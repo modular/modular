@@ -14,7 +14,7 @@
 """Pins the vision position embedding across a clip's temporal slices.
 
 ``BilinearInterpolationPositionEmbedding`` interpolates one position grid per
-FRAME -- ``sum(h * w)`` rows -- and ``mo.spatial_merge`` replicates it across
+FRAME -- ``sum(h * w)`` rows -- and ``vision.spatial_merge`` replicates it across
 each grid item's ``t`` temporal patches, emitting ``sum(t * h * w)``. The two
 lengths coincide only for still images, so nothing in the image path can see a
 mistake here.
@@ -38,10 +38,10 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
+from max.pipelines.architectures.qwen3_5.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
 )
-from max.pipelines.architectures.qwen3vl_moe.nn.visual_transformer import (
+from max.pipelines.architectures.qwen3_5.layers.visual_transformer import (
     BilinearInterpolationPositionEmbedding,
 )
 

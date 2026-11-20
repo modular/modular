@@ -44,7 +44,7 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext) raises:
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer, var exponent}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
 
         var val = (
             in_buffer.unsafe_ptr()
@@ -56,7 +56,7 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext) raises:
             idx, result.cast[.float32]()
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):
             var expected_value = in_host[i] ** exponent.cast[.float32]()

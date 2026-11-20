@@ -22,12 +22,12 @@ from max.algorithm import elementwise
 from max._plugin import MaxPluginForTarget
 from std.collections.string.string_span import get_static_string
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu, is_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget, _accelerator_arch
 
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 # Re-export CPU implementations.
 from .backend.cpu import (
@@ -116,79 +116,122 @@ def _get_start_indices_of_nth_subvolume[
     res.data[0] = curr_index
 
 
+@inline(.always)
+def _start_indices_of_nth_element[
+    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
+    subvolume_rank: Int = 0,
+](n: Int, shape: Coord) -> StaticTuple[Int, rank]:
+    """Converts a flat index into row-major ND start indices.
+
+    Divides by a compile-time literal for every dimension whose extent
+    `shape_types` knows statically, so those divisions strength-reduce instead
+    of lowering to a runtime `div`.
+
+    Matches `_get_start_indices_of_nth_subvolume[subvolume_rank]` exactly,
+    including leftover-into-dim-0: the outermost coordinate is the undivided
+    remainder, never reduced modulo `shape[0]`. Dimensions inside the trailing
+    subvolume are left zeroed for the caller to fill in.
+
+    Parameters:
+        rank: The rank of the ND index.
+        shape_types: The `Coord` element types of `shape`, carrying whichever
+            extents are known at compile time.
+        use_32bit: Divide in 32-bit when every extent fits in 32 bits. The
+            narrowing keeps the runtime `divmod` off the 64-bit path.
+        subvolume_rank: The rank of the trailing subvolume left untouched.
+
+    Args:
+        n: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+
+    Returns:
+        The start indices.
+    """
+    comptime assert (
+        subvolume_rank < rank
+    ), "the trailing subvolume must be smaller than the index rank"
+
+    var res = StaticTuple[Int, rank](0)
+    comptime if use_32bit:
+        _decompose_flat_index[rank, shape_types, .uint32, subvolume_rank](
+            n, shape, res
+        )
+    else:
+        _decompose_flat_index[rank, shape_types, .int, subvolume_rank](
+            n, shape, res
+        )
+    return res
+
+
+@inline(.always)
+def _decompose_flat_index[
+    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    dtype: DType,
+    subvolume_rank: Int,
+](n: Int, shape: Coord, mut res: StaticTuple[Int, rank]):
+    """Fills `res` with the row-major start indices of flat index `n`.
+
+    The `dtype` accumulator keeps the runtime `divmod` in the caller's chosen
+    arithmetic width; compile-time extents fold the division away entirely.
+
+    Parameters:
+        rank: The rank of the ND index.
+        shape_types: The `Coord` element types of `shape`.
+        dtype: The arithmetic type of the accumulator.
+        subvolume_rank: The rank of the trailing subvolume left untouched.
+
+    Args:
+        n: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+        res: Receives the start indices.
+    """
+    comptime T = Scalar[dtype]
+    var curr = T(n)
+
+    comptime for i in reversed(range(1, rank - subvolume_rank)):
+        comptime if shape_types[i].is_static_value:
+            var quotient, remainder = divmod(
+                curr, T(shape_types[i].static_value)
+            )
+            curr = quotient
+            res[i] = Int(remainder)
+        else:
+            var quotient, remainder = divmod(curr, T(Int(shape[i])))
+            curr = quotient
+            res[i] = Int(remainder)
+
+    res[0] = Int(curr)
+
+
+@inline(.always)
+def _index_coord[
+    rank: Int
+](flat: StaticTuple[Int, rank]) -> DynamicCoord[.int64, rank]:
+    """Materializes a flat index tuple as the `Coord` an elementwise body takes.
+
+    Indices are `int64` so bodies can do plain integer index arithmetic.
+
+    Parameters:
+        rank: The rank of the index space.
+
+    Args:
+        flat: The per-dimension indices.
+
+    Returns:
+        The same indices as a `Coord`.
+    """
+    var coord = DynamicCoord[.int64, rank]()
+    comptime for i in range(rank):
+        coord.replace_dynamic[i](Int64(flat[i]))
+    return coord
+
+
 # ===-----------------------------------------------------------------------===#
 # Elementwise
 # ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def elementwise[
-    func: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
-    simd_width: Int,
-    *,
-    target: StaticString = "cpu",
-    _trace_description: StaticString = "elementwise",
-](shape: Int, context: DeviceContext) raises:
-    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns when
-    all sub-tasks have completed.
-
-    Parameters:
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        target: The target to run on.
-        _trace_description: Description of the trace.
-
-    Args:
-        shape: The shape of the buffer.
-        context: The device context to use.
-
-    Raises:
-        If the operation fails.
-    """
-
-    elementwise[
-        func,
-        simd_width=simd_width,
-        target=target,
-        _trace_description=_trace_description,
-    ](Coord(shape), context)
-
-
-@inline(.always)
-def elementwise[
-    func: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
-    simd_width: Int,
-    *,
-    target: StaticString = "cpu",
-    _trace_description: StaticString = "elementwise",
-](shape: Coord, context: DeviceContext) raises:
-    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns when
-    all sub-tasks have completed.
-
-    Parameters:
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        target: The target to run on.
-        _trace_description: Description of the trace.
-
-    Args:
-        shape: The shape of the buffer.
-        context: The device context to use.
-
-    Raises:
-        If the operation fails.
-    """
-
-    def func_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
-        func[width, alignment](indices)
-
-    _elementwise_impl[
-        simd_width,
-        target=target,
-        trace_description=_trace_description,
-    ](func_unified, shape, context)
 
 
 @inline(.always)
@@ -199,7 +242,6 @@ def elementwise[
     //,
     simd_width: Int,
     *,
-    target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
     """Unified-closure entry point for `elementwise` (DeviceContext).
@@ -212,11 +254,9 @@ def elementwise[
     `elementwise[N](func, shape, ctx)`.
 
     Parameters:
-        FuncType: A parametric callable taking
-            `IndexList[rank]` and template parameters `width`, `rank`,
-            `alignment`.
+        FuncType: A parametric callable taking an index `Coord` and template
+            parameters `width` and `alignment`.
         simd_width: The SIMD vector width to use.
-        target: The target to run on.
         _trace_description: Description of the trace.
 
     Args:
@@ -229,79 +269,8 @@ def elementwise[
     """
     _elementwise_impl[
         simd_width,
-        target=target,
         trace_description=_trace_description,
     ](func, shape, context)
-
-
-@fieldwise_init
-struct _IndexListToCoordAdapter[
-    rank: Int,
-    FuncType: ImplicitlyCopyable
-    & RegisterPassable
-    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
-](
-    ImplicitlyCopyable,
-    RegisterPassable,
-    def[width: Int, alignment: Int = 1](Coord) -> None,
-):
-    """Adapts an `IndexList`-taking function to a `Coord`-taking callable.
-
-    Bridges the `IndexList`-based elementwise body convention to the
-    `Coord`-based GPU kernel interface required by `_elementwise_impl_gpu`.
-
-    TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
-    `lit.closure.init` with parametric witnesses in the MOGG package that the
-    package loader cannot resolve.
-
-    Parameters:
-        rank: The rank of the index space.
-        FuncType: The wrapped function type.
-    """
-
-    var func: Self.FuncType
-
-    @inline(.always)
-    def __call__[width: Int, alignment: Int = 1](self, coords: Coord):
-        self.func[width, Self.rank, alignment](
-            rebind[IndexList[Self.rank]](coord_to_index_list(coords))
-        )
-
-
-@fieldwise_init
-struct _CoordToIndexListAdapter[
-    rank: Int,
-    FuncType: ImplicitlyCopyable
-    & RegisterPassable
-    & def[width: Int, alignment: Int = 1](Coord) -> None,
-](
-    ImplicitlyCopyable,
-    RegisterPassable,
-    def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
-):
-    """Adapts a `Coord`-taking function to an `IndexList`-taking callable.
-
-    Bridges the `Coord`-based elementwise body convention to the
-    `IndexList`-based plugin entry points required by
-    `MaxPluginForTarget.elementwise_fn`.
-
-    TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
-    `lit.closure.init` with parametric witnesses in the MOGG package that the
-    package loader cannot resolve.
-
-    Parameters:
-        rank: The rank of the index space.
-        FuncType: The wrapped function type.
-    """
-
-    var func: Self.FuncType
-
-    @inline(.always)
-    def __call__[
-        width: Int, call_rank: Int, alignment: Int = 1
-    ](self, indices: IndexList[call_rank]):
-        comptime assert call_rank == Self.rank
-        self.func[width, alignment](Coord(indices))
 
 
 @inline(.always)
@@ -312,12 +281,11 @@ def _elementwise_impl[
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
-    target: StaticString = "cpu",
     trace_description: StaticString,
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
     @inline(.always)
     def description_fn() {imm} -> String:
-        var shape_str = trace_arg("shape", coord_to_index_list(shape))
+        var shape_str = trace_arg("shape", shape)
         var vector_width_str = String(t"vector_width={simd_width}")
         return ";".join([shape_str^, vector_width_str^])
 
@@ -326,7 +294,13 @@ def _elementwise_impl[
     comptime desc = String(t"({d})") if d else ""
     comptime kind = get_static_string["elementwise", desc]()
 
-    with Trace[TraceLevel.OP, target=target](
+    # An accelerator that is not a SIMT GPU, such as an NPU, is traced on the
+    # host, so `device_kind_label()` (which rejects such targets) can't be used.
+    comptime trace_target = get_static_string[
+        "gpu" if context.target.is_gpu() else "cpu"
+    ]()
+
+    with Trace[TraceLevel.OP, target=trace_target](
         kind,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -337,7 +311,7 @@ def _elementwise_impl[
         # `MaxPluginForTarget`.
         # TODO(DRIV-186): GPUInfo should handle CPU device,
         # Should not need to additionally check accelerator arch here
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
 
             @inline(.always)
             def func_wrap_cpu[
@@ -345,10 +319,7 @@ def _elementwise_impl[
             ](coords: Coord) {imm}:
                 func[width, alignment](coords)
 
-            _elementwise_impl_cpu[
-                simd_width=simd_width,
-                trace_description=trace_description,
-            ](
+            _elementwise_impl_cpu[simd_width](
                 func_wrap_cpu,
                 shape=shape,
                 ctx=Optional(context.assert_cpu_target()),
@@ -358,18 +329,18 @@ def _elementwise_impl[
         ]._handles_elementwise:
             comptime plugin = MaxPluginForTarget[context.target]
             return plugin.elementwise_fn[shape.rank, simd_width](
-                _CoordToIndexListAdapter[shape.rank, FuncType](func),
-                coord_to_index_list(shape),
-                context,
+                func,
+                shape,
+                context.assert_default_target(),
             )
-        elif is_gpu[target]():
+        elif context.target.is_gpu():
             _elementwise_impl_gpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
             ](
                 func,
                 shape=shape,
-                ctx=context,
+                ctx=context.assert_default_target(),
             )
         else:
             CompilationTarget.unsupported_target_error[
@@ -386,7 +357,6 @@ def _elementwise_impl[
 def dual_elementwise[
     simd_width: Int,
     *,
-    target: StaticString = "gpu",
     _trace_description: StaticString = "dual_elementwise",
 ](
     shape_0: Coord,
@@ -409,7 +379,6 @@ def dual_elementwise[
 
     Parameters:
         simd_width: The SIMD vector width to use.
-        target: The target to run on (must be GPU).
         _trace_description: Description of the trace.
 
     Args:
@@ -425,7 +394,6 @@ def dual_elementwise[
 
     _dual_elementwise_impl[
         simd_width,
-        target=target,
         trace_description=_trace_description,
     ](func_0, func_1, shape_0, shape_1, context)
 
@@ -441,7 +409,6 @@ def _dual_elementwise_impl[
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
-    target: StaticString = "gpu",
     trace_description: StaticString,
 ](
     func_0: Func0Type,
@@ -450,10 +417,14 @@ def _dual_elementwise_impl[
     shape_1: Coord,
     context: DeviceContext,
 ) raises:
+    comptime assert (
+        context.target.is_gpu()
+    ), "dual_elementwise only supports GPU target"
+
     @inline(.always)
     def description_fn() {imm} -> String:
-        var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
-        var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
+        var s0 = trace_arg("shape_0", shape_0)
+        var s1 = trace_arg("shape_1", shape_1)
         var vw = String(t"vector_width={simd_width}")
         return ";".join([s0^, s1^, vw^])
 
@@ -461,14 +432,11 @@ def _dual_elementwise_impl[
     comptime desc = String(t"({d})") if d else ""
     comptime kind = get_static_string["dual_elementwise", desc]()
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
         kind,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        comptime assert is_gpu[
-            target
-        ](), "dual_elementwise only supports GPU target"
         _dual_elementwise_impl_gpu[
             simd_width=simd_width,
             trace_description=kind,
@@ -495,11 +463,11 @@ for regions that fail out of the input domain are handled by load_fn.
 
 
 Parameters:
-    shape_element_type: The element dtype of the shape.
-    input_shape_element_type: The element dtype of the input shape.
+    shape_types: The element types of the `shape` coordinate.
+    input_shape_types: The element types of the `input_shape` coordinate.
     rank: Input and output domain rank.
-    stencil_rank: Rank of stencil subdomain slice.
-    stencil_axis: Stencil subdomain axes.
+    stencil_rank: Rank of stencil subdomain slice. Must be 2: the stencil
+        covers the spatial axes 1 and 2.
     simd_width: The SIMD vector width to use.
     dtype: The input and output data dtype.
     map_fn: A function that a point in the output domain to the input co-domain.
@@ -524,11 +492,11 @@ comptime stencil_gpu = _stencil_impl_gpu
 """(Naive implementation) Computes stencil operation in parallel on GPU.
 
 Parameters:
-    shape_element_type: The element dtype of the shape.
-    input_shape_element_type: The element dtype of the input shape.
+    shape_types: The element types of the `shape` coordinate.
+    input_shape_types: The element types of the `input_shape` coordinate.
     rank: Input and output domain rank.
-    stencil_rank: Rank of stencil subdomain slice.
-    stencil_axis: Stencil subdomain axes.
+    stencil_rank: Rank of stencil subdomain slice. Must be 2: the stencil
+        covers the spatial axes 1 and 2.
     simd_width: The SIMD vector width to use.
     dtype: The input and output data dtype.
     MapFnType: A closure maps a point in the output domain to input co-domain bounds.

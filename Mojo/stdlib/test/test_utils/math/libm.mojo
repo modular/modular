@@ -13,7 +13,10 @@
 """Provides calls into the host libm, the reference for math tests."""
 
 from std.ffi import _external_call_const, external_call
+from std.math import isinf, isnan, nan, trunc
+from std.math.math import _call_libm
 from std.simd import _simd_apply
+from std.sys import CompilationTarget, size_of
 
 
 @inline(.always)
@@ -93,3 +96,67 @@ def libm_call_binary[
             ).cast[dtype]()
         case _:
             comptime assert False, "expected a floating point"
+
+
+def libm_call_f64[
+    dtype: DType, width: SIMDLength, //, name: StaticString
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
+    """Calls the float64 version of a libm function and rounds the result to
+    `dtype`.
+
+    Parameters:
+        dtype: The floating-point type of the argument and the result.
+        width: The SIMD width.
+        name: Name of the float64 version of the libm function.
+
+    Args:
+        x: The argument.
+
+    Returns:
+        The float64 libm result, rounded once to `dtype`.
+    """
+    return _call_libm[name](x.cast[.float64]()).cast[dtype]()
+
+
+def libm_scalb[
+    dtype: DType, //
+](x: Scalar[dtype], y: Scalar[dtype]) -> Scalar[
+    dtype
+] where dtype.is_floating_point():
+    """Returns `x * 2^y` as libm `scalb` computes it.
+
+    macOS libm has no `scalbf`, and its `scalb` does not return NaN for a
+    non-integral exponent, so off Linux this follows fdlibm/glibc `scalb`
+    using libm `ldexp` instead.
+
+    Parameters:
+        dtype: The floating-point type of the arguments.
+
+    Args:
+        x: The value to scale.
+        y: The exponent, which must be integral for a non-NaN result.
+
+    Returns:
+        The libm result, rounded through float32 for float16 and bfloat16.
+    """
+    comptime if CompilationTarget.is_linux():
+        return libm_call_binary["scalbf", "scalb"](x, y)
+    # Scaling a float32 or narrower value is exact in float64, so the rounded
+    # `ldexp` result is correct.
+    var x64 = x.cast[.float64]()
+    var y64 = y.cast[.float64]()
+    var r: Float64
+    if isnan(x64) or isnan(y64):
+        r = x64 * y64
+    elif isinf(y64):
+        r = x64 * y64 if y64 > 0 else x64 / -y64
+    elif trunc(y64) != y64:
+        r = nan[.float64]()
+    else:
+        # Clamping the exponent this far out saturates `ldexp` for every
+        # dtype without overflowing `Int32`.
+        var n = Int32(y64.clamp(-65000.0, 65000.0))
+        r = _external_call_const["ldexp", Float64](x64, n)
+    comptime if size_of[dtype]() < size_of[DType.float32]():
+        return r.cast[.float32]().cast[dtype]()
+    return r.cast[dtype]()

@@ -3,6 +3,13 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
 
 package(default_visibility = ["//max:consumers"])
 
+# Raw sources for plugin overlays.
+filegroup(
+    name = "srcs",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//plugins:__subpackages__"],
+)
+
 mojo_library(
     name = "builtin_kernels",
     srcs = glob(["**/*.mojo"]),
@@ -11,12 +18,6 @@ mojo_library(
     use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
-        "//Kernels/lib/attn_res",
-        "//Kernels/lib/kda",
-        "//Kernels/lib/matmul_rs",
-        "//Kernels/lib/mega_ffn",
-        "//Kernels/lib/msa",
-        "//Kernels/lib/qsa",
         "//max:algorithm",
         "//max:builtin_primitives",
         "//max:comm",

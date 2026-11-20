@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) matmul on the 16x32x16 `matmul2d` tile.
 
-Target: Apple M5 (`compute_capability == 5`) only.
+Target: Apple M5 and newer (`compute_capability >= 5`).
 
 `out = activation @ weight^T` where the FP4 weight stays PACKED in DRAM
 (`uint8 [N, K//2]` lo-nibble first + `float8_e4m3fn [N, K//16]` block scales).
@@ -63,13 +63,12 @@ from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
 from std.math import ceildiv
 from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.memory import unsafe_stack_allocation
-from std.utils import IndexList
 
 from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
-from layout.tile_layout import Layout, TensorLayout
+from layout.layout import Layout, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f32, NVFP4_SF_VECTOR_SIZE
 
@@ -92,8 +91,8 @@ comptime M2D_N = 32
 comptime M2D_K = 16
 
 
-def _require_apple_m5(ctx: DeviceContext) raises:
-    """Runtime guard: reject a non-Apple-M5 GPU at the host enqueue entry.
+def _require_apple_m5_or_newer(ctx: DeviceContext) raises:
+    """Runtime guard: reject a pre-M5 Apple GPU at the host enqueue entry.
 
     The kernel body uses the Apple simdgroup MMA (`_mma_apple`), which compiles
     for any Apple GPU target, so the Metal-4 / M5 requirement is enforced at
@@ -103,11 +102,11 @@ def _require_apple_m5(ctx: DeviceContext) raises:
     comptime assert).
     """
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "matmul2d W4A16 (Apple M5 NVFP4) requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "matmul2d W4A16 (Apple M5 NVFP4) requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -138,7 +137,7 @@ def frag_col_base(lane: Int) -> Int:
 
 
 @inline(.always)
-def a_frag_coord(lane: Int, i: Int) -> IndexList[2]:
+def a_frag_coord(lane: Int, i: Int) -> Tuple[Int, Int]:
     """(row, col) in the 16x16 A tile for this lane's A element `i` (0..7).
 
     Args:
@@ -147,13 +146,14 @@ def a_frag_coord(lane: Int, i: Int) -> IndexList[2]:
         i: A-fragment element index in `[0, 8)`; selects which of this lane's
             8 held A elements to map to `(row, col)`.
     """
-    return IndexList[2](
-        frag_row_base(lane) + (i >> 2) * 8, frag_col_base(lane) + (i % 4)
+    return (
+        frag_row_base(lane) + (i >> 2) * 8,
+        frag_col_base(lane) + (i % 4),
     )
 
 
 @inline(.always)
-def bc_frag_coord(lane: Int, i: Int) -> IndexList[2]:
+def bc_frag_coord(lane: Int, i: Int) -> Tuple[Int, Int]:
     """(row, col) in the 16x32 B/C tile for this lane's element `i` (0..15).
 
     Args:
@@ -163,14 +163,14 @@ def bc_frag_coord(lane: Int, i: Int) -> IndexList[2]:
             lane's 16 held B/C elements to map to `(row, col)`.
     """
     var half, sub = divmod(i, 8)
-    return IndexList[2](
+    return (
         frag_row_base(lane) + (sub >> 2) * 8,
         frag_col_base(lane) + (sub % 4) + half * 16,
     )
 
 
 @inline(.always)
-def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
+def bt_frag_coord(lane: Int, i: Int) -> Tuple[Int, Int]:
     """(n, k) in the 16x32 right operand for element `i` under `transpose_right=1`.
 
     Under `transpose_right=1` the op reads the right operand as `(N, K)` instead
@@ -190,7 +190,7 @@ def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
             16 held B elements to map to `(n, k)` under `transpose_right=1`.
     """
     var half, sub = divmod(i, 8)
-    return IndexList[2](
+    return (
         frag_row_base(lane) + (sub >> 2) * 8 + half * 16,  # n (0..31)
         frag_col_base(lane) + (sub % 4),  # k (0..15, contiguous)
     )
@@ -381,7 +381,7 @@ struct Fp4WeightLoader[
         self,
         arow0: Int,
         k0: Int,
-        a_rc: Array[IndexList[2], 8],
+        a_rc: Array[Tuple[Int, Int], 8],
     ) -> SIMD[
         Self.in_type, 8
     ]:
@@ -447,7 +447,7 @@ struct Fp4WeightLoader[
             var k_abs0 = k0 + cb  # even (k0 mult 16, cb mult 4)
             # One 2-byte packed load -> 4 nibbles (k = cb .. cb+3).
             var two = self.packed.load[width=2, alignment=1](
-                Coord(n_abs, k_abs0 // 2)
+                (n_abs, k_abs0 // 2)
             )
             var pw = UInt16(two[0]) | (UInt16(two[1]) << UInt16(8))
             var nib = SIMD[.uint16, 4](0)
@@ -522,7 +522,7 @@ struct Fp4WeightLoader[
         """
         var byte0 = col0 // 2  # first packed byte in this row's strip
         var bytes = self.packed.load[width=bytes_per_thread, alignment=1](
-            Coord(n_abs, (k0 // 2) + byte0)
+            (n_abs, (k0 // 2) + byte0)
         )
         var nib = SIMD[.uint16, cols_per_thread](0)
         comptime for j in range(bytes_per_thread):
@@ -533,7 +533,7 @@ struct Fp4WeightLoader[
             self.scales[n_abs, (k0 + col0) // Self.SF][0].cast[.float32]()
         )
         var dec = (decode_e2m1_to_f32(nib) * scale_abs).cast[Self.in_type]()
-        b_view.store[width=cols_per_thread](Coord(n_local, col0), dec)
+        b_view.store((n_local, col0), dec)
 
 
 struct Matmul2dFp4[
@@ -661,15 +661,15 @@ struct Matmul2dFp4[
 
         # A frag: base map. B frag: transpose_right map (n, k) w/ k contiguous.
         var a_rc = Array[_, 8](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: a_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: a_frag_coord(lane, i)
         )
         # C store: UNCHANGED base bc map (transpose_right permutes only B).
         var c_rc = Array[_, 16](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: bc_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: bc_frag_coord(lane, i)
         )
 
         # This lane's fragment (n, k) base for the transpose_right B map. The 16
@@ -733,8 +733,8 @@ struct Matmul2dFp4[
                     var gm = trow0 + c_rc[i][0]
                     var gn = tcol0 + c_rc[i][1]
                     if gm < M and gn < N:
-                        c.store[width=1](
-                            Coord(gm, gn),
+                        c.store(
+                            (gm, gn),
                             SIMD[Self.c_type, 1](cv[i].cast[Self.c_type]()),
                         )
 
@@ -838,20 +838,20 @@ struct Matmul2dFp4[
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
         var a_rc = Array[_, 8](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: a_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: a_frag_coord(lane, i)
         )
         # B fragment (n, k) local coords under transpose_right; k contiguous.
         var b_nk = Array[_, 16](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: bt_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: bt_frag_coord(lane, i)
         )
         var c_rc = Array[_, 16](
-            fill_with_unrolled=lambda [i: Int]() -> IndexList[2]: bc_frag_coord(
-                lane, i
-            )
+            fill_with_unrolled=lambda [i: Int]() -> Tuple[
+                Int, Int
+            ]: bc_frag_coord(lane, i)
         )
 
         # The FP4 decode / A-gather owner: all packed/scale/A/SMEM addressing
@@ -940,8 +940,8 @@ struct Matmul2dFp4[
                     var gm = trow0 + c_rc[i][0]
                     var gn = tcol0 + c_rc[i][1]
                     if gm < M and gn < N:
-                        c.store[width=1](
-                            Coord(gm, gn),
+                        c.store(
+                            (gm, gn),
                             SIMD[Self.c_type, 1](cv[i].cast[Self.c_type]()),
                         )
 
@@ -990,9 +990,9 @@ def enqueue_matmul2d_fp4[
         ctx: Device context used to enqueue the kernel.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime MM = Matmul2dFp4[
         c_type,
@@ -1003,11 +1003,11 @@ def enqueue_matmul2d_fp4[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_matmul2d_fp4 requires Apple M5 (compute_capability =="
-                " 5); got compute_capability="
+                "enqueue_matmul2d_fp4 requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -1046,8 +1046,10 @@ def enqueue_matmul2d_fp4[
         Int32(m),
         Int32(n),
         Int32(k),
-        grid_dim=(grid_n, grid_m),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_n, grid_m),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )
 
 
@@ -1110,9 +1112,9 @@ def enqueue_matmul2d_fp4_smem[
         ctx: Device context used to enqueue the kernel.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime MM = Matmul2dFp4[
         c_type,
@@ -1124,11 +1126,11 @@ def enqueue_matmul2d_fp4_smem[
     ]
 
     var cc = ctx.compute_capability()
-    if cc != 5:
+    if cc < 5:
         raise Error(
             (
-                "enqueue_matmul2d_fp4_smem requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
+                "enqueue_matmul2d_fp4_smem requires Apple M5 or newer"
+                " (compute_capability >= 5); got compute_capability="
             ),
             cc,
         )
@@ -1167,6 +1169,8 @@ def enqueue_matmul2d_fp4_smem[
         Int32(m),
         Int32(n),
         Int32(k),
-        grid_dim=(grid_n, grid_m),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_n, grid_m),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )

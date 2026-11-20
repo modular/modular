@@ -14,9 +14,10 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
@@ -32,10 +33,18 @@ from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+    max_pages_per_request,
+)
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.graph_groups import (
+    RaggedBatch,
+    TPSignals,
+    VisionMerge,
+)
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext
 from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.graph_input_stager import (
@@ -50,6 +59,8 @@ from max.pipelines.lib.interfaces.pipeline_model import (
 )
 from max.pipelines.lora import LoRAManagerV3
 from max.pipelines.modeling.dataprocessing import collate_batch
+from max.pipelines.speculative.spec_input_types import draft_probs_rows_name
+from max.support.math import ceildiv
 from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
@@ -115,6 +126,100 @@ class BatchProcessorRuntime:
         into one ragged stream.
         """
         return self.max_batch_size * self.data_parallel_degree
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Returns the largest size each per-step input dim can take.
+
+        A serving engine allocates each per-step input once at these sizes and
+        slices it per batch, so each bound comes from the code that sizes the
+        same input for MAX's own staging.
+
+        Args:
+            dims: Symbolic dims of a graph's per-step inputs.
+            kv_params: The KV cache parameters, which bound a lookup table's
+                pages per context.
+
+        Returns:
+            Each dim's maximum, keyed by name.
+
+        Raises:
+            ValueError: If a dim is not one this runtime bounds, or is an image
+                row dim while the vision cache is off.
+        """
+        tokens = self.max_batch_active_tokens
+        exact = {
+            "total_seq_len": tokens,
+            "input_row_offsets_len": self.max_global_batch_size + 1,
+            "return_n_logits": 1,
+        }
+        image_rows = {
+            "num_image_tokens",
+            "total_image_tokens",
+            "vision_merged_seq_len",
+        }
+        bounds: dict[str, int] = {}
+        for dim in dims:
+            if dim in exact:
+                bounds[dim] = exact[dim]
+            elif dim in image_rows:
+                # The vision encoder cache stages only the rows inside each
+                # context's active window, which replace tokens of the step.
+                # Without it, a context that needs encoding stages every row
+                # of every image, which the step's tokens do not bound.
+                if self.pipeline_config.runtime.vision_cache_utilization == 0:
+                    raise ValueError(
+                        f"input dim {dim!r} has no per-step maximum with the"
+                        " vision cache off: enable it with"
+                        " --vision-cache-utilization"
+                    )
+                bounds[dim] = tokens
+            elif re.fullmatch(r"replica_\d+_batch_size", dim):
+                bounds[dim] = self.max_batch_size
+            elif re.fullmatch(r"replica_\d+_\w*max_num_pages", dim):
+                bounds[dim] = max_pages_per_request(kv_params, self.max_seq_len)
+            else:
+                raise ValueError(f"no maximum is known for input dim {dim!r}")
+        return bounds
+
+    def spec_decode_max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Bounds the dims of a decoder's inputs and of the spec-decode tail.
+
+        As :meth:`max_dims` does, for a fused speculative-decoding graph. A
+        step verifies at most ``num_speculative_tokens`` drafts per row,
+        which the merged window adds to the row's tokens, masks one more
+        position than it verifies, over the packed vocabulary, and drafts a
+        row per sequence, or a block draft its whole block.
+        """
+        speculative = self.pipeline_config.speculative
+        assert speculative is not None
+        k = speculative.draft_width
+        vocab_size = self.pipeline_config.model.huggingface_config.get_text_config().vocab_size
+        batch_size = self.max_global_batch_size
+        draft_rows = (
+            1 if speculative.is_eagle() or speculative.is_mtp() else k + 1
+        )
+        tail = {
+            "batch_size": batch_size,
+            "merged_total_seq_len": self.max_batch_active_tokens
+            + batch_size * k,
+            "num_steps": k,
+            "num_bitmask_positions": k + 1,
+            "packed_vocab_size": ceildiv(vocab_size, 32),
+            "num_draft_slots": batch_size * draft_rows,
+            "num_draft_offsets": batch_size + 1,
+        }
+        # A replica keeps a draft distribution per sequence it holds.
+        for replica in range(self.pipeline_config.model.data_parallel_degree):
+            tail[draft_probs_rows_name(replica)] = self.max_batch_size
+        dims = list(dims)
+        bounds = self.max_dims(
+            [dim for dim in dims if dim not in tail], kv_params
+        )
+        return {dim: tail[dim] if dim in tail else bounds[dim] for dim in dims}
 
     @property
     def max_batch_active_tokens(self) -> int:
@@ -213,6 +318,19 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT, ArchConfigT_co]):
                 graph's input types in declaration order.
         """
         self.input_tree = input_tree
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Returns the largest size each per-step input dim can take.
+
+        Defaults to :meth:`BatchProcessorRuntime.max_dims`; a processor that
+        feeds inputs of its own bounds their dims too.
+
+        Raises:
+            ValueError: If no maximum is known for a dim.
+        """
+        return self.runtime.max_dims(dims, kv_params)
 
     @abstractmethod
     def prepare_initial_token_inputs(
@@ -477,11 +595,9 @@ def ragged_batch_inputs(
     *,
     data_parallel_degree: int = 1,
     hidden_states: tuple[DType, int] | None = None,
-) -> OrderedDict[str, TensorType]:
+    row_offsets_devices: Sequence[DeviceRef] | None = None,
+) -> RaggedBatch:
     """Returns the named per-batch graph inputs, in the order ``fields`` gives.
-
-    The result is an ``OrderedDict``, not a ``dict``: ``tree.flatten`` sorts a
-    plain dict's keys, and the graph declares its inputs in insertion order.
 
     Args:
         device_ref: The device that holds the token and row-offset tensors.
@@ -493,11 +609,14 @@ def ragged_batch_inputs(
         hidden_states: The ``(dtype, hidden_size)`` of the EAGLE draft's
             hidden-state input. Required when ``fields`` names
             ``hidden_states``.
+        row_offsets_devices: The devices that each take their own
+            ``row_offsets``, for a graph that does not broadcast them.
+            ``row_offsets`` is then a tuple with one type per device.
 
     Returns:
         The input types keyed by field name.
     """
-    available = {
+    available: dict[str, TensorType | tuple[TensorType, ...]] = {
         "tokens": TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         ),
@@ -518,17 +637,24 @@ def ragged_batch_inputs(
             device=DeviceRef.CPU(),
         ),
     }
+    if row_offsets_devices is not None:
+        available["row_offsets"] = tuple(
+            TensorType(
+                DType.uint32, shape=["input_row_offsets_len"], device=device
+            )
+            for device in row_offsets_devices
+        )
     if hidden_states is not None:
         dtype, hidden_size = hidden_states
         available["hidden_states"] = TensorType(
             dtype, shape=["total_seq_len", hidden_size], device=device_ref
         )
-    return OrderedDict((name, available[name]) for name in fields)
+    return RaggedBatch((name, available[name]) for name in fields)
 
 
 def signal_inputs(
     device_refs: list[DeviceRef],
-) -> OrderedDict[str, tuple[BufferType, ...]]:
+) -> TPSignals:
     """Returns the named per-device allreduce signal buffers.
 
     Args:
@@ -537,7 +663,7 @@ def signal_inputs(
     Returns:
         The signal buffer types, one per device, under ``signal``.
     """
-    return OrderedDict(signal=tuple(Signals(devices=device_refs).input_types()))
+    return TPSignals(signal=tuple(Signals(devices=device_refs).input_types()))
 
 
 def vision_merge_inputs(
@@ -546,7 +672,7 @@ def vision_merge_inputs(
     hidden_size: int,
     *,
     rows_dim: str,
-) -> OrderedDict[str, tuple[TensorType, ...]]:
+) -> VisionMerge:
     """Returns the per-device vision embeddings and where they merge.
 
     Args:
@@ -561,7 +687,7 @@ def vision_merge_inputs(
         token stream that their rows replace under ``image_token_indices``,
         one of each per device.
     """
-    return OrderedDict(
+    return VisionMerge(
         image_embeddings=tuple(
             TensorType(dtype, shape=[rows_dim, hidden_size], device=device)
             for device in device_refs
@@ -694,6 +820,12 @@ class UnifiedSpecDecodeBatchProcessor(
             np.array([self._seed_counter], dtype=np.uint64)
         ).to(device0)
 
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Bounds the dims of a decoder's inputs and of the spec-decode tail."""
+        return self.runtime.spec_decode_max_dims(dims, kv_params)
+
     def get_symbolic_inputs(
         self,
         *,
@@ -779,12 +911,13 @@ def embedding_ragged_symbolic_inputs(
 ) -> list[TensorType | BufferType]:
     """Symbolic compile inputs for single-replica ragged embedding models."""
     device_ref = device_refs[0]
+    # The dtypes and devices SingleReplicaEmbeddingBatchProcessor builds.
     return [
-        TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),
+        TensorType(DType.uint32, shape=["total_seq_len"], device=device_ref),
         TensorType(
             DType.uint32,
             shape=["input_row_offsets_len"],
-            device=device_ref,
+            device=DeviceRef.CPU(),
         ),
         TensorType(
             DType.uint32,

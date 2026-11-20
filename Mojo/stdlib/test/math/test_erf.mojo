@@ -42,7 +42,7 @@ def test_erf_libm() raises:
     comptime test_dtype = DType.float32
 
     # generate input values and write them to file
-    var x32_allocation = alloc[Scalar[test_dtype]]({count = N}).into_managed()
+    var x32_allocation = alloc[Scalar[test_dtype]]({length = N}).into_managed()
     var x32 = x32_allocation.unsafe_ptr()
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
@@ -50,7 +50,7 @@ def test_erf_libm() raises:
     ####################
     # math.erf result
     ####################
-    var y32_allocation = alloc[Scalar[test_dtype]]({count = N}).into_managed()
+    var y32_allocation = alloc[Scalar[test_dtype]]({length = N}).into_managed()
     var y32 = y32_allocation.unsafe_ptr()
     for i in range(N):
         y32[unsafe_offset=i] = erf(x32[unsafe_offset=i])  # math.erf
@@ -62,10 +62,10 @@ def test_erf_libm() raises:
     def erf_libm[
         dtype: DType, simd_width: SIMDLength
     ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-        return libm_call["erff", "err"](arg)
+        return libm_call["erff", "erf"](arg)
 
     var libm_out_allocation = alloc[Scalar[test_dtype]](
-        {count = N}
+        {length = N}
     ).into_managed()
     var libm_out = libm_out_allocation.unsafe_ptr()
     for i in range(N):

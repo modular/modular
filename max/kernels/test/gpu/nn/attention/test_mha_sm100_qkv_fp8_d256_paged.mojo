@@ -136,23 +136,10 @@ def execute_paged_fp8_test[
         total_length += valid_lengths[i]
 
     print(
-        "test_mha_sm100_qkv_fp8_d256_paged: ",
-        "mask=",
-        mask_name,
-        " group=",
-        group,
-        " n_q_heads=",
-        num_q_heads,
-        " n_kv_heads=",
-        kv_num_heads,
-        " bs=",
-        batch_size,
-        " max_ctx=",
-        max_full_context_length,
-        " max_prompt=",
-        max_prompt_length,
-        " page_size=",
-        page_size,
+        t"test_mha_sm100_qkv_fp8_d256_paged:  mask= {mask_name}  group="
+        t" {group}  n_q_heads= {num_q_heads}  n_kv_heads= {kv_num_heads}  bs="
+        t" {batch_size}  max_ctx= {max_full_context_length}  max_prompt="
+        t" {max_prompt_length}  page_size= {page_size}"
     )
 
     var q_layout = row_major(total_length, Idx[num_q_heads], Idx[head_dim])
@@ -350,18 +337,8 @@ def execute_paged_fp8_test[
                     if diff > atol + rtol * abs(expect):
                         if num_mismatches < 16:
                             print(
-                                "mismatch bs=",
-                                bs,
-                                "s=",
-                                s,
-                                "h=",
-                                h,
-                                "d=",
-                                d,
-                                "actual=",
-                                actual,
-                                "expect=",
-                                expect,
+                                t"mismatch bs= {bs} s= {s} h= {h} d="
+                                t" {d} actual= {actual} expect= {expect}"
                             )
                         num_mismatches += 1
                     dot += actual * expect
@@ -372,16 +349,9 @@ def execute_paged_fp8_test[
     if aa > 0.0 and bb > 0.0:
         cos = dot / (sqrt(aa) * sqrt(bb))
     print(
-        "  num_mismatches=",
-        num_mismatches,
-        " / ",
-        num_compared,
-        " mean_abs_diff=",
-        total_abs_diff / Float64(num_compared),
-        " max_abs_diff=",
-        max_abs_diff,
-        " cosine=",
-        cos,
+        t"  num_mismatches= {num_mismatches}  /  {num_compared}  mean_abs_diff="
+        t" {total_abs_diff / Float64(num_compared)}  max_abs_diff="
+        t" {max_abs_diff}  cosine= {cos}"
     )
     assert_true(cos >= 0.9997, "cosine below 0.9997 bar")
     if num_mismatches > 0:

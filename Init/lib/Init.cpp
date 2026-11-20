@@ -52,6 +52,9 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
 
   bool crashReportingEnabled = Telemetry::isCrashReportingEnabled(settings);
 
+  // Unconditional: writing the annotation does not depend on Crashpad starting.
+  installLLVMFatalErrorHandler();
+
   // Enable crash logging, if appropriate.
   if (!isProductionBuild() && !crashReportingEnabled)
     Init::registerDevelopmentSignalHandler(programName);

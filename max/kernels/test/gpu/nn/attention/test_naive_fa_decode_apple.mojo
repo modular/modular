@@ -28,8 +28,7 @@ from std.collections import Set
 from std.math import rsqrt
 from std.random import random_ui64, seed
 
-from max.gpu.host import DeviceContext
-from std.sys import default_accelerator
+from max.gpu.host import DeviceContext, default_accelerator
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,

@@ -71,7 +71,7 @@ struct HostMachineInfo;
 
 // Constant for total number of address spaces. Increase this value if needed.
 static constexpr uint32_t kNumAddrSpaces = 16;
-class DataLayout {
+class MODULAR_CXX_EXPORT DataLayout {
 public:
   /// Get the default alloca address space.
   int32_t getAllocaAddrSpace() const { return allocaAddrSpace; }
@@ -97,8 +97,6 @@ public:
   int32_t getIntegerABIAlign(int32_t bitwidth) const;
   /// Get the ABI alignment of float type in bytes.
   int32_t getFloatABIAlign(int32_t bitwidth) const;
-  /// Get the ABI alignment of a vector type in bytes.
-  int32_t getVectorABIAlign(int32_t numElts, int32_t eltBitWidth) const;
   /// Get the default address space pointer ABI alignment in bytes.
   int32_t getPointerABIAlign(uint32_t addrSpace = 0) const {
     addrSpace = addrSpace >= ptrInfos.size() ? 0 : addrSpace;
@@ -186,7 +184,10 @@ private:
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Support/MDialect/MAttrs.h.inc"
+#include "Support/SymbolExport.h"
+#pragma GCC visibility pop
 
 //===----------------------------------------------------------------------===//
 // IntArrayElementsAttr
@@ -196,7 +197,7 @@ namespace M {
 
 /// This class represents a dense array of integers. Integer elements that do
 /// not fit evenly into bytes are rounded up to the nearest byte.
-class IntArrayElementsAttr : public ArrayElementsAttr {
+class MODULAR_CXX_EXPORT IntArrayElementsAttr : public ArrayElementsAttr {
 public:
   using ArrayElementsAttr::ArrayElementsAttr;
 
@@ -265,7 +266,7 @@ void printDenseIntArray(
 
 /// This class represents a dense array of floats. Float elements that do not
 /// fit evenly into bytes are rounded up to the nearest byte.
-class FloatArrayElementsAttr : public ArrayElementsAttr {
+class MODULAR_CXX_EXPORT FloatArrayElementsAttr : public ArrayElementsAttr {
 public:
   using ArrayElementsAttr::ArrayElementsAttr;
 
@@ -314,7 +315,7 @@ public:
 
 /// This class represents a dense array of indices. Index type elements are
 /// stored according to the index type's internal storage bitwidth.
-class IndexArrayElementsAttr : public ArrayElementsAttr {
+class MODULAR_CXX_EXPORT IndexArrayElementsAttr : public ArrayElementsAttr {
 public:
   using ArrayElementsAttr::ArrayElementsAttr;
 
@@ -339,15 +340,10 @@ public:
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
-/// Convert a `DenseElementsAttr` to an `ArrayElementsAttr`. Pass through any
-/// other kind of attribute. This should be the only place where the splatness
-/// and bitpacked-ness of the attribute are handled.
-Attribute convertDenseElements(Attribute attr);
-
 /// Returns an ArrayElementsAttr representing data. The given data is always
 /// copied into the MLIR context.
-ElementsAttr getInlineAttrForTensorDataCopy(ShapedType type,
-                                            ArrayRef<char> data);
+MODULAR_CXX_EXPORT ElementsAttr
+getInlineAttrForTensorDataCopy(ShapedType type, ArrayRef<char> data);
 
 /// Returns an attribute to store the given tensor data. If the type's number
 /// of elements is small, returns an ArrayElementsAttr. Otherwise creates
@@ -359,35 +355,35 @@ getAttrForTensorDataCopy(ShapedType type, StringRef bufferName,
                          DenseResourceElementsHandleManager &resourceManager);
 
 /// Return the contents of the IntArrayElementsAttr as a vector in int64_t.
-SmallVector<int64_t> getIntBlob(IntArrayElementsAttr intElemsAttr);
-
-/// Return the contents of the FloatArrayElementsAttr as a vector in float.
-SmallVector<float> getFloatBlob(FloatArrayElementsAttr floatElemsAttr);
+MODULAR_CXX_EXPORT SmallVector<int64_t>
+getIntBlob(IntArrayElementsAttr intElemsAttr);
 
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
 /// Returns a string literal that represents the given relocation model.
-StringLiteral stringifyRelocationModel(llvm::Reloc::Model model);
+MODULAR_CXX_EXPORT StringLiteral
+stringifyRelocationModel(llvm::Reloc::Model model);
 /// If the given string maps to one used to represent an `llvm::Reloc::Model`,
 /// returns that model. Otherwise, returns null.
-ErrorOr<llvm::Reloc::Model> symbolizeRelocationModel(StringRef str);
+MODULAR_CXX_EXPORT ErrorOr<llvm::Reloc::Model>
+symbolizeRelocationModel(StringRef str);
 
 /// Look for a target info specification inside the provided module. Returns
 /// null if there is not one.
-TargetInfoAttr getTargetInfo(ModuleOp module);
+MODULAR_CXX_EXPORT TargetInfoAttr getTargetInfo(ModuleOp module);
 /// Set the target info specification on the provided module. The module cannot
 /// already have a target specification.
-void setTargetInfo(ModuleOp module, TargetInfoAttr target);
+MODULAR_CXX_EXPORT void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// Look for a target info specification in the nearest surrounding module from
 /// the provided operation. Returns null if one cannot be found.
-TargetInfoAttr lookupTargetInfo(Operation *from);
+MODULAR_CXX_EXPORT TargetInfoAttr lookupTargetInfo(Operation *from);
 /// Erase the target info set on the module. This asserts that a target was
 /// present to begin with.
-void eraseTargetInfo(ModuleOp module);
+MODULAR_CXX_EXPORT void eraseTargetInfo(ModuleOp module);
 /// Get the target info for the specified target.
-ErrorOr<TargetInfoAttr>
+MODULAR_CXX_EXPORT ErrorOr<TargetInfoAttr>
 getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                  StringRef features, StringRef tuneCpu = "",
                  StringRef acceleratorArch = "",
@@ -400,21 +396,23 @@ getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
 /// recognized; only a name that is a feature of none of them is unrecognized.
 /// Matching is exact. Returns true when no relevant backend is linked (a
 /// host-only build cannot validate).
-bool isKnownTargetFeature(StringRef feature, StringRef targetTriple);
+MODULAR_CXX_EXPORT bool isKnownTargetFeature(StringRef feature,
+                                             StringRef targetTriple);
 
 /// Returns runtime representation of target info attribute.
 ErrorOr<TargetInfo> toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr);
 
 /// Returns attribute representing runtime target info.
-TargetInfoAttr fromRuntimeTargetInfo(MLIRContext *ctx,
-                                     const TargetInfo &runtimeTargetInfo);
+MODULAR_CXX_EXPORT TargetInfoAttr
+fromRuntimeTargetInfo(MLIRContext *ctx, const TargetInfo &runtimeTargetInfo);
 
 //===----------------------------------------------------------------------===//
 // DeviceRefAttr
 //===----------------------------------------------------------------------===//
 
 /// Returns runtime representation of device ref attribute.
-ErrorOr<DeviceRef> toRuntimeDeviceRef(DeviceRefAttr deviceRefAttr);
+MODULAR_CXX_EXPORT ErrorOr<DeviceRef>
+toRuntimeDeviceRef(DeviceRefAttr deviceRefAttr);
 
 /// Returns attribute representing runtime device ref.
 DeviceRefAttr fromRuntimeDeviceRef(MLIRContext *ctx,
@@ -424,12 +422,12 @@ DeviceRefAttr fromRuntimeDeviceRef(MLIRContext *ctx,
 ///
 /// Forward declared so can be used in MOOps.td, see MODevices.h for rest of
 /// helpers and MODevices.cpp for implementation.
-DeviceRefAttr getHostDevice(MLIRContext *ctx);
-DeviceRefAttr getHostDevice(Operation *op);
+MODULAR_CXX_EXPORT DeviceRefAttr getHostDevice(MLIRContext *ctx);
+MODULAR_CXX_EXPORT DeviceRefAttr getHostDevice(Operation *op);
 
 /// Returns true if the device ref names a host (CPU) device, regardless of
 /// its id: `cpu:1` is as host-resident as `cpu:0`.
-bool isHostPlaced(DeviceRefAttr device);
+MODULAR_CXX_EXPORT bool isHostPlaced(DeviceRefAttr device);
 
 //===----------------------------------------------------------------------===//
 // DeviceSpecAttr
@@ -447,7 +445,7 @@ DeviceSpecAttr fromRuntimeDeviceSpec(MLIRContext *ctx,
 //===----------------------------------------------------------------------===//
 
 /// Returns runtime representation of device spec collection attribute.
-ErrorOr<DeviceSpecCollection>
+MODULAR_CXX_EXPORT ErrorOr<DeviceSpecCollection>
 toRuntimeDeviceSpecs(DeviceSpecCollectionAttr deviceSpecCollectionAttr);
 
 /// Returns attribute representing runtime device spec collection.

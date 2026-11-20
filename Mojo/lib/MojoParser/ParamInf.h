@@ -15,6 +15,7 @@
 #define KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 
 #include "InferenceState.h"
+#include "Mojo/MojoParser/SharedState.h"
 #include "OverloadSet.h"
 
 namespace M::KGEN::LIT {
@@ -38,8 +39,8 @@ public:
   ParamInf(const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
            PogListAttr declaredParamPogs, bool allowImplicitConversions,
            ASTDecl *declIfDirect, bool discardError,
-           DeferredTypingContext *deferredTypingContext = nullptr,
-           ArrayRef<ConstraintAttr> additionalAssumptions = {});
+           TypedAttr additionalAssumptions,
+           DeferredTypingContext *deferredTypingContext = nullptr);
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding. On success, returns the verified bindings (which can be
@@ -63,8 +64,6 @@ public:
                                        evaluator.getIndexBindings());
   }
 
-  const ParameterEvaluator &getEvaluator() const { return evaluator; }
-
   /// Pre-seed an inferred parameter value by index.
   void setInitialInferredValue(size_t paramIdx, TypedAttr paramVal) {
     setInferredValue(paramIdx, paramVal);
@@ -85,13 +84,17 @@ private:
   // invoked after both parameter list and argument list has been scanned).
   LogicalResult inferFromDefaults();
 
-  // Finalize the inference by making any remaining uninferred parameter to
-  // UnboundAttr.
+  // Finalize the inference by leaving any remaining uninferred parameter
+  // unbound.
   LogicalResult finalizeWithUnbound();
 
   /// Infer still-unbound parameters from equality (`where a == b`) body
   /// constraints.
   LogicalResult inferFromBodyConstraints();
+
+  /// Bind each still-unbound singleton `Origin` parameter whose underlying
+  /// `!lit.origin` is already known.
+  void inferOriginParams();
 
   /// Convenience getters for fields from paramBindings.
   ASTDecl &getDeclScope() const { return paramBindings.declScope; }
@@ -174,7 +177,7 @@ public:
                const CallOperands &callOperands,
                const CallOperands::PogAssignment &pogAssignment,
                OperandsNeedingOriginsList &operandsNeedingOrigins,
-               ArrayRef<ConstraintAttr> additionalAssumptions = {});
+               TypedAttr additionalAssumptions);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the verified parameter bindings. On
@@ -198,12 +201,6 @@ private:
 
   LogicalResult inferOptionalLiteralSize();
 
-  /// Given an incomplete parameter binding set, try to infer parameters on
-  /// Self of a method from the first argument.
-  LogicalResult inferCTADParams();
-
-  LogicalResult inferSelfFromInitResult();
-
   LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
                                 const ExprDest &dest);
 
@@ -213,6 +210,13 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
                                 size_t argIdx, ASTType expectedType,
                                 ArgConvention expectedConvention);
+
+  /// Check that the `*operand` unpack can go into the variadic pack
+  /// `expectedPackType`. The operand must be a VariadicPack with the same
+  /// ownership, and at least the mutability, of the expected pack. Return the
+  /// `!lit.ref.pack` of the operand, or null after a diagnostic.
+  RefPackType checkUnpackedPack(const OperandValue &operand,
+                                ASTType expectedPackType);
 };
 
 } // namespace M::KGEN::LIT

@@ -21,21 +21,8 @@ from max.gpu import block_idx, cluster_idx
 def test_thread_block_cluster():
     var rank = block_rank_in_cluster()
     print(
-        "cluster_ids=(",
-        cluster_idx.x,
-        ",",
-        cluster_idx.y,
-        ",",
-        cluster_idx.z,
-        ")",
-        "block_ids=(",
-        block_idx.x,
-        ",",
-        block_idx.y,
-        ")",
-        "block_rank=(",
-        rank,
-        ")",
+        t"cluster_ids=( {cluster_idx.x} , {cluster_idx.y} , {cluster_idx.z} )"
+        t" block_ids=( {block_idx.x} , {block_idx.y} ) block_rank=( {rank} )"
     )
 
 

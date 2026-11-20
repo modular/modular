@@ -18,7 +18,7 @@ import dataclasses
 
 import pytest
 from max.driver import CPU, Accelerator, Device, accelerator_count
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────
 

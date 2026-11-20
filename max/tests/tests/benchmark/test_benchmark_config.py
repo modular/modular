@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 import json
-import tempfile
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -27,21 +28,33 @@ from max.benchmark.benchmark_serving import (
     main_with_parsed_args,
     parse_args,
 )
+from max.benchmark.benchmark_shared.backend_names import Backend
 from max.benchmark.benchmark_shared.config import (
     DEFAULT_BENCHMARK_SEED,
+    Endpoint,
     ServingBenchmarkConfig,
 )
 from max.benchmark.benchmark_shared.datasets import DistributionParameter
 from max.benchmark.benchmark_shared.datasets.all import (
     _resolve_agentic_tool_profiles,
 )
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.iteration import resolve_seed
+from max.benchmark.benchmark_shared.metrics import BenchmarkResult
 from max.benchmark.benchmark_shared.workload import (
+    _apply_workload_to_config,
     apply_workload,
     load_workload_file,
 )
+from max.benchmark.benchmark_shared.workload_stats import (
+    EngineState,
+    WorkloadStats,
+    write_workload_stats,
+)
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
+
+_CONFIG_LOGGER = "max.benchmark.benchmark_shared.config"
 
 
 class TestServingSweepFields:
@@ -119,18 +132,17 @@ class TestServingConfigFileLoading:
     Config YAML format notes
     ------------------------
     ``ServingBenchmarkConfig`` uses ``section_name = "benchmark_config"`` as
-    its default, but that default is NOT visible to the ``model_validator``
-    because it runs before Pydantic applies defaults.  The section is only
-    extracted when ``section_name`` is explicitly supplied at construction time.
+    its default. The section is extracted when the file has it; a file
+    without it is read from the top level.
 
     Two valid file formats therefore exist:
 
-    * **Flat** (no section wrapper) — works without passing ``section_name``::
+    * **Flat** (no section wrapper)::
 
           model: myorg/model
           host: 10.0.0.1
 
-    * **Sectioned** — requires ``section_name="benchmark_config"``::
+    * **Sectioned**::
 
           benchmark_config:
               model: myorg/model
@@ -160,18 +172,6 @@ class TestServingConfigFileLoading:
         config = ServingBenchmarkConfig(config_file=str(cfg_path))
         assert config.port == 9000
         assert config.backend == "vllm"
-
-    def test_flat_yaml_with_tempfile(self) -> None:
-        """config_file works with a real NamedTemporaryFile."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
-            yaml.dump({"model": "tmp/model", "port": 8080}, f)
-            tmp_name = f.name
-
-        config = ServingBenchmarkConfig(config_file=tmp_name)
-        assert config.model == "tmp/model"
-        assert config.port == 8080
 
     # ------------------------------------------------------------------
     # Sectioned YAML (benchmark_config section, explicit section_name)
@@ -362,6 +362,400 @@ def test_live_run_stats_json_reflects_server_clamped_limit(
     assert blob["context_limit"] == 2048
 
 
+def test_mach_metrics_settle_before_they_are_read(
+    mocker: MockerFixture,
+) -> None:
+    wait = mocker.patch.object(benchmark_serving, "wait_for_metrics_to_settle")
+    config = ServingBenchmarkConfig(model="HuggingFaceTB/SmolLM2-135M")
+
+    benchmark_serving._settle_server_metrics(
+        config, "mach", "http://localhost:8091"
+    )
+
+    wait.assert_called_once()
+
+
+def test_other_backends_do_not_wait_for_their_metrics(
+    mocker: MockerFixture,
+) -> None:
+    wait = mocker.patch.object(benchmark_serving, "wait_for_metrics_to_settle")
+    config = ServingBenchmarkConfig(model="HuggingFaceTB/SmolLM2-135M")
+
+    benchmark_serving._settle_server_metrics(
+        config, "modular", "http://localhost:8000"
+    )
+
+    wait.assert_not_called()
+
+
+def test_engine_state_json_rejects_a_multi_point_sweep() -> None:
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        engine_state_json="state.json",
+        max_concurrency=[8, 16],
+    )
+    with pytest.raises(ValueError, match="single --max-concurrency"):
+        list(main_with_parsed_args(config))
+
+
+def test_engine_state_json_rejects_a_dry_run() -> None:
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        engine_state_json="state.json",
+        dry_run=True,
+    )
+    with pytest.raises(ValueError, match="needs a real run"):
+        list(main_with_parsed_args(config))
+
+
+def _engine_state_result(
+    mocker: MockerFixture,
+    *,
+    cached_tokens_reported: bool = True,
+    cache_hit_rate: float = 0.7,
+) -> BenchmarkResult:
+    result = mocker.Mock(spec=BenchmarkResult)
+    result.text_data = mocker.Mock(request_records=[])
+    result.run_cache_hit_rate = (
+        cache_hit_rate if cached_tokens_reported else None
+    )
+    result.mean_decode_batch_size = 9.0
+    return result
+
+
+def test_engine_state_is_written_from_the_run(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    assert EngineState.model_validate_json(path.read_text()) == EngineState(
+        cache_hit_rate=0.7,
+        decode_batch_size_mean=9.0,
+        max_concurrency=32,
+        engine="max",
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "engine"),
+    [
+        ("modular", "max"),
+        ("modular-chat", "max"),
+        ("mach", "mach"),
+        ("vllm", None),
+    ],
+)
+def test_engine_state_names_the_engine_the_backend_drives(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    backend: Backend,
+    engine: str | None,
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        backend=backend,
+        engine_state_json=str(path),
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    assert EngineState.model_validate_json(path.read_text()).engine == engine
+
+
+def test_engine_state_has_no_cache_hit_rate_when_the_server_reports_none(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config,
+        mocker.Mock(),
+        _engine_state_result(mocker, cached_tokens_reported=False),
+        32,
+        True,
+    )
+
+    state = EngineState.model_validate_json(path.read_text())
+    assert state.cache_hit_rate is None
+    assert state.decode_batch_size_mean == 9.0
+
+
+def test_engine_state_is_not_written_when_the_hit_rate_exceeds_one(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config,
+        mocker.Mock(),
+        _engine_state_result(mocker, cache_hit_rate=1.2),
+        32,
+        True,
+    )
+
+    assert not path.exists()
+
+
+def test_engine_state_is_not_written_for_a_failed_run(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, False
+    )
+
+    assert not path.exists()
+
+
+@pytest.mark.parametrize(
+    ("success", "cancelled", "written"),
+    [(True, False, True), (False, True, True), (False, False, False)],
+    ids=["succeeded", "cancelled", "failed"],
+)
+def test_engine_state_is_not_written_when_a_request_failed(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    success: bool,
+    cancelled: bool,
+    written: bool,
+) -> None:
+    """Validation leaves failed requests out, so a run that lost most of its
+    requests still passes it."""
+    path = tmp_path / "state.json"
+    result = _engine_state_result(mocker)
+    result.text_data = mocker.Mock(
+        request_records=[
+            mocker.Mock(success=True, cancelled=False),
+            mocker.Mock(success=success, cancelled=cancelled),
+        ],
+    )
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), result, 32, True
+    )
+
+    assert path.exists() == written
+
+
+def test_a_few_failed_requests_are_recorded_in_the_engine_state(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    result = _engine_state_result(mocker)
+    result.text_data = mocker.Mock(
+        request_records=[mocker.Mock(success=True, cancelled=False)] * 199
+        + [mocker.Mock(success=False, cancelled=False)]
+    )
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), result, 32, True
+    )
+
+    assert (
+        EngineState.model_validate_json(path.read_text()).failed_requests == 1
+    )
+
+
+def test_engine_state_comes_from_the_first_iteration(
+    mocker: MockerFixture,
+) -> None:
+    """Later iterations replay the same requests against a warm cache."""
+    results = [
+        mocker.Mock(aggregates=mocker.Mock(request_throughput=t))
+        for t in (1.0, 3.0, 2.0)
+    ]
+    outcomes = iter([(r, True) for r in results])
+
+    async def fake_benchmark(*_: object) -> tuple[object, bool]:
+        return next(outcomes)
+
+    mocker.patch.object(benchmark_serving, "benchmark", fake_benchmark)
+    mocker.patch.object(benchmark_serving, "_sample_for_seed")
+    mocker.patch.object(benchmark_serving, "retain_result")
+    mocker.patch.object(benchmark_serving, "flush_prefix_cache")
+    emit = mocker.patch.object(benchmark_serving, "_emit_engine_state")
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        max_concurrency=[8],
+        num_iters=3,
+        seed=0,
+    )
+
+    list(
+        benchmark_serving._run_benchmark_sweep(
+            config, mocker.Mock(), mocker.Mock(num_prompts_for=lambda _: 8)
+        )
+    )
+
+    assert emit.call_args.args[2] is results[0]
+
+
+def test_engine_state_is_not_written_without_text_results(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    result = _engine_state_result(mocker)
+    result.text_data = None
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), result, 32, True
+    )
+
+    assert not path.exists()
+
+
+def test_engine_state_is_not_written_without_the_flag(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    config = ServingBenchmarkConfig(model="HuggingFaceTB/SmolLM2-135M")
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), mocker.Mock(spec=BenchmarkResult), 32, True
+    )
+    assert list(tmp_path.iterdir()) == []
+
+
+def _dry_stats() -> WorkloadStats:
+    return WorkloadStats(
+        requests=10,
+        context_limit=None,
+        turns_dropped_at_context_limit=0,
+        input_len=None,
+        input_len_first_turn=None,
+        input_len_later_turn=None,
+        output_len=None,
+        tool_request_fraction=None,
+        tools_per_request=None,
+        image_request_fraction=None,
+        constrained_request_fraction=None,
+    )
+
+
+def _stats_config(tmp_path: Path, **overrides: Any) -> ServingBenchmarkConfig:
+    stats_path = tmp_path / "stats.json"
+    write_workload_stats(_dry_stats(), stats_path)
+    return ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        workload_stats_json=str(stats_path),
+        **overrides,
+    )
+
+
+def test_real_run_rewrites_the_stats_file_with_the_engine_state(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch.object(
+        benchmark_serving, "_compute_session_stats", return_value=_dry_stats()
+    )
+    config = _stats_config(tmp_path)
+    before = WorkloadStats.model_validate_json(
+        Path(config.workload_stats_json or "").read_text()
+    )
+    assert before.engine_state is None
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    after = WorkloadStats.model_validate_json(
+        Path(config.workload_stats_json or "").read_text()
+    )
+    assert after.engine_state == EngineState(
+        cache_hit_rate=0.7,
+        decode_batch_size_mean=9.0,
+        max_concurrency=32,
+        engine="max",
+    )
+    assert after.model_copy(update={"engine_state": None}) == before
+
+
+def test_both_files_are_written_when_both_flags_are_set(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch.object(
+        benchmark_serving, "_compute_session_stats", return_value=_dry_stats()
+    )
+    state_path = tmp_path / "state.json"
+    config = _stats_config(tmp_path, engine_state_json=str(state_path))
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    state = EngineState.model_validate_json(state_path.read_text())
+    stats = WorkloadStats.model_validate_json(
+        Path(config.workload_stats_json or "").read_text()
+    )
+    assert stats.engine_state == state
+
+
+def test_stats_file_keeps_its_pre_run_content_for_a_failed_run(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    config = _stats_config(tmp_path)
+    path = Path(config.workload_stats_json or "")
+    before = path.read_text()
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, False
+    )
+
+    assert path.read_text() == before
+
+
+def test_stats_file_keeps_its_pre_run_content_across_a_sweep(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """Both figures depend on the load, so a sweep has no single state."""
+    config = _stats_config(tmp_path, max_concurrency=[8, 16])
+    path = Path(config.workload_stats_json or "")
+    before = path.read_text()
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 8, True
+    )
+
+    assert path.read_text() == before
+
+
+def test_engine_state_json_is_still_refused_for_a_sweep() -> None:
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        engine_state_json="state.json",
+        request_rate=[1.0, 2.0],
+    )
+    with pytest.raises(ValueError, match="single --max-concurrency"):
+        list(main_with_parsed_args(config))
+
+
 # ===----------------------------------------------------------------------=== #
 # Seed handling (PERF-2587)
 # ===----------------------------------------------------------------------=== #
@@ -396,20 +790,126 @@ class TestSeedDefaultAndOverride:
         assert parse_args(["--model", "m", "--seed", value]).seed is None
 
 
+class TestNumGpusValidation:
+    """``num_gpus`` divides total throughput, so only positive counts parse."""
+
+    def test_positive_count_is_kept(self) -> None:
+        """A real GPU count parses and round-trips."""
+        assert ServingBenchmarkConfig(num_gpus=4).num_gpus == 4
+
+    def test_unset_stays_none(self) -> None:
+        """The default leaves per-GPU throughput unreported, not divided."""
+        assert ServingBenchmarkConfig().num_gpus is None
+
+    @pytest.mark.parametrize("value", [0, -1, -8])
+    def test_non_positive_count_is_rejected(self, value: int) -> None:
+        """Zero or negative counts fail at the config boundary rather than
+        dividing through into a degenerate per-GPU figure."""
+        with pytest.raises(ValidationError):
+            ServingBenchmarkConfig(num_gpus=value)
+
+    def test_assignment_is_revalidated(self) -> None:
+        """Workload YAML application assigns fields, so the bound must hold
+        there too, not only at construction."""
+        config = ServingBenchmarkConfig(num_gpus=2)
+        with pytest.raises(ValidationError):
+            config.num_gpus = 0
+
+
+class TestRenamedWarmupOption:
+    """``--warmup-to-steady-state`` became ``--warmup-multiturn``; the old name
+    keeps its meaning everywhere an option can be set, with a warning."""
+
+    @pytest.mark.parametrize(
+        ("flag", "expected"),
+        [
+            ("--warmup-to-steady-state", True),
+            ("--no-warmup-to-steady-state", False),
+            ("--warmup-to-steady-state=false", False),
+            ("--warmup_to_steady_state", True),
+            ("--no_warmup_to_steady_state", False),
+        ],
+    )
+    def test_cli_old_flag(
+        self, flag: str, expected: bool, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+            config = parse_args(["--model", "m", flag])
+        assert config.warmup_multiturn is expected
+        assert "warmup_multiturn" in config.model_fields_set
+        assert "deprecated" in caplog.text
+
+    def test_env_var_old_name(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setenv("MODULAR_WARMUP_TO_STEADY_STATE", "false")
+        monkeypatch.delenv("MODULAR_WARMUP_MULTITURN", raising=False)
+        with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+            config = parse_args(["--model", "m"])
+        assert config.warmup_multiturn is False
+        assert "deprecated" in caplog.text
+        assert "MODULAR_WARMUP_MULTITURN" not in os.environ
+
+        monkeypatch.setenv("MODULAR_WARMUP_TO_STEADY_STATE", "true")
+        assert parse_args(["--model", "m"]).warmup_multiturn is True
+
+    def test_env_var_new_name_wins(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_WARMUP_TO_STEADY_STATE", "false")
+        monkeypatch.setenv("MODULAR_WARMUP_MULTITURN", "true")
+        assert parse_args(["--model", "m"]).warmup_multiturn is True
+
+    def test_config_file_old_key(self, tmp_path: Path) -> None:
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path, {"model": "myorg/llama", "warmup_to_steady_state": False}
+        )
+
+        config = ServingBenchmarkConfig(config_file=str(cfg_path))
+        assert config.warmup_multiturn is False
+
+    def test_config_file_old_key_outside_section(self, tmp_path: Path) -> None:
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path,
+            {
+                "benchmark_config": {"model": "myorg/llama"},
+                "warmup_to_steady_state": False,
+            },
+        )
+
+        with pytest.raises(ValueError, match="would be ignored"):
+            ServingBenchmarkConfig(config_file=str(cfg_path))
+
+    def test_workload_old_key(self, tmp_path: Path) -> None:
+        config = ServingBenchmarkConfig(model="myorg/llama")
+        apply_workload(
+            config, {"warmup-to-steady-state": False}, base_dir=tmp_path
+        )
+        assert config.warmup_multiturn is False
+
+
 class TestSeedConfigFileLoading:
     """Seed loaded from a YAML config/workload file."""
 
-    def test_yaml_null_maps_to_random(self, tmp_path: Path) -> None:
-        """YAML ``seed: null`` loads as ``None`` (draw a random seed)."""
+    @pytest.mark.parametrize(
+        "seed_yaml",
+        [
+            # YAML null loads as None directly.
+            pytest.param("null", id="yaml_null"),
+            # The string "none" is mapped to None by the validator.
+            pytest.param("none", id="yaml_string_none"),
+        ],
+    )
+    def test_yaml_null_maps_to_random(
+        self, tmp_path: Path, seed_yaml: str
+    ) -> None:
+        """A null-like YAML seed loads as ``None`` (draw a random seed)."""
         cfg_path = tmp_path / "serving.yaml"
-        cfg_path.write_text("model: myorg/llama\nseed: null\n")
-
-        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
-
-    def test_yaml_string_none_maps_to_random(self, tmp_path: Path) -> None:
-        """YAML ``seed: none`` (string) loads as ``None`` via the validator."""
-        cfg_path = tmp_path / "serving.yaml"
-        cfg_path.write_text("model: myorg/llama\nseed: none\n")
+        cfg_path.write_text(f"model: myorg/llama\nseed: {seed_yaml}\n")
 
         assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
 
@@ -525,6 +1025,58 @@ class TestExtraBodyValidator:
         assert args.extra_body == self._NESTED
 
 
+_RESPONSE_FORMAT: dict[str, Any] = {"type": "json_object"}
+_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {"name": "f", "parameters": {"type": "object"}},
+    }
+]
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["extra_body", "agentic_tool_profiles", "response_format", "tools"],
+)
+@pytest.mark.parametrize("content", ["", "null\n", "# only a comment\n"])
+def test_empty_file_rejected(tmp_path: Path, field: str, content: str) -> None:
+    """A file that loads as nothing is an error, not an unset field."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text(content)
+    with pytest.raises(ValueError, match=rf"{field} \(file .*\) is empty"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: str(payload)}
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["extra_body", "agentic_tool_profiles", "response_format", "tools"],
+)
+def test_at_prefixed_file_path_rejected(tmp_path: Path, field: str) -> None:
+    """``@`` is part of the path, not a prefix to strip."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text("{}\n")
+    with pytest.raises(ValueError, match=rf"{field} .* not a readable file"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: f"@{payload}"}
+        )
+
+
+@pytest.mark.parametrize("field", ["extra_body", "agentic_tool_profiles"])
+@pytest.mark.parametrize("content", ["- stop\n", "42\n"])
+def test_non_mapping_file_rejected(
+    tmp_path: Path, field: str, content: str
+) -> None:
+    """A file holding something other than a mapping is an error."""
+    payload = tmp_path / "payload.yaml"
+    payload.write_text(content)
+    with pytest.raises(ValidationError, match=field):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", field: str(payload)}
+        )
+
+
 class TestApplyWorkload:
     """`apply_workload` applies an in-memory workload like a YAML file."""
 
@@ -538,6 +1090,70 @@ class TestApplyWorkload:
         )
         assert args.extra_body == {"k": "v"}
         assert args.num_prompts == 7
+
+    def test_resolves_response_format_and_tools_against_base_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Bare paths resolve beside the workload, not in cwd."""
+        (tmp_path / "schema.json").write_text(json.dumps(_RESPONSE_FORMAT))
+        (tmp_path / "tools.json").write_text(json.dumps(_TOOLS))
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+
+        args = ServingBenchmarkConfig(model="m")
+        apply_workload(
+            args,
+            {"response-format": "schema.json", "tools": "tools.json"},
+            base_dir=tmp_path,
+        )
+        assert args.response_format == _RESPONSE_FORMAT
+        assert args.tools == _TOOLS
+
+    def test_falls_back_to_cwd_when_nothing_is_beside_the_workload(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A repo-root path in a workload written elsewhere still resolves."""
+        (tmp_path / "repo" / "tools").mkdir(parents=True)
+        (tmp_path / "repo" / "tools" / "t.json").write_text(json.dumps(_TOOLS))
+        (tmp_path / "workloads").mkdir()
+        monkeypatch.chdir(tmp_path / "repo")
+
+        args = ServingBenchmarkConfig(model="m")
+        apply_workload(
+            args, {"tools": "tools/t.json"}, base_dir=tmp_path / "workloads"
+        )
+        assert args.tools == _TOOLS
+
+    def test_at_prefixed_path_rejected(self, tmp_path: Path) -> None:
+        """A workload path keeps its ``@``, so the file it names is missing."""
+        (tmp_path / "tools.json").write_text(json.dumps(_TOOLS))
+
+        args = ServingBenchmarkConfig(model="m")
+        with pytest.raises(ValueError, match="not a readable file path"):
+            apply_workload(args, {"tools": "@tools.json"}, base_dir=tmp_path)
+
+    def test_inline_response_format_and_tools_are_not_paths(
+        self, tmp_path: Path
+    ) -> None:
+        """Path resolution must not touch a value that is the content itself."""
+        for options in (
+            {"response-format": _RESPONSE_FORMAT, "tools": _TOOLS},
+            {
+                "response-format": json.dumps(_RESPONSE_FORMAT),
+                "tools": json.dumps(_TOOLS),
+            },
+        ):
+            args = ServingBenchmarkConfig(model="m")
+            apply_workload(args, options, base_dir=tmp_path)
+            assert args.response_format == _RESPONSE_FORMAT
+            assert args.tools == _TOOLS
+
+    def test_invalid_response_format_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid response_format"):
+            ServingBenchmarkConfig.model_validate(
+                {"model": "m", "response_format": '{"type": "nope"}'}
+            )
 
 
 class TestLoadWorkloadFile:
@@ -866,19 +1482,22 @@ class TestImageFlags:
                 image_fraction=0.1, benchmark_task="text-to-image"
             )
 
-    def test_rejects_text_only_endpoint(self) -> None:
-        """A text-only driver would drop the images while stats still count them."""
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            # A text-only driver would drop the images while stats still
+            # count them.
+            pytest.param("/v1/completions", id="text_only_endpoint"),
+            # /v1/responses only routes to OpenResponsesRequestDriver for
+            # pixel-generation tasks, and that driver takes only
+            # PixelGenerationRequestFuncInput, so it never carries input
+            # images.
+            pytest.param("/v1/responses", id="responses_endpoint"),
+        ],
+    )
+    def test_rejects_non_image_endpoint(self, endpoint: Endpoint) -> None:
         with pytest.raises(ValueError, match="image-capable endpoint"):
-            ServingBenchmarkConfig(
-                image_fraction=0.1, endpoint="/v1/completions"
-            )
-
-    def test_rejects_responses_endpoint(self) -> None:
-        """/v1/responses only routes to OpenResponsesRequestDriver for
-        pixel-generation tasks, and that driver takes only
-        PixelGenerationRequestFuncInput, so it never carries input images."""
-        with pytest.raises(ValueError, match="image-capable endpoint"):
-            ServingBenchmarkConfig(image_fraction=0.1, endpoint="/v1/responses")
+            ServingBenchmarkConfig(image_fraction=0.1, endpoint=endpoint)
 
     def test_allows_chat_completions_endpoint(self) -> None:
         config = ServingBenchmarkConfig(
@@ -897,3 +1516,105 @@ class TestImageFlags:
         assert config.image_count == "DU(1,3)"
         assert config.image_long_side == "U(256,1024)"
         assert config.image_turn == "last"
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_max_output_len_must_be_positive(value: int) -> None:
+    # Single-turn once read 0 as "no cap" while the fitted path rejected it.
+    with pytest.raises(ValidationError, match="max_output_len"):
+        ServingBenchmarkConfig.model_validate(
+            {"model": "m", "max_output_len": value}
+        )
+
+
+class TestGoodputFlag:
+    """``--goodput`` takes vLLM's space-separated ``key:value`` targets."""
+
+    def test_unset_by_default(self) -> None:
+        config = parse_args(["--model", "m"])
+        assert config.goodput is None
+        assert config.goodput_targets is None
+
+    def test_cli_takes_several_targets(self) -> None:
+        config = parse_args(
+            ["--model", "m", "--goodput", "ttft:500", "tpot:50", "--port", "9"]
+        )
+        assert config.goodput == ["ttft:500", "tpot:50"]
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=500.0, tpot_ms=50.0
+        )
+        assert config.port == 9
+
+    def test_cli_takes_one_quoted_string(self) -> None:
+        config = parse_args(["--model", "m", "--goodput", "e2el:2500.5 ttft:1"])
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=1.0, e2el_ms=2500.5
+        )
+
+    def test_cli_rejects_unknown_key(self) -> None:
+        with pytest.raises(SystemExit):
+            parse_args(["--model", "m", "--goodput", "itl:5"])
+
+    @pytest.mark.parametrize(
+        ("value", "match"),
+        [
+            ("itl:5", "unknown key 'itl'"),
+            ("ttft", "not a 'key:value' pair"),
+            ("ttft:fast", "needs a number of milliseconds"),
+            ("ttft:-1", "positive, finite"),
+            ("ttft:0", "positive, finite"),
+            ("ttft:inf", "positive, finite"),
+            ("ttft:1 ttft:2", "more than once"),
+            ("", "at least one target"),
+            ([], "at least one target"),
+            ({}, "at least one target"),
+            (5, "expected space-separated"),
+            (["ttft", 500], "expected 'key:value' strings"),
+        ],
+    )
+    def test_rejects_invalid_targets(self, value: object, match: str) -> None:
+        with pytest.raises(ValidationError, match=match):
+            ServingBenchmarkConfig.model_validate({"goodput": value})
+
+    def test_cli_rejects_empty_string(self) -> None:
+        with pytest.raises(SystemExit):
+            parse_args(["--model", "m", "--goodput", ""])
+
+    def test_env_var_takes_space_separated_targets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_GOODPUT", "ttft:500 tpot:50")
+        config = parse_args(["--model", "m"])
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=500.0, tpot_ms=50.0
+        )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "ttft:500 tpot:50",
+            ["ttft:500", "tpot:50"],
+            {"ttft": 500, "tpot": 50},
+        ],
+        ids=["string", "list", "mapping"],
+    )
+    def test_workload_yaml_forms_agree(self, value: object) -> None:
+        config = ServingBenchmarkConfig(model="m")
+        _apply_workload_to_config(config, {"goodput": value})
+        assert config.goodput_targets == GoodputTargets(
+            ttft_ms=500.0, tpot_ms=50.0
+        )
+
+    def test_config_file_mapping(self, tmp_path: Path) -> None:
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(
+            cfg_path,
+            {"benchmark_config": {"model": "m", "goodput": {"tpot": 40}}},
+        )
+        config = ServingBenchmarkConfig(config_file=str(cfg_path))
+        assert config.goodput_targets == GoodputTargets(tpot_ms=40.0)
+
+    def test_workload_yaml_value_is_validated(self) -> None:
+        config = ServingBenchmarkConfig(model="m")
+        with pytest.raises(ValidationError, match="unknown key"):
+            _apply_workload_to_config(config, {"goodput": "slo:5"})

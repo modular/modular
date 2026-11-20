@@ -10,3 +10,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""MAX Serve: the server, its routers, workers, and pipelines."""

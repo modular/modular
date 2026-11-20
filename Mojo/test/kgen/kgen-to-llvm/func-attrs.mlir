@@ -12,7 +12,7 @@ kgen.func @borrow(%arg0: !kgen.pointer<i32> imm) {
   hlcf.return
 }
 
-// CHECK-LABEL: @imm_mem(ptr noundef nonnull %0)
+// CHECK-LABEL: @imm_mem(ptr noundef nonnull readonly %0)
 kgen.func @imm_mem(%arg0: !kgen.pointer<i32> imm_mem) {
   hlcf.return
 }

@@ -52,22 +52,23 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     packed_page_stride,
 )
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
+    context_position_rows,
+)
+from max.pipelines.architectures.qwen3_5.context import (
+    Qwen3_5TextAndVisionContext,
+    VisionEncodingData,
+)
+from max.pipelines.architectures.qwen3_5.data_processing import (
+    get_rope_index,
 )
 from max.pipelines.architectures.qwen3_5.layers.attention import (
     Qwen3_5Attention,
 )
 from max.pipelines.architectures.qwen3_5.layers.text_rotary import (
     Qwen3_5TextRotaryEmbedding,
-)
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-    VisionEncodingData,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    get_rope_index,
 )
 from max.pipelines.context import (
     ImageMetadata,
@@ -277,7 +278,7 @@ def _hf_decode_positions(
 
 def _image_context(
     grid: tuple[int, int, int],
-) -> tuple[Qwen3VLTextAndVisionContext, npt.NDArray[np.int64]]:
+) -> tuple[Qwen3_5TextAndVisionContext, npt.NDArray[np.int64]]:
     """Builds the context an image request reaches the batcher with."""
     input_ids, mm_token_type_ids = _prompt_with_image(grid)
     positions, deltas = _hf_rope_index(
@@ -289,7 +290,7 @@ def _image_context(
     tokens = input_ids[0]
     image_token_indices = np.where(tokens == IMAGE_TOKEN_ID)[0]
     prefill_positions = positions.squeeze(1).numpy()
-    context = Qwen3VLTextAndVisionContext(
+    context = Qwen3_5TextAndVisionContext(
         max_length=len(tokens) + DECODE_STEPS,
         tokens=TokenBuffer(tokens.copy()),
         images=[
@@ -355,6 +356,26 @@ def test_decode_continues_positions_past_an_image(
                 past_length=prompt_length + step,
             ),
         )
+
+
+def test_a_verify_window_continues_positions_through_its_drafts() -> None:
+    """A speculative step's drafts take the positions after its token.
+
+    The verify window is longer than the step's active tokens, and past an
+    image every one of its positions carries the request's rope delta.
+    """
+    context, _ = _image_context(GRIDS[0])
+    prompt_length = len(context.tokens)
+    context.update(new_token=1)
+
+    np.testing.assert_array_equal(
+        context_position_rows(context, length=4),
+        _hf_decode_positions(
+            rope_delta=context.rope_delta,
+            past_length=prompt_length,
+            num_new_tokens=4,
+        ),
+    )
 
 
 def test_decode_positions_of_a_batch_stay_with_their_requests() -> None:

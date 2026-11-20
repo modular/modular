@@ -15,7 +15,7 @@ from std.memory import Allocation, Layout, dealloc
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 
-from .tile_layout import TensorLayout
+from .layout import TensorLayout
 from .tile_tensor import TileTensor
 
 
@@ -34,7 +34,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
     var _layout: Self.LayoutType
     var _host: Allocation[Scalar[Self.dtype]]
     var _device: Optional[DeviceBuffer[Self.dtype]]
-    var _ctx: Optional[DeviceContext]
+    var _ctx: Optional[DeviceContext[]]
 
     def __init__(out self, layout: Self.LayoutType):
         """Allocates host memory only.
@@ -43,7 +43,7 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
             layout: The layout of the tensor.
         """
         self._layout = layout
-        self._host = alloc(Layout[Scalar[Self.dtype]](count=_cosize(layout)))
+        self._host = alloc(Layout[Scalar[Self.dtype]](length=_cosize(layout)))
         self._device = None
         self._ctx = None
 
@@ -57,9 +57,9 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
         var size = _cosize(layout)
         var device = ctx.enqueue_create_buffer[Self.dtype](size)
         self._layout = layout
-        self._host = alloc(Layout[Scalar[Self.dtype]](count=size))
+        self._host = alloc(Layout[Scalar[Self.dtype]](length=size))
         self._device = device
-        self._ctx = ctx
+        self._ctx = ctx.assert_default_target()
 
     def __deinit__(deinit self):
         dealloc(self._host^)
@@ -88,11 +88,10 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
         Raises:
             If the tensor was created without a `DeviceContext`.
         """
-        if not self._device:
+        __guard case .Some(device) = self._device else:
             raise Error("HostDeviceTileTensor has no device buffer")
         return TileTensor[Self.dtype, Self.LayoutType, origin_of(self)](
-            ptr=self._device.value()
-            .unsafe_ptr()
+            ptr=device.unsafe_ptr()
             .unsafe_mut_cast[origin_of(self).mut]()
             .unsafe_origin_cast[origin_of(self)](),
             layout=self._layout,

@@ -29,7 +29,7 @@ embedding before a single MHA attention block. Layout matches
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from max.dtype import DType
@@ -40,29 +40,30 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention.attention_with_rope import (
+from max.nn._graph_ops.data_parallel import split_batch_replicated
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.attention.attention_with_rope import (
     AttentionWithRope,
     DataParallelAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs, logits_outputs
+from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
-from max.nn.transformer.transformer import fuse_captured_hidden_states
+from max.nn.legacy.transformer.transformer import fuse_captured_hidden_states
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 
 @dataclass(kw_only=True)
@@ -101,6 +102,9 @@ class Eagle3MHADraftConfig:
     fc_input_multiplier: int
     """Number of fused target hidden states (2 or 3). Set from the
     ``fc.weight`` shape in the draft checkpoint at load time."""
+
+    target_layer_ids: list[int] = field(default_factory=list)
+    """The target layers the draft fuses, as MAX indices."""
 
     sliding_window: int | None = None
     """If set, the draft attention uses a sliding-window causal mask of
@@ -245,6 +249,10 @@ class Eagle3MHADraft(Module):
 
     See :meth:`__call__` for the full argument types.
     """
+
+    has_own_lm_head = True
+    """Whether the draft scores through its own ``lm_head``. One whose
+    checkpoint ships none scores through its target's."""
 
     def __init__(
         self,
@@ -534,7 +542,7 @@ class Eagle3MHADraft(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         split_prefix: str = "eagle3_mha_draft",
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Forward pass.
 
         Args mirror :meth:`Eagle3MLADraft.__call__` so the unified module can
@@ -866,7 +874,8 @@ class Eagle3MHADraft(Module):
             self.sampling_logits_dtype,
         )
 
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
+        variable_logits: TensorValue | None = None
+        logit_offsets: TensorValue | None = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
             # Compute the range on device 0 and broadcast to all
@@ -925,13 +934,16 @@ class Eagle3MHADraft(Module):
                 dtype=DType.int64,
                 device=devices[0],
             )
-            ret_val += (variable_logits, logit_offsets)
 
-        ret_val += extract_hs(
-            return_hidden_states=self.return_hidden_states,
-            last_token_hs_distributed=last_token_distributed,
-            all_hs_distributed=hs,
-            normalizer=self.norm_shards,
+        return logits_outputs(
+            last_logits,
+            variable_logits,
+            logit_offsets,
+            self.return_hidden_states,
+            extract_hs(
+                return_hidden_states=self.return_hidden_states,
+                last_token_hs_distributed=last_token_distributed,
+                all_hs_distributed=hs,
+                normalizer=self.norm_shards,
+            ),
         )
-
-        return ret_val

@@ -14,15 +14,25 @@
 
 from __future__ import annotations
 
+import math
+
 from max._core import Operation
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import builtin, kgen, mo, rmo
 from max.dtype import DType
 
-from ..dim import Dim
+from .. import dtype_promotion
+from ..dim import Dim, StaticDim
 from ..graph import Graph
 from ..shape import Shape
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
+from .cast import cast
+from .constant import constant
+from .elementwise import _accum_type, exp, log
+from .elementwise import max as elementwise_max
+from .reshape import reshape
+from .shape_to_tensor import shape_to_tensor
+from .transfer_to import transfer_to
 
 
 def sum(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -60,7 +70,7 @@ def sum(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceAddOp, x, axis=axis)
+    return _reduce(mo.ReduceAddOp, x, axis=axis)
 
 
 def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -98,7 +108,57 @@ def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceMeanOp, x, axis=axis)
+    x = TensorValue(x)
+    total = sum(x, axis=axis)
+    if not x.dtype.is_float():
+        # The mean of integers is an integer.
+        return Graph.current._add_op_generated(
+            rmo.DivOp, input_x=total, input_y=_axis_length(x, axis)
+        )[0].tensor
+    # A half-precision type can't hold a long axis's length, but it holds the
+    # length's reciprocal.
+    return Graph.current._add_op_generated(
+        rmo.MulOp, input_x=total, input_y=_inverse_axis_length(x, axis)
+    )[0].tensor
+
+
+def _axis_length(x: TensorValue, axis: int) -> TensorValue:
+    """Returns the length of ``axis`` of an integer ``x`` in ``x``'s dtype.
+
+    The length is at least 1, so the mean of an empty axis is 0 instead of a
+    division by zero.
+    """
+    dim = x.shape[axis]
+    if isinstance(dim, StaticDim):
+        length = constant(int(dim) or 1, DType.int64, device=x.device)
+    else:
+        length = elementwise_max(
+            transfer_to(reshape(shape_to_tensor([dim]), []), x.device),
+            constant(1, DType.int64, device=x.device),
+        )
+    return cast(length, x.dtype)
+
+
+def _inverse_axis_length(x: TensorValue, axis: int) -> TensorValue:
+    """Returns ``1 / length`` of ``axis`` of a float ``x`` in ``x``'s dtype.
+
+    It's computed in at least float32 and rounded once. An empty axis gives
+    ``inf``, so its mean is NaN.
+    """
+    dim = x.shape[axis]
+    if isinstance(dim, StaticDim):
+        n = int(dim)
+        return constant(1.0 / n if n else math.inf, x.dtype, device=x.device)
+    wide = DType.float64 if x.dtype == DType.float64 else DType.float32
+    length = cast(
+        transfer_to(reshape(shape_to_tensor([dim]), []), x.device), wide
+    )
+    inverse = Graph.current._add_op_generated(
+        rmo.DivOp,
+        input_x=constant(1.0, wide, device=x.device),
+        input_y=length,
+    )[0].tensor
+    return cast(inverse, x.dtype)
 
 
 def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -150,7 +210,7 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceMinOp, x, axis=axis)
+    return _reduce(mo.ReduceMinOp, x, axis=axis)
 
 
 def max(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -188,7 +248,7 @@ def max(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceMaxOp, x, axis=axis)
+    return _reduce(mo.ReduceMaxOp, x, axis=axis)
 
 
 def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -226,7 +286,15 @@ def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceMulOp, x, axis=axis)
+    return _reduce(mo.ReduceMulOp, x, axis=axis)
+
+
+_IMPLICIT_AXIS_REDUCTIONS = (
+    mo.ReduceAddOp,
+    mo.ReduceMinOp,
+    mo.ReduceMaxOp,
+    mo.ReduceMulOp,
+)
 
 
 def _reduce(
@@ -239,7 +307,7 @@ def _reduce(
 
     Args:
         op_type: The reduction op class (for example,
-            :class:`~max._core.dialects.rmo.MoReduceAddOp`).
+            :class:`~max._core.dialects.mo.ReduceAddOp`).
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
             indexes from the last dimension. For example, a value of ``-1`` will
@@ -261,11 +329,17 @@ def _reduce(
     shape = Shape(x.shape)
     shape[axis] = Dim(1)
     result_type = TensorType(out_dtype or x.dtype, shape, x.device)
+    # The implicit-axis reductions read the axis off the result type.
+    axis_attr = (
+        {}
+        if op_type in _IMPLICIT_AXIS_REDUCTIONS
+        else {"axis": builtin.IntegerAttr(builtin.IndexType(), axis)}
+    )
     return Graph.current._add_op_generated(
         op_type,
         result=result_type,
         input=x,
-        axis=builtin.IntegerAttr(builtin.IndexType(), axis),
+        **axis_attr,
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
@@ -310,7 +384,7 @@ def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceArgMinOp, x, axis, out_dtype=DType.int64)
+    return _reduce(mo.ReduceArgMinOp, x, axis, out_dtype=DType.int64)
 
 
 def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -365,4 +439,49 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(rmo.MoReduceArgMaxOp, x, axis, out_dtype=DType.int64)
+    return _reduce(mo.ReduceArgMaxOp, x, axis, out_dtype=DType.int64)
+
+
+def logsoftmax(value: TensorValueLike, axis: int = -1) -> TensorValue:
+    """Computes the log-softmax of a tensor along an axis.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("logsoftmax_example") as graph:
+            x = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
+            graph.output(ops.logsoftmax(x))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(
+            result.to_numpy(), [-2.407, -1.407, -0.407], atol=1e-3
+        )
+
+    Args:
+        value: The input to the log-softmax computation. Must have a
+            floating-point dtype.
+        axis: The axis along which to compute the log-softmax. Defaults to the
+            final axis (``-1``).
+
+    Returns:
+        A ``TensorValue`` of the same shape and dtype as ``value``
+        representing the log-softmax of ``value`` computed along ``axis``.
+
+    Raises:
+        Error: If the input is not a tensor or has a non-floating-point dtype.
+    """
+    value = dtype_promotion._restrict_to_strong_dtypes(value)
+    # In the accumulation dtype: x - max - log(sum(exp(x - max))).
+    x = cast(value, _accum_type(value))
+    shifted = x - max(x, axis=axis)
+    return cast(shifted - log(sum(exp(shifted), axis=axis)), value.dtype)

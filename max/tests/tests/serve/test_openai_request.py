@@ -341,6 +341,22 @@ def test_openai_parse_rejects_unknown_role() -> None:
         CreateChatCompletionRequest.model_validate(request_data)
 
 
+@pytest.mark.parametrize("field", ["max_tokens", "max_completion_tokens"])
+@pytest.mark.parametrize("value", [0, -1])
+def test_openai_chat_completion_rejects_non_positive_token_limit(
+    field: str, value: int
+) -> None:
+    """OpenAI rejects token limits below 1 rather than generating one token."""
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                field: value,
+            }
+        )
+
+
 def test_openai_chat_completion_accepts_prompt_tokens() -> None:
     """Schema must accept ``prompt_tokens`` (orchestrator pre-tokenized input).
 
@@ -1017,6 +1033,62 @@ def test_reasoning_effort_rejects_an_unknown_level() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "disabled",
+    [
+        {"thinking": {"type": "disabled"}},
+        {"chat_template_kwargs": {"thinking": False}},
+        {"chat_template_kwargs": {"enable_thinking": False}},
+        {"chat_template_kwargs": {"thinking_mode": "disabled"}},
+    ],
+)
+@pytest.mark.parametrize("effort", ["hgih", "none", "minimal", "high"])
+def test_a_disabled_request_discards_its_effort(
+    disabled: dict[str, Any], effort: str
+) -> None:
+    """An effort beside an explicit disable is never checked or rendered.
+
+    The tokenizer would discard it unrendered, and the orchestrator's parser
+    drops it too, so an invalid word is not an error either way.
+    """
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning_effort": effort,
+            **disabled,
+        }
+    )
+    assert request.reasoning_effort is None
+    assert "reasoning_effort" not in (
+        request.resolved_chat_template_kwargs or {}
+    )
+
+
+@pytest.mark.parametrize(
+    "stated",
+    [
+        {"thinking": {"type": "enabled"}},
+        {"chat_template_kwargs": {"thinking": True}},
+        {"chat_template_kwargs": {"thinking_mode": "adaptive"}},
+        {"chat_template_kwargs": {"thinking_mode": "enabled"}},
+    ],
+)
+def test_a_request_that_states_a_mode_still_checks_its_effort(
+    stated: dict[str, Any],
+) -> None:
+    """Only an explicit disable excuses the effort from the schema."""
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning_effort": "hgih",
+                **stated,
+            }
+        )
+
+
 def test_reasoning_object_effort_rejects_an_unknown_level() -> None:
     with pytest.raises(ValidationError):
         CreateChatCompletionRequest.model_validate(
@@ -1066,8 +1138,16 @@ def test_thinking_translates_to_standard_reasoning_flags() -> None:
         assert not hasattr(request, "thinking")
         return request.chat_template_kwargs
 
-    assert _kwargs("enabled") == {"enable_thinking": True, "thinking": True}
-    assert _kwargs("disabled") == {"enable_thinking": False, "thinking": False}
+    assert _kwargs("enabled") == {
+        "enable_thinking": True,
+        "thinking": True,
+        "thinking_mode": "enabled",
+    }
+    assert _kwargs("disabled") == {
+        "enable_thinking": False,
+        "thinking": False,
+        "thinking_mode": "disabled",
+    }
     # adaptive == unset: no reasoning flags injected.
     assert _kwargs("adaptive") is None
 
@@ -1077,25 +1157,44 @@ def test_thinking_translates_to_standard_reasoning_flags() -> None:
     )
     assert request.chat_template_kwargs is None
 
-    # Unknown thinking type is rejected.
-    with pytest.raises(ValidationError):
-        CreateChatCompletionRequest.model_validate(
-            {
-                "model": "test",
-                "messages": [{"role": "user", "content": "hi"}],
-                "thinking": {"type": "sometimes"},
-            }
-        )
+    # Unknown thinking type is rejected, and so is any other invalid falsy
+    # value: only a missing or null ``type`` defaults to adaptive.
+    for kind in ["sometimes", "", False, 0, [], {}]:
+        with pytest.raises(ValidationError):
+            CreateChatCompletionRequest.model_validate(
+                {
+                    "model": "test",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "thinking": {"type": kind},
+                }
+            )
 
-    # A malformed thinking object (extra keys) is rejected.
-    with pytest.raises(ValidationError):
-        CreateChatCompletionRequest.model_validate(
+    # A null ``thinking`` is unstated rather than an unknown field.
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "thinking": None,
+        }
+    )
+    assert not hasattr(request, "thinking")
+    assert request.chat_template_kwargs is None
+
+    # Other members are ignored, and a missing or null type is adaptive.
+    for thinking, enabled in (
+        ({"type": "enabled", "budget_tokens": 100}, True),
+        ({"budget_tokens": 100}, None),
+        ({"type": None, "budget_tokens": 100}, None),
+    ):
+        request = CreateChatCompletionRequest.model_validate(
             {
                 "model": "test",
                 "messages": [{"role": "user", "content": "hi"}],
-                "thinking": {"type": "enabled", "budget": 100},
+                "thinking": thinking,
             }
         )
+        kwargs = request.chat_template_kwargs or {}
+        assert kwargs.get("enable_thinking") is enabled, thinking
 
 
 def test_thinking_does_not_override_explicit_chat_template_kwargs() -> None:
@@ -1199,9 +1298,59 @@ def _chat_template_kwargs_for(payload: dict[str, Any]) -> dict[str, Any] | None:
             {
                 "enable_thinking": False,
                 "thinking": False,
+            },
+            id="openrouter_enabled_false_discards_effort_high",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": False, "effort": "medium"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+            },
+            id="openrouter_enabled_false_discards_effort_medium",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": False, "effort": "minimal"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+            },
+            id="openrouter_enabled_false_discards_effort_minimal",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": False, "effort": "max"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+            },
+            id="openrouter_enabled_false_discards_effort_max",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": False, "effort": "none"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="openrouter_enabled_false_keeps_effort_none",
+        ),
+        pytest.param(
+            {"reasoning": {"enabled": True, "effort": "none"}},
+            {
+                "enable_thinking": False,
+                "thinking": False,
+                "reasoning_effort": "none",
+            },
+            id="openrouter_enabled_true_effort_none_is_off",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high", "reasoning": {"effort": "none"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
                 "reasoning_effort": "high",
             },
-            id="openrouter_enabled_wins_over_effort",
+            id="top_level_effort_wins_over_openrouter_none",
         ),
         pytest.param(
             {"reasoning_effort": "high", "reasoning": {"effort": "low"}},
@@ -1227,6 +1376,148 @@ def _chat_template_kwargs_for(payload: dict[str, Any]) -> dict[str, Any] | None:
             },
             id="client_kwargs_win",
         ),
+        pytest.param(
+            {
+                "reasoning_effort": "low",
+                "chat_template_kwargs": {
+                    "enable_thinking": True,
+                    "thinking": False,
+                },
+            },
+            # `thinking` outranks the other spelling, so the request closes
+            # thinking and the effort is dropped unread, as MAX serve does.
+            {
+                "enable_thinking": True,
+                "thinking": False,
+            },
+            id="conflicting_flags_true_first_stay_as_written",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "low",
+                "chat_template_kwargs": {
+                    "enable_thinking": False,
+                    "thinking": True,
+                },
+            },
+            {
+                "reasoning_effort": "low",
+                "enable_thinking": False,
+                "thinking": True,
+            },
+            id="conflicting_flags_false_first_stay_as_written",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "chat_template_kwargs": {"reasoning_effort": None},
+            },
+            {"reasoning_effort": None},
+            id="kwargs_null_effort_overrides_top_level",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "chat_template_kwargs": {"reasoning_effort": 0},
+            },
+            {"reasoning_effort": 0},
+            id="kwargs_zero_effort_overrides_top_level",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "chat_template_kwargs": {"reasoning_effort": False},
+            },
+            {"reasoning_effort": False},
+            id="kwargs_false_effort_overrides_top_level",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": 0}},
+            {"reasoning_effort": 0},
+            id="kwargs_zero_effort_alone_keeps_the_model_default",
+        ),
+        pytest.param(
+            {"chat_template_kwargs": {"reasoning_effort": False}},
+            {"reasoning_effort": False},
+            id="kwargs_false_effort_alone_keeps_the_model_default",
+        ),
+        pytest.param(
+            {
+                "reasoning": {"effort": "high"},
+                "chat_template_kwargs": {"reasoning_effort": 50},
+            },
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": 50,
+            },
+            id="kwargs_numeric_effort_overrides_openrouter",
+        ),
+        pytest.param(
+            {
+                "chat_template_kwargs": {
+                    "thinking_mode": "adaptive",
+                    "reasoning_effort": "low",
+                },
+            },
+            {
+                "thinking_mode": "adaptive",
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "low",
+            },
+            id="unrelated_thinking_mode_stays_untouched",
+        ),
+        pytest.param(
+            {
+                "chat_template_kwargs": {"thinking": True},
+                "reasoning": {"effort": "none"},
+            },
+            {"thinking": True},
+            id="openrouter_none_ignores_explicit_flag",
+        ),
+        pytest.param(
+            {
+                "chat_template_kwargs": {"thinking": False},
+                "reasoning": {"enabled": True},
+            },
+            {"thinking": False},
+            id="openrouter_enabled_ignores_explicit_flag",
+        ),
+        pytest.param(
+            {
+                "chat_template_kwargs": {"thinking_mode": "adaptive"},
+                "reasoning": {"enabled": False},
+            },
+            {"thinking_mode": "adaptive"},
+            id="openrouter_ignores_explicit_thinking_mode",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "chat_template_kwargs": {"reasoning_effort": None},
+                "reasoning": {"enabled": False},
+            },
+            {"reasoning_effort": None},
+            id="openrouter_ignores_explicit_null_effort",
+        ),
+        pytest.param(
+            {
+                "reasoning_effort": "high",
+                "reasoning": {"enabled": False},
+            },
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort_ignores_openrouter_enabled",
+        ),
+        pytest.param(
+            {"reasoning": {}},
+            None,
+            id="empty_reasoning_object_preserves_default",
+        ),
     ],
 )
 def test_resolved_chat_template_kwargs(
@@ -1234,6 +1525,71 @@ def test_resolved_chat_template_kwargs(
 ) -> None:
     """Reasoning controls are folded into the kwargs the chat template sees."""
     assert _chat_template_kwargs_for(payload) == expected
+
+
+_THINKING_OFF = {"enable_thinking": False, "thinking": False}
+_THINKING_ON = {"enable_thinking": True, "thinking": True}
+
+
+@pytest.mark.parametrize(
+    "payloads,expected",
+    [
+        pytest.param(
+            [
+                {"reasoning_effort": "none"},
+                {"chat_template_kwargs": {"reasoning_effort": "none"}},
+                {"reasoning": {"effort": "none"}},
+                {"reasoning": {"enabled": False, "effort": "none"}},
+                {"reasoning": {"enabled": True, "effort": "none"}},
+            ],
+            {**_THINKING_OFF, "reasoning_effort": "none"},
+            id="effort_none",
+        ),
+        pytest.param(
+            [
+                {"reasoning_effort": "high"},
+                {"chat_template_kwargs": {"reasoning_effort": "high"}},
+                {"reasoning": {"effort": "high"}},
+                {"reasoning": {"enabled": True, "effort": "high"}},
+            ],
+            {**_THINKING_ON, "reasoning_effort": "high"},
+            id="effort_level",
+        ),
+        pytest.param(
+            [
+                {"chat_template_kwargs": _THINKING_OFF},
+                {"reasoning": {"enabled": False}},
+                {"reasoning": {"enabled": False, "effort": "high"}},
+            ],
+            _THINKING_OFF,
+            id="thinking_off",
+        ),
+        pytest.param(
+            [
+                {"chat_template_kwargs": _THINKING_ON},
+                {"reasoning": {"enabled": True}},
+            ],
+            _THINKING_ON,
+            id="thinking_on",
+        ),
+        pytest.param(
+            [
+                {},
+                {"thinking": {"type": "adaptive"}},
+                {"reasoning": {}},
+                {"reasoning": {"max_tokens": 64, "exclude": True}},
+            ],
+            None,
+            id="model_default",
+        ),
+    ],
+)
+def test_equivalent_reasoning_controls_render_alike(
+    payloads: list[dict[str, Any]], expected: dict[str, Any] | None
+) -> None:
+    """One intent renders the same whichever channel carries it."""
+    for payload in payloads:
+        assert _chat_template_kwargs_for(payload) == expected, payload
 
 
 # ---------------------------------------------------------------------------

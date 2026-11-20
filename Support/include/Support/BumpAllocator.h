@@ -10,13 +10,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //===----------------------------------------------------------------------===//
-//===----------------------------------------------------------------------===//
-// Copyright (c) 2026, Modular Inc. All rights reserved.
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions:
-// https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//===----------------------------------------------------------------------===//
 //
 // This file defines a slab-backed bump allocator. It is a modernized version of
 // llvm::BumpPtrAllocator. It would be great to eventually upstream and unify.
@@ -26,6 +19,7 @@
 #ifndef SUPPORT_BUMPALLOCATOR_H
 #define SUPPORT_BUMPALLOCATOR_H
 
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -50,7 +44,7 @@ namespace M {
 /// Individual allocations cannot be freed. All allocations remain valid until
 /// the allocator is reset or destroyed. Allocations larger than the size
 /// threshold receive dedicated slabs.
-class BumpAllocator {
+class MODULAR_CXX_EXPORT BumpAllocator {
 public:
   static constexpr size_t slabSize = 4096;
   static constexpr size_t sizeThreshold = slabSize;
@@ -181,23 +175,8 @@ public:
   /// Returns a stable identifier for an allocator-owned pointer.
   int64_t identifyKnownObject(const void *ptr) const;
 
-  /// Returns a stable identifier scaled by `T`'s alignment.
-  template <typename T>
-  int64_t identifyKnownAlignedObject(const void *ptr) const {
-    int64_t result = identifyKnownObject(ptr);
-    assert(result % alignof(T) == 0 && "incorrect alignment information");
-    return result / alignof(T);
-  }
-
   /// Returns the total number of bytes reserved by all slabs.
   size_t getTotalMemory() const;
-
-  /// Sets the sanitizer red-zone size when ABI checks are enabled.
-  void setRedZoneSize([[maybe_unused]] size_t size) {
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
-    redZoneSize = size;
-#endif
-  }
 
   /// Prints allocator statistics to stderr.
   void printStats() const;

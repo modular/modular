@@ -24,15 +24,15 @@ from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
 
 from std.testing import assert_equal
 
-from std.utils import IndexList
-
 
 def matrix_band_part[
     output_layout: TensorLayout,
     dtype: DType,
+    input_origin: ImmOrigin,
+    output_origin: MutOrigin,
 ](
-    input: TileTensor[dtype, output_layout, ImmutAnyOrigin],
-    output: TileTensor[dtype, output_layout, MutAnyOrigin],
+    input: TileTensor[dtype, output_layout, input_origin],
+    output: TileTensor[dtype, output_layout, output_origin],
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,
@@ -50,7 +50,7 @@ def matrix_band_part[
     comptime assert input.flat_rank == 2
     comptime assert output.flat_rank == 2
     comptime rank = input.flat_rank
-    var input_shape = IndexList[rank](Int(input.dim(0)), Int(input.dim(1)))
+    var input_shape = (Int(input.dim(0)), Int(input.dim(1)))
 
     def input_fn[width: Int](coords: Coord) {var input} -> SIMD[dtype, width]:
         return input.load[width=width](coords)
@@ -68,7 +68,7 @@ def matrix_band_part[
         num_upper_buf,
         exclude_buf,
         output,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
 

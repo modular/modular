@@ -124,9 +124,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print(
-        "=== fuzz_numeric_canary seed=", the_seed, "budget=", the_budget, "==="
-    )
+    print(t"=== fuzz_numeric_canary seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

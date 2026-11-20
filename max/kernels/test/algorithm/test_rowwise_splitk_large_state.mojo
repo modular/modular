@@ -15,10 +15,10 @@ reduces correctly on shapes that pick the split-axis tier."""
 
 from algorithm import rowwise
 from algorithm.reduce_op import ReduceOp
-from algorithm.rowwise_types import RowCoord
 from layout import Coord
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal, assert_true
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index
 
 comptime dtype = DType.float32
@@ -63,8 +63,11 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
     for i in range(rows * cols):
         x[i] = Scalar[dtype](i % 3)
     var out = List[Scalar[dtype]](length=rows, fill=-1)
-    var x_ptr = x.unsafe_ptr()
-    var out_ptr = out.unsafe_ptr()
+    # Take the pointers through spans: a closure cannot capture an interior
+    # pointer into a list that a nested closure passed to a generic function
+    # also uses (https://github.com/modular/modular/issues/7552).
+    var x_ptr = Span(x).unsafe_ptr()
+    var out_ptr = Span(out).unsafe_ptr()
     var shape = Coord(Index(rows, cols))
 
     @inline(.always)
@@ -78,31 +81,33 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var x_ptr, var cols} -> SIMD[dtype, width]:
-            var i = Int(idx.coord[0].value()) * cols + Int(idx.coord[1].value())
+        ](idx: DynamicCoord[DType.int, rank]) {var x_ptr, var cols} -> SIMD[
+            dtype, width
+        ]:
+            var i = Int(idx[0]) * cols + Int(idx[1])
             return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
-        var row = rowwise.Row[params, dtype, dtype, 1, rank, is_cached=False](
+        var row = rowwise.Row[params, dtype, dtype, 1, rank, keep_tile=False](
             row_coords, cols, ctx, load
         )
 
         @inline(.always)
         def ident[
             w: Int
-        ](tile: SIMD[dtype, w], idx: RowCoord[rank]) {} -> SIMD[dtype, w]:
+        ](tile: SIMD[dtype, w], idx: DynamicCoord[DType.int, rank]) {} -> SIMD[
+            dtype, w
+        ]:
             return tile
 
         var acc = row.reduce[BigSum[dtype, params.simd_width]](ident, load).acc
 
         @inline(.always)
-        def write(oc: RowCoord[rank]) {var acc, var out_ptr}:
-            out_ptr.unsafe_offset(Int(oc.coord[0].value())).unsafe_store(acc[0])
+        def write(oc: DynamicCoord[DType.int, rank]) {var acc, var out_ptr}:
+            out_ptr.unsafe_offset(Int(oc[0])).unsafe_store(acc[0])
 
         row.emit(write)
 
-    rowwise.launch[axis=1, simd_width=1, target="cpu", num_phases=1](
-        body, shape
-    )
+    rowwise.launch[axis=1, simd_width=1, num_phases=1](body, shape)
     _ = x^
     return out^
 

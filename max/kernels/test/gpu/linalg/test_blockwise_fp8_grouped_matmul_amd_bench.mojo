@@ -47,7 +47,7 @@ def bench_grouped_shape[
     num_experts: Int,
     N: Int,
     K: Int,
-](ctx: DeviceContext, total_rows: Int, num_active: Int) raises:
+](ctx: DeviceContext[], total_rows: Int, num_active: Int) raises:
     comptime input_type = DType.float8_e4m3fn
     comptime transpose_b = True
     comptime BLOCK_SCALE_N = 128
@@ -113,7 +113,7 @@ def bench_grouped_shape[
     var a_off_dev = TileTensor(a_off_buf, row_major(Coord(num_active + 1)))
     var eids_dev = TileTensor(eids_buf, row_major(Coord(num_active)))
 
-    def run_mine(c: DeviceContext) raises {imm}:
+    def run_mine(c: DeviceContext[]) raises {imm}:
         blockwise_scaled_fp8_grouped_matmul_amd[
             transpose_b=transpose_b,
             N_SCALE=BLOCK_SCALE_N,
@@ -131,12 +131,14 @@ def bench_grouped_shape[
             ctx=c,
         )
 
-    def run_naive(c: DeviceContext) raises {imm}:
+    def run_naive(c: DeviceContext[]) raises {imm}:
         naive_blockwise_scaled_fp8_grouped_matmul[
             BLOCK_DIM_M=16,
             BLOCK_DIM_N=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                1, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
         ](
             c_ref_dev,
             a_dev,
@@ -174,25 +176,11 @@ def bench_grouped_shape[
     var tflops_naive = flops / (med_naive * 1.0e9)
 
     print(
-        "rows=",
-        total_rows,
-        " NxK=",
-        N,
-        "x",
-        K,
-        " experts=",
-        num_active,
-        " | tiled: ",
-        med_mine,
-        " ms (",
-        tflops_mine,
-        " TFLOP/s) | naive: ",
-        med_naive,
-        " ms (",
-        tflops_naive,
-        " TFLOP/s) | speedup: ",
-        med_naive / med_mine,
-        "x",
+        (
+            t"rows={total_rows} NxK={N}x{K} experts={num_active} | tiled:"
+            t" {med_mine} ms ({tflops_mine} TFLOP/s) | naive: {med_naive} ms"
+            t" ({tflops_naive} TFLOP/s) | speedup: {med_naive / med_mine}x"
+        ),
         sep="",
     )
 

@@ -24,8 +24,6 @@ from std.sys.intrinsics import PrefetchOptions
 
 from layout import Coord, Idx, TileTensor
 
-from std.utils.index import Index, IndexList
-
 from ...accumulate import _Accumulator
 from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
 from .impl import InnerMatmulKernel
@@ -54,7 +52,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,
-        tile_n_k_idx: IndexList[2],
+        tile_n_k_idx: Tuple[Int, Int],
     ):
         """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
@@ -68,6 +66,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 processing tile to index the packed B matrix.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
+        comptime assert a.flat_rank == 2, "a must be rank 2"
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -88,11 +87,11 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](b_ptr + (prefetch_offset + idx * simd_size))
+                ](b_ptr.unsafe_offset(prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
         var K = Int(a.dim[1]())
-        var a_ptr = a.ptr + (global_offset.M * K + global_k)
+        var a_ptr = a.ptr_at_offset(Coord(global_offset.M, global_k))
 
         comptime c_type = c_local.dtype
 
@@ -102,9 +101,9 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
-                var b_val = b_ptr.load[width=simd_size, alignment=alignment](
-                    idx1 * simd_size
-                )
+                var b_val = b_ptr.unsafe_load[
+                    width=simd_size, alignment=alignment
+                ](idx1 * simd_size)
                 c_local.fma(idx0, idx1, a_val, b_val)
 
     @inline(.always)
@@ -119,7 +118,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
-        tile_n_k: IndexList[2],
+        tile_n_k: Tuple[Int, Int],
         skip_boundary_check: Bool,
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
@@ -146,13 +145,15 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 loads and stores.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
+        comptime assert c.flat_rank == 2, "c must be rank 2"
 
         var c_stride = Int(c.dim[1]())
 
-        var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
+        var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
 
-        var c_bound = Index(global_bound.M, global_bound.N) - Index(
-            global_offset.M, global_offset.N
+        var c_bound = (
+            global_bound.M - global_offset.M,
+            global_bound.N - global_offset.N,
         )
 
         var acc = _Accumulator[
@@ -166,7 +167,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                    rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -182,10 +183,10 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                     b_packed,
                     acc,
                     global_offset,
-                    Index(idx_n, idx_k),
+                    (idx_n, idx_k),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
+                rebind[MutPointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

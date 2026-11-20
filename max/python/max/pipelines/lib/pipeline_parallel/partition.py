@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from ..pipeline_stage import PipelineStage
 
@@ -37,11 +37,8 @@ if TYPE_CHECKING:
 class PartitionSpec:
     """Where a checkpoint's decoder may be cut into pipeline stages.
 
-    An architecture config returns one from an optional
-    ``construct_partition_spec(huggingface_config)`` classmethod, which it
-    defines only when some cut is forbidden or its decoder counts layers
-    other than ``get_num_layers`` does. Returning ``None`` refuses pipeline
-    parallelism for that checkpoint.
+    An architecture config that runs as pipeline stages returns one by
+    implementing :class:`ArchConfigWithPartitionSpec`.
     """
 
     num_layers: int
@@ -50,6 +47,23 @@ class PartitionSpec:
     forbidden_cuts: frozenset[int] = frozenset()
     """Layer ids no stage may start at, such as a layer that reads a cache an
     earlier layer writes."""
+
+
+@runtime_checkable
+class ArchConfigWithPartitionSpec(Protocol):
+    """An architecture config whose decoder may be cut into pipeline stages."""
+
+    @classmethod
+    def construct_partition_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> PartitionSpec:
+        """Returns where the checkpoint's decoder may be cut.
+
+        Raises:
+            ValueError: If the checkpoint cannot be split into pipeline
+                stages.
+        """
+        ...
 
 
 def partition_spec(
@@ -62,30 +76,18 @@ def partition_spec(
         huggingface_config: The checkpoint's config.
 
     Raises:
-        TypeError: If the architecture's config class defines neither
-            ``construct_partition_spec`` nor ``get_num_layers``.
+        TypeError: If the architecture's config does not implement
+            :class:`ArchConfigWithPartitionSpec`.
         ValueError: If the checkpoint cannot be split into pipeline stages.
     """
-    arch_config = arch.config
-    construct = getattr(arch_config, "construct_partition_spec", None)
-    if construct is not None:
-        spec = construct(huggingface_config)
-        assert spec is None or isinstance(spec, PartitionSpec)
-    else:
-        get_num_layers = getattr(arch_config, "get_num_layers", None)
-        if get_num_layers is None:
-            raise TypeError(
-                f"{arch_config.__name__} needs construct_partition_spec to run"
-                " as pipeline stages, since it does not define"
-                " get_num_layers."
-            )
-        spec = PartitionSpec(num_layers=int(get_num_layers(huggingface_config)))
-    if spec is None:
-        raise ValueError(
-            f"{arch.name} does not allow this checkpoint to be split into"
-            " pipeline stages."
+    config = arch.config
+    if not issubclass(config, ArchConfigWithPartitionSpec):
+        raise TypeError(
+            f"{arch.name} does not run as pipeline stages, since"
+            f" {config.__name__} does not implement"
+            " ArchConfigWithPartitionSpec."
         )
-    return spec
+    return config.construct_partition_spec(huggingface_config)
 
 
 def split_layers(

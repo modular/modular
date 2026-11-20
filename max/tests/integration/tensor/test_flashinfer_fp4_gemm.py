@@ -26,10 +26,10 @@ from flashinfer.quantization.fp4_quantization import (
     e2m1_and_ufp8sf_scale_to_float,
     nvfp4_quantize,
 )
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, TensorType
+from max.tensor.tensor import Tensor, TensorType
 
 
 def _set_up_ninja_path() -> None:

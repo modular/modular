@@ -11,38 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Activation function utilities."""
-
-from __future__ import annotations
+"""Gated activation configuration for mixture-of-experts layers."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 
-from max.graph import TensorValue, ops
-
-
-def activation_function_from_name(
-    name: str,
-) -> Callable[[TensorValue], TensorValue]:
-    activations: dict[str, Callable[[TensorValue], TensorValue]] = {
-        "silu": ops.silu,
-        "gelu": ops.gelu,
-        "gelu_tanh": partial(ops.gelu, approximate="tanh"),
-        "relu": ops.relu,
-        "tanh": ops.tanh,
-        "sigmoid": ops.sigmoid,
-    }
-    activation_function = activations.get(name)
-    if activation_function is None:
-        raise ValueError(f"Unrecognized activation function name ({name})")
-    return activation_function
-
+from max.graph import TensorValue
 
 # The constants each fused activation reads; the others must stay 0.
 _FUSED_ACTIVATION_CONSTANTS: dict[str, tuple[str, ...]] = {
     "silu": ("limit",),
     "swigluoai": ("alpha", "limit"),
+    "situ": ("alpha", "limit"),
     "gelu_tanh": (),
 }
 
@@ -61,10 +41,14 @@ class GatedActivation:
     - ``"gelu_tanh"``: ``gelu(gate) * up`` with the tanh approximation
       ``gelu(x) = 0.5 * x * (1 + tanh(0.7978845608028654 *
       (x + 0.044715 * x**3)))``.
+    - ``"situ"``: ``beta * tanh(gate / beta) * sigmoid(gate) * u`` with
+      ``beta = alpha`` (non-zero), where ``u`` is
+      ``linear_beta * tanh(up / linear_beta)`` for a non-zero ``limit``
+      (``linear_beta``) and ``up`` itself for ``limit = 0``.
 
     ``gated_activation_fn`` replaces the activation with graph ops, for
     activations no kernel fuses. It takes the ``[gate | up]`` projection and
-    ``moe_dim``; see :func:`~max.nn.moe.make_concatenated_gated_activation_fn`.
+    ``moe_dim``; see :func:`~max.nn.legacy.moe.make_concatenated_gated_activation_fn`.
     A layer that has one runs it instead of any fused kernel, which costs
     performance: the activation runs as separate graph ops over the whole
     gate-up output, and the fused grouped-matmul and quantize paths are
@@ -75,14 +59,23 @@ class GatedActivation:
     """The activation fused kernels compute."""
 
     alpha: float = 0.0
-    """The sigmoid scale of ``"swigluoai"``; must be 0 for the others."""
+    """The sigmoid scale of ``"swigluoai"`` and the gate's tanh scale
+    ``beta`` of ``"situ"`` (non-zero there); must be 0 for the others."""
 
     limit: float = 0.0
-    """The clamp bound of ``"swigluoai"`` and ``"silu"`` (0 leaves ``"silu"``
-    unclamped); must be 0 for ``"gelu_tanh"``."""
+    """The clamp bound of ``"swigluoai"`` and ``"silu"`` (0 leaves
+    ``"silu"`` unclamped), and the up half's soft saturation
+    ``linear_beta`` of ``"situ"`` (0 passes ``up`` through); must be 0 for
+    ``"gelu_tanh"``."""
 
     gated_activation_fn: Callable[[TensorValue, int], TensorValue] | None = None
     """Graph-op replacement for the activation, or ``None`` to fuse it."""
+
+    round_to_bf16: bool = False
+    """Whether a fused kernel rounds the activation's output to ``bfloat16``
+    before it quantizes it. A standalone activation kernel writes ``bfloat16``,
+    so a fused kernel needs this to quantize the same values. Only ``"silu"``
+    and ``"swigluoai"`` take it."""
 
     def __post_init__(self) -> None:
         name = self.fused_activation
@@ -99,6 +92,10 @@ class GatedActivation:
             raise ValueError(f"limit must be non-negative, got {self.limit}")
         if name == "swigluoai" and (self.alpha == 0.0 or self.limit == 0.0):
             raise ValueError("swigluoai needs a non-zero alpha and limit")
+        if name == "situ" and self.alpha == 0.0:
+            raise ValueError("situ needs a non-zero alpha (beta)")
+        if self.round_to_bf16 and name not in ("silu", "swigluoai"):
+            raise ValueError(f"{name} does not take round_to_bf16")
         if self.gated_activation_fn is not None and (
             name != "silu" or self.limit != 0.0
         ):
@@ -107,12 +104,8 @@ class GatedActivation:
                 " fused_activation, alpha, and limit at their defaults"
             )
 
-    def kernel_parameters(self) -> dict[str, str]:
+    def kernel_parameters(self) -> dict[str, float | str]:
         """Returns ``fused_activation`` encoded as kernel parameters.
-
-        Kernel parameters cannot be floats, so the constants ride as strings.
-        ``repr`` round-trips the double, so the kernel's compile-time parse
-        rounds to the same float32 a constant would.
 
         Raises:
             ValueError: If ``gated_activation_fn`` is set; a kernel can only
@@ -124,7 +117,8 @@ class GatedActivation:
                 " into a kernel"
             )
         return {
-            "activation": self.fused_activation,
-            "swiglu_alpha": repr(float(self.alpha)),
-            "swiglu_limit": repr(float(self.limit)),
+            "activation": self.fused_activation
+            + ("_bf16" if self.round_to_bf16 else ""),
+            "swiglu_alpha": float(self.alpha),
+            "swiglu_limit": float(self.limit),
         }

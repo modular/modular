@@ -15,13 +15,17 @@ name: bench_ep_combine
 file: $KERNEL_BENCHMARKS_ROOT/gpu/comm/bench_ep_combine.mojo
 
 params:
-# Example parameter configurations for ep_combine benchmark
+# Sweep axes are the ones the binary reads: hidden_size, top_k, n_experts and
+# n_ranks. Both shapes (decode and prefill) run inside one process, so the
+# token counts are not sweep axes -- they are the defines below, and
+# `slots_decode` / `slots_prefill` (the per-arm iteration counts) default in
+# the benchmark. The arms are BF16 either way: this benchmark dispatches with
+# `BF16TokenFormat`, so a dtype sweep here would rerun identical code.
 
 - hidden_size: [3576, 7168]
   top_k: [8]
   n_experts: [128, 256]
   n_ranks: [8]
-  n_tokens_per_rank: [128]
+  n_tok_decode: [16]
+  n_tok_prefill: [2048]
   num_gpus: 8
-  token_dtype: [DType.bfloat16, DType.float8_e4m3fn]
-  scales_dtype: [DType.float32]

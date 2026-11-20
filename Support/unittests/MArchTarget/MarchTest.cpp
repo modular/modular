@@ -59,6 +59,84 @@ TEST(ArchTarget, getMArchTargetInfo) {
   EXPECT_EQ(info->triple.str(), "aarch64-unknown-linux-gnu");
 }
 
+// With both -march and -mcpu, -march supplies the architecture baseline, as
+// in the clang driver: armv8.2-a reaches the feature set while neoverse-n1
+// stays the CPU.
+TEST(ArchTarget, AArch64MarchAddsArchFeaturesToMcpu) {
+  llvm::InitializeAllTargets();
+
+  ErrorOr<TargetInfo> info = M::getMArchTargetInfo(
+      "aarch64-unknown-linux-gnu", "armv8.2-a", "neoverse-n1", "");
+
+  ASSERT_FALSE(info.isError()) << info.getError();
+  EXPECT_TRUE(info->triple.isAArch64()) << info->triple.str();
+  EXPECT_EQ(info->arch, "neoverse-n1");
+  EXPECT_THAT(info->features, ::testing::Contains("v8.2a"));
+}
+
+// A "+noext" modifier on -march applies on top of the architecture defaults:
+// armv9-a implies SVE and SVE2, and "+nosve" removes both. neoverse-n1 has no
+// SVE, so any "sve" in the result would come from the -march expansion.
+TEST(ArchTarget, AArch64MarchNegativeModifierOverridesArchDefaults) {
+  llvm::InitializeAllTargets();
+
+  ErrorOr<TargetInfo> info = M::getMArchTargetInfo(
+      "aarch64-unknown-linux-gnu", "armv9-a+nosve", "neoverse-n1", "");
+  ASSERT_FALSE(info.isError()) << info.getError();
+
+  EXPECT_TRUE(info->triple.isAArch64()) << info->triple.str();
+  EXPECT_EQ(info->arch, "neoverse-n1");
+  // v9a shows the -march was applied, so the checks below are not vacuous.
+  EXPECT_THAT(info->features, ::testing::Contains("v9a"));
+  EXPECT_THAT(info->features, ::testing::Not(::testing::Contains("sve")));
+  EXPECT_THAT(info->features, ::testing::Not(::testing::Contains("sve2")));
+}
+
+// -march alone keeps an AArch64 triple and expands the architecture's
+// defaults.
+TEST(ArchTarget, AArch64MarchAlone) {
+  llvm::InitializeAllTargets();
+
+  const std::pair<const char *, const char *> cases[] = {
+      {"armv8-a", "v8a"}, {"armv8.2-a", "v8.2a"}, {"armv9-a", "v9a"}};
+  for (auto [march, archFeature] : cases) {
+    ErrorOr<TargetInfo> info =
+        M::getMArchTargetInfo("aarch64-unknown-linux-gnu", march, "", "");
+    ASSERT_FALSE(info.isError()) << march << ": " << info.getError();
+    EXPECT_TRUE(info->triple.isAArch64())
+        << march << ": " << info->triple.str();
+    EXPECT_THAT(info->features, ::testing::Contains(archFeature)) << march;
+    EXPECT_THAT(info->features, ::testing::Contains("neon")) << march;
+    // An AArch32-only feature would mean the triple was parsed as 32-bit ARM.
+    EXPECT_THAT(info->features,
+                ::testing::Not(::testing::Contains("hwdiv-arm")))
+        << march;
+  }
+}
+
+// FIXME(#6918): the CPU's default extensions are added after the -march
+// expansion, so "+nosve" does not remove SVE from a CPU that has it.
+TEST(ArchTarget, AArch64MarchNegativeModifierDoesNotOverrideCpuDefaults) {
+  llvm::InitializeAllTargets();
+
+  ErrorOr<TargetInfo> info = M::getMArchTargetInfo(
+      "aarch64-unknown-linux-gnu", "armv9-a+nosve", "neoverse-v1", "");
+  ASSERT_FALSE(info.isError()) << info.getError();
+  EXPECT_THAT(info->features, ::testing::Contains("sve"));
+}
+
+// Without -march, -mcpu sets the CPU and contributes its own extensions.
+TEST(ArchTarget, AArch64McpuAlone) {
+  llvm::InitializeAllTargets();
+
+  ErrorOr<TargetInfo> info =
+      M::getMArchTargetInfo("aarch64-unknown-linux-gnu", "", "neoverse-n1", "");
+  ASSERT_FALSE(info.isError()) << info.getError();
+  EXPECT_TRUE(info->triple.isAArch64()) << info->triple.str();
+  EXPECT_EQ(info->arch, "neoverse-n1");
+  EXPECT_THAT(info->features, ::testing::Contains("spe"));
+}
+
 // A host CPU LLVM cannot identify must not take the whole target down with it.
 // getHostCPUName() answers "generic" for such a part, and Clang rejects that
 // name on x86_64 -- so a part newer than the pinned LLVM's CPU tables otherwise

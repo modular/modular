@@ -36,7 +36,7 @@ The profiler exposes two layers:
 2. **One-shot CLI capture**: :func:`maybe_reexec_under_nsys` re-launches the
    current process under ``nsys profile`` and renders a top-N kernel summary
    on exit; :func:`profiled_region` is the corresponding context manager
-   that brackets the timed region with ``cudaProfilerStart``/``Stop`` and
+   that brackets the timed region with ``cuProfilerStart``/``Stop`` and
    prints a ``cProfile`` Python/CPU summary. These power the
    ``--profile`` flag on ``max generate`` / ``max benchmark``.
 """

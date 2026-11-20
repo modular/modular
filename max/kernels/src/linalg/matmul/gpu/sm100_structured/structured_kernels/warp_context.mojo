@@ -300,12 +300,11 @@ struct EpilogueWarpContext[
 #     # __exit__ waits for epilogue, deallocates TMEM
 
 
-@explicit_destroy("Must call release() to deallocate TMEM")
 struct MmaWarp[
     opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
-](not Deinitable):
+](not Deinitable else "Must call release() to deallocate TMEM"):
     """Unified linear type for MMA warp TMEM lifecycle.
 
     Works as both a linear type (direct use) and within context managers.
@@ -407,12 +406,11 @@ struct MmaWarp[
         self.dealloc_barrier.complete_dealloc(self.tmem)
 
 
-@explicit_destroy("Must call release() to signal completion")
 struct EpilogueWarp[
     opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
-](not Deinitable):
+](not Deinitable else "Must call release() to signal completion"):
     """Unified linear type for epilogue warp lifecycle.
 
     Works as both a linear type (direct use) and within context managers.

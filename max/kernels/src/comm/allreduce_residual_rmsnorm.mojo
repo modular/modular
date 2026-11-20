@@ -22,7 +22,13 @@ input with a bf16 output) the FP8 phases (per-row max, dynamic scale, and
 quantize) are skipped at compile time, the normalized value is written
 directly in the input dtype, and no per-row scale is produced.
 
-Three dispatch paths:
+Four dispatch paths:
+
+Lamport (latency-bound, non-quantizing payloads): the barrier-free Lamport
+  kernel in `allreduce_lamport_rmsnorm.mojo`, selected by the same byte
+  buckets as the plain allreduce's Lamport path. Each rank pushes its packs
+  into its peers' Lamport regions and polls its own, so no start barrier and no
+  peer-input reads are needed.
 
 1-stage (small payloads): Each thread loads from all GPUs, accumulates
   in float32 registers, then applies RMSNorm + FP8 quantization. Simple
@@ -62,13 +68,14 @@ from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
     get_defined_int,
+    is_amd_gpu,
+    is_nvidia_gpu,
     simd_width_of,
     size_of,
 )
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
@@ -76,16 +83,22 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from layout import (
     Coord,
     Idx,
+    TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tile_tensor import _ComptimeConditionalTileTensor
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 
@@ -94,16 +107,60 @@ from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 from .rms_norm_fp8 import rms_norm_fused_fp8
 
 from .allreduce import (
+    AllReduceAlgorithm,
+    _load_peers_rotated,
     allreduce,
     allreduce_tuning_table,
+)
+from .allreduce_lamport_rmsnorm import (
+    _lamport_allreduce_rmsnorm_launch,
+    lamport_allreduce_rmsnorm_fits,
 )
 from .device_query import get_sm_version, dispatch_select_comm_config
 from .reducescatter import _target_address_space
 from .sync import (
+    MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
     is_p2p_enabled,
 )
+
+
+# --- PDL helpers ---
+
+
+@inline(.always)
+def _pdl_wait[pdl_level: PDLLevel]():
+    """Waits for the predecessor grid and, for `OVERLAP_AT_BEGINNING`, releases
+    the dependent grid right away.
+
+    The dependent's own `wait_on_dependent_grids` blocks until this grid has
+    completed and its stores are visible, so releasing at the start only
+    decides when the dependent becomes resident. Releasing after the wait
+    keeps at most one dependent resident ahead of the running grid. Every
+    thread of the block must call it.
+    """
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
+
+
+@inline(.always)
+def _pdl_release_at_end[pdl_level: PDLLevel]():
+    """Releases the dependent grid after the last global access, unless
+    `_pdl_wait` already did.
+
+    The trigger follows the barrier that retires the peers' P2P reads of this
+    GPU's input, which the next kernel may overwrite. Only the first warp spins
+    on the peers' flags inside that barrier, so the block syncs again before
+    any thread releases the dependent. Every thread of the block must call it.
+    """
+    comptime if (
+        pdl_level > PDLLevel.OFF and pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        barrier()
+        launch_dependent_grids()
 
 
 # --- GPU Kernel ---
@@ -115,13 +172,14 @@ from .sync import (
     )
 )
 @__name(
-    t"allreduce_rmsnorm_fp8_warp_tiling_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}",
+    t"allreduce_rmsnorm_fp8_warp_tiling_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}_{multiply_before_cast}",
 )
 def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
     LayoutType: TensorLayout,
     in_dtype: DType,
+    gamma_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
     scale_origin: MutOrigin,
@@ -135,15 +193,24 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
+    multiply_before_cast: Bool,
+    pdl_level: PDLLevel,
     OutputFnType: ImplicitlyCopyable
     & DevicePassable
     & RegisterPassable
     & def[width: SIMDLength](Int, Int, SIMD[out_dtype, width]) -> None,
+    *,
+    GammaEngine: TensorEngine,
+    ScaleBufferEngine: TensorEngine,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
-    gamma: TileTensor[in_dtype, LayoutType, origin],
+    gamma: TileTensor[gamma_dtype, LayoutType, origin, Engine=GammaEngine],
     scale_buffer: TileTensor[
-        mut=True, scales_dtype, ScaleLayoutType, scale_origin
+        mut=True,
+        scales_dtype,
+        ScaleLayoutType,
+        scale_origin,
+        Engine=ScaleBufferEngine,
     ],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -188,7 +255,8 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     comptime assert residual.T.flat_rank >= 2
     comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
-    comptime align = align_of[SIMD[in_dtype, simd_width]]()
+    comptime gamma_align = align_of[SIMD[gamma_dtype, simd_width]]()
+    _assert_gamma_dtype_supported[gamma_dtype, in_dtype]()
     # Fuse FP8 quantization only when the output dtype differs from the input.
     # When out_dtype == in_dtype the max/scale/quantize phases are skipped.
     comptime quantize = out_dtype != in_dtype
@@ -197,30 +265,41 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     var idx = tid * simd_width
     var is_valid = idx < _cols
 
-    # Barrier: wait for all GPUs to have their input data ready.
-    _multi_gpu_barrier[ngpus, is_start=True](
-        rank_sigs, rank_sigs[_my_rank], _my_rank
-    )
+    # Peers P2P-read the input the predecessor (the producing GEMM) writes, and
+    # the start barrier below tells them it is ready. Wait first so the barrier
+    # is never signalled before those stores land.
+    _pdl_wait[pdl_level]()
 
-    # Preload gamma weights into registers. The global memory latency is
-    # hidden behind the P2P loads below (~200+ cycles per GPU).
-    # Gamma depends only on column index — preload once, reuse across all _rows.
+    # Preload gamma weights into registers. Gamma is not guaranteed to be a
+    # checkpoint buffer: the graph can pass a computed value (for example a
+    # cast of the weight), so it is read only after the wait. Its latency hides
+    # behind the start barrier. It depends only on the column index, so it is
+    # loaded once and reused across all _rows.
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(idx)).cast[
+            gamma.load[width=simd_width, alignment=gamma_align]((idx,)).cast[
                 accum_type
             ]()
             + _weight_offset.cast[accum_type]()
         )
 
-    # Round-robin access pattern for NVLink load-balancing.
-    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
-    var ptrs = Array[_, ngpus](
-        fill_with_unrolled=lambda [i: Int]() -> PtrType: src_ptrs[
-            (_my_rank + i) % ngpus
-        ]
+    # Barrier: wait for all GPUs to have their input data ready.
+    _multi_gpu_barrier[ngpus, is_start=True](
+        rank_sigs, rank_sigs[_my_rank], _my_rank
     )
+
+    # Input pointers in global rank order on every rank, so every rank rounds
+    # the reduced sum identically; see `_load_peers_rotated` for the load order.
+    var ptrs = src_ptrs.copy()
+    comptime if ngpus == 2:
+        # Two terms sum to the same bits in either order, so keep the
+        # round-robin order, which also balances the reads.
+        ptrs = Array[_, ngpus](
+            fill_with_unrolled=lambda [i: Int]() -> ImmPointer[
+                Scalar[in_dtype], ImmutAnyOrigin
+            ]: src_ptrs[(_my_rank + i) % ngpus]
+        )
 
     # Row loop: each block processes _rows with stride = grid_dim.
     # For _rows <= grid_dim, the loop body runs exactly once per block.
@@ -232,29 +311,38 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         if is_valid:
             var elem_idx = row * _cols + idx
 
-            comptime for gpu_idx in range(ngpus):
-                vec_data += (
-                    ptrs[gpu_idx]
-                    .address_space_cast[_target_address_space]()
-                    .load[
-                        width=simd_width,
-                        alignment=simd_width,
-                        invariant=True,
-                    ](elem_idx)
-                    .cast[accum_type]()
-                )
+            comptime if (is_nvidia_gpu() or is_amd_gpu()) and ngpus > 2:
+                comptime for r in range(ngpus):
+                    if _my_rank == r:
+                        var vals = _load_peers_rotated[
+                            ngpus, r, simd_width, alignment=simd_width
+                        ](ptrs, elem_idx)
+                        var accum = SIMD[accum_type, simd_width](0)
+                        comptime for g in range(ngpus):
+                            accum += vals[g].cast[accum_type]()
+                        vec_data = accum
+            else:
+                comptime for gpu_idx in range(ngpus):
+                    vec_data += (
+                        ptrs[gpu_idx]
+                        .unsafe_address_space_cast[_target_address_space]()
+                        .unsafe_load[
+                            width=simd_width,
+                            alignment=simd_width,
+                            invariant=True,
+                        ](elem_idx)
+                        .cast[accum_type]()
+                    )
 
             # Add residual and write pre-norm sum (compile-time gated).
             comptime if has_residual:
                 vec_data += (
                     residual[]
-                    .load[width=simd_width](Coord(row, idx))
+                    .load[width=simd_width]((row, idx))
                     .cast[accum_type]()
                 )
                 # Write bf16 pre-normalization sum for the residual stream.
-                residual_output[].store[width=simd_width](
-                    Coord(row, idx), vec_data.cast[in_dtype]()
-                )
+                residual_output[].store((row, idx), vec_data.cast[in_dtype]())
 
         # Phase 1: Compute mean-square.
         var thread_m2 = (vec_data**2).reduce_add()
@@ -294,12 +382,26 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
             # Phase 3 (no quant): write the normalized value directly in
             # out_dtype (== in_dtype). No per-row scale is produced.
             if is_valid:
-                output_fn[simd_width](row, idx, normalized.cast[out_dtype]())
+                comptime if multiply_before_cast:
+                    output_fn[simd_width](
+                        row, idx, normalized.cast[out_dtype]()
+                    )
+                else:
+                    output_fn[simd_width](
+                        row,
+                        idx,
+                        (
+                            (vec_data * norm_factor).cast[in_dtype]()
+                            * gamma_vec.cast[in_dtype]()
+                        ).cast[out_dtype](),
+                    )
 
     # Peers read this GPU's input over P2P, so hold it until they finish.
     _multi_gpu_barrier[ngpus, is_start=False](
         rank_sigs, rank_sigs[_my_rank], _my_rank
     )
+
+    _pdl_release_at_end[pdl_level]()
 
 
 @__llvm_metadata(
@@ -308,13 +410,14 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     )
 )
 @__name(
-    t"allreduce_rmsnorm_fp8_2stage_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}",
+    t"allreduce_rmsnorm_fp8_2stage_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}_{multiply_before_cast}",
 )
 def _allreduce_rmsnorm_fp8_kernel_2stage[
     mut: Bool,
     origin: Origin[mut=mut],
     LayoutType: TensorLayout,
     in_dtype: DType,
+    gamma_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
     scale_origin: MutOrigin,
@@ -328,15 +431,24 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
+    multiply_before_cast: Bool,
+    pdl_level: PDLLevel,
     OutputFnType: ImplicitlyCopyable
     & DevicePassable
     & RegisterPassable
     & def[width: SIMDLength](Int, Int, SIMD[out_dtype, width]) -> None,
+    *,
+    GammaEngine: TensorEngine,
+    ScaleBufferEngine: TensorEngine,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
-    gamma: TileTensor[in_dtype, LayoutType, origin],
+    gamma: TileTensor[gamma_dtype, LayoutType, origin, Engine=GammaEngine],
     scale_buffer: TileTensor[
-        mut=True, scales_dtype, ScaleLayoutType, scale_origin
+        mut=True,
+        scales_dtype,
+        ScaleLayoutType,
+        scale_origin,
+        Engine=ScaleBufferEngine,
     ],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -412,7 +524,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     comptime assert residual.T.flat_rank >= 2
     comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
-    comptime align = align_of[SIMD[in_dtype, simd_width]]()
+    comptime gamma_align = align_of[SIMD[gamma_dtype, simd_width]]()
+    _assert_gamma_dtype_supported[gamma_dtype, in_dtype]()
     # Fuse FP8 quantization only when the output dtype differs from the input.
     # When out_dtype == in_dtype the scratch carries the normalized value in
     # out_dtype (== in_dtype) and no scale section is reserved or written.
@@ -458,32 +571,32 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # +1 advances the Signal pointer by sizeof(Signal) bytes, stepping
     # past the Signal header to reach the scratch region of the buffer.
     var scratch_fp8 = (
-        rank_sigs[_my_rank].address_space_cast[.GENERIC]() + 1
-    ).bitcast[Scalar[out_dtype]]()
-    var scratch_scale = (scratch_fp8 + fp8_per_rank).bitcast[
+        rank_sigs[_my_rank].unsafe_offset(1).unsafe_bitcast[Scalar[out_dtype]]()
+    )
+    var scratch_scale = scratch_fp8.unsafe_offset(fp8_per_rank).unsafe_bitcast[
         Scalar[scales_dtype]
     ]()
-    var scratch_residual = (scratch_scale + scale_pad_elements).bitcast[
-        Scalar[in_dtype]
-    ]()
+    var scratch_residual = scratch_scale.unsafe_offset(
+        scale_pad_elements
+    ).unsafe_bitcast[Scalar[in_dtype]]()
 
     # P2P scratch pointers for all GPUs (for reads in Stage 2).
     # +1 advances by sizeof(Signal) bytes (see local scratch note above).
     comptime Fp8PtrType = MutPointer[Scalar[out_dtype], MutAnyOrigin]
     var fp8_ptrs = Array[_, ngpus](
         fill_with_unrolled=lambda [i: Int]() -> Fp8PtrType: (
-            rank_sigs[i].address_space_cast[.GENERIC]() + 1
-        ).bitcast[Scalar[out_dtype]]()
+            rank_sigs[i].unsafe_offset(1)
+        ).unsafe_bitcast[Scalar[out_dtype]]()
     )
 
     comptime ScalePtrType = MutPointer[Scalar[scales_dtype], MutAnyOrigin]
     var scale_ptrs = Array[_, ngpus](
         fill_with_unrolled=lambda [i: Int]() -> ScalePtrType: (
-            (rank_sigs[i].address_space_cast[.GENERIC]() + 1).bitcast[
-                Scalar[out_dtype]
-            ]()
-            + fp8_per_rank
-        ).bitcast[Scalar[scales_dtype]]()
+            rank_sigs[i]
+            .unsafe_offset(1)
+            .unsafe_bitcast[Scalar[out_dtype]]()
+            .unsafe_offset(fp8_per_rank)
+        ).unsafe_bitcast[Scalar[scales_dtype]]()
     )
     var residual_ptrs = Array[
         MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus
@@ -491,9 +604,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
     comptime if has_residual:
         comptime for i in range(ngpus):
-            residual_ptrs[i] = (scale_ptrs[i] + scale_pad_elements).bitcast[
-                Scalar[in_dtype]
-            ]()
+            residual_ptrs[i] = (
+                scale_ptrs[i].unsafe_offset(scale_pad_elements)
+            ).unsafe_bitcast[Scalar[in_dtype]]()
 
     # Round-robin P2P input pointers for NVLink load-balancing.
     comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
@@ -503,14 +616,20 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
         ]
     )
 
-    # Preload gamma weights into registers BEFORE start barrier.
-    # Gamma is local data — safe to load early, hides latency behind barrier.
+    # The predecessor writes the input peers P2P-read below and the residual,
+    # so wait before signalling the start barrier.
+    _pdl_wait[pdl_level]()
+
+    # Preload gamma weights into registers BEFORE the start barrier. Gamma is
+    # not guaranteed to be a checkpoint buffer: the graph can pass a computed
+    # value (for example a cast of the weight), so it is read only after the
+    # wait. Its latency hides behind the start barrier.
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(col_idx)).cast[
-                accum_type
-            ]()
+            gamma.load[width=simd_width, alignment=gamma_align](
+                (col_idx,)
+            ).cast[accum_type]()
             + _weight_offset.cast[accum_type]()
         )
 
@@ -533,8 +652,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 comptime for gpu_idx in range(ngpus):
                     accum += (
                         ptrs[gpu_idx]
-                        .address_space_cast[_target_address_space]()
-                        .load[
+                        .unsafe_address_space_cast[_target_address_space]()
+                        .unsafe_load[
                             width=simd_width,
                             alignment=simd_width,
                             invariant=True,
@@ -546,13 +665,13 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 comptime if has_residual:
                     accum += (
                         residual[]
-                        .load[width=simd_width](Coord(row, col_idx))
+                        .load[width=simd_width]((row, col_idx))
                         .cast[accum_type]()
                     )
                     var local_elem = local_row * _cols + col_idx
-                    scratch_residual.address_space_cast[
+                    scratch_residual.unsafe_address_space_cast[
                         _target_address_space
-                    ]().store[width=simd_width, alignment=simd_width](
+                    ]().unsafe_store[width=simd_width, alignment=simd_width](
                         local_elem, accum.cast[in_dtype]()
                     )
 
@@ -586,9 +705,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
                 # Write scale to local scratch.
                 if tid == 0:
-                    scratch_scale.address_space_cast[
+                    scratch_scale.unsafe_address_space_cast[
                         _target_address_space
-                    ]().store(local_row, scale_factor)
+                    ]().unsafe_store(local_row, scale_factor)
 
                 # Quantize and write fp8 to local scratch.
                 if is_valid:
@@ -596,9 +715,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                         normalized, scale_factor_recip
                     )
                     var local_elem = local_row * _cols + col_idx
-                    scratch_fp8.address_space_cast[
+                    scratch_fp8.unsafe_address_space_cast[
                         _target_address_space
-                    ]().store[width=simd_width, alignment=simd_width](
+                    ]().unsafe_store[width=simd_width, alignment=simd_width](
                         local_elem, output_fp8
                     )
             else:
@@ -606,10 +725,18 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 # local scratch. No scale is computed or written.
                 if is_valid:
                     var local_elem = local_row * _cols + col_idx
-                    scratch_fp8.address_space_cast[
+                    var out_vec: SIMD[out_dtype, simd_width]
+                    comptime if multiply_before_cast:
+                        out_vec = normalized.cast[out_dtype]()
+                    else:
+                        out_vec = (
+                            (accum * norm_factor).cast[in_dtype]()
+                            * gamma_vec.cast[in_dtype]()
+                        ).cast[out_dtype]()
+                    scratch_fp8.unsafe_address_space_cast[
                         _target_address_space
-                    ]().store[width=simd_width, alignment=simd_width](
-                        local_elem, normalized.cast[out_dtype]()
+                    ]().unsafe_store[width=simd_width, alignment=simd_width](
+                        local_elem, out_vec
                     )
 
     # Per-block barrier with fence: block B waits for block B on all GPUs.
@@ -636,8 +763,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
             if is_valid:
                 var out_val = (
                     fp8_ptrs[gpu]
-                    .address_space_cast[_target_address_space]()
-                    .load[
+                    .unsafe_address_space_cast[_target_address_space]()
+                    .unsafe_load[
                         width=simd_width,
                         alignment=simd_width,
                         invariant=True,
@@ -650,8 +777,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 if tid == 0:
                     scale_buffer[row] = (
                         scale_ptrs[gpu]
-                        .address_space_cast[_target_address_space]()
-                        .load[invariant=True](local_row)
+                        .unsafe_address_space_cast[_target_address_space]()
+                        .unsafe_load[invariant=True](local_row)
                     )
 
             # Read bf16 residual from gpu's scratch (compile-time gated).
@@ -659,21 +786,21 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 if is_valid:
                     var bf16_val = (
                         residual_ptrs[gpu]
-                        .address_space_cast[_target_address_space]()
-                        .load[
+                        .unsafe_address_space_cast[_target_address_space]()
+                        .unsafe_load[
                             width=simd_width,
                             alignment=simd_width,
                             invariant=True,
                         ](local_elem)
                     )
-                    residual_output[].store[width=simd_width](
-                        Coord(row, col_idx), bf16_val
-                    )
+                    residual_output[].store((row, col_idx), bf16_val)
 
     # No end barrier. Every block waited at the mid barrier for its peer
     # blocks to finish Stage 1, so all P2P reads of the inputs are done by
     # the time this kernel exits. Stage 2 only reads peer scratch inside
     # the Signal buffer, which the next collective's start barrier protects.
+
+    _pdl_release_at_end[pdl_level]()
 
 
 # --- Launcher ---
@@ -689,12 +816,14 @@ def _allreduce_rmsnorm_fp8_launch[
     ngpus: Int,
     threads_per_block: Int,
     has_residual: Bool = False,
+    multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     output: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
@@ -728,20 +857,21 @@ def _allreduce_rmsnorm_fp8_launch[
     var grid_dim = min(rows, max_blocks)
     var block_dim = threads_per_block
 
-    # Provide evidence that flat_rank >= 2 for output.store(Coord(..., ...)).
+    # Provide evidence that flat_rank >= 2 for output.store((..., ...)).
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
-        output.store[width=width](Coord(row, col), val)
+        output.store((row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         mut=gamma.mut,
         origin=gamma.origin,
         LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
+        gamma_dtype=gamma.dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
         scale_origin=scale_output.origin,
@@ -754,7 +884,11 @@ def _allreduce_rmsnorm_fp8_launch[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
         has_residual=has_residual,
+        multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
         OutputFnType=type_of(output_fn),
+        GammaEngine=gamma.Engine,
+        ScaleBufferEngine=scale_output.Engine,
     ]
     ctx.enqueue_function[kernel](
         src_ptrs,
@@ -772,6 +906,7 @@ def _allreduce_rmsnorm_fp8_launch[
         output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -783,12 +918,14 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     ngpus: Int,
     threads_per_block: Int,
     has_residual: Bool = False,
+    multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     output: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
@@ -865,41 +1002,34 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime if has_residual:
         _min_buf += _rows_per_rank * cols * size_of[in_dtype]()
     comptime if quantize:
-        assert _out_scratch % size_of[scales_dtype]() == 0, (
-            String("2-stage: output scratch (")
-            + String(_out_scratch)
-            + " B) must be a multiple of sizeof(scales_dtype) for scale pointer"
-            + " alignment; rank_sigs[i] must be >= "
-            + String(_min_buf)
-            + " bytes"
+        assert _out_scratch % size_of[scales_dtype]() == 0, String(
+            t"2-stage: output scratch ({_out_scratch} B) must be a"
+            t" multiple of sizeof(scales_dtype) for scale pointer"
+            t" alignment; rank_sigs[i] must be >= {_min_buf} bytes"
         )
     comptime if has_residual:
-        assert (_out_scratch + _scale_scratch) % simd_width == 0, (
-            String("2-stage: residual scratch offset (output=")
-            + String(_out_scratch)
-            + " B + scales_padded="
-            + String(_scale_scratch)
-            + " B = "
-            + String(_out_scratch + _scale_scratch)
-            + " B) must be a multiple of simd_width ("
-            + String(simd_width)
-            + " B) for SIMD residual stores"
+        assert (_out_scratch + _scale_scratch) % simd_width == 0, String(
+            t"2-stage: residual scratch offset (output={_out_scratch} B +"
+            t" scales_padded={_scale_scratch} B = "
+            t"{_out_scratch + _scale_scratch} B) must be a multiple of"
+            t" simd_width ({simd_width} B) for SIMD residual stores"
         )
 
-    # Provide evidence that flat_rank >= 2 for output.store(Coord(..., ...)).
+    # Provide evidence that flat_rank >= 2 for output.store((..., ...)).
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
     def output_fn[
         width: SIMDLength
     ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
-        output.store[width=width](Coord(row, col), val)
+        output.store((row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
         mut=gamma.mut,
         origin=gamma.origin,
         LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
+        gamma_dtype=gamma.dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
         scale_origin=scale_output.origin,
@@ -912,7 +1042,11 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
         has_residual=has_residual,
+        multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
         OutputFnType=type_of(output_fn),
+        GammaEngine=gamma.Engine,
+        ScaleBufferEngine=scale_output.Engine,
     ]
     ctx.enqueue_function[kernel](
         src_ptrs,
@@ -930,17 +1064,159 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
 # --- Split (2-kernel) path ---
 
 
-def _launch_split_allreduce_rmsnorm_fp8[
+@inline(.always)
+def _gamma_dtype_supported[gamma_dtype: DType, in_dtype: DType]() -> Bool:
+    """Whether the fused norm kernels can read a `gamma_dtype` gamma.
+
+    Gamma is the input dtype, or a bfloat16/float16 weight on a float32
+    input (Kimi K3's routed-expert norm): it widens exactly in registers,
+    so the norm's value is the one a float32 gamma gives.
+    """
+    return gamma_dtype == in_dtype or (
+        in_dtype == DType.float32
+        and gamma_dtype in (DType.bfloat16, DType.float16)
+    )
+
+
+@inline(.always)
+def _assert_gamma_dtype_supported[gamma_dtype: DType, in_dtype: DType]():
+    """Asserts that the fused norm kernels can read a `gamma_dtype` gamma.
+
+    `_gamma_dtype_supported` lists the dtype pairs that qualify.
+    """
+    comptime assert _gamma_dtype_supported[
+        gamma_dtype, in_dtype
+    ](), "gamma must be the input dtype, or a narrower float on float32 input"
+
+
+@inline(.always)
+def _gamma_as_input_dtype[
+    in_dtype: DType
+](gamma: TileTensor[...]) -> TileTensor[
+    in_dtype,
+    gamma.LayoutType,
+    gamma.origin,
+    Engine=gamma.Engine,
+    address_space=gamma.address_space,
+    linear_idx_type=gamma.linear_idx_type,
+]:
+    """Retypes a gamma known to be `in_dtype` for the paths that require it."""
+    comptime assert gamma.dtype == in_dtype, "gamma must be the input dtype"
+    return rebind[
+        TileTensor[
+            in_dtype,
+            gamma.LayoutType,
+            gamma.origin,
+            Engine=gamma.Engine,
+            address_space=gamma.address_space,
+            linear_idx_type=gamma.linear_idx_type,
+        ]
+    ](gamma)
+
+
+def _rms_norm_rows[
+    dtype: DType,
+    gamma_dtype: DType,
+    simd_width: Int,
+    threads_per_block: Int,
+    multiply_before_cast: Bool,
+](
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: ImmPointer[Scalar[gamma_dtype], ImmutAnyOrigin],
+    rows: Int,
+    cols: Int,
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+):
+    comptime accum_type = get_accum_type[dtype]()
+    comptime stride = threads_per_block * simd_width
+    var first_col = thread_idx.x * simd_width
+
+    for row in range(block_idx.x, rows, grid_dim.x):
+        var row_in = input.unsafe_offset(row * cols)
+        var thread_m2 = Scalar[accum_type](0)
+        for col in range(first_col, cols, stride):
+            var x = row_in.unsafe_load[width=simd_width](col).cast[accum_type]()
+            thread_m2 += (x * x).reduce_add()
+        var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
+            thread_m2
+        )
+        var norm_factor = rsqrt(
+            row_m2 / Scalar[accum_type](cols) + epsilon.cast[accum_type]()
+        )
+
+        var row_out = output.unsafe_offset(row * cols)
+        for col in range(first_col, cols, stride):
+            var x = row_in.unsafe_load[width=simd_width](col).cast[accum_type]()
+            var gamma_vec = (
+                gamma.unsafe_load[width=simd_width](col).cast[accum_type]()
+                + weight_offset.cast[accum_type]()
+            )
+            var y: SIMD[dtype, simd_width]
+            comptime if multiply_before_cast:
+                y = (x * norm_factor * gamma_vec).cast[dtype]()
+            else:
+                y = (x * norm_factor).cast[dtype]() * gamma_vec.cast[dtype]()
+            row_out.unsafe_store[width=simd_width](col, y)
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(threads_per_block)
+    )
+)
+@__name(
+    t"rms_norm_rows_{dtype}_{gamma_dtype}_{simd_width}_{multiply_before_cast}",
+)
+def _rms_norm_rows_kernel[
+    dtype: DType,
+    gamma_dtype: DType,
+    simd_width: Int,
+    threads_per_block: Int,
+    multiply_before_cast: Bool,
+](
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: ImmPointer[Scalar[gamma_dtype], ImmutAnyOrigin],
+    rows: Int32,
+    cols: Int32,
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+):
+    """RMSNorm over each row of a local `[rows, cols]` buffer, one block per
+    row, with the fused kernels' gamma and cast-order arithmetic. A
+    `gamma_dtype` narrower than `dtype` widens in registers."""
+    var _rows = Int(rows)
+    var _cols = Int(cols)
+    if _cols % simd_width == 0:
+        _rms_norm_rows[
+            dtype,
+            gamma_dtype,
+            simd_width,
+            threads_per_block,
+            multiply_before_cast,
+        ](output, input, gamma, _rows, _cols, epsilon, weight_offset)
+    else:
+        _rms_norm_rows[
+            dtype, gamma_dtype, 1, threads_per_block, multiply_before_cast
+        ](output, input, gamma, _rows, _cols, epsilon, weight_offset)
+
+
+def _launch_split_allreduce_rmsnorm[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
     ngpus: Int,
+    multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -952,15 +1228,19 @@ def _launch_split_allreduce_rmsnorm_fp8[
     scale_ub: Float32,
     scale_output_1d: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    my_rank: Int,
     ctx: DeviceContext,
     residual: TileTensor[mut=False, in_dtype, ...],
     residual_output: TileTensor[mut=True, in_dtype, ...],
 ) raises:
-    """Two-kernel fallback: allreduce+add epilogue, then rmsnorm+fp8.
+    """Two-kernel path: allreduce+add epilogue, then RMSNorm [+ FP8].
 
-    Faster than fused 2-stage for large with-residual payloads because
-    it avoids carrying bf16 residual data through scratch buffers.
+    Faster than fused 2-stage for large quantizing with-residual payloads
+    because it avoids carrying bf16 residual data through scratch buffers.
+    It is also the only path without P2P access: the allreduce then falls
+    back to staged copies, and the norm reads only local memory.
     """
+    comptime quantize = out_dtype != in_dtype
     # Construct TileTensor inputs for allreduce.
     comptime _TT = type_of(TileTensor(src_ptrs[0], row_major(rows, cols)))
     var input_buffers = Array[_, ngpus](
@@ -969,84 +1249,152 @@ def _launch_split_allreduce_rmsnorm_fp8[
         )
     )
 
-    var _cols = cols
+    var residual_2d = residual.reshape(row_major(rows, cols))
+    var residual_output_2d = residual_output.reshape(row_major(rows, cols))
 
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
-    @__copy_capture(residual_output, _cols)
     @inline(.always)
-    @__parameter
     def input_fn[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
-        var li = idx[0] * _cols + idx[1]
-        return residual_output.raw_load[width=width, alignment=width](li)
+        width: Int
+    ](coords: Coord) {var residual_output_2d} -> SIMD[in_dtype, width]:
+        return residual_output_2d.load[width=width, alignment=width](coords)
 
-    var shape = IndexList[2](rows, cols)
-    var scale_output_2d = TileTensor(
-        scale_output_1d._storage, row_major(rows, Idx[1])
-    )
+    var shape = (rows, cols)
+    var scale_output_2d = scale_output_1d.reshape(row_major(rows, Idx[1]))
 
-    # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
+    comptime norm_threads = 256
+    comptime norm_simd_width = simd_width_of[in_dtype, target=ctx.target]()
+    comptime NormKernel = _rms_norm_rows_kernel[
+        in_dtype, in_dtype, norm_simd_width, norm_threads, multiply_before_cast
+    ]
+
+    # Pre-compile the RMSNorm kernel before launching allreduce.
     # This avoids a deadlock where cuModuleLoadDataEx (JIT compilation)
     # blocks on the CUDA context while the allreduce kernel is waiting
     # at a multi-GPU barrier for other ranks to be enqueued.
-    rms_norm_fused_fp8[
-        in_dtype, out_dtype, scales_dtype, 2, input_fn, compile_only=True
-    ](
-        shape,
-        output_2d,
-        gamma,
-        epsilon,
-        weight_offset,
-        ctx,
-        scale_ub,
-        scale_output_2d,
-    )
+    comptime if quantize:
+        rms_norm_fused_fp8[
+            in_dtype,
+            out_dtype,
+            scales_dtype,
+            2,
+            compile_only=True,
+            pdl_level=pdl_level,
+        ](
+            input_fn,
+            shape,
+            output_2d,
+            gamma,
+            epsilon,
+            weight_offset,
+            ctx,
+            scale_ub,
+            scale_output_2d,
+        )
+    var norm_kernel = ctx.compile_function[NormKernel]()
 
     # Step 1: Allreduce with add epilogue → residual_output.
-    @__copy_capture(residual, residual_output, _cols)
     @inline(.always)
-    @__parameter
     def add_epilogue[
         _dtype: DType,
         _width: SIMDLength,
         *,
-        _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
-        var il = coord_to_index_list(coords)
-        var flat_idx = il[0] * _cols + il[1]
-        var res = residual.raw_load[width=_width, alignment=_alignment](
-            flat_idx
-        )
+        alignment: Int,
+    ](coords: Coord, val: SIMD[_dtype, length=_width]) {
+        var residual_2d, var residual_output_2d
+    } -> None:
+        var rc = Coord(Int(coords[0]), Int(coords[1]))
+        var res = residual_2d.load[width=_width, alignment=alignment](rc)
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.
         var sum_f32 = (
             val.cast[.float32]()
             + rebind[SIMD[_dtype, _width]](res).cast[.float32]()
         )
-        residual_output.raw_store[width=_width, alignment=_alignment](
-            flat_idx,
-            rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]()),
+        residual_output_2d.store[alignment=alignment](
+            rc, rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]())
         )
 
-    allreduce[ngpus=ngpus, output_lambda=add_epilogue](
-        input_buffers, residual_output.layout, rank_sigs, ctx
+    allreduce[ngpus=ngpus, pdl_level=pdl_level](
+        input_buffers,
+        residual_output.layout,
+        add_epilogue,
+        rank_sigs,
+        ctx,
+        my_rank=my_rank,
     )
 
-    # Step 2: Fused RMSNorm + FP8 on residual_output (kernel already compiled).
-    rms_norm_fused_fp8[in_dtype, out_dtype, scales_dtype, 2, input_fn](
-        shape,
-        output_2d,
-        gamma,
-        epsilon,
-        weight_offset,
-        ctx,
-        scale_ub,
-        scale_output_2d,
-    )
+    # Step 2: RMSNorm [+ FP8] on residual_output (kernel already compiled).
+    comptime if quantize:
+        rms_norm_fused_fp8[
+            in_dtype, out_dtype, scales_dtype, 2, pdl_level=pdl_level
+        ](
+            input_fn,
+            shape,
+            output_2d,
+            gamma,
+            epsilon,
+            weight_offset,
+            ctx,
+            scale_ub,
+            scale_output_2d,
+        )
+    else:
+        ctx.enqueue_function(
+            norm_kernel,
+            rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](output_2d.ptr),
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                residual_output.ptr
+            ),
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](gamma.ptr),
+            Int32(rows),
+            Int32(cols),
+            epsilon,
+            weight_offset,
+            grid_dim=min(rows, MAX_NUM_BLOCKS_UPPER_BOUND),
+            block_dim=norm_threads,
+        )
 
 
 # --- Dispatch ---
+
+
+def _2stage_scratch_bytes[
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    ngpus: Int,
+    has_residual: Bool,
+](rows: Int, cols: Int) -> Int:
+    """Returns the scratch the 2-stage kernel stages through after each
+    `Signal` header (see `_allreduce_rmsnorm_fp8_launch_2stage`)."""
+    var rows_per_rank = ceildiv(rows, ngpus)
+    var num_bytes = rows_per_rank * cols * size_of[out_dtype]()
+    comptime if out_dtype != in_dtype:
+        # The scale section is padded to the SIMD width; 32 B covers any width.
+        num_bytes += align_up(rows_per_rank * size_of[scales_dtype](), 32)
+    comptime if has_residual:
+        num_bytes += rows_per_rank * cols * size_of[in_dtype]()
+    return num_bytes
+
+
+def _fused_kernel_tiles_cols[
+    in_dtype: DType
+](cols: Int, ctx: DeviceContext) -> Bool:
+    """Whether the fused kernels' warp-tiling dispatch can handle `cols`.
+
+    Depends on shape only, so every rank agrees; `_dispatch_ar_norm` uses it
+    to route untileable widths to the two-launch fallback.
+    """
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime sw1 = simd_width_of[in_dtype, target=ctx.target]()
+    comptime sw2 = sw1 * 2
+    return cols <= (warp_size * sw1 * max_warps_per_block) or (
+        cols <= (warp_size * sw2 * max_warps_per_block) and cols % sw2 == 0
+    )
 
 
 def _dispatch_fused_kernel[
@@ -1055,17 +1403,21 @@ def _dispatch_fused_kernel[
     scales_dtype: DType,
     ngpus: Int,
     has_residual: Bool = False,
+    multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     output_2d: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output_1d: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    my_rank: Int,
+    scratch_bytes: Int,
     ctx: DeviceContext,
     residual: _ComptimeConditionalTileTensor[
         in_dtype, engaged=has_residual, ...
@@ -1088,26 +1440,79 @@ def _dispatch_fused_kernel[
 
     Centralizes the dispatch logic shared by allreduce_rmsnorm and
     allreduce_residual_rmsnorm. Selects simd width based on column count
-    and 1-stage vs 2-stage based on payload size.
+    and Lamport, 1-stage, or 2-stage based on payload size. Paths that
+    stage through more than `scratch_bytes` after each `Signal` header fall
+    back to the 1-stage kernel.
     """
+    # The kernels and the split path always wait for the predecessor, so the
+    # no-wait level would silently mean the opposite of its name. Checked
+    # before any fallback return so every path rejects it.
+    comptime assert (
+        pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ), "pdl_level must be OFF, ON or OVERLAP_AT_BEGINNING"
+
     # A step that skips speculative drafting hands every rank a zero-row
     # batch, and a zero grid is rejected by `enqueue_function`. Every rank
     # sees the same `rows`, so skipping the barrier pair strands no peer.
     if rows == 0:
         return
 
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+    # Every fused kernel reads its peers' inputs directly. Without P2P the
+    # plain allreduce falls back to staged copies, so reduce with it and
+    # normalize separately, as the unfused graph would.
+    comptime if has_residual:
+        if not is_p2p_enabled():
+            _launch_split_allreduce_rmsnorm[
+                in_dtype,
+                out_dtype,
+                scales_dtype,
+                ngpus,
+                multiply_before_cast,
+                pdl_level,
+            ](
+                rows,
+                cols,
+                src_ptrs,
+                output_2d,
+                _gamma_as_input_dtype[in_dtype](gamma),
+                epsilon,
+                weight_offset,
+                scale_ub,
+                scale_output_1d,
+                rank_sigs,
+                my_rank,
+                ctx,
+                residual[],
+                residual_output[],
+            )
+            return
+
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
     comptime base_simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime sw1 = base_simd_width
     comptime sw2 = base_simd_width * 2
 
     # Fuse FP8 quantization only when the output dtype differs from the input.
-    # The split (2-kernel) path is FP8-only: it relies on the compact FP8
-    # all-gather and on `rms_norm_fused_fp8`'s `compile_only` JIT-deadlock
-    # guard, neither of which has a non-quant analog. So when not quantizing
-    # the dispatch only ever picks the 1-stage or 2-stage fused kernels.
+    # With P2P the split (2-kernel) path is picked only when quantizing: its
+    # crossover is measured against the compact FP8 all-gather. So when not
+    # quantizing the dispatch picks the Lamport, 1-stage, or 2-stage kernels.
     comptime quantize = out_dtype != in_dtype
+    comptime gamma_dtype = gamma.dtype
+    # Only the 1- and 2-stage kernels widen a narrower gamma in registers;
+    # the Lamport and split paths require gamma in `in_dtype`.
+    _assert_gamma_dtype_supported[gamma_dtype, in_dtype]()
+    comptime assert gamma_dtype == in_dtype or not has_residual, (
+        "a gamma dtype different from the input is supported only without"
+        " a residual"
+    )
+    comptime assert multiply_before_cast or not quantize, (
+        "the FP8 epilogue applies gamma before the cast, so"
+        " multiply_before_cast=False is supported without quantization only"
+    )
 
     # Use 2-stage (reduce-scatter + fused all-gather) for large payloads.
     # Threshold is per-rank payload: each GPU processes ceildiv(rows, ngpus)
@@ -1119,7 +1524,56 @@ def _dispatch_fused_kernel[
     #   1 = force 1-stage for all sizes
     #   2 = force 2-stage for all sizes
     #   3 = force split (2-kernel) path for all sizes (residual only)
+    #   4 = force the Lamport kernel (no-quant only; the shape must fit it)
     comptime force_stage = get_defined_int["FORCE_ALLREDUCE_STAGE", 0]()
+
+    # Latency-bound payloads take the barrier-free Lamport kernel wherever the
+    # plain allreduce's tuning table routes the same byte count to Lamport.
+    # That kernel has no FP8 epilogue, so quantizing calls stay on 1-stage,
+    # and its sentinel exists only for 16- and 32-bit floats.
+    comptime lamport_dtype = in_dtype in (
+        DType.bfloat16,
+        DType.float16,
+        DType.float32,
+    )
+    comptime if (
+        not quantize
+        and lamport_dtype
+        and gamma_dtype == in_dtype
+        and (force_stage == 0 or force_stage == 4)
+    ):
+        comptime sm_version = get_sm_version()
+        var use_lamport = force_stage == 4 or (
+            dispatch_select_comm_config[
+                ngpus, sm_version, allreduce_tuning_table
+            ](rows * cols * size_of[in_dtype]()).algorithm
+            == AllReduceAlgorithm.LAMPORT
+            and lamport_allreduce_rmsnorm_fits[in_dtype, ngpus](rows, cols)
+        )
+        if use_lamport:
+            comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+            _lamport_allreduce_rmsnorm_launch[
+                in_dtype,
+                ngpus,
+                has_residual=has_residual,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                my_rank,
+                src_ptrs[my_rank],
+                rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
+                    output_2d.ptr
+                ),
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](gamma.ptr),
+                rank_sigs,
+                rows,
+                cols,
+                Scalar[in_dtype](epsilon),
+                weight_offset,
+                ctx,
+                residual,
+                residual_output,
+            )
+            return
 
     # Per-rank byte thresholds for switching to 2-stage allreduce.
     # Derived from empirical sweep data (bf16, per-rank crossover points):
@@ -1244,6 +1698,26 @@ def _dispatch_fused_kernel[
             else:
                 use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
+            # The 2-stage kernel and the split path's allreduce stage through
+            # the scratch after each Signal header. The 1-stage kernel reads
+            # peers directly, so it is the fallback when the scratch is short.
+            if (
+                use_2stage
+                and _2stage_scratch_bytes[
+                    in_dtype, out_dtype, scales_dtype, ngpus, has_residual
+                ](rows, cols)
+                > scratch_bytes
+            ):
+                use_2stage = False
+            # Matches the plain allreduce's 32-element partitioning.
+            var split_scratch = (
+                ceildiv(ceildiv(rows * cols, 32), ngpus)
+                * 32
+                * size_of[in_dtype]()
+            )
+            if use_split and split_scratch > scratch_bytes:
+                use_split = False
+
     def launch_1stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch[
             sw,
@@ -1253,6 +1727,8 @@ def _dispatch_fused_kernel[
             ngpus,
             threads_per_block,
             has_residual=has_residual,
+            multiply_before_cast=multiply_before_cast,
+            pdl_level=pdl_level,
         ](
             rows,
             cols,
@@ -1264,7 +1740,7 @@ def _dispatch_fused_kernel[
             scale_ub,
             scale_output_1d,
             rank_sigs,
-            Int(ctx.id()),
+            my_rank,
             ctx,
             residual,
             residual_output,
@@ -1279,6 +1755,8 @@ def _dispatch_fused_kernel[
             ngpus,
             threads_per_block,
             has_residual=has_residual,
+            multiply_before_cast=multiply_before_cast,
+            pdl_level=pdl_level,
         ](
             rows,
             cols,
@@ -1290,7 +1768,7 @@ def _dispatch_fused_kernel[
             scale_ub,
             scale_output_1d,
             rank_sigs,
-            Int(ctx.id()),
+            my_rank,
             ctx,
             residual,
             residual_output,
@@ -1298,22 +1776,28 @@ def _dispatch_fused_kernel[
 
     if use_split:
         # use_split is only ever set when has_residual and quantize, and the
-        # comptime guard keeps the FP8-only split launcher from being
-        # instantiated for the non-quant case.
+        # comptime guard keeps the split launcher out of the other
+        # instantiations.
         comptime if has_residual and quantize:
-            _launch_split_allreduce_rmsnorm_fp8[
-                in_dtype, out_dtype, scales_dtype, ngpus
+            _launch_split_allreduce_rmsnorm[
+                in_dtype,
+                out_dtype,
+                scales_dtype,
+                ngpus,
+                multiply_before_cast,
+                pdl_level,
             ](
                 rows,
                 cols,
                 src_ptrs,
                 output_2d,
-                gamma,
+                _gamma_as_input_dtype[in_dtype](gamma),
                 epsilon,
                 weight_offset,
                 scale_ub,
                 scale_output_1d,
                 rank_sigs,
+                my_rank,
                 ctx,
                 residual[],
                 residual_output[],
@@ -1322,25 +1806,23 @@ def _dispatch_fused_kernel[
 
     # Warp-tiling: each thread handles simd_width elements. Wider simd for
     # larger column counts.
-    if cols <= (WARP_SIZE * sw1 * max_warps_per_block):
+    if not _fused_kernel_tiles_cols[in_dtype](cols, ctx):
+        comptime max_cols = warp_size * sw2 * max_warps_per_block
+        raise Error(
+            String(
+                t"allreduce_rmsnorm: cols ({cols}) exceeds max supported ("
+                t"{max_cols}) for warp-tiling kernel"
+            )
+        )
+    if cols <= (warp_size * sw1 * max_warps_per_block):
         if use_2stage:
             launch_2stage[sw1]()
         else:
             launch_1stage[sw1]()
-    elif cols <= (WARP_SIZE * sw2 * max_warps_per_block) and cols % sw2 == 0:
-        if use_2stage:
-            launch_2stage[sw2]()
-        else:
-            launch_1stage[sw2]()
+    elif use_2stage:
+        launch_2stage[sw2]()
     else:
-        comptime max_cols = WARP_SIZE * sw2 * max_warps_per_block
-        raise Error(
-            "allreduce_rmsnorm: cols ("
-            + String(cols)
-            + ") exceeds max supported ("
-            + String(max_cols)
-            + ") for warp-tiling kernel"
-        )
+        launch_1stage[sw2]()
 
 
 # --- Public API ---
@@ -1353,17 +1835,27 @@ def allreduce_rmsnorm[
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
+    in_engine: TensorEngine,
     //,
+    multiply_before_cast: Bool = True,
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    ),
 ](
-    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
+    input_buffers: Array[
+        TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
     output: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    my_rank: Optional[Int] = None,
+    scratch_bytes: Optional[Int] = None,
 ) raises:
     """Fused allreduce + RMSNorm with optional FP8 quantization.
 
@@ -1383,11 +1875,26 @@ def allreduce_rmsnorm[
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
+        multiply_before_cast: Matches `ops.rms_norm`. True applies gamma in
+            float32 before the single cast to the output dtype; False casts
+            the normalized value to `in_dtype` first and applies gamma in
+            `in_dtype`. False requires `out_dtype == in_dtype`.
+        pdl_level: Programmatic dependent launch level. The fused kernels
+            wait for their predecessor before they signal their peers, and
+            release the next kernel after the barrier that retires the peers'
+            reads (`ON`) or right after the wait (`OVERLAP_AT_BEGINNING`). On
+            the split path the allreduce always releases the norm at its exit,
+            and only the norm honors `OVERLAP_AT_BEGINNING`. That level
+            requires the next kernel not to write this kernel's inputs before
+            its own PDL wait, because peers may still be reading them. The
+            Lamport branch always uses PDL.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
         output: Output buffer (FP8 values when quantizing, else `in_dtype`).
-        gamma: RMSNorm gamma weights (1D TileTensor of length cols).
+        gamma: RMSNorm gamma weights (1D TileTensor of length cols), in
+            `in_dtype` or, on a float32 input, bfloat16/float16 (widened
+            exactly in registers).
         epsilon: RMSNorm epsilon for numerical stability.
         weight_offset: Additive offset for gamma weights.
         scale_ub: Upper bound for FP8 scale clamping (ignored when not
@@ -1396,6 +1903,12 @@ def allreduce_rmsnorm[
             written, when not quantizing).
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
+        my_rank: This GPU's index in `input_buffers` and `rank_sigs`.
+            Defaults to `ctx.device().id`, which is right only when device
+            ordinals match list positions.
+        scratch_bytes: Bytes after each `Signal` header that kernels may
+            stage through. Paths that need more take the 1-stage kernel.
+            None means the caller sized it for every path.
 
     Note:
         Both kernels finish all P2P reads of the input buffers before they
@@ -1427,6 +1940,12 @@ def allreduce_rmsnorm[
     if not is_p2p_enabled():
         raise Error("allreduce_rmsnorm requires P2P access between GPUs")
 
+    var rank = my_rank.or_else(Int(ctx.device().id))
+    if not 0 <= rank < ngpus:
+        raise Error(
+            t"allreduce_rmsnorm: my_rank ({rank}) must be in [0, {ngpus})"
+        )
+
     # Compute rows/cols from TileTensor dims.
     var in_num_elems = input_buffers[0].num_elements()
     comptime last_dim_idx = in_layout.rank - 1
@@ -1438,22 +1957,21 @@ def allreduce_rmsnorm[
     var src_ptrs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> PtrType: rebind[
             ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
-        ](input_buffers[i]._storage)
+        ](input_buffers[i].ptr)
     )
 
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
-    var output_2d = TileTensor(
-        rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(rows, cols),
-    )
-    var scale_output_1d = TileTensor(
-        rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
-            scale_output._storage
-        ),
-        row_major(rows),
-    )
+    var output_2d = output.reshape(row_major(rows, cols))
+    var scale_output_1d = scale_output.reshape(row_major(rows))
 
-    _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
+    _dispatch_fused_kernel[
+        in_dtype,
+        out_dtype,
+        scales_dtype,
+        ngpus,
+        multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
+    ](
         rows,
         cols,
         src_ptrs,
@@ -1464,8 +1982,130 @@ def allreduce_rmsnorm[
         scale_ub,
         scale_output_1d,
         rank_sigs,
+        rank,
+        scratch_bytes.or_else(Int.MAX),
         ctx,
     )
+
+
+# Cols the fuse threshold was measured at (MI355, 8 GPUs, bf16); a different
+# width maps the byte threshold to a different row count, so recalibrate
+# before trusting the crossover there.
+comptime AR_NORM_CALIBRATED_COLS = 3584
+
+# `[rows, cols]` bf16 bytes at/below which `_dispatch_ar_norm` fuses: the
+# measured MI355 8-GPU crossover at 3584 cols, where the fused kernel wins
+# through 512 rows and loses from 768. A perf cut, not correctness -- above
+# it the fabric-saturated plain allreduce beats the norm-in-epilogue, so the
+# dispatch hands off to a standalone allreduce + norm.
+comptime AR_NORM_FUSE_THRESHOLD = (
+    512 * AR_NORM_CALIBRATED_COLS * size_of[DType.bfloat16]()
+)
+
+
+def _dispatch_ar_norm[
+    in_dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    in_engine: TensorEngine,
+    TwoLaunchFnType: def() raises -> None,
+    //,
+    multiply_before_cast: Bool = True,
+](
+    input_buffers: Array[
+        TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
+    normed_out: TileTensor[mut=True, in_dtype, ...],
+    sum_out: TileTensor[mut=True, in_dtype, ...],
+    gamma: TileTensor[...],
+    epsilon: Float32,
+    weight_offset: Scalar[in_dtype],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    ctx: DeviceContext,
+    two_launch: TwoLaunchFnType,
+    my_rank: Optional[Int] = None,
+    scratch_bytes: Optional[Int] = None,
+) raises:
+    """Runtime-select the fused allreduce+norm vs a two-launch fallback.
+
+    On AMD, fuses while the full `[rows, cols]` payload fits
+    `AR_NORM_FUSE_THRESHOLD`; above it, hand off to `two_launch` (a
+    standalone allreduce into `sum_out` followed by a separate norm),
+    caller-supplied so `comm` stays free of `nn`. Elsewhere only the
+    payloads `allreduce_rmsnorm` sends to its Lamport kernel fuse, since the
+    other fused kernels are not calibrated there. A host without P2P access
+    always takes `two_launch`: the fused kernels read their peers' inputs
+    directly, while the plain allreduce falls back to staged copies.
+
+    Widths the fused kernels cannot warp-tile also take `two_launch`. The
+    gate reads only `rows` and `cols`, which are identical on every rank
+    (an allreduce needs same-shaped operands): the two arms issue different
+    barriers on shared `rank_sigs`, so a per-rank disagreement would
+    deadlock. `sum_out` is written by `two_launch` only.
+    """
+    # The threshold is a byte count calibrated on bf16. A float32 call moves
+    # the same bytes for half the rows, so the same cut keeps it fused only
+    # where a bf16 call of equal traffic was measured to win.
+    comptime assert in_dtype in (
+        DType.bfloat16,
+        DType.float32,
+    ), "_dispatch_ar_norm supports bf16 or float32 in/out only"
+
+    # The fused kernels read their peers' inputs directly; without P2P the
+    # plain allreduce falls back to staged copies, so run the two-launch
+    # fallback instead of the fused arm's hard P2P requirement.
+    # `is_p2p_enabled` is a process-wide property, so every rank takes the
+    # same arm.
+    if not is_p2p_enabled():
+        two_launch()
+        return
+
+    var payload_bytes = input_buffers[0].num_elements() * size_of[in_dtype]()
+    comptime last_dim_idx = in_layout.rank - 1
+    var cols = Int(input_buffers[0].dim[last_dim_idx]())
+    var fuse: Bool
+    comptime if ctx.target.is_amd_gpu():
+        fuse = payload_bytes <= AR_NORM_FUSE_THRESHOLD and (
+            _fused_kernel_tiles_cols[in_dtype](cols, ctx)
+        )
+    else:
+        # Off AMD only the latency-bound payloads fuse, the ones
+        # `allreduce_rmsnorm` sends to its Lamport kernel: there one launch
+        # saves the separate norm launch outright. The 1- and 2-stage fused
+        # kernels are not calibrated against the plain allreduce here, and a
+        # gamma narrower than the input only reaches those, so a mismatched
+        # gamma keeps the two-launch chain.
+        comptime sm_version = get_sm_version()
+        comptime lamport_reads_gamma = gamma.dtype == in_dtype
+        var rows = input_buffers[0].num_elements() // cols
+        fuse = (
+            dispatch_select_comm_config[
+                ngpus, sm_version, allreduce_tuning_table
+            ](payload_bytes).algorithm
+            == AllReduceAlgorithm.LAMPORT
+            and lamport_reads_gamma
+            and lamport_allreduce_rmsnorm_fits[in_dtype, ngpus](rows, cols)
+        )
+    if fuse:
+        # in == out dtype, so the kernel skips its FP8 epilogue and never
+        # touches the scale operand; `sum_out` (unwritten on this arm)
+        # doubles as the dummy.
+        allreduce_rmsnorm[multiply_before_cast=multiply_before_cast](
+            input_buffers,
+            normed_out,
+            gamma,
+            epsilon,
+            weight_offset,
+            Float32(0.0),
+            sum_out,
+            rank_sigs,
+            ctx,
+            my_rank=my_rank,
+            scratch_bytes=scratch_bytes,
+        )
+    else:
+        two_launch()
 
 
 def allreduce_residual_rmsnorm[
@@ -1475,9 +2115,13 @@ def allreduce_residual_rmsnorm[
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
+    in_engine: TensorEngine,
     //,
+    multiply_before_cast: Bool = True,
 ](
-    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
+    input_buffers: Array[
+        TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
     residual: TileTensor[mut=False, in_dtype, ...],
     output: TileTensor[mut=True, out_dtype, ...],
     residual_output: TileTensor[mut=True, in_dtype, ...],
@@ -1488,6 +2132,8 @@ def allreduce_residual_rmsnorm[
     scale_output: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    my_rank: Optional[Int] = None,
+    scratch_bytes: Optional[Int] = None,
 ) raises:
     """Fused allreduce + residual add + RMSNorm with optional FP8 quantization.
 
@@ -1496,7 +2142,8 @@ def allreduce_residual_rmsnorm[
     kernel. When `out_dtype == in_dtype` the quantization is skipped: the
     normalized value is written directly in the input dtype and `scale_ub` and
     `scale_output` are ignored (the per-row scale is neither computed nor
-    written).
+    written). Without P2P access it runs the plain allreduce, which stages
+    peer inputs through copies, followed by a separate RMSNorm kernel.
 
     Parameters:
         in_dtype: Input data type (e.g. bfloat16).
@@ -1507,6 +2154,10 @@ def allreduce_residual_rmsnorm[
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
+        multiply_before_cast: Matches `ops.rms_norm`. True applies gamma in
+            float32 before the single cast to the output dtype; False casts
+            the normalized value to `in_dtype` first and applies gamma in
+            `in_dtype`. False requires `out_dtype == in_dtype`.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
@@ -1522,6 +2173,12 @@ def allreduce_residual_rmsnorm[
             written, when not quantizing).
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
+        my_rank: This GPU's index in `input_buffers` and `rank_sigs`.
+            Defaults to `ctx.device().id`, which is right only when device
+            ordinals match list positions.
+        scratch_bytes: Bytes after each `Signal` header that kernels may
+            stage through. Paths that need more take the 1-stage kernel.
+            None means the caller sized it for every path.
     """
     comptime assert (
         in_dtype.is_floating_point()
@@ -1531,9 +2188,11 @@ def allreduce_residual_rmsnorm[
         " in_dtype (skip quantization)"
     )
 
-    if not is_p2p_enabled():
+    var rank = my_rank.or_else(Int(ctx.device().id))
+    if not 0 <= rank < ngpus:
         raise Error(
-            "allreduce_residual_rmsnorm requires P2P access between GPUs"
+            t"allreduce_residual_rmsnorm: my_rank ({rank}) must be in [0,"
+            t" {ngpus})"
         )
 
     # Compute rows/cols from TileTensor dims. The internal dispatch flattens
@@ -1548,33 +2207,33 @@ def allreduce_residual_rmsnorm[
     var src_ptrs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> PtrType: rebind[
             ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
-        ](input_buffers[i]._storage)
+        ](input_buffers[i].ptr)
     )
 
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
-    var output_2d = TileTensor(
-        rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(rows, cols),
+    var output_2d = output.reshape(row_major(rows, cols))
+    var residual_2d = (
+        residual.as_imm().as_unsafe_any_origin().reshape(row_major(rows, cols))
     )
-    var residual_2d = TileTensor(
-        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](residual._storage),
-        row_major(rows, cols),
+    var residual_output_2d = residual_output.as_unsafe_any_origin().reshape(
+        row_major(rows, cols)
     )
-    var residual_output_2d = TileTensor(
-        rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
-            residual_output._storage
-        ),
-        row_major(rows, cols),
-    )
-    var scale_output_1d = TileTensor(
-        rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
-            scale_output._storage
-        ),
-        row_major(rows),
-    )
+    var scale_output_1d = scale_output.reshape(row_major(rows))
 
+    # PDL is verified on 2 GPUs only; 4/8-GPU runs stay OFF until someone
+    # measures them. The fused kernels wait for their predecessor before they
+    # signal their peers, and release the next kernel right after that wait.
+    comptime pdl_level = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    )
     _dispatch_fused_kernel[
-        in_dtype, out_dtype, scales_dtype, ngpus, has_residual=True
+        in_dtype,
+        out_dtype,
+        scales_dtype,
+        ngpus,
+        has_residual=True,
+        multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
     ](
         rows,
         cols,
@@ -1586,6 +2245,8 @@ def allreduce_residual_rmsnorm[
         scale_ub,
         scale_output_1d,
         rank_sigs,
+        rank,
+        scratch_bytes.or_else(Int.MAX),
         ctx,
         residual_2d,
         residual_output_2d,

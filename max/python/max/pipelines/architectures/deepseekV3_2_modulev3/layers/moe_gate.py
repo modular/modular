@@ -14,12 +14,10 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.functional_kernels import (
-    moe_router_group_limited,
-)
-from max.experimental.tensor import Tensor
+from max.nn.kernels import moe_router_group_limited
+from max.tensor import Tensor
 
 from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter
 
@@ -52,4 +50,7 @@ class DeepseekV3_2TopKRouter(DeepseekV3TopKRouter):
             self.norm_topk_prob,
             self.routed_scaling_factor,
         )
-        return topk_idx, topk_weight
+        return (
+            topk_idx.rebind_mapping(scores.mapping),
+            topk_weight.rebind_mapping(scores.mapping),
+        )

@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 from linalg.transpose import (
     _simplify_transpose_perms,
     transpose,
     transpose_inplace,
 )
-
-from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_transpose_4x4_tiletensor
@@ -390,8 +388,8 @@ def test_transpose_si64_tiletensor() raises:
 # CHECK-LABEL: test_simplify_perm
 def test_simplify_perm():
     print("== test_simplify_perm")
-    var perm = IndexList[4](0, 2, 3, 1)
-    var shape = IndexList[4](8, 3, 200, 200)
+    var perm: Array[Int, 4] = [0, 2, 3, 1]
+    var shape: Array[Int, 4] = [8, 3, 200, 200]
     var rank = 4
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0, 2, 1
@@ -402,8 +400,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = IndexList[4](0, 2, 3, 1)
-    shape = IndexList[4](1, 3, 200, 200)
+    perm = [0, 2, 3, 1]
+    shape = [1, 3, 200, 200]
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 1, 0
     print(perm)
@@ -413,8 +411,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = IndexList[4](0, 2, 1, 3)
-    shape = IndexList[4](8, 3, 200, 200)
+    perm = [0, 2, 1, 3]
+    shape = [8, 3, 200, 200]
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0, 2, 1, 3
     print(perm)
@@ -424,8 +422,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = IndexList[4](0, 2, 1, 3)
-    shape = IndexList[4](1, 3, 200, 200)
+    perm = [0, 2, 1, 3]
+    shape = [1, 3, 200, 200]
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 1, 0, 2
     print(perm)
@@ -435,8 +433,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = IndexList[4](2, 1, 0, 3)
-    shape = IndexList[4](1, 3, 200, 200)
+    perm = [2, 1, 0, 3]
+    shape = [1, 3, 200, 200]
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 1, 0, 2
     print(perm)
@@ -446,8 +444,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = IndexList[4](3, 2, 1, 0)
-    shape = IndexList[4](1, 3, 200, 200)
+    perm = [3, 2, 1, 0]
+    shape = [1, 3, 200, 200]
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 2, 1, 0
     print(perm)
@@ -457,8 +455,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = IndexList[4](0, 2, 1, 3)
-    shape = IndexList[4](1, 3, 1, 200)
+    perm = [0, 2, 1, 3]
+    shape = [1, 3, 1, 200]
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0
     print(perm)
@@ -468,8 +466,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 4
-    perm = IndexList[4](0, 3, 1, 2)
-    shape = IndexList[4](9, 1, 2, 3)
+    perm = [0, 3, 1, 2]
+    shape = [9, 1, 2, 3]
     _simplify_transpose_perms[4](rank, shape, perm)
     # CHECK: 0, 2, 1
     print(perm)
@@ -479,8 +477,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 2
-    var perm2 = IndexList[2](0, 1)
-    var shape2 = IndexList[2](20, 30)
+    var perm2: Array[Int, 2] = [0, 1]
+    var shape2: Array[Int, 2] = [20, 30]
     _simplify_transpose_perms[2](rank, shape2, perm2)
     # CHECK: 0
     print(perm2)
@@ -490,8 +488,8 @@ def test_simplify_perm():
     print(rank)
 
     rank = 2
-    perm2 = IndexList[2](1, 0)
-    shape2 = IndexList[2](20, 30)
+    perm2 = [1, 0]
+    shape2 = [20, 30]
     _simplify_transpose_perms[2](rank, shape2, perm2)
     # CHECK: 1, 0
     print(perm2)
@@ -501,14 +499,25 @@ def test_simplify_perm():
     print(rank)
 
     rank = 2
-    perm2 = IndexList[2](1, 0)
-    shape2 = IndexList[2](20, 1)
+    perm2 = [1, 0]
+    shape2 = [20, 1]
     _simplify_transpose_perms[2](rank, shape2, perm2)
-    # CHECK: 0
+    # CHECK: [0, 0]
     print(perm2)
-    # CHECK: 20
+    # CHECK-NEXT: [20, 0]
     print(shape2)
-    # CHECK: 1
+    # CHECK-NEXT: 1
+    print(rank)
+
+    rank = 3
+    var perm3: Array[Int, 3] = [2, 0, 1]
+    var shape3: Array[Int, 3] = [4, 5, 1]
+    _simplify_transpose_perms[3](rank, shape3, perm3)
+    # CHECK: [0, 0, 0]
+    print(perm3)
+    # CHECK-NEXT: [20, 0, 0]
+    print(shape3)
+    # CHECK-NEXT: 1
     print(rank)
 
 

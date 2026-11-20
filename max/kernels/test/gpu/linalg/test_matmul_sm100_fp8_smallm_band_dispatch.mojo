@@ -153,7 +153,7 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     assert_almost_equal(
         c_host._storage, c_ref_host._storage, m * N, atol=0.01, rtol=0.01
     )
-    print("=== PASS FP8 (N=", N, ", K=", K, ", m=", m, ") ===")
+    print(t"=== PASS FP8 (N= {N} , K= {K} , m= {m} ) ===")
 
     _ = a_device^
     _ = b_device^
@@ -217,7 +217,7 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     assert_almost_equal(
         c_host._storage, c_ref_host._storage, m * N, atol=0.01, rtol=0.01
     )
-    print("=== PASS BF16 (N=", N, ", K=", K, ", m=", m, ") ===")
+    print(t"=== PASS BF16 (N= {N} , K= {K} , m= {m} ) ===")
 
     _ = a_device^
     _ = b_device^

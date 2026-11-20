@@ -53,13 +53,8 @@ def _test_pull[
 
     if DeviceContext.number_of_devices() < ngpus:
         print(
-            "Skipping scatter ngpus=",
-            ngpus,
-            " DP=",
-            dp_size,
-            ": need",
-            ngpus,
-            "GPUs",
+            t"Skipping scatter ngpus= {ngpus}  DP= {dp_size} : need"
+            t" {ngpus} GPUs"
         )
         return
 
@@ -69,7 +64,7 @@ def _test_pull[
         if len(expected[dp]) > max_chunk_size:
             max_chunk_size = len(expected[dp])
 
-    var ctxs = List[DeviceContext]()
+    var ctxs = List[DeviceContext[]]()
     for i in range(ngpus):
         ctxs.append(DeviceContext(device_id=i))
 
@@ -77,9 +72,11 @@ def _test_pull[
     var input_devbufs = List[DeviceBuffer[dtype]]()
     var host_buf = ctxs[0].enqueue_create_host_buffer[dtype](max_chunk_size)
 
-    comptime InputTileType = TileTensor[
-        dtype, type_of(row_major(Int(0))), ImmutAnyOrigin
-    ]
+    comptime InputTileType = type_of(
+        TileTensor(input_devbufs[0], row_major(Int(0)))
+        .as_unsafe_any_origin()
+        .as_imm()
+    )
     var tt_input_bufs = Array[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
@@ -89,7 +86,9 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(n)).as_imm()
+        tt_input_bufs[dp] = (
+            TileTensor(dev_buf, row_major(n)).as_unsafe_any_origin().as_imm()
+        )
         input_devbufs.append(dev_buf)
 
     # Output buffers on each GPU (sized to its replica's chunk).
@@ -153,12 +152,8 @@ def _test_pull[
                     expected[replica][j],
                 )
     print(
-        "PASS: scatter ngpus=",
-        ngpus,
-        ", DP=",
-        dp_size,
-        ", max_elems=",
-        max_chunk_size,
+        t"PASS: scatter ngpus= {ngpus} , DP= {dp_size} , max_elems="
+        t" {max_chunk_size}"
     )
 
     _ = signal_bufs^

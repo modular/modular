@@ -30,10 +30,9 @@ from conftest import (
     VISION_POOLING_KERNEL_SIZE,
     TorchGemma4VisionPooler,
 )
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.pipelines.architectures.gemma4.vision_model.pooling import (
     avg_pool_by_positions,
@@ -42,6 +41,7 @@ from max.pipelines.architectures.gemma4.vision_model.pooling import (
 from max.pipelines.architectures.gemma4_modulev3.vision_model.pooling import (
     Gemma4VisionPooler,
 )
+from max.tensor import default_dtype
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16

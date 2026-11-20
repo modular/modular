@@ -13,84 +13,45 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-"""End-to-end pattern matching: literals, tuples, structs, Optional, EnumLike,
+"""End-to-end pattern matching: literals, tuples, structs, Optional, enums,
 and comptime match."""
 
 from std.collections import List, Optional
-from std.utils import Variant
 from std.os import abort
 
 
-@fieldwise_init
-struct _Eof(TrivialRegisterPassable):
-    pass
+__enum Token(ImplicitlyCopyable):
+    """A tiny lexer token for pattern matching."""
 
-
-# FIXME: Adopt "enum" syntax when it is implemented in the future.
-struct Token(Copyable, Deinitable, EnumLike, Movable):
-    """A tiny lexer token with EnumLike cases for pattern matching."""
-
-    # Should all be synthesized by the compiler.
-    comptime _enum_case_names = ParameterList.of[
-        "eof".value, "identifier".value, "integer".value
-    ].values
-    comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, String, Int
-    ].values
-    var _value: Variant[_Eof, String, Int]
-
-    def __init__(out self, *, eof: NoneType):
-        self._value = Variant[_Eof, String, Int](_Eof())
-
-    def __init__(out self, *, var identifier: String):
-        self._value = Variant[_Eof, String, Int](identifier^)
-
-    def __init__(out self, *, integer: Int):
-        self._value = Variant[_Eof, String, Int](integer)
-
-    @staticmethod
-    def eof() -> Self:
-        return Self(eof=None)
-
-    @staticmethod
-    def identifier(var name: String) -> Self:
-        return Self(identifier=name^)
-
-    @staticmethod
-    def integer(value: Int) -> Self:
-        return Self(integer=value)
-
-    def _get_enum_discriminant(self) -> Int:
-        if self._value.isa[_Eof]():
-            return 0
-        if self._value.isa[String]():
-            return 1
-        return 2
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
-        id
-    ]:
-        comptime assert id != 0, "eof has no payload"
-        comptime if id == 1:
-            return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
-                Pointer(to=self._value.unsafe_get[String]()).unsafe_origin_cast[
-                    origin_of(self)
-                ]()[]
-            )
-        else:
-            return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
-                Pointer(to=self._value.unsafe_get[Int]()).unsafe_origin_cast[
-                    origin_of(self)
-                ]()[]
-            )
+    case eof
+    case identifier(String)
+    case integer(Int)
 
 
 @fieldwise_init
-struct Point(Copyable, ImplicitlyCopyable, Movable):
+struct Point(ImplicitlyCopyable):
     var x: Int
     var y: Int
+
+
+struct LinearPayload(Movable):
+    var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+    def take(deinit self) -> Int:
+        return self.value
+
+
+struct NonMovablePayload(Deinitable, not Movable):
+    var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+    def take(deinit self) -> Int:
+        return self.value
 
 
 # ===----------------------------------------------------------------------=== #
@@ -104,6 +65,60 @@ def describe_optional(opt: Optional[Int]) -> String:
             return String("some:", value)
         case .None:
             return "none"
+
+
+def make_optional_linear_payload() -> Optional[LinearPayload]:
+    return LinearPayload(42)
+
+
+def take_optional_linear_payload() -> Int:
+    match make_optional_linear_payload():
+        case .Some(var payload):
+            return payload^.take()
+        case .None:
+            abort("unreachable")
+
+
+def make_optional_non_movable_payload() -> Optional[NonMovablePayload]:
+    return Optional[NonMovablePayload](
+        init_with=lambda () -> NonMovablePayload: NonMovablePayload(99)
+    )
+
+
+def take_optional_non_movable_payload() -> Int:
+    match make_optional_non_movable_payload():
+        case .Some(var payload):
+            return payload^.take()
+        case .None:
+            abort("unreachable")
+
+
+def describe_guard_optional(opt: Optional[Int]) -> String:
+    __guard case .Some(value) = opt else:
+        return "none"
+    return String("some:", value)
+
+
+def make_linear_payload_pair() -> Tuple[LinearPayload, LinearPayload]:
+    return (LinearPayload(17), LinearPayload(25))
+
+
+def take_tuple_linear_payload() -> Int:
+    match make_linear_payload_pair():
+        case (var payload, _):
+            return payload^.take()
+
+
+def take_destructured_linear_payload_pair() -> Int:
+    var (first, second) = make_linear_payload_pair()
+    return first^.take() + second^.take()
+
+
+def take_transferred_linear_payload_pair() -> Int:
+    var first = LinearPayload(31)
+    var second = LinearPayload(41)
+    var (left, right) = (first^, second^)
+    return left^.take() + right^.take()
 
 
 def describe_token(tok: Token) -> String:
@@ -275,6 +290,18 @@ def classify_if_case_nested(value: Optional[Point]) -> String:
         return "other"
 
 
+def take_if_case_optional_linear_payload() -> Int:
+    if case .Some(var payload) = make_optional_linear_payload():
+        return payload^.take()
+    else:
+        abort("unreachable")
+
+
+def take_if_case_tuple_linear_payload() -> Int:
+    if case (var payload, _) = make_linear_payload_pair():
+        return payload^.take()
+
+
 def classify_while_case(var pair: Tuple[Int, Int]) -> String:
     var result = String("miss")
     while case ((0, value) | (value, 1)) as matched = pair:
@@ -332,6 +359,23 @@ def classify_comptime_as[x: Int]() -> String:
             return "other"
 
 
+def classify_comptime_guard[pair: Tuple[Int, Int]]() -> String:
+    comptime __guard case (0, value) = pair else:
+        return "miss"
+    return String("hit:", value)
+
+
+def comptime_guard_does_not_fall_through[condition: Bool]():
+    comptime __guard case True = condition else:
+        return
+    comptime assert False, "shouldn't get instantiated"
+
+
+def comptime_guard_does_not_enter_else[condition: Bool]():
+    comptime __guard case True = condition else:
+        comptime assert False, "shouldn't happen"
+
+
 # ===----------------------------------------------------------------------=== #
 # Tests
 # ===----------------------------------------------------------------------=== #
@@ -361,13 +405,34 @@ def test_optional():
             # CHECK: tag-none
             print("tag-none")
 
+    # CHECK: moved-linear: 42
+    print("moved-linear:", take_optional_linear_payload())
+    # CHECK: moved-non-movable: 99
+    print("moved-non-movable:", take_optional_non_movable_payload())
+    # CHECK: moved-tuple-linear: 17
+    print("moved-tuple-linear:", take_tuple_linear_payload())
+    # CHECK: destructured-tuple-linear: 42
+    print("destructured-tuple-linear:", take_destructured_linear_payload_pair())
+    # CHECK: transferred-tuple-linear: 72
+    print("transferred-tuple-linear:", take_transferred_linear_payload_pair())
+
+
+def test_guard():
+    # CHECK-LABEL: == test_guard
+    print("== test_guard")
+
+    # CHECK: some:42
+    print(describe_guard_optional(Optional(42)))
+    # CHECK: none
+    print(describe_guard_optional(Optional[Int](None)))
+
 
 def test_enum_like_token():
     # CHECK-LABEL: == test_enum_like_token
     print("== test_enum_like_token")
 
     # CHECK: eof
-    print(describe_token(Token.eof()))
+    print(describe_token(Token.eof))
     # CHECK: id:main
     print(describe_token(Token.identifier("main")))
     # CHECK: int:99
@@ -546,6 +611,11 @@ def test_if_case():
     # CHECK: other
     print(classify_if_case_nested(Optional(Point(3, 4))))
 
+    # CHECK: if-case-moved-linear: 42
+    print("if-case-moved-linear:", take_if_case_optional_linear_payload())
+    # CHECK: if-case-moved-tuple-linear: 17
+    print("if-case-moved-tuple-linear:", take_if_case_tuple_linear_payload())
+
 
 def test_while_case():
     # CHECK-LABEL: == test_while_case
@@ -607,9 +677,20 @@ def test_comptime_match():
     # CHECK: other
     print(classify_comptime_as[3]())
 
+    # Guard bindings remain available to the continuation selected by the
+    # compile-time condition.
+    # CHECK: hit:5
+    print(classify_comptime_guard[(0, 5)]())
+    # CHECK: miss
+    print(classify_comptime_guard[(4, 4)]())
+
+    comptime_guard_does_not_fall_through[False]()
+    comptime_guard_does_not_enter_else[True]()
+
 
 def main():
     test_optional()
+    test_guard()
     test_enum_like_token()
     test_literals_guards_or()
     test_tuples_and_structs()

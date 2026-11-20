@@ -16,13 +16,15 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.comm.ep.ep_kernels import fused_silu
-from max.nn.kernels import moe_create_indices, moe_finalize
-from max.nn.moe import MoEQuantized, NvMxf4f8Strategy
+from max.nn._graph_ops import moe_create_indices, moe_finalize
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._graph_ops.moe_quant import NvMxf4f8Strategy
+from max.nn.legacy.moe import MoEQuantized
 
 
 class DeepseekV3_2MoE(MoEQuantized):
     """DeepSeek V3 uses the nn module MoE layer.
+
     This class implements changes needed for V3.2.
 
     DeepSeek modified MoE datatypes for V3 to V3.2 upgrade.

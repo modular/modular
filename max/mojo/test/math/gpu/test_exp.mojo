@@ -42,13 +42,13 @@ def run_elementwise[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
 
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, exp(in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx))
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):

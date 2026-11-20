@@ -26,7 +26,7 @@ import torch  # type: ignore[import-not-found]
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import RMSNorm
+from max.nn.legacy import RMSNorm
 
 from testbed.dtypes import DTYPE_MAP
 from testbed.harness import CompiledLayerBundle, LayerTestHarness
@@ -58,10 +58,12 @@ class RMSNormHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the RMSNorm harness."""
         return RMSNormStaticParams
 
     @staticmethod
     def dynamic_params_type() -> type:
+        """Returns the per-shape parameters type for the RMSNorm harness."""
         return RMSNormDynamicParams
 
     def __init__(
@@ -76,9 +78,11 @@ class RMSNormHarness(
 
     @property
     def name(self) -> str:
+        """Returns the registered harness name, ``rms_norm``."""
         return "rms_norm"
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the RMSNorm graph and its weight registry."""
         p = self.static_params
         max_dtype, _ = DTYPE_MAP[p.dtype]
 
@@ -99,6 +103,7 @@ class RMSNormHarness(
         return graph, layer.state_dict()
 
     def build_and_compile(self) -> CompiledLayerBundle:
+        """Compiles the RMSNorm graph through the runner's session."""
         graph, weights_registry = self.build_graph()
         compiled = self.session.load(graph, weights_registry=weights_registry)
 
@@ -113,6 +118,7 @@ class RMSNormHarness(
         bundle: CompiledLayerBundle,
         dynamic_params: RMSNormDynamicParams,
     ) -> tuple[list[Buffer], None]:
+        """Builds one random input buffer for the given shape."""
         p = self.static_params
         _, torch_dtype = DTYPE_MAP[p.dtype]
 
@@ -125,9 +131,10 @@ class RMSNormHarness(
     def cleanup_inputs(
         self, bundle: CompiledLayerBundle, context: None
     ) -> None:
-        pass  # No resources to clean up for RMSNorm.
+        """Releases nothing; RMSNorm allocates no per-shape resources."""
 
     def cuda_graph_eligible(self, dynamic_params: RMSNormDynamicParams) -> bool:
+        """Returns ``True`` because the shape does not change the graph."""
         # RMSNorm is always eligible for CUDA graphs.
         return True
 
@@ -148,4 +155,5 @@ class RMSNormHarness(
         dynamic_params: RMSNormDynamicParams,
         device: str = "cuda",
     ) -> list[torch.Tensor]:
+        """Wraps the MAX input buffer as a torch tensor on the target device."""
         return [torch.from_dlpack(execute_args[0]).to(device=device)]

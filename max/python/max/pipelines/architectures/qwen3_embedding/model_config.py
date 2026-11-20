@@ -10,15 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen3Embedding configuration."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar
 
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.graph.quantization import QuantizationEncoding
+from max.graph.weights import WeightData
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
+    ModelOutputConfig,
 )
-from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self
 
@@ -37,7 +48,54 @@ class Qwen3EmbeddingConfig(ArchConfig):
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
 
+    embedding_quantization: QuantizationEncoding | None = None
+    """The checkpoint's token-embedding encoding, when quantized (GGUF),
+    which :meth:`finalize` reads."""
+
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """The checkpoint's config."""
+        config = self.pipeline_config.model.huggingface_config
+        assert config is not None
+        return config
+
+    @property
+    def dtype(self) -> DType:
+        """The model's dtype, from the resolved quantization encoding."""
+        return supported_encoding_dtype(
+            _select_quantization_encoding(
+                self.pipeline_config.model, self.DEFAULT_ENCODING
+            )
+        )
+
+    @property
+    def devices(self) -> list[DeviceRef]:
+        """The devices the model runs on."""
+        return [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in self.pipeline_config.model.device_specs
+        ]
+
+    @property
+    def pool_embeddings(self) -> bool:
+        """Whether the model returns pooled, normalized embeddings."""
+        return self.pipeline_config.model.pool_embeddings
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> None:
+        """Records the token embedding's encoding from the checkpoint."""
+        del huggingface_config, outputs
+        embed_weight = state_dict.get("embed_tokens.weight")
+        self.embedding_quantization = (
+            embed_weight.quantization_encoding if embed_weight else None
+        )
+
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -46,6 +104,7 @@ class Qwen3EmbeddingConfig(ArchConfig):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The configured ``max_length``, bounded by the checkpoint's."""
         # The configured max_length, bounded by max_position_embeddings.
         model_max = getattr(
             huggingface_config, "max_position_embeddings", 32768
@@ -68,4 +127,5 @@ class Qwen3EmbeddingConfig(ArchConfig):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         return cls(pipeline_config=pipeline_config, max_seq_len=max_seq_len)

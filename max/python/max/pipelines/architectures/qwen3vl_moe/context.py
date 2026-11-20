@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3-VL-MoE interleaved text, image and video context."""
 
 from dataclasses import dataclass
 

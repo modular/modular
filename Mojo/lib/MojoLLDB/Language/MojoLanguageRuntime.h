@@ -75,9 +75,7 @@ public:
     return retPlanSp;
   }
 
-  bool IsAllowedRuntimeValue(lldb_private::ConstString name) override {
-    return false;
-  }
+  bool IsAllowedRuntimeValue(llvm::StringRef name) override { return false; }
 
   bool
   GetDynamicTypeAndAddress(lldb_private::ValueObject &in_value,

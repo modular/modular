@@ -40,7 +40,7 @@ Access is warp-collective: `tcgen05.ld` and `tcgen05.st` take a collective
 base in the address and place each thread's registers relative to it, so a
 TMEM operand is always a base, never `base + lane`, and its layout says which
 cells this thread's registers hold. Two views exist. The row view of a warp's
-`(32, N)` tile is its row 0 (`tile.tile[1, N](coord[0, 0])`): the
+`(32, N)` tile is its row 0 (`tile[:1, :]`): the
 `32x32b` shape hands thread `t` lane `base + t`, so the copy means "these
 columns of the lane this thread owns". The `16x256b` view of a `(16, N)` half
 of that tile, `tmem_16x256b(block)`, has layout `TMem16x256bLayout[N]`, a
@@ -65,7 +65,7 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 
 from layout import Coord, CoordLike, Idx, TensorLayout, coord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from max.gpu import lane_id
 from layout.tile_tensor import TileTensor
 from layout.tensor_engine import (
@@ -98,10 +98,6 @@ lane."""
 def _grid_index(addr: UInt32) -> UInt32:
     """Returns the cell `addr` encodes as a flat lane-first index on the
     grid, `col * TMEM_NUM_LANES + lane`.
-
-    The index is 32-bit like the address, so view offsets cost the same
-    32-bit adds and shifts as the hand-written address arithmetic they
-    replace.
     """
     var lane = addr >> _LANE_SHIFT
     var col = addr & ((1 << _LANE_SHIFT) - 1)
@@ -142,7 +138,7 @@ cells."""
 comptime _FRAGMENT_LANE_PAIR_STRIDE = 8
 """Lanes between the two rows of a thread's `16x256b` fragment."""
 
-comptime TMem16x256bLayout[num_cols: Int] = TileLayout(
+comptime TMem16x256bLayout[num_cols: Int] = Layout(
     shape=Coord(coord[2, 2], Idx[num_cols // _FRAGMENT_COLS_PER_REPEAT]),
     stride=Coord(
         coord[TMEM_NUM_LANES, _FRAGMENT_LANE_PAIR_STRIDE],
@@ -162,7 +158,7 @@ Parameters:
 """
 
 
-comptime TMem16x256bRegisters[num_cols: Int] = TileLayout(
+comptime TMem16x256bRegisters[num_cols: Int] = Layout(
     shape=Coord(coord[2, 2], Idx[num_cols // _FRAGMENT_COLS_PER_REPEAT]),
     stride=Coord(coord[1, 2], Idx[4]),
 )
@@ -194,7 +190,7 @@ struct TMemAccessShape(EnumLike, Equatable, TrivialRegisterPassable):
         "BLOCK_16X256B".value,
     ].values
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -545,14 +541,14 @@ struct TMemEngine(TensorEngine):
         Returns:
             A handle at the cell `offset` positions after `storage`'s.
         """
-        # Sum the components at address width; a view hands over a folded
-        # `ComptimeInt` part and a runtime part, and both fit in 32 bits.
-        var grid_offset = UInt32(0)
+        # Encoding is additive while no lane sum reaches `TMEM_NUM_LANES`,
+        # which holds for non-negative components of a cell on the grid, so
+        # each component is encoded on its own: a folded `ComptimeInt` part
+        # becomes a constant, and the address is never decoded.
+        var addr = storage.addr
         comptime for i in range(offset_coord.flat_rank):
-            grid_offset += UInt32(Int(offset_coord[i].value()))
-        return type_of(storage)(
-            _encode(_grid_index(storage.addr) + grid_offset)
-        )
+            addr += _encode(UInt32(Int(offset_coord[i])))
+        return type_of(storage)(addr)
 
     @staticmethod
     def _check_copy[
@@ -1098,7 +1094,7 @@ def tmem_16x256b(
 
     Args:
         block: A `(16, N)` block of a warp's `(32, N)` TMEM tile, such as
-            `warp_tile.tile[16, N](coord[half, 0])`.
+            `warp_tile[Idx[16 * half] : Idx[16 * (half + 1)], :]`.
 
     Returns:
         The fragment view over the block's storage.

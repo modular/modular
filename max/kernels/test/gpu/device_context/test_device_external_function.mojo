@@ -16,7 +16,7 @@ from max.gpu.host import (
     DeviceContext,
 )
 from max.gpu.host import DeviceGraph, DeviceGraphBuilder
-from max.gpu.host.device_context import DeviceExternalFunction
+from max.gpu.host import DeviceExternalFunction
 from std.os import getenv
 from std.testing import assert_equal
 
@@ -30,9 +30,9 @@ def test_external_cubin_vec_add(ctx: DeviceContext) raises:
     var external_func = DeviceExternalFunction(
         ctx,
         function_name="vec_add",  # matches extern "C" name
-        # DeviceExternalFunction takes a StringSlice, which is probably wrong.
+        # DeviceExternalFunction takes a StringSpan, which is probably wrong.
         # The cubin is [very, very likely] invalid UTF8.
-        asm=String(StringSlice(unsafe_from_utf8=cubin_data)),
+        asm=String(StringSpan(unsafe_from_utf8=cubin_data)),
     )
 
     comptime length = 1024
@@ -74,9 +74,9 @@ def test_external_cubin_vec_add_graph(ctx: DeviceContext) raises:
     var external_func = DeviceExternalFunction(
         ctx,
         function_name="vec_add",  # matches extern "C" name
-        # DeviceExternalFunction takes a StringSlice, which is probably wrong.
+        # DeviceExternalFunction takes a StringSpan, which is probably wrong.
         # The cubin is [very, very likely] invalid UTF8.
-        asm=String(StringSlice(unsafe_from_utf8=cubin_data)),
+        asm=String(StringSpan(unsafe_from_utf8=cubin_data)),
     )
 
     comptime length = 1024

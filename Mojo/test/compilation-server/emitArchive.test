@@ -16,7 +16,6 @@
         "relocModel": 1,
         "debugInfoLanguage": 1,
         "saveTempsPrefix": "",
-        "searchPaths": "",
         "enableLLVMPerFunctionSplitting": true,
         "enableParallelLLC": true
     },

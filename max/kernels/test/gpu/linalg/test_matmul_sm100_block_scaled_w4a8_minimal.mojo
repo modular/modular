@@ -25,13 +25,17 @@ from w4a8_block_scaled_matmul_harness import run_w4a8_block_scaled_matmul
 def main() raises:
     with DeviceContext() as ctx:
         run_w4a8_block_scaled_matmul[
-            N=1024, K=1152, mma_n=128, cta_group=1, cluster_shape=(1, 1, 1)
+            N=1024,
+            K=1152,
+            mma_n=128,
+            cta_group=1,
+            cluster_shape=(Int(1), Int(1), Int(1)),
         ](ctx, 1000)
         run_w4a8_block_scaled_matmul[
             N=1024,
             K=1152,
             mma_n=128,
             cta_group=1,
-            cluster_shape=(1, 1, 1),
+            cluster_shape=(Int(1), Int(1), Int(1)),
             realistic_data=True,
         ](ctx, 1000)

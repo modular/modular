@@ -89,9 +89,8 @@ struct DefaultMatmulOps(EnumLike, ScheduleOps):
     comptime LOAD_FRAG = Self(2)
     comptime COMPUTE = Self(3)
 
-    # Op tags are open-ended Ints (`OpDesc.tag` interchange): schedules can
-    # carry tags this struct does not name, so the enum is not exhaustive
-    # and unknown tags map to discriminant -1 (never a valid case index).
+    # Op tags are open-ended Ints (`OpDesc.tag` interchange), so the enum is
+    # not exhaustive. An unknown tag maps past the case indices.
     comptime _enum_is_exhaustive = False
 
     comptime _enum_case_names = ParameterList.of[
@@ -105,7 +104,7 @@ struct DefaultMatmulOps(EnumLike, ScheduleOps):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -126,7 +125,7 @@ struct DefaultMatmulOps(EnumLike, ScheduleOps):
             case Self.SCHED_GROUP_BARRIER.value:
                 return 6
             case _:
-                return -1
+                return self.value + ParameterList[Self._enum_case_names].length
 
     @inline(.always)
     def _unsafe_get_enum_payload[

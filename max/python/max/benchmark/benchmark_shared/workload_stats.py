@@ -30,7 +30,7 @@ locally and never sent, and a session ends at the first turn whose context
 would exceed the tokenizer's context limit.
 
 The stats describe the sampled workload, not any single run of it:
-``--warmup-to-steady-state`` later drops unpicked candidate sessions and
+``--warmup-multiturn`` later drops unpicked candidate sessions and
 gives the picked ones warm-up prefix turns, so a run with it on sends fewer
 requests than these stats report.
 """
@@ -40,6 +40,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
@@ -54,7 +55,8 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SampledRequest,
     Samples,
 )
-from pydantic import BaseModel
+from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import BaseModel, Field
 from transformers.tokenization_utils_base import VERY_LARGE_INTEGER
 
 WORKLOAD_STATS_SCHEMA_VERSION = 1
@@ -131,6 +133,27 @@ class Distribution(BaseModel):
         )
 
 
+class EngineState(BaseModel):
+    """Engine behavior measured while a real run served the workload.
+
+    Unlike the rest of the stats, these figures depend on the engine and on
+    the load the run drove, so a dry run has none. Each is None when the run
+    could not measure it.
+    """
+
+    # Share of input tokens the engine served from its prefix cache.
+    cache_hit_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Mean rows per decode batch, as production's decode batch-size mean.
+    decode_batch_size_mean: float | None = Field(default=None, ge=0.0)
+    # The load the run drove; both figures above move with it.
+    max_concurrency: int | None = Field(default=None, ge=1)
+    # The engine that served the run, when it is one production is cut by.
+    # Both figures mean different things on different engines.
+    engine: Literal["max", "mach"] | None = None
+    # Requests that failed; the figures leave them out.
+    failed_requests: int = Field(default=0, ge=0)
+
+
 class WorkloadStats(BaseModel):
     """What a workload would send, in the terms production is measured in."""
 
@@ -144,12 +167,18 @@ class WorkloadStats(BaseModel):
     input_len_first_turn: Distribution | None
     input_len_later_turn: Distribution | None
     output_len: Distribution | None
+    # Defaulted so stats written before the turn split still load.
+    output_len_first_turn: Distribution | None = None
+    output_len_later_turn: Distribution | None = None
     tool_request_fraction: float | None
     # Over requests that send tools, as production's tools-per-request
     # histogram only records those.
     tools_per_request: Distribution | None
     image_request_fraction: float | None
     constrained_request_fraction: float | None
+    # Defaulted so a dry run, and stats written before a run was measured,
+    # still load.
+    engine_state: EngineState | None = None
 
     @property
     def dropped_turn_fraction(self) -> float | None:
@@ -173,6 +202,15 @@ def _prompt_has_image(prompt: str | list[ChatMessage]) -> bool:
     )
 
 
+def _constrains_output(response_format: ResponseFormat | None) -> bool:
+    # A "text" format leaves the output free, and MAX Serve's structured
+    # output counter, which production's share is read from, skips it.
+    return response_format is not None and response_format["type"] in (
+        "json_object",
+        "json_schema",
+    )
+
+
 def _single_turn_request(
     request: SampledRequest, run_prefix_len: int
 ) -> WorkloadRequest:
@@ -181,7 +219,7 @@ def _single_turn_request(
         output_len=request.output_len,
         first_turn=not _prompt_has_assistant(request.prompt_formatted),
         num_tools=len(request.tools or []),
-        constrained=request.response_format is not None,
+        constrained=_constrains_output(request.response_format),
         carries_image=bool(request.encoded_images)
         or _prompt_has_image(request.prompt_formatted),
     )
@@ -246,7 +284,7 @@ def _chat_session_requests(
                     output_len=output_len,
                     first_turn=idx == 0,
                     num_tools=len(user.tools or []),
-                    constrained=user.response_format is not None,
+                    constrained=_constrains_output(user.response_format),
                     carries_image=image_seen,
                 )
             )
@@ -342,6 +380,20 @@ def compute_workload_stats(
         output_len=Distribution.of(
             [r.output_len for r in requests if r.output_len is not None]
         ),
+        output_len_first_turn=Distribution.of(
+            [
+                r.output_len
+                for r in requests
+                if r.first_turn and r.output_len is not None
+            ]
+        ),
+        output_len_later_turn=Distribution.of(
+            [
+                r.output_len
+                for r in requests
+                if not r.first_turn and r.output_len is not None
+            ]
+        ),
         tool_request_fraction=_fraction([r.num_tools > 0 for r in requests]),
         tools_per_request=Distribution.of(
             [r.num_tools for r in requests if r.num_tools > 0]
@@ -356,3 +408,8 @@ def compute_workload_stats(
 def write_workload_stats(stats: WorkloadStats, path: str | Path) -> None:
     """Writes ``stats`` as JSON to ``path``."""
     Path(path).write_text(stats.model_dump_json(indent=2) + "\n")
+
+
+def write_engine_state(state: EngineState, path: str | Path) -> None:
+    """Writes ``state`` as JSON to ``path``."""
+    Path(path).write_text(state.model_dump_json(indent=2) + "\n")

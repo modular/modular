@@ -110,10 +110,15 @@ static void patchStore(POP::StoreOp store, ArrayRef<SelfReference> refs) {
   Value bytes = POP::PointerBitcastOp::create(b, loc, byteType, dest);
 
   for (const SelfReference &ref : refs) {
+    auto indexTy = KGEN::SIMDType::getScalarIndexType(b.getContext());
     Value target = POP::OffsetOp::create(
-        b, loc, bytes, mlir::index::ConstantOp::create(b, loc, ref.target));
+        b, loc, bytes,
+        KGEN::ParamConstantOp::create(
+            b, loc, KGEN::SIMDAttr::get(uint64_t(ref.target), indexTy)));
     Value slot = POP::OffsetOp::create(
-        b, loc, bytes, mlir::index::ConstantOp::create(b, loc, ref.offset));
+        b, loc, bytes,
+        KGEN::ParamConstantOp::create(
+            b, loc, KGEN::SIMDAttr::get(uint64_t(ref.offset), indexTy)));
     Value slotAsPtr =
         POP::PointerBitcastOp::create(b, loc, PointerType::get(byteType), slot);
     POP::StoreOp::create(b, loc, target, slotAsPtr);

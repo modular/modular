@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
 from smoke_tests.smoke_test import MODEL_RECIPES
@@ -38,6 +39,11 @@ def test_hf_repos_for_model_includes_draft_model() -> None:
     )
     assert "meta-llama/Llama-3.1-8B-Instruct" in repos
     assert "atomicapple0/EAGLE-LLaMA3.1-Instruct-8B" in repos
+
+
+def test_hf_repos_for_model_includes_variant_repos() -> None:
+    repos = smoke_test.hf_repos_for_model("google/gemma-4-31B-it__pp_mtp")
+    assert repos == ["google/gemma-4-31B-it", "google/gemma-4-31B-it-assistant"]
 
 
 def test_hf_repos_for_model_prefers_recipe_casing() -> None:
@@ -385,3 +391,44 @@ def test_merge_serve_extra_args_does_not_mutate_input() -> None:
     snapshot = list(args)
     smoke_test.merge_serve_extra_args(args, "--kv-connector-config=tiered.json")
     assert args == snapshot
+
+
+@pytest.mark.parametrize("framework", ["max", "max-ci"])
+def test_flint_smoke_uses_explicit_recipe(
+    monkeypatch: MonkeyPatch, framework: str
+) -> None:
+    monkeypatch.setattr(
+        smoke_test, "_inside_bazel", lambda: framework == "max-ci"
+    )
+    model = "RecursiveSI/flint"
+    cmd, _ = smoke_test.get_server_cmd(
+        framework, model, gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--prefer-module-v3" in cmd
+    recipe_path = cmd[cmd.index("--config-file") + 1]
+    assert recipe_path == MODEL_RECIPES[model]
+
+
+@pytest.mark.parametrize("framework", ["max", "max-ci"])
+def test_lfm3_smoke_uses_architecture_defaults(
+    monkeypatch: MonkeyPatch, framework: str
+) -> None:
+    monkeypatch.setattr(
+        smoke_test, "_inside_bazel", lambda: framework == "max-ci"
+    )
+    cmd, _ = smoke_test.get_server_cmd(
+        framework, "LiquidAI/LFM3-1.7B", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert cmd[cmd.index("--model") + 1] == "LiquidAI/LFM3-1.7B"
+    assert "--config-file" not in cmd
+    assert not {
+        "--max-length",
+        "--max-batch-size",
+        "--max-batch-input-tokens",
+        "--device-graph-capture",
+        "--no-device-graph-capture",
+        "--enable-overlap-scheduler",
+        "--no-enable-overlap-scheduler",
+    }.intersection(cmd)

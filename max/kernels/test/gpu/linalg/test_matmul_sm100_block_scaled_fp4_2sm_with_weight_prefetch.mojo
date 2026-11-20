@@ -13,10 +13,10 @@
 #
 # Test: block-scaled FP4 matmul (sm100, 2SM) with weight prefetching.
 #
-# Mirrors test_matmul_sm100_block_scaled_fp4_2sm.mojo with prefetch_tiles_n=2
-# added to BlockScaledMatmulConfig.  All tile shapes (bn in [64, 128]), both
-# swapAB variants, and all 8 cluster shapes from the reference test are
-# exercised.  NVFP4 scaling only (2SM MXFP4 is not exercised here).
+# Exercises the 2SM FP4 config with prefetch_tiles_n=2 added to
+# BlockScaledMatmulConfig.  All tile shapes (bn in [64, 128]), both
+# swapAB variants, and all 8 cluster shapes are exercised.  NVFP4 scaling
+# only (2SM MXFP4 is not exercised here).
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up, ceildiv
 from std.sys import size_of
@@ -36,7 +36,6 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
@@ -47,6 +46,7 @@ from linalg.fp4_utils import (
 )
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.utils.coord import Coord
 
 
 def _test_impl[
@@ -58,9 +58,9 @@ def _test_impl[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -84,11 +84,12 @@ def _test_impl[
     print(
         t"[prefetch-2sm] in/out dtypes=({a_type}, {b_type}, {c_type},"
         t" {scales_dtype})"
-        t" shape=({Int(m.value())}, {Int(n.value())}, {Int(k.value())})"
+        t" shape=({Int(m)}, {Int(n)}, {Int(k)})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
         t" cta_group={cta_group}"
-        t" cluster_shape=({cluster_shape[0]}, {cluster_shape[1]},"
-        t" {cluster_shape[2]})"
+        t" cluster_shape=(Int({cluster_shape[0]}), Int({cluster_shape[1]}),"
+        t" Int("
+        t" {cluster_shape[2]}))"
         t" swapAB={swapAB} k_group_size={k_group_size}"
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
         t" prefetch_tiles_n={prefetch_tiles_n}"
@@ -100,9 +101,9 @@ def _test_impl[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * (KType.static_value // 2)
-    var b_size = Int(n.value()) * (KType.static_value // 2)
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * (KType.static_value // 2)
+    var b_size = Int(n) * (KType.static_value // 2)
+    var c_size = Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -123,7 +124,7 @@ def _test_impl[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(m), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -163,24 +164,24 @@ def _test_impl[
     rand(a_scales_host.as_span())
     rand(b_scales_host.as_span())
 
-    for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(m), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
-            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
             SF_VECTOR_SIZE,
         ):
-            if idx0 >= Int(m.value()) or idx1 >= Int(k.value()):
+            if idx0 >= Int(m) or idx1 >= Int(k):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
-    for idx0 in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(n), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
-            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            align_up(Int(k), SF_VECTOR_SIZE * SF_ATOM_K),
             SF_VECTOR_SIZE,
         ):
-            if idx0 >= Int(n.value()) or idx1 >= Int(k.value()):
+            if idx0 >= Int(n) or idx1 >= Int(k):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
@@ -194,8 +195,10 @@ def _test_impl[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=scaling_kind,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -282,9 +285,9 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
             b_type: DType,
             c_type: DType,
             _scales_dtype: DType,
-            block_tile_shape: IndexList[3],
-            mma_shape: IndexList[3],
-            cluster_shape: StaticTuple[Int32, 3],
+            block_tile_shape: Tuple[Int, Int, Int],
+            mma_shape: Tuple[Int, Int, Int],
+            cluster_shape: Tuple[Int, Int, Int],
             cta_group: Int,
             transpose_b: Bool = True,
             a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -328,12 +331,12 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
 
         # ------------------------------------------------------------------
         # 2SM tile sweep: cta_group=2, bm=128, bn in [64, 128]
-        # umma_shape = Index(2*bm, 2*bn, MMA_K) — reflects 2SM layout
+        # umma_shape = (2*bm, 2*bn, MMA_K) — reflects 2SM layout
         # ------------------------------------------------------------------
         comptime for bm in [128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                 run[
                     dtype,
@@ -342,7 +345,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -363,7 +366,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -384,7 +387,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                    cluster_shape=(4, 2, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -405,7 +408,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                    cluster_shape=(8, 2, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -425,7 +428,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -445,7 +448,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -466,7 +469,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -486,7 +489,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     cta_group=2,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,

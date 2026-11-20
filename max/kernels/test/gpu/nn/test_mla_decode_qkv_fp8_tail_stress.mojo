@@ -32,7 +32,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -153,6 +153,7 @@ def share[
             config=MHAConfig[FP8](num_heads, Q_DEPTH),
             ragged=True,
             sparse=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -173,6 +174,7 @@ def share[
             rank=3,
             config=MHAConfig[FP8](num_heads, Q_DEPTH),
             ragged=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,

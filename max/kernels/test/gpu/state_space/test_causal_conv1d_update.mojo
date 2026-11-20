@@ -122,15 +122,24 @@ def run_causal_conv1d_update_gpu[
     )
 
     # Initialize input data
-    rand[dtype](input_h.unsafe_ptr(), input_h.num_elements())
-    rand[dtype](conv_state_h.unsafe_ptr(), conv_state_h.num_elements())
-    rand[dtype](weight_h.unsafe_ptr(), weight_h.num_elements())
-    rand[dtype](bias_h.unsafe_ptr(), bias_h.num_elements())
+    rand[dtype](input_h.as_span())
+    rand[dtype](conv_state_h.as_span())
+    rand[dtype](weight_h.as_span())
+    rand[dtype](bias_h.as_span())
 
     # Copy conv_state for CPU and GPU
+    var conv_state_flat = conv_state_h.reshape(
+        row_major(batch * dim * state_len)
+    )
+    var conv_state_cpu_flat = conv_state_cpu_h.reshape(
+        row_major(batch * dim * state_len)
+    )
+    var conv_state_gpu_flat = conv_state_gpu_h.reshape(
+        row_major(batch * dim * state_len)
+    )
     for i in range(batch * dim * state_len):
-        conv_state_cpu_h.unsafe_ptr()[i] = conv_state_h.unsafe_ptr()[i]
-        conv_state_gpu_h.unsafe_ptr()[i] = conv_state_h.unsafe_ptr()[i]
+        conv_state_cpu_flat[i] = conv_state_flat[i]
+        conv_state_gpu_flat[i] = conv_state_flat[i]
 
     var input_buf = input_h
     var conv_state_cpu_buf = conv_state_cpu_h
@@ -305,10 +314,12 @@ def run_causal_conv1d_update_gpu[
 
     # Compare results
     var flattened_size = batch * dim * seqlen
+    var result_gpu_flat = result_gpu_h.reshape(row_major(flattened_size))
+    var result_cpu_flat = result_cpu_h.reshape(row_major(flattened_size))
     for i in range(flattened_size):
         assert_almost_equal(
-            result_gpu_h.unsafe_ptr()[i],
-            result_cpu_h.unsafe_ptr()[i],
+            result_gpu_flat[i],
+            result_cpu_flat[i],
             rtol=rtol,
         )
 
@@ -316,8 +327,8 @@ def run_causal_conv1d_update_gpu[
     var conv_state_size = batch * dim * state_len
     for i in range(conv_state_size):
         assert_almost_equal(
-            conv_state_gpu_h.unsafe_ptr()[i],
-            conv_state_cpu_h.unsafe_ptr()[i],
+            conv_state_gpu_flat[i],
+            conv_state_cpu_flat[i],
             rtol=rtol,
         )
 

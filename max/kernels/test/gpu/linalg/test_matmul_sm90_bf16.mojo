@@ -16,15 +16,15 @@ from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from layout import Idx
 
-from std.utils.index import Index
-
 # Helper to calculate block_tile_shape based on num_consumer and wgmma_n
-comptime block_tile_shape[num_consumer: Int, wgmma_n: Int] = Index(
-    64 * num_consumer, wgmma_n, 64
+comptime block_tile_shape[num_consumer: Int, wgmma_n: Int] = (
+    64 * num_consumer,
+    wgmma_n,
+    64,
 )
 
 # Helper to calculate wgmma_shape - fixed for bfloat16
-comptime wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
+comptime wgmma_shape[wgmma_n: Int] = (64, wgmma_n, 16)
 
 
 def main() raises:
@@ -37,7 +37,7 @@ def main() raises:
                     .bfloat16,
                     .bfloat16,
                     .bfloat16,
-                    Index(1, 1, 1),  # cluster_shape
+                    (1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
@@ -54,7 +54,7 @@ def main() raises:
                     .bfloat16,
                     .bfloat16,
                     .bfloat16,
-                    Index(1, 1, 1),  # cluster_shape
+                    (1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
@@ -71,7 +71,7 @@ def main() raises:
                     .bfloat16,
                     .bfloat16,
                     .bfloat16,
-                    Index(1, 1, 1),  # cluster_shape
+                    (1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
@@ -89,7 +89,7 @@ def main() raises:
                     .bfloat16,
                     .bfloat16,
                     .bfloat16,
-                    Index(1, 1, 1),  # cluster_shape
+                    (1, 1, 1),  # cluster_shape
                     block_tile_shape[j, wgmma_n[i]],
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
@@ -107,7 +107,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
+            (1, 1, 1),  # cluster_shape
             block_tile_shape[2, 128],
             wgmma_shape[128],
             num_consumer=2,
@@ -119,7 +119,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
+            (1, 1, 1),  # cluster_shape
             block_tile_shape[2, 256],
             wgmma_shape[256],
             num_consumer=2,
@@ -130,7 +130,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
+            (1, 1, 1),  # cluster_shape
             block_tile_shape[2, 128],
             wgmma_shape[128],
             num_consumer=2,
@@ -141,9 +141,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(128, 64, 64),
-            Index(64, 64, 16),
+            (1, 1, 1),  # cluster_shape
+            (128, 64, 64),
+            (64, 64, 16),
             num_consumer=2,
             num_pipeline_stages=8,
         ](ctx, Int(256), Idx[4096], Idx[1536])
@@ -152,9 +152,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(64, 48, 64),
-            Index(64, 48, 16),
+            (1, 1, 1),  # cluster_shape
+            (64, 48, 64),
+            (64, 48, 16),
             num_consumer=1,
             num_pipeline_stages=8,
             k_group_size=2,
@@ -164,9 +164,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(64, 48, 64),
-            Index(64, 48, 16),
+            (1, 1, 1),  # cluster_shape
+            (64, 48, 64),
+            (64, 48, 16),
             num_consumer=1,
             num_pipeline_stages=12,
             k_group_size=4,
@@ -176,9 +176,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(64, 32, 64),
-            Index(64, 32, 16),
+            (1, 1, 1),  # cluster_shape
+            (64, 32, 64),
+            (64, 32, 16),
             num_consumer=1,
             num_pipeline_stages=17,
         ](ctx, Int(2), Idx[4096], Idx[1536])
@@ -187,9 +187,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(64, 8, 64),
-            Index(64, 8, 16),
+            (1, 1, 1),  # cluster_shape
+            (64, 8, 64),
+            (64, 8, 16),
             num_consumer=1,
             num_pipeline_stages=20,
         ](ctx, Int(16), Idx[64], Idx[256])
@@ -198,9 +198,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(64, 256, 64),
-            Index(64, 256, 16),
+            (1, 1, 1),  # cluster_shape
+            (64, 256, 64),
+            (64, 256, 16),
             num_consumer=1,
             num_pipeline_stages=5,
         ](ctx, Int(20), Idx[84], Idx[4096])
@@ -209,9 +209,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(128, 256, 64),
-            Index(64, 256, 16),
+            (1, 1, 1),  # cluster_shape
+            (128, 256, 64),
+            (64, 256, 16),
             num_consumer=2,
             num_pipeline_stages=2,
         ](ctx, Int(476), Idx[1024], Idx[128])
@@ -220,9 +220,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(128, 48, 64),
-            Index(64, 48, 16),
+            (1, 1, 1),  # cluster_shape
+            (128, 48, 64),
+            (64, 48, 16),
             num_consumer=2,
             num_pipeline_stages=2,
         ](ctx, Int(1536), Idx[48], Idx[4096])
@@ -231,9 +231,9 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),  # cluster_shape
-            Index(128, 8, 64),
-            Index(64, 8, 16),
+            (1, 1, 1),  # cluster_shape
+            (128, 8, 64),
+            (64, 8, 16),
             num_consumer=2,
             num_pipeline_stages=2,
         ](ctx, Int(1536), Idx[13], Idx[4096])

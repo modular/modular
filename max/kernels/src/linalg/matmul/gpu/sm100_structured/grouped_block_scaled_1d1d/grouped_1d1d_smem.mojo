@@ -20,10 +20,10 @@ the standard GroupedBlockScaledSmem:
 2. No CLC pipeline storage - uses 3-warp specialization (no scheduler warp)
 3. Simpler barrier structure optimized for the 1D-1D workload
 
-Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
+Tile storage is shared via BlockScaledTileCore from block_scaled_tile_core.mojo.
 """
 
-from ..block_scaled.block_scaled_smem import BlockScaledTileCore
+from ..structured_kernels.block_scaled_tile_core import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from structured_kernels.pipeline_storage import (
     BarrierPair,
@@ -67,7 +67,6 @@ struct SchedulerSmem:
     """
 
     comptime NUM_SLOTS = 2  # 2-slot ProducerConsumer
-    comptime MAX_TILES = Self.NUM_SLOTS  # backward compat alias
     # Group cache sized to fit the B200 SMEM limit under worst-case MXFP8
     # 2SM configs (base SMEM is already ~232.5 KB, leaving <1 KB for us).
     # 32 covers the common MoE decode regime and the larger Kimi-style 49
@@ -112,7 +111,7 @@ struct SchedulerSmem:
 
     @inline(.always)
     def empty_mbar(ref[AddressSpace.SHARED] self) -> MbarPtr:
-        return self.barriers.ptr() + 2
+        return self.barriers.ptr().unsafe_offset(2)
 
 
 struct Grouped1D1DSmem[

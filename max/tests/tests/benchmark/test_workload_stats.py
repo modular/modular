@@ -43,9 +43,11 @@ from max.benchmark.benchmark_shared.serving_result_output import (
 from max.benchmark.benchmark_shared.workload_stats import (
     WORKLOAD_STATS_SCHEMA_VERSION,
     Distribution,
+    EngineState,
     WorkloadStats,
     compute_workload_stats,
     workload_requests,
+    write_engine_state,
     write_workload_stats,
 )
 from openai.types.chat.completion_create_params import ResponseFormat
@@ -127,6 +129,17 @@ def test_single_turn_mix_counts_each_request_once() -> None:
     assert stats.tools_per_request is not None
     assert stats.tools_per_request.count == 2
     assert stats.tools_per_request.mean == 2.0
+
+
+def test_text_response_format_does_not_constrain_the_output() -> None:
+    samples = RequestSamples(
+        requests=[
+            _request(response_format={"type": "text"}),
+            _request(response_format=_JSON_OBJECT),
+        ]
+    )
+    stats = compute_workload_stats(samples)
+    assert stats.constrained_request_fraction == 0.5
 
 
 def test_empty_tools_list_is_not_a_tool_request() -> None:
@@ -333,6 +346,29 @@ def test_input_distribution_reports_long_context_shares() -> None:
     assert stats.output_len.fraction_above is None
 
 
+def test_output_distribution_splits_by_turn() -> None:
+    samples = ChatSamples(
+        chat_sessions=[
+            _session((_user(100), 40), (_user(20), 10), (_user(20), 20))
+        ]
+    )
+    stats = compute_workload_stats(samples)
+    assert stats.output_len_first_turn is not None
+    assert stats.output_len_first_turn.count == 1
+    assert stats.output_len_first_turn.max == 40
+    assert stats.output_len_later_turn is not None
+    assert stats.output_len_later_turn.count == 2
+    assert stats.output_len_later_turn.mean == 15
+
+
+def test_single_turn_workload_has_no_later_turn_outputs() -> None:
+    stats = compute_workload_stats(
+        RequestSamples(requests=[_request(), _request()])
+    )
+    assert stats.output_len_first_turn is not None
+    assert stats.output_len_later_turn is None
+
+
 def test_distribution_of_nothing_is_none() -> None:
     assert Distribution.of([]) is None
 
@@ -352,6 +388,56 @@ def test_written_json_round_trips(tmp_path: Path) -> None:
     assert WorkloadStats.model_validate(blob) == stats
 
 
+def test_dry_run_stats_have_no_engine_state() -> None:
+    samples = ChatSamples(chat_sessions=[_session((_user(100), 10))])
+    assert compute_workload_stats(samples).engine_state is None
+
+
+def test_stats_without_engine_state_still_load() -> None:
+    samples = ChatSamples(chat_sessions=[_session((_user(100), 10))])
+    blob = json.loads(compute_workload_stats(samples).model_dump_json())
+    del blob["engine_state"]
+    assert WorkloadStats.model_validate(blob).engine_state is None
+
+
+def test_engine_state_round_trips_through_stats(tmp_path: Path) -> None:
+    samples = ChatSamples(chat_sessions=[_session((_user(100), 10))])
+    state = EngineState(
+        cache_hit_rate=0.8, decode_batch_size_mean=12.5, max_concurrency=64
+    )
+    stats = compute_workload_stats(samples).model_copy(
+        update={"engine_state": state}
+    )
+    path = tmp_path / "stats.json"
+    write_workload_stats(stats, path)
+    assert WorkloadStats.model_validate_json(path.read_text()) == stats
+
+
+def test_written_engine_state_loads_as_engine_state(tmp_path: Path) -> None:
+    state = EngineState(cache_hit_rate=0.8, max_concurrency=64)
+    path = tmp_path / "state.json"
+    write_engine_state(state, path)
+    loaded = EngineState.model_validate_json(path.read_text())
+    assert loaded == state
+    assert loaded.decode_batch_size_mean is None
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"cache_hit_rate": 1.7},
+        {"cache_hit_rate": -0.1},
+        {"decode_batch_size_mean": -3.0},
+        {"max_concurrency": 0},
+    ],
+)
+def test_engine_state_rejects_out_of_range_figures(
+    fields: dict[str, float],
+) -> None:
+    with pytest.raises(ValueError):
+        EngineState.model_validate(fields)
+
+
 def test_print_workload_stats_prints_requests_sent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -369,6 +455,18 @@ def test_print_workload_stats_prints_requests_sent(
     assert "Turns dropped at the limit:" in out
     assert "Tool-offering requests:" in out
     assert "100.00%" in out
+
+
+def test_print_workload_stats_prints_output_by_turn(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    samples = ChatSamples(
+        chat_sessions=[_session((_user(100), 10), (_user(20), 10))]
+    )
+    print_workload_stats(samples, compute_workload_stats(samples))
+    out = capsys.readouterr().out
+    assert "Output length (first turn)" in out
+    assert "Output length (later turns)" in out
 
 
 def test_print_workload_stats_sections_share_columns(

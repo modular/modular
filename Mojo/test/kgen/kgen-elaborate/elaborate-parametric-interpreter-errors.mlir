@@ -24,7 +24,7 @@ kgen.generator export @use_Itf3two() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant: index = <get_sizeof(!opaque<"type">, #target)>
+  %0 = kgen.param.constant: scalar<index> = <get_sizeof(!opaque<"type">, #target)>
   hlcf.return
 }
 
@@ -75,24 +75,6 @@ kgen.generator @brokenVLenAssert() {
 
   // expected-note @+1 {{constraint failed: foo}}
   kgen.param.assert <eq(2, 3)>, B
-  hlcf.return
-}
-
-// -----
-
-// COM: Unused `kgen.param.declare` should not be ignored.
-// expected-note @below {{failed to interpret function}}
-kgen.generator @fail_if_zero<value>() -> index {
-  %0 = index.constant 0
-  // expected-note @below {{failed to interpret operation}}
-  // expected-note @below {{constraint failed: must not be zero!}}
-  kgen.param.assert <ne(value, 0)>, "must not be zero!"
-  hlcf.return %0 : index
-}
-
-kgen.generator @unused_param_declare() {
-// expected-error @below {{failed to compile-time evaluate function call}}
-  kgen.param.declare unused = <apply(:() -> index bind_params(:<index>() -> index @fail_if_zero, 0))>
   hlcf.return
 }
 
@@ -220,7 +202,7 @@ kgen.generator @will_pass<a, b>() -> (index, index) {
   hlcf.return %0, %1 : index, index
 }
 
-!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
+!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) -> !kgen.none)>
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @main() {
@@ -262,9 +244,9 @@ kgen.generator export @gen_structs() {
 // -----
 // expected-error @below {{function instantiation failed}}
 // expected-note @below {{cannot concretize name in 'llvm_metadata'}}
-kgen.generator export @metadata<x>() attributes {fnAttrs = [
+kgen.generator export @metadata<x>() <fnAttrs = [
   #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
-]}{
+]> {
   hlcf.return
 }
 

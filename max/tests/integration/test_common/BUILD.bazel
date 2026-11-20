@@ -86,6 +86,7 @@ modular_py_library(
     deps = [
         ":model_output",
         ":numerics",
+        ":storage",
         ":test_data",
         requirement("numpy"),
         requirement("pillow"),
@@ -98,7 +99,6 @@ modular_py_library(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
-        "//max/python/max/support",
     ],
 )
 
@@ -164,6 +164,38 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "mixed_step_split_ops",
+    testonly = True,
+    srcs = ["mixed_step_split_ops.py"],
+    imports = [".."],
+    # Also the MiniMax-M3.1 DSpark graph test, which lives with its model.
+    visibility = [
+        "//max/tests:__subpackages__",
+        "//max_private/minimax_m3_dspark:__pkg__",
+    ],
+    deps = ["//max/python/max/mlir"],
+)
+
+modular_py_library(
+    name = "vision_preprocess_parity",
+    testonly = True,
+    srcs = ["vision_preprocess_parity.py"],
+    imports = [".."],
+    # Also the MiniMax-M3 parity test, which lives with its model.
+    visibility = [
+        "//max/tests:__subpackages__",
+        "//max_private/minimax_m3:__pkg__",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_library(
     name = "mef_precompile",
     testonly = True,
     srcs = ["mef_precompile.py"],
@@ -172,14 +204,13 @@ modular_py_library(
     # use the same CPU/GPU compile split: //max/python/layer_benchmarks'
     # harness tests, the GPT-2 device-conformance suites, which sit under
     # //max/internal because they reach into the closed-source driver plugins,
-    # and the Qwen4-Exp and Kimi K3 arch packages, whose QSA indexer and EP
-    # local-compute tests precompile their graphs.
+    # and the Qwen4-Exp arch package, whose QSA indexer tests precompile
+    # their graphs.
     visibility = [
         "//:__pkg__",
         "//max/internal/driver/test:__pkg__",
         "//max/python/layer_benchmarks:__pkg__",
         "//max/tests:__subpackages__",
-        "//max_private/kimi_k3:__pkg__",
         "//max_private/qwen4_exp:__pkg__",
         "//oss/modular/max/tests:__subpackages__",
     ],
@@ -198,12 +229,13 @@ modular_py_library(
     srcs = ["context_utils.py"],
     imports = [".."],
     # Extends the package default with the Qwen4-Exp arch package, whose QSA
-    # tests build their contexts through this helper.
+    # tests build their contexts through this helper, and with plugin tests.
     visibility = [
         "//:__pkg__",
         "//max/tests:__subpackages__",
         "//max_private/qwen4_exp:__pkg__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         requirement("numpy"),
@@ -220,7 +252,7 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         "//max/python/max/driver",
-        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/support",
     ],
 )
@@ -238,11 +270,32 @@ modular_py_library(
         "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         requirement("pytest"),
         requirement("typing-extensions"),
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_model_dummy_graph_specs",
+    testonly = True,
+    srcs = ["pipeline_model_dummy_graph_specs.py"],
+    imports = [".."],
+    deps = [
+        ":pipeline_model_dummy",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -260,13 +313,14 @@ modular_py_library(
         "//max/internal:__subpackages__",
         "//max/tests:__subpackages__",
         "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -286,6 +340,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         ":numerics",
+        ":storage",
         ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
         requirement("diffusers"),
@@ -294,7 +349,6 @@ modular_py_library(
         requirement("requests"),
         requirement("torch"),
         requirement("transformers"),
-        "//max/python/max/support",
     ],
 )
 
@@ -312,11 +366,18 @@ modular_py_library(
         "test_common.vllm_hook_core",
     ],
     imports = [".."],
+    visibility = [
+        "//:__pkg__",
+        "//Kernels/benchmarks/csa:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         # the normal one pulled from rules_pycross transitively.
         ":storage",
         ":test_data",
         requirement("numpy"),
+        requirement("transformers"),
     ] + select({
         "//:nvidia_gpu": [
             requirement("ninja"),
@@ -347,18 +408,25 @@ modular_py_library(
     testonly = True,
     srcs = [
         "mocks/__init__.py",
-        "mocks/memory_estimation.py",
         "mocks/pipeline_config.py",
         "mocks/pipeline_model.py",
         "mocks/tokenizer.py",
     ],
     imports = [".."],
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
@@ -419,7 +487,7 @@ modular_py_library(
     srcs = ["torch_print_hook.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/nn/hooks:base_print_hook",
+        "//max/python/max/nn/legacy/hooks:base_print_hook",
         requirement("torch"),
     ],
 )

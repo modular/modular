@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Prefill-side request scheduling."""
+
 from __future__ import annotations
 
 import logging
@@ -57,7 +60,12 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger, _trace_batch, held_blocks_per_leaf
+from .utils import (
+    SchedulerLogger,
+    _ScheduledBatch,
+    _trace_batch,
+    held_blocks_per_leaf,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -99,6 +107,8 @@ def _pages_to_transfer(
 
 @dataclass
 class TransferDest:
+    """Where one request's KV pages are transferred."""
+
     engine_name: str
     dst_block_ids: dict[str, list[int]]
     dst_replica_idx: int
@@ -114,6 +124,8 @@ class ActiveTransfer:
 
 
 class PrefillScheduler(Scheduler):
+    """Schedules the prefill side of text generation."""
+
     def __init__(
         self,
         pipeline: Pipeline[
@@ -250,9 +262,11 @@ class PrefillScheduler(Scheduler):
             del self.active_transfers[id]
 
     def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
-        """Count of active_transfers + _pending_first_token entries holding
-        blocks on this replica -- a transfer on a different replica's
-        device pool can't free blocks on this one."""
+        """Count of transfers holding blocks on this replica.
+
+        Sums ``active_transfers`` and ``_pending_first_token`` entries; a transfer on a
+        different replica's device pool can't free blocks on this one.
+        """
         return sum(
             1
             for active in self.active_transfers.values()
@@ -378,7 +392,9 @@ class PrefillScheduler(Scheduler):
         )
 
     @traced
-    def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
+    def schedule(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> _ScheduledBatch:
         """Executes the current batch of requests and sends completed requests to decode.
 
         Processes the active batch through the pipeline, handles any chunked prefill requests,
@@ -387,7 +403,12 @@ class PrefillScheduler(Scheduler):
         # Execute the Batch
         assert len(inputs.batches) > 0
         with _trace_batch("prefill", inputs):
+            execution_start = time.monotonic()
             responses = self.pipeline.execute(inputs)
+            execution_time_s = time.monotonic() - execution_start
+            output_tokens = sum(
+                len(output.tokens) for output in responses.values()
+            )
 
         self.batch_constructor.advance_requests(inputs)
 
@@ -429,7 +450,11 @@ class PrefillScheduler(Scheduler):
         # Remove all TG requests from the batch constructor.
         num_terminated_reqs = len(self.batch_constructor.all_tg_reqs)
         self.batch_constructor.clear_tg_reqs()
-        return num_terminated_reqs
+        return _ScheduledBatch(
+            terminated_reqs=num_terminated_reqs,
+            execution_time_s=execution_time_s,
+            output_tokens=output_tokens,
+        )
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
@@ -441,7 +466,6 @@ class PrefillScheduler(Scheduler):
         Returns:
             SchedulerProgress: Indicates whether work was performed in this iteration.
         """
-
         while True:
             try:
                 request, identity = self.dispatcher.recv_request_nowait()
@@ -502,14 +526,14 @@ class PrefillScheduler(Scheduler):
                         (t0 - enqueued_at) * 1000
                     )
         with Tracer(f"_schedule({inputs})"):
-            num_terminated_reqs = self.schedule(inputs)
+            scheduled = self.schedule(inputs)
         t1 = time.monotonic()
-        batch_execution_time_s = t1 - t0
+        METRICS.scheduler_batch_step_time(
+            (t1 - t0) * 1000, batch_type=inputs.batch_type.value
+        )
 
-        # Log batch metrics. When the overlap pipeline is active, the
-        # wall-clock time measured above describes the previously enqueued
-        # batch; the pipeline reports that batch's composition and timing so
-        # telemetry is attributed to the correct batch type.
+        # Overlap reports the completed batch's composition and service time;
+        # synchronous batches use the interval measured around execute().
         is_overlap_active = bool(
             getattr(self.pipeline, "overlap_active", False)
         )
@@ -518,9 +542,14 @@ class PrefillScheduler(Scheduler):
             inputs=inputs,
             kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
-            batch_execution_time_s=batch_execution_time_s,
+            batch_execution_time_s=0.0
+            if is_overlap_active
+            else scheduled.execution_time_s,
+            num_output_tokens=None
+            if is_overlap_active
+            else scheduled.output_tokens,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
-            num_terminated_reqs=num_terminated_reqs,
+            num_terminated_reqs=scheduled.terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             overlap_active=is_overlap_active,
             completed_batch_stats=self.pipeline.take_completed_batch_stats()
@@ -543,6 +572,7 @@ def load_prefill_scheduler(
     settings: Settings,
     memory_plan: MemoryPlan | None,
 ) -> PrefillScheduler:
+    """Builds a prefill scheduler from the pipeline and memory plan."""
     spec_config = pipeline_config.speculative
     if spec_config is not None:
         logger.info(

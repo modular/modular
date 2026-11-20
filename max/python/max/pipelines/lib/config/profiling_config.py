@@ -17,12 +17,12 @@ from __future__ import annotations
 import os
 from typing import get_args
 
-from max.config import ConfigFileModel
+from max.config import ConfigModel
 from max.engine import GPUProfilingMode
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 
-class ProfilingConfig(ConfigFileModel):
+class ProfilingConfig(ConfigModel):
     """Configuration for the GPU (NVTX/Nsight) profiler and kernel tracing.
 
     ``max serve`` has no command-line flags for the ``kernel_trace_*``
@@ -56,9 +56,9 @@ class ProfilingConfig(ConfigFileModel):
 
     When tracing exports spans and ``MAX_SERVE_KERNEL_TRACE_HEADERS`` is on,
     ``max serve`` captures the GPU kernels of the forward passes that run a
-    request whose ``x-max-trace-level`` header asks for them. A capture
-    stops after this many passes, traced or not, and its requests are
-    traced no further."""
+    sampled request whose ``x-max-trace-level`` header asks for them. A
+    capture stops after this many passes, traced or not, and its requests
+    are traced no further."""
 
     kernel_trace_max_batch_links: int = Field(
         default=128,

@@ -14,14 +14,14 @@
 
 from __future__ import annotations
 
-from max.experimental.nn.norm import RMSNorm, rms_norm
-from max.experimental.tensor import Tensor
+from max.nn.norm import RMSNorm, rms_norm
+from max.tensor import Tensor
 
 
 class MultiplyBeforeCastRMSNorm(RMSNorm):
     """RMSNorm that applies the weight before casting back to the input dtype.
 
-    ``max.nn.RMSNorm`` defaults ``multiply_before_cast`` to True and
+    ``max.nn.legacy.RMSNorm`` defaults ``multiply_before_cast`` to True and
     ``ops.rms_norm`` defaults it to False, so the graph-API model's final norm
     -- the only one that does not pass the flag explicitly -- multiplies before
     the cast while a plain ModuleV3 ``RMSNorm`` multiplies after. The two round
@@ -29,4 +29,5 @@ class MultiplyBeforeCastRMSNorm(RMSNorm):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` with the weight applied before the cast."""
         return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)

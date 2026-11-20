@@ -22,103 +22,97 @@ using namespace mlir::LLVM;
 using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
+// Coercion through memory
+//===----------------------------------------------------------------------===//
+
+Type M::KGEN::getCoercedValueType(const CoercionInfo &coercion,
+                                  MLIRContext *ctx) {
+  if (coercion.isTwoRegister()) {
+    return LLVMStructType::getLiteral(
+        ctx, {coercion.coercedType, coercion.coercedSecondType});
+  }
+  return coercion.coercedType;
+}
+
+Value M::KGEN::createCoercionSlot(OpBuilder &b, Location loc, LLVMFuncOp func,
+                                  Type mojoType, Type coercedType,
+                                  const LLVMDataLayout &dataLayout) {
+  // The data layout gives a vector the alignment of its element, which can be
+  // less than the LLVM alignment. Thus the slot has the coerced type, which
+  // LLVM aligns, unless the Mojo type is larger.
+  Type slotType = dataLayout.getTypeAllocSize(mojoType) >
+                          dataLayout.getTypeAllocSize(coercedType)
+                      ? mojoType
+                      : coercedType;
+  uint64_t align = std::max(dataLayout.getTypeABIAlign(mojoType),
+                            dataLayout.getTypeABIAlign(coercedType));
+  // Keep the alignment of the slot type when it is sufficient.
+  if (align <= static_cast<uint64_t>(dataLayout.getTypeABIAlign(slotType)))
+    align = 0;
+
+  OpBuilder::InsertionGuard guard(b);
+  b.setInsertionPointToStart(&func.getBody().front());
+  Value count = ConstantOp::create(b, loc, b.getI32IntegerAttr(1));
+  return AllocaOp::create(b, loc, LLVMPointerType::get(b.getContext()),
+                          slotType, count, align);
+}
+
+Value M::KGEN::coerceThroughSlot(OpBuilder &b, Location loc, Value value,
+                                 Type destType, Value slot) {
+  StoreOp::create(b, loc, value, slot);
+  return LoadOp::create(b, loc, destType, slot);
+}
+
+Value M::KGEN::coerceToC(OpBuilder &b, Location loc, LLVMFuncOp func,
+                         Value value, Type coercedType,
+                         const LLVMDataLayout &dataLayout) {
+  Value slot = createCoercionSlot(b, loc, func, value.getType(), coercedType,
+                                  dataLayout);
+  return coerceThroughSlot(b, loc, value, coercedType, slot);
+}
+
+Value M::KGEN::coerceFromC(OpBuilder &b, Location loc, LLVMFuncOp func,
+                           Value value, Type mojoType,
+                           const LLVMDataLayout &dataLayout) {
+  Value slot =
+      createCoercionSlot(b, loc, func, mojoType, value.getType(), dataLayout);
+  return coerceThroughSlot(b, loc, value, mojoType, slot);
+}
+
+//===----------------------------------------------------------------------===//
 // CABICallHelper implementation
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<CABIInfo> CABICallHelper::createABIHandler() const {
   const llvm::Triple &triple = tc->getTarget().getTriple();
-  // POPToLLVMTypeConverter inherits from LLVMDataLayout
-  const LLVMDataLayout &dataLayout = *tc;
-  return M::KGEN::createCABIInfo(triple, ctx, dataLayout);
+  return M::KGEN::createCABIInfo(triple, ctx, *tc);
 }
 
-Value CABICallHelper::createEntryBlockAlloca(
-    ConversionPatternRewriter &rewriter, Location loc, Type elemType) const {
+Value CABICallHelper::createEntryBlockAlloca(DirectRewriter &rewriter,
+                                             Location loc, Type elemType,
+                                             int64_t alignment) const {
   auto ptrType = LLVMPointerType::get(ctx);
-
-  // Find the enclosing LLVM function.
-  auto func = parentOp->getParentOfType<LLVMFuncOp>();
-  assert(func && "external_call must be inside an LLVM function");
 
   // Save current insertion point and emit alloca at the start of the
   // entry block.
   OpBuilder::InsertionGuard guard(rewriter);
-  Block &entryBlock = func.getBody().front();
+  Block &entryBlock = getParentFunc().getBody().front();
   rewriter.setInsertionPointToStart(&entryBlock);
 
   Value count =
       ConstantOp::create(rewriter, loc, rewriter.getI32IntegerAttr(1));
-  return AllocaOp::create(rewriter, loc, ptrType, elemType, count,
-                          /*alignment=*/0);
+  return AllocaOp::create(rewriter, loc, ptrType, elemType, count, alignment);
 }
 
-Value CABICallHelper::bitcastViaMemory(
-    Value sourceValue, Type destType, Type allocType, Location loc,
-    ConversionPatternRewriter &rewriter) const {
-  Value alloca = createEntryBlockAlloca(rewriter, loc, allocType);
-  StoreOp::create(rewriter, loc, sourceValue, alloca);
-  return LoadOp::create(rewriter, loc, destType, alloca);
+LLVMFuncOp CABICallHelper::getParentFunc() const {
+  auto func = parentOp->getParentOfType<LLVMFuncOp>();
+  assert(func && "external_call must be inside an LLVM function");
+  return func;
 }
 
-Value CABICallHelper::createOffsetGEP(
-    Value basePtr, int64_t byteOffset, Location loc,
-    ConversionPatternRewriter &rewriter) const {
-  auto ptrType = LLVMPointerType::get(ctx);
-  return GEPOp::create(rewriter, loc, ptrType, rewriter.getI8Type(), basePtr,
-                       GEPArg(byteOffset), GEPNoWrapFlags::inbounds);
-}
-
-SmallVector<Value> CABICallHelper::prepareTwoRegisterArgument(
-    Value originalArg, Type firstType, Type secondType, Location loc,
-    ConversionPatternRewriter &rewriter) const {
-  // Allocate struct containing both register types
-  Type allocType = LLVMStructType::getLiteral(ctx, {firstType, secondType});
-  Value alloca = createEntryBlockAlloca(rewriter, loc, allocType);
-
-  // Store original struct
-  StoreOp::create(rewriter, loc, originalArg, alloca);
-
-  // Load first register at offset 0
-  Value first = LoadOp::create(rewriter, loc, firstType, alloca);
-
-  // Load second register at the byte offset of the second struct field.
-  // This equals getTypeStoreSize(firstType) because all implemented ABIs
-  // guarantee firstType is exactly 8 bytes (i64 or f64 for System V AMD64;
-  // i64 for ARM64 AAPCS non-HFA), so the LLVM struct {firstType, secondType}
-  // never has alignment padding between the two slots.
-  int64_t offset = tc->getTypeStoreSize(firstType);
-  Value gep = createOffsetGEP(alloca, offset, loc, rewriter);
-  Value second = LoadOp::create(rewriter, loc, secondType, gep);
-
-  return {first, second};
-}
-
-Value CABICallHelper::handleTwoRegisterReturn(
-    Value callResult, Type firstType, Type secondType, Type originalReturnType,
-    Location loc, ConversionPatternRewriter &rewriter) const {
-  // Allocate struct containing both register types
-  Type allocType = LLVMStructType::getLiteral(ctx, {firstType, secondType});
-  Value alloca = createEntryBlockAlloca(rewriter, loc, allocType);
-
-  // Extract and store first register
-  Value first = ExtractValueOp::create(rewriter, loc, callResult, 0);
-  StoreOp::create(rewriter, loc, first, alloca);
-
-  // Extract and store second register at the byte offset of the second field.
-  // See prepareTwoRegisterArgument for why this offset is always correct.
-  int64_t offset = tc->getTypeStoreSize(firstType);
-  Value gep = createOffsetGEP(alloca, offset, loc, rewriter);
-  Value second = ExtractValueOp::create(rewriter, loc, callResult, 1);
-  StoreOp::create(rewriter, loc, second, gep);
-
-  // Load as original struct type
-  return LoadOp::create(rewriter, loc, originalReturnType, alloca);
-}
-
-SmallVector<Value>
-CABICallHelper::prepareArg(const CoercionInfo &coercion, Value originalArg,
-                           Location loc,
-                           ConversionPatternRewriter &rewriter) const {
+SmallVector<Value> CABICallHelper::prepareArg(const CoercionInfo &coercion,
+                                              Value originalArg, Location loc,
+                                              DirectRewriter &rewriter) const {
   SmallVector<Value> result;
 
   if (coercion.isIdentity()) {
@@ -129,48 +123,38 @@ CABICallHelper::prepareArg(const CoercionInfo &coercion, Value originalArg,
 
   if (coercion.useIndirect) {
     // Allocate stack space, store struct, pass pointer
-    Value alloca = createEntryBlockAlloca(rewriter, loc, originalArg.getType());
+    Value alloca = createEntryBlockAlloca(rewriter, loc, originalArg.getType(),
+                                          coercion.indirectAlign);
     StoreOp::create(rewriter, loc, originalArg, alloca);
     result.push_back(alloca);
     return result;
   }
 
-  // Bitcast struct to integer/float type via store-to-stack + load pattern.
-  //
-  // Following Clang's approach: allocate using the coerced type(s) to
-  // ensure the allocation is large enough for the loads. This prevents UB
-  // when coercion rounds up (e.g., 3-byte struct -> i32 = 4 bytes).
   assert(coercion.coercedType && "non-identity, non-indirect coercion must "
                                  "have a coercedType — classifier bug");
-
-  if (coercion.isTwoRegister()) {
-    assert(coercion.coercedSecondType &&
-           "two-register classification must have coercedSecondType");
-    // Two registers: prepare both register values
-    auto values =
-        prepareTwoRegisterArgument(originalArg, coercion.coercedType,
-                                   coercion.coercedSecondType, loc, rewriter);
-    result.append(values.begin(), values.end());
-  } else {
-    // Single register: use bitcast helper
-    Value coercedVal = bitcastViaMemory(originalArg, coercion.coercedType,
-                                        coercion.coercedType, loc, rewriter);
-    result.push_back(coercedVal);
+  Value coerced = coerceToC(rewriter, loc, getParentFunc(), originalArg,
+                            getCoercedValueType(coercion, ctx), *tc);
+  if (!coercion.isTwoRegister()) {
+    result.push_back(coerced);
+    return result;
   }
-
+  result.push_back(ExtractValueOp::create(rewriter, loc, coerced, 0));
+  result.push_back(ExtractValueOp::create(rewriter, loc, coerced, 1));
   return result;
 }
 
-std::pair<SmallVector<Value>, Value> CABICallHelper::buildCallArgs(
-    ArrayRef<CoercionInfo> argClass, const CoercionInfo &retClass,
-    ValueRange originalArgs, Type origRetTy, Location loc,
-    ConversionPatternRewriter &rewriter) const {
+std::pair<SmallVector<Value>, Value>
+CABICallHelper::buildCallArgs(ArrayRef<CoercionInfo> argClass,
+                              const CoercionInfo &retClass,
+                              ValueRange originalArgs, Type origRetTy,
+                              Location loc, DirectRewriter &rewriter) const {
   SmallVector<Value> callArgs;
   Value sretPointer = nullptr;
 
   // Prepare sret pointer if needed
   if (retClass.useSRet) {
-    sretPointer = createEntryBlockAlloca(rewriter, loc, origRetTy);
+    sretPointer = createEntryBlockAlloca(rewriter, loc, origRetTy,
+                                         retClass.indirectAlign);
     callArgs.push_back(sretPointer);
   }
 
@@ -187,7 +171,7 @@ std::pair<SmallVector<Value>, Value> CABICallHelper::buildCallArgs(
 Value CABICallHelper::extractReturn(const CoercionInfo &retClass,
                                     Value callResult, Value sretPointer,
                                     Type origRetTy, Location loc,
-                                    ConversionPatternRewriter &rewriter) const {
+                                    DirectRewriter &rewriter) const {
   if (retClass.useSRet) {
     // Load from sret pointer
     return LoadOp::create(rewriter, loc, origRetTy, sretPointer);
@@ -198,46 +182,35 @@ Value CABICallHelper::extractReturn(const CoercionInfo &retClass,
     return callResult;
   }
 
-  if (retClass.isTwoRegister()) {
-    assert(retClass.coercedType && retClass.coercedSecondType &&
-           "two-register classification must have both coerced types");
-    // Two-register return: extract both values and reconstruct struct
-    return handleTwoRegisterReturn(callResult, retClass.coercedType,
-                                   retClass.coercedSecondType, origRetTy, loc,
-                                   rewriter);
-  }
-
-  // Single-register: bitcast from coerced type back to struct
-  assert(retClass.coercedType &&
-         "non-identity, non-sret, non-two-register return must have a "
-         "coercedType — classifier bug");
-  return bitcastViaMemory(callResult, origRetTy, retClass.coercedType, loc,
-                          rewriter);
+  assert(callResult.getType() == getCoercedValueType(retClass, ctx) &&
+         "a register result must have the coerced type");
+  return coerceFromC(rewriter, loc, getParentFunc(), callResult, origRetTy,
+                     *tc);
 }
 
 CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,
-                                         ValueRange argValues, Type origRetTy,
-                                         Location loc,
-                                         ConversionPatternRewriter &rewriter,
+                                         ValueRange argValues, Type retType,
+                                         Location loc, DirectRewriter &rewriter,
                                          size_t numFixedArgs,
                                          bool isVariadic) const {
   auto handler = createABIHandler();
 
-  // Classification runs on LLVM types so register/layout rules see the same
-  // shape the C compiler does.
+  // Classification runs on the unconverted types, which keep the union
+  // members, field layout and signedness the C ABI depends on. The coercion
+  // runs on the LLVM types.
   SmallVector<Type> llvmArgTypes;
   llvmArgTypes.reserve(argTypes.size());
   for (Type t : argTypes)
     llvmArgTypes.push_back(tc->convertType(t));
-  Type llvmRetTy = origRetTy ? tc->convertType(origRetTy) : Type();
+  Type llvmRetTy = retType ? tc->convertType(retType) : Type();
 
-  SignatureClassification sigClass =
-      handler->computeSignatureInfo(llvmArgTypes, llvmRetTy, loc, numFixedArgs);
+  SignatureClassification sigClass = handler->computeSignatureInfo(
+      argTypes, retType, loc, CABIRole::Caller, numFixedArgs);
 
   LLVMFunctionType sig = sigClass.getFunctionType(
-      ctx, argValues.getTypes(), origRetTy, isVariadic, numFixedArgs);
+      ctx, argValues.getTypes(), llvmRetTy, isVariadic, numFixedArgs);
   auto [callArgs, sretPtr] = buildCallArgs(sigClass.args, sigClass.ret,
-                                           argValues, origRetTy, loc, rewriter);
+                                           argValues, llvmRetTy, loc, rewriter);
   return {sig,       std::move(sigClass), std::move(llvmArgTypes),
           llvmRetTy, std::move(callArgs), sretPtr};
 }
@@ -257,7 +230,7 @@ static size_t getNumCallArgs(CallOp call) {
 
 Value CABICallHelper::finishCall(CallOp call, const CABICallPrep &prep,
                                  TailKind tailKind, Location loc,
-                                 ConversionPatternRewriter &rewriter) const {
+                                 DirectRewriter &rewriter) const {
   const SignatureClassification &sigClass = prep.classification;
 
   // A direct call lowers from the call-site attributes, so they must be set
@@ -273,15 +246,18 @@ Value CABICallHelper::finishCall(CallOp call, const CABICallPrep &prep,
         paramAttrs, [&](const NamedAttrList &attrs) -> Attribute {
           return attrs.getDictionary(ctx);
         })));
+  assert(sigClass.getResultAttrs(ctx).empty() &&
+         "Not expecting call-side result attrs");
 
-  // A tail call is only safe when the callee does not write through any
-  // pointer that lives in the caller's stack frame.  The sret alloca
-  // created by prepareCall lives in the caller's frame, so a tail call
-  // would free that frame before the callee stores its return value,
-  // producing a silent memory corruption (MOCO-3841).  Suppress the tail
-  // marker whenever sret is in use; non-sret returns are register-passed
-  // and remain eligible for tail-call optimization.
-  if (!sigClass.ret.useSRet)
+  // A tail call frees the caller's frame before the callee runs. The sret
+  // alloca and the copy behind a plain indirect argument live there; a
+  // `byval` pointee does not, since the attribute makes the call sequence
+  // copy it. See the requirements of `tail` in LLVM's LangRef.
+  bool usesCallerFrame = sigClass.ret.useSRet ||
+                         llvm::any_of(sigClass.args, [](const CoercionInfo &c) {
+                           return c.useIndirect && !c.useByval;
+                         });
+  if (!usesCallerFrame)
     applyTailKind(call, tailKind);
 
   if (!prep.retType)

@@ -10,15 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""End-to-end correctness for the short-axis GPU softmax fast/safe arms.
+"""End-to-end correctness for short-axis GPU softmax under input fusion.
 
-The short-inner-axis softmax warp kernel picks its load arm from the
-graph-compiler `has_prologue_fusion` flag:
-
-- No real input fusion (`softmax(x)`) -> flat fast path.
-- A fused elementwise producer (`softmax(x * scale)`) -> true-coordinate
-  fusion-safe path; the per-row coordinate is decomposed using the output
-  layout's dims (compile-time constants for a static graph shape).
+Covers an unfused input (`softmax(x)`), a fused elementwise producer
+(`softmax(x * scale)`), and a fused non-contiguous view, across the warp/block
+boundary of the inner axis, with static and dynamic outer dims.
 """
 
 import ml_dtypes
@@ -147,7 +143,7 @@ def _check(
     "shape", STATIC_SHAPES, ids=lambda s: "x".join(str(d) for d in s)
 )
 def test_softmax_static_shapes(gpu_session, shape, fused, dtype) -> None:  # noqa: ANN001
-    """Static shapes across the WARP_SIZE boundary, both load arms, fp32+bf16."""
+    """Static shapes across the WARP_SIZE boundary, fused/unfused, fp32+bf16."""
     _check(gpu_session, shape, shape, fused=fused, seed=0, dtype=dtype)
 
 
@@ -172,9 +168,8 @@ def test_softmax_sliced_view(gpu_session, dtype) -> None:  # noqa: ANN001
     """Softmax over a non-contiguous fused VIEW (a slice).
 
     Regression: `x[:, :-1]` is a view whose outer stride reflects the original
-    (un-sliced) size. A fused view producer sets `has_prologue_fusion == True`,
-    so the warp kernel must use true coordinates; a flat fast path would assume
-    contiguity and read the wrong elements for outer rows. `vocab = 5` keeps this
+    (un-sliced) size, so the kernel must read it at true coordinates; a flat
+    path would assume contiguity and read the wrong elements for outer rows. `vocab = 5` keeps this
     on the warp path. Mirrors the rejection sampler's `[:, :-1]` bonus-token
     slice.
     """

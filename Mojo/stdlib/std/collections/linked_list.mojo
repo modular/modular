@@ -23,18 +23,17 @@ from std.builtin.rebind import downcast
 from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 
-@explicit_destroy(
-    "A `Node` with a non-`Deinitable` element must be consumed with"
-    " `_into_value()`; its owning `LinkedList` manages this."
-)
 struct Node[
     T: Movable,
 ](
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "A `Node` with a non-`Deinitable` element must be consumed with"
+        " `_into_value()`; its owning `LinkedList` manages this."
+    ),
     Movable,
 ):
     """A node in a linked list data structure.
@@ -147,16 +146,14 @@ struct _LinkedListIter[
     def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        if not self.curr:
+        __guard case .Some(var curr) = self.curr else:
             raise StopIteration()
-        var old = self.curr
-
         comptime if Self.forward:
-            self.curr = self.curr.value()[].next()
+            self.curr = curr[].next()
         else:
-            self.curr = self.curr.value()[].prev()
+            self.curr = curr[].prev()
 
-        return old.value()[].value
+        return curr[].value
 
 
 @fieldwise_init
@@ -200,7 +197,7 @@ struct _LinkedListIterOwned[T: Movable & Deinitable](
                 Self.T
             ]._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -210,15 +207,14 @@ struct _LinkedListIterOwned[T: Movable & Deinitable](
         return (sz, {sz})
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `LinkedList` with"
-    " non-`Deinitable` elements"
-)
 struct LinkedList[ElementType: Movable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
-    Deinitable where conforms_to(ElementType, Deinitable),
+    Deinitable where conforms_to(ElementType, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy a `LinkedList` with"
+        " non-`Deinitable` elements"
+    ),
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     Iterable,
@@ -340,7 +336,7 @@ struct LinkedList[ElementType: Movable](
             destroy_func(nn.unsafe_take_pointee()._into_value())
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
             curr = next
@@ -371,6 +367,7 @@ struct LinkedList[ElementType: Movable](
         """
         self._delete_list_elements(deinit_func)
 
+    @__unsafe_nested_origins_read_only
     def append(mut self, var value: Self.ElementType):
         """Add an element to the end of the list.
 
@@ -394,6 +391,7 @@ struct LinkedList[ElementType: Movable](
         self._tail = addr
         self._size += 1
 
+    @__unsafe_nested_origins_read_only
     def prepend(mut self, var value: Self.ElementType):
         """Add an element to the beginning of the list.
 
@@ -444,10 +442,8 @@ struct LinkedList[ElementType: Movable](
         Raises:
             If the operation fails.
         """
-        if not self._tail:
+        __guard case .Some(var nn) = self._tail else:
             raise "Pop on empty list."
-
-        var nn = self._tail.value()
         var node = nn.unsafe_take_pointee()
         self._tail = node.prev()
         self._size -= 1
@@ -456,7 +452,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -485,26 +481,23 @@ struct LinkedList[ElementType: Movable](
         var idx = index(i)
         var current = self._get_node_ptr(idx)
 
-        if case .Some(nn) = current:
-            var node = nn.unsafe_take_pointee()
-            if case .Some(prev_node) = node.prev():
-                prev_node[].next() = node.next()
-            else:
-                self._head = node.next()
-            if case .Some(next_node) = node.next():
-                next_node[].prev() = node.prev()
-            else:
-                self._tail = node.prev()
+        __guard case .Some(nn) = current else:
+            raise Error("Invalid index for pop: ", idx)
+        var node = nn.unsafe_take_pointee()
+        if case .Some(prev_node) = node.prev():
+            prev_node[].next() = node.next()
+        else:
+            self._head = node.next()
+        if case .Some(next_node) = node.next():
+            next_node[].prev() = node.prev()
+        else:
+            self._tail = node.prev()
 
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
-                )
-            )
-            self._size -= 1
-            return node^._into_value()
-
-        raise Error("Invalid index for pop: ", idx)
+        dealloc(
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
+        )
+        self._size -= 1
+        return node^._into_value()
 
     def maybe_pop(mut self) -> Optional[Self.ElementType]:
         """Removes the tail of the list and returns it, if it exists.
@@ -515,9 +508,8 @@ struct LinkedList[ElementType: Movable](
         Notes:
             Time Complexity: O(1).
         """
-        if not self._tail:
+        __guard case .Some(var nn) = self._tail else:
             return Optional[Self.ElementType]()
-        var nn = self._tail.value()
         var node = nn.unsafe_take_pointee()
         self._tail = node.prev()
         self._size -= 1
@@ -526,7 +518,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
         )
         return node^._into_value()
 
@@ -551,26 +543,23 @@ struct LinkedList[ElementType: Movable](
         """
         var current = self._get_node_ptr(index(i))
 
-        if case .Some(nn) = current:
-            var node = nn.unsafe_take_pointee()
-            if case .Some(prev_node) = node.prev():
-                prev_node[].next() = node.next()
-            else:
-                self._head = node.next()
-            if case .Some(next_node) = node.next():
-                next_node[].prev() = node.prev()
-            else:
-                self._tail = node.prev()
-
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
-                )
-            )
-            self._size -= 1
-            return Optional[Self.ElementType](node^._into_value())
-        else:
+        __guard case .Some(nn) = current else:
             return Optional[Self.ElementType]()
+        var node = nn.unsafe_take_pointee()
+        if case .Some(prev_node) = node.prev():
+            prev_node[].next() = node.next()
+        else:
+            self._head = node.next()
+        if case .Some(next_node) = node.next():
+            next_node[].prev() = node.prev()
+        else:
+            self._tail = node.prev()
+
+        dealloc(
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
+        )
+        self._size -= 1
+        return Optional[Self.ElementType](node^._into_value())
 
     def clear(
         mut self,
@@ -586,7 +575,7 @@ struct LinkedList[ElementType: Movable](
             nn.unsafe_deinit_pointee()
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
 
@@ -594,6 +583,7 @@ struct LinkedList[ElementType: Movable](
         self._tail = Self._NodePointer()
         self._size = 0
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType):
         """Insert an element `elem` into the list at index `idx`.
@@ -612,7 +602,7 @@ struct LinkedList[ElementType: Movable](
 
         # Valid range is `[0, len(self)]` (an index of `len(self)` appends).
         var i = index(idx)
-        check_bounds(i, len(self) + 1)
+        check_bounds(i, length=len(self) + 1)
 
         if i == 0:
             var node: Pointer[
@@ -846,7 +836,7 @@ struct LinkedList[ElementType: Movable](
         """
         var i = index(idx)
         var l = len(self)
-        check_bounds(i, l, call_location[inline_count=2]())
+        check_bounds(i, length=l, location=call_location[inline_count=2]())
         var mid = l // 2
         if i <= mid:
             var curr = self._head

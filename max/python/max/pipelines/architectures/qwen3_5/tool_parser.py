@@ -246,9 +246,12 @@ _STATE_AFTER_FUNCTION_CLOSE = 4  # After </function>, before </tool_call>.
 
 
 def _max_holdback(buffer: str, sentinel: str) -> int:
-    """Return the length of the longest suffix of ``buffer`` that is a
-    proper prefix of ``sentinel``. We hold back exactly that many
-    characters so a sentinel split across deltas is still recognized."""
+    """Returns the number of characters to hold back.
+
+    That is the length of the longest suffix of ``buffer`` that is a proper
+    prefix of ``sentinel``, so a sentinel split across deltas is still
+    recognized.
+    """
     max_keep = min(len(buffer), len(sentinel) - 1)
     for n in range(max_keep, 0, -1):
         if sentinel.startswith(buffer[-n:]):
@@ -263,7 +266,7 @@ def _max_holdback(buffer: str, sentinel: str) -> int:
 
 
 def _without_mandatory_call_separator(node: Any) -> Any:
-    """Rewrites ``"\n"``-separated tag sections to end each call in a newline."""
+    """Rewrites newline-separated tag sections so each call ends in a newline."""
     if isinstance(node, list):
         return [_without_mandatory_call_separator(item) for item in node]
     if not isinstance(node, dict):

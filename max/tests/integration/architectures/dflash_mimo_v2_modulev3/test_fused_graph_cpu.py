@@ -1,0 +1,551 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""The fused ModuleV3 MiMo-V2 DFlash graph's no-GPU gate.
+
+The fused module stages on a 1-device CPU mesh with the synthetic
+target+draft checkpoint strict-loaded: exercising the Tensor boundary, the
+adapters, the verify path, the drafter and the accept without compiling.
+What is pinned:
+
+- the staged graph's name and input count, the engine's binding surface;
+- the weight-name contract both directions (``Module.compile`` silently
+  drops an unmatched entry, so the names are the real gate);
+- the trace's ops: the shared MoE subgraph, the W4A8 chain inside it, the
+  drafter's paged K/V stores and windowed attention, and the verify path's
+  variable-logits range and argmax head;
+- the SUBGRAPH COUNT: a refactor extracting more or fewer bodies must
+  update this test consciously.
+
+The 2-device input-tree parity check from the reference script needs a
+mesh whose devices carry distinct accelerator ids (the trace inserts the
+mesh's signal buffers only then); on a CPU mesh the layout equality is
+declared, not traced, so the multi-device layout is covered by the V2
+suite's GPU lane, not here.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
+
+import pytest
+from max import functional as F
+from max import mlir
+from max.driver import (
+    CPU,
+    DeviceSpec,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn import _graph_ops as kernels
+from max.nn.kv_cache import KVCacheParams, KVConnectorType, MultiKVCacheParams
+from max.nn.legacy.comm import Signals
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.arch import (
+    dflash_mimo_v2_modulev3_draft_arch,
+)
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.model import (
+    DFlashMiMoV2ModuleV3DraftArchConfig,
+)
+from max.pipelines.architectures.mimo_v2_modulev3.arch import (
+    mimo_v2_modulev3_arch,
+)
+from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
+    MiMoV2Config,
+)
+from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
+from max.pipelines.kv_cache.connectors.dkv.connector import (
+    _validate_dkv_leaves,
+)
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.module_registration import RegisteredDecoderBuilder
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _kv_tree,
+    _Pairing,
+)
+from max.pipelines.speculative import SpeculativeConfig
+from max.pipelines.weights import HuggingFaceRepo
+from max.tensor import default_device, default_dtype
+from max.tensor.compilation import StagedGraph
+from mimo_dflash_v3_fixtures import (
+    DFLASH_CONFIG,
+    _FakeAttrConfig,
+    build_module,
+    build_parts,
+    fused_weights,
+    graph_name,
+)
+from test_common.mixed_step_split_ops import record_sources
+
+GRAPH_NAME = "unified_dflash_mimo_v2"
+"""The graph-API pairing's graph name, which Mach's block-spec executor binds
+by constant."""
+
+GATE_UP_OP = "mo.composite.grouped_matmul_swiglu_nvfp4"
+DOWN_OP = "mo.composite.grouped_matmul_block_scaled"
+"""The experts' two launches: the gate/up matmul with the SwiGLU and MXFP8
+requantize fused into its epilogue, and the down projection that reads it."""
+
+N_INPUTS_1DEV = 38
+"""Inputs at 1 device without the bitmask triple (41 with it): the fused
+signature's tokens, offsets, return_n_logits, the self-declared signal
+buffer, the 27 KV leaf inputs (9 per group over 3 groups, the split
+record last), the draft tokens, the 6 sampling tails. The grammar
+bitmask is off: its host-wait op is GPU-only."""
+
+TARGET_ATTENTIONS = len(_FakeAttrConfig.hybrid_layer_pattern)
+"""The target's attention ops: one per decoder layer."""
+
+_DRAFTER_LAYER_TYPES = DFLASH_CONFIG["layer_types"]
+assert isinstance(_DRAFTER_LAYER_TYPES, list)
+DRAFTER_ATTENTIONS = len(_DRAFTER_LAYER_TYPES)
+"""The drafter's attention ops: only the block forward attends."""
+
+
+def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(
+    tmp_path: Any,
+) -> None:
+    """The dKV-configured KV tree the pairing builds is servable.
+
+    Builds the target's and the ModuleV3 drafter's params with a dKV-typed
+    connector config (the drafter refuses it only on the graph API), joins
+    them as the pairing does, and hands the tree to the connector's own
+    validation: the target's sliding window (128) beside
+    the drafter's context window (1024) is the mixed-width tree, and a leaf
+    kind the connector cannot serve (a scratch or recurrent leaf joining
+    the tree) fails here rather than at a served boot.
+    """
+    # The draft repo, on disk: construct_kv_params reads its config.json
+    # through repo_file, which resolves a local HuggingFaceRepo directly.
+    draft_dir = tmp_path / "dflash"
+    draft_dir.mkdir()
+    (draft_dir / "config.json").write_text(json.dumps(DFLASH_CONFIG))
+
+    devices = [DeviceRef.GPU(0)]
+    pipeline_config = cast(
+        Any,
+        SimpleNamespace(
+            draft_model=SimpleNamespace(
+                huggingface_weight_repo=HuggingFaceRepo(repo_id=str(draft_dir))
+            ),
+            model=SimpleNamespace(data_parallel_degree=1),
+            speculative=SpeculativeConfig(speculative_method="dflash"),
+        ),
+    )
+    kv_cache_config = KVCacheConfig(
+        kv_cache_page_size=128,
+        kv_connector_config=KVConnectorConfig(type=KVConnectorType.dkv),
+    )
+
+    def kv_params(config_cls: Any) -> Any:
+        return config_cls.construct_kv_params(
+            _FakeAttrConfig(),
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            DType.bfloat16,
+        )
+
+    target = kv_params(MiMoV2Config)
+    draft = kv_params(DFlashMiMoV2ModuleV3DraftArchConfig)
+    assert isinstance(target, MultiKVCacheParams)
+    assert isinstance(draft, KVCacheParams)
+    # The pairing stamps every leaf with the draft's width.
+    stamped = {}
+    for name, leaf in target.children.items():
+        assert isinstance(leaf, KVCacheParams)
+        stamped[name] = replace(leaf, num_draft_tokens=draft.num_draft_tokens)
+    params = MultiKVCacheParams.from_params(
+        {"target": MultiKVCacheParams.from_params(stamped), "draft": draft}
+    )
+    leaves = {
+        region.leaf_id: region.group_id for region in params.leaves().values()
+    }
+    assert len(leaves) == 3, f"the mixed tree holds three leaves: {leaves}"
+    widths = {
+        group.window_size
+        for group in leaves.values()
+        if group.is_sliding_window()
+    }
+    assert widths == {128, 1024}, (
+        "the target's sliding window beside the drafter's context window"
+    )
+    # The connector's own gate: no refusal, and every leaf is a kind it
+    # serves. A restored refusal, or a leaf kind dKV cannot serve, fails
+    # here.
+    _validate_dkv_leaves(leaves)
+    # The target's groups cache their 192-wide keys and 128-wide values
+    # unpadded, as the base build's do.
+    target = params.children["target"]
+    assert isinstance(target, MultiKVCacheParams)
+    dims = {
+        name: (leaf.head_dim, leaf.storage_head_dim)
+        for name, leaf in target.children.items()
+        if isinstance(leaf, KVCacheParams)
+    }
+    assert dims == {
+        "sliding_attention": (192, 320),
+        "full_attention": (192, 320),
+    }
+
+
+class _PastTheCheck(Exception):
+    """Raised where the target's build reads its config, past the check."""
+
+
+@pytest.mark.parametrize(("block", "refused"), [(8, False), (9, True)])
+def test_a_drafter_block_past_the_split_decode_route_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    block: int,
+    refused: bool,
+) -> None:
+    """A verify step runs the drafter's block, whatever
+    ``num_speculative_tokens`` says.
+
+    At 7 speculative tokens the base tree's own check counts 7 x 16 = 112
+    query rows on the full group (64 Q heads over 4 KV heads). The pairing
+    stamps the block on the tree it hands the registered builder: 8 x 16 =
+    128 keeps the split cache's decode route, and 9 x 16 = 144 leaves it,
+    so the build refuses it.
+    """
+    # The builder resolves the KV tree's devices; the virtual devices
+    # stand in without a GPU, as the staging gates' builds do.
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(1)
+    draft_dir = tmp_path / "dflash"
+    draft_dir.mkdir()
+    (draft_dir / "config.json").write_text(
+        json.dumps({**DFLASH_CONFIG, "block_size": block})
+    )
+    kv_cache_config = KVCacheConfig(kv_cache_page_size=128)
+    # A checkpoint file, so the requested encoding resolves as it does
+    # against a real repo: the file name carries no encoding hint, and the
+    # file exists, so the requested encoding stands.
+    (tmp_path / "model.safetensors").write_bytes(b"")
+    pipeline_config = cast(
+        Any,
+        SimpleNamespace(
+            draft_model=SimpleNamespace(
+                huggingface_weight_repo=HuggingFaceRepo(repo_id=str(draft_dir)),
+                huggingface_config=None,
+            ),
+            model=SimpleNamespace(
+                data_parallel_degree=1,
+                device_specs=[DeviceSpec.accelerator(0)],
+                huggingface_config=_FakeAttrConfig(),
+                kv_cache=kv_cache_config,
+                # The encoding the config resolves: the checkpoint's own.
+                quantization_encoding="float4_e2m1fnx2",
+                weight_path=[tmp_path / "model.safetensors"],
+                huggingface_weight_repo=None,
+                default_device_spec=DeviceSpec.accelerator(0),
+            ),
+            runtime=SimpleNamespace(
+                ep_size=1,
+                ep_use_allreduce=True,
+                enable_chunked_prefill=True,
+                max_batch_input_tokens=256,
+            ),
+            speculative=SpeculativeConfig(
+                speculative_method="dflash", num_speculative_tokens=7
+            ),
+        ),
+    )
+    target_kv = MiMoV2Config.construct_kv_params(
+        _FakeAttrConfig(),
+        pipeline_config,
+        [DeviceRef.GPU(0)],
+        kv_cache_config,
+        DType.bfloat16,
+    )
+    tree = _kv_tree(
+        pipeline_config,
+        _Pairing(
+            "MiMoV2ForCausalLM",
+            mimo_v2_modulev3_arch,
+            dflash_mimo_v2_modulev3_draft_arch,
+        ),
+        target_kv,
+    )
+    context = cast(
+        ModelLoadContext,
+        SimpleNamespace(
+            pipeline_config=pipeline_config,
+            weights=object(),
+            adapter=None,
+            memory_plan=SimpleNamespace(planned_max_batch_size=5),
+            return_logits=ReturnLogits.VARIABLE,
+            return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
+            target_layer_ids=(1, 3),
+            kv_params=tree.children["target"],
+            max_seq_len=1024,
+            max_batch_total_tokens=512,
+            huggingface_config=_FakeAttrConfig(),
+            start_ep=lambda ep: None,
+        ),
+    )
+
+    # The builder reads the checkpoint only to name the decoder's weights,
+    # which this refusal check never loads; an empty state dict keeps the
+    # build about the config, not the tensors.
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.parse_state_dict_from_weights",
+        lambda *args: cast(dict[str, Any], {}),
+    )
+    # The registered builder applies the load context -- whose KV check is
+    # the refusal under test -- before it constructs the decoder; the
+    # patch marks where the check has passed for the accepted block.
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.construct_module",
+        lambda *args: (_ for _ in ()).throw(_PastTheCheck()),
+    )
+    builder = RegisteredDecoderBuilder(
+        cast(Any, mimo_v2_modulev3_arch.pipeline_model)
+    )
+    if refused:
+        with pytest.raises(ValueError, match="144 query rows"):
+            builder.build_module(context)
+    else:
+        with pytest.raises(_PastTheCheck):
+            builder.build_module(context)
+
+
+@pytest.fixture(scope="module")
+def staged() -> tuple[StagedGraph[Any, Any], str]:
+    """The fused module staged at 1 device, and its trace text.
+
+    Built once per module: the stage is the expensive step (the trace
+    realizes every adapter output), and every check below only reads it.
+    """
+    one = [DeviceRef.CPU()]
+    config, draft, kv_tree = build_parts(one)
+    weights = fused_weights(config, draft)
+    module = build_module(config, draft, kv_tree, structured_output=False)
+    # The W4A8 kernels have no CPU dispatch; the stage only emits the ops,
+    # so pin the SM100 shape paths the GPU build will compile, exactly as
+    # the ModuleV3 MiMo CPU harness does.
+    kernels._is_sm10x_gpu = lambda: True
+    with default_dtype(DType.bfloat16), default_device(CPU()):
+        with F.lazy():
+            graph, _registry = module.stage(
+                *module.driver_call().input_types,
+                weights=weights,
+                name=graph_name(),
+                allow_subgraphs=True,
+            )
+            text = str(graph)
+    return graph, text
+
+
+def test_the_graph_stages_under_the_engine_binding_name(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """Mach's block-spec executor binds the graph by the constant
+    ``unified_dflash_mimo_v2`` -- the V2 build's name -- so the ModuleV3
+    export must stage under it or every deployed MEF is stranded."""
+    graph, _ = staged
+    assert graph.graph.name == GRAPH_NAME
+
+
+def test_the_input_count_matches_the_v2_signature(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The engine binds the inputs positionally; the count is the
+    signature's. At 1 device the trace declares its own signal buffer at
+    the engine's slot, so the count holds with the V2 graph's."""
+    graph, _ = staged
+    assert len(graph.graph.inputs) == N_INPUTS_1DEV
+
+
+def test_the_signal_buffer_takes_the_engines_slot(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """Mach binds the signal buffers after the tokens, row offsets and logit
+    count, where the graph-API pairing declares them."""
+    graph, _ = staged
+    (signal,) = Signals(devices=[DeviceRef.CPU()]).input_types()
+    assert graph.graph.inputs[3].type == signal
+
+
+def test_the_weight_name_contract_holds_both_directions() -> None:
+    """``Module.compile`` silently drops a weights entry no parameter
+    matches and initializes that parameter to its default, so the fused
+    module's parameters and the adapted ``target.``/``draft.``-prefixed
+    checkpoint must be asserted equal as sets, and the strict load pins
+    shape and backing dtype."""
+    one = [DeviceRef.CPU()]
+    config, draft, kv_tree = build_parts(one)
+    module = build_module(config, draft, kv_tree, structured_output=False)
+    weights = fused_weights(config, draft)
+    names = {name for name, _ in module.parameters}
+    assert names == set(weights), (
+        f"module lacks {sorted(set(weights) - names)[:8]}; no parameter "
+        f"matches {sorted(names - set(weights))[:8]}"
+    )
+    with default_dtype(DType.bfloat16), default_device(CPU()):
+        with F.lazy():
+            module.load_state_dict(weights, strict=True)
+
+
+def test_the_trace_carries_the_shared_moe_subgraph(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The target's 3 MoE layers share one extracted body and call it once
+    each; layer 0's dense MLP stays inline. Pin the counts so an extraction
+    of another body -- or a fusion folding a call away -- must update this
+    test consciously, not slip past it."""
+    _, text = staged
+    assert text.count("mo.graph @mimo_v2_moe") == 1
+    assert text.count("mo.call @mimo_v2_moe") == 3
+    # The MoE body is the only shared extraction; the top-level graph makes
+    # the other one. Pin the total.
+    assert text.count("mo.graph @") == 2
+
+
+def _nested_ops(
+    op: mlir.Operation | mlir.OpView,
+) -> list[mlir.Operation | mlir.OpView]:
+    """Returns ``op`` and every op nested under it, in program order."""
+    return [op] + [
+        inner
+        for region in op.regions
+        for block in region.blocks
+        for child in block.operations
+        for inner in _nested_ops(child)
+    ]
+
+
+def test_the_trace_carries_the_w4a8_chain(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The experts run the MXFP4 chain: the input quantize and two grouped
+    matmuls, all inside the shared body; the dense MLPs run the W8A8 FP8
+    chain inline.
+
+    The gate/up matmul's epilogue applies the gated activation and the down
+    projection's MXFP8 re-quantize in place, so neither a standalone SiLU
+    nor a second grouped quantize appears, and the grouped matmul count is
+    two.
+    """
+    graph, text = staged
+    for op, expected in (
+        ("moe.create.indices.with.scales.offset", 1),
+        (
+            "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices",
+            1,
+        ),
+        # The plain name is a substring of the row-indexed one, so the
+        # experts' input quantize counts here too.
+        ("quantization.grouped.quantize.dynamic.block.scaled", 1),
+        (GATE_UP_OP, 1),
+        (DOWN_OP, 1),
+        ("moe.finalize", 1),
+        ("mo.composite.quantize_dynamic_scaled_fp8", 7),
+        ("matmul.dynamic_scaled_fp8", 7),
+        ("f8e4m3fn", None),
+        ("f8e8m0fnu", None),
+    ):
+        n = text.count(op)
+        assert n > 0, f"missing {op}"
+        if expected is not None:
+            assert n == expected, f"{op}: expected {expected}, got {n}"
+    assert "ep.fused_silu" not in text, "the chained SiLU is gone"
+    # The fused epilogue rounds its SwiGLU output through the bfloat16 the
+    # chained activation stored before it quantizes, which keeps the layer's
+    # output bit-identical to the chained path's.
+    ops = _nested_ops(graph.graph._mlir_op.block.owner)
+    (gate_up,) = [op for op in ops if op.name == GATE_UP_OP]
+    activation = mlir.StringAttr(gate_up.attributes["activation"]).value
+    assert activation == "silu_bf16", (
+        f"the gate/up matmul fuses {activation}, not a bf16-rounded SwiGLU"
+    )
+    # The down matmul consumes the epilogue's packed output directly: a
+    # restored re-quantize would put another op's result in this slot.
+    (down,) = [op for op in ops if op.name == DOWN_OP]
+    assert down.operands[0] == gate_up.results[0], (
+        "the down matmul does not read the gate/up epilogue's packed result"
+    )
+
+
+def test_the_trace_carries_the_drafter_kernels(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The drafter's 2 layers write context and block K/V through one
+    rotation-and-store launch each -- the context rows through the
+    query-less one, the block rows through the one that ropes their queries
+    too -- not the paged stores plus a separate fused QK kernel, and attend
+    through the sinked windowed kernel; the target's 4 layers keep their own
+    8 stores."""
+    _, text = staged
+    for op, expected in (
+        ("kv_cache.store.paged.ragged", 8),
+        ("kv_cache.fused_qk_rope.ragged.paged", 4),
+        ("kv_cache.rope_qkv_store.ragged.paged", 2),
+        ("kv_cache.k_rope_v_store.ragged.paged", 2),
+        ("attention.mha.ragged.paged.sink_weights", 5),
+        ("attention.mha.ragged.paged", 6),
+    ):
+        n = text.count(op)
+        assert n == expected, f"{op}: expected {expected}, got {n}"
+
+
+def test_only_the_target_attention_reads_the_split_record(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The drafter must not split on the target's record: the driver strips
+    the record before every draft forward, so the drafter's attention reads
+    a zeros constant while the target's reads the leaf's graph argument."""
+    graph, _ = staged
+    attention = [
+        source
+        for symbol, source in record_sources(graph.graph._mlir_op.block.owner)
+        if symbol
+        in (
+            "attention.mha.ragged.paged",
+            "attention.mha.ragged.paged.sink_weights",
+        )
+    ]
+    assert attention == (
+        ["argument"] * TARGET_ATTENTIONS + ["mo.constant"] * DRAFTER_ATTENTIONS
+    )
+
+
+def test_the_target_layers_read_the_split_cache(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The target's layers, sliding and full, store, rotate and attend over
+    the split cache by its value width; the drafter's ops do not."""
+    _, text = staged
+    # The K store, V store, RoPE and attention of each of the 4 target
+    # layers; the full-attention layer alone was 4.
+    assert text.count("v_head_dim = 128") == 4 * 4
+    assert "v_head_dim = " not in text.replace("v_head_dim = 128", "")
+
+
+def test_the_trace_carries_the_verify_path(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The verify path scores the trailing rows of each request through a
+    host-counted range, and the drafter's proposals come out of the target
+    head's argmax."""
+    _, text = staged
+    for op in ("mo.range", "arg_max"):
+        assert text.count(op) > 0, f"missing {op}"

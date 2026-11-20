@@ -30,7 +30,7 @@ the deleted Mojo kernels used), so the sweep is ops x widths, not ops x
 widths x ranks.
 
 ``MutableStoreSlice`` is the family's one unusual member: its graph takes
-an in-place ``BufferType`` input, emits ``rmo.MoMutableStoreSliceOp`` with
+an in-place ``BufferType`` input, emits ``mo.MutableStoreSliceOp`` with
 the device-chain idiom from ``max.graph.ops.buffer_store_slice``, and has
 no tensor outputs (``graph.output()`` packs the chain).
 
@@ -43,7 +43,7 @@ from collections.abc import Callable
 
 import numpy as np
 from max import _core, engine
-from max._core.dialects import kgen, mo, rmo
+from max._core.dialects import kgen, mo
 from max._interpreter_ops import gc_compile
 from max.driver import Buffer, Device
 from max.dtype import DType
@@ -248,8 +248,10 @@ def store_slice(
     stops: NDArray[np.int64],
     steps: NDArray[np.int64],
 ) -> None:
-    """Writes ``src`` into ``in_buffer``'s slice in place, via zero-copy
-    uint views padded to ``MAX_RANK`` with leading full-extent unit axes.
+    """Writes ``src`` into ``in_buffer``'s slice in place.
+
+    The write is zero-copy, through uint views padded to ``MAX_RANK`` with
+    leading full-extent unit axes.
 
     Sub-byte dtypes (fp4) raise NotImplementedError in uint_view_dtype,
     matching the deleted Mojo kernel's unsupported-dtype behavior.
@@ -274,9 +276,12 @@ def _symbolic_dims(prefix: str) -> list[str]:
 def _build_transpose_graph(
     module: Module, device: Device, dtype: DType
 ) -> None:
-    """rmo.MoTransposeOp with the permutation as a runtime [MAX_RANK] host
-    operand: one graph serves every permutation. Handlers pad input and
-    perm to MAX_RANK and re-view the output to the real shape."""
+    """Transposes through ``mo.TransposeOp`` with a runtime permutation.
+
+    The permutation is a ``[MAX_RANK]`` host operand, so one graph serves
+    every permutation. Handlers pad input and perm to MAX_RANK and re-view
+    the output to the real shape.
+    """
     device_ref = DeviceRef.from_device(device)
     graph = Graph(
         _graph_name(mo.TransposeOp, device, dtype),
@@ -290,7 +295,7 @@ def _build_transpose_graph(
         data, perm = (v.tensor for v in graph.inputs)
         out_type = TensorType(dtype, _symbolic_dims("o"), device=device_ref)
         out = Graph.current._add_op_generated(
-            rmo.MoTransposeOp,
+            mo.TransposeOp,
             result=out_type,
             input=data,
             perm=perm,
@@ -313,7 +318,8 @@ def _build_broadcast_graph(
     dims. So each output dim ``o{i}`` is bound from the shape of a tiny
     host uint8 carrier input ``[o{i}]``; legality stays the handler's
     job (it has the concrete shapes). Always MAX_RANK carriers; handlers
-    pad both sides to MAX_RANK."""
+    pad both sides to MAX_RANK.
+    """
     device_ref = DeviceRef.from_device(device)
     out_dims = _symbolic_dims("o")
     graph = Graph(
@@ -342,7 +348,7 @@ _register_spec(mo.BroadcastToOp, _build_broadcast_graph)
 def _build_store_slice_graph(
     module: Module, device: Device, dtype: DType
 ) -> None:
-    """rmo.MoMutableStoreSliceOp writing in place into a BufferType input.
+    """mo.MutableStoreSliceOp writing in place into a BufferType input.
 
     Chain idiom copied from ``max.graph.ops.buffer_store_slice``
     (graph/ops/buffer.py), but with runtime starts/stops/steps operands
@@ -368,15 +374,15 @@ def _build_store_slice_graph(
         src, starts, stops, steps = (v.tensor for v in graph.inputs[1:])
         in_chain = Graph.current.device_chains[dst.device]
         out_chain = Graph.current._add_op_generated(
-            rmo.MoMutableStoreSliceOp,
+            mo.MutableStoreSliceOp,
             mo.ChainType(),
             dst,
             src,
             starts,
             stops,
             steps,
-            kgen.ParamDeclArrayAttr([]),
             in_chain,
+            kgen.ParamDeclArrayAttr([]),
         )[-1]
         Graph.current.device_chains[dst.device] = out_chain
         graph.output()

@@ -20,12 +20,10 @@ from max.gpu.host import DeviceContext
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, Idx, TileTensor, row_major
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 from internal_utils import assert_almost_equal, assert_with_measure
 from std.random import rand
 from internal_utils._measure import relative_difference
-from std.collections import OptionalReg
-from std.utils.index import IndexList
 
 from ....utils import ElementwiseComputeFn, no_compute_fn
 from ....utils_gpu import MatmulConfig
@@ -44,14 +42,14 @@ def test_matmul_sm90[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    cluster_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
+    cluster_shape: Tuple[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    wgmma_shape: Tuple[Int, Int, Int],
     num_consumer: Int = 1,
     num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     default_epilogue: Bool = False,
@@ -107,9 +105,9 @@ def test_matmul_sm90[
         compute_fn: Maps each output index and value to the value to store
             when `has_compute_fn` is set.
     """
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     comptime CLUSTER_N = cluster_shape[0]
     comptime CLUSTER_M = cluster_shape[1]
@@ -121,23 +119,21 @@ def test_matmul_sm90[
 
     # Host allocations
     var a_host_alloc = alloc(
-        AllocLayout[Scalar[a_type]](count=a_size)
+        AllocLayout[Scalar[a_type]](length=a_size)
     ).into_managed()
     var a_host = a_host_alloc.unsafe_ptr()
     var b_host_alloc = alloc(
-        AllocLayout[Scalar[b_type]](count=b_size)
+        AllocLayout[Scalar[b_type]](length=b_size)
     ).into_managed()
     var b_host = b_host_alloc.unsafe_ptr()
     var c_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
     var c_host = c_host_alloc.unsafe_ptr()
     var c_host_ref_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_host_ref: UnsafePointer[
-        Scalar[c_type], origin_of(c_host_ref_alloc)
-    ] = c_host_ref_alloc.unsafe_ptr()
+    var c_host_ref = c_host_ref_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -257,7 +253,7 @@ def test_matmul_sm90[
             schedule=schedule,
             grid_shape=grid_shape,
             use_tma_store=use_tma_store,
-        ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn, ctx)
+        ]((M, N), a_tensor, b_tensor, epilogue_fn, ctx)
     else:
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,

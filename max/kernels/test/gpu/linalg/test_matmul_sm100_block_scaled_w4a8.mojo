@@ -35,7 +35,7 @@ def main() raises:
                     K=1152,
                     mma_n=mma_n,
                     cta_group=cta_group,
-                    cluster_shape=(cta_group, 1, 1),
+                    cluster_shape=(Int(cta_group), Int(1), Int(1)),
                     block_swizzle_size=8,
                 ](ctx, 1000)
 
@@ -44,7 +44,7 @@ def main() raises:
                     K=4096,
                     mma_n=mma_n,
                     cta_group=cta_group,
-                    cluster_shape=(4, 2, 1),
+                    cluster_shape=(Int(4), Int(2), Int(1)),
                     k_group_size=2,
                 ](ctx, 500)
 
@@ -53,7 +53,7 @@ def main() raises:
                     K=8192,
                     mma_n=mma_n,
                     cta_group=cta_group,
-                    cluster_shape=(4, 4, 1),
+                    cluster_shape=(Int(4), Int(4), Int(1)),
                     block_swizzle_size=1,
                 ](ctx, 777, alpha=0.5)
 
@@ -62,7 +62,7 @@ def main() raises:
                     K=7168,
                     mma_n=mma_n,
                     cta_group=cta_group,
-                    cluster_shape=(4, 4, 1),
+                    cluster_shape=(Int(4), Int(4), Int(1)),
                     block_swizzle_size=1,
                 ](ctx, 1, alpha=0.5)
 
@@ -73,7 +73,7 @@ def main() raises:
                     K=1152,
                     mma_n=mma_n,
                     cta_group=cta_group,
-                    cluster_shape=(cta_group, 1, 1),
+                    cluster_shape=(Int(cta_group), Int(1), Int(1)),
                     block_swizzle_size=8,
                     fused_epilogue=True,
                 ](ctx, 16)

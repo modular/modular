@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Stopwatch for timing a scope."""
+
 import contextlib
 import time
 from collections.abc import Callable, Generator
@@ -45,12 +47,14 @@ class StopWatch:
 
     @classmethod
     def start(cls):  # noqa: ANN206
+        """Returns a stopwatch started now."""
         sw = cls()
         sw.reset()
         return sw
 
     @staticmethod
     def time_ns() -> int:
+        """Returns the current monotonic time."""
         return time.perf_counter_ns()
 
     def __init__(self, start_ns: int | None = None) -> None:
@@ -60,6 +64,7 @@ class StopWatch:
         self.exit_ns: int = 0
 
     def reset(self, start_ns: int | None = None) -> None:
+        """Restarts the watch, optionally from a given time."""
         if start_ns is None:
             start_ns = self.time_ns()
         self.start_ns = start_ns
@@ -79,6 +84,7 @@ class StopWatch:
 
     @property
     def elapsed_ns(self) -> int:
+        """Elapsed time since the watch started, in nanoseconds."""
         if not self.start_ns:
             raise RuntimeError("Stopwatch not started")
         end = self.exit_ns or self.time_ns()
@@ -87,10 +93,12 @@ class StopWatch:
 
     @property
     def elapsed_ms(self) -> float:
+        """Elapsed time since the watch started, in milliseconds."""
         return self.elapsed_ns / 1e6
 
     @property
     def elapsed_s(self) -> float:
+        """Elapsed time since the watch started, in seconds."""
         return self.elapsed_ns / 1e9
 
 

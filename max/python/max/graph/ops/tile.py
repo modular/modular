@@ -14,7 +14,7 @@
 
 from collections.abc import Iterable
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 
 from .. import dtype_promotion
 from ..dim import Dim, DimLike, StaticDim
@@ -78,7 +78,7 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
     ]
 
     return Graph.current._add_op_generated(
-        rmo.MoTileOp,
+        mo.TileOp,
         TensorType(dtype=x.dtype, shape=output_dims, device=x.device),
         x,
         TensorValue(Shape(repeats)),

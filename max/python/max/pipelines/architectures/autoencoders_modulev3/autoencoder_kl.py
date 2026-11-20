@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""ModuleV3 autoencoder KL and its pipeline model."""
 
 from typing import Any
 
 from max.driver import Device
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
+from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
+from max.tensor import Tensor
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLConfig

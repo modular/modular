@@ -287,17 +287,8 @@ def test_garbage_row_canary[
     var row_w = num_q_heads * head_dim
     var total_keys = prefix + q_width
     print(
-        "  [Layer G garbage-row canary] dtype=",
-        String(dtype),
-        " prefix=",
-        prefix,
-        " q_width=",
-        q_width,
-        " group=",
-        group,
-        " seed=",
-        rng_seed,
-        sep="",
+        t"  [Layer G garbage-row canary]"
+        t" dtype={dtype} prefix={prefix} q_width={q_width} group={group} seed={rng_seed}"
     )
 
     var q_clean = ctx.enqueue_create_host_buffer[dtype](q_width * row_w)
@@ -339,13 +330,8 @@ def test_garbage_row_canary[
         if o_poison[i] != o_poison[i]:  # NaN != NaN
             any_nan = True
     print(
-        "     row0 mismatches=",
-        mismatches,
-        "/",
-        row_w,
-        "  row0_has_nan(poisoned run)=",
-        any_nan,
-        sep="",
+        t"     row0 mismatches={mismatches}/{row_w}  row0_has_nan(poisoned"
+        t" run)={any_nan}"
     )
     assert_equal(
         mismatches,
@@ -385,13 +371,7 @@ def main() raises:
                 ](1024, w, ctx)
             except e:
                 failures.append(String("bf16 group=16 w=") + String(w))
-                print(
-                    "     CANARY FAILED (bf16, group=16, w=",
-                    w,
-                    "): ",
-                    e,
-                    sep="",
-                )
+                print(t"     CANARY FAILED (bf16, group=16, w={w}): {e}")
 
         # fp8, group=16: the original failing shape (MiniMax-M3's dense
         # attention layers at TP4, num_draft_tokens_to_verify up to 7).
@@ -406,9 +386,7 @@ def main() raises:
                 ](1024, w, ctx)
             except e:
                 failures.append(String("fp8 group=16 w=") + String(w))
-                print(
-                    "     CANARY FAILED (fp8, group=16, w=", w, "): ", e, sep=""
-                )
+                print(t"     CANARY FAILED (fp8, group=16, w={w}): {e}")
 
         # fp8, group=8: a second, independently confirmed original failure at a
         # different (num_q_heads, group) -- the failing width (5) is NOT a
@@ -448,11 +426,8 @@ def main() raises:
                     String("fp8 group=16 w=4 seed=") + String(w4_seed)
                 )
                 print(
-                    "     CANARY FAILED (fp8, group=16, w=4, seed=",
-                    w4_seed,
-                    "): ",
-                    e,
-                    sep="",
+                    t"     CANARY FAILED (fp8, group=16, w=4,"
+                    t" seed={w4_seed}): {e}"
                 )
 
         assert_true(

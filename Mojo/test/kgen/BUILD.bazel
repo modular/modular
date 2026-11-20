@@ -1,13 +1,23 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "modular_cc_binary")
 
-package(default_visibility = ["//visibility:private"])
+# gazelle:default_visibility //visibility:private,//plugins:__subpackages__
+
+package(default_visibility = [
+    "//plugins:__subpackages__",
+    "//visibility:private",
+])
+
+_INTERPRETER_LIB_TESTS = glob(["kgen-elaborate/interpreter-libs*.mlir"])
 
 lit_tests(
     name = "kgen",
-    srcs = glob([
-        "**/*.mlir",
-        "**/*.ll",
-    ]),
+    srcs = glob(
+        [
+            "**/*.mlir",
+            "**/*.ll",
+        ],
+        exclude = _INTERPRETER_LIB_TESTS,
+    ),
     tools = [
         "//Mojo/tools/hash-mlir",
         "//Mojo/tools/kgen",
@@ -18,4 +28,21 @@ lit_tests(
         "@llvm-project//llvm:llvm-dis",
         "@llvm-project//llvm:llvm-objdump",
     ],
+)
+
+modular_cc_binary(
+    name = "interpreter_lib.so",
+    testonly = True,
+    srcs = ["kgen-elaborate/Inputs/interpreter_lib.cpp"],
+    linkshared = True,
+)
+
+lit_tests(
+    name = "interpreter_libs",
+    srcs = _INTERPRETER_LIB_TESTS,
+    custom_substitutions = {
+        "%interpreter_lib": "$(rlocationpath :interpreter_lib.so)",
+    },
+    data = [":interpreter_lib.so"],
+    tools = ["//Mojo/tools/kgen"],
 )

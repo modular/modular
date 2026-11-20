@@ -119,13 +119,12 @@ The `comptime for` unrolls at compile time. Each `ScheduleEntry` carries an
 
 ### The dispatch function
 
-You write a `@__parameter` function that maps `ScheduleEntry` tags to kernel
+You write a nested closure that maps `ScheduleEntry` tags to kernel
 primitives:
 
 ```mojo
-@__parameter
 @inline(.always)
-def dispatch[entry: ScheduleEntry]():
+def dispatch[entry: ScheduleEntry]() {imm}:
     comptime if entry.op.tag == MyOps.LOAD_A.value:
         load_a_from_dram(entry.op.stage)
     elif entry.op.tag == MyOps.MMA.value:
@@ -283,9 +282,8 @@ comptime schedule = build_default_matmul_schedule[
     num_k_tiles=num_k_tiles, ...
 ]()
 
-@__parameter
 @inline(.always)
-def _bind[entry: ScheduleEntry]():
+def _bind[entry: ScheduleEntry]() {imm}:
     comptime if entry.op.tag == LOAD_DRAM:
         load_tiles_from_dram()
     elif entry.op.tag == STORE_SMEM:
@@ -587,8 +585,10 @@ result registers.
 
 ```mojo
 # Layout: [kv_smem] [produced_mbar × stages] [consumed_mbar × stages] [q_mbar × 2]
-produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
-consumed_mbar_kv = produced_mbar_kv + pipeline_stages
+produced_mbar_kv = kv_smem.unsafe_offset(kv_smem_size).unsafe_bitcast[
+    SharedMemBarrier
+]()
+consumed_mbar_kv = produced_mbar_kv.unsafe_offset(pipeline_stages)
 
 # Initialize: 1 producer thread, num_consumer_threads consumers
 comptime for i in range(pipeline_stages):
@@ -888,9 +888,8 @@ and the MMA resource model — the same analysis it does for `vmcnt` on AMD.
 The dispatch function maps to the existing WGMMA ceremony:
 
 ```mojo
-@__parameter
 @inline(.always)
-def inner_dispatch[entry: ScheduleEntry]():
+def inner_dispatch[entry: ScheduleEntry]() {imm}:
     comptime if entry.op.tag == FA3InnerOps.WGMMA_QK.value:
         warpgroup_fence(p_reg_tile)
         wgmma_0.arrive()
@@ -969,9 +968,8 @@ runs them, with barrier ops injected at the synchronization points.
 **Step 7 — Dispatch.** The dispatch function maps tags to NVIDIA primitives:
 
 ```mojo
-@__parameter
 @inline(.always)
-def producer_dispatch[entry: ScheduleEntry]():
+def producer_dispatch[entry: ScheduleEntry]() {imm}:
     comptime if entry.op.tag == FA3Ops.TMA_LOAD_K.value:
         # Wait for consumer to free stage, set expected bytes, TMA copy
         consumed_mbar_kv[stage_idx].wait(phase)
@@ -983,9 +981,8 @@ def producer_dispatch[entry: ScheduleEntry]():
         produced_mbar_kv[stage_idx].expect_bytes(tile_bytes)
         v_tma_op.async_copy(v_tile(stage_idx), produced_mbar_kv[stage_idx], coord)
 
-@__parameter
 @inline(.always)
-def consumer_dispatch[entry: ScheduleEntry]():
+def consumer_dispatch[entry: ScheduleEntry]() {imm}:
     comptime if entry.op.tag == FA3Ops.WGMMA_QK.value:
         # Wait for K data, then async MMA
         produced_mbar_kv[stage_idx].wait(phase)

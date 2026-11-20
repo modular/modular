@@ -32,8 +32,9 @@ from max.driver import (
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
-from max.nn.float8_scale_stacking import can_use_fused_mlp
+from max.nn.legacy.float8_scale_stacking import can_use_fused_mlp
 from max.nn.quant_config import (
+    DISABLE_FUSED_SWIGLU_NVFP4_ENV,
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -184,11 +185,22 @@ def _normalize_modelopt_ignore_pattern(pattern: str) -> str:
     return normalized
 
 
+def _modelopt_section(hf_quant_config: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return the modelopt fields of a HF quant config.
+
+    Some exports nest ``quant_algo`` and ``exclude_modules`` under
+    ``quantization``, as ``hf_quant_config.json`` does, instead of writing
+    them on the top level.
+    """
+    return hf_quant_config.get("quantization", hf_quant_config)
+
+
 def _modelopt_ignore_patterns(
     hf_quant_config: Mapping[str, Any] | Any,
 ) -> list[str]:
-    """Return modelopt ``ignore`` entries (glob patterns) from a HF quant config."""
-    ignore = hf_quant_config.get("ignore", [])
+    """Return modelopt ``ignore`` / ``exclude_modules`` globs from a HF quant config."""
+    section = _modelopt_section(hf_quant_config)
+    ignore = section.get("ignore", section.get("exclude_modules", []))
     if not isinstance(ignore, Sequence) or isinstance(ignore, str):
         return []
     return [_normalize_modelopt_ignore_pattern(str(entry)) for entry in ignore]
@@ -706,14 +718,15 @@ def _parse_mxfp8_config(
     (one scale per 32 weight columns).  The weight adapter converts E8M0 bytes
     to float32 before loading, so we declare DType.float32 for weight scales
     here.  Activation scales are computed dynamically at runtime.
+
+    A modelopt ``quant_algo: MXFP8`` export names its unquantized modules in
+    ``exclude_modules``; ``quant_method="mxfp8"`` names them in
+    ``ignored_layers``.
     """
     text_config = getattr(huggingface_config, "text_config", huggingface_config)
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     if hf_quant_config is None:
         hf_quant_config = getattr(text_config, "quantization_config", {})
-
-    ignored_layers: list[str] = list(hf_quant_config.get("ignored_layers", []))
-    ignored_modules: set[str] = set(ignored_layers)
 
     weight_spec = WeightScaleSpec(
         granularity=ScaleGranularity.BLOCK,
@@ -727,13 +740,28 @@ def _parse_mxfp8_config(
         block_size=(1, 32),
     )
 
-    mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
-        _quantized_layers_and_embedding_dtype(
-            huggingface_config,
-            ignored_modules,
-            state_dict,
+    shared_experts_weight_dtype: DType | None = None
+    if _modelopt_section(hf_quant_config).get("quant_algo") == "MXFP8":
+        ignore_patterns = _modelopt_ignore_patterns(hf_quant_config)
+        mlp_quantized_layers, attn_quantized_layers = (
+            _quantized_layers_from_modelopt_ignore(
+                huggingface_config, ignore_patterns
+            )
         )
-    )
+        embedding_output_dtype: DType | None = (
+            _embedding_output_dtype_from_state_dict(state_dict, ignore_patterns)
+        )
+        shared_experts_weight_dtype = _modelopt_shared_experts_quantized_dtype(
+            ignore_patterns
+        )
+    else:
+        mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
+            _quantized_layers_and_embedding_dtype(
+                huggingface_config,
+                set(hf_quant_config.get("ignored_layers", [])),
+                state_dict,
+            )
+        )
 
     bias_dtype = _bias_dtype(state_dict)
 
@@ -743,6 +771,7 @@ def _parse_mxfp8_config(
         mlp_quantized_layers=mlp_quantized_layers,
         attn_quantized_layers=attn_quantized_layers,
         embedding_output_dtype=embedding_output_dtype,
+        shared_experts_weight_dtype=shared_experts_weight_dtype,
         bias_dtype=bias_dtype,
         format=QuantFormat.MXFP8,
     )
@@ -796,8 +825,8 @@ def _parse_fp8_config(
     elif quant_method == "mxfp8":
         return _parse_mxfp8_config(huggingface_config, state_dict, dtype)
     elif quant_method == "modelopt":
-        quant_algo = hf_quant_config.get("quant_algo")
-        if quant_algo == "MIXED_PRECISION":
+        quant_algo = _modelopt_section(hf_quant_config).get("quant_algo")
+        if quant_algo in ("MXFP8", "MIXED_PRECISION"):
             return _parse_mxfp8_config(huggingface_config, state_dict, dtype)
 
     raise ValueError(
@@ -892,7 +921,7 @@ def _load_standalone_quant_config(
 
 def resolve_hf_quant_config(
     huggingface_config: AutoConfig,
-    state_dict: Mapping[str, WeightData],
+    state_dict: Mapping[str, Any],
 ) -> dict[str, Any] | None:
     """Resolves a checkpoint's Hugging Face quantization config.
 
@@ -1089,7 +1118,7 @@ def build_modelopt_nvfp4_config(
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> QuantConfig:
-    """Builds the QuantConfig for modelopt's NVFP4 two-level scheme.
+    """Builds the QuantConfig for the NVFP4 two-level scheme.
 
     Skips the whole-checkpoint ``quant_algo == "NVFP4"`` check that a
     ``MIXED_PRECISION`` export cannot pass, so the caller must have
@@ -1097,10 +1126,14 @@ def build_modelopt_nvfp4_config(
     quantized some other way reads its payload as packed FP4 and yields
     garbage.
 
+    Reads modelopt's per-tensor scales and compressed-tensors' global
+    scales, their reciprocals, alike: the config records which ones the
+    checkpoint stores.
+
     Args:
         huggingface_config: The config the layer count is read from.
         state_dict: The checkpoint weights, read for the bias and
-            embedding dtypes.
+            embedding dtypes and for which per-tensor scales they store.
         resolved_quant_config: The resolved quantization config, from
             :func:`resolve_hf_quant_config`. Only its ``ignore`` globs
             are read; ``None`` means nothing is ignored.
@@ -1139,6 +1172,9 @@ def build_modelopt_nvfp4_config(
         bias_dtype=_bias_dtype(state_dict),
         shared_experts_weight_dtype=_modelopt_shared_experts_quantized_dtype(
             ignore_patterns
+        ),
+        compressed_tensors_global_scales=any(
+            name.endswith(".weight_global_scale") for name in state_dict
         ),
     )
 
@@ -1460,6 +1496,6 @@ def apply_fused_kernel_flags(
         config.is_nvfp4
         or (config.is_mxfp8 and accelerator_api() == "cuda")
         or (config.is_mxfp8 and on_gfx950)
-    ) and (os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1")
+    ) and (os.environ.get(DISABLE_FUSED_SWIGLU_NVFP4_ENV) != "1")
 
     return config

@@ -176,7 +176,6 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
     block = nextBlock;
   }
 
-  DenseSet<Block *> visited;
   bool hasSuspensionPoints = !buildContext.blockList.empty();
   if (hasSuspensionPoints) {
     // Create the initial switch to direct to the correct resume point.

@@ -24,14 +24,15 @@ from std.testing import assert_almost_equal
 
 
 def tcgen05_st_ld_roundtrip_kernel[
-    M: Int, N: Int
+    M: Int, N: Int, data_origin: MutOrigin
 ](
     data: TileTensor[
-        .float32, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
+        .float32,
+        RowMajorLayout[ComptimeInt[M], ComptimeInt[N]],
+        data_origin,
     ]
 ):
     var elect_one_warp = warp_id() == 0
-    var elect_one_thread = thread_idx.x == 0
 
     var ptr_tmem_addr = unsafe_stack_allocation[
         1, UInt32, address_space=.SHARED, alignment=16
@@ -64,7 +65,7 @@ def tcgen05_st_ld_roundtrip_kernel[
         datapaths=16,
         bits=256,
         repeat=2,
-        dtype=DType.float32,
+        dtype=.float32,
         pack=False,
         width=width,
     ](tmem_addr)
@@ -77,7 +78,7 @@ def tcgen05_st_ld_roundtrip_kernel[
 
     for n in range(N):
         if data_ld[n] == data_st[n]:
-            data[Int(thread_idx.x), n] = data_ld[n]
+            data[thread_idx.x, n] = data_ld[n]
 
 
 def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
@@ -85,7 +86,7 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
     comptime N = 8
     var data = HostDeviceTileTensor[.float32](row_major[M, N](), ctx)
 
-    comptime kernel = tcgen05_st_ld_roundtrip_kernel[M, N]
+    comptime kernel = tcgen05_st_ld_roundtrip_kernel[M, N, origin_of(data)]
     ctx.enqueue_function[kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
@@ -105,10 +106,12 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
 
 
 def tcgen05_cp_ld_roundtrip_kernel[
-    M: Int, N: Int
+    M: Int, N: Int, data_origin: MutOrigin
 ](
     data: TileTensor[
-        .float32, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
+        .float32,
+        RowMajorLayout[ComptimeInt[M], ComptimeInt[N]],
+        data_origin,
     ]
 ):
     comptime M_smem = 128
@@ -218,7 +221,7 @@ def tcgen05_cp_ld_roundtrip_kernel[
         datapaths=16,
         bits=bits,
         repeat=1,
-        dtype=DType.float32,
+        dtype=.float32,
         pack=False,
         width=width,
     ](tmem_addr)
@@ -231,14 +234,14 @@ def tcgen05_cp_ld_roundtrip_kernel[
 
     for n in range(N):
         if data_ld[n] == Float32(thread_idx.x * N + n):
-            data[Int(thread_idx.x), n] = data_ld[n]
+            data[thread_idx.x, n] = data_ld[n]
 
 
 def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext) raises:
     comptime M = 32
     comptime N = 4
     var data = HostDeviceTileTensor[.float32](row_major[M, N](), ctx)
-    comptime kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]
+    comptime kernel = tcgen05_cp_ld_roundtrip_kernel[M, N, origin_of(data)]
     ctx.enqueue_function[kernel](
         data.device_tensor(),
         grid_dim=(1, 1),

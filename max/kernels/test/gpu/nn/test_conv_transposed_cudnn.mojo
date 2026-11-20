@@ -36,21 +36,9 @@ def test_conv_transposed_cudnn[
     """
 
     print(
-        "input_len=",
-        input_len,
-        ", kernel_size=",
-        kernel_len,
-        ", in_channels=",
-        in_channels,
-        ", out_channels=",
-        out_channels,
-        ", stride=",
-        stride_val,
-        ", pad=",
-        pad_val,
-        ", dilation=",
-        dilation_val,
-        ")",
+        t"input_len= {input_len} , kernel_size= {kernel_len} , in_channels="
+        t" {in_channels} , out_channels= {out_channels} , stride="
+        t" {stride_val} , pad= {pad_val} , dilation= {dilation_val} )"
     )
 
     # Shapes and sizes
@@ -95,11 +83,11 @@ def test_conv_transposed_cudnn[
     random(filter_host)
 
     # Parameters (1-D ⇒ only W dimension varies).
-    var stride = Index(1, 1, stride_val)
-    var dilation = Index(1, 1, dilation_val)
-    var pad_d = Index(0, 0)  # depth – none in 1-D
-    var pad_h = Index(0, 0)  # height – none in 1-D
-    var pad_w = Index(pad_val, pad_val)  # width padding (symmetric)
+    var stride = Coord(1, 1, stride_val)
+    var dilation = Coord(1, 1, dilation_val)
+    var pad_d = Coord(0, 0)  # depth – none in 1-D
+    var pad_h = Coord(0, 0)  # height – none in 1-D
+    var pad_w = Coord(pad_val, pad_val)  # width padding (symmetric)
 
     # Execute naive reference implementation.
     conv_transpose_naive[dtype](
@@ -162,9 +150,9 @@ def test_conv_transposed_cudnn[
     ctx.enqueue_copy(d_input, input_nchw_host_ptr)
     ctx.enqueue_copy(d_filter, filter_nchw_host_ptr)
 
-    var stride_hw = Index(1, stride_val)
-    var dilation_hw = Index(1, dilation_val)
-    var padding_hw = Index(0, pad_val)
+    var stride_hw = Coord(1, stride_val)
+    var dilation_hw = Coord(1, dilation_val)
+    var padding_hw = Coord(0, pad_val)
 
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](

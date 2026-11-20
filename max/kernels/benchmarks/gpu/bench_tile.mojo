@@ -68,7 +68,7 @@ def _numel[rank: Int, *sr: Int, tiled: Bool]() -> Int:
 
 def run_case[
     dtype: DType, rank: Int, *sr: Int
-](mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
+](mut m: Bench, ctx: DeviceContext[], nsys: Bool) raises:
     comptime in_numel = _numel[rank, *sr, tiled=False]()
     comptime out_numel = _numel[rank, *sr, tiled=True]()
     var name = _case_name[dtype, rank, *sr]()
@@ -100,7 +100,7 @@ def run_case[
         out_dims[i] = sr[i] * sr[rank + i]
 
     @inline(.always)
-    def launch(ctx: DeviceContext) raises {mut}:
+    def launch(ctx: DeviceContext[]) raises {mut}:
         # Per-rank layout literals: `comptime if` elaborates only the
         # taken branch, so each branch can bind differently-shaped
         # TileTensors.
@@ -108,7 +108,7 @@ def run_case[
             var input = TileTensor(in_dev, row_major[sr[0]]())
             var output = TileTensor(out_dev, row_major[sr[0] * sr[1]]())
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),
@@ -121,7 +121,7 @@ def run_case[
                 row_major[sr[0] * sr[2], sr[1] * sr[3]](),
             )
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),
@@ -134,7 +134,7 @@ def run_case[
                 row_major[sr[0] * sr[3], sr[1] * sr[4], sr[2] * sr[5]](),
             )
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),
@@ -154,7 +154,7 @@ def run_case[
                 ](),
             )
             var repeats = TileTensor(repeats_stack, row_major[rank]())
-            tile[target="gpu"](
+            tile(
                 input.make_dynamic[.int64](),
                 repeats.make_dynamic[.int64](),
                 output.make_dynamic[.int64](),
@@ -206,7 +206,7 @@ def run_case[
     m.bench_function(bench_e2e, BenchId(name, "e2e"))
 
 
-def run_fp32(mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
+def run_fp32(mut m: Bench, ctx: DeviceContext[], nsys: Bool) raises:
     comptime dt = DType.float32
     # Large rank-2, all axes repeated: the classic expand-embeddings copy.
     run_case[dt, 2, 1024, 1024, 2, 2](m, ctx, nsys)
@@ -222,19 +222,19 @@ def run_fp32(mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
     run_case[dt, 2, 2, 3, 2, 2](m, ctx, nsys)
 
 
-def run_bf16(mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
+def run_bf16(mut m: Bench, ctx: DeviceContext[], nsys: Bool) raises:
     comptime dt = DType.bfloat16
     run_case[dt, 2, 1024, 1024, 2, 2](m, ctx, nsys)
     run_case[dt, 2, 4096, 1024, 1, 4](m, ctx, nsys)
 
 
-def run_int8(mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
+def run_int8(mut m: Bench, ctx: DeviceContext[], nsys: Bool) raises:
     comptime dt = DType.int8
     run_case[dt, 2, 8192, 2048, 1, 2](m, ctx, nsys)
     run_case[dt, 3, 128, 128, 256, 1, 1, 8](m, ctx, nsys)
 
 
-def run_int64(mut m: Bench, ctx: DeviceContext, nsys: Bool) raises:
+def run_int64(mut m: Bench, ctx: DeviceContext[], nsys: Bool) raises:
     comptime dt = DType.int64
     run_case[dt, 2, 1024, 1024, 2, 2](m, ctx, nsys)
 

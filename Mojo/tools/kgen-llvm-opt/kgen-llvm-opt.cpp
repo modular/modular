@@ -316,7 +316,8 @@ int main(int argc, char **argv) {
 
     // Otherwise we infer the DataLayout from the target machine.
     Expected<std::unique_ptr<TargetMachine>> expectedTM =
-        codegen::createTargetMachineForTriple(Triple(tripleStr),
+        codegen::createTargetMachineForTriple(context.getLibraryOptions(),
+                                              Triple(tripleStr),
                                               getCodeGenOptLevel(clOptions));
     if (!expectedTM) {
       errs() << argv[0] << ": warning: failed to infer data layout: "
@@ -398,11 +399,12 @@ int main(int argc, char **argv) {
 
   if (moduleTriple.getArch()) {
     const TargetOptions options =
-        codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
+        codegen::getTargetOptions(context.getLibraryOptions(), moduleTriple);
     cpuStr = codegen::getCPUStr();
     featuresStr = codegen::getFeaturesStr();
     Expected<std::unique_ptr<TargetMachine>> expectedTM =
-        codegen::createTargetMachineForTriple(moduleTriple,
+        codegen::createTargetMachineForTriple(context.getLibraryOptions(),
+                                              moduleTriple,
                                               getCodeGenOptLevel(clOptions));
     if (auto e = expectedTM.takeError()) {
       errs() << argv[0] << ": WARNING: failed to create target machine for '"
@@ -422,8 +424,8 @@ int main(int argc, char **argv) {
   codegen::setFunctionAttributes(*module, cpuStr, featuresStr);
 
   llvm::PassInstrumentationCallbacks pic;
-  PassBuilder pb(targetMachine.get(), PipelineTuningOptions(),
-                 /*PGOOpt=*/std::nullopt, &pic);
+  PassBuilder pb(module->getContext(), targetMachine.get(),
+                 PipelineTuningOptions(), /*PGOOpt=*/std::nullopt, &pic);
   M::KGEN::registerKGENLLVMPasses(pb);
   ModulePassManager mpm;
   if (!clOptions.disableOptimizationPasses)

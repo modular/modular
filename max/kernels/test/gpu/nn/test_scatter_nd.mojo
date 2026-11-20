@@ -75,7 +75,7 @@ def test_row_scatter_2d[
     var upd_tt = TileTensor(upd_dev, row_major[n_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 1]())
 
-    scatter_nd_generator[oob_index_strategy=strategy, target="gpu"](
+    scatter_nd_generator[oob_index_strategy=strategy](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -141,7 +141,7 @@ def test_batched_indices[
     var upd_tt = TileTensor(upd_dev, row_major[a, b, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[a, b, 1]())
 
-    scatter_nd_generator[oob_index_strategy=strategy, target="gpu"](
+    scatter_nd_generator[oob_index_strategy=strategy](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -206,7 +206,7 @@ def test_sheet_scatter_3d[
     var upd_tt = TileTensor(upd_dev, row_major[n_idx, d2]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 2]())
 
-    scatter_nd_generator[oob_index_strategy=strategy, target="gpu"](
+    scatter_nd_generator[oob_index_strategy=strategy](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -271,7 +271,7 @@ def test_elem_scatter[
     var upd_tt = TileTensor(upd_dev, row_major[n_idx]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 2]())
 
-    scatter_nd_generator[oob_index_strategy=strategy, target="gpu"](
+    scatter_nd_generator[oob_index_strategy=strategy](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -332,9 +332,9 @@ def test_skip_oob(ctx: DeviceContext) raises:
     var upd_tt = TileTensor(upd_dev, row_major[n_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 1]())
 
-    scatter_nd_generator[
-        oob_index_strategy=ScatterOobIndexStrategy.SKIP, target="gpu"
-    ](data_tt, idx_tt, upd_tt, out_tt, ctx)
+    scatter_nd_generator[oob_index_strategy=ScatterOobIndexStrategy.SKIP](
+        data_tt, idx_tt, upd_tt, out_tt, ctx
+    )
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
@@ -404,9 +404,9 @@ def test_skip_oob_multi_index(ctx: DeviceContext) raises:
     var upd_tt = TileTensor(upd_dev, row_major[n_idx, d2]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 2]())
 
-    scatter_nd_generator[
-        oob_index_strategy=ScatterOobIndexStrategy.SKIP, target="gpu"
-    ](data_tt, idx_tt, upd_tt, out_tt, ctx)
+    scatter_nd_generator[oob_index_strategy=ScatterOobIndexStrategy.SKIP](
+        data_tt, idx_tt, upd_tt, out_tt, ctx
+    )
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
@@ -478,7 +478,6 @@ def test_reduce_add[
 
     scatter_nd_generator[
         oob_index_strategy=strategy,
-        target="gpu",
         atomic_update_fn=_atomic_reduce[reduce_fn],
     ](data_tt, idx_tt, upd_tt, out_tt, ctx)
     ctx.enqueue_copy(out_host, out_dev)
@@ -540,7 +539,7 @@ def test_unaligned_slice(ctx: DeviceContext) raises:
     var upd_tt = TileTensor(upd_dev, row_major[n_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 1]())
 
-    scatter_nd_generator[target="gpu"](data_tt, idx_tt, upd_tt, out_tt, ctx)
+    scatter_nd_generator(data_tt, idx_tt, upd_tt, out_tt, ctx)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
@@ -654,7 +653,7 @@ def test_reduce_duplicate_indices[
     var upd_tt = TileTensor(upd_dev, row_major[n_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 1]())
 
-    scatter_nd_generator[target="gpu", atomic_update_fn=atomic_update_fn](
+    scatter_nd_generator[atomic_update_fn=atomic_update_fn](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -719,7 +718,7 @@ def test_elem_scatter_duplicate_indices(ctx: DeviceContext) raises:
     var upd_tt = TileTensor(upd_dev, row_major[n_idx]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 2]())
 
-    scatter_nd_generator[target="gpu", atomic_update_fn=_atomic_add](
+    scatter_nd_generator[atomic_update_fn=_atomic_add](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)

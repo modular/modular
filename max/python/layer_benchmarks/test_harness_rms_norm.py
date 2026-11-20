@@ -34,12 +34,14 @@ _SMOKE_SHAPES = [
 def runner() -> LayerTestRunner[
     RMSNormStaticParams, RMSNormDynamicParams, None
 ]:
+    """Creates the runner for RMSNorm."""
     return create_runner(RMS_NORM)
 
 
 def test_benchmark_smoke(
     runner: LayerTestRunner[RMSNormStaticParams, RMSNormDynamicParams, None],
 ) -> None:
+    """Benchmarks one shape to check the harness runs."""
     results = runner.benchmark(_SMOKE_SHAPES, iterations=1, warmup=1)
     for _label, stats in results:
         assert stats.mean_ms > 0.0
@@ -48,6 +50,7 @@ def test_benchmark_smoke(
 def test_correctness(
     runner: LayerTestRunner[RMSNormStaticParams, RMSNormDynamicParams, None],
 ) -> None:
+    """Checks the runner's results against the reference."""
     results = runner.correctness(
         _SMOKE_SHAPES, atol=1e-2, rtol=1e-2, cos_threshold=0.001
     )

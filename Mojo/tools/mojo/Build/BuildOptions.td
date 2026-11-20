@@ -13,10 +13,11 @@
 
 include "BuildDescription.td"
 
-include "Common/CompilationOptions.td"
+include "Common/BackendOptions.td"
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
-include "Common/TargetOptions.td"
+include "Common/FixItOptions.td"
+include "Common/TargetQueryOptions.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//
@@ -25,7 +26,7 @@ include "Support/Driver/CommonOptions.td"
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+defm o : CommandOption<["-"], "o", OutputOptionGroup,
   MetaVarName<"PATH">, HelpText<
     "Sets the path and filename for the executable output. By default, it "
     "outputs the executable to the current directory, with the same name "
@@ -35,7 +36,7 @@ defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
 // No Values list: the accepted kinds come from the registered TargetTraits,
 // which also render the per-kind table below this option in --help.
 defm emitted_file_type: CommandOption<
-  ["--"], "emit", OutputOptionGroup, Index<1>,
+  ["--"], "emit", OutputOptionGroup,
   MetaVarName<"FILE_TYPE">,
   HelpText<"The kind of output to produce instead of an executable\n"
            "(default: `exe`). Each compilation target declares the kinds\n"

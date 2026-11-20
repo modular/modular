@@ -390,6 +390,9 @@ class TestCustomParameterValidation:
             42,
             -10,
             0,
+            3.14,
+            -0.5,
+            1e-5,
             "hello",
             "",
             DType.float32,
@@ -424,7 +427,6 @@ class TestCustomParameterValidation:
             [1, 2, 3],  # List not supported
             {"key": "value"},  # Dict not supported
             None,  # None not supported
-            3.14,  # Float not supported
         ],
     )
     def test_custom__parameter_types__unsupported(
@@ -808,9 +810,6 @@ class TestCustomPropertyBased:
                 st.text(), st.integers(), min_size=1, max_size=2
             ),  # Dicts not supported
             st.none(),  # None not supported
-            st.floats(
-                min_value=-100.0, max_value=100.0
-            ),  # Floats not supported
         ),
     )
     def test_custom__property__invalid_parameter_types(

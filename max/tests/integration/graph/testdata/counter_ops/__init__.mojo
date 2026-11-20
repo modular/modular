@@ -14,9 +14,9 @@
 from std.os import abort
 
 import extensibility
-from extensibility import ManagedTensorSlice, InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
 
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 
 
 struct Counter[stride: Int](Movable):
@@ -47,9 +47,15 @@ struct MakeCounterFromTensor:
     @staticmethod
     def execute[
         stride: Int,
-    ](init: InputTensor[dtype=.int32, rank=1, ...]) -> Counter[stride]:
-        print("making. init:", init[0], init[1])
-        return Counter[stride](Int(init[0]), Int(init[1]))
+    ](init: Some[Input & Tensor]) -> Counter[stride]:
+        comptime assert conforms_to(type_of(init), TileTensorable)
+        comptime assert type_of(init).dtype == .int32
+        comptime assert type_of(init).rank == 1
+        var init_tile = init.to_tile_tensor[.int32]().as_imm()
+        var a = init_tile.load[width=1](Coord(0))
+        var b = init_tile.load[width=1](Coord(1))
+        print("making. init:", a, b)
+        return Counter[stride](Int(a), Int(b))
 
 
 @extensibility.register("make_counter")
@@ -73,8 +79,10 @@ struct BumpCounter:
 @extensibility.register("read_counter")
 struct ReadCounter:
     @staticmethod
-    def execute[
-        stride: Int
-    ](output: OutputTensor[dtype=.int32, rank=1, ...], c: Counter[stride],):
-        output[0] = Int32(c.a)
-        output[1] = Int32(c.b)
+    def execute[stride: Int](output: Some[Output & Tensor], c: Counter[stride]):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert type_of(output).dtype == .int32
+        comptime assert type_of(output).rank == 1
+        var output_tile = output.to_tile_tensor[.int32]()
+        output_tile.store[width=1](Coord(0), Int32(c.a))
+        output_tile.store[width=1](Coord(1), Int32(c.b))

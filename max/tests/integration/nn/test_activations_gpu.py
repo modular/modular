@@ -13,22 +13,22 @@
 """Numerical correctness tests for activation functions via the
 experimental tensor API.
 
-Mirrors the kernel-path probe in ``oss/max-llm-book/tests/test_gpt2_accel.py``:
-construct a tensor, run ``F.<activation>(...)`` under ``default_device(...)``,
-copy the result back to CPU, and compare against the torch reference.
+Each test constructs a tensor, runs ``F.<activation>(...)`` under
+``default_device(...)``, copies the result back to CPU, and compares it
+against the torch reference.
 
 Parametrized over available backends. CPU is always exercised; the
 ``Accelerator()`` case is added only when ``accelerator_count() > 0`` so the
 file remains importable on CPU-only hosts.
 """
 
-import max.experimental.functional as F
+import max.functional as F
 import numpy as np
 import pytest
 import torch
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device, default_dtype
+from max.tensor import Tensor, default_device, default_dtype
 
 _DEVICE_PARAMS = [pytest.param(CPU, id="cpu")]
 if accelerator_count() > 0:

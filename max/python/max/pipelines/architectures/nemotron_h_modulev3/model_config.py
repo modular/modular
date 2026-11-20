@@ -14,23 +14,24 @@
 
 from __future__ import annotations
 
+import dataclasses
 import enum
 import logging
 import math
-from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kernels import _moe_sigmoid_gemv_router_unsupported
+from max.nn._graph_ops import moe_sigmoid_gemv_router_supports
 from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -38,11 +39,16 @@ from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
+from max.pipelines.lib.registration_runtime import DeploymentConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights import resolve_hf_quant_config
 from max.support.math import ceildiv
 from transformers import AutoConfig
 from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 
 from .quantization import (
     NVFP4_GROUP_SIZE,
@@ -53,17 +59,12 @@ from .quantization import (
     parse_quant_scheme,
 )
 
-if TYPE_CHECKING:
-    from max.pipelines.speculative.config import SpeculativeMethod
-
 logger = logging.getLogger("max.pipelines")
 
 ATTN_CACHE_KEY = "attn"
 STATE_CACHE_KEY = "state"
 CONV_LEAF_ID = "mamba/conv"
 SSM_LEAF_ID = "mamba/ssm"
-CONV_SCRATCH_LEAF_ID = "mamba/conv_scratch"
-SSM_SCRATCH_LEAF_ID = "mamba/ssm_scratch"
 
 MOE_TP_CHANNEL_ALIGNMENT = 64
 """The multiple each device's share of a routed expert's channels is padded
@@ -174,6 +175,7 @@ def _runs_fused_router(
     num_experts: int,
     num_experts_per_tok: int,
     hidden_size: int,
+    hidden_dtype: DType,
 ) -> bool:
     """Returns whether the MoE router fuses its gate GEMV into top-k.
 
@@ -181,20 +183,20 @@ def _runs_fused_router(
     warp, keep the separate float32 gate matmul.
     """
     return all(
-        device.api in ("hip", "cuda")
-        and _moe_sigmoid_gemv_router_unsupported(
-            n_routed_experts=num_experts,
-            n_experts_per_tok=num_experts_per_tok,
-            hidden_size=hidden_size,
-            warp_size=64 if device.api == "hip" else 32,
-        )
-        is None
-        for device in load_devices(device_specs)
+        device.api in ("hip", "cuda") for device in load_devices(device_specs)
+    ) and moe_sigmoid_gemv_router_supports(
+        num_experts,
+        num_experts_per_tok,
+        hidden_size,
+        hidden_dtype=hidden_dtype,
+        weight_dtype=DType.float32,
     )
 
 
 @dataclass(kw_only=True)
-class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
+class NemotronHConfig(
+    ArchConfigWithStoredKVParams, ArchConfigWithKVCache, DeploymentConfig
+):
     """Configuration for a Nemotron-H hybrid decoder.
 
     Every layer is a pre-norm residual block around one mixer: Mamba-2,
@@ -241,12 +243,80 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     target_layer_ids: tuple[int, ...] = ()
     fused_router: bool = False
-    """Whether the MoE router runs its gate GEMV, sigmoid and top-k as one
-    fused op instead of a separate float32 matmul."""
+    """Whether the MoE router runs its float32 gate GEMV, sigmoid and top-k
+    as one fused op instead of a separate float32 matmul. Off whenever
+    ``bf16_router_gate`` is on."""
+    bf16_router_gate: bool = False
+    """Whether the MoE router computes its gate scores with a bfloat16
+    tensor-core matmul (float32 accumulation) and keeps its gate weight in
+    bfloat16, instead of a float32 gate GEMV or matmul."""
+    checkpoint_router_gate_dtype: DType | None = None
+    """The dtype the checkpoint stores the MoE router's gate weight in, as
+    :meth:`finalize` reads it. ``None`` before then."""
     capture_mamba_replay: bool = False
     """Whether each Mamba block also returns the inputs of its state updates,
     so that a speculative verify can replay the accepted prefix onto the live
     state afterwards (see :mod:`.state_rollback`)."""
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig | None = None,
+    ) -> None:
+        """Checks the checkpoint's quantized weights and sets the outputs.
+
+        It also reads the dtype the checkpoint stores the router gates in,
+        so that the router declares the gate as stored. A draft names the
+        layers whose outputs it reads, and Nemotron-H taps layer inputs: a
+        layer's output is the next layer's input.
+        """
+        del huggingface_config
+        self.quant_scheme.check_weights(state_dict.keys())
+        for mixer in sorted(self.mixers(LayerKind.MOE)):
+            gate = state_dict.get(f"{mixer}.gate.weight")
+            if gate is not None:
+                self.checkpoint_router_gate_dtype = gate.dtype
+                break
+        outputs = outputs or ModelOutputConfig()
+        self.return_logits = outputs.return_logits
+        self.return_hidden_states = outputs.return_hidden_states
+        self.target_layer_ids = tuple(
+            i + 1 for i in outputs.target_layer_ids or ()
+        )
+
+    def apply_model_load_context(self, context: ModelLoadContext) -> Self:
+        """Captures each Mamba layer's replay inputs under speculation."""
+        return dataclasses.replace(
+            self,
+            capture_mamba_replay=(
+                context.pipeline_config.speculative is not None
+            ),
+        )
+
+    @property
+    def router_gate_dtype(self) -> DType:
+        """The dtype of the MoE router's gate weight.
+
+        The router's matmul reads it; the graph casts the stored gate to
+        it once, at init.
+        """
+        return DType.bfloat16 if self.bf16_router_gate else DType.float32
+
+    @property
+    def router_gate_stored_dtype(self) -> DType:
+        """The dtype the checkpoint stores the MoE router's gate weight in.
+
+        The module declares the stored dtype, so the gate loads as the
+        checkpoint stores it. Before :meth:`finalize` reads it, which is
+        when the memory planner runs, it is the published checkpoints'
+        dtype: BF16 in the BF16 checkpoint, and float32 in the
+        modelopt-quantized one, whose values are exactly representable in
+        BF16.
+        """
+        if self.checkpoint_router_gate_dtype is not None:
+            return self.checkpoint_router_gate_dtype
+        return DType.float32 if self.quant_scheme.quantized else DType.bfloat16
 
     def w4a4_mixers(self) -> frozenset[str]:
         """Returns the MoE mixers whose routed experts are NVFP4, run W4A4."""
@@ -258,9 +328,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         )
 
     def shared_expert_slices(self, mixer: str) -> int:
-        """Returns how many routed experts' worth of channels the shared
-        expert runs as, inside the routed W4A4 grouped matmul.
+        """Returns the shared expert's width in routed experts.
 
+        The shared expert runs inside the routed W4A4 grouped matmul. ``relu2``
+        acts on each channel alone, so the shared expert's channels split into
+        slices as wide as a routed expert's, and the shared output is the sum of
+        the slices' outputs. Each slice runs as one more expert that every token
+        picks at weight 1.
         relu2 acts on each channel alone, so the shared expert's channels
         split into slices as wide as a routed expert's, and the shared output
         is the sum of the slices' outputs. Each slice runs as one more expert
@@ -347,17 +421,16 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def moe_intermediate_size_per_device(self) -> int:
-        """Returns the routed expert channels each device holds, padding
-        included."""
+        """Returns the routed expert channels each device holds, padding included."""
         return moe_channels_per_device(
             self.moe_intermediate_size, len(self.devices)
         )
 
     @property
     def nvfp4_experts_split_by_block(self) -> bool:
-        """Returns whether each device's share of the routed expert channels
-        is a whole number of NVFP4 blocks.
+        """Whether each device's share of the routed channels is whole blocks.
 
+        The down projection's block scales can only be split between blocks.
         The down projection's block scales can only be split between blocks.
         """
         share = self.moe_intermediate_size // len(self.devices)
@@ -365,10 +438,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def mamba_intermediate_size(self) -> int:
+        """The mixer's width, from the head count and the head width."""
         return self.mamba_num_heads * self.mamba_head_dim
 
     @property
     def conv_dim(self) -> int:
+        """The width the causal convolution runs at."""
         return (
             self.mamba_intermediate_size
             + 2 * self.n_groups * self.ssm_state_size
@@ -384,26 +459,14 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-        verify_scratch: bool = False,
-        speculative_method: SpeculativeMethod | None = None,
-        num_draft_tokens: int = 0,
     ) -> MultiKVCacheParams:
         """Returns the attention leaf beside the Mamba state.
 
         The attention layers index the KV cache 0, 1, 2, ... in layer order;
-        the Mamba layers do the same in the state leaves.
-
-        Args:
-            verify_scratch: Whether the state also declares one scratch leaf
-                per live leaf, drawn once per request and never published. A
-                speculative verify advances the scratch rows, leaving the live
-                rows at the pre-verify state until the accepted prefix is
-                known.
-            speculative_method: The speculative method, which sizes the
-                attention cache's dispatch for the verify width.
-            num_draft_tokens: How many drafts a step verifies, which the
-                cache reserves pages for.
+        the Mamba layers do the same in the state leaves. Under speculative
+        decoding the attention cache reserves the drafts' pages.
         """
+        speculative = pipeline_config.speculative
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         if data_parallel_degree > 1:
             raise ValueError("Nemotron-H does not support data parallelism")
@@ -418,8 +481,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             num_layers=kinds.count(LayerKind.ATTENTION),
             devices=devices,
             data_parallel_degree=data_parallel_degree,
-            speculative_method=speculative_method,
-            num_draft_tokens=num_draft_tokens,
+            speculative_method=speculative.speculative_method
+            if speculative
+            else None,
+            num_draft_tokens=speculative.draft_width if speculative else 0,
         )
         hf = huggingface_config
         num_mamba_layers = kinds.count(LayerKind.MAMBA)
@@ -453,19 +518,6 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 dtype=DType.float32,
             ),
         ]
-        if verify_scratch:
-            regions += [
-                replace(
-                    region,
-                    leaf_id=scratch_id,
-                    scratch=True,
-                )
-                for region, scratch_id in zip(
-                    regions,
-                    (CONV_SCRATCH_LEAF_ID, SSM_SCRATCH_LEAF_ID),
-                    strict=True,
-                )
-            ]
         state = RecurrentStateParams(
             regions=tuple(regions),
             devices=attn.devices,
@@ -483,6 +535,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         model_config = model_config or pipeline_config.model
         hf = model_config.huggingface_config
         if hf is None:
@@ -509,11 +562,21 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             hf, kv_params=kv_params, devices=devices, max_seq_len=max_seq_len
         )
         _check_quantized_runs_on(model_config.device_specs, config.quant_scheme)
-        config.fused_router = _runs_fused_router(
-            model_config.device_specs,
-            num_experts=config.num_experts,
-            num_experts_per_tok=config.num_experts_per_tok,
-            hidden_size=config.hidden_size,
+        config.bf16_router_gate = all(
+            is_sm100(device)
+            for device in load_devices(model_config.device_specs)
+        )
+        # The bf16 gate matmul replaces the fused float32 GEMV, so at most
+        # one of the two flags is on.
+        config.fused_router = (
+            not config.bf16_router_gate
+            and _runs_fused_router(
+                model_config.device_specs,
+                num_experts=config.num_experts,
+                num_experts_per_tok=config.num_experts_per_tok,
+                hidden_size=config.hidden_size,
+                hidden_dtype=config.dtype,
+            )
         )
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}
         if hf_quant_config.get("kv_cache_scheme") and kv_cache_format is None:

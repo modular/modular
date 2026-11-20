@@ -16,6 +16,7 @@
 // the argument registers must still arrive intact: x86-64 SysV passes it
 // entirely on the stack rather than splitting it across a register and memory.
 
+#include <stdarg.h>
 #include <stdint.h>
 
 typedef struct int3_t {
@@ -50,4 +51,48 @@ int check_struct_after_five(void *p0, void *p1, int a, int b, int c,
   (void)b;
   (void)c;
   return check_values(value);
+}
+
+// Variadic args use the same registers as fixed args. One fixed and four
+// variadic ints consume five integer registers, so the variadic int3_t rolls
+// back to the stack, where va_arg reads all of it.
+int check_variadic_struct_after_five(int a, ...) {
+  va_list args;
+  va_start(args, a);
+  for (int i = 0; i < 4; ++i)
+    (void)va_arg(args, int);
+  int3_t value = va_arg(args, int3_t);
+  va_end(args);
+  return check_values(value);
+}
+
+// Seven ints consume X0-X6 on arm64 (six registers plus the stack on x86-64);
+// the by-value int3_t cannot fit in what remains on either ABI, so it must be
+// passed entirely on the stack there too.
+int check_struct_after_seven(int a, int b, int c, int d, int e, int f, int g,
+                             int3_t value) {
+  (void)a;
+  (void)b;
+  (void)c;
+  (void)d;
+  (void)e;
+  (void)f;
+  (void)g;
+  return check_values(value);
+}
+
+// The same shape with a trailing argument: the rolled-back struct exhausts
+// the register search, so the trailing int must also arrive on the stack
+// (clang compiles this function the same way). Checks both the struct and
+// the trailing argument.
+int check_struct_then_int_after_seven(int a, int b, int c, int d, int e, int f,
+                                      int g, int3_t value, int t) {
+  (void)a;
+  (void)b;
+  (void)c;
+  (void)d;
+  (void)e;
+  (void)f;
+  (void)g;
+  return check_values(value) + (t != 44);
 }

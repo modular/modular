@@ -28,7 +28,6 @@ BF16 GMEM round trip).
 
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
-from std.memory import UnsafePointer
 from layout import Idx, TileTensor, row_major
 
 from linalg.fp4_utils import MXFP8_SF_DTYPE, MXFP8_SF_VECTOR_SIZE
@@ -39,7 +38,6 @@ from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 def grouped_matmul_swiglu_mxfp8_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     # When True (default), the in-tile fused epilogue rounds through
     # bf16 in the SMEM scatter so its output matches the chained
@@ -86,8 +84,6 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     Parameters:
         transpose_b: Transpose the B weight in the matmul (defaults to
             True).
-        target: Target backend selector forwarded to the inner
-            dispatch as a `StaticString` (defaults to `"cpu"`).
         pdl_level: Program-Dependent Launch level forwarded to the
             grid controls (defaults to `PDLLevel.ON`).
         match_bf16: Round the in-tile fused epilogue through `bf16`
@@ -136,22 +132,22 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
 
     comptime c_packed_row_stride = type_of(c_packed).static_shape[1]
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+    var c_packed_ptr = rebind[MutPointer[UInt8, MutAnyOrigin]](
         c_packed._storage
     )
 
     # The fused path never reads or writes C. It only carries `c_type` and `N`
     # and fills the kernel ABI, so alias `c_packed` rather than allocate.
     var dummy_c_tensor = TileTensor(
-        c_packed_ptr.bitcast[Scalar[c_type]](),
+        c_packed_ptr.unsafe_bitcast[Scalar[c_type]](),
         row_major(Idx[1], Idx[N]),
     )
     var c_swiglu_scales_ptr = rebind[
-        UnsafePointer[Scalar[MXFP8_SF_DTYPE], MutAnyOrigin]
+        MutPointer[Scalar[MXFP8_SF_DTYPE], MutAnyOrigin]
     ](c_swiglu_scales._storage)
     # MXFP8 doesn't use a per-expert tensor_sf; the trait method is
     # gated out for MXFP8 so this pointer is never dereferenced.
-    var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+    var c_input_scales_ptr = rebind[ImmPointer[Float32, ImmutAnyOrigin]](
         expert_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[
@@ -168,7 +164,6 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
 
     grouped_matmul_mxfp8_dispatch[
         transpose_b=transpose_b,
-        target=target,
         pdl_level=pdl_level,
         fuse_swiglu=True,
         SwiGLUOutputT=type_of(swiglu_out),

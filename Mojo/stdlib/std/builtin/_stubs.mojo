@@ -18,6 +18,11 @@ from std.os.os import _abort_base
 # ===-----------------------------------------------------------------------===#
 
 
+# WARNING: Do NOT rename or move this struct, or change its parameters. The
+# compiler matches its fully qualified name, `std::builtin::_stubs::__MLIRType`.
+# Changing it might silently breaks compiler.
+#
+# TODO: the long-term goal is to remove this struct.
 struct __MLIRType[T: __mlir_type.`!kgen.non_struct_type`](
     TrivialRegisterPassable
 ):
@@ -49,7 +54,7 @@ def check_list_length[
 
 
 # ===-----------------------------------------------------------------------===#
-# comptime for (was @parameter for) implementation details
+# comptime for implementation details
 # ===-----------------------------------------------------------------------===#
 
 

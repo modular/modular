@@ -113,6 +113,7 @@ class LayerTestRunner(Generic[StaticParamsT, DynamicParamsT, ContextT]):
 
     @property
     def bundle(self) -> CompiledLayerBundle:
+        """Returns the compiled bundle, compiling it on first access."""
         return self._ensure_compiled()
 
     # ------------------------------------------------------------------ #

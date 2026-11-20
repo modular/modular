@@ -17,6 +17,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -28,7 +29,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul_with_epilogue_tensor[
@@ -39,9 +39,9 @@ def test_blackwell_matmul_with_epilogue_tensor[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int = 1,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -53,9 +53,9 @@ def test_blackwell_matmul_with_epilogue_tensor[
     num_accum_pipeline_stages: Int = 2,
     num_clc_pipeline_stages: Int = 2,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
@@ -76,15 +76,15 @@ def test_blackwell_matmul_with_epilogue_tensor[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
-    var epilogue_host_ptr = alloc[Scalar[c_type]](c_size)
+    var epilogue_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var epilogue_host = TileTensor(epilogue_host_ptr, epilogue_shape)
 
     # Device allocations
@@ -109,8 +109,10 @@ def test_blackwell_matmul_with_epilogue_tensor[
     ctx.enqueue_copy(epilogue_device, epilogue_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -189,7 +191,7 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # Add epilogue tensor to reference on host: C_ref[m, n] += epilogue[m, n]
     for i in range(M):
         for j in range(N):
-            c_host_ref[Coord(i, j)] += epilogue_host[Coord(i, j)]
+            c_host_ref[i, j] += epilogue_host[i, j]
 
     # print("c_ref(blas+epilogue):", end=" ")
     # for i in range(M):
@@ -220,11 +222,11 @@ def test_blackwell_matmul_with_epilogue_tensor[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    epilogue_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_host_ref_ptr.unsafe_free()
+    epilogue_host_ptr.unsafe_free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -259,8 +261,8 @@ def main() raises:
                     192,
                     256,
                 ]:
-                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
-                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = (mma_m, mma_n, BK)
+                    comptime umma_shape = (mma_m, mma_n, MMA_K)
 
                     test_blackwell_matmul_with_epilogue_tensor[
                         dtype,
@@ -268,7 +270,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                        cluster_shape=(1, 1, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -289,7 +291,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -308,7 +310,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                            cluster_shape=(4, 2, 1),
                             cta_group=cta_group,
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
@@ -330,7 +332,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                            cluster_shape=(8, 2, 1),
                             cta_group=cta_group,
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
@@ -350,7 +352,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,

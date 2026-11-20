@@ -1,5 +1,6 @@
 """An internal Mojo toolchain to point to our local tools."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@cfg_workaround.bzl", "CFG_WORKAROUND")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_mojo//mojo:providers.bzl", "MojoInfo", "MojoToolchainInfo")
@@ -28,6 +29,12 @@ def _mojo_toolchain_impl(ctx):
         if min_os:
             copts.append("--target-triple=arm64-apple-macosx{}".format(min_os))
 
+    hal_device_context = ctx.attr._hal_device_context[BuildSettingInfo].value
+    if hal_device_context:
+        # Mojo code reads this define when a compile elaborates it, so every
+        # Mojo compile needs it, not only the compile of the `max` package.
+        copts.extend(["-D", "HAL_DEVICE_CONTEXT"])
+
     copts_toolchain = ctx.toolchains["@rules_mojo//:copts_toolchain_type"]
     if copts_toolchain:
         copts.extend(copts_toolchain.copts_toolchain_info.copts)
@@ -50,14 +57,21 @@ def _mojo_toolchain_impl(ctx):
     if ctx.attr.extra_build_env:
         build_env.update(ctx.attr.extra_build_env[MojoBuildEnvInfo].env)
 
-    # Expose driver plugin for test runtime.  The runtime_env and
+    # Expose driver plugins for test runtime.  The runtime_env and
     # extra_runfiles fields are merged by rules_mojo into RunEnvironmentInfo
-    # so tests find the plugin without a hardcoded --test_env in local.bazelrc.
+    # so tests find the plugins without a hardcoded --test_env in local.bazelrc.
     runtime_env = {}
     extra_runfiles = []
-    if ctx.file.driver_plugin:
-        runtime_env["MODULAR_DRIVER_PLUGINS"] = ctx.file.driver_plugin.short_path
-        extra_runfiles.append(ctx.file.driver_plugin)
+    entries = []
+    for target, plugin_name in ctx.attr.driver_plugins.items():
+        plugin = target[DefaultInfo].files.to_list()[0]
+        entries.append((plugin_name + "@" if plugin_name else "") + plugin.short_path)
+        extra_runfiles.append(plugin)
+
+        # The plugin's shared library deps, which its RPATH finds in runfiles.
+        extra_runfiles.extend(target[DefaultInfo].default_runfiles.files.to_list())
+    if entries:
+        runtime_env["MODULAR_DRIVER_PLUGINS"] = ";".join(entries)
 
     return [
         platform_common.ToolchainInfo(
@@ -103,11 +117,10 @@ mojo_toolchain = rule(
             cfg = CFG_WORKAROUND,
             doc = "Optional compiler plugin (.so) to set via MODULAR_COMPILER_PLUGINS in build actions.",
         ),
-        "driver_plugin": attr.label(
-            mandatory = False,
-            allow_single_file = True,
+        "driver_plugins": attr.label_keyed_string_dict(
+            allow_files = True,
             cfg = "target",
-            doc = "Optional driver plugin (.so) to set via MODULAR_DRIVER_PLUGINS at test runtime.",
+            doc = "Optional driver plugins (.so) to set via MODULAR_DRIVER_PLUGINS at test runtime, each mapped to an optional name to register it under.",
         ),
         "extra_build_env": attr.label(
             mandatory = False,
@@ -117,6 +130,9 @@ mojo_toolchain = rule(
         ),
         "_macos_constraint": attr.label(
             default = Label("@platforms//os:macos"),
+        ),
+        "_hal_device_context": attr.label(
+            default = Label("//:hal_device_context"),
         ),
     },
     toolchains = [

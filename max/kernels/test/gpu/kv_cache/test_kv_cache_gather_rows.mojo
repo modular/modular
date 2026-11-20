@@ -75,8 +75,9 @@ def run_case[
         ctx,
     )
     var blocks_host = blocks.host_tensor()
+    var blocks_flat = blocks_host.reshape(row_major(blocks_host.num_elements()))
     for i in range(blocks_host.num_elements()):
-        blocks_host.unsafe_ptr().unsafe_store(i, Scalar[dtype](randn_float64()))
+        blocks_flat[i] = Scalar[dtype](randn_float64())
     blocks.to_device()
 
     var offsets = HostDeviceTileTensor[.uint32](
@@ -137,18 +138,18 @@ def run_case[
         UInt32(lengths.max_full_context_length),
     )
     var lut_host = lut.host_tile_tensor()
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
 
     comptime for kv in range(kv_dim):
         comptime if kv == 0:
-            kv_cache_gather_rows_ragged[target="gpu"](
+            kv_cache_gather_rows_ragged(
                 gpu_out.device_tensor(),
                 slots.device_tensor(),
                 offsets.device_tensor(),
                 device_collection.get_key_cache(LAYER),
                 ctx,
             )
-            kv_cache_gather_rows_ragged[target="cpu"](
+            kv_cache_gather_rows_ragged(
                 cpu_host,
                 slots_host,
                 offsets_host,
@@ -156,14 +157,14 @@ def run_case[
                 cpu_ctx,
             )
         else:
-            kv_cache_gather_rows_ragged[target="gpu"](
+            kv_cache_gather_rows_ragged(
                 gpu_out.device_tensor(),
                 slots.device_tensor(),
                 offsets.device_tensor(),
                 device_collection.get_value_cache(LAYER),
                 ctx,
             )
-            kv_cache_gather_rows_ragged[target="cpu"](
+            kv_cache_gather_rows_ragged(
                 cpu_host,
                 slots_host,
                 offsets_host,

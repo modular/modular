@@ -17,8 +17,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.graph import BufferType, DimLike, TensorType, TensorValue
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.graph_groups import SparseIndices
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative.driver import (
     CarryDimNames,
     DecodeKVSwap,
@@ -31,6 +35,7 @@ from max.pipelines.speculative.driver import (
 from max.pipelines.speculative.spec_target import Verified
 
 from ..deepseekV3_2.deepseekV3_2 import DeepseekV3_2
+from ..deepseekV3_2.layers.sparse_mla import sparse_selection_width
 from ..deepseekV3_2_nextn.deepseekV3_2_nextn import DeepseekV3_2NextN
 
 __all__ = [
@@ -54,6 +59,7 @@ class Glm5_2Target:
         self.target = target
 
     def verify(self, batch: SequentialBatch) -> Verified[list[TensorValue]]:
+        """Runs the target over the batch to score the drafts."""
         outputs = self.target(
             batch.merged_tokens,
             batch.signal_buffers,
@@ -68,14 +74,15 @@ class Glm5_2Target:
             batch.batch_context_lengths,
             batch.ep_inputs,
         )
-        # ``emit_last_token_logits`` is off, so the tuple is
-        # [logits, offsets, hidden per device...].
         return Verified(
-            logits=outputs[0],
-            hidden=list(outputs[2 : 2 + batch.n_devs]),
+            logits=outputs.logits["logits"],
+            hidden=list(
+                outputs.hidden_states[self.target.return_hidden_states.value]
+            ),
         )
 
     def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        """The expert-parallel input types, or none without a manager."""
         if self.target.ep_manager is None:
             return ()
         return self.target.ep_manager.input_types()
@@ -100,8 +107,12 @@ class Glm5_2MTPProposer:
     def __init__(self, draft: DeepseekV3_2NextN) -> None:
         self.draft = draft
         self.hidden_dim: DimLike = draft.config.hidden_size
+        assert isinstance(draft.config.kv_params, MultiKVCacheParams)
+        mla_kv_params = draft.config.kv_params.children["mla"]
+        assert isinstance(mla_kv_params, KVCacheParams)
         self.reuse: ReuseSpec | None = ReuseSpec(
-            dim=draft.config.index_topk, split_prefix="mtp_topk"
+            dim=sparse_selection_width(mla_kv_params, draft.config.index_topk),
+            split_prefix="mtp_topk",
         )
 
     def prefill(
@@ -110,6 +121,7 @@ class Glm5_2MTPProposer:
         tokens: TensorValue,
         target_hidden: list[TensorValue],
     ) -> Proposed:
+        """Runs the draft over the prompt's target hidden states."""
         # Step 0 needs ALL hidden states and VARIABLE logits; ``last_logits``
         # goes unread, so suppress its vocab-sized projection.
         self.draft.return_hidden_states = ReturnHiddenStates.ALL
@@ -136,16 +148,16 @@ class Glm5_2MTPProposer:
         self.draft.return_logits = ReturnLogits.LAST_TOKEN
         self.draft.emit_last_token_logits = True
 
-        n = batch.n_devs
         return Proposed(
-            logits=outputs[0],
-            hidden=list(outputs[2 : 2 + n]),
-            reuse=list(outputs[2 + n : 2 + 2 * n]),
+            logits=outputs.logits["logits"],
+            hidden=list(outputs.hidden_states[ReturnHiddenStates.ALL.value]),
+            reuse=list(outputs.group("topk_indices", SparseIndices)["rows"]),
         )
 
     def step(
         self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
     ) -> Proposed:
+        """Runs one draft step from the previous step's tokens."""
         # ``hnorm`` expects the post-final-norm hidden state, which the target
         # hands over at step 0. ``shared_head_norm`` is row-wise, so
         # normalizing the one carried row here is equivalent and far cheaper.
@@ -172,6 +184,6 @@ class Glm5_2MTPProposer:
             split_prefix=f"{self.split_prefix}_draft_step{index}",
         )
         return Proposed(
-            logits=outputs[0],
-            hidden=list(outputs[1 : 1 + batch.n_devs]),
+            logits=outputs.logits["next_token_logits"],
+            hidden=list(outputs.hidden_states[self.step_hidden_mode.value]),
         )

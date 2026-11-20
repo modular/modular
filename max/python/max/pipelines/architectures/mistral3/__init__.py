@@ -13,11 +13,9 @@
 """Mistral 3 vision-language architecture for multimodal text generation."""
 
 from .arch import mistral3_arch
-from .model import Mistral3Model
 from .model_config import Mistral3Config
 
 __all__ = [
     "Mistral3Config",
-    "Mistral3Model",
     "mistral3_arch",
 ]

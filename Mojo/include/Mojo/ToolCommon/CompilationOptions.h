@@ -15,6 +15,7 @@
 #define KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/ParameterVerification.h"
 #if MLRT_ACCELERATOR_SUPPORT
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #endif
@@ -22,6 +23,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTarget.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -98,7 +100,7 @@ inline void applyTargetABIEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
 
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
-class CompilationOptions {
+class MODULAR_CXX_EXPORT CompilationOptions {
 public:
   /// The debug info level to use when compiling.
   enum DebugInfoLevel {
@@ -142,9 +144,7 @@ public:
       bool elaborationErrorIncludePrelude = false,
       ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams,
       unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max(),
-      DebugInfoLanguage debugInfoLanguage = kLangMojo,
-      std::string searchPaths = "",
-      SmallVector<std::string> extraSearchPaths = {});
+      DebugInfoLanguage debugInfoLanguage = kLangMojo);
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -223,11 +223,13 @@ public:
   /// so the toolchain behind that embedded kind still runs even when the host
   /// output is discarded.
   EmitAs offloadOutputKind = EmitAs::ASM;
-  std::string searchPaths;
-  SmallVector<std::string> extraSearchPaths;
 
   // File paths to external bitcode libraries specified via command line.
   SmallVector<std::string> bitcodeLibs;
+
+  // Interpreter libraries, the shared libraries whose functions a comptime
+  // `pop.external_call` can call.
+  SmallVector<std::string> interpreterLibs;
 
   bool verboseOutput = false;
 
@@ -238,6 +240,14 @@ public:
   ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams;
 
   unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max();
+
+  bool elaborationStats = false;
+
+  bool parserStats = false;
+
+  // Whether to run the parameter verifier. It finds compiler bugs, not user
+  // errors, so CI can turn it off to save compile time.
+  bool runParameterVerifier = kVerifyParametersByDefault;
 
   // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)
@@ -258,16 +268,6 @@ public:
   // Maximum number of threads to be used by AsyncRT. 0 means use all available.
   size_t numThreads = 0;
 
-  bool disableWarnings = false;
-  bool warningsAsErrors = false;
-  bool warnOnUnstableAPIs = false;
-  bool ignoreIncompatiblePrecompiledFileErrors = false;
-
-  /// Qualified names (e.g. `Foo.bar`, or just `some_fn` for a top-level
-  /// declaration) of `@deprecated` declarations whose deprecation warning
-  /// should be suppressed, set via `--ignore-deprecated`.
-  SmallVector<std::string> ignoredDeprecations;
-
   // Extra handle name to separate cache base between mojo, kgen, kgen-opt,
   // to avoid internal test cache pruning races caused by different binary IDs.
   // Set default value to be "mojo", will be overwritten with other tool names
@@ -278,10 +278,10 @@ public:
 };
 
 // Return true if `triple` is a registered GPU target.
-bool isGPUTriple(const llvm::Triple &triple);
+MODULAR_CXX_EXPORT bool isGPUTriple(const llvm::Triple &triple);
 
 // Return true if `triple` is the registered Metal target.
-bool isMetalTriple(const llvm::Triple &triple);
+MODULAR_CXX_EXPORT bool isMetalTriple(const llvm::Triple &triple);
 
 // Whether the standalone module should export all symbols (GPU targets do, so
 // offloaded kernels resolve by symbol at runtime).

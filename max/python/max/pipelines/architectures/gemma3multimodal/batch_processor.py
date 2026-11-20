@@ -90,6 +90,7 @@ class Gemma3MultiModalBatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The graph inputs' shapes, as symbols plus the KV cache params."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
@@ -140,6 +141,7 @@ class Gemma3MultiModalBatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Gemma3MultiModalModelInputs:
+        """Builds the first step's inputs from the replica batches."""
         from .model import Gemma3MultiModalModelInputs
 
         if len(replica_batches) > 1:
@@ -181,6 +183,7 @@ class Gemma3MultiModalBatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Unpacks the graph outputs into ragged KV results."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

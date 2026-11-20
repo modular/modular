@@ -25,22 +25,18 @@ from max.gpu.memory import fence_mbarrier_init
 from layout import (
     TensorLayout,
     Coord,
-    Layout,
     TileTensor,
     coord,
     row_major,
 )
-from layout.tile_layout import Layout as NativeLayout
 from layout.tile_tensor import stack_allocation
-from layout.int_tuple import _IntTupleToCoordLike
-from std.utils import TypeList
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tile_io import copy_local_to_dram
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
-    tile_layout_mn_major,
+    tile_layout_k_major_typed,
+    tile_layout_mn_major_typed,
     warpgroup_fence,
 )
 from layout.tma_async import (
@@ -52,21 +48,10 @@ from layout.tma_async import (
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import DynamicCoord
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
-
-
-# Keep the nested SMEM modes used by the existing descriptor formulas.
-comptime _SmemLayout[legacy: Layout] = NativeLayout[
-    shape_types=TypeList.of[
-        Coord[*_IntTupleToCoordLike[.int64, legacy.shape[0]]],
-        Coord[*_IntTupleToCoordLike[.int64, legacy.shape[1]]],
-    ](),
-    stride_types=TypeList.of[
-        Coord[*_IntTupleToCoordLike[.int64, legacy.stride[0]]],
-        Coord[*_IntTupleToCoordLike[.int64, legacy.stride[1]]],
-    ](),
-]
+from std.utils.coord import Coord
 
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -80,11 +65,13 @@ def multicast_tma_wgmma_kernel[
     a_desc_shape: Coord,
     b_tile_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
-    cluster_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    wgmma_shape: DynamicCoord[.int, 3],
+    ASmemLayout: TensorLayout,
+    BSmemLayout: TensorLayout,
+    a_smem_layout: ASmemLayout,
+    b_smem_layout: BSmemLayout,
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -99,21 +86,11 @@ def multicast_tma_wgmma_kernel[
     comptime assert type_of(c).LayoutType.shape_known
     var a_smem_tile = stack_allocation[
         dtype=a_type, address_space=.SHARED, alignment=128
-    ](
-        _SmemLayout[a_smem_layout](
-            Coord[*_SmemLayout[a_smem_layout].shape_types](),
-            Coord[*_SmemLayout[a_smem_layout].stride_types](),
-        )
-    )
+    ](a_smem_layout)
 
     var b_smem_tile = stack_allocation[
         dtype=b_type, address_space=.SHARED, alignment=128
-    ](
-        _SmemLayout[b_smem_layout](
-            Coord[*_SmemLayout[b_smem_layout].shape_types](),
-            Coord[*_SmemLayout[b_smem_layout].stride_types](),
-        )
-    )
+    ](b_smem_layout)
 
     comptime accum_type = get_accum_type[a_type]()
     var wgmma_op = TensorCoreAsync[
@@ -185,7 +162,7 @@ def multicast_tma_wgmma_kernel[
                         block_idx.y * BM + rank_n * a_tma_rows
                     )
                     var a_smem_slice = type_of(a_smem_tile)(
-                        a_smem_tile.ptr + rank_n * a_tma_load_size,
+                        a_smem_tile.ptr.unsafe_offset(rank_n * a_tma_load_size),
                         a_smem_tile.layout,
                     )
 
@@ -222,7 +199,7 @@ def multicast_tma_wgmma_kernel[
                         block_idx.x * BN + rank_m * b_tma_rows
                     )
                     var b_smem_slice = type_of(b_smem_tile)(
-                        b_smem_tile.ptr + rank_m * b_tma_load_size,
+                        b_smem_tile.ptr.unsafe_offset(rank_m * b_tma_load_size),
                         b_smem_tile.layout,
                     )
 
@@ -313,9 +290,9 @@ def test_multicast_tma_wgmma[
     b_type: DType,
     c_type: DType,
     prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    wgmma_shape: DynamicCoord[.int, 3],
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -383,14 +360,16 @@ def test_multicast_tma_wgmma[
     var c_ref = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
 
     # Shared memory tile layouts
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        a_type, BM, BK, a_swizzle
+    ]
+    # Two distinct layouts; select the type, then default-construct it.
+    comptime BSmemLayout = type_of(
+        tile_layout_k_major_typed[b_type, BN, BK, b_swizzle]
+    ) if transpose_b else type_of(
+        tile_layout_mn_major_typed[b_type, BN, BK, b_swizzle]
+    )
+    comptime b_smem_layout = BSmemLayout()
 
     a.to_device()
     b.to_device()
@@ -426,6 +405,8 @@ def test_multicast_tma_wgmma[
         type_of(b_tma_op).desc_shape,
         block_tile_shape,
         wgmma_shape,
+        type_of(a_smem_layout),
+        type_of(b_smem_layout),
         a_smem_layout,
         b_smem_layout,
         cluster_shape=cluster_shape,
@@ -480,10 +461,10 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(128, 16, 128),
-            Index(64, 16, 64),
-            Index(64, 8, 16),
-            Index(2, 1, 1),
+            (128, 16, 128),
+            (64, 16, 64),
+            (64, 8, 16),
+            (2, 1, 1),
             transpose_b=True,
         ](ctx)
 
@@ -491,10 +472,10 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(128, 160, 128),
-            Index(64, 160, 64),
-            Index(64, 80, 16),
-            Index(2, 1, 1),
+            (128, 160, 128),
+            (64, 160, 64),
+            (64, 80, 16),
+            (2, 1, 1),
             transpose_b=True,
         ](ctx)
 
@@ -503,10 +484,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 16, 128),
-                Index(64, 16, 64),
-                Index(64, 8, 16),
-                Index(2, 1, 1),
+                (128, 16, 128),
+                (64, 16, 64),
+                (64, 8, 16),
+                (2, 1, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
@@ -517,10 +498,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 160, 128),
-                Index(64, 160, 64),
-                Index(64, 80, 16),
-                Index(2, 1, 1),
+                (128, 160, 128),
+                (64, 160, 64),
+                (64, 80, 16),
+                (2, 1, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
@@ -531,10 +512,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 16, 64),
-                Index(64, 16, 32),
-                Index(64, 8, 16),
-                Index(2, 1, 1),
+                (128, 16, 64),
+                (64, 16, 32),
+                (64, 8, 16),
+                (2, 1, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
@@ -545,10 +526,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 160, 64),
-                Index(64, 160, 32),
-                Index(64, 80, 16),
-                Index(2, 1, 1),
+                (128, 160, 64),
+                (64, 160, 32),
+                (64, 80, 16),
+                (2, 1, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
@@ -559,10 +540,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 16, 32),
-                Index(64, 16, 16),
-                Index(64, 8, 16),
-                Index(2, 1, 1),
+                (128, 16, 32),
+                (64, 16, 16),
+                (64, 8, 16),
+                (2, 1, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
@@ -573,10 +554,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 160, 32),
-                Index(64, 160, 16),
-                Index(64, 80, 16),
-                Index(2, 1, 1),
+                (128, 160, 32),
+                (64, 160, 16),
+                (64, 80, 16),
+                (2, 1, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
@@ -588,10 +569,10 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(128, 16, 128),
-            Index(64, 8, 64),
-            Index(64, 8, 16),
-            Index(2, 2, 1),
+            (128, 16, 128),
+            (64, 8, 64),
+            (64, 8, 16),
+            (2, 2, 1),
             transpose_b=True,
         ](ctx)
 
@@ -599,10 +580,10 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(128, 160, 128),
-            Index(64, 80, 64),
-            Index(64, 80, 16),
-            Index(2, 2, 1),
+            (128, 160, 128),
+            (64, 80, 64),
+            (64, 80, 16),
+            (2, 2, 1),
             transpose_b=True,
         ](ctx)
 
@@ -611,10 +592,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 32, 128),
-                Index(64, 16, 64),
-                Index(64, 8, 16),
-                Index(2, 2, 1),
+                (128, 32, 128),
+                (64, 16, 64),
+                (64, 8, 16),
+                (2, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
@@ -625,10 +606,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 320, 128),
-                Index(64, 160, 64),
-                Index(64, 80, 16),
-                Index(2, 2, 1),
+                (128, 320, 128),
+                (64, 160, 64),
+                (64, 80, 16),
+                (2, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
@@ -639,10 +620,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 32, 64),
-                Index(64, 16, 32),
-                Index(64, 8, 16),
-                Index(2, 2, 1),
+                (128, 32, 64),
+                (64, 16, 32),
+                (64, 8, 16),
+                (2, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
@@ -653,10 +634,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 320, 64),
-                Index(64, 160, 32),
-                Index(64, 80, 16),
-                Index(2, 2, 1),
+                (128, 320, 64),
+                (64, 160, 32),
+                (64, 80, 16),
+                (2, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
@@ -667,10 +648,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 32, 32),
-                Index(64, 16, 16),
-                Index(64, 8, 16),
-                Index(2, 2, 1),
+                (128, 32, 32),
+                (64, 16, 16),
+                (64, 8, 16),
+                (2, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
@@ -681,10 +662,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(128, 320, 32),
-                Index(64, 160, 16),
-                Index(64, 80, 16),
-                Index(2, 2, 1),
+                (128, 320, 32),
+                (64, 160, 16),
+                (64, 80, 16),
+                (2, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
@@ -696,10 +677,10 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(64, 16, 128),
-            Index(64, 8, 64),
-            Index(64, 8, 16),
-            Index(1, 2, 1),
+            (64, 16, 128),
+            (64, 8, 64),
+            (64, 8, 16),
+            (1, 2, 1),
             transpose_b=True,
         ](ctx)
 
@@ -707,10 +688,10 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(64, 160, 128),
-            Index(64, 80, 64),
-            Index(64, 80, 16),
-            Index(1, 2, 1),
+            (64, 160, 128),
+            (64, 80, 64),
+            (64, 80, 16),
+            (1, 2, 1),
             transpose_b=True,
         ](ctx)
 
@@ -719,10 +700,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(64, 32, 128),
-                Index(64, 16, 64),
-                Index(64, 8, 16),
-                Index(1, 2, 1),
+                (64, 32, 128),
+                (64, 16, 64),
+                (64, 8, 16),
+                (1, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
@@ -733,10 +714,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(64, 320, 128),
-                Index(64, 160, 64),
-                Index(64, 80, 16),
-                Index(1, 2, 1),
+                (64, 320, 128),
+                (64, 160, 64),
+                (64, 80, 16),
+                (1, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
@@ -747,10 +728,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(64, 32, 64),
-                Index(64, 16, 32),
-                Index(64, 8, 16),
-                Index(1, 2, 1),
+                (64, 32, 64),
+                (64, 16, 32),
+                (64, 8, 16),
+                (1, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
@@ -761,10 +742,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(64, 320, 64),
-                Index(64, 160, 32),
-                Index(64, 80, 16),
-                Index(1, 2, 1),
+                (64, 320, 64),
+                (64, 160, 32),
+                (64, 80, 16),
+                (1, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
@@ -775,10 +756,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(64, 32, 32),
-                Index(64, 16, 16),
-                Index(64, 8, 16),
-                Index(1, 2, 1),
+                (64, 32, 32),
+                (64, 16, 16),
+                (64, 8, 16),
+                (1, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
@@ -789,10 +770,10 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 .bfloat16,
-                Index(64, 320, 32),
-                Index(64, 160, 16),
-                Index(64, 80, 16),
-                Index(1, 2, 1),
+                (64, 320, 32),
+                (64, 160, 16),
+                (64, 80, 16),
+                (1, 2, 1),
                 a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,

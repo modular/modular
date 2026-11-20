@@ -18,11 +18,14 @@ from std.testing import (
     assert_raises,
     assert_true,
 )
+from std.testing._ffi import CField, CStruct
 from test_utils.cabi_check import (
     AbiConstant,
     AbiTypedef,
     AbiTypedefLike,
     _c_field_decl,
+    _c_type_decl,
+    assert_cabi_constant,
     _c_scalar_name,
     constant_checks,
     emit_cabi_checks_for,
@@ -45,6 +48,41 @@ struct ProbeNested:
     var inner: Probe
 
 
+struct ProbeWide:
+    var seconds: Int64
+    var flags: UInt64
+
+
+@__annotation("unrelated")
+@__annotation(CStruct(rename="probe_c"))
+struct RenamedProbe:
+    var alpha: Int32
+
+
+struct ProbeNestedRenamed:
+    var inner: RenamedProbe
+
+
+@__annotation(CStruct(skip_fields=True))
+struct OpaqueProbe:
+    var alpha: Int32
+
+
+struct FieldProbe:
+    @__annotation(CField(rename="alpha", c_type="uintptr_t"))
+    var words: Array[UInt32, 2]
+
+    @__annotation("unrelated")
+    @__annotation(CField(rename="beta"))
+    var renamed: Int32
+
+    @__annotation(CField(c_type="void *"))
+    var gamma: UInt64
+
+    @__annotation(CField(c_type=.array("__u64", 2)))
+    var pad: Array[UInt64, 2]
+
+
 def test_preamble() raises:
     var out = preamble(["<errno.h>", "<netinet/in.h>"])
     assert_true(out.startswith("// Generated ABI reference; do not edit."))
@@ -54,10 +92,12 @@ def test_preamble() raises:
     assert_true("#include <stdint.h>\n" in out)
     assert_true("#define MOJO_CHECK_CABI_LAYOUT(name, type)" in out)
     assert_true("#define MOJO_CHECK_CABI_FIELD(name, type, field)" in out)
-    assert_true("#define MOJO_CHECK_CABI_CONST(name)" in out)
+    assert_true("#define MOJO_CHECK_CABI_FIELD_INT64(name, type, field)" in out)
     assert_true(
-        "#define MOJO_CHECK_CABI_IS_SIGNED(e) ((__typeof__(e))-1 < 0)" in out
+        "#define MOJO_CHECK_CABI_FIELD_UINT64(name, type, field)" in out
     )
+    assert_true("#define MOJO_CHECK_CABI_FITS(value, type)" in out)
+    assert_true("#define MOJO_CHECK_CABI_CONST(name, type)" in out)
 
 
 def test_struct_checks() raises:
@@ -95,6 +135,83 @@ def test_struct_checks_nested_struct_field() raises:
     )
 
 
+def test_struct_checks_64_bit_fields() raises:
+    assert_equal(
+        struct_checks[ProbeWide](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(ProbeWide, struct ProbeWide)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeWide, struct ProbeWide, seconds)\n"
+            "MOJO_CHECK_CABI_FIELD_INT64(ProbeWide, struct ProbeWide,"
+            " seconds)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeWide, struct ProbeWide, flags)\n"
+            "MOJO_CHECK_CABI_FIELD_UINT64(ProbeWide, struct ProbeWide, flags)"
+        ),
+    )
+
+
+def test_struct_checks_rename() raises:
+    assert_equal(
+        struct_checks[RenamedProbe](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(probe_c, struct probe_c)\n"
+            "MOJO_CHECK_CABI_FIELD(probe_c, struct probe_c, alpha)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(probe_c, struct probe_c, alpha,"
+            " int32_t *ptr)"
+        ),
+    )
+
+
+def test_struct_checks_nested_renamed_struct_field() raises:
+    assert_equal(
+        struct_checks[ProbeNestedRenamed](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(ProbeNestedRenamed, struct"
+            " ProbeNestedRenamed)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeNestedRenamed, struct"
+            " ProbeNestedRenamed, inner)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(ProbeNestedRenamed, struct"
+            " ProbeNestedRenamed, inner, struct probe_c *ptr)"
+        ),
+    )
+
+
+def test_struct_checks_skip_fields() raises:
+    assert_equal(
+        struct_checks[OpaqueProbe](),
+        "MOJO_CHECK_CABI_LAYOUT(OpaqueProbe, struct OpaqueProbe)",
+    )
+
+
+def test_struct_checks_cfield() raises:
+    assert_equal(
+        struct_checks[FieldProbe](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(FieldProbe, struct FieldProbe)\n"
+            "MOJO_CHECK_CABI_FIELD(FieldProbe, struct FieldProbe, alpha)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(FieldProbe, struct FieldProbe, alpha,"
+            " uintptr_t *ptr)\n"
+            "MOJO_CHECK_CABI_FIELD(FieldProbe, struct FieldProbe, beta)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(FieldProbe, struct FieldProbe, beta,"
+            " int32_t *ptr)\n"
+            "MOJO_CHECK_CABI_FIELD(FieldProbe, struct FieldProbe, gamma)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(FieldProbe, struct FieldProbe, gamma,"
+            " void * *ptr)\n"
+            "MOJO_CHECK_CABI_FIELD(FieldProbe, struct FieldProbe, pad)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(FieldProbe, struct FieldProbe, pad,"
+            " __u64 (*ptr)[2])"
+        ),
+    )
+
+
+def test_c_type_decl() raises:
+    # A string converts implicitly to the `.type` case.
+    assert_equal(_c_type_decl("uint16_t"), "uint16_t *ptr")
+    assert_equal(_c_type_decl("void *"), "void * *ptr")
+    assert_equal(_c_type_decl(.array("__u64", 2)), "__u64 (*ptr)[2]")
+    with assert_raises(contains="spells no C type"):
+        _ = _c_type_decl(.default)
+
+
 def test_c_scalar_name() raises:
     assert_equal(_c_scalar_name[Int8](), Optional[StaticString]("int8_t"))
     assert_equal(_c_scalar_name[UInt8](), Optional[StaticString]("uint8_t"))
@@ -121,6 +238,16 @@ def test_c_field_decl_array() raises:
     assert_equal(
         _c_field_decl[Array[UInt16, 16]](),
         Optional[String]("uint16_t (*ptr)[16]"),
+    )
+
+
+def test_c_field_decl_wide_array() raises:
+    # A 64-bit array's implied check is the exact `<stdint.h>` element type,
+    # unlike a 64-bit scalar's; a field spelled differently in C names its
+    # type with `CField(c_type=)`.
+    assert_equal(
+        _c_field_decl[Array[UInt64, 2]](),
+        Optional[String]("uint64_t (*ptr)[2]"),
     )
 
 
@@ -153,7 +280,21 @@ def test_typedef_checks() raises:
 
 
 def test_constant_checks() raises:
-    assert_equal(constant_checks("EPERM"), "MOJO_CHECK_CABI_CONST(EPERM)")
+    assert_equal(
+        constant_checks(AbiConstant("EV_ADD", UInt16(1))),
+        "MOJO_CHECK_CABI_CONST(EV_ADD, uint16_t)",
+    )
+    assert_equal(
+        constant_checks(AbiConstant("EVFILT_READ", Int16(-1))),
+        "MOJO_CHECK_CABI_CONST(EVFILT_READ, int16_t)",
+    )
+
+
+# The reporters come from the `abi_probe` suite's C reference.
+def test_assert_cabi_constant() raises:
+    assert_cabi_constant[AbiConstant("INT8_MIN", Int8.MIN)]()
+    with assert_raises(contains="mojo_check_cabi_const_INT8_MIN"):
+        assert_cabi_constant[AbiConstant("INT8_MIN", Int8(-127))]()
 
 
 def test_emit_cabi_checks_for() raises:
@@ -171,7 +312,7 @@ def test_emit_cabi_checks_for() raises:
         + "\n\n"
         + typedef_checks[Typedef]()
         + "\n\n"
-        + constant_checks("EPERM"),
+        + constant_checks(AbiConstant("EPERM", Int32(1))),
     )
 
 

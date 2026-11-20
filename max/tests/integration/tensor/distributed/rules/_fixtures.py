@@ -25,7 +25,7 @@ from collections.abc import Callable
 from typing import Any
 
 from max.driver import CPU
-from max.experimental.sharding import (
+from max.tensor.sharding import (
     ALL_TRANSITIONS,
     AxisAssignment,
     DeviceMapping,
@@ -35,8 +35,8 @@ from max.experimental.sharding import (
     Sharded,
     auto_reshard,
 )
-from max.experimental.sharding._auto_reshard import pick_reshard_action
-from max.experimental.sharding.action import Action, tensor_layouts_in
+from max.tensor.sharding._auto_reshard import pick_reshard_action
+from max.tensor.sharding.action import Action, tensor_layouts_in
 
 # ── Convenience aliases ──────────────────────────────────────────────
 

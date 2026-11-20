@@ -46,13 +46,16 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
   case ArgConvention::ImmReg:
   case ArgConvention::ImmMem:
+  case ArgConvention::PackImmMem:
     return "imm";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
+  case ArgConvention::PackOwnedMem:
     return "var";
   case ArgConvention::DeinitMem:
     return "deinit";
   case ArgConvention::Mut:
+  case ArgConvention::PackMut:
     return "mut";
   case ArgConvention::Ref:
     return "ref";
@@ -80,10 +83,12 @@ void KGENDialect::registerTypes() {
   registerPrettyType(
       "non_struct_type", &NonStructTypeType::parse,
       mlir::TypeID::get<NonStructTypeType>(),
-      +[](AsmPrinter &p, Type) { p << "non_struct_type"; });
+      +[](AsmPrinter &p, Type) { p << "non_struct_type"; },
+      +[](AsmPrinter &p, Type, KGENParamPrinter &) { p << "non_struct_type"; });
   registerPrettyType(
       "type", &TypeType::parse, mlir::TypeID::get<TypeType>(),
-      +[](AsmPrinter &p, Type) { p << "type"; });
+      +[](AsmPrinter &p, Type) { p << "type"; },
+      +[](AsmPrinter &p, Type, KGENParamPrinter &) { p << "type"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<PointerType>();
   registerMnemonicType<NoneType>();
@@ -95,21 +100,18 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<StructInstanceType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
+  registerMnemonicType<UntaggedUnionType>();
 
   // Register the SIMD type with custom parser/printer that sugars
   // `!kgen.simd<1, dtype>` to `!kgen.scalar<dtype>`.
   registerPrettyType(
       "simd", &SIMDType::parse, mlir::TypeID::get<SIMDType>(),
       +[](AsmPrinter &p, Type type) {
-        auto simd = cast<SIMDType>(type);
-        if (simd.isScalar()) {
-          p << "scalar<";
-          printDTypeParamValue(p, simd.getDType());
-          p << ">";
-        } else {
-          p << "simd";
-          simd.print(p);
-        }
+        KGENParamPrinter::createDiagnosticPrinter().printSIMDBody(
+            p, cast<SIMDType>(type));
+      },
+      +[](AsmPrinter &p, Type type, KGENParamPrinter &printer) {
+        printer.printSIMDBody(p, cast<SIMDType>(type));
       });
   registerKeywordParser("scalar", [](AsmParser &p) -> Type {
     TypedAttr resultDType;
@@ -119,6 +121,48 @@ void KGENDialect::registerTypes() {
       return {};
     return SIMDType::get(1, resultDType);
   });
+}
+
+//===----------------------------------------------------------------------===//
+// Param-aware printing
+//===----------------------------------------------------------------------===//
+// The mnemonic is emitted by the registration lambda, so these print only the
+// body.
+
+void StructInstanceType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printStructInstanceBody(p, *this);
+}
+
+void StructType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printStructBody(p, *this);
+}
+
+void PointerType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printPointerBody(p, *this);
+}
+
+void ParamListType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printParamListBody(p, *this);
+}
+
+void TypeValueType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printTypeValueBody(p, *this);
+}
+
+void VariantType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printVariantBody(p, *this);
+}
+
+void UntaggedUnionType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members || !members.getValues().empty())
+    printer.printVariantTypes(p, getVariadic());
+  p << '>';
+}
+
+void SIMDType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printSIMDBody(p, *this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -191,7 +235,8 @@ OptionalParseResult ParamType::parseValue(AsmParser &p,
   return {}; // No custom parsing.
 }
 
-LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) const {
   return failure(); // No custom printing.
 }
 
@@ -199,12 +244,40 @@ LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
 // TypeValueType
 //===----------------------------------------------------------------------===//
 
+/// Returns true if `type` is `__MLIRType[T]`, the stub struct that provides the
+/// witness tables of a non-struct type `T`.
+static bool isMLIRTypeStub(Type type) {
+  auto ref = dyn_cast<TypeValueType>(type);
+  if (!ref)
+    return false;
+  SymbolRefAttr symbol;
+  if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(ref.getTypeValue()))
+    symbol = genRef.getSymbol();
+  else if (auto instRef = dyn_cast<TypeInstanceRefAttr>(ref.getTypeValue()))
+    symbol = instRef.getSymbol();
+  else
+    return false;
+
+  // TODO: We don't have a good way to see whether we are handling __MLIRType at
+  // this stage, hard code it here :(
+  constexpr StringLiteral stubName = "std::builtin::_stubs::__MLIRType";
+  return symbol.getRootReference().getValue().starts_with(stubName);
+}
+
 Type TypeValueType::get(TypedAttr typeValue) {
   // Strip extension to reveal the actual underlying type.
   typeValue = ExtensionAttr::strip(typeValue);
   // Simply forward the value domain type from a TypeParamAttr.
-  if (auto constant = dyn_cast<TypeParamAttr>(typeValue))
+  if (auto constant = dyn_cast<TypeParamAttr>(typeValue)) {
+    // Look through MLIRStubs, this mirrors what we do in parser when creating
+    // `ParamType` from a `__MLIRType` type value. This make evaluation result
+    // consistent between parser and elaborator.
+    //
+    // FIXME: Fix `__MLIRType`!
+    if (isMLIRTypeStub(constant.getTypeValue()))
+      return constant.getMlirType();
     return constant.getTypeValue();
+  }
 
   // Otherwise, form the TypeValueType like normal.
   return Base::get(typeValue.getContext(), typeValue);
@@ -229,19 +302,22 @@ OptionalParseResult NonStructTypeType::parseValue(AsmParser &p,
   return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
 }
 
-LogicalResult NonStructTypeType::printValue(AsmPrinter &p,
-                                            TypedAttr value) const {
-  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
-  return printSugaredTypeValue(p, value, typePrinter);
+LogicalResult NonStructTypeType::printValue(AsmPrinter &p, TypedAttr value,
+                                            KGENParamPrinter &printer) const {
+  return printSugaredTypeValue(p, value, [&printer](AsmPrinter &p, Type type) {
+    printer.printKGENType(p, type);
+  });
 }
 
 OptionalParseResult TypeType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
 }
 
-LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
-  return printSugaredTypeValue(p, value, typePrinter);
+LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
+  return printSugaredTypeValue(p, value, [&printer](AsmPrinter &p, Type type) {
+    printer.printKGENType(p, type);
+  });
 }
 
 std::optional<int64_t> TypeType::getTypeSize(TargetInfoAttr target) const {
@@ -388,7 +464,10 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
       ParameterExprArrayAttr paramValues;
       if (parseParameterValues(p, paramValues))
         return failure();
-      value = SymbolConstantAttr::get(symbol, sigGen, paramValues);
+      value = FuncSymbolGenerator::get(
+          getInputParamTypes(),
+          FuncSymbolAttr::get(symbol, cast<FuncType>(getBody()), paramValues),
+          getParamListAttrs());
     } else if (auto closureSymbol = dyn_cast<ClosureSymbolAttr>(attr)) {
       value = ClosureSymbolAttr::get(
           closureSymbol.getContext(), closureSymbol.getParentSymbol(),
@@ -403,7 +482,8 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   if (::isa<FuncTypeGeneratorType>(*this)) {
     if (auto mlirOp = dyn_cast<MLIROpAttr>(value)) {
       p << mlirOp.getName();
@@ -412,12 +492,11 @@ LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
       return success();
     }
 
-    auto symbolCst = dyn_cast<SymbolConstantAttr>(value);
-    if (!symbolCst)
-      return failure();
-    p << symbolCst.getSymbol();
-    printParameterValues(p, symbolCst.getParamValues());
-    return success();
+    if (auto funcSym = FuncSymbolGenerator::dynCast(value)) {
+      p << funcSym.getSymbol();
+      printer.printParameterValues(p, funcSym.getFuncSymbol().getParamValues());
+      return success();
+    }
   }
 
   return failure();
@@ -475,15 +554,16 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   VerboseCompilerTimeTraceScope traceScope(
       "GeneratorType::getSpecializedGenerator");
 
   // If the signature isn't parameterized, then there are no substitutions to
-  // perform.
-  if (paramBindings.empty())
+  // perform. A non-empty list goes through the arity check even when it binds
+  // no values.
+  if (paramBindings.size() == 0)
     return *this;
 
   std::optional<PartiallySpecializedInputParams> specializationOpt =
@@ -496,7 +576,7 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return getSpecializedGenerator(
       paramBindings, evaluationContext,
@@ -663,12 +743,14 @@ bool FuncType::isPosVarArg(size_t index) {
   return getArgListAttrs().isPosVarArg(index);
 }
 
-/// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: def x(mut *args: Int) is declared 'mut'.
+/// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
+/// elements. For example: def x(mut *args: Int) is declared 'mut'.
 ArgConvention FuncType::getVariadicConvention(size_t index) {
+  if (std::optional<ArgConvention> eltConvention =
+          getPackEltConvention(getArgConvention(index)))
+    return *eltConvention;
   PogListAttr pogs = getArgListAttrs();
-  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg ||
-      pogs.getVariadicKind(index) == VariadicKind::PackVarArg)
+  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg)
     return pogs.getOrigVariadicConvention();
   return ArgConvention::ByRefError;
 }
@@ -677,29 +759,24 @@ bool FuncType::isKwVarArg(size_t index) {
   return getArgListAttrs().isKwVarArg(index);
 }
 
-bool FuncType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
+bool FuncType::isPack(size_t index) {
+  return getPackEltConvention(getArgConvention(index)).has_value();
+}
 
 std::optional<size_t> FuncType::findPackVarArgIndex() {
-  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult() - isThrows();
-  if (numUserArgs == 0)
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  const auto *it = llvm::find_if(conventions, [](ArgConvention conv) {
+    return getPackEltConvention(conv).has_value();
+  });
+  if (it == conventions.end())
     return std::nullopt;
-  size_t lastUserArgIndex = numUserArgs - 1;
-  if (isKwVarArg(lastUserArgIndex)) {
-    if (lastUserArgIndex == 0)
-      return std::nullopt;
-    --lastUserArgIndex;
-  }
-  if (isPack(lastUserArgIndex))
-    return std::make_optional(lastUserArgIndex);
-  return std::nullopt;
+  return it - conventions.begin();
 }
 
 bool FuncType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }
 
 std::optional<int64_t> FuncType::getTypeSize(TargetInfoAttr target) const {
-  // Non-capturing closures are function pointers. Capturing closures contain
-  // a function pointer and a capture state pointer.
-  return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
+  return target.getDataLayout().getPointerSize();
 }
 
 std::optional<int64_t> FuncType::getTypeAlign(TargetInfoAttr target) const {
@@ -741,13 +818,13 @@ ErrorOr<TypedAttr> FuncType::readFrom(int64_t addr,
       // recursion but require one level of typing to preserve symbol storage in
       // the interpreter. Handle the resulting type mismatches with a bit cast.
       if (generatorType.getBody() != *this) {
-        assert(isa<SymbolConstantAttr>(*symbol) &&
-               "func slot must hold a symbol constant");
-        auto symbolCst = cast<SymbolConstantAttr>(*symbol);
+        auto generator = FuncSymbolGenerator::dynCast(*symbol);
+        assert(generator && generator.isFullyBound() &&
+               "func slot must hold a function symbol");
         auto shallowGen =
             cast<FuncTypeGeneratorType>(generatorType.getWithBody(*this));
-        symbol =
-            cast<TypedAttr>(FuncPtrBitcastAttr::get(symbolCst, shallowGen));
+        symbol = cast<TypedAttr>(FuncPtrBitcastAttr::get(
+            generator.getInstantiatedFuncSymbol(), shallowGen));
       }
     }
   }
@@ -783,6 +860,34 @@ FuncType FuncType::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return result;
 }
 
+/// Each element of a variadic pack argument is the address of an argument of
+/// the caller (see `ArgConvention::PackImmMem`), so it must be a pointer.
+static LogicalResult
+verifyPackArgument(function_ref<InFlightDiagnostic()> emitError, size_t argIdx,
+                   Type argType) {
+  auto ptr = dyn_cast<PointerType>(argType);
+  if (!ptr)
+    return success();
+  // Before elaboration, the pack can be a `VariadicPack` that is not resolved.
+  auto pack = dyn_cast<StructType>(ptr.getElementType());
+  if (!pack || !pack.getIsParamPack())
+    return success();
+  auto elts = dyn_cast_or_null<ParamListAttr>(pack.getElementTypesVariadic());
+  if (!elts)
+    return success();
+  for (auto [eltIdx, elt] : llvm::enumerate(elts.getValues())) {
+    auto typeValue = dyn_cast<TypeParamAttr>(elt);
+    if (!typeValue)
+      continue;
+    if (Type eltType = typeValue.getMlirType(); !isa<PointerType>(eltType)) {
+      return emitError() << "element #" << eltIdx << " of pack argument #"
+                         << argIdx
+                         << " should be a `!kgen.pointer` but got: " << eltType;
+    }
+  }
+  return success();
+}
+
 LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                                FunctionType values, FnMetadataAttr metadataAttr,
                                PogListAttr argListAttrs) {
@@ -804,6 +909,31 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
     return emitError()
            << "number of arguments does not match number of argument names: "
            << values.getNumInputs() << " != " << numPogs;
+  }
+
+  // The convention of a pack argument holds its element convention, so the
+  // argument list does not.
+  std::optional<size_t> packIdx;
+  for (auto [i, conv] : llvm::enumerate(argConventions)) {
+    if (!getPackEltConvention(conv))
+      continue;
+    if (packIdx)
+      return emitError() << "func type cannot have more than one pack argument";
+    packIdx = i;
+  }
+  if (!argListAttrs.getPogs().empty()) {
+    for (auto [i, pog] : llvm::enumerate(argListAttrs.getPogs())) {
+      if (pog.isPack() != (packIdx == i)) {
+        return emitError() << "argument #" << i
+                           << " must have a pack convention if and only if it "
+                              "is a pack vararg";
+      }
+    }
+    if (packIdx &&
+        argListAttrs.getOrigVariadicConvention() != ArgConvention::ByRefError) {
+      return emitError() << "argument list with a pack vararg cannot have a "
+                            "variadic convention";
+    }
   }
 
   // If the FuncType has metadata, defer to it for further verification.
@@ -831,6 +961,9 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                << "func type with 'byref_error' argument must be 'throws'";
       byRefErrorIdx = i;
     }
+    if (getPackEltConvention(conv) &&
+        failed(verifyPackArgument(emitError, i, argType)))
+      return failure();
 
     Type type = argType;
     // Verify variadics.
@@ -876,8 +1009,8 @@ OptionalParseResult FuncLiteralType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult FuncLiteralType::printValue(AsmPrinter &p,
-                                          TypedAttr value) const {
+LogicalResult FuncLiteralType::printValue(AsmPrinter &p, TypedAttr value,
+                                          KGENParamPrinter &printer) const {
   return failure();
 }
 
@@ -926,7 +1059,7 @@ FuncTypeGeneratorType FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
 }
 
 FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   return ::cast_or_null<FuncTypeGeneratorType>(
@@ -935,7 +1068,7 @@ FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
 }
 
 FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return ::cast_or_null<FuncTypeGeneratorType>(
       GeneratorType::getSpecializedGenerator(paramBindings, evaluationContext,
@@ -1012,7 +1145,7 @@ FuncLiteralTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
 
 FuncLiteralTypeGeneratorType
 FuncLiteralTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   return ::cast_or_null<FuncLiteralTypeGeneratorType>(
@@ -1022,33 +1155,23 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
 
 FuncLiteralTypeGeneratorType
 FuncLiteralTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return ::cast_or_null<FuncLiteralTypeGeneratorType>(
       GeneratorType::getSpecializedGenerator(paramBindings, evaluationContext,
                                              location));
 }
 
-SymbolConstantAttr FuncLiteralTypeGeneratorType::getSymbolConstantAttr() {
+TypedAttr FuncLiteralTypeGeneratorType::getFuncSymbolAttr() {
+  return GeneratorAttr::get(getInputParamTypes(), getBody().getTargetLiteral(),
+                            getParamListAttrs());
+}
+
+FuncTypeGeneratorType
+FuncLiteralTypeGeneratorType::getNonLiteralGeneratorType() {
   auto directSymbol = getBody().getTargetLiteral();
-  auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
-                                getParamListAttrs());
-
-  // The parameter values might have dependent type, erase the ref too in the
-  // create a evaluator to erase the dependencies too.
-  ParameterEvaluator evaluator(ArrayRef<TypedAttr>{});
-  for (auto unboundType : getInputParamTypes()) {
-    // There could be a dependent input parameter type, erase the unknown ref.
-    auto unbound = UnboundAttr::get(evaluator.replace(unboundType));
-    evaluator.appendIndexBinding(unbound);
-  }
-
-  SmallVector<TypedAttr> paramValues;
-  for (auto paramValue : directSymbol.getParamValues())
-    paramValues.push_back(evaluator.replace(paramValue));
-
-  return SymbolConstantAttr::get(directSymbol.getSymbol(),
-                                 cast<FuncTypeGeneratorType>(sig), paramValues);
+  return GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
+                            getParamListAttrs());
 }
 
 FuncLiteralType FuncLiteralTypeGeneratorType::getBody() {
@@ -1103,18 +1226,8 @@ static ParseResult parsePointerOptionals(AsmParser &p, TypedAttr &addressSpace,
 
 static void printPointerOptionals(AsmPrinter &p, TypedAttr addressSpace,
                                   bool isNonNull) {
-  // Get default values for comparison
-  auto defaultAddrSpace =
-      IntegerAttr::get(IndexType::get(addressSpace.getContext()), 0);
-
-  if (addressSpace != defaultAddrSpace) {
-    p << ", ";
-    printIndexParamValue(p, addressSpace);
-  }
-
-  if (isNonNull) {
-    p << ", nonnull";
-  }
+  KGENParamPrinter::createDiagnosticPrinter().printPointerOptionals(
+      p, addressSpace, isNonNull);
 }
 
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -1220,7 +1333,8 @@ OptionalParseResult PointerType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   // Print a raw pointer attribute as an integer.
   if (auto ptrAttr = dyn_cast<PointerAttr>(value)) {
     p << ptrAttr.getAddr();
@@ -1230,7 +1344,7 @@ LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
   // Print a `store_to_mem` directive.
   if (auto memAttr = dyn_cast<StoreToMemAttr>(value)) {
     p << "store_to_mem(";
-    printParamValue(p, memAttr.getValue());
+    printer.printParamValue(p, memAttr.getValue());
     p << ')';
     return success();
   }
@@ -1516,8 +1630,10 @@ Type StructType::parse(AsmParser &p) {
 
   TypedAttr variadic;
 
-  // Check for `(` which indicates concrete types.
+  // `(...)` lists layouts, so it makes a layout struct.
+  StructDomain domain = StructDomain::Unset;
   if (succeeded(p.parseOptionalLParen())) {
+    domain = StructDomain::Layout;
     auto metatype = TypeType::get(p.getContext());
     auto variadicType = ParamListType::get(metatype);
     // Check for empty struct case.
@@ -1559,6 +1675,10 @@ Type StructType::parse(AsmParser &p) {
     return {};
 
   bool isParamPack = succeeded(p.parseOptionalKeyword("isParamPack"));
+  if (succeeded(p.parseOptionalKeyword("layout")))
+    domain = StructDomain::Layout;
+  else if (succeeded(p.parseOptionalKeyword("value")))
+    domain = StructDomain::Value;
 
   // Parse optional `align(N)` for minAlignment.
   TypedAttr minAlignment;
@@ -1572,61 +1692,12 @@ Type StructType::parse(AsmParser &p) {
     return {};
 
   return StructType::get(p.getContext(), variadic, isMemoryOnly, minAlignment,
-                         isParamPack);
+                         isParamPack, domain);
 }
-
-static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
-                                              TypedAttr variadic);
 
 /// Print the StructType.
 void StructType::print(AsmPrinter &p) const {
-  p << '<';
-
-  TypedAttr variadic = getElementTypesVariadic();
-  auto attr = dyn_cast<ParamListAttr>(variadic);
-  // The parenthesized form below prints only each element's layout half, and
-  // parses back as elements with no separate type value. Do not print this way
-  // when doing so would discard information.
-  bool printsAsTypes = attr && isa<TypeType>(attr.getType().getElementType()) &&
-                       normalizeVariadicForUniquing(getContext(), attr) == attr;
-  if (!printsAsTypes) {
-    // Parametric expression or complex metatype - print without parens.  We
-    // print :param_list<Movable> if the elements are not TypeType metatype.
-    if (!isa<TypeType>(
-            cast<ParamListType>(variadic.getType()).getElementType()))
-      printColonTypeParamValue(p, variadic);
-    else
-      printParamValue(p, variadic, variadic.getType());
-  } else {
-    // Concrete types with simple metatype - print with parens.
-    p << '(';
-    if (!attr.getValues().empty()) {
-      SmallVector<Type> types;
-      for (TypedAttr value : attr.getValues())
-        types.push_back(ParamType::get(value));
-      printParamTypes(p, types);
-    }
-    p << ')';
-  }
-
-  KGEN::printIsMemoryOnly(p, getIsMemoryOnly());
-
-  if (getIsParamPack())
-    p << " isParamPack";
-
-  // Print alignment if not the default (1).
-  TypedAttr minAlign = getMinAlignment();
-  if (auto intAttr = dyn_cast<IntegerAttr>(minAlign)) {
-    if (intAttr.getInt() != 1)
-      p << " align(" << intAttr.getInt() << ")";
-  } else if (minAlign) {
-    // Parametric alignment expression.
-    p << " align(";
-    printIndexParamValue(p, minAlign);
-    p << ")";
-  }
-
-  p << '>';
+  KGENParamPrinter::createDiagnosticPrinter().printStructBody(p, *this);
 }
 
 /// Verify that the variadic parameter is valid.
@@ -1635,7 +1706,8 @@ void StructType::print(AsmPrinter &p) const {
 /// expression.
 LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  TypedAttr variadic, TypedAttr isMemoryOnly,
-                                 TypedAttr minAlignment, bool isParamPack) {
+                                 TypedAttr minAlignment, bool isParamPack,
+                                 StructDomain domain) {
   // isMemoryOnly must be an i1-typed attribute (BoolAttr or constraint
   // proposition).
   if (auto intTy = dyn_cast<IntegerType>(isMemoryOnly.getType());
@@ -1710,33 +1782,22 @@ std::optional<size_t> StructType::getNumElements() const {
   return resolved.getValues().size();
 }
 
-static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
-                                                        TargetInfoAttr target) {
-  int64_t size = 0;
-  int64_t strictest = 1;
+/// Lay out `types` in order, each at the next offset aligned for it. Append
+/// the offset of each type to `offsets`, and return the end of the last one.
+static std::optional<int64_t>
+layOutElements(ArrayRef<Type> types, TargetInfoAttr target,
+               SmallVectorImpl<int64_t> &offsets) {
+  int64_t end = 0;
   for (Type type : types) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
-    std::optional<int64_t> typeSize =
-        DataLayoutInterface::getTypeAllocSize(target, type);
+    std::optional<int64_t> typeSize = getStructFieldSize(target, type);
     if (!typeAlign || !typeSize)
       return {};
-    size = llvm::alignTo(size, *typeAlign) + *typeSize;
-    strictest = std::max(strictest, *typeAlign);
+    offsets.push_back(llvm::alignTo(end, *typeAlign));
+    end = offsets.back() + *typeSize;
   }
-  return llvm::alignTo(size, strictest);
-}
-
-std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
-  // A struct backed by a concrete ParamListAttr has a known size.
-  if (ParamListAttr attr = getVariadicIfResolved()) {
-    SmallVector<Type> types;
-    if (failed(resolveTypes(attr.getValues(), types)))
-      return {};
-    return getPackedElementsTypeSize(types, target);
-  }
-  // Parametric struct - size unknown until elaboration.
-  return {};
+  return end;
 }
 
 static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
@@ -1750,6 +1811,42 @@ static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
     strictest = std::max(strictest, *typeAlign);
   }
   return strictest;
+}
+
+static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
+                                                        TargetInfoAttr target) {
+  SmallVector<int64_t> offsets;
+  std::optional<int64_t> end = layOutElements(types, target, offsets);
+  std::optional<int64_t> strictest = getMaxAlignmentAmongTypes(types, target);
+  if (!end || !strictest)
+    return {};
+  return llvm::alignTo(*end, *strictest);
+}
+
+std::optional<SmallVector<int64_t>>
+StructType::getElementOffsets(TargetInfoAttr target) const {
+  ParamListAttr attr = getVariadicIfResolved();
+  if (!attr)
+    return std::nullopt;
+  SmallVector<Type> types;
+  if (failed(resolveTypes(attr.getValues(), types)))
+    return std::nullopt;
+  SmallVector<int64_t> offsets;
+  if (!layOutElements(types, target, offsets))
+    return std::nullopt;
+  return offsets;
+}
+
+std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
+  // A struct backed by a concrete ParamListAttr has a known size.
+  if (ParamListAttr attr = getVariadicIfResolved()) {
+    SmallVector<Type> types;
+    if (failed(resolveTypes(attr.getValues(), types)))
+      return {};
+    return getPackedElementsTypeSize(types, target);
+  }
+  // Parametric struct - size unknown until elaboration.
+  return {};
 }
 
 std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
@@ -1844,42 +1941,32 @@ static TypedAttr convertTypesToVariadicAttr(MLIRContext *context,
   return ParamListAttr::get(elements, variadicType);
 }
 
-/// Normalize a ParamListAttr to use canonicalized TypeParamAttrs.
-/// This ensures consistent uniquing regardless of how the ParamListAttr was
-/// created (e.g., from bytecode vs from ArrayRef<Type>).
-static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
-                                              TypedAttr variadic) {
-  // Only normalize concrete VariadicAttrs, not parametric expressions.
-  auto variadicAttr = dyn_cast<ParamListAttr>(variadic);
-  if (!variadicAttr)
-    return variadic;
+/// Reduces each type constant in a layout's element list to its layout half.
+/// Parametric expressions are kept as-is; they are reduced when they fold to
+/// type constants and the struct is rebuilt.
+static void projectToLayouts(TypedAttr &variadic) {
+  auto paramList = dyn_cast<ParamListAttr>(variadic);
+  if (!paramList)
+    return;
 
-  // Directly canonicalize TypeParamAttr values by rebuilding them through
-  // TypeParamAttr::get(), which ensures consistent representation.
-  // Non-TypeParamAttr values (parametric expressions) are kept as-is.
-  auto metatype = TypeType::get(context);
   SmallVector<TypedAttr> normalized;
-  normalized.reserve(variadicAttr.getValues().size());
-  bool changed = false;
-  for (TypedAttr value : variadicAttr.getValues()) {
-    if (auto typeParam = dyn_cast<TypeParamAttr>(value)) {
-      // Canonicalize by rebuilding through TypeParamAttr::get().
-      TypedAttr canonical = cast<TypedAttr>(
-          TypeParamAttr::get(typeParam.getMlirType(), metatype));
-      normalized.push_back(canonical);
-      if (canonical != value)
-        changed = true;
-    } else {
+  normalized.reserve(paramList.getValues().size());
+  Type metatype = paramList.getType().getElementType();
+  for (TypedAttr value : paramList.getValues()) {
+    TypedAttr element = stripIdentityWrappers(value);
+
+    // Keep the element's metatype: a pack's list can be typed by a trait.
+    auto typeParam = sugarDynCast<TypeParamAttr>(element);
+    if (!typeParam) {
       // Keep parametric expressions as-is.
       normalized.push_back(value);
+      continue;
     }
+    normalized.push_back(TypeParamAttr::get(typeParam.getMlirType(), metatype));
   }
 
-  // Return original if nothing changed.
-  if (!changed)
-    return variadic;
-
-  return ParamListAttr::get(normalized, variadicAttr.getType());
+  if (ArrayRef<TypedAttr>(normalized) != paramList.getValues())
+    variadic = ParamListAttr::get(normalized, paramList.getType());
 }
 
 /// Main builder for StructType with TypedAttr variadic.
@@ -1887,14 +1974,38 @@ static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
 /// If isMemoryOnly is null, uses BoolAttr(false).
 StructType StructType::get(MLIRContext *context, TypedAttr variadic,
                            TypedAttr isMemoryOnly, TypedAttr minAlignment,
-                           bool isParamPack) {
+                           bool isParamPack, StructDomain domain) {
   if (!isMemoryOnly)
     isMemoryOnly = BoolAttr::get(context, false);
   if (!minAlignment)
     minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  if (!isParamPack)
-    variadic = normalizeVariadicForUniquing(context, variadic);
-  return Base::get(context, variadic, isMemoryOnly, minAlignment, isParamPack);
+  if (domain == StructDomain::Layout)
+    projectToLayouts(variadic);
+  return Base::get(context, variadic, isMemoryOnly, minAlignment, isParamPack,
+                   domain);
+}
+
+StructType StructType::get(MLIRContext *context, TypedAttr variadic,
+                           TypedAttr isMemoryOnly, TypedAttr minAlignment,
+                           bool isParamPack) {
+  return get(context, variadic, isMemoryOnly, minAlignment, isParamPack,
+             StructDomain::Unset);
+}
+
+StructType StructType::getLayoutDomain(MLIRContext *context, TypedAttr variadic,
+                                       TypedAttr isMemoryOnly,
+                                       TypedAttr minAlignment,
+                                       bool isParamPack) {
+  return get(context, variadic, isMemoryOnly, minAlignment, isParamPack,
+             StructDomain::Layout);
+}
+
+StructType StructType::getValueDomain(MLIRContext *context, TypedAttr variadic,
+                                      TypedAttr isMemoryOnly,
+                                      TypedAttr minAlignment,
+                                      bool isParamPack) {
+  return get(context, variadic, isMemoryOnly, minAlignment, isParamPack,
+             StructDomain::Value);
 }
 
 StructType StructType::get(ArrayRef<Type> types, bool isMemoryOnly) {
@@ -1903,21 +2014,21 @@ StructType StructType::get(ArrayRef<Type> types, bool isMemoryOnly) {
          "use get(MLIRContext*, ArrayRef<Type>, bool) for empty structs");
   MLIRContext *context = types.front().getContext();
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
-  return StructType::get(context, variadic,
+  return getLayoutDomain(context, variadic,
                          BoolAttr::get(context, isMemoryOnly));
 }
 
 StructType StructType::get(MLIRContext *context, ArrayRef<Type> types,
                            bool isMemoryOnly, TypedAttr minAlignment) {
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
-  return StructType::get(context, variadic,
+  return getLayoutDomain(context, variadic,
                          BoolAttr::get(context, isMemoryOnly), minAlignment);
 }
 
 StructType StructType::get(MLIRContext *context, ArrayRef<Type> types,
                            TypedAttr isMemoryOnly, TypedAttr minAlignment) {
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
-  return StructType::get(context, variadic, isMemoryOnly, minAlignment);
+  return getLayoutDomain(context, variadic, isMemoryOnly, minAlignment);
 }
 
 StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
@@ -1934,25 +2045,28 @@ StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
   TypedAttr isMemOnlyAttr = BoolAttr::get(context, isMemoryOnly);
   TypedAttr minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  if (failed(verify(emitError, variadic, isMemOnlyAttr, minAlignment, false)))
+  if (failed(verify(emitError, variadic, isMemOnlyAttr, minAlignment, false,
+                    StructDomain::Layout)))
     return {};
-  return get(context, variadic, isMemOnlyAttr, minAlignment);
+  return getLayoutDomain(context, variadic, isMemOnlyAttr, minAlignment);
 }
 
 StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                   MLIRContext *context, TypedAttr variadic,
                                   TypedAttr isMemoryOnly,
-                                  TypedAttr minAlignment, bool isParamPack) {
+                                  TypedAttr minAlignment, bool isParamPack,
+                                  StructDomain domain) {
   if (!isMemoryOnly)
     isMemoryOnly = BoolAttr::get(context, false);
   if (!minAlignment)
     minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  if (!isParamPack)
-    variadic = normalizeVariadicForUniquing(context, variadic);
-  if (failed(
-          verify(emitError, variadic, isMemoryOnly, minAlignment, isParamPack)))
+  if (domain == StructDomain::Layout)
+    projectToLayouts(variadic);
+  if (failed(verify(emitError, variadic, isMemoryOnly, minAlignment,
+                    isParamPack, domain)))
     return {};
-  return Base::get(context, variadic, isMemoryOnly, minAlignment, isParamPack);
+  return Base::get(context, variadic, isMemoryOnly, minAlignment, isParamPack,
+                   domain);
 }
 
 FailureOr<Type>
@@ -2069,19 +2183,114 @@ static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
 }
 
 static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
-  // Print an empty variadic or a parametric variadic.
-  auto attr = dyn_cast<ParamListAttr>(variadic);
-  if (!attr || attr.getValues().empty()) {
-    p << '[';
-    printParamValue(p, variadic);
-    p << ']';
-    return;
-  }
+  KGENParamPrinter::createDiagnosticPrinter().printVariantTypes(p, variadic);
+}
 
-  SmallVector<Type> values;
-  for (TypedAttr value : attr.getValues())
-    values.push_back(ParamType::get(value));
-  printParamTypes(p, values);
+UntaggedUnionType UntaggedUnionType::get(MLIRContext *ctx, TypedAttr variadic) {
+  // Both storage types erase metatype witnesses from concrete member lists.
+  return Base::get(ctx, VariantType::get(ctx, variadic).getVariadic());
+}
+
+UntaggedUnionType UntaggedUnionType::getFromBytecode(TypedAttr variadic) {
+  return Base::get(variadic.getContext(), variadic);
+}
+
+UntaggedUnionType
+UntaggedUnionType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *ctx, TypedAttr variadic) {
+  if (failed(verify(emitError, variadic)))
+    return {};
+  return get(ctx, variadic);
+}
+
+Type UntaggedUnionType::parse(AsmParser &p) {
+  auto loc = p.getCurrentLocation();
+  if (p.parseLess())
+    return {};
+  TypedAttr variadic;
+  if (succeeded(p.parseOptionalGreater())) {
+    auto listType = ParamListType::get(TypeType::get(p.getContext()));
+    variadic = ParamListAttr::get({}, listType);
+  } else if (parseVariantTypes(p, variadic) || p.parseGreater()) {
+    return {};
+  }
+  return getChecked([&] { return p.emitError(loc); }, p.getContext(), variadic);
+}
+
+void UntaggedUnionType::print(AsmPrinter &p) const {
+  p << '<';
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members || !members.getValues().empty())
+    printVariantTypes(p, getVariadic());
+  p << '>';
+}
+
+LogicalResult
+UntaggedUnionType::verify(function_ref<InFlightDiagnostic()> emitError,
+                          TypedAttr variadic) {
+  auto list = dyn_cast<ParamListType>(variadic.getType());
+  auto metatype = list ? dyn_cast<ParameterTypeInterface>(list.getElementType())
+                       : ParameterTypeInterface();
+  if (!list || (!isTypeExprType(list.getElementType()) &&
+                (!metatype || !metatype.isMetaType())))
+    return emitError() << "union members must be a list of types";
+  return success();
+}
+
+std::optional<int64_t>
+UntaggedUnionType::getTypeSize(TargetInfoAttr target) const {
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members)
+    return {};
+  int64_t size = 0;
+  for (TypedAttr member : members.getValues()) {
+    auto memberSize =
+        DataLayoutInterface::getTypeAllocSize(target, ParamType::get(member));
+    if (!memberSize)
+      return {};
+    size = std::max(size, *memberSize);
+  }
+  return size;
+}
+
+std::optional<int64_t>
+UntaggedUnionType::getTypeAlign(TargetInfoAttr target) const {
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members)
+    return {};
+  SmallVector<Type> types =
+      llvm::map_to_vector(members.getValues(), [](TypedAttr member) {
+        return ParamType::get(member);
+      });
+  return getMaxAlignmentAmongTypes(types, target);
+}
+
+std::optional<int64_t> KGEN::getStructFieldSize(TargetInfoAttr target,
+                                                Type type) {
+  if (isa<UntaggedUnionType>(type))
+    return DataLayoutInterface::getTypeStoreSize(target, type);
+  return DataLayoutInterface::getTypeAllocSize(target, type);
+}
+
+ErrorOrSuccess UntaggedUnionType::writeTo(TypedAttr value, int64_t addr,
+                                          InterpreterState &state) const {
+  auto snapshot = dyn_cast<UntaggedUnionAttr>(value);
+  auto size = getTypeSize(state.getTarget());
+  if (!snapshot || !size)
+    return Error("cannot write unresolved untagged union field");
+  return state.writeMemoryFragments(addr, *size, snapshot.getFragments());
+}
+
+ErrorOr<TypedAttr> UntaggedUnionType::readFrom(int64_t addr,
+                                               InterpreterState &state) const {
+  auto size = getTypeSize(state.getTarget());
+  if (!size)
+    return Error("cannot read unresolved untagged union field");
+  auto fragments = state.readMemoryFragments(
+      addr, *size, PointerType::get(NoneType::get(getContext())));
+  if (fragments.isError())
+    return fragments.takeError();
+  return UntaggedUnionAttr::get(getContext(), *fragments, *this);
 }
 
 OptionalParseResult VariantType::parseValue(AsmParser &p,
@@ -2097,12 +2306,13 @@ OptionalParseResult VariantType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   auto variant = dyn_cast<VariantAttr>(value);
   if (!variant)
     return failure();
   p << '{';
-  printColonTypeParamValue(p, variant.getValue());
+  printer.printColonTypeParamValue(p, variant.getValue());
   p << ", " << variant.getIndex() << '}';
   return success();
 }
@@ -2382,6 +2592,10 @@ SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
 
 SIMDType SIMDType::getScalarBoolType(MLIRContext *ctx) {
   return get(ctx, /*size=*/1, KGENDType::kBool);
+}
+
+SIMDType SIMDType::getScalarIndexType(MLIRContext *ctx) {
+  return get(ctx, /*size=*/1, KGENDType::index);
 }
 
 SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,

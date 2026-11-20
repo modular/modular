@@ -11,21 +11,43 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Register the GLM-5.1 text-generation architecture."""
+
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessor,
 )
-from max.pipelines.architectures.deepseekV3_2 import weight_adapters
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
-from .memory_planner import Glm5_1MemoryPlanner
 from .model import Glm5_1Model
 from .model_config import Glm5_1Config
 from .reasoning import GlmReasoningParser  # noqa: F401  registers "glm45"
 from .tokenizer import GlmTokenizer
 from .tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
+from .weight_adapters import glm5_1_weight_rules
+
+
+def glm_format_spec(repo: HuggingFaceRepo) -> Path | None:
+    """Returns the FormatSpec document of a GLM checkpoint.
+
+    Args:
+        repo: The checkpoint.
+
+    Returns:
+        GLM-5.3's document, or ``None`` for the earlier checkpoints, which no
+        document describes yet.
+    """
+    return (
+        Path(__file__).parent / "formatspec.json"
+        if "glm-5.3" in repo.repo_id.lower()
+        else None
+    )
+
 
 glm5_1_arch = SupportedArchitecture(
     name="GlmMoeDsaForCausalLM",
@@ -46,15 +68,15 @@ glm5_1_arch = SupportedArchitecture(
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=glm5_1_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
-    memory_planner=Glm5_1MemoryPlanner,
     tool_parser="glm45",
+    format_spec=glm_format_spec,
     reasoning_parser="glm45",
+    supports_nvfp4_kv_cache=True,
     # GLM strongly prefers pretty-printed JSON: under the compact grammar its
     # content-bearing continuations are all masked at the first array decision
     # and the schema's shortest terminator wins (measured 8/8 degenerate

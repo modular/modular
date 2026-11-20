@@ -29,6 +29,7 @@ from max.pipelines.lib.tokenizer import (
     open_image,
     resolve_eos_token_ids,
     resolve_single_special_token,
+    resolve_token_id_bound,
 )
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
@@ -53,9 +54,10 @@ _REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _PROCESSOR_CONFIG = "processor_config.json"
 
 
-def _load_processor_config(
+def load_processor_config(
     model_path: str, revision: str | None
 ) -> dict[str, Any]:
+    """Returns the checkpoint's ``processor_config.json``."""
     local = Path(model_path) / _PROCESSOR_CONFIG
     if not local.is_file():
         local = Path(
@@ -69,8 +71,11 @@ def _load_processor_config(
 
 
 def to_reasoning_strength(options: Mapping[str, Any]) -> dict[str, Any]:
-    """Maps OpenAI's ``reasoning_effort`` onto the template's
-    ``reasoning_strength`` and drops the thinking toggles it does not read.
+    """Maps ``reasoning_effort`` onto the template's strength.
+
+    The thinking toggles the template does not read are dropped. ``xhigh`` is
+    only reachable as ``reasoning_strength`` in ``chat_template_kwargs``; any
+    other effort falls back to the template's default (``high``).
 
     ``xhigh`` is only reachable as ``reasoning_strength`` in
     ``chat_template_kwargs``; any other effort falls back to the template's
@@ -119,13 +124,16 @@ class MuseGlimmerTokenizer(TextAndVisionTokenizer):
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
         )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
+        )
 
         huggingface_config = pipeline_config.model.huggingface_config
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
         self.processor = MuseGlimmerProcessor(
-            self.delegate, _load_processor_config(model_path, revision)
+            self.delegate, load_processor_config(model_path, revision)
         )
         self.vision_token_ids = [
             huggingface_config.image_token_id,

@@ -28,34 +28,15 @@ using namespace M::KGEN;
 // ConcreteBindingReplacer
 //===----------------------------------------------------------------------===//
 
-ConcreteBindingReplacer::ConcreteBindingReplacer(
-    ArrayRef<TypedAttr> paramBindings) {
-  bindings.reserve(paramBindings.size());
-  numUnbound = 0;
-  for (TypedAttr binding : paramBindings) {
-    ParamBinding pb;
-    if (isa<UnboundAttr>(binding)) {
-      pb.isBound = false;
-      pb.newIndex = numUnbound++;
-      pb.boundValue = nullptr;
-    } else {
-      pb.isBound = true;
-      pb.boundValue = binding;
-    }
-    bindings.push_back(pb);
-  }
-}
-
 SmallVector<Type> ConcreteBindingReplacer::getRemappedUnboundParamTypes(
     ArrayRef<Type> originalTypes) {
   assert(originalTypes.size() == bindings.size() &&
          "mismatched param types and bindings");
 
   SmallVector<Type> result;
-  result.reserve(numUnbound);
-
+  result.reserve(bindings.size() - bindings.getBoundValues().size());
   for (auto [idx, type] : llvm::enumerate(originalTypes)) {
-    if (!bindings[idx].isBound)
+    if (!isBound(idx))
       result.push_back(getReboundType(type));
   }
   return result;
@@ -70,11 +51,10 @@ Attribute ConcreteBindingReplacer::tryReplace(Attribute attr, size_t depth) {
     unsigned index = ref.getIndex();
     assert(index < bindings.size() && "parameter index out of range");
 
-    const ParamBinding &binding = bindings[index];
     Type remappedType = replaceImpl(ref.getType(), depth);
 
-    if (binding.isBound) {
-      TypedAttr result = binding.boundValue;
+    if (isBound(index)) {
+      TypedAttr result = bindings.getBoundValues()[getRank(index)];
 
       // If the types don't match but are canonically equal, rebind.
       if (result.getType() != remappedType &&
@@ -86,42 +66,35 @@ Attribute ConcreteBindingReplacer::tryReplace(Attribute attr, size_t depth) {
 
     // Unbound: create a new index ref with the updated index.
     // The depth stays the same since we're not changing scope structure.
-    if (binding.newIndex == ref.getIndex() && remappedType == ref.getType())
+    size_t newIndex = getRank(index);
+    if (newIndex == index && remappedType == ref.getType())
       return ref;
 
-    return ParamIndexRefAttr::get(ref.getDepth(), binding.newIndex,
-                                  remappedType);
+    return ParamIndexRefAttr::get(ref.getDepth(), newIndex, remappedType);
   }
 
   return nullptr;
 }
 
 PogListAttr ConcreteBindingReplacer::specializeMetadata(
-    PogListAttr genMetadata, ArrayRef<TypedAttr> paramBindings,
-    ArrayRef<Type> paramTypes, function_ref<InFlightDiagnostic()> emitErrorFn) {
+    PogListAttr genMetadata, ArrayRef<Type> paramTypes,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
   if (!genMetadata)
     return {};
 
-  // Precompute bound/unbound info and index mapping in a single O(N) pass.
-  llvm::BitVector boundParams(paramBindings.size());
-  SmallVector<unsigned> newIndexMap(paramBindings.size());
-  unsigned unboundCount = 0;
-  for (auto [idx, binding] : llvm::enumerate(paramBindings)) {
-    if (!isa<UnboundAttr>(binding)) {
-      boundParams.set(idx);
-    } else {
-      newIndexMap[idx] = unboundCount++;
-    }
-  }
-
+  llvm::BitVector boundParams(bindings.size());
   ParameterEvaluator metadataEvaluator;
-  for (auto [idx, binding] : llvm::enumerate(paramBindings)) {
-    if (isa<UnboundAttr>(binding)) {
+  const TypedAttr *nextBoundValue = bindings.getBoundValues().begin();
+  size_t numUnbound = 0;
+  for (auto [idx, bound] :
+       llvm::enumerate(bindings.getBoundMask().asArrayRef())) {
+    if (bound) {
+      boundParams.set(idx);
+      metadataEvaluator.appendIndexBinding(*nextBoundValue++);
+    } else {
       Type remappedType = getReboundType(paramTypes[idx]);
       metadataEvaluator.appendIndexBinding(
-          ParamIndexRefAttr::get(/*depth=*/0, newIndexMap[idx], remappedType));
-    } else {
-      metadataEvaluator.appendIndexBinding(binding);
+          ParamIndexRefAttr::get(/*depth=*/0, numUnbound++, remappedType));
     }
   }
 
@@ -134,9 +107,9 @@ PogListAttr ConcreteBindingReplacer::specializeMetadata(
 //===----------------------------------------------------------------------===//
 
 GeneratorType M::KGEN::getSpecializedWithConcreteBindings(
-    GeneratorType gen, ArrayRef<TypedAttr> paramBindings,
+    GeneratorType gen, ParamsBindingArrayAttr paramBindings,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  if (paramBindings.empty())
+  if (paramBindings.size() == 0)
     return gen;
 
   ArrayRef<Type> paramTypes = gen.getInputParamTypes();
@@ -154,8 +127,8 @@ GeneratorType M::KGEN::getSpecializedWithConcreteBindings(
       replacer.getRemappedUnboundParamTypes(paramTypes);
   Type newBody = replacer.getReboundType(gen.getBody());
   PogListAttr rawMetadata = gen.getParamListAttrs();
-  PogListAttr genMetadata = replacer.specializeMetadata(
-      rawMetadata, paramBindings, paramTypes, emitErrorFn);
+  PogListAttr genMetadata =
+      replacer.specializeMetadata(rawMetadata, paramTypes, emitErrorFn);
   if (rawMetadata && !genMetadata)
     return {};
 
@@ -163,9 +136,9 @@ GeneratorType M::KGEN::getSpecializedWithConcreteBindings(
 }
 
 GeneratorAttr M::KGEN::getSpecializedWithConcreteBindings(
-    GeneratorAttr gen, ArrayRef<TypedAttr> paramBindings,
+    GeneratorAttr gen, ParamsBindingArrayAttr paramBindings,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  if (paramBindings.empty())
+  if (paramBindings.size() == 0)
     return gen;
 
   ArrayRef<Type> paramTypes = gen.getInputParamTypes();
@@ -182,8 +155,8 @@ GeneratorAttr M::KGEN::getSpecializedWithConcreteBindings(
       replacer.getRemappedUnboundParamTypes(paramTypes);
   TypedAttr newBody = replacer.getReboundAttribute(gen.getBody());
   PogListAttr rawMetadata = gen.getMetadata();
-  PogListAttr genMetadata = replacer.specializeMetadata(
-      rawMetadata, paramBindings, paramTypes, emitErrorFn);
+  PogListAttr genMetadata =
+      replacer.specializeMetadata(rawMetadata, paramTypes, emitErrorFn);
   if (rawMetadata && !genMetadata)
     return {};
 

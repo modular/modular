@@ -51,7 +51,7 @@ functional changes) should contain tests.
 defined in `Mojo/test/mojo-parser/lit.cfg.py`. It expands to:
 
 ```bash
-kgen-translate -import-mojo -mojo-enable-prebuilt-packages -mojo-search-paths=Mojo/test/test-packages
+kgen-translate -import-mojo -mojo-enable-prebuilt-packages -mojo-search-paths=<absolute path to Mojo/test/test-packages>
 ```
 
 This runs the parser with minimal stdlib stubs instead of the full standard
@@ -110,7 +110,7 @@ library, making tests faster and more isolated.
 | `-mlir-print-debuginfo`           | Include debug info in IR output                        |
 | `--kgen-print-inline-type-values` | Pretty-print type values                               |
 | `-o /dev/null`                    | Discard output (for error-only tests)                  |
-| `--mojo-disable-builtins`         | Don't use stdlib stubs                                 |
+| `--disable-builtins`              | Don't use stdlib stubs                                 |
 | `-allow-unregistered-dialect`     | Accept unregistered MLIR dialects                      |
 
 ## FileCheck Conventions

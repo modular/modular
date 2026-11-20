@@ -14,10 +14,14 @@ package(
 modular_cc_test(
     name = "ADTTest",
     srcs = glob(["ADT/*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//Support:ADT",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
@@ -185,6 +189,7 @@ modular_cc_test(
     name = "HashUtilsTest",
     srcs = ["HashUtilsTest.cpp"],
     deps = [
+        "//Support:BytecodeHash",
         "//Support:HashUtils",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -231,7 +236,11 @@ modular_cc_test(
     deps = [
         "//Support:Compiler",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:Rewrite",
     ],
 )
 
@@ -247,9 +256,10 @@ modular_cc_test(
 modular_cc_test(
     name = "ContextTest",
     srcs = ["ContextTest.cpp"],
+    dynamic_deps = ["//Support:Globals"],
     deps = [
         "//Support:Context",
-        "//Support:Globals",
+        "//Support:Globals.static",
     ],
 )
 
@@ -317,7 +327,6 @@ modular_cc_test(
     name = "HostTest",
     srcs = ["HostTest.cpp"],
     deps = [
-        "//Support:MArchTarget",
         "//Support:MArchTargetMinimal",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
@@ -327,8 +336,9 @@ modular_cc_test(
 modular_cc_test(
     name = "ProfilingTest",
     srcs = ["TimeProfilerTest.cpp"],
+    dynamic_deps = ["//Support:Globals"],
     deps = [
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
     ],
@@ -337,9 +347,13 @@ modular_cc_test(
 modular_cc_test(
     name = "MArchTargetTest",
     srcs = glob(["MArchTarget/*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MArchTarget",
         "//Support:MDialect",
         "@llvm-project//llvm:Support",
@@ -356,6 +370,8 @@ modular_cc_test(
         "//Support:Filesystem",
         "//Support:Telemetry",
         "@llvm-project//llvm:Support",
+        "@opentelemetry-cpp//exporters/otlp:otlp_http_log_record_exporter",
+        "@opentelemetry-cpp//exporters/otlp:otlp_http_metric_exporter",
     ],
 )
 

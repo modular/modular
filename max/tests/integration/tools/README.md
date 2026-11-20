@@ -23,7 +23,7 @@ bazel run //max/tests/integration/tools:download_models_for_testing -- \
 # Download multiple repos in one run
 bazel run //max/tests/integration/tools:download_models_for_testing -- \
     meta-llama/Llama-3.2-1B-Instruct \
-    openai/whisper-large-v3
+    meta-llama/Llama-3.1-8B-Instruct
 
 # Override the revision explicitly
 bazel run //max/tests/integration/tools:download_models_for_testing -- \

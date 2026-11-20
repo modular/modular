@@ -19,7 +19,7 @@ from std.sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from max.gpu.primitives import warp
 from max.gpu.memory import (
@@ -34,10 +34,10 @@ from layout import (
     TensorLayout,
     TileTensor,
     row_major,
+    coord,
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
 
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
@@ -142,24 +142,20 @@ def gemv_tma_kernel[
             )
 
             cp_async_bulk_tensor_shared_cluster_global[
-                Scalar[dtype],
-                SharedMemBarrier,
-                2,
+                Scalar[dtype], SharedMemBarrier
             ](
                 a_smem_base.unsafe_offset(Int(stage) * a_size),
                 descriptor_a_ptr,
                 Pointer(to=tma_mbar[unsafe_offset=stage]),
-                Index(col_offset, block_row),
+                (col_offset, block_row),
             )
             cp_async_bulk_tensor_shared_cluster_global[
-                Scalar[dtype],
-                SharedMemBarrier,
-                1,
+                Scalar[dtype], SharedMemBarrier
             ](
                 b_smem_base.unsafe_offset(Int(stage) * b_size),
                 descriptor_b_ptr,
                 Pointer(to=tma_mbar[unsafe_offset=stage]),
-                Index(col_offset),
+                (col_offset,),
             )
             producer_phase.step()
 
@@ -215,14 +211,14 @@ def gemv_tma[
     M: Int,
     N: Int,
     K: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # TODO: Tune further.
     comptime THREAD_NUM = 1024
     comptime BLOCK_SIZE_M = 64
     comptime BLOCK_SIZE_K = 256
     # Number of warps per block for 128 threads.
-    comptime WARPS_PER_BLOCK = THREAD_NUM // WARP_SIZE
+    comptime WARPS_PER_BLOCK = THREAD_NUM // ctx.default_device_info.warp_size
     comptime ROWS_PER_WARP = BLOCK_SIZE_M // WARPS_PER_BLOCK
     comptime NUM_PIPELINE_STAGES = 1
 
@@ -230,17 +226,17 @@ def gemv_tma[
     comptime assert a.flat_rank == 2
     comptime assert b.flat_rank == 1
 
-    var tma_desc_a = create_tma_descriptor[dtype, 2](
+    var tma_desc_a = create_tma_descriptor[dtype](
         a_device,
         (M, K),
-        (K, 1),
-        Index(BLOCK_SIZE_M, BLOCK_SIZE_K),
+        (K, Idx[1]),
+        coord[BLOCK_SIZE_M, BLOCK_SIZE_K],
     )
-    var tma_desc_b = create_tma_descriptor[dtype, 1](
+    var tma_desc_b = create_tma_descriptor[dtype](
         b_device,
-        Index(K),
-        Index(1),
-        Index(BLOCK_SIZE_K),
+        (K,),
+        coord[1],
+        coord[BLOCK_SIZE_K],
     )
     # Shared memory needed for NUM_PIPELINE_STAGES A and B working tiles.
     # +8 bytes for each of NUM_PIPELINE_STAGES barriers.
@@ -273,9 +269,6 @@ def gemv_tma[
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -286,15 +279,15 @@ def test_gemv_tma[
     //,
     dtype: DType,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     m: MType,
     n: NType,
     k: KType,
     benchmark: Bool = False,
 ) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var a_shape = Coord(m, k)
     var b_shape = Coord(k)
@@ -347,7 +340,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             gemv_tma(
                 c_device,
                 c_tt,

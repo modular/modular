@@ -36,7 +36,8 @@ Run with: `mojo max/kernels/benchmarks/gpu/nn/bench_conv2d_apple.mojo`.
 from std.math import ceildiv
 from std.time import perf_counter
 
-from layout import LTToTTLayout, Layout, TileTensor
+from layout import Coord, TileTensor, row_major
+from layout.layout import Layout
 from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
 from nn.conv.gpu.im2col_matmul_2d import (
@@ -56,18 +57,18 @@ def bench_shape[
     warmup: Int = 20,
     hot: Int = 30,
 ](ctx: DeviceContext, name: StaticString) raises:
-    comptime N = Int(input_layout.shape[0])
-    comptime H = Int(input_layout.shape[1])
-    comptime W = Int(input_layout.shape[2])
-    comptime C = Int(input_layout.shape[3])
+    comptime N = input_layout.static_shape[0]
+    comptime H = input_layout.static_shape[1]
+    comptime W = input_layout.static_shape[2]
+    comptime C = input_layout.static_shape[3]
 
-    comptime R = Int(filter_layout.shape[0])
-    comptime S = Int(filter_layout.shape[1])
-    comptime F = Int(filter_layout.shape[3])
+    comptime R = filter_layout.static_shape[0]
+    comptime S = filter_layout.static_shape[1]
+    comptime F = filter_layout.static_shape[3]
 
     comptime H_out = (H + 2 * pad[0] - (R - 1) - 1) // stride[0] + 1
     comptime W_out = (W + 2 * pad[1] - (S - 1) - 1) // stride[1] + 1
-    comptime output_layout = Layout.row_major(N, H_out, W_out, F)
+    comptime output_layout = row_major[N, H_out, W_out, F]()
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_layout.size())
@@ -77,15 +78,9 @@ def bench_shape[
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
     var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
 
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
-    )
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout)
 
     # 2 * M * N * K flops (MAC = 2).
     var flops = Float64(2 * N * H_out * W_out * F * R * S * C)
@@ -96,9 +91,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -109,9 +104,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -124,9 +119,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -137,9 +132,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -157,7 +152,6 @@ def bench_shape[
         dtype,
         dtype,
         block_size,
-        None,
         input_tt.Engine,
         filter_tt.Engine,
         output_tt.Engine,
@@ -172,9 +166,9 @@ def bench_shape[
             input_tt.as_unsafe_any_origin(),
             filter_tt.as_unsafe_any_origin(),
             output_tt.as_unsafe_any_origin(),
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            Coord(stride[0], stride[1]),
+            Coord(1, 1),
+            Coord(pad[0], pad[1]),
             Int32(1),
             grid_dim=(gx, gy, gz),
             block_dim=(block_size, block_size),
@@ -194,37 +188,17 @@ def bench_shape[
     var naive_tflops = flops / (naive_ms * 1e-3) / 1e12
 
     print(name)
-    print(
-        "  (a) FUSED       : ",
-        fused_ms,
-        " ms   (",
-        fused_tflops,
-        " TFLOP/s)",
-    )
-    print(
-        "  (b) MATERIALISE : ",
-        mat_ms,
-        " ms   (",
-        mat_tflops,
-        " TFLOP/s)",
-    )
-    print(
-        "  (c) NAIVE       : ",
-        naive_ms,
-        " ms   (",
-        naive_tflops,
-        " TFLOP/s)",
-    )
+    print(t"  (a) FUSED       :  {fused_ms}  ms   ( {fused_tflops}  TFLOP/s)")
+    print(t"  (b) MATERIALISE :  {mat_ms}  ms   ( {mat_tflops}  TFLOP/s)")
+    print(t"  (c) NAIVE       :  {naive_ms}  ms   ( {naive_tflops}  TFLOP/s)")
     # Ratios > 1.0 mean fused is FASTER than the comparison path.
     print(
-        "  ratio fused/naive       (naive_ms / fused_ms): ",
-        naive_ms / fused_ms,
-        "x",
+        t"  ratio fused/naive       (naive_ms / fused_ms): "
+        t" {naive_ms / fused_ms} x"
     )
     print(
-        "  ratio fused/materialise (mat_ms   / fused_ms): ",
-        mat_ms / fused_ms,
-        "x",
+        t"  ratio fused/materialise (mat_ms   / fused_ms): "
+        t" {mat_ms / fused_ms} x"
     )
 
     _ = input_dev^
@@ -241,29 +215,29 @@ def main() raises:
         # C128->256 @128^2: large GEMM, compute-bound. Materialise should be
         # near-peak; fused must stay within ~15%.
         bench_shape[
-            Layout.row_major(1, 128, 128, 128),
-            Layout.row_major(3, 3, 128, 256),
+            row_major[1, 128, 128, 128](),
+            row_major[3, 3, 128, 256](),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,128,128,128] 3x3 s1 C128->256 (compute-bound)")
 
         # C128->128 @64^2.
         bench_shape[
-            Layout.row_major(1, 64, 64, 128),
-            Layout.row_major(3, 3, 128, 128),
+            row_major[1, 64, 64, 128](),
+            row_major[3, 3, 128, 128](),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,64,64,128] 3x3 s1 C128->128 (compute-bound)")
 
         # C64->64 @256^2: mid-K, high spatial. Crossover region.
         bench_shape[
-            Layout.row_major(1, 256, 256, 64),
-            Layout.row_major(3, 3, 64, 64),
+            row_major[1, 256, 256, 64](),
+            row_major[3, 3, 64, 64](),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,64] 3x3 s1 C64->64 (crossover)")
 
         # ---- Memory-bound regime (the verdict-bar shape) ----
@@ -271,40 +245,40 @@ def main() raises:
         # [M,K] round-trip lost to naive here (~0.28x). Fused MUST be >= ~1.0x
         # of naive or the guard deletion is unsafe.
         bench_shape[
-            Layout.row_major(1, 512, 512, 32),
-            Layout.row_major(3, 3, 32, 32),
+            row_major[1, 512, 512, 32](),
+            row_major[3, 3, 32, 32](),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,512,512,32] 3x3 s1 C32->32 @512^2 (MEM-BOUND verdict bar)")
 
         # ---- FLUX.2-VAE decoder shapes (production) ----
         # Decoder upsamples spatial while reducing channels; 3x3 s1 same-pad.
         # 128ch block at 256^2.
         bench_shape[
-            Layout.row_major(1, 256, 256, 128),
-            Layout.row_major(3, 3, 128, 128),
+            row_major[1, 256, 256, 128](),
+            row_major[3, 3, 128, 128](),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,128] 3x3 s1 C128->128 (FLUX-VAE)")
 
         # 256->128 at 256^2 (channel reduction stage).
         bench_shape[
-            Layout.row_major(1, 256, 256, 256),
-            Layout.row_major(3, 3, 256, 128),
+            row_major[1, 256, 256, 256](),
+            row_major[3, 3, 256, 128](),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,256] 3x3 s1 C256->128 (FLUX-VAE)")
 
         # 128->64 at 512^2 (late decoder, low-C high-res).
         bench_shape[
-            Layout.row_major(1, 512, 512, 128),
-            Layout.row_major(3, 3, 128, 64),
+            row_major[1, 512, 512, 128](),
+            row_major[3, 3, 128, 64](),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,512,512,128] 3x3 s1 C128->64 (FLUX-VAE late)")
 
         print("DONE")

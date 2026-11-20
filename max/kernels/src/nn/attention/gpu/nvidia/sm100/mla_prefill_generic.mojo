@@ -20,8 +20,6 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     TransientScheduler,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    assert_sm_exclusive_smem,
-    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     KConsumerPipeline,
@@ -48,8 +46,9 @@ from nn.attention.gpu.nvidia.common import (
 )
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
-from layout.tile_layout import row_major as tt_row_major
-from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from layout.layout import row_major as tt_row_major
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
 from max.gpu.sync import barrier
@@ -120,7 +119,7 @@ struct WarpRole(EnumLike, Equatable, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -441,17 +440,11 @@ __extension SM100MLA:
     ):
         comptime assert Self.MMA_M == 64 or Self.MMA_M == 128
         comptime assert _is_decoding[Self.MaxSeqLenType]() == False
-        comptime assert Self.config.supported(), (
-            "depth = "
-            + String(Self.config.qk_depth)
-            + "\nBN = "
-            + String(Self.config.BN)
-            + "\nnum_kv_stages = "
-            + String(Self.config.num_kv_stages)
-            + "\ntmem_used = "
-            + String(Self.config.tmem_used)
-            + "\nsmem_used = "
-            + String(Self.config.smem_used)
+        comptime assert Self.config.supported(), String(
+            t"depth = {Self.config.qk_depth}\nBN = "
+            t"{Self.config.BN}\nnum_kv_stages = "
+            t"{Self.config.num_kv_stages}\ntmem_used = "
+            t"{Self.config.tmem_used}\nsmem_used = {Self.config.smem_used}"
         )
         comptime assert (
             not Self.SchedulerType.may_advance
@@ -493,6 +486,7 @@ __extension SM100MLA:
         var rope_smem = rebind[SharedMemPointer[Scalar[KRopeType.dtype]]](
             attn_smem.rope_smem_base()
         )
+        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         #
@@ -526,6 +520,10 @@ __extension SM100MLA:
         if warp_idx == 0:
             # Initialize all barriers (S/C/order/Q1Sync/KV/O) in one call
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
+        elif warp_idx == 1:
+            tcgen05_alloc[Self.cta_group](
+                ptr_tmem_addr, Self.config.sm100_tmem_cols
+            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -545,17 +543,19 @@ __extension SM100MLA:
         # Load/MMA warps), so it is the only divergence-free place to honor the
         # contract that *every* CTA signal launch-dependents — otherwise a
         # back-to-back consumer grid's `wait` hangs (see MLA decode).  The
-        # data-independent prologue above (barrier init, TMA descriptor
-        # prefetch) overlaps the predecessor grid's tail; `wait`
+        # data-independent prologue above (barrier init, tmem alloc, TMA
+        # descriptor prefetch) overlaps the predecessor grid's tail; `wait`
         # fences here before the data-dependent Q/K/V loads in `Self.load`;
         # `launch` lets the successor grid's prologue overlap our compute.
         comptime if MLA_PREFILL_PDL_LEVEL > PDLLevel.OFF:
             wait_on_dependent_grids()
             launch_dependent_grids()
 
-        # Read the TMEM base once and carry it by register into the shared
-        # fa4_softmax / fa4_correction consumers.
-        var tmem_addr = attn_tmem_addr[cluster_size=1]()
+        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
+        # barrier publish it), and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers. See the depth-512 fix: the
+        # consumers must not re-read `tmem_addr_ptr()` in their bodies.
+        var tmem_addr = ptr_tmem_addr[0]
 
         var role = warp_idx_to_role[Self.config.fa4_config.single_o](warp_idx)
 
@@ -581,6 +581,7 @@ __extension SM100MLA:
                     False,
                     Self.MaxSeqLenType,
                     output_nonempty=output_nonempty,
+                    single_softmax_wg=Self.config.fa4_config.single_o,
                 ](
                     attn_smem,
                     tmem_addr,
@@ -646,6 +647,10 @@ __extension SM100MLA:
                 warpgroup_reg_dealloc[num_reg_other]()
 
                 if not seq_info.is_valid():
+                    tcgen05_release_allocation_lock[Self.cta_group]()
+                    tcgen05_dealloc[Self.cta_group](
+                        tmem_addr, Self.config.sm100_tmem_cols
+                    )
                     return
                 var pos: MLAPositionSummary = MLAPositionSummary.create[
                     _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
@@ -664,6 +669,8 @@ __extension SM100MLA:
                 )
             case .Empty:
                 warpgroup_reg_dealloc[num_reg_empty]()
+            case _:
+                pass
 
     @staticmethod
     @inline(.always)
@@ -935,7 +942,7 @@ __extension SM100MLA:
                 k_rope_coord[0] = UInt32(Self.cache_depth - Self.rope_depth)
                 k_rope_tma_op.async_copy_elect(
                     KRopeSubType(
-                        smem_base_ptr + _p * k_rope_sub_elems,
+                        smem_base_ptr.unsafe_offset(_p * k_rope_sub_elems),
                         tt_row_major[k_rope_sub_elems](),
                     ),
                     mbar[],
@@ -1016,17 +1023,17 @@ __extension SM100MLA:
                 `rope_smem_base` is already `KRopeType`-typed the bitcast
                 is a no-op.
                 """
-                return rope_smem_base.bitcast[
+                return rope_smem_base.unsafe_bitcast[
                     Scalar[KRopeType.dtype]
-                ]() + idx * UInt32(rope_stage_elems)
+                ]().unsafe_offset(idx * UInt32(rope_stage_elems))
 
             @inline(.always)
             def _fused_v_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
                 """V destination smem ptr at the current KV stage."""
-                return k_smem_base + kv_pipeline.state.index() * UInt32(
-                    kv_stage_elems
+                return k_smem_base.unsafe_offset(
+                    kv_pipeline.state.index() * UInt32(kv_stage_elems)
                 )
 
             comptime produce_k_fused_paged_type = type_of(paged_rows)
@@ -1076,8 +1083,9 @@ __extension SM100MLA:
                     )
                 paged.tma_copy_k[needs_partial=partial](
                     k_nope_tma_op,
-                    k_smem_base
-                    + kv_pipeline.state.index() * UInt32(kv_stage_elems),
+                    k_smem_base.unsafe_offset(
+                        kv_pipeline.state.index() * UInt32(kv_stage_elems)
+                    ),
                     mbar[],
                     kv_head_idx=kv_head_idx,
                     elect=e,
@@ -1341,7 +1349,10 @@ __extension SM100MLA:
                 expect_bytes_pred(q1_mbar, Int32(q_bytes), e)
                 # Elect-predicated in-PTX via `_elect`; no Mojo `if e != 0:`.
                 q_tma_op.async_copy_elect(
-                    QType(q_smem + q_elements, tt_row_major[q_elems]()),
+                    QType(
+                        q_smem.unsafe_offset(q_elements),
+                        tt_row_major[q_elems](),
+                    ),
                     q1_mbar[0],
                     q_coord[
                         depth=Self.qk_depth,
@@ -1546,8 +1557,8 @@ __extension SM100MLA:
                         ](q_gmem_row, q_head_idx),
                         e,
                     )
-                var smem_ptr = k_smem_base + k_pipeline.state.index() * UInt32(
-                    k_elements_per_stage
+                var smem_ptr = k_smem_base.unsafe_offset(
+                    k_pipeline.state.index() * UInt32(k_elements_per_stage)
                 )
                 var k_nope_smem_local, k_rope_smem_local = split_smem[
                     KVPipeType.k_nope_tma_layout,
@@ -1600,7 +1611,10 @@ __extension SM100MLA:
                 expect_bytes_pred(q1_mbar, Int32(q_bytes), e)
                 # Q1 — elect-predicated in-PTX via `_elect`.
                 q_tma_op.async_copy_elect(
-                    QType(q_smem + q_elements, tt_row_major[q_elems]()),
+                    QType(
+                        q_smem.unsafe_offset(q_elements),
+                        tt_row_major[q_elems](),
+                    ),
                     q1_mbar[0],
                     q_coord[
                         depth=Self.qk_depth,
@@ -1829,9 +1843,9 @@ __extension SM100MLA:
                 # 2Q is non-shared-KV, never shared), so q1_rope is dead here;
                 # define it from the same base for type consistency.
                 q0_rope = Self.descriptor_q_rope(
-                    (q_smem.bitcast[UInt8]() + q_rope_off).bitcast[
-                        Scalar[Self.rope_mma_dtype]
-                    ]()
+                    (
+                        q_smem.unsafe_bitcast[UInt8]().unsafe_offset(q_rope_off)
+                    ).unsafe_bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
                 q1_rope = q0_rope
 
@@ -2335,9 +2349,9 @@ __extension SM100MLA:
 
                 var q0_nope = Self.descriptor_q(q_smem)
                 q0_rope = Self.descriptor_q_rope(
-                    (q_smem + q_nope_bytes // Self.qkv_dt_size).bitcast[
-                        Scalar[Self.rope_mma_dtype]
-                    ]()
+                    q_smem.unsafe_offset(
+                        q_nope_bytes // Self.qkv_dt_size
+                    ).unsafe_bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
                 var q1_nope = q0_nope + q_half_bytes
                 q1_rope = q0_rope + q_half_bytes
@@ -2367,8 +2381,10 @@ __extension SM100MLA:
                     is_k_major=True,
                 ](
                     (
-                        k_smem_base + nope_stage_bytes // Self.qkv_dt_size
-                    ).bitcast[Scalar[Self.rope_mma_dtype]]()
+                        k_smem_base.unsafe_offset(
+                            nope_stage_bytes // Self.qkv_dt_size
+                        )
+                    ).unsafe_bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
 
                 # ---- single-O serial path (1Q wide-V), non-shared-KV, mixed ----
@@ -2801,9 +2817,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     comptime SinkType = NullPointer[output_dtype]
     comptime KVRowOffsetsType = NullPointer[.uint32]
     comptime PartitionType = NoPartition[.float32]
-    var valid_len: ValidLengthType = {
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
-    }
+    var valid_len: ValidLengthType = {valid_length}
 
     # Launch the kernel built from `cfg` (the 2Q `fa4_config` or its 1Q
     # variant). All TMA ops were created by the caller from `fa4_config`;
@@ -2869,7 +2883,6 @@ def _mla_prefill_sm100_valid_length_dispatch[
         # dynamic-smem region, so reserve the max of both footprints.
         comptime smem_use = cfg.launch_smem_used()
 
-        assert_sm_exclusive_smem[smem_use]()
         ctx.enqueue_function[kernel](
             q_tma_op,
             k_nope_tma_op,
@@ -2881,13 +2894,12 @@ def _mla_prefill_sm100_valid_length_dispatch[
             scale,
             UInt32(batch_size),
             pack,
-            grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
-            block_dim=(num_threads, 1, 1),
-            shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=smem_use,
+                attributes=pdl_launch_attributes(MLA_PREFILL_PDL_LEVEL),
             ),
-            attributes=pdl_launch_attributes(MLA_PREFILL_PDL_LEVEL),
         )
 
     # --- 1Q / 2Q dispatch ---
@@ -2912,7 +2924,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
                 max_prompt_len.as_uint32(),
                 UInt32(PartitionType().num_partitions()),
                 UInt32(batch_size),
-                ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                ctx.device().multiprocessor_count(),
             ):
                 _launch[cfg_1q]()
             else:

@@ -164,6 +164,12 @@ public:
   /// out-of-line definition of a type to interpret.
   virtual Operation *lookupTypeDefinition(SymbolRefAttr symbol) { return {}; }
 
+  /// Look up `symbol` in the interpreter libraries. Return null when no library
+  /// defines it.
+  virtual ErrorOr<void *> lookupInterpreterLibSymbol(StringRef symbol) {
+    return nullptr;
+  }
+
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Management
 
@@ -216,12 +222,38 @@ public:
   ErrorOrSuccess copyMarkedRegions(int64_t srcAddr, int64_t dstAddr,
                                    size_t len);
 
+  /// Give a function from an interpreter library the memory at each of
+  /// `addrs` and the memory it reaches through pointers. The function runs in
+  /// the compiler process, so it needs real addresses, not interpreter
+  /// addresses. The interpreter cannot see what the function reads, so all
+  /// reachable memory is exposed before the call, not on demand. Owned memory
+  /// that holds no pointers is passed in place, so the function can write
+  /// results into it. Other memory is copied into memory from `allocate`, with
+  /// its pointers patched to real addresses. Return the real address of each
+  /// of `addrs`. A pointer that is null or does not point into interpreter
+  /// memory is copied unchanged. The function may run on several threads at
+  /// once and must not write through pointers into memory that another call's
+  /// arguments share.
+  ErrorOr<SmallVector<void *>> memoryToExternalCall(
+      ArrayRef<int64_t> addrs,
+      function_ref<void *(size_t size, size_t align)> allocate);
+
   /// Write an attribute value of a given type to the provided chunk of memory.
   ErrorOrSuccess writeAttributeToMemory(int64_t addr, TypedAttr value);
 
   /// Read an attribute value of the given type from the provided chunk of
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
+
+  /// Read [addr, addr + size) as bytes, pointers and symbols, as its marks
+  /// say, for a type that cannot name what it holds (an untagged union).
+  ErrorOr<SmallVector<TypedAttr>> readMemoryFragments(int64_t addr, size_t size,
+                                                      Type pointerType);
+
+  /// Write fragments from readMemoryFragments over a whole field, replacing
+  /// its old marks.
+  ErrorOrSuccess writeMemoryFragments(int64_t addr, size_t size,
+                                      ArrayRef<TypedAttr> fragments);
 
   /// Allocate a slot in the symbol table and store the specified symbol.
   uint64_t addSymbolToSymbolTable(TypedAttr symbol);
@@ -301,16 +333,6 @@ public:
   /// If the stack is not deep enough, return null.
   virtual Operation *getOrigin(size_t depth) = 0;
 
-  /// Set the value of a named global.
-  void setNamedGlobal(StringAttr name, Attribute value) {
-    namedGlobals[name] = value;
-  }
-
-  /// Get the value of a named global.
-  Attribute getNamedGlobal(StringAttr name) {
-    return namedGlobals.lookup(name);
-  }
-
   //===--------------------------------------------------------------------===//
   // Interpreter Value Management
 
@@ -346,9 +368,10 @@ private:
                         size_t size, size_t align, unsigned addressSpace,
                         MemoryHandleAttr hdl, size_t refCount = 1);
 
-    /// Mark or unmark the given region of the blob as a pointer value.
+    /// Track values that need remapping when memory is exported.
     ErrorOrSuccess setMarkedRegion(int64_t offset, int64_t regionSize,
-                                   int64_t pointerSize, RegionMark regionMark);
+                                   TargetInfoAttr target, RegionMark regionMark,
+                                   unsigned addressSpace = 0);
 
     /// Return true if the memory is owned by the interpreter.
     bool isOwned() const { return isa<void *>(memory); }
@@ -495,11 +518,6 @@ protected:
   /// When the interpreter hits an error, construct an error tree given the
   /// current stack frame.
   virtual ErrorTree addStackTrace(ErrorTree error) = 0;
-
-private:
-  /// This map implements named global values. Named global values represent a
-  /// mechanism for storing SSA value captures at compile time.
-  DenseMap<StringAttr, Attribute> namedGlobals;
 };
 
 //===----------------------------------------------------------------------===//

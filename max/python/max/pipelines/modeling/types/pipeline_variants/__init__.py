@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Input and output types for each generation modality: text, image, audio,
-and embeddings.
+"""Input and output types for each generation modality.
+
+The modalities are text, image, audio, and embeddings.
 """
 
 from .audio_generation import (

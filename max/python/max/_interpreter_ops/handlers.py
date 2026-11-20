@@ -56,9 +56,16 @@ from max._interpreter_ops import (
     topk_gc,
     unary_elementwise_gc,
 )
-from max.driver import CPU, Buffer, Device
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    bfloat16_as_uint16_to_float32,
+    float32_to_bfloat16_as_uint16,
+)
 from max.dtype import DType
-from max.experimental import custom
+from max.functional import custom_op as custom
+from max.graph.ops.rms_norm import _float32_attr_value
 
 
 class _HasAxis(Protocol):
@@ -176,6 +183,23 @@ def _get_target_device(op: _core.Operation) -> Device:
     """
     result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
     return graph.DeviceRef.from_mlir(result_mlir_type.device_ref).to_device()
+
+
+def _buffer_to_numpy_safe(buf: Buffer) -> npt.NDArray[Any]:
+    """Converts a host buffer to NumPy, handling dtypes NumPy can't hold."""
+    if buf.dtype == DType.bfloat16:
+        return bfloat16_as_uint16_to_float32(buf.view(DType.uint16).to_numpy())
+    return buf.to_numpy()
+
+
+def _numpy_to_buffer_safe(
+    arr: npt.NDArray[Any], dtype: DType, device: Device
+) -> Buffer:
+    """Inverse of `_buffer_to_numpy_safe`."""
+    if dtype == DType.bfloat16:
+        bf16_bits = float32_to_bfloat16_as_uint16(arr.astype(np.float32))
+        return Buffer.from_numpy(bf16_bits).view(DType.bfloat16).to(device)
+    return Buffer.from_numpy(arr).to(device)
 
 
 # Constant operations
@@ -506,7 +530,7 @@ def _handle_debug_tensor_print(
     tensor_buf = inputs[1]
     label = op.label
     if tensor_buf is not None:
-        np_array = tensor_buf.to_numpy()
+        np_array = _buffer_to_numpy_safe(tensor_buf)
         if label:
             print(f"[{label}] {np_array}")
         else:
@@ -798,14 +822,16 @@ def _handle_matmul(
     """Routes eager matmul and batch_matmul through a GC model.
 
     Looks up the rank-3 batched-matmul :class:`~max.engine.Model` for the
-    realized input's device and dtype (see :func:`matmul_gc.matmul_model`),
-    view-shims the two operands to canonical rank 3, executes the model, and
-    view-shims the output back to the result rank. All views are zero-copy.
+    operands' device, their dtypes and the result dtype (see
+    :func:`matmul_gc.matmul_model`), view-shims the two operands to canonical
+    rank 3, executes the model, and view-shims the output back to the result
+    rank. All views are zero-copy.
 
     The same handler serves both ``mo.matmul`` (rank 2) and ``mo.batch_matmul``
-    (rank 3+). The RMO->MO lowering already casts both operands to a common
-    dtype and broadcasts them to equal batch/rank before these ops are created,
-    so reading device, dtype, and the equal-batch shape from ``lhs`` is exact.
+    (rank 3+). The RMO->MO lowering broadcasts both operands to equal batch and
+    rank before these ops are created, so reading the device and the
+    equal-batch shape from ``lhs`` is exact. The operands and the result each
+    keep their own dtype.
 
     Args:
         op: The ``mo.matmul`` or ``mo.batch_matmul`` operation being handled.
@@ -818,7 +844,11 @@ def _handle_matmul(
     assert isinstance(lhs, Buffer)
     assert isinstance(rhs, Buffer)
 
-    model = matmul_gc.matmul_model(lhs.device, lhs.dtype)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    model = matmul_gc.matmul_model(
+        lhs.device, lhs.dtype, rhs.dtype, result_type.dtype
+    )
 
     # Forward rank shim: flatten leading dims to one batch dim (zero-copy).
     lhs_view = lhs.view(lhs.dtype, matmul_gc.canonical_shape(lhs.shape))
@@ -1002,7 +1032,7 @@ def _handle_transpose(
 def _handle_slice(
     op: mo.SliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.slice via rmo.MoSliceOp with runtime starts/stops/steps.
+    """Handle mo.slice via mo.SliceOp with runtime starts/stops/steps.
 
     Inputs: (input, starts, stops, steps); the latter three are rank-1 int64
     tensors with one entry per dimension. Negative starts/stops are normalized
@@ -1225,7 +1255,9 @@ def _handle_reduce_axis(
     assert isinstance(x, Buffer)
     _check_buffers_on_device(inputs, target_device)
 
-    axis = cast(_HasAxis, op).axis
+    axis = _reduction_axis(op, x.shape, result_type.shape)
+    if axis is None:
+        return [x]
     variant = reduce_axis_gc.variant_for(op)
     model = reduce_axis_gc.reduce_model(type(op), x.device, x.dtype, variant)
 
@@ -1234,6 +1266,24 @@ def _handle_reduce_axis(
     (out,) = model(x_view)
     out_shape = tuple(int(dim) for dim in result_type.shape)
     return [out.view(result_type.dtype, out_shape)]
+
+
+def _reduction_axis(
+    op: _core.Operation, in_shape: Sequence[int], out_shape: Sequence[Any]
+) -> int | None:
+    """Returns ``op``'s ``axis``, or the dimension reduced to 1.
+
+    For an op without an ``axis``, the result is the dimension that becomes 1
+    in the output, or ``None`` when none does: the op is then the identity.
+    """
+    if hasattr(op, "axis"):
+        return cast(_HasAxis, op).axis
+    for axis, (in_dim, out_dim) in enumerate(
+        zip(in_shape, out_shape, strict=True)
+    ):
+        if int(in_dim) != int(out_dim):
+            return axis
+    return None
 
 
 # Wrapped in a function so the REDUCE_AXIS_GC_OPS access is deferred past the
@@ -1287,39 +1337,41 @@ def _handle_layer_norm(
 # RMS norm operations
 
 
-@register_op_handler(mo.ReduceRmsNormOp)
+@register_op_handler(mo.CompositeReduceRmsNormOp)
 def _handle_rms_norm(
-    op: mo.ReduceRmsNormOp, inputs: Sequence[Buffer | None]
+    op: mo.CompositeReduceRmsNormOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Routes eager rms_norm through a GC model.
 
     Looks up the rank-2 rms_norm :class:`~max.engine.Model` for the realized
-    input's device, dtype, and compile-time ``multiply_before_cast`` variant
-    (see :func:`rms_norm_gc.rms_norm_model`), view-shims the input to
-    canonical rank 2 ``[rows, features]``, executes the model, and
-    view-shims the result back. All views are zero-copy.
+    input's device and dtype and the op's compile-time ``epsilon``,
+    ``weight_offset`` and ``multiply_before_cast`` (see
+    :func:`rms_norm_gc.rms_norm_model`), view-shims the input to canonical
+    rank 2 ``[rows, features]``, executes the model, and view-shims the
+    result back. All views are zero-copy.
 
     Args:
         op: The rms_norm operation being handled.
-        inputs: Input buffers -- input tensor, weight, epsilon,
-            weight_offset. Epsilon and weight_offset are always on CPU
-            (MO_SingleDeviceWithHostOperands).
+        inputs: Input buffers -- input tensor and weight.
 
     Returns:
         A single-element list holding the normalized tensor buffer.
     """
-    x, weight, epsilon, weight_offset = inputs
+    x, weight = inputs
     assert isinstance(x, Buffer)
     assert isinstance(weight, Buffer)
-    assert isinstance(epsilon, Buffer)
-    assert isinstance(weight_offset, Buffer)
 
-    multiply_before_cast = bool(op.multiply_before_cast)
-    model = rms_norm_gc.rms_norm_model(x.device, x.dtype, multiply_before_cast)
+    model = rms_norm_gc.rms_norm_model(
+        x.device,
+        x.dtype,
+        _float32_attr_value(op.epsilon),
+        _float32_attr_value(op.weight_offset),
+        bool(op.multiply_before_cast),
+    )
 
     rows, features = rms_norm_gc.canonical_rank2(x.shape)
     x_view = x.view(x.dtype, (rows, features))
-    (out,) = model(x_view, weight, epsilon, weight_offset)
+    (out,) = model(x_view, weight)
 
     return [out.view(out.dtype, x.shape)]
 
@@ -1636,13 +1688,17 @@ def _handle_gather_sum(
     assert isinstance(x, Buffer)
     assert isinstance(indices, Buffer)
 
-    input_np = x.to_numpy()
+    input_np = _buffer_to_numpy_safe(x)
     indices_np = indices.to_numpy().astype(np.intp)
 
     gathered = np.take(input_np, indices_np, axis=0)
     result = gathered.sum(axis=1, keepdims=True)
 
-    return [Buffer.from_numpy(np.ascontiguousarray(result))]
+    return [
+        _numpy_to_buffer_safe(
+            np.ascontiguousarray(result), x.dtype, target_device
+        )
+    ]
 
 
 @register_op_handler(mo.GatherNdOp)
@@ -1698,8 +1754,7 @@ def _handle_gather_nd(
 def _handle_scatter_nd_family(
     op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Dispatches an eager scatter-nd op via scatter_nd_gc's single fused
-    model.
+    """Dispatches an eager scatter-nd op through scatter_nd_gc's fused model.
 
     Args:
         op: The scatter-nd / scatter-nd-reduce operation being handled.
@@ -1956,7 +2011,7 @@ def _handle_max_pool(
 def _handle_tile(
     op: mo.TileOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.tile via rmo.MoTileOp with runtime repeats.
+    """Handle mo.tile via mo.TileOp with runtime repeats.
 
     Operands: input (any device), repeats (host int64 rank-1;
     ``to_numpy`` syncs a device-resident repeats to the host). Output
@@ -2276,7 +2331,7 @@ def _handle_pad_via_gc(
 def _handle_pad_constant(
     op: mo.PadConstantOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.constant via rmo.MoPadConstantOp (CPU + GPU)."""
+    """Handle mo.pad.constant via mo.PadConstantOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadConstantOp)
 
 
@@ -2284,7 +2339,7 @@ def _handle_pad_constant(
 def _handle_pad_reflect(
     op: mo.PadReflectOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.reflect via rmo.MoPadReflectOp (CPU + GPU)."""
+    """Handle mo.pad.reflect via mo.PadReflectOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadReflectOp)
 
 
@@ -2292,7 +2347,7 @@ def _handle_pad_reflect(
 def _handle_pad_repeat(
     op: mo.PadRepeatOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.repeat (edge pad) via rmo.MoPadRepeatOp (CPU + GPU)."""
+    """Handle mo.pad.repeat (edge pad) via mo.PadRepeatOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadRepeatOp)
 
 
@@ -2363,8 +2418,8 @@ def _handle_resize_bicubic(
     """Handle mo.resize.bicubic.
 
     Runs on the input's device like nearest (single-device MO op with a
-    host ``size`` operand); the kernel is rank-4 only. Bicubic has no
-    variant attrs, so the cache key carries the empty variant.
+    host ``size`` operand); the kernel is rank-4 only. The cache key carries
+    ``antialias`` as its variant.
     """
     input_buffer, size_buffer = inputs
     assert isinstance(input_buffer, Buffer)
@@ -2376,7 +2431,7 @@ def _handle_resize_bicubic(
         input_buffer.device,
         input_buffer.dtype,
         rank,
-        resize_gc._NO_VARIANT,
+        (int(op.antialias),),
     )
     return model(input_buffer, size_buffer)
 
@@ -2417,9 +2472,10 @@ def _handle_distributed_allreduce_sum(
     group_size = op.group_size or num_inputs
     totals: list[npt.NDArray[Any]] = []
     for group_start in range(0, num_inputs, group_size):
-        total = bufs[group_start].to(CPU()).to_numpy().copy()
+        # `to(CPU())` doesn't copy a host buffer, so `+=` would mutate the input.
+        total = _buffer_to_numpy_safe(bufs[group_start].to(CPU())).copy()
         for buf in bufs[group_start + 1 : group_start + group_size]:
-            total += buf.to(CPU()).to_numpy()
+            total += _buffer_to_numpy_safe(buf.to(CPU()))
         totals.extend([total] * group_size)
 
     # Place each group's sum on its output devices.
@@ -2428,7 +2484,9 @@ def _handle_distributed_allreduce_sum(
     for i, result in enumerate(results[:-1]):
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(Buffer.from_numpy(totals[i]).to(device))
+        output_buffers.append(
+            _numpy_to_buffer_safe(totals[i], bufs[i].dtype, device)
+        )
 
     # Trailing None for the output chain.
     output_buffers.append(None)
@@ -2477,7 +2535,21 @@ def _handle_distributed_allgather(
         input_idx = group_start + local_input_idx
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(bufs[input_idx].to(device))
+        source = bufs[input_idx]
+        if op.slice_rows:
+            rows = source.shape[0]
+            if rows % num_inputs != 0:
+                raise ValueError(
+                    "allgather_rows_slice requires the row count to be a "
+                    "multiple of the device count"
+                )
+            rows_per_device = rows // num_inputs
+            start = device_idx * rows_per_device
+            indices = (slice(start, start + rows_per_device),) + (
+                slice(None),
+            ) * (len(source.shape) - 1)
+            source = source[indices]
+        output_buffers.append(source.to(device))
 
     output_buffers.append(None)
     return output_buffers
@@ -2763,8 +2835,9 @@ def _resolve_spec(op: mo.CustomOp) -> custom.CustomOp | None:
 
 
 def _check_realized_shape(out: Buffer, result: _core.Value[Any]) -> None:
-    """Raises ``RuntimeError`` when *out*'s realized rank, dtype, device, or
-    a statically-known dim disagrees with *result*'s staged type.
+    """Raises when *out* disagrees with *result*'s staged type.
+
+    Checks realized rank, dtype, device, and any statically-known dim.
 
     A binding compiled from a ``CustomOp`` (:mod:`custom_gc`) is
     rank-polymorphic: only rank, dtype, and device key the compiled model,

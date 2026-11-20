@@ -59,7 +59,7 @@ def repro_struct_attr():
     struct_callee[2, type_of(my_fn)](my_fn)
 
 
-# COM: Verify SymbolConstantAttr matching: closure returning a type
+# COM: Verify FuncSymbolAttr matching: closure returning a type
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
@@ -230,7 +230,7 @@ def bar[U: DoB](x: U):
 # COM: Verify that a register_passable closure capturing a generic
 # COM: register_passable closure and a concrete register_passable struct gets
 # COM: convention register_passable (not trivial)
-# S7-DAG: lit.struct.decl @"{{.*}}s7_call_inner{{.*}}::outer::__storage"{{.*}} register_passable attributes
+# S7-DAG: lit.struct.decl @"{{.*}}s7_call_inner{{.*}}::outer::__storage"{{.*}} register_passable{{$}}
 
 
 struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
@@ -254,7 +254,7 @@ def s7_call_inner[
 # COM: Verify that a register_passable closure capturing a trivially
 # COM: register_passable callback and a trivial struct gets convention
 # COM: register_passable_trivial.
-# S8-DAG: lit.struct.decl @"{{.*}}s8_call_inner{{.*}}::outer::__storage"{{.*}} register_passable_trivial attributes
+# S8-DAG: lit.struct.decl @"{{.*}}s8_call_inner{{.*}}::outer::__storage"{{.*}} register_passable_trivial {{[{]$}}
 
 
 struct TrivialPayload(TrivialRegisterPassable):
@@ -280,7 +280,7 @@ def s8_call_inner[
 
 # S9: kgen.conformance @"##__mojo_closure__##"{{.*}}#kgen.param_list.get<:param_list<{{.*}}> [!String, !Int]
 # S9-NEXT: kgen.witness "__call__"
-# S9-SAME: capturing -> !kgen.none>
+# S9-SAME: -> !kgen.none>
 
 
 struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
@@ -297,21 +297,21 @@ struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
     def __getitem_param__[
         idx: Int
     ](ref self) -> ref[self] Self.element_types[idx]:
-        var storage_kgen_ptr = UnsafePointer(
+        var storage_kgen_ptr = Pointer(
             to=self._mlir_value
         )._get_kgen_pointer()
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
-            _type=UnsafePointer[
+            _type=Pointer[
                 Self.element_types[idx], origin_of(self)]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+        return Pointer[_, origin_of(self)](elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def consume_elements[
         EltHandler: def[idx: Int](var elt: Self.element_types[idx])
     ](deinit self, elt_handler: EltHandler, /):
-        var ptr = UnsafePointer(to=self[0])
+        var ptr = Pointer(to=self[0])
         elt_handler[0](__get_address_as_owned_value(ptr._get_kgen_pointer()))
 
 

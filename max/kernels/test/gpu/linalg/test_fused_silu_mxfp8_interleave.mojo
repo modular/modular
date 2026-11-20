@@ -31,6 +31,7 @@ from std.math import ceildiv, exp, recip
 from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.memory.unsafe import bitcast
+from std.memory.alloc import unsafe_alloc
 
 from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import (
@@ -73,14 +74,7 @@ def _test_silu_mxfp8[
     var M = total_num_tokens
 
     print(
-        "  H=",
-        H,
-        " M=",
-        M,
-        " active=",
-        num_active_experts,
-        " clamp=",
-        clamp_activation,
+        t"  H={H} M={M} active={num_active_experts} clamp={clamp_activation}",
         sep="",
     )
 
@@ -91,9 +85,9 @@ def _test_silu_mxfp8[
     var in_size = M * two_H
     var out_size = M * H
 
-    var in_host_ptr = alloc[Scalar[in_dtype]](in_size)
-    var out_host_ptr = alloc[Scalar[fp8_dtype]](out_size)
-    var out_ref_host_ptr = alloc[Scalar[fp8_dtype]](out_size)
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](in_size)
+    var out_host_ptr = unsafe_alloc[Scalar[fp8_dtype]](out_size)
+    var out_ref_host_ptr = unsafe_alloc[Scalar[fp8_dtype]](out_size)
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](in_size)
     var in_tensor = TileTensor(in_device, in_shape)
@@ -101,8 +95,8 @@ def _test_silu_mxfp8[
     var out_tensor = TileTensor(out_device, out_shape)
 
     # ---- Per-expert offsets ----
-    var row_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
-    var scales_offsets_host_ptr = alloc[UInt32](num_active_experts)
+    var row_offsets_host_ptr = unsafe_alloc[UInt32](num_active_experts + 1)
+    var scales_offsets_host_ptr = unsafe_alloc[UInt32](num_active_experts)
 
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
@@ -140,8 +134,8 @@ def _test_silu_mxfp8[
     )
     var scales_size = scales_shape.product()
 
-    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var scales_ref_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var scales_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
+    var scales_ref_host_ptr = unsafe_alloc[Scalar[scales_dtype]](scales_size)
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
@@ -258,6 +252,11 @@ def _test_silu_mxfp8[
             alpha,
             limit if clamp_activation else 0.0,
         ],
+        OutputEngine=type_of(out_tensor).Engine,
+        ScalesEngine=type_of(scales_tensor).Engine,
+        InputEngine=type_of(in_immut).Engine,
+        RowOffsetsEngine=type_of(row_offsets_immut).Engine,
+        ScalesOffsetsEngine=type_of(scales_offsets_immut).Engine,
     ]
     ctx.enqueue_function[kernel](
         out_tensor,
@@ -306,14 +305,9 @@ def _test_silu_mxfp8[
 
     if out_mismatch != 0 or sf_mismatch != 0:
         print(
-            "    OUT mismatch count =",
-            out_mismatch,
-            " first @ idx=",
-            first_bad_out,
-            "  SF mismatch count =",
-            sf_mismatch,
-            " first @ idx=",
-            first_bad_sf,
+            t"    OUT mismatch count = {out_mismatch}  first @ idx="
+            t" {first_bad_out}   SF mismatch count = {sf_mismatch}  first @"
+            t" idx= {first_bad_sf}"
         )
         if first_bad_out >= 0:
             var m_bad, k_bad = divmod(first_bad_out, H)
@@ -324,14 +318,8 @@ def _test_silu_mxfp8[
                 SIMD[fp8_dtype, 1](out_host_ptr[first_bad_out])
             )[0]
             print(
-                "    first OUT bad: m=",
-                m_bad,
-                " k=",
-                k_bad,
-                " ref(byte)=",
-                ref_byte,
-                " got(byte)=",
-                got_byte,
+                t"    first OUT bad: m= {m_bad}  k= {k_bad}  ref(byte)="
+                t" {ref_byte}  got(byte)= {got_byte}"
             )
         raise Error("MXFP8 fused-silu reference disagrees with kernel output")
 

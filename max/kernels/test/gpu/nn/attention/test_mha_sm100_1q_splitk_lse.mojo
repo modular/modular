@@ -191,19 +191,8 @@ def execute_combine_test[
     var window_len = win_end - win_begin
 
     print(
-        "test_mha_sm100_1q_splitk_combine: mask=",
-        mask_t.name(),
-        " depth=",
-        head_size,
-        " P=",
-        P,
-        " num_keys=",
-        num_keys,
-        " T=",
-        T,
-        " sink=",
-        USE_SINK,
-        sep="",
+        t"test_mha_sm100_1q_splitk_combine:"
+        t" mask={mask_t.name()} depth={head_size} P={P} num_keys={num_keys} T={T} sink={USE_SINK}"
     )
     if not (T >= P):
         raise Error("test misconfigured: need T >= P (no empty partitions)")
@@ -465,14 +454,8 @@ def execute_combine_test[
                 else:
                     blk1_max = max(blk1_max, diff)
     print(
-        "  max-abs diff(split combined O, full naive) =",
-        max_abs_diff,
-        " at flat idx",
-        argmax_idx,
-        " block0=",
-        blk0_max,
-        " block1=",
-        blk1_max,
+        t"  max-abs diff(split combined O, full naive) = {max_abs_diff}  at"
+        t" flat idx {argmax_idx}  block0= {blk0_max}  block1= {blk1_max}"
     )
 
     _ = q_dev^
@@ -598,23 +581,24 @@ def main() raises:
     assert_equal(_auto_p[SM_COUNT, False](8, 48), 3)
     assert_equal(_auto_p[SM_COUNT, False](8, 96), 1)
     # An unbounded mask keeps the 8 the ramp asks for at every one of them.
-    comptime for rg in [12, 24, 48, 96]:
+    for rg in [12, 24, 48, 96]:
         assert_equal(_auto_p[SM_COUNT, True](8, rg), 8)
 
     with DeviceContext() as ctx:
-        comptime if MASK == 0:
-            execute_combine_test[NullMask, DEPTH](NullMask(), ctx)
-        elif MASK == 1:
-            execute_combine_test[CausalMask, DEPTH](CausalMask(), ctx)
-        elif MASK == 2:
-            execute_combine_test[ChunkedMask[CHUNK], DEPTH](
-                ChunkedMask[CHUNK](), ctx
-            )
-        elif MASK == 3:
-            execute_combine_test[SlidingWindowCausalMask[SW_WINDOW], DEPTH](
-                SlidingWindowCausalMask[SW_WINDOW](), ctx
-            )
-        else:
-            execute_combine_test[SlidingWindowNonCausalMask[SW_WINDOW], DEPTH](
-                SlidingWindowNonCausalMask[SW_WINDOW](), ctx
-            )
+        comptime match MASK:
+            case 0:
+                execute_combine_test[NullMask, DEPTH](NullMask(), ctx)
+            case 1:
+                execute_combine_test[CausalMask, DEPTH](CausalMask(), ctx)
+            case 2:
+                execute_combine_test[ChunkedMask[CHUNK], DEPTH](
+                    ChunkedMask[CHUNK](), ctx
+                )
+            case 3:
+                execute_combine_test[SlidingWindowCausalMask[SW_WINDOW], DEPTH](
+                    SlidingWindowCausalMask[SW_WINDOW](), ctx
+                )
+            case _:
+                execute_combine_test[
+                    SlidingWindowNonCausalMask[SW_WINDOW], DEPTH
+                ](SlidingWindowNonCausalMask[SW_WINDOW](), ctx)

@@ -11,6 +11,7 @@ modular_cc_library(
     ],
     hdrs = glob(["include/**/*.h"]),
     copts = ["-I$(GENDIR)/Config"],
+    deps = ["//Support:SymbolExport"],
 )
 
 modular_versioned_expand_template(

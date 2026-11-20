@@ -16,7 +16,7 @@
 # These tests aren't _great_. They're platform specific, and implementation
 # specific. But for now they test behavior and reproducibility.
 
-from std.hashlib import default_comp_time_hasher
+from std.hash import default_comp_time_hasher
 
 from std.testing import assert_equal, assert_not_equal, assert_true
 from std.testing import TestSuite

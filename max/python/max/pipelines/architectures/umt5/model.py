@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The UMT5 pipeline model."""
 
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights

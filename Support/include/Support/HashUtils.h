@@ -14,9 +14,8 @@
 #ifndef SUPPORT_HASHUTILS_H
 #define SUPPORT_HASHUTILS_H
 
-#include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 
-#include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/raw_ostream.h"
 #include <array>
 #include <cstddef>
@@ -38,14 +37,10 @@
 #define XXH_STATIC_LINKING_ONLY
 #include "xxhash.h"
 
-namespace mlir {
-class Operation;
-} // namespace mlir
-
 namespace M {
 
 /// A raw_ostream that hashes content using the xxhash 128-bit algorithm.
-class raw_xxhash128_stream : public llvm::raw_ostream {
+class MODULAR_CXX_EXPORT raw_xxhash128_stream : public llvm::raw_ostream {
   XXH3_state_t State;
 
   /// See raw_ostream::write_impl. Defined out-of-line in HashUtils.cpp so the
@@ -65,7 +60,7 @@ public:
 };
 
 /// A raw_ostream that hashes content using the xxhash 64-bit algorithm.
-class raw_xxhash64_stream : public llvm::raw_ostream {
+class MODULAR_CXX_EXPORT raw_xxhash64_stream : public llvm::raw_ostream {
   XXH3_state_t State;
 
   /// See raw_ostream::write_impl. Defined out-of-line in HashUtils.cpp so the
@@ -82,15 +77,6 @@ public:
 
   uint64_t current_pos() const override { return 0; }
 };
-
-/// Compute the xxhash for the given MLIR operation.
-/// The hash ignores source location information.
-FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
-
-/// This function computes the bytecode hash similar to getBytecodeHash, but
-/// does so by hashing each individual operation in the module in parallel
-/// (via BytecodeHasher) and then combining the results into a single hash.
-FailureOr<std::string> getModuleBytecodeHash(mlir::ModuleOp module);
 
 } // namespace M
 #endif // SUPPORT_HASHUTILS_H

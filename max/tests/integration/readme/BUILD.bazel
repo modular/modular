@@ -1,0 +1,64 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test")
+
+# The shell snippets in the top-level README run here so a stale one fails CI.
+# The Mojo compiler and the pipelines binary need different Mojo environments,
+# hence one test target per snippet.
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "extract_readme_code_snippets",
+    testonly = True,
+    srcs = ["extract_readme_code_snippets.py"],
+    imports = ["."],
+)
+
+modular_py_test(
+    name = "test_readme_mojo_snippet",
+    size = "large",
+    srcs = ["test_readme_mojo_snippet.py"],
+    data = [
+        "//:public_readme",
+        "//Mojo/examples:hello.mojo",
+    ],
+    env = {
+        "README_PATH": "$(rootpath //:public_readme)",
+    },
+    mojo_deps = ["@mojo//:std"],
+    tags = ["no-sandbox"],
+    deps = [":extract_readme_code_snippets"],
+)
+
+modular_py_test(
+    name = "test_readme_max_snippet",
+    size = "enormous",
+    srcs = ["test_readme_max_snippet.py"],
+    data = [
+        "//:public_readme",
+        "//max/python/max/_entrypoints:pipelines",
+    ],
+    env = {
+        "PIPELINES_PATH": "$(rootpath //max/python/max/_entrypoints:pipelines)",
+        "README_PATH": "$(rootpath //:public_readme)",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "5",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    # Depending on the binary puts the kernel packages on the Mojo import
+    # path the subprocess inherits, the way its own launcher would.
+    ignore_extra_deps = ["//max/python/max/_entrypoints:pipelines"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":extract_readme_code_snippets",
+        "//max/python/max/_entrypoints:pipelines",
+    ],
+)

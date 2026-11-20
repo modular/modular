@@ -30,25 +30,26 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kernels import mtp_eh_norm
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
-from max.nn.layer import Module
-from max.nn.linear import ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
+from max.nn._graph_ops import mtp_eh_norm
+from max.nn._graph_ops.data_parallel import split_batch_replicated
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import SparseIndices
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
 from ..deepseekV3_2.deepseekV3_2 import DeepseekV3_2DecoderLayer
@@ -216,7 +217,8 @@ class DeepseekV3_2NextN(Module):
         reuse_prev_topk: bool = False,
         selection_lag: int = 0,
         split_prefix: str = "draft",
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs the speculative model over the graph inputs."""
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -350,7 +352,7 @@ class DeepseekV3_2NextN(Module):
         h = layer_outs[:n_devs]
         topk_indices = layer_outs[n_devs : 2 * n_devs]
 
-        postprocess = deepseek_logits_postprocess(
+        outputs = deepseek_logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets_,
             all_logits_input_row_offsets=all_logits_input_row_offsets,
@@ -368,13 +370,15 @@ class DeepseekV3_2NextN(Module):
             vocab_size=self.config.vocab_size,
         )
 
-        # Append the per-device physical rows so the unified MTP module can
-        # gather and reuse them across subsequent draft steps.
-        return (*postprocess, *topk_indices)
+        # The per-device physical rows, so the unified MTP module can gather
+        # and reuse them across subsequent draft steps.
+        outputs["topk_indices"] = SparseIndices(rows=tuple(topk_indices))
+        return outputs
 
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types for the config's devices."""
         devices = self.config.devices
         device_ref = devices[0]
 

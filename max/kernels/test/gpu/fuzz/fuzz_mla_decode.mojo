@@ -59,6 +59,7 @@ from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
+from nn.attention.gpu.mla import SM100MLA
 from nn.kv_cache_ragged import generic_flare_mla_decode_kv_cache_ragged
 
 from _fuzz import (
@@ -292,7 +293,7 @@ def run_one_case(
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1] == 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -456,8 +457,8 @@ def run_one_case(
 
     # === Kernel under test ==================================================
     generic_flare_mla_decode_kv_cache_ragged[
-        target="gpu",
         mask_str=MASK,
+        kernels=SM100MLA,
     ](
         q_tt,
         row_offsets_tt,
@@ -721,8 +722,13 @@ def run_schedule_case(
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
     ctx.synchronize()
 
-    var block_shape = IndexList[6](
-        total_pages, 1, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, DEPTH
+    var block_shape = (
+        total_pages,
+        1,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        KV_NUM_HEADS,
+        DEPTH,
     )
     comptime Collection = PagedKVCacheCollection[
         kv_type,
@@ -782,7 +788,10 @@ def run_schedule_case(
     # for the `determinism` oracle.
     var np = Optional[Int](2) if pin_partitions else Optional[Int]()
 
-    generic_flare_mla_decode_kv_cache_ragged[target="gpu", mask_str=MASK](
+    generic_flare_mla_decode_kv_cache_ragged[
+        mask_str=MASK,
+        kernels=SM100MLA,
+    ](
         q_tt,
         row_offsets_tt,
         kv_collection,
@@ -799,7 +808,10 @@ def run_schedule_case(
     ctx.synchronize()
 
     for _ in range(repeats - 1):
-        generic_flare_mla_decode_kv_cache_ragged[target="gpu", mask_str=MASK](
+        generic_flare_mla_decode_kv_cache_ragged[
+            mask_str=MASK,
+            kernels=SM100MLA,
+        ](
             q_tt,
             row_offsets_tt,
             kv_collection,
@@ -847,24 +859,13 @@ def main() raises:
         var specs = gen_specs(the_budget, safe=False)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch_size=",
-                specs[i].batch_size,
-                "max_cache_len=",
-                specs[i].max_cache_len,
-                "min_cache_len=",
-                specs[i].min_cache_len,
-                "seq_len=",
-                specs[i].seq_len,
-                "pattern=",
-                specs[i].pattern,
-                "ragged_q=",
-                specs[i].ragged_q,
-                "seed=",
-                specs[i].seed,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} batch_size="
+                t" {specs[i].batch_size} max_cache_len="
+                t" {specs[i].max_cache_len} min_cache_len="
+                t" {specs[i].min_cache_len} seq_len="
+                t" {specs[i].seq_len} pattern= {specs[i].pattern} ragged_q="
+                t" {specs[i].ragged_q} seed= {specs[i].seed} dist="
+                t" {specs[i].dist}"
             )
         return
 
@@ -894,15 +895,8 @@ def main() raises:
 
     # Default: standalone in-process fuzz.
     print(
-        "=== fuzz_mla_decode num_heads=",
-        num_heads,
-        "mask=",
-        MASK,
-        "seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_mla_decode num_heads= {num_heads} mask= {MASK} seed="
+        t" {the_seed} budget= {the_budget} ==="
     )
     var specs = gen_specs(the_budget, safe=True)
     with DeviceContext() as ctx:

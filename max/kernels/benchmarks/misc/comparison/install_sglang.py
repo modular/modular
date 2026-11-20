@@ -66,3 +66,10 @@ if __name__ == "__main__":
     tv_version = _matching_torchvision_version()
     torch_index = _torch_cuda_index()
     install_pip_package(f"torchvision=={tv_version}", index_url=torch_index)
+
+    # kbench runs an older torch than torchcodec is built for, so importing
+    # it raises OSError, which sglang does not catch. Without torchcodec,
+    # sglang uses decord, and these benchmarks decode no video.
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "uninstall", "-y", "torchcodec"]
+    )

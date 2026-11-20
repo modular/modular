@@ -22,8 +22,8 @@ resolution:
 - `gmem_edge_masked_load` — reinterprets any pointer as device (global).
 - `smem_edge_masked_load` — reinterprets any pointer as threadgroup (shared).
 
-Apple M5 only: the AGX3 intrinsics don't exist elsewhere, so callers dispatch
-on `compute_capability() == 5`.
+Apple M5 and newer: the AGX3 intrinsics don't exist on earlier generations,
+so callers dispatch on `compute_capability() >= 5`.
 """
 
 from std.collections.string import StaticString
@@ -36,7 +36,7 @@ from std.sys import size_of
 def build_edge_mask(
     index: Int32, lower_bound: Int32, upper_bound: Int32
 ) -> Int16:
-    """Computes the per-lane edge mask for a vector access (Apple M5 only).
+    """Computes the per-lane edge mask for a vector access (Apple M5 and newer).
 
     Bit `i` of the result is set when element `index + i` lies in
     `[lower_bound, upper_bound)`. Pass it as an `*edge_masked_load` `mask`.
@@ -124,7 +124,7 @@ def edge_masked_load[
     mask: Int16,
 ) -> SIMD[dtype, width]:
     """Loads a predicated (edge-masked) vector in the pointer's own address
-    space (Apple M5 only).
+    space (Apple M5 and newer).
 
     Loads `width` elements from `ptr`, zeroing any lane whose `mask` bit is
     clear; masked-off lanes are not read, so the vector may safely straddle the
@@ -146,7 +146,7 @@ def edge_masked_load[
 
     Constraints:
         `width` in {1, 2, 4}, `dtype` 8/16/32/64-bit, `src_space` `GLOBAL` or
-        `SHARED`. Apple M5 only.
+        `SHARED`. Apple M5 and newer.
     """
     comptime assert (
         src_space == AddressSpace.GLOBAL or src_space == AddressSpace.SHARED
@@ -172,7 +172,7 @@ def gmem_edge_masked_load[
     mask: Int16,
 ) -> SIMD[dtype, width]:
     """Loads an edge-masked vector, treating `ptr` as device (global) memory
-    (Apple M5 only).
+    (Apple M5 and newer).
 
     Like `edge_masked_load` but reinterprets any pointer as global — for a
     generic-typed pointer to device memory. Emits AGX3
@@ -191,7 +191,7 @@ def gmem_edge_masked_load[
         A `SIMD[dtype, width]`; in-range lanes loaded, masked-off lanes zero.
 
     Constraints:
-        `width` in {1, 2, 4}, `dtype` 8/16/32/64-bit. Apple M5 only.
+        `width` in {1, 2, 4}, `dtype` 8/16/32/64-bit. Apple M5 and newer.
     """
     return _emask_load[width, "global", AddressSpace.GLOBAL](ptr, mask)
 
@@ -207,7 +207,7 @@ def smem_edge_masked_load[
     mask: Int16,
 ) -> SIMD[dtype, width]:
     """Loads an edge-masked vector, treating `ptr` as threadgroup (shared)
-    memory (Apple M5 only).
+    memory (Apple M5 and newer).
 
     Like `edge_masked_load` but reinterprets any pointer as shared — for a
     generic-typed pointer to threadgroup memory. Emits AGX3
@@ -226,6 +226,6 @@ def smem_edge_masked_load[
         A `SIMD[dtype, width]`; in-range lanes loaded, masked-off lanes zero.
 
     Constraints:
-        `width` in {1, 2, 4}, `dtype` 8/16/32/64-bit. Apple M5 only.
+        `width` in {1, 2, 4}, `dtype` 8/16/32/64-bit. Apple M5 and newer.
     """
     return _emask_load[width, "local", AddressSpace.SHARED](ptr, mask)

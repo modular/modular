@@ -21,8 +21,12 @@ from std.testing import assert_equal
 
 
 def copy_kernel[
-    src_dtype: DType, dst_dtype: DType, M: Int, swizzled: Bool
-](output: MutPointer[Scalar[dst_dtype], MutAnyOrigin],):
+    src_dtype: DType,
+    dst_dtype: DType,
+    M: Int,
+    swizzled: Bool,
+    output_origin: MutOrigin,
+](output: MutPointer[Scalar[dst_dtype], output_origin],):
     comptime P = M // 8
     var local = stack_allocation[src_dtype, address_space=.LOCAL](
         row_major[P, 4]()
@@ -31,7 +35,7 @@ def copy_kernel[
         comptime for col in range(4):
             local[row, col] = (
                 Scalar[src_dtype](
-                    (Int(thread_idx.x) * 32 + row * 4 + col) % 127 - 63
+                    (thread_idx.x * 32 + row * 4 + col) % 127 - 63
                 )
                 / 8
             )
@@ -49,9 +53,10 @@ def copy_kernel[
         )
     barrier()
     # Read the physical shared allocation without reversing the permutation.
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
+    var shared_flat = shared.reshape[M * 16]()
     for i in range(tid, M * 16, 64):
-        output[i + 8] = shared.raw_load[width=1](i)
+        output[i + 8] = shared_flat[i]
 
 
 def test_copy[
@@ -63,9 +68,11 @@ def test_copy[
     with output.map_to_host() as host:
         for i in range(count + 16):
             host[i] = Scalar[dst_dtype](-99)
-    ctx.enqueue_function[copy_kernel[src_dtype, dst_dtype, M, swizzled]](
-        output, grid_dim=(1,), block_dim=(64,)
-    )
+    ctx.enqueue_function[
+        copy_kernel[
+            src_dtype, dst_dtype, M, swizzled, output_origin=origin_of(output)
+        ]
+    ](output, grid_dim=(1,), block_dim=(64,))
     with output.map_to_host() as host:
         for i in range(8):
             assert_equal(host[i], Scalar[dst_dtype](-99))

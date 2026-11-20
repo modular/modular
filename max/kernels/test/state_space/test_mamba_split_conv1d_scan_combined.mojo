@@ -14,7 +14,6 @@
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from layout import (
-    Layout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -71,7 +70,6 @@ def run_mamba_split_conv1d_scan_combined[
     var zxbcdt_channels = 2 * dim + 2 * ngroups * dstate + nheads
     var zxbcdt_size = batch * seqlen * zxbcdt_channels
     var zxbcdt_heap = List(length=zxbcdt_size, fill=Scalar[dtype](0))
-    comptime layout_3d = Layout.row_major[3]()
     var zxbcdt_h = TileTensor(
         zxbcdt_heap, row_major(batch, seqlen, zxbcdt_channels)
     )
@@ -80,7 +78,6 @@ def run_mamba_split_conv1d_scan_combined[
     var conv_weight_channels = dim + 2 * ngroups * dstate
     var conv_weight_size = conv_weight_channels * width
     var conv_weight_heap = List(length=conv_weight_size, fill=Scalar[dtype](0))
-    comptime layout_2d = Layout.row_major[2]()
     var conv_weight_h = TileTensor(
         conv_weight_heap, row_major(conv_weight_channels, width)
     )
@@ -88,7 +85,6 @@ def run_mamba_split_conv1d_scan_combined[
     # conv_bias: (dim + 2*ngroups*dstate,)
     var conv_bias_size = conv_weight_channels
     var conv_bias_heap = List(length=conv_bias_size, fill=Scalar[dtype](0))
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
     var conv_bias_h = TileTensor(conv_bias_heap, row_major(conv_bias_size))
 
     # dt_bias: (nheads,)
@@ -117,7 +113,6 @@ def run_mamba_split_conv1d_scan_combined[
     # x: (batch, dim, num_chunks, 2*dstate)
     var x_size = batch * dim * n_chunks * 2 * dstate
     var x_heap = List(length=x_size, fill=Scalar[dtype](0))
-    comptime layout_4d = Layout.row_major[4]()
     var x_h = TileTensor(x_heap, row_major(batch, dim, n_chunks, 2 * dstate))
 
     # out_z: (batch, dim, seqlen)
@@ -416,7 +411,7 @@ def run_mamba_split_conv1d_scan_combined[
 def test_mamba_combined_basic() raises:
     """Test basic mamba_split_conv1d_scan_combined."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -438,7 +433,7 @@ def test_mamba_combined_basic() raises:
 def test_mamba_combined_headdim1_multi_head_D() raises:
     """With headdim == 1, D is (nheads, 0); each head needs its own D."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -460,7 +455,7 @@ def test_mamba_combined_headdim1_multi_head_D() raises:
 def test_mamba_combined_without_D() raises:
     """Test mamba_split_conv1d_scan_combined without D."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=False,
         has_rmsnorm=False,
@@ -482,7 +477,7 @@ def test_mamba_combined_without_D() raises:
 def test_mamba_combined_with_rmsnorm() raises:
     """Test mamba_split_conv1d_scan_combined with RMSNorm."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=True,
@@ -504,7 +499,7 @@ def test_mamba_combined_with_rmsnorm() raises:
 def test_mamba_combined_norm_after_gate() raises:
     """Test mamba_split_conv1d_scan_combined with norm_after_gate."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -526,7 +521,7 @@ def test_mamba_combined_norm_after_gate() raises:
 def test_mamba_combined_without_delta_softplus() raises:
     """Test mamba_split_conv1d_scan_combined without delta_softplus."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
@@ -548,7 +543,7 @@ def test_mamba_combined_without_delta_softplus() raises:
 def test_mamba_combined_larger_shapes() raises:
     """Test mamba_split_conv1d_scan_combined with larger shapes."""
     run_mamba_split_conv1d_scan_combined[
-        DType.float32,
+        .float32,
         8,  # DSTATE
         has_D=True,
         has_rmsnorm=False,

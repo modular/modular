@@ -20,7 +20,7 @@ rather than a Mojo comptime assert.
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 H = 128
 

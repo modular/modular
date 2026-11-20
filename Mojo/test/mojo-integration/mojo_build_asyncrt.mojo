@@ -24,11 +24,9 @@ from std.runtime._asyncrt import create_task
 def main():
     print("== test_runtime_task")
 
-    @__parameter
     __async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
-    @__parameter
     __async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
         return __await create_task(
             test_asyncrt_add[1](a)

@@ -138,14 +138,14 @@ kgen.func @address_of() -> !kgen.generator<() -> !kgen.scalar<f32>> {
 }
 
 // CHECK: llvm.func @used_internally
-kgen.func export @used_internally() cabi -> !kgen.struct<(i32, i32)>{
+kgen.func export @used_internally() cabi -> !kgen.struct<(scalar<si32>, scalar<si32>)>{
   hlcf.unreachable
 }
 
 // CHECK: llvm.func internal @used_func
 kgen.func @used_func() {
   // CHECK-NEXT: call @used_internally
-  kgen.call @used_internally() : () -> !kgen.struct<(i32, i32)>
+  kgen.call @used_internally() : () -> !kgen.struct<(scalar<si32>, scalar<si32>)>
   hlcf.return
 }
 
@@ -218,8 +218,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: llvm.func internal @coro
 // CHECK-SAME: coroutineType = !llvm.struct<(i64, ptr, ptr, ptr, ptr, ptr, ptr)>
-kgen.func @coro() attributes {coroutineType = !kgen.struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>} {
+kgen.func @coro() {
   hlcf.return
-}
+} <coroutineType = !kgen.struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>>
 
 }

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Samples requests for any benchmark task from its configured dataset."""
+
 from __future__ import annotations
 
 import logging
@@ -138,10 +140,12 @@ def _resolve_agentic_tool_profiles(
 def _inflated_chat_session_count(
     args: ServingBenchmarkConfig, base_session_count: int
 ) -> int:
-    """Inflate the dataset request to ``base + factor * max_warmup_count``
-    so the length-biased warmup pick has cap headroom (sweeps inflate by
-    the largest requested concurrency)."""
-    if not args.warmup_to_steady_state or args.warmup_oversample_factor <= 0:
+    """Inflate the dataset request to ``base + factor * max_warmup_count``.
+
+    The inflation gives the length-biased warmup pick cap headroom (sweeps
+    inflate by the largest requested concurrency).
+    """
+    if not args.warmup_multiturn or args.warmup_oversample_factor <= 0:
         return base_session_count
     max_warmup = 0
     if args.max_concurrent_conversations is not None:
@@ -176,7 +180,6 @@ def sample_requests(
     Returns:
         The sampled requests.
     """
-
     if benchmark_task == "text-generation":
         if tokenizer is None:
             raise ValueError(
@@ -381,6 +384,7 @@ def sample_requests(
                             pool=pool,
                             shuffle=(not args.record_output_lengths),
                             fit_length_distributions=True,
+                            max_output_len=args.max_output_len,
                             num_turns=args.random_num_turns,
                             input_len=args.random_input_len,
                             output_len=args.random_output_len,
@@ -476,6 +480,7 @@ def sample_requests(
                             pool=pool,
                             shuffle=(not args.record_output_lengths),
                             fit_length_distributions=True,
+                            max_output_len=args.max_output_len,
                             num_turns=args.random_num_turns,
                             input_len=args.random_input_len,
                             output_len=args.random_output_len,

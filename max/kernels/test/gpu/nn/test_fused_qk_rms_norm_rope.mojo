@@ -32,7 +32,6 @@ from std.random import random_ui64
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
-    Coord,
     Idx,
     TileTensor,
     row_major,
@@ -68,16 +67,9 @@ def run_fused_qk_rms_norm_rope[
     atol: Float64 = 1e-2,
 ) raises:
     print(
-        "== run_fused_qk_rms_norm_rope dtype=",
-        dtype,
-        " head_size=",
-        head_size,
-        " rope_dim=",
-        rope_dim,
-        " num_q_heads=",
-        num_q_heads,
-        " num_k_heads=",
-        num_k_heads,
+        t"== run_fused_qk_rms_norm_rope dtype= {dtype}  head_size= {head_size} "
+        t" rope_dim= {rope_dim}  num_q_heads= {num_q_heads}  num_k_heads="
+        t" {num_k_heads}"
     )
 
     comptime kv_params = KVCacheStaticParams(
@@ -110,10 +102,10 @@ def run_fused_qk_rms_norm_rope[
     var row_offsets_tile_layout = row_major(batch_size + 1)
     comptime freqs_tile_layout = row_major[max_seq_len, rope_dim]()
 
-    var row_offsets_shape = Index(batch_size + 1)
+    var row_offsets_shape = batch_size + 1
     var cache_lengths_shape = Index(batch_size)
-    var q_ragged_shape = IndexList[3](total_length, num_q_heads, head_size)
-    var kv_block_shape = IndexList[6](
+    var q_ragged_shape = Index(total_length, num_q_heads, head_size)
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -124,7 +116,7 @@ def run_fused_qk_rms_norm_rope[
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
-    var freqs_shape = IndexList[2](max_seq_len, rope_dim)
+    var freqs_shape = Index(max_seq_len, rope_dim)
 
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
@@ -286,7 +278,7 @@ def run_fused_qk_rms_norm_rope[
         UInt32(max_cache_length),
     )
 
-    fused_qk_rms_norm_ragged_paged[target="gpu", multiply_before_cast=True](
+    fused_qk_rms_norm_ragged_paged[multiply_before_cast=True](
         q_in_tt,
         ref_collection,
         gamma_q_tt,
@@ -299,7 +291,8 @@ def run_fused_qk_rms_norm_rope[
         ctx,
     )
     fused_qk_rope_ragged[
-        ref_collection.CacheType, interleaved=False, target="gpu"
+        ref_collection.CacheType,
+        interleaved=False,
     ](
         q_proj=q_norm_ref_tt,
         input_row_offsets=row_offsets_tensor,
@@ -315,10 +308,9 @@ def run_fused_qk_rms_norm_rope[
     def q_input_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var q_in_tt} -> SIMD[dtype, width]:
-        return q_in_tt.load[width=width](Coord(Index(token, head, col)))
+        return q_in_tt.load[width=width]((token, head, col))
 
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=False,
     ](
@@ -431,20 +423,9 @@ def run_fused_dual_qk_rms_norm_rope[
     exercising the two-`cache_t` instantiation the M3 sparse path needs.
     """
     print(
-        "== run_fused_dual_qk_rms_norm_rope dtype=",
-        dtype,
-        " head_size=",
-        head_size,
-        " rope_dim=",
-        rope_dim,
-        " main=",
-        main_q_heads,
-        "/",
-        main_k_heads,
-        " index=",
-        index_q_heads,
-        "/",
-        index_k_heads,
+        t"== run_fused_dual_qk_rms_norm_rope dtype= {dtype}  head_size="
+        t" {head_size}  rope_dim= {rope_dim}  main= {main_q_heads} /"
+        t" {main_k_heads}  index= {index_q_heads} / {index_k_heads}"
     )
 
     comptime main_kv_params = KVCacheStaticParams(
@@ -481,7 +462,7 @@ def run_fused_dual_qk_rms_norm_rope[
         )
         max_prompt_length = max(max_prompt_length, prompt_lens[i])
 
-    var main_kv_block_shape = IndexList[6](
+    var main_kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -489,7 +470,7 @@ def run_fused_dual_qk_rms_norm_rope[
         main_kv_params.num_heads,
         main_kv_params.head_size,
     )
-    var index_kv_block_shape = IndexList[6](
+    var index_kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -500,7 +481,7 @@ def run_fused_dual_qk_rms_norm_rope[
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
-    var freqs_shape = IndexList[2](max_seq_len, rope_dim)
+    var freqs_shape = Index(max_seq_len, rope_dim)
 
     # Shared metadata.
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
@@ -562,8 +543,8 @@ def run_fused_dual_qk_rms_norm_rope[
             random(gamma_tensor)
 
     # Per-band Q inputs.
-    var q_main_shape = IndexList[3](total_length, main_q_heads, head_size)
-    var q_index_shape = IndexList[3](total_length, index_q_heads, head_size)
+    var q_main_shape = Index(total_length, main_q_heads, head_size)
+    var q_index_shape = Index(total_length, index_q_heads, head_size)
     var q_main_layout = row_major(
         total_length, Idx[main_q_heads], Idx[head_size]
     )
@@ -761,7 +742,7 @@ def run_fused_dual_qk_rms_norm_rope[
     def main_q_input_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var q_main_in_tt} -> SIMD[dtype, width]:
-        return q_main_in_tt.load[width=width](Coord(Index(token, head, col)))
+        return q_main_in_tt.load[width=width]((token, head, col))
 
     @inline(.always)
     def index_q_input_fn[
@@ -769,11 +750,10 @@ def run_fused_dual_qk_rms_norm_rope[
     ](token: Int, head: Int, col: Int) {var q_index_in_tt} -> SIMD[
         dtype, width
     ]:
-        return q_index_in_tt.load[width=width](Coord(Index(token, head, col)))
+        return q_index_in_tt.load[width=width]((token, head, col))
 
     # Reference: two separate single-kernel launches.
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -790,7 +770,6 @@ def run_fused_dual_qk_rms_norm_rope[
         ctx,
     )
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -809,7 +788,6 @@ def run_fused_dual_qk_rms_norm_rope[
 
     # Fused: one dual launch.
     fused_dual_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -957,7 +935,6 @@ def run_fused_dual_qk_rms_norm_rope[
     )
 
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -974,7 +951,6 @@ def run_fused_dual_qk_rms_norm_rope[
         ctx,
     )
     fused_dual_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -1002,8 +978,8 @@ def run_fused_dual_qk_rms_norm_rope[
     with q_main_single_fp8_device.map_to_host() as single_host:
         with q_main_dual_fp8_device.map_to_host() as dual_host:
             # Raw bytes: an FP8 NaN never compares equal to itself.
-            var single_u8 = single_host.unsafe_ptr().bitcast[UInt8]()
-            var dual_u8 = dual_host.unsafe_ptr().bitcast[UInt8]()
+            var single_u8 = single_host.unsafe_ptr().unsafe_bitcast[UInt8]()
+            var dual_u8 = dual_host.unsafe_ptr().unsafe_bitcast[UInt8]()
             var live = 0
             for i in range(q_main_numel):
                 assert_equal(dual_u8[i], single_u8[i])

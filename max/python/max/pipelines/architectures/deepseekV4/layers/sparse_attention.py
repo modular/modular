@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Index-gathered sparse attention with an attention sink.
 
 Dense-gather equivalent of ``inference/kernel.py::sparse_attn_kernel``. The

@@ -17,6 +17,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -160,6 +161,8 @@ class VLLMPipeline:
     tensor_parallel_size: int = 1
     extra_kwargs: dict[str, Any] = field(default_factory=dict)
     mm_data_key: str = "image"
+    env: dict[str, str] = field(default_factory=dict)
+    """Environment overrides applied before the engine starts."""
 
 
 class PipelineOracle(ABC):
@@ -626,6 +629,9 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
+        # The logits recorder runs after the generation config's processors,
+        # and MAX's logits carry no repetition penalty.
+        model.generation_config.repetition_penalty = 1.0
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     def run_torch_text_generation(
@@ -857,6 +863,8 @@ class GenericOracle(PipelineOracle):
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         batch_size: int | list[int] | None = None,
         add_bos_token: bool | None = None,
+        vllm_extra_kwargs: Mapping[str, Any] | None = None,
+        vllm_env: Mapping[str, str] | None = None,
     ) -> None:
         self.model_path = model_path
         # A quantized checkpoint transformers cannot load names its bf16 source
@@ -879,10 +887,25 @@ class GenericOracle(PipelineOracle):
         self.default_batch_size = batch_size
         self.add_bos_token = add_bos_token
         self.trust_remote_code = config_params.get("trust_remote_code", False)
+        self.vllm_extra_kwargs = dict(vllm_extra_kwargs or {})
+        self.vllm_env = dict(vllm_env or {})
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
         return self._device_encoding_map
+
+    def create_vllm_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
+    ) -> VLLMPipeline:
+        vllm_pipeline = super().create_vllm_pipeline(
+            encoding=encoding, device_specs=device_specs
+        )
+        vllm_pipeline.extra_kwargs = dict(self.vllm_extra_kwargs)
+        vllm_pipeline.env = dict(self.vllm_env)
+        return vllm_pipeline
 
     def _local_model_path(self) -> str:
         """Return a local model directory, syncing from S3 once if needed.
@@ -1535,18 +1558,84 @@ class NemotronHOracle(GenericOracle):
         return super().create_torch_pipeline(encoding=encoding, device=device)
 
 
+def _glm5_3_flash_prompts() -> list[str]:
+    """Returns the GLM-5.3-Flash chat-template text the goldens were made from.
+
+    The long prompt passes 2048 tokens, so the sparse-MLA indexer selects
+    instead of keeping every pool. The tool prompt holds a tool call and its
+    result. The seeded ledger keeps the long prompt out of the source.
+    """
+    rng = random.Random(20261111)
+    towns = ["Port Alder", "Kessick", "Varrow", "Elm Hollow", "Thistlebay"]
+    towns += ["Corran", "Midfen", "Ashgate"]
+    jobs = ["lighthouse keeper", "harbour master", "ferry pilot"]
+    jobs += ["net mender", "salt merchant", "tide clerk"]
+    items = ["ships", "crates of herring", "barrels of tar", "sacks of grain"]
+    items += ["bales of wool"]
+    ledger = "\n".join(
+        f"Entry {i}. The {rng.choice(jobs)} of {rng.choice(towns)} recorded "
+        f"{rng.randint(10, 999)} {rng.choice(items)} in month"
+        f" {rng.randint(1, 12)}, noted wind from the"
+        f" {rng.choice(['north', 'south', 'east', 'west'])} on"
+        f" {rng.randint(1, 28)} days, and paid {rng.randint(2, 90)} silver"
+        " marks in harbour dues."
+        for i in range(1, 131)
+    )
+    long_question = (
+        "Below is a harbour ledger. Read it carefully.\n\n"
+        f"{ledger}\n\nQuestion: according to entry 3, how many silver marks"
+        " were paid in harbour dues, and which town was it? Answer in one"
+        " sentence."
+    )
+    tool_call = (
+        "<tool_call>get_weather<arg_key>city</arg_key><arg_value>Paris"
+        "</arg_value><arg_key>unit</arg_key><arg_value>c</arg_value>"
+        "</tool_call>"
+    )
+    tools = (
+        "<|system|>\n# Tools\n\nYou may call one or more functions to assist"
+        " with the user query.\n\nYou are provided with function signatures"
+        " within <tools></tools> XML tags:\n<tools>\n"
+        '{"name": "get_weather", "description": "Get the current weather for'
+        ' a city.", "parameters": {"type": "object", "properties": {"city":'
+        ' {"type": "string"}, "unit": {"type": "string", "enum": ["c", "f"]}},'
+        ' "required": ["city"]}}\n</tools>\n\nFor each function call, output'
+        " the function name and arguments within the following XML format:\n"
+        "<tool_call>{function-name}<arg_key>{arg-key-1}</arg_key><arg_value>"
+        "{arg-value-1}</arg_value><arg_key>{arg-key-2}</arg_key><arg_value>"
+        "{arg-value-2}</arg_value>...</tool_call>"
+    )
+    tool_turns = (
+        "<|user|>What is the weather in Paris right now, in celsius?"
+        f"<|assistant|><think></think>{tool_call}<|observation|>"
+        '<tool_response>{"city": "Paris", "temp": 18, "unit": "c",'
+        ' "condition": "cloudy"}</tool_response>'
+    )
+    system = "[gMASK]<sop><|system|>Reasoning Effort: Max"
+    reply = "<|assistant|><think>"
+    return [
+        f"{system}<|user|>What is the capital of France? Answer in one"
+        f" sentence.{reply}",
+        f"{system}<|user|>{long_question}{reply}",
+        f"{system}{tools}{tool_turns}{reply}",
+    ]
+
+
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
-    "allenai/OLMo-1B-hf": GenericOracle(
-        model_path="allenai/OLMo-1B-hf",
-        config_params={"max_length": 1024},
-        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
-    ),
     "google/gemma-4-26B-A4B-it": GenericOracle(
         model_path="google/gemma-4-26B-A4B-it",
         config_params={
             "max_batch_size": 128,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "nvidia/Gemma-4-26B-A4B-NVFP4": GenericOracle(
+        model_path="nvidia/Gemma-4-26B-A4B-NVFP4",
+        torch_model_path="google/gemma-4-26B-A4B-it",
+        config_params={
+            "max_batch_size": 128,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "google/gemma-4-31B-it": GenericOracle(
         model_path="google/gemma-4-31B-it",
@@ -1573,21 +1662,20 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
-    "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct": GenericOracle(
-        model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
-        config_params={
-            "max_length": 1024,
-            "max_batch_size": 128,  # TODO(E2EOPT-48): Remove batch size override.
-            "trust_remote_code": True,
-        },
-        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
-    ),
     "LiquidAI/LFM2.5-1.2B-Instruct": GenericOracle(
         model_path="LiquidAI/LFM2.5-1.2B-Instruct",
         config_params={"trust_remote_code": True},
         device_encoding_map={
             "gpu": ["float32", "bfloat16"],
         },
+    ),
+    "LiquidAI/LFM3-1.7B": GenericOracle(
+        model_path="LiquidAI/LFM3-1.7B",
+        config_params={"max_length": 8192, "trust_remote_code": True},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "LiquidAI/LFM3-VL-2B": Qwen3VLPipelineOracle(
+        model_path="LiquidAI/LFM3-VL-2B"
     ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
         model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
@@ -1703,16 +1791,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "allenai/OLMo-2-0425-1B-RLVR1": GenericOracle(
-        model_path="allenai/OLMo-2-0425-1B-RLVR1",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
     "allenai/OLMo-2-1124-7B": GenericOracle(
         model_path="allenai/OLMo-2-1124-7B",
         config_params={
@@ -1785,9 +1863,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "OpenGVLab/InternVL3-38B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-38B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-78B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-78B-Instruct"
     ),
     "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3_5-8B-Instruct"
@@ -2031,6 +2106,31 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
     ),
+    # The reference is a vLLM golden on the same fp8/fp4 checkpoint. MAX runs
+    # the ModuleV3 recipe (flash_0731_fp8_tp2_b200.yaml) at TP=2 from the
+    # 2x B200 job's device list, with its default BF16 KV cache.
+    # vLLM's only DeepSeek-V4 KV cache on B200 is fp8_ds_mla (`auto` maps to
+    # it), so that cache dtype is pinned here and the KV-dtype gap lands in the
+    # tolerances. `dtype` is reset to vLLM's default because the float8_e4m3fn
+    # encoding otherwise makes vllm_utils request float16.
+    "deepseek-ai/DeepSeek-V4-Flash-0731": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-V4-Flash-0731",
+        config_params={
+            "max_length": 4096,
+            "max_batch_input_tokens": 4096,
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        vllm_extra_kwargs={
+            "dtype": "auto",
+            "kv_cache_dtype": "fp8",
+            "tokenizer_mode": "deepseek_v4",
+            "max_model_len": 4096,
+        },
+        # vLLM's DeepSeek-V4 o_proj calls DeepGEMM's fp8_einsum
+        # unconditionally, so it needs DeepGEMM's weight layout.
+        vllm_env={"VLLM_USE_DEEP_GEMM": "1"},
+    ),
     "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.2-Exp",
         config_params={
@@ -2048,6 +2148,45 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "nvidia/Kimi-K2.7-Code-NVFP4": KimiK2_7PipelineOracle(
         "nvidia/Kimi-K2.7-Code-NVFP4"
     ),
+    # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
+    # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.
+    "poolside/Laguna-S-2.1-NVFP4": GenericOracle(
+        model_path="poolside/Laguna-S-2.1-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
+    # transformers cannot load ML4's consolidated NVFP4 checkpoint, so the
+    # reference has to be a vLLM golden. ep_size stays at its default
+    # (TP-sharded routed experts), the layout Mach serves by default
+    # (mach/docs/models/mistral-large-4.md).
+    # TODO(CENG-1443): that golden also needs the Mistral-format load arguments
+    # (`config_format`, `load_format` and `tokenizer_mode` set to "mistral",
+    # passed as `vllm_extra_kwargs`) and a tokenizer from the base repo.
+    "mistralai/Mistral-Large-4-1T-A52B-NVFP4": GenericOracle(
+        model_path="mistralai/Mistral-Large-4-1T-A52B-NVFP4",
+        config_params={
+            "max_length": 4096,
+            "max_batch_input_tokens": 4096,
+            "kv_cache_format": "float8_e4m3fn",
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
+    # Beam first shipped in transformers 5.20.1, newer than MAX's pin, so the
+    # reference is a vLLM golden. Beam runs its experts expert parallel over
+    # every device, so ep_size is the device count: this entry runs on 4 GPUs.
+    # In-process generation never chunks prefill, and the EP dispatch buffers
+    # are sized to max_batch_input_tokens, so it covers the longest prompt.
+    "reflection/Beam-1.0-501B-A23B-NVFP4": GenericOracle(
+        model_path="reflection/Beam-1.0-501B-A23B-NVFP4",
+        config_params={
+            "max_length": 1024,
+            "max_batch_input_tokens": 1024,
+            "ep_size": 4,
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
     # are pinned and apply_chat_template is off so the input_ids match those the
     # reference logits were generated from.
@@ -2059,6 +2198,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "The capital of France is",
             "Quantum computing is",
         ],
+        apply_chat_template=False,
+    ),
+    # GLM-5.3-Flash cut to 8 layers (6 KDA, 2 MLA) plus the MTP layer and 8
+    # routed experts, every width at the real value, so it runs on one GPU.
+    "glm-5.3-flash/flash-8L": GenericOracle(
+        model_path="s3://modular-bazel-artifacts-public/artifacts/glm-5.3-flash_flash-8L_fixture/1/2fae666394acb6bdb6c5082dc99b86ff59cd77c62fe2c480e3d2e4288ebf86c4",
+        config_params={
+            "max_length": 8192,
+            "enable_prefix_caching": False,
+            "device_memory_utilization": 0.8,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        prompts=_glm5_3_flash_prompts(),
         apply_chat_template=False,
     ),
     # MiniMax-M3-MXFP8, compared against goldens pregenerated
@@ -2140,5 +2292,26 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "device_memory_utilization": 0.9,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    # transformers cannot load the NVFP4 checkpoint, so the torch reference
+    # is the BF16 checkpoint it was quantized from, and the quantization error
+    # lands in the logit_verification_config.yaml tolerances. MAX runs the
+    # ModuleV3 path like the smoke-test recipe, but keeps the default BF16 KV
+    # cache rather than the recipe's FP8 one, so only the weight quantization
+    # differs from the reference. The context and batch are capped like the
+    # Nano entry above so the paged KV cache and the per-slot SSM state pool
+    # stay small. Tensor parallelism comes from the device list: the yaml
+    # entry runs on the 2x B200 job (gpu:0,1), so MAX runs at TP=2.
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4": NemotronHOracle(
+        model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        torch_model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        config_params={
+            "max_length": 8192,
+            "max_batch_size": 8,
+            "trust_remote_code": True,
+            "device_memory_utilization": 0.9,
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
 }

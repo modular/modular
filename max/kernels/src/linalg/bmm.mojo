@@ -14,9 +14,8 @@
 """Provides batched matrix multiplication (BMM) for CPU and GPU targets."""
 
 from std.math import align_up, ceildiv, gcd
-from std.sys import size_of
+from std.sys import has_amd_rdna_gpu_accelerator, size_of
 from std.sys.info import (
-    _has_blackwell_tcgen05,
     _is_amd_rdna,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -31,16 +30,20 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
     blockwise_scaled_fp8_matmul_amd_tile as _blockwise_scaled_fp8_matmul_amd_tile,
 )
 from max.algorithm import elementwise, sync_parallelize
-from max.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import (
+    _index_coord,
+    _start_indices_of_nth_element,
+)
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
     global_idx,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import A100, is_cpu, is_valid_target
+from max.gpu.host.info import A100, is_cpu
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import (
     coord,
     ComptimeInt,
@@ -49,27 +52,31 @@ from layout import (
     Idx,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile
-from layout.tile_layout import Layout as TileLayout
+from std.utils.coord import Coord, DynamicCoord
+from layout.layout import Layout
 from std.logger import Logger
 from std.memory import dealloc
 from std.memory.alloc import Alignment, Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from max.gpu.host.info import H100, MI355X, _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
 )
+from .accumulate import _Accumulator
 from .matmul.cpu.impl import _submatmul_sequential_sync
 from .matmul.gpu import _matmul_gpu, _amdgpu_get_mma_shape
-from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
+from .matmul.gpu._multistage_gemm_gpu import (
+    multistage_gemm_kernel,
+    multistage_gemm_kernel_compute_fn,
+    multistage_gemm_kernel_epilogue_fn,
+)
 from .matmul.gpu.amd import AMDMatmul
 from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
@@ -78,13 +85,16 @@ from .matmul.gpu.sm100_structured.default.dispatch import (
     dispatch_sm100_batched_matmul,
 )
 from .utils import GemmShape
-from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
     get_kernel_config,
     get_kernel_type,
     get_matmul_num_tasks,
     get_min_task_size,
     get_partitioned_matmul,
+    no_compute_fn,
+    no_epilogue_fn,
     packA_i8mm,
     partition_work,
     use_i8mm_fn,
@@ -93,40 +103,33 @@ from .utils_gpu import MatmulConfig, MatmulKernels
 
 comptime logger = Logger()
 
-comptime elementwise_epilogue_type = def[
-    c_type: DType,
-    width: SIMDLength,
-    *,
-    alignment: Int = 1,
-](
-    Coord,
-    SIMD[c_type, width],
-) capturing -> None
-"""Fused elementwise epilogue over the ORIGINAL (uncollapsed) buffer rank.
 
-Batched matmul collapses the batch dims to run a 2-D kernel, so this does not
-receive the kernel's own coordinate -- unlike
-`linalg.utils.elementwise_epilogue_type`, which is always rank 2. The wrappers
-below un-collapse it back to the caller's own rank. The one exception is
-`_bmm_sm100_blockwise_scaled_fp8_kernel`, which rebuilds a rank-3
-`(batch, m, n)` coordinate and so accepts a rank-3 caller only.
-"""
-
-
-# Similar to _get_start_indices_of_nth_subvolume but returns only the batch
-# dimensions for matmul, skipping the last 2 dimsnions.
 @inline(.always)
-def _get_batch_dims[
-    rank: Int
-](flat_index: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
-    res = {}
-    var curr_index = flat_index
+def _batch_start_indices[
+    shape_types: TypeList[Trait=CoordLike, ...], //
+](batch: Int, shape: Coord[*shape_types]) -> StaticTuple[
+    Int, Coord[*shape_types].rank
+]:
+    """Returns the start indices of batch `batch` in the uncollapsed `shape`.
 
-    comptime for idx in range(rank - 2):
-        # Count from the back, skipping last two dims.
-        comptime i = rank - idx - 3
-        res[i] = curr_index % shape[i]
-        curr_index //= shape[i]
+    The last two (matrix) indices are zero.
+    """
+    return _start_indices_of_nth_element[
+        Coord[*shape_types].rank, shape_types, False, subvolume_rank=2
+    ](batch, shape)
+
+
+@inline(.always)
+def _nd_output_coord[
+    rank: Int
+](batch_start: StaticTuple[Int, rank], row: Int, col: Int) -> DynamicCoord[
+    .int64, rank
+]:
+    """Returns the uncollapsed output coordinate of `(row, col)` in a batch."""
+    var nd_coords = batch_start
+    nd_coords[rank - 2] = row
+    nd_coords[rank - 1] = col
+    return _index_coord(nd_coords)
 
 
 comptime _slice_types[
@@ -165,7 +168,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
     tensor: TileTensor,
     out result: TileTensor[
         mut=tensor.mut,
-        LayoutType=TileLayout[
+        LayoutType=Layout[
             _shape_types_to_3d[tensor.LayoutType._shape_types](),
             _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
@@ -190,7 +193,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime idx = rank - 3 + i
 
         # copy the stride
-        var stride_ptr = UnsafePointer(to=strides[i])
+        var stride_ptr = Pointer(to=strides[i])
         comptime StrideType = out_stride_types[i]
 
         comptime if StrideType.is_static_value:
@@ -202,17 +205,17 @@ def _reshape_tile_tensor_with_batch_to_3d(
             )
 
         # copy the shape
-        var shape_ptr = UnsafePointer(to=shape[i])
+        var shape_ptr = Pointer(to=shape[i])
         comptime ShapeType = out_shape_types[i]
 
         comptime if ShapeType.is_static_value:
             shape_ptr.write(rebind[ShapeType](Idx[ShapeType.static_value]))
         else:
-            var shape_val = Int(tensor.layout.shape[idx]().value())
+            var shape_val = Int(tensor.dim[idx]())
 
             comptime if i == 0:
                 comptime for batch_idx in range(rank - 3):
-                    shape_val *= Int(tensor.layout.shape[batch_idx]().value())
+                    shape_val *= Int(tensor.dim[batch_idx]())
 
             comptime if ShapeType == Int:
                 shape_ptr.write(rebind[ShapeType](shape_val))
@@ -223,78 +226,82 @@ def _reshape_tile_tensor_with_batch_to_3d(
 
     return type_of(result)(
         tensor.ptr,
-        TileLayout[out_shape_types, out_stride_types](
+        Layout[out_shape_types, out_stride_types](
             Coord[*out_shape_types](shape^), Coord[*out_stride_types](strides^)
         ),
     )
 
 
 @inline(.always)
-def _batched_matmul_cpu[
-    rank: Int,
+def _batched_matmul_cpu_impl[
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    rank: Int,
     *,
     transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    saturated_vnni: Bool = False,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+    saturated_vnni: Bool,
 ](
     c_tile: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_tile: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tile: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext.CPU] = None,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: Optional[DeviceContext.CPU],
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
-    # Extract shape as IndexList for downstream functions.
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_tile.layout.shape_coord())
-    )
+    var c_shape = c_tile.layout.shape_coord()
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
     # directed to the special Apple-specific implementation.
     comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
-        apple_batched_matmul[
-            rank,
-            transpose_b=transpose_b,
-            elementwise_epilogue_fn=elementwise_epilogue_fn,
-        ](c_tile, a_tile, b_tile, c_shape)
+        comptime if has_epilogue_fn:
+            apple_batched_matmul[transpose_b=transpose_b](
+                c_tile, a_tile, b_tile, c_shape, epilogue_fn
+            )
+        elif has_compute_fn:
+            apple_batched_matmul[transpose_b=transpose_b](
+                c_tile, a_tile, b_tile, c_shape, compute_fn
+            )
+        else:
+            apple_batched_matmul[transpose_b=transpose_b](
+                c_tile, a_tile, b_tile, c_shape
+            )
         return
 
     # Flatten to 3D TileTensor by collapsing batch dimensions.
     var collapsed_batches = 1
     comptime for i in range(rank - 2):
-        collapsed_batches *= c_shape[i]
-    var mat_rows = c_shape[rank - 2]
-    var mat_cols = c_shape[rank - 1]
+        collapsed_batches *= Int(c_shape[i])
+    var mat_rows = Int(c_shape[rank - 2])
+    var mat_cols = Int(c_shape[rank - 1])
 
-    var a_shape = rebind[IndexList[rank]](
-        coord_to_index_list(a_tile.layout.shape_coord())
-    )
-    var b_shape_idx = rebind[IndexList[rank]](
-        coord_to_index_list(b_tile.layout.shape_coord())
-    )
+    var a_shape = a_tile.layout.shape_coord()
+    var b_shape = b_tile.layout.shape_coord()
 
-    var c = TileTensor(
-        c_tile.ptr,
-        row_major(collapsed_batches, mat_rows, mat_cols),
-    )
-    var a = TileTensor(
-        a_tile.ptr,
-        row_major(collapsed_batches, a_shape[rank - 2], a_shape[rank - 1]),
-    )
-    var b = TileTensor(
-        b_tile.ptr,
+    var c = c_tile.reshape(row_major(collapsed_batches, mat_rows, mat_cols))
+    var a = a_tile.reshape(
         row_major(
-            collapsed_batches, b_shape_idx[rank - 2], b_shape_idx[rank - 1]
-        ),
+            collapsed_batches, Int(a_shape[rank - 2]), Int(a_shape[rank - 1])
+        )
+    )
+    var b = b_tile.reshape(
+        row_major(
+            collapsed_batches, Int(b_shape[rank - 2]), Int(b_shape[rank - 1])
+        )
     )
     var batch_size: Int = Int(c.dim[0]())
 
     var m = Int(c.dim[1]())
     var n = Int(c.dim[2]())
     var k = Int(a.dim[2]())
+    comptime accum_type = get_accum_type[c_type]()
     var num_threads = parallelism_level(ctx)
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
@@ -302,11 +309,11 @@ def _batched_matmul_cpu[
     )
     # Prevent parallelizing matmul with too many threads.
     var max_num_tasks_matmul = get_matmul_num_tasks[
-        a_type, b_type, c_type, simd_width_of[c_type](), True
+        a_type, b_type, accum_type, simd_width_of[accum_type](), True
     ](m, n, k, num_threads) if get_kernel_type(
         m, n, k
     ) else get_matmul_num_tasks[
-        a_type, b_type, c_type, simd_width_of[c_type](), False
+        a_type, b_type, accum_type, simd_width_of[accum_type](), False
     ](
         m, n, k, num_threads
     )
@@ -370,37 +377,60 @@ def _batched_matmul_cpu[
             var c_view = c[batch, :, :]
             var a_view = a[batch, :, :]
 
-            comptime config = get_kernel_config[a_type, b_type, c_type]()
-            comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+            comptime config = get_kernel_config[a_type, b_type, accum_type]()
+            comptime use_i8mm = use_i8mm_fn[a_type, b_type, accum_type]()
             comptime simd_size = config.simd_size
-            comptime alignment = Alignment.of[SIMD[c_type, simd_size]]()
+            comptime alignment = Alignment.of[SIMD[accum_type, simd_size]]()
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
 
             var b_view = b[batch, :, :]
 
-            var batch_coords = _get_start_indices_of_nth_subvolume[2](
-                batch, c_shape
-            )
+            var batch_coords = _batch_start_indices(batch, c_shape)
 
-            @__parameter
-            def elementwise_lambda_2d[
-                c_type: DType, width: SIMDLength, *, alignment: Int = 1
-            ](out_coords: Coord, out_val: SIMD[c_type, width]):
+            @inline(.always)
+            def epilogue_2d[
+                c_type: DType, width: SIMDLength, *, alignment: Int
+            ](out_coords: Coord, out_val: SIMD[c_type, width]) {
+                var batch_coords,
+                var epilogue_fn,
+            }:
                 comptime assert (
                     out_coords.rank == 2
                 ), "the matmul epilogue contract is rank 2"
                 # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
-                comptime if case .Some(func) = elementwise_epilogue_fn:
-                    batch_coords[rank - 1] = Int(out_coords[1].value())
-                    batch_coords[rank - 2] = Int(out_coords[0].value())
+                epilogue_fn[c_type, width, alignment=alignment](
+                    _nd_output_coord(
+                        batch_coords, Int(out_coords[0]), Int(out_coords[1])
+                    ),
+                    out_val,
+                )
 
-                    func[c_type, width](Coord(batch_coords), out_val)
+            @inline(.always)
+            def compute_2d[
+                c_type: DType, width: SIMDLength, *, alignment: Int
+            ](out_coords: Coord, out_val: SIMD[c_type, width]) {
+                var batch_coords,
+                var compute_fn,
+            } -> SIMD[c_type, width]:
+                comptime assert (
+                    out_coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                return compute_fn[c_type, width, alignment=alignment](
+                    _nd_output_coord(
+                        batch_coords, Int(out_coords[0]), Int(out_coords[1])
+                    ),
+                    out_val,
+                )
 
             var sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type, config.kernel_rows, config.kernel_cols
+                a_type,
+                b_type,
+                accum_type,
+                config.kernel_rows,
+                config.kernel_cols,
             ](m, n, k, matmul_task_id, num_tasks_matmul)
             if (
                 sub_matmul_config.shape[0] <= 0
@@ -408,36 +438,131 @@ def _batched_matmul_cpu[
             ):
                 return
 
-            comptime if use_i8mm:
+            comptime if accum_type != c_type:
+                # Keep the output microtile in the accumulation dtype for the
+                # entire K reduction; round only before callbacks or stores.
+                var sub_m = sub_matmul_config.shape[0]
+                var sub_n = sub_matmul_config.shape[1]
+                var row_offset = sub_matmul_config.offset[0]
+                var col_offset = sub_matmul_config.offset[1]
+
+                @inline(.always)
+                def full_k_tile[
+                    rows: Int, width: Int, groups: Int = 1
+                ](row: Int, col: Int) {
+                    var a_view,
+                    var b_view,
+                    var c_view,
+                    var k,
+                    var n,
+                    var epilogue_2d,
+                    var compute_2d,
+                }:
+                    var acc = _Accumulator[accum_type, rows, groups, width]()
+                    acc.init(0)
+                    comptime if transpose_b:
+                        for kk in range(k):
+                            comptime for group in range(groups):
+                                var b_vec = SIMD[b_type, width](0)
+                                comptime for lane in range(width):
+                                    b_vec[lane] = b_view.ptr_at_offset(
+                                        Coord(col + group * width + lane, kk)
+                                    ).unsafe_load[width=1]()
+                                comptime for rr in range(rows):
+                                    var a_val = a_view.ptr_at_offset(
+                                        Coord(row + rr, kk)
+                                    ).unsafe_load[width=1]()
+                                    acc.fma(
+                                        rr,
+                                        group,
+                                        SIMD[a_type, width](a_val),
+                                        b_vec,
+                                    )
+                    else:
+                        acc.accumulate(
+                            k,
+                            a_view.ptr_at_offset(Coord(row, 0)),
+                            k,
+                            b_view.ptr_at_offset(Coord(0, col)),
+                            n,
+                        )
+                    comptime for rr in range(rows):
+                        comptime for group in range(groups):
+                            var coords = Coord(row + rr, col + group * width)
+                            var value = acc[rr, group].cast[c_type]()
+                            comptime if has_epilogue_fn:
+                                epilogue_2d[c_type, width, alignment=1](
+                                    coords, value
+                                )
+                            elif has_compute_fn:
+                                c_view.store[alignment=1](
+                                    coords,
+                                    compute_2d[c_type, width, alignment=1](
+                                        coords, value
+                                    ),
+                                )
+                            else:
+                                c_view.store[alignment=1](coords, value)
+
+                comptime width = simd_width_of[accum_type]()
+                # Limit register pressure for strided transposed-B loads.
+                comptime groups = 1 if transpose_b else 3
+                comptime columns = groups * width
+                var wide_end = sub_n // columns * columns
+                for nc in range(0, wide_end, columns):
+                    for mr in range(0, sub_m // 4 * 4, 4):
+                        full_k_tile[4, width, groups](
+                            row_offset + mr, col_offset + nc
+                        )
+                    for mr in range(sub_m // 4 * 4, sub_m):
+                        full_k_tile[1, width, groups](
+                            row_offset + mr, col_offset + nc
+                        )
+                for nc in range(wide_end, sub_n // width * width, width):
+                    for mr in range(0, sub_m // 4 * 4, 4):
+                        full_k_tile[4, width](row_offset + mr, col_offset + nc)
+                    for mr in range(sub_m // 4 * 4, sub_m):
+                        full_k_tile[1, width](row_offset + mr, col_offset + nc)
+                for nc in range(sub_n // width * width, sub_n):
+                    for mr in range(0, sub_m // 4 * 4, 4):
+                        full_k_tile[4, 1](row_offset + mr, col_offset + nc)
+                    for mr in range(sub_m // 4 * 4, sub_m):
+                        full_k_tile[1, 1](row_offset + mr, col_offset + nc)
+            elif use_i8mm:
                 var a_packed_alloc = alloc(
                     AllocLayout[Scalar[a_type], alignment=alignment](
-                        count=mh * kh
+                        length=mh * kh
                     )
                 )
                 var a_packed = TileTensor(
                     a_packed_alloc.unsafe_ptr(),
                     row_major(mh, kh),
                 )
-                packA_i8mm[a_type](
-                    0, m, k, a_view.ptr, a_packed_alloc.unsafe_ptr()
-                )
+                packA_i8mm[a_type](0, m, k, a_view, a_packed_alloc.unsafe_ptr())
 
                 _submatmul_sequential_sync[
                     config,
                     transpose_b,
                     b_packed=False,
-                    elementwise_lambda_fn=Optional[
-                        matmul_elementwise_epilogue_type
-                    ](
-                        elementwise_lambda_2d
-                    ) if elementwise_epilogue_fn else None,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     saturated_vnni=saturated_vnni,
                 ](
                     c_view,
                     a_packed,
                     b_view,
-                    GemmShape(sub_matmul_config.shape),
-                    GemmShape(sub_matmul_config.offset),
+                    GemmShape(
+                        sub_matmul_config.shape[0],
+                        sub_matmul_config.shape[1],
+                        sub_matmul_config.shape[2],
+                    ),
+                    GemmShape(
+                        sub_matmul_config.offset[0],
+                        sub_matmul_config.offset[1],
+                        sub_matmul_config.offset[2],
+                    ),
+                    epilogue_2d,
+                    compute_2d,
                 )
                 dealloc(a_packed_alloc^)
             else:
@@ -445,29 +570,35 @@ def _batched_matmul_cpu[
                     config,
                     transpose_b,
                     b_packed=False,
-                    elementwise_lambda_fn=Optional[
-                        matmul_elementwise_epilogue_type
-                    ](
-                        elementwise_lambda_2d
-                    ) if elementwise_epilogue_fn else None,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     saturated_vnni=saturated_vnni,
                 ](
                     c_view,
                     a_view,
                     b_view,
-                    GemmShape(sub_matmul_config.shape),
-                    GemmShape(sub_matmul_config.offset),
+                    GemmShape(
+                        sub_matmul_config.shape[0],
+                        sub_matmul_config.shape[1],
+                        sub_matmul_config.shape[2],
+                    ),
+                    GemmShape(
+                        sub_matmul_config.offset[0],
+                        sub_matmul_config.offset[1],
+                        sub_matmul_config.offset[2],
+                    ),
+                    epilogue_2d,
+                    compute_2d,
                 )
-            _ = batch_coords
 
     sync_parallelize(task_func, num_tasks, ctx)
 
 
 @__name(
-    t"naive_batched_matmul_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    t"naive_batched_matmul_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}{"_epilogue_fn" if has_epilogue_fn else ""}{"_compute_fn" if has_compute_fn else ""}",
 )
 def naive_batched_matmul_kernel[
-    rank: Int,
+    CShapeTypes: TypeList[Trait=CoordLike, ...],
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -475,20 +606,25 @@ def naive_batched_matmul_kernel[
     ATensorType: TensorLayout,
     BTensorType: TensorLayout,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
-    c_buff_nd_shape: IndexList[rank],
+    c_buff_nd_shape: Coord[*CShapeTypes],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ) -> None:
     """
     Computes one element per thread of a batched matrix multiplication using a
     naive scalar accumulation loop over the contraction dimension.
 
     Parameters:
-        rank: Rank of the original (un-collapsed) output tensor.
+        CShapeTypes: Element types of `c_buff_nd_shape`.
         c_type: Output tensor element dtype.
         a_type: LHS input tensor element dtype.
         b_type: RHS input tensor element dtype.
@@ -496,8 +632,13 @@ def naive_batched_matmul_kernel[
         ATensorType: Layout type of the LHS input tensor.
         BTensorType: Layout type of the RHS input tensor.
         transpose_b: Whether the RHS input is transposed.
-        elementwise_lambda_fn: Optional epilogue applied to each output element.
         accum_type: Accumulator dtype used during the contraction.
+        EpilogueFnType: Type of `epilogue_fn`.
+        ComputeFnType: Type of `compute_fn`.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output in place of
+            `c_tensor` (defaults to False).
+        has_compute_fn: Whether `compute_fn` maps each value before it is
+            stored into `c_tensor` (defaults to False).
 
     Args:
         c_tensor: Rank-3 output tensor of shape `(batch, m, n)`.
@@ -505,6 +646,12 @@ def naive_batched_matmul_kernel[
         b_tensor: Rank-3 RHS input tensor of shape `(batch, k, n)`.
         c_buff_nd_shape: Shape of the original output tensor before collapsing
             to 3D, used to un-collapse batch coordinates for the epilogue.
+        epilogue_fn: Stores each output element at its coordinate in the
+            original output rank. Launch with `epilogue_fn` as the first
+            `host_args` element.
+        compute_fn: Maps each output element, at its coordinate in the
+            original output rank, to the value to store. Launch with
+            `compute_fn` as the second `host_args` element.
     """
     comptime assert (
         c_tensor.rank == 3 and a_tensor.rank == 3 and b_tensor.rank == 3
@@ -533,13 +680,19 @@ def naive_batched_matmul_kernel[
         var b_val = b_tensor[z, x, ki] if transpose_b else b_tensor[z, ki, x]
         val += a_tensor[z, y, ki].cast[accum_type]() * b_val.cast[accum_type]()
 
-    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
-        var nd_corrds = _get_start_indices_of_nth_subvolume[2](
-            z, c_buff_nd_shape
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
+    comptime if has_epilogue_fn or has_compute_fn:
+        var nd_coords = _nd_output_coord(
+            _batch_start_indices(z, c_buff_nd_shape), y, x
         )
-        nd_corrds[rank - 1] = x
-        nd_corrds[rank - 2] = y
-        elementwise_lambda[c_type, 1](Coord(nd_corrds), val.cast[c_type]())
+        comptime if has_compute_fn:
+            c_tensor[z, y, x] = compute_fn[c_type, 1, alignment=1](
+                nd_coords, val.cast[c_type]()
+            )
+        else:
+            epilogue_fn[c_type, 1, alignment=1](nd_coords, val.cast[c_type]())
     else:
         c_tensor[z, y, x] = val.cast[c_type]()
 
@@ -550,10 +703,10 @@ def naive_batched_matmul_kernel[
     )
 )
 @__name(
-    t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}{"_epilogue_fn" if has_epilogue_fn else ""}{"_compute_fn" if has_compute_fn else ""}",
 )
 def batched_matmul_kernel_gpu[
-    rank: Int,
+    CShapeTypes: TypeList[Trait=CoordLike, ...],
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -562,12 +715,17 @@ def batched_matmul_kernel_gpu[
     BTensorType: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
-    c_buff_nd_shape: IndexList[rank],
+    c_buff_nd_shape: Coord[*CShapeTypes],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """
     Computes a single batch slice of a batched matrix multiplication on the
@@ -575,7 +733,7 @@ def batched_matmul_kernel_gpu[
     `AMDMatmul` kernel on AMD hardware.
 
     Parameters:
-        rank: Rank of the original (un-collapsed) output tensor.
+        CShapeTypes: Element types of `c_buff_nd_shape`.
         c_type: Output tensor element dtype.
         a_type: LHS input tensor element dtype.
         b_type: RHS input tensor element dtype.
@@ -584,7 +742,12 @@ def batched_matmul_kernel_gpu[
         BTensorType: Layout type of the RHS input tensor.
         transpose_b: Whether the RHS input is transposed.
         config: Matmul kernel configuration for the target hardware.
-        elementwise_lambda_fn: Optional epilogue applied to each output element.
+        EpilogueFnType: Type of `epilogue_fn`.
+        ComputeFnType: Type of `compute_fn`.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output in place of
+            `c_tensor` (defaults to False).
+        has_compute_fn: Whether `compute_fn` maps each value before it is
+            stored into `c_tensor` (defaults to False).
 
     Args:
         c_tensor: Rank-3 output tensor of shape `(batch, m, n)`.
@@ -592,17 +755,19 @@ def batched_matmul_kernel_gpu[
         b_tensor: Rank-3 RHS input tensor of shape `(batch, k, n)`.
         c_buff_nd_shape: Shape of the original output tensor before collapsing
             to 3D, used to un-collapse batch coordinates for the epilogue.
+        epilogue_fn: Stores each output element at its coordinate in the
+            original output rank. Launch with `epilogue_fn` as the first
+            `host_args` element.
+        compute_fn: Maps each output element, at its coordinate in the
+            original output rank, to the value to store. Launch with
+            `compute_fn` as the second `host_args` element.
     """
     var batch_idx = block_idx.z
-    var a_ptr = a_tensor.ptr + batch_idx * Int(
-        a_tensor.layout.stride[0]().value()
-    )
-    var b_ptr = b_tensor.ptr + batch_idx * Int(
-        b_tensor.layout.stride[0]().value()
-    )
-    var c_ptr = c_tensor.ptr + batch_idx * Int(
-        c_tensor.layout.stride[0]().value()
-    )
+    comptime assert a_tensor.flat_rank == 3 and b_tensor.flat_rank == 3
+    comptime assert c_tensor.flat_rank == 3
+    var a_ptr = a_tensor.ptr_at_offset(Coord(batch_idx, Idx[0], Idx[0]))
+    var b_ptr = b_tensor.ptr_at_offset(Coord(batch_idx, Idx[0], Idx[0]))
+    var c_ptr = c_tensor.ptr_at_offset(Coord(batch_idx, Idx[0], Idx[0]))
 
     var m = Int(c_tensor.dim[1]())
 
@@ -611,68 +776,103 @@ def batched_matmul_kernel_gpu[
 
     var a = TileTensor(
         a_ptr,
-        TileLayout(
+        Layout(
             (m, Idx[a_tensor.static_shape[2]]),
             Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
     )
     var b = TileTensor(
         b_ptr,
-        TileLayout(
+        Layout(
             Coord[*_slice_types[BTensorType._shape_types, 2]()](),
             Coord[*_slice_types[BTensorType._stride_types, 2]()](),
         ),
     )
     var c = TileTensor(
         c_ptr,
-        TileLayout(
+        Layout(
             (m, Idx[c_tensor.static_shape[2]]),
             Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
     )
 
-    @__parameter
-    def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](out_coords: Coord, val: SIMD[dtype, width]) capturing -> None:
+    @inline(.always)
+    def nd_epilogue_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](out_coords: Coord, val: SIMD[dtype, width]) {
+        var epilogue_fn,
+        var c_buff_nd_shape,
+    }:
         comptime assert (
             out_coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        comptime if case .Some(elementwise_epilogue) = elementwise_lambda_fn:
-            var nd_coords = _get_start_indices_of_nth_subvolume[2](
-                block_idx.z, c_buff_nd_shape
-            )
-            nd_coords[rank - 1] = Int(out_coords[1].value())
-            nd_coords[rank - 2] = Int(out_coords[0].value())
-            elementwise_epilogue(Coord(nd_coords), val)
-
-    comptime if is_nvidia_gpu():
-        multistage_gemm_kernel[
-            config=config,
-            elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
-                elementwise_epilogue_fn_wrapper
-            ) if elementwise_lambda_fn else None,
-        ](c, a, b)
-    elif is_amd_gpu() and not _is_amd_rdna():
-        AMDMatmul[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            config,
-            Optional[matmul_elementwise_epilogue_type](
-                elementwise_epilogue_fn_wrapper
-            ) if elementwise_lambda_fn else None,
-        ].run[
-            type_of(c).LayoutType,
-            type_of(a).LayoutType,
-            type_of(b).LayoutType,
-            type_of(c).Engine,
-            type_of(a).Engine,
-            type_of(b).Engine,
-        ](
-            c, a, b
+        var nd_coords = _nd_output_coord(
+            _batch_start_indices(block_idx.z, c_buff_nd_shape),
+            Int(out_coords[0]),
+            Int(out_coords[1]),
         )
+        epilogue_fn[dtype, width, alignment=1](nd_coords, val)
+
+    @inline(.always)
+    def nd_compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](out_coords: Coord, val: SIMD[dtype, width]) {
+        var compute_fn,
+        var c_buff_nd_shape,
+    } -> SIMD[dtype, width]:
+        comptime assert (
+            out_coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        var nd_coords = _nd_output_coord(
+            _batch_start_indices(block_idx.z, c_buff_nd_shape),
+            Int(out_coords[0]),
+            Int(out_coords[1]),
+        )
+        return compute_fn[dtype, width, alignment=1](nd_coords, val)
+
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
+    comptime if is_nvidia_gpu():
+        comptime if has_epilogue_fn:
+            multistage_gemm_kernel_epilogue_fn[config=config](
+                c, a, b, nd_epilogue_fn
+            )
+        elif has_compute_fn:
+            multistage_gemm_kernel_compute_fn[config=config](
+                c, a, b, nd_compute_fn
+            )
+        else:
+            multistage_gemm_kernel[config=config](c, a, b)
+    elif is_amd_gpu() and not _is_amd_rdna():
+        comptime matmul = AMDMatmul[a_type, b_type, c_type, transpose_b, config]
+        comptime if has_epilogue_fn:
+            matmul.run_with_epilogue_fn[
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
+                type_of(c).Engine,
+                type_of(a).Engine,
+                type_of(b).Engine,
+            ](c, a, b, nd_epilogue_fn)
+        elif has_compute_fn:
+            matmul.run_with_compute_fn[
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
+                type_of(c).Engine,
+                type_of(a).Engine,
+                type_of(b).Engine,
+            ](c, a, b, nd_compute_fn)
+        else:
+            matmul.run[
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
+                type_of(c).Engine,
+                type_of(a).Engine,
+                type_of(b).Engine,
+            ](c, a, b)
 
 
 @inline(.always)
@@ -683,13 +883,95 @@ def _batched_matmul_gpu[
     //,
     *,
     transpose_b: Bool = False,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
     a_buf: TileTensor[mut=False, a_type, ...],
     b_buf: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
+    _batched_matmul_gpu_impl[
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+        pdl_level=pdl_level,
+    ](c_buf, a_buf, b_buf, no_epilogue_fn, no_compute_fn, ctx)
+
+
+@inline(.always)
+def _batched_matmul_gpu[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c_buf: TileTensor[mut=True, c_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    _batched_matmul_gpu_impl[
+        transpose_b=transpose_b,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+        pdl_level=pdl_level,
+    ](c_buf, a_buf, b_buf, epilogue_fn, no_compute_fn, ctx)
+
+
+@inline(.always)
+def _batched_matmul_gpu[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c_buf: TileTensor[mut=True, c_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    _batched_matmul_gpu_impl[
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+        pdl_level=pdl_level,
+    ](c_buf, a_buf, b_buf, no_epilogue_fn, compute_fn, ctx)
+
+
+@inline(.always)
+def _batched_matmul_gpu_impl[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c_buf: TileTensor[mut=True, c_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
     comptime rank = c_buf.rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
     comptime assert (
@@ -722,46 +1004,68 @@ def _batched_matmul_gpu[
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
             # If the batch size is 1, then this is just a matmul and we can use the
             # matmul kernel directly.
+            #
+            # B may be an activation here, outside the constant-weight
+            # contract of the PDL weight prefetch. The rank-2 views below
+            # take their dims from runtime ints, so N and K are dynamic and
+            # neither the prefetching SM100 configs (keyed on static N and K)
+            # nor the split-K GEMV's weight prefetch (static N) is selected.
 
             # batch_size==1, so flatten (1, X, Y) → (X, Y)
             # by constructing rank-2 TileTensors directly.
-            var c_2d = TileTensor(
-                c_tensor_reshaped.ptr,
-                row_major(m, n),
-            )
-            var a_2d = TileTensor(
-                a_tensor_reshaped.ptr,
-                row_major(m, k),
-            )
+            var c_2d = c_tensor_reshaped.reshape(row_major(m, n))
+            var a_2d = a_tensor_reshaped.reshape(row_major(m, k))
             # Use b's actual dims since their order depends on transpose_b.
-            var b_2d = TileTensor(
-                b_tensor_reshaped.ptr,
+            var b_2d = b_tensor_reshaped.reshape(
                 row_major(
                     Int(b_tensor_reshaped.dim(1)), Int(b_tensor_reshaped.dim(2))
-                ),
+                )
             )
 
-            comptime if case .Some(epilogue) = elementwise_epilogue_fn:
+            comptime if has_epilogue_fn:
 
-                @__parameter
-                @__copy_capture(c_buf)
-                def elementwise_epilogue_fn_wrapper[
-                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
-                ](out_coords: Coord, val: SIMD[dtype, width]) capturing -> None:
+                @inline(.always)
+                def batch_epilogue_fn[
+                    dtype: DType, width: SIMDLength, *, alignment: Int
+                ](out_coords: Coord, val: SIMD[dtype, width]) {var epilogue_fn}:
                     comptime assert (
                         out_coords.rank == 2
                     ), "the matmul epilogue contract is rank 2"
-                    var batch_coords = IndexList[rank](0)
+                    epilogue_fn[dtype, width, alignment=1](
+                        _nd_output_coord(
+                            StaticTuple[Int, rank](0),
+                            Int(out_coords[0]),
+                            Int(out_coords[1]),
+                        ),
+                        val,
+                    )
 
-                    batch_coords[rank - 1] = Int(out_coords[1].value())
-                    batch_coords[rank - 2] = Int(out_coords[0].value())
+                _matmul_gpu[transpose_b=transpose_b](
+                    c_2d, a_2d, b_2d, batch_epilogue_fn, ctx
+                )
+            elif has_compute_fn:
 
-                    epilogue(Coord(batch_coords), val)
+                @inline(.always)
+                def batch_compute_fn[
+                    dtype: DType, width: SIMDLength, *, alignment: Int
+                ](out_coords: Coord, val: SIMD[dtype, width]) {
+                    var compute_fn
+                } -> SIMD[dtype, width]:
+                    comptime assert (
+                        out_coords.rank == 2
+                    ), "the matmul epilogue contract is rank 2"
+                    return compute_fn[dtype, width, alignment=1](
+                        _nd_output_coord(
+                            StaticTuple[Int, rank](0),
+                            Int(out_coords[0]),
+                            Int(out_coords[1]),
+                        ),
+                        val,
+                    )
 
-                _matmul_gpu[
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_epilogue_fn_wrapper,
-                ](c_2d, a_2d, b_2d, ctx=ctx)
+                _matmul_gpu[transpose_b=transpose_b](
+                    c_2d, a_2d, b_2d, batch_compute_fn, ctx
+                )
             else:
                 _matmul_gpu[transpose_b=transpose_b](c_2d, a_2d, b_2d, ctx=ctx)
 
@@ -770,14 +1074,10 @@ def _batched_matmul_gpu[
     comptime a_k = a_tensor_reshaped.LayoutType._shape_types[2].static_value
     comptime c_n = c_tensor_reshaped.LayoutType._shape_types[2].static_value
 
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_buf.layout.shape_coord())
-    )
+    var c_shape = c_buf.layout.shape_coord()
 
     # SM100 (B200+) batched BF16 matmul dispatch
-    comptime use_SM100_kernels = (
-        ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05()
-    )
+    comptime use_SM100_kernels = ctx.target._has_blackwell_tcgen05()
     comptime if use_SM100_kernels and has_static_NK and transpose_b:
         logger.info(
             "Dispatching Batched Matmul via SM100",
@@ -793,35 +1093,92 @@ def _batched_matmul_gpu[
             and a_k * size_of[a_type]() % 16 == 0
             and transpose_b
         ):
-            dispatch_sm100_batched_matmul[c_type, a_type, b_type, transpose_b](
-                c_tensor_reshaped,
-                a_tensor_reshaped,
-                b_tensor_reshaped,
-                ctx,
-            )
+            comptime if not has_epilogue_fn:
+                dispatch_sm100_batched_matmul[
+                    c_type, a_type, b_type, transpose_b, pdl_level=pdl_level
+                ](
+                    c_tensor_reshaped,
+                    a_tensor_reshaped,
+                    b_tensor_reshaped,
+                    ctx,
+                )
 
-            comptime if case .Some(epilogue) = elementwise_epilogue_fn:
+            comptime if has_epilogue_fn:
+                # `epilogue_fn` owns every output store, so `c` supplies only
+                # the shape. This kernel has no epilogue hook and writes the
+                # whole product with TMA, so stage it in scratch for the
+                # epilogue pass to read back.
+                #
+                # TODO(GEX-4431): take this buffer through an accumulator
+                # trait bound the graph provides and memory plans, instead of
+                # allocating it on every call.
+                var scratch = ctx.enqueue_create_buffer[c_type](
+                    c_tensor_reshaped.num_elements()
+                )
+                var c_scratch = TileTensor(
+                    scratch, row_major(c_tensor_reshaped.layout.shape_coord())
+                )
+                dispatch_sm100_batched_matmul[
+                    c_type, a_type, b_type, transpose_b, pdl_level=pdl_level
+                ](
+                    c_scratch,
+                    a_tensor_reshaped,
+                    b_tensor_reshaped,
+                    ctx,
+                )
+
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
                 def epilogue_wrapper[
                     simd_width: Int, alignment: Int = 1
                 ](idx: Coord) {var}:
-                    var c_val = c_tensor_reshaped.load[
+                    var c_val = c_scratch.load[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
                     ](idx)
-                    var collapsed = coord_to_index_list(idx)
-                    var nd_coords = _get_start_indices_of_nth_subvolume[2](
-                        Int(collapsed[0]), c_shape
+                    var nd_coords = _nd_output_coord(
+                        _batch_start_indices(Int(idx[0]), c_shape),
+                        Int(idx[1]),
+                        Int(idx[2]),
                     )
-                    nd_coords[rank - 1] = collapsed[2]
-                    nd_coords[rank - 2] = collapsed[1]
-                    epilogue[alignment=alignment](Coord(nd_coords), c_val)
+                    epilogue_fn[c_type, simd_width, alignment=alignment](
+                        nd_coords, c_val
+                    )
 
-                elementwise[simd_size, target="gpu"](
-                    epilogue_wrapper, Coord(batch_size, m, n), ctx
-                )
+                elementwise[
+                    simd_size,
+                    _trace_description="elementwise_batched_matmul_sm100_epilogue",
+                ](epilogue_wrapper, Coord(batch_size, m, n), ctx)
+                _ = scratch^
+            elif has_compute_fn:
+                comptime simd_size = 32 // size_of[c_type]()
+
+                def compute_wrapper[
+                    simd_width: Int, alignment: Int = 1
+                ](idx: Coord) {var}:
+                    comptime byte_alignment = alignment * size_of[c_type]()
+                    var c_val = c_tensor_reshaped.load[
+                        width=simd_width, alignment=byte_alignment
+                    ](idx)
+                    var nd_coords = _nd_output_coord(
+                        _batch_start_indices(Int(idx[0]), c_shape),
+                        Int(idx[1]),
+                        Int(idx[2]),
+                    )
+                    c_tensor_reshaped.store[
+                        width=simd_width, alignment=byte_alignment
+                    ](
+                        idx,
+                        compute_fn[c_type, simd_width, alignment=alignment](
+                            nd_coords, c_val
+                        ),
+                    )
+
+                elementwise[
+                    simd_size,
+                    _trace_description="elementwise_batched_matmul_sm100_compute",
+                ](compute_wrapper, Coord(batch_size, m, n), ctx)
 
             return
 
@@ -839,7 +1196,7 @@ def _batched_matmul_gpu[
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
         comptime batched_matmul_type = batched_matmul_kernel_gpu[
-            rank,
+            type_of(c_shape).element_types,
             c_tensor_reshaped.dtype,
             a_tensor_reshaped.dtype,
             b_tensor_reshaped.dtype,
@@ -848,7 +1205,10 @@ def _batched_matmul_gpu[
             b_tensor_reshaped.LayoutType,
             transpose_b,
             kernels.ampere_128x128_4,
-            elementwise_epilogue_fn,
+            EpilogueFnType=EpilogueFnType,
+            ComputeFnType=ComputeFnType,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ]
 
         var grid_dim = kernels.ampere_128x128_4.grid_dim(m, n)
@@ -858,28 +1218,36 @@ def _batched_matmul_gpu[
             a_tensor_reshaped.as_imm(),
             b_tensor_reshaped.as_imm(),
             c_shape,
-            grid_dim=(grid_dim[0], grid_dim[1], batch_size),
-            block_dim=kernels.ampere_128x128_4.block_dim(),
-            shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(kernels.ampere_128x128_4.shared_mem_usage())
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(grid_dim[0], grid_dim[1], batch_size),
+                block_dim=kernels.ampere_128x128_4.block_dim(),
+                shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
             ),
+            host_args=(epilogue_fn, compute_fn),
         )
-    elif has_static_NK and ctx.target.is_amd_gpu() and transpose_b:
+    elif (
+        has_static_NK
+        and ctx.target.is_amd_gpu()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+        # AMDMatmul loads K in 4-byte units and stores 4-wide along N.
+        and a_k * size_of[a_type]() % 4 == 0
+        and c_n % 4 == 0
+    ):
 
         @inline(.always)
         def kernel_helper[block_m: Int, block_n: Int]() raises {imm}:
             comptime block_k = 64
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(block_m, block_n, block_k),
-                warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+                block_tile_shape=(block_m, block_n, block_k),
+                warp_tile_shape=(block_m // 2, block_n // 2, block_k),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_k_partitions=1,
             )
 
             comptime batched_matmul_type = batched_matmul_kernel_gpu[
-                rank,
+                type_of(c_shape).element_types,
                 c_tensor_reshaped.dtype,
                 a_tensor_reshaped.dtype,
                 b_tensor_reshaped.dtype,
@@ -888,7 +1256,10 @@ def _batched_matmul_gpu[
                 b_tensor_reshaped.LayoutType,
                 transpose_b,
                 config,
-                elementwise_epilogue_fn,
+                EpilogueFnType=EpilogueFnType,
+                ComputeFnType=ComputeFnType,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
             ]
 
             ctx.enqueue_function[batched_matmul_type](
@@ -896,12 +1267,15 @@ def _batched_matmul_gpu[
                 a_tensor_reshaped.as_imm(),
                 b_tensor_reshaped.as_imm(),
                 c_shape,
-                grid_dim=(
-                    ceildiv(n, block_n),
-                    ceildiv(m, block_m),
-                    batch_size,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(
+                        ceildiv(n, block_n),
+                        ceildiv(m, block_m),
+                        batch_size,
+                    ),
+                    block_dim=config.block_dim(),
                 ),
-                block_dim=config.block_dim(),
+                host_args=(epilogue_fn, compute_fn),
             )
 
         if m <= 32:
@@ -916,7 +1290,7 @@ def _batched_matmul_gpu[
 
         comptime BLOCK_DIM = 16
         comptime bmm = naive_batched_matmul_kernel[
-            rank,
+            type_of(c_shape).element_types,
             c_type,
             a_type,
             b_type,
@@ -924,19 +1298,25 @@ def _batched_matmul_gpu[
             a_tensor_reshaped.LayoutType,
             b_tensor_reshaped.LayoutType,
             transpose_b,
-            elementwise_epilogue_fn,
+            EpilogueFnType=EpilogueFnType,
+            ComputeFnType=ComputeFnType,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ]
         ctx.enqueue_function[bmm](
             c_tensor_reshaped,
             a_tensor_reshaped.as_imm(),
             b_tensor_reshaped.as_imm(),
             c_shape,
-            grid_dim=(
-                ceildiv(n, BLOCK_DIM),
-                ceildiv(m, BLOCK_DIM),
-                batch_size,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    ceildiv(n, BLOCK_DIM),
+                    ceildiv(m, BLOCK_DIM),
+                    batch_size,
+                ),
+                block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
             ),
-            block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+            host_args=(epilogue_fn, compute_fn),
         )
 
 
@@ -945,15 +1325,14 @@ def batched_matmul[
     *,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
-    target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     *,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """TileTensor primary implementation of `batched_matmul`.
 
@@ -962,11 +1341,17 @@ def batched_matmul[
             `False`; not yet supported).
         transpose_b: Whether the RHS input is transposed (defaults to
             `False`).
-        elementwise_epilogue_fn: Optional epilogue applied to each output
-            element (defaults to `None`).
         saturated_vnni: Whether to use saturated VNNI accumulation on CPU
             (defaults to `False`; not applicable on GPU).
-        target: Target hardware for the operation (defaults to `"cpu"`).
+        pdl_level: Programmatic dependent launch level for the SM100 GPU
+            kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
+            releases dependent grids at kernel entry, so every dependent must
+            wait before reading the output. The SM100 plain matmul may prefetch
+            its B operand ahead of that wait, because B is a weight read
+            straight from the checkpoint by contract. A value the graph
+            computes each call (a cast, concat, derived parameter or sharded
+            view) is not one, so this op's output must not feed it as B
+            (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
@@ -977,6 +1362,159 @@ def batched_matmul[
         context: Optional device context used for dispatch and parallelism
             (defaults to `None`).
     """
+    _batched_matmul[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+        saturated_vnni=saturated_vnni,
+        pdl_level=pdl_level,
+    ](c_buf, a_buf, b_buf, no_epilogue_fn, no_compute_fn, context)
+
+
+@inline(.always)
+def batched_matmul[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    saturated_vnni: Bool = False,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
+](
+    c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    *,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
+) raises:
+    """Same as the plain overload, storing the output through `epilogue_fn`.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_a: Whether the LHS input is transposed (defaults to
+            `False`; not yet supported).
+        transpose_b: Whether the RHS input is transposed (defaults to
+            `False`).
+        saturated_vnni: Whether to use saturated VNNI accumulation on CPU
+            (defaults to `False`; not applicable on GPU).
+        pdl_level: Programmatic dependent launch level for the SM100 GPU
+            kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
+            releases dependent grids at kernel entry, so every dependent must
+            wait before reading the output. The SM100 plain matmul may prefetch
+            its B operand ahead of that wait, because B is a weight read
+            straight from the checkpoint by contract. A value the graph
+            computes each call (a cast, concat, derived parameter or sharded
+            view) is not one, so this op's output must not feed it as B
+            (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
+
+    Args:
+        c_buf: Tensor of shape `(..., m, n)` giving the output shape; rank
+            must be at least 2 and match the inputs. Some dispatch paths
+            use it as scratch for the product.
+        a_buf: LHS input tensor of shape `(..., m, k)`.
+        b_buf: RHS input tensor of shape `(..., k, n)`, or `(..., n, k)`
+            when `transpose_b` is set.
+        epilogue_fn: Stores each output chunk. It receives coordinates of
+            the same rank as `c_buf`, not the collapsed rank-3 coordinates
+            the kernels compute over.
+        context: Optional device context used for dispatch and parallelism
+            (defaults to `None`).
+    """
+    _batched_matmul[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+        saturated_vnni=saturated_vnni,
+        pdl_level=pdl_level,
+    ](c_buf, a_buf, b_buf, epilogue_fn, no_compute_fn, context)
+
+
+@inline(.always)
+def batched_matmul[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    saturated_vnni: Bool = False,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
+](
+    c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    compute_fn: ComputeFnType,
+    *,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
+) raises:
+    """Same as the plain overload, storing `compute_fn(idx, value)` into
+    `c_buf`.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_a: Whether the LHS input is transposed (defaults to
+            `False`; not yet supported).
+        transpose_b: Whether the RHS input is transposed (defaults to
+            `False`).
+        saturated_vnni: Whether to use saturated VNNI accumulation on CPU
+            (defaults to `False`; not applicable on GPU).
+        pdl_level: Programmatic dependent launch level for the SM100 GPU
+            kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
+            releases dependent grids at kernel entry, so every dependent must
+            wait before reading the output. The SM100 plain matmul may prefetch
+            its B operand ahead of that wait, because B is a weight read
+            straight from the checkpoint by contract. A value the graph
+            computes each call (a cast, concat, derived parameter or sharded
+            view) is not one, so this op's output must not feed it as B
+            (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
+
+    Args:
+        c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
+            2 and match the inputs.
+        a_buf: LHS input tensor of shape `(..., m, k)`.
+        b_buf: RHS input tensor of shape `(..., k, n)`, or `(..., n, k)`
+            when `transpose_b` is set.
+        compute_fn: Maps each output chunk to the value to store. It
+            receives coordinates of the same rank as `c_buf`, not the
+            collapsed rank-3 coordinates the kernels compute over.
+        context: Optional device context used for dispatch and parallelism
+            (defaults to `None`).
+    """
+    _batched_matmul[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+        saturated_vnni=saturated_vnni,
+        pdl_level=pdl_level,
+    ](c_buf, a_buf, b_buf, no_epilogue_fn, compute_fn, context)
+
+
+@inline(.always)
+def _batched_matmul[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
+    saturated_vnni: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+    context: DeviceContext.Optional,
+) raises:
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
     comptime assert c_buf.rank >= 2, "c must be at least rank 2"
     comptime assert (
         c_buf.rank == a_buf.rank == b_buf.rank
@@ -994,16 +1532,9 @@ def batched_matmul[
 
     comptime rank = c_buf.rank
 
-    # Build shape IndexLists from TileTensor for tracing.
-    var a_shape = rebind[IndexList[rank]](
-        coord_to_index_list(a_buf.layout.shape_coord())
-    )
-    var b_shape = rebind[IndexList[rank]](
-        coord_to_index_list(b_buf.layout.shape_coord())
-    )
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_buf.layout.shape_coord())
-    )
+    var a_shape = a_buf.layout.shape_coord()
+    var b_shape = b_buf.layout.shape_coord()
+    var c_shape = c_buf.layout.shape_coord()
 
     @inline(.always)
     def description_fn() {var a_shape, var b_shape, var c_shape, imm} -> String:
@@ -1017,37 +1548,30 @@ def batched_matmul[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.T.target.device_kind_label()](
         "batched_matmul",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        comptime assert is_valid_target[target](), "unsupported target"
-
-        comptime if is_cpu[target]():
+        comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
-            _batched_matmul_cpu[
+            _batched_matmul_cpu_impl[
                 rank,
-                a_buf.dtype,
-                b_buf.dtype,
-                c_buf.dtype,
                 transpose_b=transpose_b,
-                elementwise_epilogue_fn=elementwise_epilogue_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 saturated_vnni=saturated_vnni,
-            ](c_buf, a_buf, b_buf, ctx=cpu_ctx)
+            ](c_buf, a_buf, b_buf, epilogue_fn, compute_fn, cpu_ctx)
         else:
             comptime assert (
                 saturated_vnni == False
             ), "saturated_vnni is not applicable on the gpu"
-            _batched_matmul_gpu[
+            _batched_matmul_gpu_impl[
                 transpose_b=transpose_b,
-                elementwise_epilogue_fn=elementwise_epilogue_fn,
-            ](
-                c_buf,
-                a_buf,
-                b_buf,
-                context.value(),
-            )
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+                pdl_level=pdl_level,
+            ](c_buf, a_buf, b_buf, epilogue_fn, compute_fn, context.value())
 
 
 @inline(.always)
@@ -1055,7 +1579,7 @@ def batched_matmul_shape[
     rank: Int
 ](
     a_buff: TileTensor[mut=False, ...], b_buff: TileTensor[mut=False, ...]
-) raises -> IndexList[rank]:
+) raises -> DynamicCoord[.int, rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
@@ -1089,19 +1613,27 @@ def batched_matmul_shape[
     if foundMismatch:
         raise Error("[batch_matmul] inputs batch dimensions must match")
 
-    var output_shape = rebind[IndexList[rank]](
-        coord_to_index_list(a_buff.layout.shape_coord())
-    )
-    output_shape[rank - 1] = Int(b_buff.dim[rank - 1]())
+    var output_shape = DynamicCoord[.int, rank]()
+    comptime for i in range(rank - 1):
+        output_shape.replace_dynamic[i](Int(a_buff.dim[i]()))
+    output_shape.replace_dynamic[rank - 1](Int(b_buff.dim[rank - 1]()))
 
     return output_shape
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-@__name(t"bmm_sm100_blockwise_scaled_fp8_{a_type}_{b_type}_{c_type}")
+@__name(
+    t"bmm_sm100_blockwise_scaled_fp8_{a_type}_{b_type}_{c_type}{"_epilogue_fn" if has_epilogue_fn else ""}"
+)
 def _bmm_sm100_blockwise_scaled_fp8_kernel[
     a_type: DType,
     b_type: DType,
@@ -1118,15 +1650,16 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     b_desc_shape: Coord,
     a_scales_tile_shape: Coord,
     a_scales_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_scaling_block_n: Int = 128,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    has_epilogue_fn: Bool = False,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -1138,6 +1671,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     ],
     b_scales_tensor: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     num_iters: Int32,
+    epilogue_fn: EpilogueFnType,
 ):
     var _num_iters = Int(num_iters)
     comptime assert c_tensor.flat_rank == 3
@@ -1146,14 +1680,14 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     # subscripting with slices would make both extents dynamic.
     var c_tt = TileTensor(
         c_tensor.ptr_at_offset(Coord(block_idx.z, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(c_tensor.layout.shape[1](), c_tensor.layout.shape[2]()),
             Coord(c_tensor.layout.stride[1](), c_tensor.layout.stride[2]()),
         ),
     )
     var b_scales_tt = TileTensor(
         b_scales_tensor.ptr_at_offset(Coord(block_idx.z, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(
                 b_scales_tensor.layout.shape[1](),
                 b_scales_tensor.layout.shape[2](),
@@ -1165,17 +1699,16 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         ),
     )
 
-    @__parameter
-    def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](out_coords: Coord, val: SIMD[dtype, width]) capturing -> None:
+    @inline(.always)
+    def batched_epilogue_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](out_coords: Coord, val: SIMD[dtype, width]) {var epilogue_fn}:
         comptime assert (
             out_coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        comptime if case .Some(elementwise_epilogue) = elementwise_lambda_fn:
-            elementwise_epilogue(
-                (block_idx.z, out_coords[0], out_coords[1]), val
-            )
+        epilogue_fn[dtype, width, alignment=alignment](
+            (block_idx.z, out_coords[0], out_coords[1]), val
+        )
 
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_type,
@@ -1187,6 +1720,8 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         type_of(c_tt).LayoutType,
         a_scales_layout,
         type_of(b_scales_tt).LayoutType,
+        type_of(c_tt).Engine,
+        type_of(b_scales_tt).Engine,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
         type_of(b_tma_op).tile_shape,
@@ -1199,10 +1734,8 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=num_threads,
-        elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
-            elementwise_epilogue_fn_wrapper
-        ) if elementwise_lambda_fn else None,
         b_scaling_block_n=b_scaling_block_n,
+        has_epilogue_fn=has_epilogue_fn,
     ](
         a_tma_op,
         b_tma_op,
@@ -1210,6 +1743,8 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_scales_tma_op,
         b_scales_tt,
         Int32(_num_iters),
+        batched_epilogue_fn,
+        no_compute_fn,
     )
 
 
@@ -1221,11 +1756,10 @@ def bmm_sm100_blockwise_scaled_fp8[
     b_scales_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Tuple[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_scaling_block_n: Int = 128,
 ](
     c_: TileTensor[mut=True, c_type, ...],
@@ -1251,7 +1785,6 @@ def bmm_sm100_blockwise_scaled_fp8[
         block_tile_shape: CTA tile shape `(BM, BN, BK)`.
         a_swizzle: TMA swizzle mode for the LHS input tensor.
         b_swizzle: TMA swizzle mode for the RHS input tensor.
-        elementwise_lambda_fn: Optional epilogue applied to each output element.
         b_scaling_block_n: N-direction scale block size for the RHS scales.
 
     Args:
@@ -1262,7 +1795,105 @@ def bmm_sm100_blockwise_scaled_fp8[
         b_scales_: Rank-3 RHS scales tensor.
         ctx: Device context used to enqueue the kernel.
     """
+    _bmm_sm100_blockwise_scaled_fp8_impl[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        b_scaling_block_n=b_scaling_block_n,
+        has_epilogue_fn=False,
+    ](c_, a_, b_, a_scales_, b_scales_, no_epilogue_fn, ctx)
 
+
+def bmm_sm100_blockwise_scaled_fp8[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool,
+    umma_shape: Tuple[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_scaling_block_n: Int = 128,
+](
+    c_: TileTensor[mut=True, c_type, ...],
+    a_: TileTensor[mut=False, a_type, ...],
+    b_: TileTensor[mut=False, b_type, ...],
+    a_scales_: TileTensor[mut=False, a_scales_type, ...],
+    b_scales_: TileTensor[mut=False, b_scales_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Same as the plain overload, storing the output through `epilogue_fn`.
+
+    The kernel never writes `c_`; only its shape is read.
+
+    Parameters:
+        c_type: Output tensor element dtype.
+        a_type: LHS input tensor element dtype.
+        b_type: RHS input tensor element dtype.
+        a_scales_type: LHS scales tensor element dtype.
+        b_scales_type: RHS scales tensor element dtype.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_b: Whether the RHS input is transposed (must be `True`).
+        umma_shape: UMMA instruction shape `(m, n, k)` used by the kernel.
+        block_tile_shape: CTA tile shape `(BM, BN, BK)`.
+        a_swizzle: TMA swizzle mode for the LHS input tensor.
+        b_swizzle: TMA swizzle mode for the RHS input tensor.
+        b_scaling_block_n: N-direction scale block size for the RHS scales.
+
+    Args:
+        c_: Rank-3 tensor of shape `(batch, m, n)` giving the output shape.
+        a_: Rank-3 LHS input tensor of shape `(batch, m, k)`.
+        b_: Rank-3 RHS input tensor of shape `(batch, k, n)`.
+        a_scales_: Rank-3 LHS scales tensor.
+        b_scales_: Rank-3 RHS scales tensor.
+        epilogue_fn: Stores each output element at its `(batch, m, n)`
+            coordinate.
+        ctx: Device context used to enqueue the kernel.
+    """
+    _bmm_sm100_blockwise_scaled_fp8_impl[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        b_scaling_block_n=b_scaling_block_n,
+        has_epilogue_fn=True,
+    ](c_, a_, b_, a_scales_, b_scales_, epilogue_fn, ctx)
+
+
+def _bmm_sm100_blockwise_scaled_fp8_impl[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool,
+    umma_shape: Tuple[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_scaling_block_n: Int = 128,
+    has_epilogue_fn: Bool,
+](
+    c_: TileTensor[mut=True, c_type, ...],
+    a_: TileTensor[mut=False, a_type, ...],
+    b_: TileTensor[mut=False, b_type, ...],
+    a_scales_: TileTensor[mut=False, a_scales_type, ...],
+    b_scales_: TileTensor[mut=False, b_scales_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
@@ -1396,8 +2027,9 @@ def bmm_sm100_blockwise_scaled_fp8[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=block_dim,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         b_scaling_block_n=b_scaling_block_n,
+        EpilogueFnType=EpilogueFnType,
+        has_epilogue_fn=has_epilogue_fn,
     ]
 
     ctx.enqueue_function[kernel](
@@ -1407,12 +2039,12 @@ def bmm_sm100_blockwise_scaled_fp8[
         a_scales_tma_op,
         b_scales_,
         Int32(ceildiv(K, BK)),
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
-        block_dim=(block_dim),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
         ),
+        host_args=(epilogue_fn,),
     )
 
 
@@ -1487,9 +2119,9 @@ def blockwise_scaled_fp8_matmul_amd_batched_kernel[
     comptime assert a_scales.flat_rank == 3
     comptime assert b_scales.flat_rank == 3
 
-    var batch = Int(block_idx.z)
-    var m_block = Int(block_idx.y)
-    var n_block = Int(block_idx.x)
+    var batch = block_idx.z
+    var m_block = block_idx.y
+    var n_block = block_idx.x
 
     # M is uniform across batches in a batched GEMM; read once. Runtime
     # trailing extents are host-asserted == the comptime N/K that tiling uses.
@@ -1506,35 +2138,35 @@ def blockwise_scaled_fp8_matmul_amd_batched_kernel[
     # column stride the loader assumes (host-asserted).
     var c_tt = TileTensor(
         c.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(Int64(M), Idx[N]),
-            Coord(Int64(Int(c.layout.stride[1]().value())), Idx[1]),
+            Coord(Int64(Int(c.dynamic_stride(1))), Idx[1]),
         ),
     )
     var a_tt = TileTensor(
         a.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(Int64(M), Idx[K]),
-            Coord(Int64(Int(a.layout.stride[1]().value())), Idx[1]),
+            Coord(Int64(Int(a.dynamic_stride(1))), Idx[1]),
         ),
     )
     var b_tt = TileTensor(
         b.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(b.layout.shape[1](), b.layout.shape[2]()),
             Coord(b.layout.stride[1](), b.layout.stride[2]()),
         ),
     )
     var a_scales_tt = TileTensor(
         a_scales.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(K_blocks, M_a_scales),
             Coord(a_scales.layout.stride[1](), a_scales.layout.stride[2]()),
         ),
     )
     var b_scales_tt = TileTensor(
         b_scales.ptr_at_offset(Coord(batch, 0, 0)),
-        TileLayout(
+        Layout(
             Coord(N_blocks, K_blocks),
             Coord(b_scales.layout.stride[1](), b_scales.layout.stride[2]()),
         ),
@@ -1588,7 +2220,7 @@ def blockwise_scaled_fp8_matmul_amd_batched[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c_: TileTensor[mut=True, c_type, ...],
@@ -1677,13 +2309,13 @@ def blockwise_scaled_fp8_matmul_amd_batched[
     # The kernel bakes innermost column stride 1 and the tile body assumes a
     # K-/N-contiguous tail; guard the runtime slices and extents satisfy that.
     assert (
-        Int(c.layout.stride[2]().value()) == 1
+        Int(c.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires c innermost stride 1"
     assert (
-        Int(a.layout.stride[2]().value()) == 1
+        Int(a.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires a innermost stride 1"
     assert (
-        Int(b.layout.stride[2]().value()) == 1
+        Int(b.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires b innermost stride 1"
     assert N_rt == N, "AMD tiled batched dispatch: runtime N != comptime N"
     assert K_rt == K, "AMD tiled batched dispatch: runtime K != comptime K"
@@ -1717,15 +2349,19 @@ def blockwise_scaled_fp8_matmul_amd_batched[
         K=K,
     ]
 
-    comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    comptime num_threads = (
+        (BM // WM) * (BN // WN) * ctx.default_device_info.warp_size
+    )
     ctx.enqueue_function[kernel](
         c,
         a,
         b,
         a_scales,
         b_scales,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
-        block_dim=(num_threads, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
+            block_dim=(num_threads, 1, 1),
+        ),
     )
 
     # The whole batch is one kernel launch (grid.z = batch); that is the
@@ -1742,7 +2378,7 @@ def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c_: TileTensor[mut=True, c_type, ...],
@@ -1842,19 +2478,19 @@ def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
     # The per-batch views pin column stride to static 1 and the loader assumes
     # a contiguous tail; these asserts guard the runtime slices/extents match.
     assert (
-        Int(c.layout.stride[2]().value()) == 1
+        Int(c.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires c innermost stride 1"
     assert (
-        Int(a.layout.stride[2]().value()) == 1
+        Int(a.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires a innermost stride 1"
     assert (
-        Int(b.layout.stride[2]().value()) == 1
+        Int(b.dynamic_stride(2)) == 1
     ), "AMD tiled batched dispatch requires b innermost stride 1"
     assert N_rt == N, "AMD tiled batched dispatch: runtime N != comptime N"
     assert K_rt == K, "AMD tiled batched dispatch: runtime K != comptime K"
 
-    var c_row_stride = Int64(Int(c.layout.stride[1]().value()))
-    var a_row_stride = Int64(Int(a.layout.stride[1]().value()))
+    var c_row_stride = Int64(Int(c.dynamic_stride(1)))
+    var a_row_stride = Int64(Int(a.dynamic_stride(1)))
 
     # Each iteration enqueues one kernel, so the fallback issues exactly ``B``
     # dispatches; returned so the launch-count gate can tell it from the ``1``.
@@ -1864,29 +2500,29 @@ def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
         # comptime N/K, b and scales keep the source layout's static parts.
         var c_tt = TileTensor(
             c.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(Coord(Int64(M), Idx[N]), Coord(c_row_stride, Idx[1])),
+            Layout(Coord(Int64(M), Idx[N]), Coord(c_row_stride, Idx[1])),
         )
         var a_tt = TileTensor(
             a.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(Coord(Int64(M), Idx[K]), Coord(a_row_stride, Idx[1])),
+            Layout(Coord(Int64(M), Idx[K]), Coord(a_row_stride, Idx[1])),
         )
         var b_tt = TileTensor(
             b.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(
+            Layout(
                 Coord(b.layout.shape[1](), b.layout.shape[2]()),
                 Coord(b.layout.stride[1](), b.layout.stride[2]()),
             ),
         )
         var a_scales_tt = TileTensor(
             a_scales.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(
+            Layout(
                 Coord(ceildiv(K_rt, BLOCK_SCALE_K), M_a_scales),
                 Coord(a_scales.layout.stride[1](), a_scales.layout.stride[2]()),
             ),
         )
         var b_scales_tt = TileTensor(
             b_scales.ptr_at_offset(Coord(batch, 0, 0)),
-            TileLayout(
+            Layout(
                 Coord(
                     ceildiv(N_rt, BLOCK_SCALE_N), ceildiv(K_rt, BLOCK_SCALE_K)
                 ),
@@ -1912,7 +2548,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -1968,7 +2604,9 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                1, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
         ](
             c[batch, :, :].address_space_cast[.GENERIC](),
             a[batch, :, :].address_space_cast[.GENERIC](),
@@ -1995,7 +2633,6 @@ def batched_matmul_dynamic_scaled_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
@@ -2027,7 +2664,6 @@ def batched_matmul_dynamic_scaled_fp8[
         n_scale_granularity: N-direction scale granularity (`64` or `128`).
         k_scale_granularity: K-direction scale granularity (`64` or `128`).
         transpose_b: Whether the RHS input is transposed.
-        target: Target platform string.
 
     Args:
         c: Rank-3 output tensor of shape `(batch, m, n)`.
@@ -2046,7 +2682,6 @@ def batched_matmul_dynamic_scaled_fp8[
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         transpose_b=transpose_b,
-        target=target,
     ](c, a, b, a_scales, b_scales, ctx)
 
 
@@ -2063,7 +2698,6 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
-    target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
@@ -2107,9 +2741,11 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         # exactly one B-scale block; BK_kernel tracks k_scale_granularity.
         # K-tile bytes = BK * sizeof(fp8) = BK. SWIZZLE_128B requires a
         # 128-byte K-tile, so BK=64 needs SWIZZLE_64B instead.
-        comptime umma_shape = Index(64, n_scale_granularity, 32)
-        comptime block_tile_shape = Index(
-            umma_shape[0], umma_shape[1], k_scale_granularity
+        comptime umma_shape = (64, n_scale_granularity, 32)
+        comptime block_tile_shape = (
+            umma_shape[0],
+            umma_shape[1],
+            k_scale_granularity,
         )
         comptime swizzle = (
             TensorMapSwizzle.SWIZZLE_128B if k_scale_granularity
@@ -2132,8 +2768,10 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         and type_of(a).static_shape[2] > 0
     ):
         return _batched_matmul_dynamic_scaled_fp8_amd_tiled[
-            scales_granularity_mnk=Index(
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             transpose_b=transpose_b,
         ](
@@ -2146,8 +2784,10 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         )
     else:
         return batched_matmul_dynamic_scaled_fp8_naive[
-            scales_granularity_mnk=Index(
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             transpose_b=transpose_b,
         ](

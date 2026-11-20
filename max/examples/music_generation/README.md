@@ -17,8 +17,9 @@ rather than one long generation. The bundled song is 2 minutes 45 seconds, and
 
 ## Requirements
 
-A [MAX-compatible GPU](https://max.modular.com/packages/#gpu-compatibility). The
-checkpoint is roughly 28 GiB of weights across its autoregressive, diffusion
+A
+[MAX-compatible GPU](https://max.modular.com/system-requirements/#gpu-compatibility).
+The checkpoint is roughly 28 GiB of weights across its autoregressive, diffusion
 and vocoder stages, which is more than a 22 GiB card holds at once — the model
 loads and frees each stage in turn, so a card that size is enough, and the
 weights download on first use.

@@ -47,8 +47,11 @@ Your custom architecture must:
 1. **Follow the naming convention**: The architecture name in `arch.py` must
 exactly match the model class name in your Hugging Face model's configuration.
 
-2. **Implement required methods**: Your model class must inherit from
-`PipelineModel` and implement the required methods.
+2. **Implement the model class**: A ModuleV3 architecture subclasses
+`ModuleV3PipelineModelWithKVCache` and implements `_create_model_config()` and
+`_instantiate_module()`. An architecture that registers only a module leaves
+`pipeline_model` unset in `arch.py`, and the registry then selects a pipeline
+model for the task.
 
 3. **Handle weight conversion**: Provide weight adapters for supported formats
 (at minimum SafeTensors).
@@ -79,21 +82,29 @@ this `--custom-architectures` option is no longer needed.
 
 ## 3. Register your architecture
 
-Add your architecture to the main
+Add a `_LazyArch` entry to `lazy_architectures` in the main
 [`architectures/__init__.py`](/max/python/max/pipelines/architectures/__init__.py)
-file:
+file. The entry names the architecture (matching `SupportedArchitecture.name`),
+the module under `architectures/` that defines it, and the symbol holding the
+`SupportedArchitecture`:
 
 ```python
-# Add import
-from .my_model import my_model_arch
-
-# Add to architectures list
-architectures = [
+lazy_architectures = [
     # ... existing architectures ...
-    my_model_arch,
+    _LazyArch("MyModelForCausalLM", ".my_model", "my_model_arch"),
     # ... rest of architectures ...
 ]
 ```
+
+`register_all_models()` hands that list to `PIPELINE_REGISTRY.register_lazy`, so
+MAX imports the package the first time it asks for the architecture.
+
+Then add the package to `ALL_ARCHITECTURES` in [all_arches.bzl][all-arches].
+That list fills the `deps` and `ignore_extra_deps` of
+`//max/python/max/_entrypoints` and the integration test targets, so a package
+left out of it cannot be imported by `//max/python/max/_entrypoints`.
+
+[all-arches]: /max/python/max/pipelines/architectures/all_arches.bzl
 
 Once registered, you can serve models using your architecture without the
 `--custom-architectures` option:

@@ -72,9 +72,10 @@ from nn.kv_cache_ragged import (
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import size_of
 from std.utils import IndexList
+from std.utils.index import Index
 
 # ---- M3 per-device (TP=4) BF16 shapes (match the differential test) ----
 comptime DATA_DTYPE = DType.bfloat16
@@ -127,7 +128,7 @@ comptime IndexCollection = PagedKVCacheCollection[
 
 
 def bench_shape(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     prompt_lens: List[Int],
     regime: String,
@@ -160,7 +161,7 @@ def bench_shape(
 
     # ---- paged lookup table (sequential distinct blocks; shared by both
     # caches since main/index blocks are separate allocations) ----
-    var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
+    var lut_cols = align_up(ceildiv(max_ctx, page_size), 8) + 16
     var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
     var block_counter = 0
     for b in range(batch_size):
@@ -201,8 +202,13 @@ def bench_shape(
     var iq_out = TileTensor(iq_out_dev, row_major(total_seq, Idx[iq_dim]))
 
     # ---- KV cache blocks (main: K+V, 1 head; index: K-only MLA, 1 head) ----
-    var main_block_shape = IndexList[6](
-        num_pages, 2, num_layers, page_size, MAIN_KV_HEADS, HEAD_SIZE
+    var main_block_shape = Index(
+        num_pages,
+        2,
+        num_layers,
+        page_size,
+        MAIN_KV_HEADS,
+        HEAD_SIZE,
     )
     var main_blocks_dev = ctx.enqueue_create_buffer[DATA_DTYPE](
         main_block_shape.flattened_length()
@@ -225,7 +231,7 @@ def bench_shape(
     var main_blocks = TileTensor(
         main_blocks_dev, main_layout(main_shape, main_strides)
     )
-    var index_block_shape = IndexList[6](
+    var index_block_shape = Index(
         num_pages, 2, num_layers, page_size, 1, HEAD_SIZE
     )
     var index_blocks_dev = ctx.enqueue_create_buffer[DATA_DTYPE](
@@ -289,7 +295,7 @@ def bench_shape(
     # ============ FUSED: one GEMM over the stacked weight ============
     @inline(.always)
     def fused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_hs, mut cb_w, mut fused_out, imm,}:
         var hs_tensor = (
             TileTensor(
@@ -307,7 +313,7 @@ def bench_shape(
             .as_imm()
             .as_unsafe_any_origin()
         )
-        generic_fused_qkv_index_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_index_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_full,
@@ -335,7 +341,7 @@ def bench_shape(
     # ============ UNFUSED: main QKV then indexer QKV (2 calls) ============
     @inline(.always)
     def unfused_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_hs, mut cb_w, mut q_out, mut iq_out, imm,}:
         var hs_tensor = (
             TileTensor(
@@ -355,13 +361,13 @@ def bench_shape(
         )
         var w_idx = (
             TileTensor(
-                cb_w.offset_ptr(iteration) + qkv_n * hidden,
+                cb_w.offset_ptr(iteration).unsafe_offset(qkv_n * hidden),
                 row_major(Idx[idx_n], Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()
         )
-        generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_qkv,
@@ -370,7 +376,7 @@ def bench_shape(
             q_out,
             ctx,
         )
-        generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu"](
+        generic_fused_qkv_matmul_kv_cache_paged_ragged(
             hs_tensor,
             iro_tensor,
             w_idx,

@@ -19,6 +19,7 @@ modular_eager_py_test(
         "test_module.py",
         "test_module_typing.py",
         "test_print_hook.py",
+        "test_print_hook_compile_weights.py",
         "test_qkv_linear.py",
         "test_sequential.py",
         "test_subgraph.py",
@@ -34,6 +35,7 @@ modular_eager_py_test(
     per_test_shard_count = {
         # Each case compiles its own graph; shard so the per-test compiles run
         # in parallel and the suite stays well under the per-target timeout.
+        "test_module.py": 4,
         "test_subgraph.py": 4,
     },
     per_test_tags = {
@@ -42,6 +44,9 @@ modular_eager_py_test(
         "test_module.py": ["skip-external-ci"],
         "test_module_typing.py": ["skip-external-ci"],
         "test_print_hook.py": ["skip-external-ci"],
+        "test_print_hook_compile_weights.py": ["skip-external-ci"],
+        # QUA-1038
+        "test_subgraph.py": ["manual"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -49,14 +54,15 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
-        "//max/python/max/experimental/testing",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/hooks:print_hook",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy/hooks:print_hook",
+        "//max/python/max/tensor/testing",
         requirement("numpy"),
         requirement("typing-extensions"),
     ],
@@ -73,10 +79,29 @@ modular_eager_py_test(
         "//conditions:default": ["//:nvidia_gpu"],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
+    ],
+)
+
+modular_eager_py_test(
+    name = "rotary_embedding_gpu_tests",
+    srcs = ["rope/test_rotary_embedding_gpu.py"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
     ],
 )
 
@@ -99,6 +124,7 @@ modular_eager_py_test(
     per_test_tags = {
         "test_module_gpt2.py": ["manual"],
     },
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -106,11 +132,11 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -123,10 +149,12 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:has_gpu"],
     ignore_extra_deps = [
         # lazy import
         "//max/python/max/_interpreter_ops",
     ],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -134,14 +162,15 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//:asan": ["@platforms//:incompatible"],
         "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": ["//:has_gpu"],
+        "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
         "//max/tests/integration/test_common:hyper_connection_reference",
         requirement("torch"),
     ],
@@ -151,6 +180,39 @@ modular_py_test(
     name = "moe_tests",
     size = "large",
     srcs = ["test_moe_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "quant_silu_tests",
+    size = "large",
+    srcs = ["test_quant_silu_gpu.py"],
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
@@ -168,13 +230,71 @@ modular_py_test(
         "//conditions:default": ["//:has_gpu"],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "grouped_matmul_fp8_device_stats_tests",
+    size = "large",
+    srcs = ["test_grouped_matmul_fp8_device_stats_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    tags = [
+        "gpu",
+    ],
+    # The SM100 persistent FP8 grouped matmul is validated on B200 only.
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "grouped_matmul_silu_nvfp4_tests",
+    size = "medium",
+    srcs = ["test_grouped_matmul_silu_nvfp4_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    # NVFP4 grouped matmuls are validated on B200 only.
+    gpu_constraints = ["//:b200_gpu"],
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        requirement("numpy"),
     ],
 )
 
@@ -185,16 +305,17 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    # The SGMV kernels are validated on B200 only.
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    # The SGMV kernels are validated on B200 only.
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -206,17 +327,19 @@ modular_eager_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": ["//:nvidia_gpu"],
+        "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
         requirement("numpy"),
         requirement("torch"),
     ],

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = activation @ weight^T`.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The FP4 weight stays
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The FP4 weight stays
 packed in DRAM (`uint8 [N, K//2]` lo-nibble + `float8_e4m3fn [N, K//16]` block
 scales); each `(BN, BK)` weight sub-tile is COOPERATIVELY dequantized to bf16
 once per K-strip into threadgroup memory (SMEM), then the dense bf16 simdgroup
@@ -47,13 +47,13 @@ tail loop, cast/epilogue store). The dense fp16/bf16/fp32 path is untouched.
 
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of
 
 from layout import TensorEngine, TileTensor, Idx
-from layout.tile_layout import Layout, TensorLayout, row_major
+from layout.layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
 
 from linalg.arch.apple.mma import MmaOpApple
@@ -356,7 +356,7 @@ struct AppleM5Fp4MatMul[
             # This thread's contiguous packed byte-run: one TileTensor width-load
             # (coalesced K; adjacent threads read adjacent bytes) -- no raw ptr.
             var bytes = packed.load[width=BYTES_PER_THREAD, alignment=1](
-                Coord(n_abs, (k0 // 2) + byte0)
+                (n_abs, (k0 // 2) + byte0)
             )
             var nib = SIMD[.uint16, COLS_PER_THREAD](0)
 
@@ -392,8 +392,8 @@ struct AppleM5Fp4MatMul[
                 # OOB N-row, or this thread's whole col-run is past the K tail:
                 # zero-fill (the MMA must read a clean zero, not stale SMEM).
                 if n_abs >= n or col0 >= kv:
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         SIMD[Self.in_type, COLS_PER_THREAD](0),
                     )
                     return
@@ -404,8 +404,8 @@ struct AppleM5Fp4MatMul[
                 )
                 if col0 + COLS_PER_THREAD <= kv:
                     # Whole run in-bounds: the interior fast path (below).
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -429,9 +429,7 @@ struct AppleM5Fp4MatMul[
                             vals[i] = (dec.cast[.float32]() * scale_abs).cast[
                                 Self.in_type
                             ]()
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0), vals
-                    )
+                    b_smem_view.store((buf, nrow, col0), vals)
             else:
                 # Interior: no bounds branch. One wide contiguous packed load ->
                 # nibble expand -> decode -> one hoisted scale. The scale comes
@@ -439,8 +437,8 @@ struct AppleM5Fp4MatMul[
                 # per-thread scattered load.
                 comptime if Self.coalesce_scales:
                     var scale_abs = s_smem_view[buf, nrow, col0 // SF][0]
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -451,8 +449,8 @@ struct AppleM5Fp4MatMul[
                             DType.float32
                         ]()
                     )
-                    b_smem_view.store[width=COLS_PER_THREAD](
-                        Coord(buf, nrow, col0),
+                    b_smem_view.store(
+                        (buf, nrow, col0),
                         _decode_run(
                             n_abs, Int(k0), col0, col_in_row, scale_abs
                         ),
@@ -469,8 +467,8 @@ struct AppleM5Fp4MatMul[
             var t = Int(tid)
             if t < NSCALE:
                 var srow, sblk = divmod(t, NBLK)
-                s_smem_view.store[width=1](
-                    Coord(buf, srow, sblk),
+                s_smem_view.store(
+                    (buf, srow, sblk),
                     Float32(
                         abs(
                             scales[Int(tg_col) + srow, Int(k0) // SF + sblk][
@@ -580,12 +578,11 @@ struct AppleM5Fp4MatMul[
             ) {imm}:
                 var y = v_fp32.cast[Self.c_type]()
                 if acol + 3 < n:
-                    c_vec.store[alignment=elem_align](Coord(lrow, lcol // 4), y)
+                    c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
                 else:
                     for e in range(min(4, n - acol)):
-                        c_sub.store[width=1, alignment=elem_align](
-                            Coord(lrow, lcol + e),
-                            SIMD[Self.c_type, 1](y[e]),
+                        c_sub.store[alignment=elem_align](
+                            (lrow, lcol + e), y[e]
                         )
 
             comptime for mi in range(Mma.num_m_mmas):
@@ -600,7 +597,7 @@ struct AppleM5Fp4MatMul[
                     if arow + 8 < m and acol < n:
                         _write4(lrow + 8, lcol, acol, frag.slice[4, offset=4]())
         else:
-            var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr)
+            var c_ptr_fp32 = rebind[MutPointer[Float32, MutAnyOrigin]](c_ptr)
             var c_mat_fp32 = TileTensor(c_ptr_fp32, row_major(m, n))
             var c_sub_fp32 = c_mat_fp32.tile[SG_M, SG_N](
                 Int(sg_row_idx), Int(sg_col_idx)
@@ -753,7 +750,7 @@ def _enqueue_apple_fp4_materialize_dense[
 
     enqueue_fp4_materialize[.bfloat16](wdense_tt, packed, scales, ctx)
 
-    if ctx.compute_capability() == 5:
+    if ctx.compute_capability() >= 5:
         enqueue_apple_matmul[
             in_type=DType.bfloat16,
             c_type=c_type,
@@ -783,10 +780,11 @@ def _enqueue_apple_fp4_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=no_epilogue_fn,
-            host_arg2=no_compute_fn,
-            grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
-            block_dim=(4 * WARP_SIZE,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
+                block_dim=(4 * WARP_SIZE,),
+            ),
+            host_args=(no_epilogue_fn, no_compute_fn),
         )
 
     # Keep the transient weight alive through the async materialize + GEMM
@@ -858,8 +856,10 @@ def _launch_apple_fp4_matmul[
         scales.as_imm(),
         log2_m,
         log2_n,
-        grid_dim=(grid_dim),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_dim),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )
 
 
@@ -964,7 +964,7 @@ def enqueue_apple_fp4_matmul[
     # Pre-M5 (M1-M4): route unconditionally to materialize->dense, which
     # decodes the FP4 weight to a transient bf16 buffer (hardware-neutral) and
     # runs the pre-M5 dense bf16 `gemm_kernel_apple_8x8`.
-    if cc != 5:
+    if cc < 5:
         # NVFP4's block size is 16, so K is always a multiple of 16 (hence 8)
         # for well-formed weights, however to be safe we assert on a malformed
         # K instead of producing silently bad results.

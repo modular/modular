@@ -14,11 +14,13 @@
 
 Four threads cooperate through `lane_group_max` to scale one 32-element MX
 block, so every geometry the launcher derives must keep each lane group covering
-exactly one block -- an invariant nothing in the kernel enforces, and one the
+exactly one block -- an invariant the kernel only `debug_assert`s and that the
 MXFP4 round-trip coverage cannot see: a two-lane permutation of the
 thread-to-column map leaves `test_quantize_roundtrip[4, 7168]` at its usual 0.2
 max relative error, that tolerance being wider than the error a wrong block
-scale introduces.
+scale introduces. The launcher rounds its `num_max_threads` cap down to whole
+lane groups, so caps that are not multiples of four (9, 5) must reproduce the
+512-thread bytes as well.
 """
 
 from std.math import ceildiv
@@ -187,7 +189,9 @@ def test_mxfp8_geometry_invariant[M: Int, K: Int](ctx: DeviceContext) raises:
 
     var alt_data = List[UInt8]()
     var alt_scales = List[UInt8]()
-    comptime for threads in [256, 128, 64]:
+    # 9 and 5 are not multiples of the four lanes that share a scale block:
+    # unrounded, they stride the column loop across a block boundary.
+    comptime for threads in [256, 128, 64, 9, 5]:
         _quantize_mxfp8[M, K, threads](ctx, values, alt_data, alt_scales)
         for i in range(M * K):
             assert_equal(
@@ -224,7 +228,7 @@ def test_mxfp4_geometry_invariant[M: Int, K: Int](ctx: DeviceContext) raises:
             h[i] = values[i].cast[.bfloat16]()
 
     var reference = List[UInt8]()
-    comptime for threads in [512, 256, 64]:
+    comptime for threads in [512, 256, 64, 9, 5]:
         var data_dev = ctx.enqueue_create_buffer[.uint8](M * packed_K)
         var scales_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * scale_K)
         var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))

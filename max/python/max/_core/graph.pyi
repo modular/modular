@@ -13,7 +13,7 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-"""MAX Graph Python bindings."""
+"""Provides Python bindings for the MAX Graph API."""
 
 import os
 import pathlib
@@ -26,6 +26,11 @@ import max._core.dialects.mo
 import max._core.driver
 import max._core.dtype
 import max._mlir.ir
+
+class KernelRegistrationError(ValueError):
+    """
+    Raised when a custom op package fails to load or check, or a custom op's Mojo kernel doesn't match its call. Where the error is in the Mojo code, the message points at it.
+    """
 
 def load_modular_dialects(arg: max._mlir.ir.DialectRegistry, /) -> None:
     """Registers all Modular MLIR dialects into the given registry."""
@@ -44,19 +49,19 @@ def _buffer_from_constant_attr(
     """Creates a Buffer from an MLIR constant attribute."""
 
 def next_operation(arg: max._mlir.ir.Operation, /) -> max._mlir.ir.Operation:
-    """Returns the next operation in the parent block, or None."""
+    """Returns the next operation in the parent block, or ``None``."""
 
 def prev_operation(arg: max._mlir.ir.Operation, /) -> max._mlir.ir.Operation:
-    """Returns the previous operation in the parent block, or None."""
+    """Returns the previous operation in the parent block, or ``None``."""
 
 def last_operation(arg: max._mlir.ir.Block, /) -> max._mlir.ir.Operation:
-    """Returns the last operation in the given block, or None."""
+    """Returns the last operation in the given block, or ``None``."""
 
 def dtype_to_type(arg: max._core.dtype.DType, /) -> max._core.Type:
-    """Converts a MAX DType to the corresponding MLIR type."""
+    """Converts a MAX :class:`DType` to the corresponding MLIR type."""
 
 def type_to_dtype(arg: max._core.Type, /) -> max._core.dtype.DType:
-    """Converts an MLIR type to the corresponding MAX DType."""
+    """Converts an MLIR type to the corresponding MAX :class:`DType`."""
 
 def frame_loc(
     arg0: max._mlir.ir.Context, arg1: object, /
@@ -89,20 +94,20 @@ def _init_and_register_max_context(mlir_ctx: max._mlir.ir.Context) -> None:
 
 class KernelTorchInfo:
     """
-    Info needed to register a Mojo kernel as a PyTorch custom op.
+    The info needed to register a Mojo kernel as a PyTorch custom op.
 
-    Built by ``max.experimental.torch`` from the kernel's ``execute``
+    Built by :obj:`max.experimental.torch` from the kernel's ``execute``
     signature via ``KernelDeclAdaptor``.
     """
 
     @property
     def num_dps_outputs(self) -> int:
-        """Number of leading destination-passing-style output arguments."""
+        """The number of leading destination-passing-style output arguments."""
 
     @property
     def tensor_arg_names(self) -> list[str]:
         """
-        Source names of tensor-like arguments in declaration order (DPS outputs first, then inputs).
+        The source names of tensor-like arguments in declaration order (DPS outputs first, then inputs).
         """
 
 class Analysis:
@@ -112,26 +117,22 @@ class Analysis:
     Loads one or more Mojo shared libraries and exposes their exported
     kernel operations for use in MAX graphs. Used internally to validate
     and register custom operations.
+
+    Args:
+        context: A Mojo library object or path.
+        paths: The additional library search paths.
     """
 
     def __init__(
         self, context: object, paths: Sequence[str | os.PathLike]
-    ) -> None:
-        """
-        Creates an analysis by loading the given Mojo libraries.
-
-        Args:
-            context: A Mojo library object or path.
-            paths: Additional library search paths.
-        """
-
+    ) -> None: ...
     @property
     def symbol_names(self) -> list[str]:
-        """Returns the list of exported kernel symbol names."""
+        """The list of exported kernel symbol names."""
 
     @property
     def library_paths(self) -> list[pathlib.Path]:
-        """Returns the paths of all loaded libraries."""
+        """The paths of all loaded libraries."""
 
     def kernel(self, arg: str, /) -> max._core.Operation:
         """Returns the MLIR operation for the named kernel symbol."""
@@ -144,12 +145,12 @@ class Analysis:
 
     def seed_kernel_decls(self, arg: max._mlir.ir.Operation, /) -> None:
         """
-        Copies kernel decl ops and the opaque-type mapping attribute into the given target module. Called by the compile path to seed a model module so the GC pipeline can skip mogg-import-packages.
+        Copies kernel decl ops and the opaque-type mapping attribute into the given target module. Called by the compile path to seed a model module so the GC pipeline can skip ``mogg-import-packages``.
         """
 
     def kernel_torch_info(self, name: str) -> KernelTorchInfo:
         """
-        Returns the info ``max.experimental.torch`` needs to register the named kernel as a PyTorch custom op. Raises ``ValueError`` if the kernel is unknown or has an unsupported argument type.
+        Returns the :class:`KernelTorchInfo` that :obj:`max.experimental.torch` needs to register the named kernel as a PyTorch custom op. Raises ``ValueError`` if the kernel is unknown or has an unsupported argument type.
         """
 
     def has_shape_function(self, name: str) -> bool:

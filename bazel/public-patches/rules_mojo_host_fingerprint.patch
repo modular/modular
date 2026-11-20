@@ -1,0 +1,12 @@
+diff --git a/mojo/mojo_host_platform.bzl b/mojo/mojo_host_platform.bzl
+--- a/mojo/mojo_host_platform.bzl
++++ b/mojo/mojo_host_platform.bzl
+@@ -223,6 +223,8 @@
+     implementation = _impl,
+     configure = True,
+     environ = [
++        # Never read; a wrapper changes it on reboot to force re-detection.
++        "MOJO_HOST_FINGERPRINT",
+         "MOJO_IGNORE_UNKNOWN_GPUS",
+         "MOJO_VERBOSE_GPU_DETECT",
+     ],

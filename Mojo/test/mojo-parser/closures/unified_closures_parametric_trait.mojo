@@ -38,7 +38,7 @@
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!AnyType_Copyable_Movable>],
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable *(0,1)>>, imm *[0,1]>>],
 # CHECK-SAME:     :type #kgen.quote<!NoneType>,
-# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[imm_mem, imm_mem], "capturing", #lit.fn_meta_origin_data<2>>
+# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[imm_mem, imm_mem], "none", #lit.fn_meta_origin_data<2>>
 comptime ClosureTraitP = def[T: Copyable](List[T]) -> NoneType
 
 
@@ -199,3 +199,37 @@ def forward[T: TrivialRegisterPassable, C: def(t: T)](c: C, arg: T):
     # CHECK-SAME:   #kgen.extension<{{.*}}> C, [
     # CHECK-SAME:     @"extension${{.*}}"<:{{.*}} T, :{{.*}} C>]>
     sink(c, arg)
+
+
+# // -----
+
+# A function converts to its closure wrapper even when the required type is a
+# `#kgen.extension` of that wrapper: the wrapper is built, then rebound to the
+# extension at zero cost.
+
+
+trait HasE:
+    comptime E: Movable
+
+
+struct Base(HasE):
+    comptime E = Int
+
+
+struct Fwd[T: HasE](HasE):
+    comptime E = Self.T.E
+
+
+def ten(x: Int) -> Int:
+    return x * 10
+
+
+def apply[T: HasE, F: def(T.E) -> Int](f: F):
+    pass
+
+
+def main():
+    # CHECK:      lit.call {{.*}}@"apply[
+    # CHECK-SAME:   #kgen.extension<{{.*}}@"inflated${{.*}}, [
+    # CHECK-SAME:     @"extension${{.*}}]>
+    apply[Fwd[Base]](ten)

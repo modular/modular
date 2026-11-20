@@ -17,7 +17,7 @@ Provides `MHAConfig` (tile/pipeline configuration), `FlashAttentionAlgorithm`
 types used by both prefill and decode attention kernels.
 """
 
-from std.math import align_up, ceildiv
+from std.math import align_up, ceildiv, iota
 from std.math.uutils import ufloordiv, ualign_up
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import OptionalReg
@@ -26,7 +26,6 @@ from std.sys import (
     align_of,
     get_defined_bool,
     get_defined_int,
-    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -36,18 +35,16 @@ from std.sys.info import _accelerator_arch
 
 from std.bit import prev_power_of_two
 from max.gpu import WARP_SIZE, lane_id
-from max.gpu.host import DeviceBuffer
+from max.gpu.host import DeviceBuffer, default_accelerator
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     DefaultEngine,
-    ImmTileTensor,
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,
 )
-from layout.layout_tensor import LayoutTensorIter
+from layout.tile_iterator import TileTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.attention.mha_mask import (
     CausalMask,
@@ -56,14 +53,18 @@ from nn.attention.mha_mask import (
     MaskName,
     MHAMask,
     NullMask,
-    RelativeLogitsMask,
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
 )
 
-from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
 from max.gpu.primitives.grid_controls import PDLLevel
+from extensibility import Fused, Input, LoadAccess, TensorTuple
+from nn.attention.operand_masks import AdditiveMask
+from nn.attention.operand_masks import (
+    RelativeLogitsMask as OperandRelativeLogitsMask,
+)
+from nn.attention.operand_masks import SegmentMask as OperandSegmentMask
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -115,7 +116,7 @@ struct FlashAttentionAlgorithm(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -194,6 +195,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: Int
     var depth: Int
+    # V and output head dim; narrower than `depth` only for a split KV cache.
+    var v_depth: Int
     var padded_depth: Int
     var num_queries_per_block: Int
     var num_keys_per_block: Int
@@ -325,9 +328,11 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         k_group_size: Int = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+        v_depth: Int = -1,
     ):
         self.num_heads = num_heads
         self.depth = depth
+        self.v_depth = depth if v_depth < 0 else v_depth
         var swizzle_granularity = (
             swizzle_mode.bytes() // size_of[DType.bfloat16]()
         )
@@ -486,19 +491,15 @@ def indexer_key_bound[
 def _kernel_mask[
     dtype: DType, width: SIMDLength
 ](
-    coord: IndexList[2, ...], bound: IndexList[2, ...], vec: SIMD[dtype, width]
+    coord: Coord[Int, Int],
+    bound: Coord[Int, Int],
+    vec: SIMD[dtype, width],
 ) -> SIMD[dtype, width]:
-    var masked_vec = SIMD[dtype, width]()
-
-    # TODO: use `select` to see if it generates the same code.
-    comptime for i in range(width):
-        masked_vec[i] = (
-            vec[i] if coord[0] < bound[0]
-            and UInt32(coord[1]) + UInt32(i)
-            < UInt32(bound[1]) else min_or_neg_inf[dtype]()
-        )
-
-    return masked_vec
+    var columns = iota[.uint32, width](UInt32(coord[1]))
+    var in_bounds = columns.lt(UInt32(bound[1])) & SIMD[.bool, width](
+        fill=coord[0] < bound[0]
+    )
+    return in_bounds.select(vec, SIMD[dtype, width](min_or_neg_inf[dtype]()))
 
 
 @inline(.always)
@@ -513,11 +514,11 @@ def _copy_frag_to_smem_nvidia[
     frag_simd_width: Int,
     *,
     type0: DType,
-    layout0: Layout,
+    layout0: TensorLayout,
     type1: DType,
     layout1: TensorLayout,
 ](
-    p_smem_iter: LayoutTensorIter[
+    p_smem_iter: TileTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
     p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
@@ -600,14 +601,12 @@ def _copy_frag_to_smem_nvidia[
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    p_smem_iter.linear_uint_type(
-                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
-                    )
+                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
                 )[]
                 comptime align = align_of[
                     SIMD[p_smem_iter.dtype, frag_simd_width]
                 ]()
-                tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
+                tile_BMxBK.ptr.unsafe_store[alignment=align](offset_BMxBK, vec)
 
 
 @inline(.always)
@@ -622,11 +621,11 @@ def _copy_frag_to_smem_amd[
     frag_simd_width: Int,
     *,
     type0: DType,
-    layout0: Layout,
+    layout0: TensorLayout,
     type1: DType,
     layout1: TensorLayout,
 ](
-    p_smem_iter: LayoutTensorIter[
+    p_smem_iter: TileTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
     p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
@@ -686,11 +685,9 @@ def _copy_frag_to_smem_amd[
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    p_smem_iter.linear_uint_type(
-                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
-                    )
+                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
                 )[]
-                tile_BMxBK.ptr.store(offset_BMxBK, vec)
+                tile_BMxBK.ptr.unsafe_store(offset_BMxBK, vec)
 
 
 @inline(.always)
@@ -705,11 +702,11 @@ def _copy_frag_to_smem[
     frag_simd_width: Int,
     *,
     type0: DType,
-    layout0: Layout,
+    layout0: TensorLayout,
     type1: DType,
     layout1: TensorLayout,
 ](
-    p_smem_iter: LayoutTensorIter[
+    p_smem_iter: TileTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
     p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
@@ -782,12 +779,8 @@ def dispatch_mask[
     mask_type: String,
     local_window_size: Int = -1,
 ](callback_fn: Some[callback_fn_type],) raises -> None:
-    """Instantiate an `MHAMask` by name and invoke a callback with it.
-
-    Resolves the mask string to one of the built-in `MHAMask` implementations
-    at compile time and calls `callback_fn` with a concrete mask instance.
-    This lets callers write mask-agnostic kernels while still specialising the
-    generated code per mask type.
+    """Instantiate an `MHAMask` that reads no operands by name and invoke a
+    callback with it.
 
     Parameters:
         mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
@@ -801,8 +794,54 @@ def dispatch_mask[
         callback_fn: Parametric callback invoked with the resolved mask.
 
     Raises:
-        Compile-time assertion error if `mask_type` is unrecognised or if
-        `local_window_size` is inconsistent with the selected mask.
+        Compile-time assertion error if `mask_type` is unrecognised, if it
+        names a mask that reads operands, or if `local_window_size` is
+        inconsistent with the selected mask.
+    """
+    return dispatch_mask[mask_type, local_window_size](
+        TensorTuple(), callback_fn
+    )
+
+
+@inline(.always)
+def dispatch_mask[
+    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
+    //,
+    mask_type: String,
+    local_window_size: Int = -1,
+](
+    mask_operands: TensorTuple[*MaskIns],
+    callback_fn: Some[callback_fn_type],
+) raises -> None:
+    """Build an `MHAMask` by name from its graph operands and invoke a
+    callback with it.
+
+    Resolves the mask string to one of the built-in `MHAMask` implementations
+    at compile time, builds it with `make` from `mask_operands`, and calls
+    `callback_fn` with it. This lets callers write mask-agnostic kernels
+    while still specialising the generated code per mask type, and lets one
+    kernel take every mask whatever operands it reads.
+
+    Parameters:
+        MaskIns: The mask operand types.
+        mask_type: Name of the mask (e.g. `"causal"`, `"null"`,
+            `"sliding_window_causal"`, `"segment"`). Must match one of the
+            `MaskName` constants.
+        local_window_size: Sliding-window or chunk size for masks that
+            require it. Must be `-1` for masks that ignore it and positive
+            for masks that require it.
+
+    Args:
+        mask_operands: The mask's graph operands: none for the masks that
+            read none, the ids and row offsets for `"segment"`, the mask for
+            `"additive"`, the bias, cache lengths and row offsets, and
+            optionally per-token sink logits, for `"relative_logits"`.
+        callback_fn: Parametric callback invoked with the resolved mask.
+
+    Raises:
+        Compile-time assertion error if `mask_type` is unrecognised, if the
+        operands don't match the mask, or if `local_window_size` is
+        inconsistent with the selected mask.
     """
 
     @inline(.always)
@@ -812,80 +851,53 @@ def dispatch_mask[
     # TODO: attach string constants to mask types themselves.
     comptime match mask_type:
         case "causal":
-            return outer_wrapper(CausalMask())
+            return outer_wrapper(CausalMask.make(mask_operands))
         case "chunked":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for ChunkedMask"
-            return outer_wrapper(ChunkedMask[local_window_size]())
+            return outer_wrapper(
+                ChunkedMask[local_window_size].make(mask_operands)
+            )
         case "null":
-            return outer_wrapper(NullMask())
+            return outer_wrapper(NullMask.make(mask_operands))
         case "sliding_window_causal":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for SlidingWindowCausalMask"
-            return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+            return outer_wrapper(
+                SlidingWindowCausalMask[local_window_size].make(mask_operands)
+            )
         case "sliding_window_noncausal":
             comptime assert local_window_size > 0, (
                 "You must specify local_window_size for"
                 " SlidingWindowNonCausalMask"
             )
             return outer_wrapper(
-                SlidingWindowNonCausalMask[local_window_size]()
+                SlidingWindowNonCausalMask[local_window_size].make(
+                    mask_operands
+                )
             )
         case "chunked_causal":
             comptime assert (
                 local_window_size > 0
             ), "You must specify local_window_size for ChunkedCausalMask"
-            return outer_wrapper(ChunkedCausalMask[local_window_size]())
+            return outer_wrapper(
+                type_of(ChunkedCausalMask[local_window_size]()).make(
+                    mask_operands
+                )
+            )
+        case "segment":
+            return outer_wrapper(OperandSegmentMask[].make(mask_operands))
+        case "additive":
+            return outer_wrapper(AdditiveMask[].make(mask_operands))
+        case "relative_logits":
+            # Causal visibility unless `local_window_size` is positive.
+            return outer_wrapper(
+                OperandRelativeLogitsMask[local_window_size].make(mask_operands)
+            )
         case _:
             comptime assert False, "Unsupported mask type: " + mask_type
-
-
-@inline(.always)
-def dispatch_relative_logits_mask[
-    dtype: DType,
-    BiasLayout: TensorLayout,
-    bias_origin: ImmOrigin,
-    CacheLengthsLayout: TensorLayout,
-    cache_lengths_origin: ImmOrigin,
-    RowOffsetsLayout: TensorLayout,
-    row_offsets_origin: ImmOrigin,
-    //,
-    local_window_size: Int = -1,
-](
-    bias_nd: ImmTileTensor[dtype, BiasLayout, bias_origin],
-    cache_lengths: ImmTileTensor[
-        .uint32, CacheLengthsLayout, cache_lengths_origin
-    ],
-    input_row_offsets: ImmTileTensor[
-        .uint32, RowOffsetsLayout, row_offsets_origin
-    ],
-    callback_fn: Some[callback_fn_type],
-) raises -> None:
-    """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
-
-    This carries runtime state (the bias table plus the tensors that recover
-    its ragged-flat row), so it lives
-    outside `dispatch_mask`'s zero-arg string dispatch. `local_window_size`
-    picks the visibility mask: `<= 0` (canonically `-1`, the graph-level
-    "no window" value) -> `CausalMask`, else
-    `SlidingWindowCausalMask[local_window_size]`. The mask structs
-    themselves report "no window" as `sliding_window_size() == 0`; this
-    function is where the two conventions meet.
-    """
-    comptime if local_window_size <= 0:
-        return callback_fn(
-            RelativeLogitsMask[visibility=CausalMask()](
-                bias_nd, cache_lengths, input_row_offsets
-            )
-        )
-    else:
-        return callback_fn(
-            RelativeLogitsMask[
-                visibility=SlidingWindowCausalMask[local_window_size]()
-            ](bias_nd, cache_lengths, input_row_offsets)
-        )
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`
@@ -981,7 +993,7 @@ trait OptionalPointer(Copyable, DevicePassable, TrivialRegisterPassable):
     @inline(.always)
     def value(
         self,
-    ) -> UnsafePointer[
+    ) -> ImmPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]:
         ...
@@ -1001,7 +1013,7 @@ struct NonNullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = False
     comptime address_space: AddressSpace = Self.address_space_
-    comptime PtrType = UnsafePointer[
+    comptime PtrType = ImmPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
@@ -1033,6 +1045,13 @@ struct NonNullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
         self.ptr = rebind[Self.PtrType](ptr.unsafe_ptr())
 
     @inline(.always)
+    def __init__(
+        out self,
+        tensor: TileTensor[Self.dtype, address_space=Self.address_space, ...],
+    ):
+        self.ptr = tensor.ptr.as_imm().as_unsafe_any_origin()
+
+    @inline(.always)
     def value(self) -> Self.PtrType:
         assert Int(self.ptr) != 0, (
             "NonNullPointer is supposed to provide a compile-time guarantee"
@@ -1055,7 +1074,7 @@ struct NullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = True
     comptime address_space: AddressSpace = Self.address_space_
-    comptime PtrType = UnsafePointer[
+    comptime PtrType = ImmPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
@@ -1094,7 +1113,7 @@ comptime MaybeNullPointer[dtype: DType, present: Bool] = NonNullPointer[
 @inline(.always)
 def maybe_null_pointer[
     dtype: DType, //, present: Bool
-](ptr: UnsafePointer[Scalar[dtype], _]) -> MaybeNullPointer[dtype, present]:
+](ptr: Pointer[Scalar[dtype], _]) -> MaybeNullPointer[dtype, present]:
     """Wraps `ptr` as a `NonNullPointer` when `present`, else drops it.
 
     Lets a caller that knows at compile time whether an optional operand is
@@ -1112,11 +1131,9 @@ def maybe_null_pointer[
         The `OptionalPointer` for `ptr`.
     """
     comptime if present:
-        return rebind[MaybeNullPointer[dtype, present]](
-            NonNullPointer[dtype](ptr.as_imm().as_unsafe_any_origin())
-        )
+        return NonNullPointer[dtype](ptr.as_imm().as_unsafe_any_origin())
     else:
-        return rebind[MaybeNullPointer[dtype, present]](NullPointer[dtype]())
+        return NullPointer[dtype]()
 
 
 @inline(.always)
@@ -1164,7 +1181,7 @@ def unread_pointer[T: OptionalPointer]() -> T:
 def as_optional_reg[
     T: OptionalPointer
 ](ptr: T) -> OptionalReg[
-    UnsafePointer[Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space]
+    MutPointer[Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space]
 ]:
     """Converts an `OptionalPointer` to the runtime-nullable `OptionalReg` form.
 
@@ -1184,7 +1201,7 @@ def as_optional_reg[
         return None
     else:
         return rebind[
-            UnsafePointer[
+            MutPointer[
                 Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space
             ]
         ](ptr.value())
@@ -1227,6 +1244,15 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     def lse_pointer(self) -> Self.LSEPointerType:
         ...
 
+    # An f32 buffer the kernel stores each partition's O into directly, in
+    # place of the output-typed O store, so the combine reads unrounded
+    # partials. Null for every scheme that does not own one.
+    comptime OPartialPointerType: OptionalPointer
+
+    @inline(.always)
+    def o_partial_pointer(self) -> Self.OPartialPointerType:
+        ...
+
 
 struct NoPartition[dtype: DType](
     Defaultable, MHAPartitionScheme, TrivialRegisterPassable
@@ -1244,6 +1270,7 @@ struct NoPartition[dtype: DType](
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
     comptime LSEPointerType = NullPointer[Self.accum_dtype]
+    comptime OPartialPointerType = NullPointer[DType.float32]
 
     @inline(.always)
     def __init__(out self):
@@ -1261,10 +1288,14 @@ struct NoPartition[dtype: DType](
     def lse_pointer(self) -> Self.LSEPointerType:
         return {}
 
+    @inline(.always)
+    def o_partial_pointer(self) -> Self.OPartialPointerType:
+        return {}
 
-struct SplitKPartition[dtype: DType](
-    MHAPartitionScheme, TrivialRegisterPassable
-):
+
+struct SplitKPartition[
+    dtype: DType, OPartialType: OptionalPointer = NullPointer[DType.float32]
+](MHAPartitionScheme, TrivialRegisterPassable):
     """A multi-partition split-K scheme for MHA decoding over long sequences.
 
     Divides the key sequence across `num_partitions` CTAs. Each CTA writes
@@ -1276,27 +1307,37 @@ struct SplitKPartition[dtype: DType](
     Parameters:
         dtype: The accumulator element type used for the partial statistics
             buffer and the final output.
+        OPartialType: An f32 buffer for each partition's O, for a kernel that
+            stores its partials unrounded; null when the kernel stores them
+            in its output type.
     """
 
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     comptime LSEPointerType = NonNullPointer[Self.accum_dtype]
+    comptime OPartialPointerType = Self.OPartialType
 
     @__allow_legacy_any_origin_fields
-    var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
+    var ptr: MutPointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
     var max_num_partitions_value: UInt32
+    var o_partial: Self.OPartialType
 
     @inline(.always)
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
+        ptr: MutPointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
         max_num_partitions_value: UInt32,
+        o_partial: Self.OPartialType = null_pointer[Self.OPartialType](),
     ):
+        comptime assert (
+            Self.OPartialType.is_null or Self.OPartialType.dtype == .float32
+        ), "the O partials a kernel stores unrounded are f32"
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
         self.max_num_partitions_value = max_num_partitions_value
+        self.o_partial = o_partial
 
     @inline(.always)
     def num_partitions(self) -> UInt32:
@@ -1309,3 +1350,7 @@ struct SplitKPartition[dtype: DType](
     @inline(.always)
     def lse_pointer(self) -> Self.LSEPointerType:
         return {self.ptr.as_imm().as_unsafe_any_origin()}
+
+    @inline(.always)
+    def o_partial_pointer(self) -> Self.OPartialPointerType:
+        return self.o_partial

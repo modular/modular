@@ -11,14 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Inkling architecture: a text-and-vision pipeline model with KV cache
-and SSM state support.
+"""The Inkling architecture.
+
+A text-and-vision pipeline model with KV cache and SSM state support.
 """
 
 from .arch import inkling_arch
 from .batch_processor import InklingInputs
 from .model import InklingModel
-from .model_config import InklingConfig
+from .model_config import (
+    InklingConfig,
+    InklingMTPConfig,
+    InklingTextConfig,
+    InklingVisionConfig,
+)
 from .reasoning import InklingReasoningParser
 from .tokenizer import InklingTokenizer
 from .tool_parser import InklingToolParser
@@ -26,9 +32,12 @@ from .tool_parser import InklingToolParser
 __all__ = [
     "InklingConfig",
     "InklingInputs",
+    "InklingMTPConfig",
     "InklingModel",
     "InklingReasoningParser",
+    "InklingTextConfig",
     "InklingTokenizer",
     "InklingToolParser",
+    "InklingVisionConfig",
     "inkling_arch",
 ]

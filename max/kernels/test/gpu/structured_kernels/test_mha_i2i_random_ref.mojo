@@ -37,7 +37,7 @@ from std.testing import assert_true
 
 from layout import TileTensor
 from layout.coord import Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -85,17 +85,8 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
     )
 
     print(
-        "--- depth=",
-        depth,
-        " seq_q=",
-        seq_q,
-        " num_keys=",
-        num_keys,
-        " (seq_q%256=",
-        seq_q % BM,
-        " num_keys%64=",
-        num_keys % KV_BLOCK,
-        ") ---",
+        t"--- depth= {depth}  seq_q= {seq_q}  num_keys= {num_keys}  (seq_q%256="
+        t" {seq_q % BM}  num_keys%64= {num_keys % KV_BLOCK} ) ---"
     )
 
     var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
@@ -174,7 +165,7 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
                     max_err = diff
                     argq = q
 
-    print("  max row-err=", max_err, " at q=", argq, " (tol=", TOL, ")")
+    print(t"  max row-err= {max_err}  at q= {argq}  (tol= {TOL} )")
     assert_true(max_err < TOL, "kernel output diverged from reference")
     print("  PASSED")
 

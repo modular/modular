@@ -225,7 +225,7 @@ def test_device_hit_attributes_no_cached_prefix_to_the_external_tier() -> None:
     """CLIN-1785: a pure device hit leaves ``cached_prefix_external_length`` 0.
 
     This is the field the scheduler subtracts from ``cached_prefix_length`` to
-    tag ``maxserve.cache.hits`` per tier, so a non-zero value here would charge
+    tag ``max.cache.hits`` per tier, so a non-zero value here would charge
     an on-device hit to the connector and understate the device share. Asserted
     on the admission path rather than on ``get_full_blocks_from_prefix_cache``'s
     block count, because the scheduler reads the context field, not the count.

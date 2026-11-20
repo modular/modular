@@ -285,6 +285,7 @@ def create_tokenizer(
         mock_model_config.huggingface_config = hf_config
         pipeline_config = NonCallableMock(spec=PipelineConfig)
         pipeline_config.model = mock_model_config
+        pipeline_config.tokenizer_impl = None
 
     return TextTokenizer(
         model_path,

@@ -48,7 +48,7 @@ Design (writer = GPU 0, reader = GPU 1, P2P enabled, peer-addressable buffers):
 
 Note on the fence primitive: `gpu.intrinsics.threadfence` asserts
 `is_nvidia_gpu()` (NVIDIA-only), so it CANNOT be used for the AMD release fence.
-We use the cross-target `std.atomic.fence[ordering=RELEASE, scope=...]`
+We use the cross-target `std.atomic.fence[ordering=release, scope=...]`
 (`pop.fence` with a real `syncscope`) instead. `scope=""` is the LLVM default =
 system scope, which is what a cross-GPU release requires.
 
@@ -61,9 +61,9 @@ genuine consumer of the slice-1 primitive.
 from std.atomic import Ordering, fence
 from max.gpu import global_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.memory import bitcast
-from std.sys import default_accelerator
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_true
 
 from comm.lamport import has_neg_zero, set_neg_zero
@@ -112,20 +112,24 @@ def writer_kernel[
     if slot >= num_slots:
         return
 
-    var slot_ptr = peer_buf + slot * PACK_WIDTH
+    var slot_ptr = peer_buf.unsafe_offset(slot * PACK_WIDTH)
     var sentinel = set_neg_zero[DTYPE, PACK_WIDTH]()
 
     for g in range(1, ITERS + 1):
         # Mark "not ready" (the tear-prone window opens here).
-        slot_ptr.store[width=PACK_WIDTH, alignment=16, volatile=True](sentinel)
+        slot_ptr.unsafe_store[width=PACK_WIDTH, alignment=16, volatile=True](
+            sentinel
+        )
         comptime if use_fence:
-            fence[ordering=Ordering.RELEASE, scope=fence_scope]()
+            fence[ordering=.release, scope=fence_scope]()
 
         # Publish the data pack: every lane carries the same generation g.
         var data = SIMD[DTYPE, PACK_WIDTH](Scalar[DTYPE](g))
-        slot_ptr.store[width=PACK_WIDTH, alignment=16, volatile=True](data)
+        slot_ptr.unsafe_store[width=PACK_WIDTH, alignment=16, volatile=True](
+            data
+        )
         comptime if use_fence:
-            fence[ordering=Ordering.RELEASE, scope=fence_scope]()
+            fence[ordering=.release, scope=fence_scope]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -160,7 +164,7 @@ def reader_kernel[
     if slot >= num_slots:
         return
 
-    var slot_ptr = own_buf + slot * PACK_WIDTH
+    var slot_ptr = own_buf.unsafe_offset(slot * PACK_WIDTH)
     var torn = Int64(0)
     var last_g = Int64(0)
 
@@ -168,13 +172,13 @@ def reader_kernel[
         var spins = 0
         while spins < SPIN_CAP:
             spins += 1
-            var pack = slot_ptr.load[
+            var pack = slot_ptr.unsafe_load[
                 width=PACK_WIDTH, alignment=16, volatile=True
             ]()
             comptime if use_fence:
                 # Reader-side acquire fence, paired with the writer release, to
                 # test whether an explicit acquire is needed for visibility.
-                fence[ordering=Ordering.ACQUIRE, scope=fence_scope]()
+                fence[ordering=.acquire, scope=fence_scope]()
 
             # Still the sentinel -> producer has not written this generation.
             if has_neg_zero[DTYPE, PACK_WIDTH](pack):
@@ -227,7 +231,7 @@ def run_variant[
     var shared = reader_ctx.create_buffer_sync[DTYPE](NUM_SLOTS * PACK_WIDTH)
     # Initialize to the sentinel so the reader's first read is "not ready",
     # never uninitialized garbage.
-    var init_host = alloc[Scalar[DTYPE]](NUM_SLOTS * PACK_WIDTH)
+    var init_host = unsafe_alloc[Scalar[DTYPE]](NUM_SLOTS * PACK_WIDTH)
     var neg_zero = bitcast[DTYPE, 1](SIMD[UDTYPE, 1](UInt32(1) << 31))[0]
     for i in range(NUM_SLOTS * PACK_WIDTH):
         init_host[i] = neg_zero
@@ -267,8 +271,8 @@ def run_variant[
     reader_ctx.synchronize()
 
     # Reduce results on the host.
-    var torn_host = alloc[Int64](NUM_SLOTS)
-    var seen_host = alloc[Int64](NUM_SLOTS)
+    var torn_host = unsafe_alloc[Int64](NUM_SLOTS)
+    var seen_host = unsafe_alloc[Int64](NUM_SLOTS)
     reader_ctx.enqueue_copy(torn_host, torn_buf)
     reader_ctx.enqueue_copy(seen_host, seen_buf)
     reader_ctx.synchronize()
@@ -300,12 +304,8 @@ def run_variant[
         )
     else:
         print(
-            (
-                "  VISIBILITY OK: every reader slot observed the peer's stores"
-                " and advanced (min generation seen ="
-            ),
-            min_seen,
-            ")",
+            t"  VISIBILITY OK: every reader slot observed the peer's stores and"
+            t" advanced (min generation seen = {min_seen} )"
         )
 
     if total_torn == 0:
@@ -316,9 +316,9 @@ def run_variant[
             " store/load is NOT single-copy-atomic for this variant"
         )
 
-    init_host.free()
-    torn_host.free()
-    seen_host.free()
+    init_host.unsafe_free()
+    torn_host.unsafe_free()
+    seen_host.unsafe_free()
 
 
 def main() raises:
@@ -334,7 +334,7 @@ def main() raises:
     var writer_ctx = DeviceContext(device_id=0)
     var reader_ctx = DeviceContext(device_id=1)
     assert_true(
-        writer_ctx.can_access(reader_ctx),
+        writer_ctx.device().can_access_peer(reader_ctx.device()),
         "GPU 0 cannot peer-access GPU 1; P2P unavailable",
     )
 

@@ -277,6 +277,25 @@ const M::Telemetry::LocalIDs &M::Telemetry::createLocalIDs() {
   return ids;
 }
 
+bool M::Telemetry::isModularEndpoint(StringRef endpoint) {
+  // Find the host the export goes to. opentelemetry-cpp's UrlParser skips
+  // userinfo whose '@' precedes the first '/', and the exporter rebuilds the
+  // URL from the host it finds; curl then ends that authority at "/?#" and
+  // splits off userinfo at its first '@'.
+  StringRef host = endpoint;
+  if (size_t pos = host.find("://"); pos != StringRef::npos)
+    host = host.drop_front(pos + 3);
+  if (size_t at = host.find('@'); at < host.find('/'))
+    host = host.drop_front(at + 1);
+  host = host.take_front(host.find_first_of("/?#"));
+  if (size_t at = host.find('@'); at != StringRef::npos)
+    host = host.drop_front(at + 1);
+  host = host.take_until([](char c) { return c == ':'; });
+  host.consume_back(".");
+  return host.equals_insensitive("modular.com") ||
+         host.ends_with_insensitive(".modular.com");
+}
+
 bool M::Telemetry::isTelemetryEnabled(Config &settings) {
   return settings.getValueAsBool("telemetry.enabled",
 #ifdef MODULAR_PRODUCTION
@@ -517,6 +536,7 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
 
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
     otlpOptions.timeout = kOtlpRequestTimeout;
+    dropHeadersForModular(otlpOptions, httpEndpoint);
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
@@ -568,6 +588,7 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
 
     otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
     otlpLogOptions.timeout = kOtlpRequestTimeout;
+    dropHeadersForModular(otlpLogOptions, httpEndpoint);
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
             otlpLogOptions);

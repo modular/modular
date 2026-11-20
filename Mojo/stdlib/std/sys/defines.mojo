@@ -216,8 +216,9 @@ def get_defined_dtype[name: StaticString, default: DType]() -> DType:
 
     comptime if is_defined[name]():
         comptime parsed = DType._from_str(get_defined_string[name]())
-        comptime assert parsed, "invalid DType define for '" + name + "'"
-        return parsed.value()
+        comptime __guard case .Some(dtype) = parsed else:
+            comptime assert False, "invalid DType define for '" + name + "'"
+        return dtype
     else:
         return default
 

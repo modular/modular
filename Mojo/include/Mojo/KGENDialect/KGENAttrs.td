@@ -56,6 +56,7 @@ def UnsignedIndexAttr :
 // ParameterExprArrayAttr
 //===----------------------------------------------------------------------===//
 
+// TODO: remove this and switch to `ParamsBindingArrayAttr`
 def KGEN_ParameterExprArrayAttr
     : ArrayOfAttr<KGENDialect, "ParameterExprArray", "exprs", "TypedAttr">;
 
@@ -333,26 +334,6 @@ def KGEN_SingletonAttr : KGEN_ExprAttr<"Singleton", "singleton"> {
 }
 
 //===----------------------------------------------------------------------===//
-// UnboundAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_UnboundAttr : KGEN_ExprAttr<"Unbound", "unbound"> {
-  let summary = "An unbound parameter value.";
-  let description = [{
-    The `#kgen.unbound` attribute represents an unbound parameter value. It is
-    a special placeholder that appears in collections of parameters that have
-    been partially bound.
-  }];
-
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "";
-
-  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
-    return get(type.getContext(), type);
-  }]>];
-}
-
-//===----------------------------------------------------------------------===//
 // NoneAttr
 //===----------------------------------------------------------------------===//
 
@@ -557,6 +538,14 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
 
     // MlirType is omitted if same as typeValue.
     #kgen.type<!myTypeValue> : !kgen.type
+
+    // A type value that holds the same value in both the value and layout
+    // domains:
+    #kgen.type<!kgen.struct<[index] value>, !kgen.struct<(index)>>
+
+    // A type value that holds more than its layout is kept.
+    #kgen.type<!kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(f32)>]] value>,
+               !kgen.struct<(struct<(f32)>)>>
     ```
   }];
 
@@ -993,40 +982,6 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
 }
 
 //===----------------------------------------------------------------------===//
-// CompileOffloadClosureAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_CompileOffloadClosureAttr : KGEN_ExprAttr<"CompileOffloadClosure",
-    "compile_offload_closure", [ContextuallyEvaluatedAttrInterface]> {
-  let summary = "Compile offload closure for a given target.";
-  let description = [{
-    The `#kgen.compile_offload_closure` attribute is used to compile offload
-    closures for a given target.
-
-    Example:
-
-    ```mlir
-    #kgen.compile_offload_closure<
-      #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
-      #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>
-    > : !kgen.string
-    ```
-  }];
-
-  let parameters = (ins
-    "TypedAttr":$target,
-    "TypedAttr":$func,
-    AttributeSelfTypeParameter<"", "Type">:$type
-  );
-
-  let assemblyFormat = [{
-    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,` $func `>`
-  }];
-
-  let genVerifyDecl = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // GetLinkageNameAttr
 //===----------------------------------------------------------------------===//
 
@@ -1042,7 +997,7 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
     ```mlir
     #kgen.get_linkage_name<
       #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
-      #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>
+      #kgen.gen<#kgen.func.symbol<@return_one>> : !kgen.generator<() -> index>
     > : !kgen.string
     ```
   }];
@@ -1113,7 +1068,7 @@ def KGEN_GetSourceNameAttr : KGEN_ExprAttr<"GetSourceName",
 
     ```mlir
     #kgen.get_source_name<
-      #kgen.symbol.constant<@return_two> : !kgen.generator<() -> index>
+      #kgen.gen<#kgen.func.symbol<@return_two>> : !kgen.generator<() -> index>
     > : !kgen.string
     ```
   }];
@@ -1143,7 +1098,7 @@ def KGEN_GetFunctionParameterCountAttr : KGEN_ExprAttr<"GetFunctionParameterCoun
 
     ```mlir
     #kgen.get_function_parameter_count<
-      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+      #kgen.gen<#kgen.func.symbol<@my_func>> : !kgen.generator<...>
     > : index
     ```
   }];
@@ -1174,7 +1129,7 @@ def KGEN_GetFunctionParameterNamesAttr : KGEN_ExprAttr<"GetFunctionParameterName
 
     ```mlir
     #kgen.get_function_parameter_names<
-      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+      #kgen.gen<#kgen.func.symbol<@my_func>> : !kgen.generator<...>
     > : !kgen.param_list<!kgen.string>
     ```
   }];
@@ -1205,7 +1160,7 @@ def KGEN_GetFunctionIsRaisingAttr : KGEN_ExprAttr<"GetFunctionIsRaising",
 
     ```mlir
     #kgen.get_function_is_raising<
-      #kgen.symbol.constant<@my_def> : !kgen.generator<...>
+      #kgen.gen<#kgen.func.symbol<@my_def>> : !kgen.generator<...>
     > : i1
     ```
   }];
@@ -1746,14 +1701,61 @@ def KGEN_GetBaseTypeNameAttr : KGEN_ExprAttr<"GetBaseTypeName", "get_base_type_n
 // BindParams
 //===----------------------------------------------------------------------===//
 
+def KGEN_ParamsBindingArrayAttr
+    : KGENAttr<"ParamsBindingArray", "params_binding_array"> {
+  let summary = "Parameter values bound onto the inputs of a generator.";
+  let description = [{
+    The `#kgen.params_binding_array` attribute holds the parameter values
+    that a `#kgen.bind_params` attribute or a `lit.bind_params` operation binds
+    onto the inputs of a generator.
+
+    The values are sparse. `boundMask` has one bit per input, set where the
+    input is bound, and `boundValues` holds the values of the bound inputs in
+    order.
+  }];
+
+  let parameters = (ins
+    "DenseBoolArrayAttr":$boundMask,
+    OptionalArrayRefParameter<"TypedAttr">:$boundValues
+  );
+  let assemblyFormat = "`<` struct(params) `>`";
+
+  let builders = [
+    // Build `numParams` values from a dense list, where a null value leaves
+    // that input unbound. Missing trailing values are unbound. The list must
+    // not be longer than `numParams`.
+    AttrBuilder<(ins
+      "size_t":$numParams,
+      "ArrayRef<TypedAttr>":$paramValues
+    )>,
+    // Build one value per entry of a dense list.
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$paramValues), [{
+      return ParamsBindingArrayAttr::get($_ctxt, paramValues.size(),
+                                         paramValues);
+    }]>
+  ];
+  let extraClassDeclaration = [{
+    /// Return the number of inputs, bound or not.
+    size_t size() const { return getBoundMask().size(); }
+
+    /// Return true if every input is bound.
+    bool isFullyBound() const { return getBoundValues().size() == size(); }
+
+    /// Return one value per input, null where the input is unbound.
+    SmallVector<TypedAttr> getDenseBindingArray() const;
+  }];
+  let genVerifyDecl = 1;
+}
+
 def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
   let summary = "Bind params onto an expression with generator type.";
   let description = [{
     The `#kgen.bind_params` attribute is used to bind parameters onto a
     generator parameter (a parameter whose type is some GeneratorType).
 
-    Partial & out-of-order parameter binding is allowed by specifying the
-    unbound positions with UnboundAttr.
+    `params` holds one entry per generator input. An input that `params`
+    leaves unbound stays an input of the result, which allows partial and
+    out-of-order binding. An unbound input prints as `?`.
 
     Example:
 
@@ -1771,11 +1773,11 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
 
   let parameters = (ins
     "TypedAttr":$generator,
-    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    "ParamsBindingArrayAttr":$params,
     OptionalParameter<"DenseBoolArrayAttr">:$discharged
   );
   let assemblyFormat =
-      "`<` custom<BindParams>($generator, $paramValues, $discharged) `>`";
+      "`<` custom<BindParams>($generator, $params, $discharged) `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -1784,36 +1786,47 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
     // construction.
     AttrBuilder<(ins
       "TypedAttr":$generator,
-      "ArrayRef<TypedAttr>":$paramValues,
+      "ParamsBindingArrayAttr":$params,
       "DenseBoolArrayAttr":$discharged,
-      CArg<"ParameterEvaluationContext *", "nullptr">:$evaluationContext
-    ), "", "TypedAttr">,
-    AttrBuilder<(ins
-      "TypedAttr":$generator,
-      "ArrayRef<TypedAttr>":$paramValues,
       CArg<"ParameterEvaluationContext *", "nullptr">:$evaluationContext
     ), "", "TypedAttr">
   ];
   let extraClassDeclaration = [{
-    /// Derive the result type from the generator and parameter values.
-    /// Parameter values are normalized to the generator's input arity: missing
-    /// trailing values are treated as unbound and extra trailing values are
-    /// ignored. `discharged` is an optional bitmask over the generator's body
+    /// Build from a dense list of parameter values, where a null value leaves
+    /// that input unbound. Missing trailing values are unbound. The list must
+    /// not be longer than the generator's inputs.
+    static TypedAttr get(
+        MLIRContext *context, TypedAttr generator,
+        ArrayRef<TypedAttr> paramValues, DenseBoolArrayAttr discharged,
+        ParameterEvaluationContext *evaluationContext = nullptr);
+    static TypedAttr get(
+        MLIRContext *context, TypedAttr generator,
+        ArrayRef<TypedAttr> paramValues,
+        ParameterEvaluationContext *evaluationContext = nullptr);
+
+    /// Return one value per generator input, null where the input is unbound.
+    SmallVector<TypedAttr> getDenseBindingArray() const {
+      return getParams().getDenseBindingArray();
+    }
+
+    /// Derive the result type from the generator type and the bound
+    /// parameters. `params` must have one entry per generator input.
+    /// `discharged` is an optional bitmask over the generator's body
     /// constraints: a set bit drops the matching constraint from the result
     /// type. Null (the default) retains all body constraints.
     static Type inferResultType(
-        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        GeneratorType genType, ParamsBindingArrayAttr params,
         DenseBoolArrayAttr discharged,
         ParameterEvaluationContext *evaluationContext);
     static Type inferResultType(
-        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        GeneratorType genType, ParamsBindingArrayAttr params,
         ParameterEvaluationContext *evaluationContext);
     Type getType() const;
 
     /// A specific builder used to build the attribute from a bytecode context,
     /// bypassing simplification.
     static BindParamsAttr getFromBytecode(
-        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        TypedAttr generator, ParamsBindingArrayAttr params,
         DenseBoolArrayAttr discharged = {});
   }];
   let genVerifyDecl = 1;
@@ -1831,8 +1844,6 @@ def KGEN_TypeGeneratorRefAttr : KGEN_ExprAttr<"TypeGeneratorRef", "genref", [
     This is a symbolic reference to a type-value generator. Its type is the
     metatype of the type-value. If the type-value is parametric, additional
     parameter values may be bound.
-
-    TODO: Merge SymbolConstantAttr into this.
   }];
 
   let parameters = (ins "SymbolRefAttr":$symbol,
@@ -1933,55 +1944,6 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant",
 }
 
 //===----------------------------------------------------------------------===//
-// SymbolConstantAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
-    [CallableSymbolAttrInterface,
-     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
-  let summary = "kgen.func or kgen.generator reference";
-  let description = [{
-    This is a value of FuncTypeGenerator type, which refers to a func or
-    generator.  This may optionally bind the input parameter values at time of
-    formation - when this happens, the result type is non-parametric.
-  }];
-
-  let parameters = (ins
-    "SymbolRefAttr":$symbol,
-    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    AttributeSelfTypeParameter<"", "FuncTypeGeneratorType">:$type
-  );
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins
-        "SymbolRefAttr":$symbol, "FuncTypeGeneratorType":$type,
-        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
-      return get(type.getContext(), symbol, paramValues, type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins
-        "StringAttr":$name, "FuncTypeGeneratorType":$type,
-        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
-      return get(FlatSymbolRefAttr::get(name), type, paramValues);
-    }]>,
-    AttrBuilderWithInferredContext<(ins
-        "GeneratorOp":$func, "FuncTypeGeneratorType":$type,
-        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
-      return get(func.getSymNameAttr(), type, paramValues);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "GeneratorOp":$func), [{
-      return get(func.getSymNameAttr(), func.getFuncTypeGenerator());
-    }]>,
-    AttrBuilderWithInferredContext<(ins "FuncOp":$func), [{
-      return get(func.getSymNameAttr(), func.getFuncTypeGenerator());
-    }]>,
-  ];
-
-  let assemblyFormat = [{
-    `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // FuncPtrBitcastAttr
 //===----------------------------------------------------------------------===//
 
@@ -1991,25 +1953,26 @@ def KGEN_FuncPtrBitcastAttr : KGEN_ExprAttr<"FuncPtrBitcast", "func_ptr_bitcast"
   let description = [{
     The `#kgen.func_ptr_bitcast` attribute is the compile-time analogue of a
     `pop.pointer.bitcast` applied to a function pointer. It wraps a
-    `SymbolConstantAttr` -- which keeps the callee's true, declared signature --
-    and re-presents it under a different `FuncTypeGeneratorType`.
+    `FuncSymbolAttr` -- which keeps the callee's true, declared signature -- and
+    re-presents it under a different `FuncTypeGeneratorType`.
 
     Example:
 
     ```mlir
-    #kgen.func_ptr_bitcast<#kgen.symbol.constant<@bar> : !kgen.generator<(i64) -> none>>
+    #kgen.func_ptr_bitcast<#kgen.func.symbol<@bar> : !kgen.func<(i64) -> none>>
       : !kgen.generator<(...) -> none>
     ```
   }];
 
   let parameters = (ins
-    "SymbolConstantAttr":$callee,
+    "FuncSymbolAttr":$callee,
+    // TODO: this should really be a bare FuncType.
     AttributeSelfTypeParameter<"", "FuncTypeGeneratorType">:$type
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-        "SymbolConstantAttr":$callee, "FuncTypeGeneratorType":$type), [{
+        "FuncSymbolAttr":$callee, "FuncTypeGeneratorType":$type), [{
       return get(type.getContext(), callee, type);
     }]>,
   ];
@@ -2018,13 +1981,8 @@ def KGEN_FuncPtrBitcastAttr : KGEN_ExprAttr<"FuncPtrBitcast", "func_ptr_bitcast"
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
-    /// Get the wrapped reference at its true (deep) signature.
-    SymbolConstantAttr getSymbolConstant() const { return getCallee(); }
-
-    SymbolRefAttr getSymbol() const { return getSymbolConstant().getSymbol(); }
-    ArrayRef<TypedAttr> getParamValues() const {
-      return getSymbolConstant().getParamValues();
-    }
+    SymbolRefAttr getSymbol() const;
+    ArrayRef<TypedAttr> getParamValues() const;
   }];
 }
 
@@ -2079,11 +2037,11 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
       PartiallySpecializedInputParams &specialization,
       function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorAttr getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings,
+      ParamsBindingArrayAttr paramBindings,
       ParameterEvaluationContext *evaluationContext,
       function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorAttr getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings,
+      ParamsBindingArrayAttr paramBindings,
       ParameterEvaluationContext *evaluationContext, Location location);
 
     /// Returns true if the signature has no input params.
@@ -2311,6 +2269,25 @@ def KGEN_StructExtractAttr : KGENAttr<"StructExtract", "struct.extract",
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_UntaggedUnionAttr : KGENAttr<"UntaggedUnion", "untagged_union", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "Union field bytes with interpreted pointer and symbol values";
+  let description = [{
+    A snapshot of an untagged union field. Each fragment is a byte, a pointer,
+    or a symbolic value. Keeping interpreted pointers as attributes lets the
+    interpreter externalize them without guessing which member is active.
+  }];
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$fragments,
+                        AttributeSelfTypeParameter<"", "UntaggedUnionType">:$type);
+  let assemblyFormat = "`<` `[` $fragments `]` `>`";
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // VariantAttr
 //===----------------------------------------------------------------------===//
 
@@ -2419,8 +2396,7 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                ["evaluateWithContext"]>,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface,
-                                ["isLessThan", "validateForElaborator"]>
+    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
@@ -2516,9 +2492,7 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
 def KGEN_ParamIdenticalAttr
     : KGEN_ExprAttr<"ParamIdentical", "param.identical", [
     DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
-                                ["evaluateWithContext"]>,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface,
-                                ["validateForElaborator"]>
+                                ["evaluateWithContext"]>
   ]> {
   let summary = "Parameter identity proposition";
   let description = [{
@@ -2725,11 +2699,17 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_LinkDependencyArrayAttr : ArrayOfAttr<KGENDialect,
-  "LinkDependencyArray", "link.dependencies", "FlatSymbolRefAttr"> {
+  "LinkDependencyArray", "link.dependencies", "SymbolRefAttr"> {
   let summary = "List of references to link dependencies.";
   let description = [{
     The `#kgen.link.dependencies` attribute represents a list of link
-    dependencies, which are flat symbol references.
+    dependencies.
+
+    Example:
+
+    ```mlir
+    #kgen<link.dependencies[@std, @namespace::@sub]>
+    ```
   }];
 }
 
@@ -2821,14 +2801,13 @@ def KGEN_ClosureSymbolAttr : KGENAttr<"ClosureSymbol", "closure.symbol",
 //===----------------------------------------------------------------------===//
 
 def KGEN_FuncSymbolAttr : KGEN_ExprAttr<"FuncSymbol", "func.symbol",
-    [DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
+    [CallableSymbolAttrInterface,
+     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "a kgen.func reference";
   let description = [{
     This is a value of FuncType, which refers to a func, the `type` must
     match with the FuncType of the given `symbol` after instantiated with the
     `paramValues`.
-
-    TODO: Delete SymbolConstantAttr after fully migrate to FuncLiteralType.
   }];
 
   let parameters = (ins
@@ -3147,8 +3126,11 @@ def KGEN_PogListAttr : KGEN_ExprAttr<"PogList", "pog_list"> {
     >
     ```
 
-    The `origVariadicConvention` indicates whether the original argument
-    convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
+    The `origVariadicConvention` denotes the argument convention of the
+    elements of a VariadicList, e.g. "mut *args: Int". A VariadicPack records
+    its elements' convention in the function's arg convention, so an argument
+    list with a VariadicPack must not set this field. Parameters have no
+    convention.
 
     Optional `bodyConstraints` holds constraints that are enforced by the body
     of the generator type that carries this list as metadata.
@@ -3405,6 +3387,10 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
 
     /// For a MemberAlias sugar, return the base type.
     Type getMemberAliasType() const;
+
+    /// Return the alias declaration for this sugar. Handles both `MyAlias`
+    /// and `MyAlias[T]` syntaxes.
+    ParamDeclRefAttr getAliasDeclRef() const;
 
     static TypedAttr getAlwaysInlineBuiltin(TypedAttr sugared,
                                             TypedAttr expanded) {

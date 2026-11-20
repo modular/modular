@@ -46,7 +46,7 @@ def _test_very_high_level_api(cpy: CPython) raises:
 
 def _test_reference_counting_api(cpy: CPython) raises:
     # this is the smallest integer that's GC'd by the Python interpreter
-    var n = cpy.PyLong_FromSsize_t(257)
+    var n = cpy.PyLong_FromSsize_t(1025)
     assert_equal(cpy._Py_REFCNT(n), 1)
 
     cpy.Py_IncRef(n)
@@ -69,9 +69,7 @@ def _test_exception_handling_api(cpy: CPython) raises:
     assert_true(cpy.PyErr_Occurred())
     cpy.PyErr_Clear()
 
-    cpy.PyErr_SetString(
-        ValueError, msg.as_c_string_span().ptr().as_unsafe_any_origin()
-    )
+    cpy.PyErr_SetString(ValueError, msg.as_c_string_span().ptr())
     assert_true(cpy.PyErr_Occurred())
 
     if cpy.version.minor < 12:
@@ -294,10 +292,7 @@ def _test_dictionary_object_api(cpy: CPython) raises:
     var pos: Py_ssize_t = 0
 
     var succ = cpy.PyDict_Next(
-        d,
-        Pointer(to=pos).as_unsafe_any_origin(),
-        Pointer(to=key).as_unsafe_any_origin(),
-        Pointer(to=value).as_unsafe_any_origin(),
+        d, Pointer(to=pos), Pointer(to=key), Pointer(to=value)
     )
     assert_equal(pos, 1)
     assert_equal(key, b)
@@ -305,10 +300,7 @@ def _test_dictionary_object_api(cpy: CPython) raises:
     assert_true(succ)
 
     succ = cpy.PyDict_Next(
-        d,
-        Pointer(to=pos).as_unsafe_any_origin(),
-        Pointer(to=key).as_unsafe_any_origin(),
-        Pointer(to=value).as_unsafe_any_origin(),
+        d, Pointer(to=pos), Pointer(to=key), Pointer(to=value)
     )
     assert_false(succ)
 
@@ -329,24 +321,14 @@ def _test_module_object_api(cpy: CPython) raises:
 
     var funcs = Array[PyMethodDef, 1](fill={})
     # returns 0 on success, -1 on failure
-    assert_equal(
-        cpy.PyModule_AddFunctions(
-            mod, funcs.unsafe_ptr().as_unsafe_any_origin()
-        ),
-        0,
-    )
-    _ = funcs
+    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
 
     var n = cpy.PyLong_FromSsize_t(0)
     var name = "n"
     # returns 0 on success, -1 on failure
     assert_equal(
-        cpy.PyModule_AddObjectRef(
-            mod, name.as_c_string_span().ptr().as_unsafe_any_origin(), n
-        ),
-        0,
+        cpy.PyModule_AddObjectRef(mod, name.as_c_string_span().ptr(), n), 0
     )
-    _ = name
 
 
 def _test_slice_object_api(cpy: CPython) raises:
@@ -387,7 +369,7 @@ def _test_capsule_api(cpy: CPython) raises:
 
 def _test_memory_management_api(cpy: CPython) raises:
     var ptr = cpy.lib.call[
-        "PyObject_Malloc", OptionalPointer[NoneType, MutUntrackedOrigin]
+        "PyObject_Malloc", Optional[Pointer[NoneType, MutUntrackedOrigin]]
     ](64)
     assert_true(ptr)
 

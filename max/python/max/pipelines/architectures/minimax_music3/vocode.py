@@ -42,11 +42,11 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.tensor import Tensor, default_dtype
+from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
 
 from .components.vocoder import Vocoder
 from .model_config import VocoderConfig

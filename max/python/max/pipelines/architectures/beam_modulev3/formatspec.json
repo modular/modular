@@ -1,0 +1,63 @@
+{
+  "argument_syntax": "named_parameters",
+  "call": {
+    "begin": {
+      "text": "<|channel|>analysis <|constrain|>xml<|message|>"
+    },
+    "end": {
+      "text": "<|call|>"
+    },
+    "name_layout": {
+      "answer_closes": [
+        "<|return|>",
+        "<|end|>",
+        "<|call|>"
+      ],
+      "answer_open": "<|channel|>final<|message|>",
+      "call_closes": [
+        "<|end|><|start|>assistant",
+        "<|call|>"
+      ],
+      "header_prefix": " to=",
+      "kind": "harmony",
+      "message_start": "<|start|>assistant",
+      "param_close": "\n</rfl:parameter>",
+      "param_prefix": "<rfl:parameter name=\"",
+      "param_suffix": "\">\n",
+      "reasoning_closes": [
+        "<|end|><|start|>assistant",
+        "<|constrain|><|start|>assistant",
+        "<|start|>assistant"
+      ]
+    },
+    "section": null,
+    "sep": null
+  },
+  "delivery": {
+    "kind": "text"
+  },
+  "format": "formatspec.spec",
+  "json_whitespace": "spaced",
+  "reasoning": {
+    "close": {
+      "text": "<|end|>"
+    },
+    "default": "on",
+    "open": {
+      "text": "<|channel|>analysis<|message|>"
+    },
+    "prompt_start": "model_emits_open"
+  },
+  "spec_version": 1,
+  "terminators": [
+    {
+      "id": 151674,
+      "text": "<|return|>"
+    },
+    {
+      "id": 151675,
+      "special": false,
+      "text": "<|call|>"
+    }
+  ]
+}

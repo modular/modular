@@ -35,6 +35,7 @@ set_virtual_device_api("hip")
 set_virtual_device_target_arch("gfx950")
 set_virtual_device_count(NUM_GPUS)
 
+import functools
 from collections.abc import Callable
 
 import pytest
@@ -42,7 +43,7 @@ from max.driver import CPU, Accelerator, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 COLS = 6144  # Hidden size the fused composites are tuned for.
 EPS = 1e-6
@@ -105,6 +106,12 @@ def _quant_graph(op: QuantOp, rows_per_device: list[int]) -> Graph:
 
 QUANT_OPS = [
     pytest.param(ops.allgather_rms_norm_quant_mxfp8, id="mxfp8"),
+    pytest.param(
+        functools.partial(
+            ops.allgather_rms_norm_quant_mxfp8, gather_quant_only=True
+        ),
+        id="mxfp8-gather-quant-only",
+    ),
     pytest.param(ops.allgather_rms_norm_quant_mxfp6, id="mxfp6"),
 ]
 

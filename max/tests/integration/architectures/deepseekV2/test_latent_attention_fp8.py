@@ -21,10 +21,11 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -33,10 +34,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -49,17 +47,20 @@ ATOL = 0.006
 
 def _quantize_attention_weights_to_fp8(
     attention_weights: dict[str, torch.Tensor],
+    rowwise: bool = False,
 ) -> dict[str, WeightData]:
-    """Quantize bfloat16 attention weights to FP8 format with block-wise scaling.
+    """Quantize bfloat16 attention weights to FP8 format.
 
     Quantizes all weights except layer norm weights (which remain in bfloat16).
-    Uses block-wise dynamic scaling with [128, 128] blocks as per DeepSeek V3.
+    Uses block-wise dynamic scaling with [128, 128] blocks as per DeepSeek V3,
+    or one scale per row.
 
     The weights are wrapped as WeightData because MAX Buffer.from_dlpack() does
     not support float8.
 
     Args:
         attention_weights: Dictionary of bfloat16 attention weights
+        rowwise: Whether to scale each row rather than each block
 
     Returns:
         Dictionary with FP8 quantized weights and corresponding scales
@@ -77,13 +78,16 @@ def _quantize_attention_weights_to_fp8(
             )
             continue
 
-        # Quantize linear layer weights to FP8 with block-wise scaling
+        # Quantize linear layer weights to FP8
         if (
             weight.dim() == 2 and weight.numel() > 128 * 128
         ):  # Only quantize large matrices
-            fp8_weight, weight_scales = _quantize_weight_blockwise_fp8(
-                weight, block_size=[128, 128]
-            )
+            if rowwise:
+                fp8_weight, weight_scales = _quantize_weight_rowwise_fp8(weight)
+            else:
+                fp8_weight, weight_scales = _quantize_weight_blockwise_fp8(
+                    weight, block_size=[128, 128]
+                )
             quantized_weights[key] = WeightData(
                 Buffer.from_dlpack(fp8_weight.view(torch.uint8)).view(
                     DType.float8_e4m3fn
@@ -169,6 +173,24 @@ def _quantize_weight_blockwise_fp8(
     return quantized_weight, scales
 
 
+def _quantize_weight_rowwise_fp8(
+    weight: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a weight tensor to FP8 with one float32 scale per row.
+
+    Args:
+        weight: Input weight tensor [M, N] in bfloat16
+
+    Returns:
+        Tuple of (quantized_weight, scales) where:
+        - quantized_weight: FP8 E4M3 quantized weights
+        - scales: float32 scale factors of shape [M, 1]
+    """
+    weight = weight.float()
+    scales = weight.abs().amax(dim=1, keepdim=True) / 448.0
+    return (weight / scales).to(torch.float8_e4m3fn), scales
+
+
 def generate_torch_outputs(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
@@ -187,6 +209,7 @@ def generate_max_outputs_fp8(
     attention_weights: dict[str, torch.Tensor],
     use_prefill: bool = True,
     prefill_buffer_size: int = 16384,
+    rowwise: bool = False,
 ) -> torch.Tensor:
     """Generate MAX outputs using FP8 MLA implementation with quantized weights.
 
@@ -196,12 +219,16 @@ def generate_max_outputs_fp8(
         attention_weights: Attention layer weights (bfloat16)
         use_prefill: Whether to use prefill mode
         prefill_buffer_size: Buffer size for prefill
+        rowwise: Whether to scale weights per row and activations per token,
+            rather than per block
 
     Returns:
         Output tensor from the FP8 attention layer
     """
     # Quantize bfloat16 weights to FP8 (except layer norm weights)
-    quantized_weights = _quantize_attention_weights_to_fp8(attention_weights)
+    quantized_weights = _quantize_attention_weights_to_fp8(
+        attention_weights, rowwise=rowwise
+    )
 
     device0 = Accelerator(0)
     session = InferenceSession(devices=[device0])
@@ -236,28 +263,43 @@ def generate_max_outputs_fp8(
         num_q_heads=config.num_attention_heads,
     )
 
-    # Create FP8 configuration with block-wise dynamic scaling [128, 128]
-    input_spec = InputScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        origin=ScaleOrigin.DYNAMIC,
-        dtype=DType.float32,
-        block_size=(1, 128),
-    )
+    if rowwise:
+        quant_config = QuantConfig(
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.COLWISE,
+                origin=ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.ROWWISE, dtype=DType.float32
+            ),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
+            format=QuantFormat.FBGEMM_FP8,
+        )
+    else:
+        # Create FP8 configuration with block-wise dynamic scaling [128, 128]
+        input_spec = InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 128),
+        )
 
-    weight_spec = WeightScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        dtype=DType.float32,
-        block_size=(128, 128),
-    )
+        weight_spec = WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float32,
+            block_size=(128, 128),
+        )
 
-    quant_config = QuantConfig(
-        input_scale=input_spec,
-        weight_scale=weight_spec,
-        mlp_quantized_layers=set(),
-        attn_quantized_layers=set(),
-        embedding_output_dtype=None,
-        format=QuantFormat.BLOCKSCALED_FP8,
-    )
+        quant_config = QuantConfig(
+            input_scale=input_spec,
+            weight_scale=weight_spec,
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
+            embedding_output_dtype=None,
+            format=QuantFormat.BLOCKSCALED_FP8,
+        )
 
     latent_attention = LatentAttentionWithRopeFp8(
         rope=rope,
@@ -275,13 +317,6 @@ def generate_max_outputs_fp8(
         buffer_size=prefill_buffer_size,
     )
     latent_attention.load_state_dict(quantized_weights, strict=True)
-
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
 
     hidden_state_type = TensorType(
         DType.bfloat16, ["total_seq_len", config.hidden_size], DeviceRef.GPU()
@@ -317,6 +352,12 @@ def generate_max_outputs_fp8(
 
     g = construct()
     compiled = session.load(g, weights_registry=latent_attention.state_dict())
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
     batch_size = 1
     total_tokens = input_tensor.shape[1]
     prompt_lens = [total_tokens] if use_prefill else [1]

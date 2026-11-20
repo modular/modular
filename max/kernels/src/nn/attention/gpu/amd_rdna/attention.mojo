@@ -26,7 +26,6 @@ from std.algorithm.functional import unswitch
 from max.gpu import block_idx, lane_id, thread_idx
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of, simd_width_of
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from layout import (
@@ -36,7 +35,7 @@ from layout import (
     MixedLayout,
     TileTensor,
 )
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tensor_core import TiledTensorCore
 
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
@@ -56,7 +55,7 @@ from .config import (
     RDNA_MMA_K,
 )
 from .softmax import SoftmaxRDNA
-from .utils import get_warp_coords, pad
+from .utils import get_warp_coords, pad, wmma_acc_row
 
 # RDNA k_group_size is always 1 (full K per WMMA fragment).
 comptime RDNA_K_GROUP_SIZE = 1
@@ -67,7 +66,7 @@ def _mask_apply_rdna[
     masked: Bool,
     accum_type: DType,
     token_gen: Bool,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     num_m_mmas: Int,
     num_n_mmas: Int,
     mask_t: MHAMask,
@@ -102,7 +101,7 @@ def _mask_apply_rdna[
         and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
     )
 
-    # RDNA WMMA C/D: lane l, elem v -> D[row=v*2+l//16, col=l%16].
+    # RDNA WMMA C/D: lane l, elem v -> D[row=wmma_acc_row(v, l//16), col=l%16].
     var lane_seq_offset = umod(lane, 16)
     var lane_key_group = ufloordiv(lane, 16)
 
@@ -130,7 +129,7 @@ def _mask_apply_rdna[
             comptime if masked:
                 comptime for j in range(output_frag_size):
                     var score_key = mma_key_base + UInt32(
-                        j * 2 + lane_key_group
+                        wmma_acc_row(j, Int(lane_key_group))
                     )
                     var score_key_with_cache_start_pos = (
                         score_key + cache_start_pos
@@ -142,9 +141,9 @@ def _mask_apply_rdna[
                         + group_idx if token_gen else block_idx.x
                     )
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                        IndexList[4, element_type=.uint32](
+                        (
                             block_idx.z,
-                            q_head_idx,
+                            Int(q_head_idx),
                             Int(score_seq_with_start_pos),
                             Int(score_key_with_cache_start_pos),
                         ),
@@ -174,7 +173,7 @@ def _mask_apply_rdna[
 
                 comptime for j in range(output_frag_size):
                     var score_key = mma_key_base + UInt32(
-                        j * 2 + lane_key_group
+                        wmma_acc_row(j, Int(lane_key_group))
                     )
                     if score_key >= bound_key:
                         p_reg_vectorized[mma_id, 0][j] = min_or_neg_inf[
@@ -238,7 +237,11 @@ struct AttentionRDNA[
     comptime depth = Self.config.depth
     comptime accum_type = get_accum_type[Self.q_type]()
 
-    comptime mma_shape = IndexList[3](RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K)
+    comptime mma_shape: Tuple[Int, Int, Int] = (
+        RDNA_MMA_M,
+        RDNA_MMA_N,
+        RDNA_MMA_K,
+    )
 
     # Per-lane C/D fragment: 1 row x 8 cols.
     comptime frag_num_rows = 1
@@ -340,19 +343,17 @@ struct AttentionRDNA[
 
     # Online-softmax cross-warp scratch; reuses K SMEM (writes happen
     # at iter boundaries, after K is consumed).
-    comptime _warp_scratch_layout = row_major[
-        2 * Int(Self.num_warps_n), Int(Self.BM)
-    ]()
+    comptime _warp_scratch_layout = row_major[2 * Self.num_warps_n, Self.BM]()
 
     var out_reg_buffer: Self.OutputRegisterBufferType
     var p_reg_buffer: Self.PRegisterBufferType
 
     var softmax: Self.SoftmaxType
 
-    var k_smem_ptr: UnsafePointer[
+    var k_smem_ptr: MutPointer[
         Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
-    var v_smem_ptr: UnsafePointer[
+    var v_smem_ptr: MutPointer[
         Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
@@ -451,7 +452,7 @@ struct AttentionRDNA[
         ImmutAnyOrigin,
         Engine=operand_t.Engine,
     ]:
-        return operand.block_paged_tile[Int(Self.BN)](
+        return operand.block_paged_tile[Self.BN](
             batch_idx,
             start_tok_idx,
             head_idx,
@@ -475,20 +476,17 @@ struct AttentionRDNA[
         comptime if Self.token_gen:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=.uint32](
-                    Int(self.num_keys - 1),
-                    Int(kv_tile_start_row),
-                ),
-                IndexList[2, element_type=.uint32](1, Self.BN),
+                (Int(self.num_keys - 1), Int(kv_tile_start_row)),
+                (Int(1), Int(Self.BN)),
             )
         else:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=.uint32](
+                (
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                IndexList[2, element_type=.uint32](Self.BM, Self.BN),
+                (Int(Self.BM), Int(Self.BN)),
             )
 
     @inline(.always)
@@ -560,13 +558,13 @@ struct AttentionRDNA[
     @inline(.always)
     def __init__(
         out self,
-        output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
-        q: UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin],
+        output_ptr: MutPointer[Scalar[Self.output_type], MutAnyOrigin],
+        q: ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
         sink_weights: OptionalReg[
-            UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin]
         ],
         batch_idx: Int,
         scale: Float32,
@@ -626,7 +624,7 @@ struct AttentionRDNA[
         ]()
 
         var q_tile = TileTensor[Self.q_type, Self.QTileLayout, ImmutAnyOrigin](
-            ptr=q + Int(q_offset),
+            ptr=q.unsafe_offset(Int(q_offset)),
             layout=Self.QTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -640,7 +638,7 @@ struct AttentionRDNA[
         self.output_tile = TileTensor[
             Self.output_type, Self.OutputTileLayout, MutAnyOrigin
         ](
-            ptr=output_ptr + Int(output_offset),
+            ptr=output_ptr.unsafe_offset(Int(output_offset)),
             layout=Self.OutputTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -699,7 +697,7 @@ struct AttentionRDNA[
             type_of(Self._warp_scratch_layout),
             address_space=.SHARED,
         ](
-            self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
+            self.k_smem_ptr.unsafe_bitcast[Scalar[Self.accum_type]](),
             Self._warp_scratch_layout,
         ).tile[
             2 * Self.num_warps_n, Self.WM
@@ -737,7 +735,12 @@ struct AttentionRDNA[
         # Decode rows = heads in GQA group (stride=output_depth).
         # Prefill rows = seq positions (stride=num_heads*output_depth).
         comptime row_stride = Self.output_depth if Self.token_gen else Self.num_heads * Self.output_depth
-        var row_bound = Self.group if Self.token_gen else self.seq_len
+        # `output_tile` is already offset to this Q tile, so `global_seq` is
+        # tile-local: bound it by the rows left in this tile, not the full
+        # sequence length, or a partial last tile writes past the output.
+        var row_bound = Self.group if Self.token_gen else min(
+            Self.BM, self.seq_len - Self.q_tile_idx() * Self.BM
+        )
 
         comptime for depth_tile in range(Self.num_n_mmas_output):
             comptime for seq_tile in range(Self.num_m_mmas):
@@ -745,7 +748,7 @@ struct AttentionRDNA[
 
                 comptime for elem in range(Self.output_frag_size):
                     var seq_in_mma = col_within_mma
-                    var depth_in_mma = elem * 2 + row_group
+                    var depth_in_mma = wmma_acc_row(elem, Int(row_group))
 
                     var global_seq = (
                         warp_row * Self.WM
@@ -765,8 +768,8 @@ struct AttentionRDNA[
                         comptime reg_offset = (
                             mma_idx * Self.output_frag_size + elem
                         )
-                        var val = reg_tile.ptr[reg_offset]
-                        self.output_tile.ptr[output_offset] = val.cast[
+                        var val = reg_tile[mma_idx, elem]
+                        self.output_tile[global_seq, global_depth] = val.cast[
                             Self.output_type
                         ]()
 
@@ -784,10 +787,10 @@ struct AttentionRDNA[
     def store_partition_info(
         self,
         num_partitions: Int,
-        exp_sum_ptr: UnsafePointer[
+        exp_sum_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
-        qk_max_ptr: UnsafePointer[
+        qk_max_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
     ):

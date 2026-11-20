@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import isclose
+from std.memory.alloc import unsafe_alloc
 from std.random import rand
 from std.sys import simd_width_of, size_of
 
 import std.benchmark
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
 from std.testing import assert_false
@@ -37,30 +38,22 @@ def test_gemv() raises:
     comptime absolute_tolerance = 1e-08
     comptime relative_tolerance = 1e-05
 
-    # alias type = DType.float16
-    # alias absolute_tolerance = 5e-02
-    # alias relative_tolerance = 5e-01
-
     comptime simd_width = simd_width_of[type]()
-    # alias m = 22016
-    # alias k = 4096
 
     comptime m = 4096
     comptime k = 11008
 
-    var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
-    var lhs = TileTensor(lhs_storage.as_unsafe_any_origin(), row_major[m, k]())
+    var lhs_storage = unsafe_alloc[Scalar[type],](m * k, alignment=alignment)
+    var lhs = TileTensor(lhs_storage, row_major[m, k]())
 
-    var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
-    var rhs = TileTensor(rhs_storage.as_unsafe_any_origin(), row_major[k]())
+    var rhs_storage = unsafe_alloc[Scalar[type],](k, alignment=alignment)
+    var rhs = TileTensor(rhs_storage, row_major[k]())
 
-    var out_storage = alloc[Scalar[type],](m, alignment=alignment)
-    var out = TileTensor(out_storage.as_unsafe_any_origin(), row_major[m]())
+    var out_storage = unsafe_alloc[Scalar[type],](m, alignment=alignment)
+    var out = TileTensor(out_storage, row_major[m]())
 
-    var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
-    var ref_out = TileTensor(
-        ref_out_storage.as_unsafe_any_origin(), row_major[m]()
-    )
+    var ref_out_storage = unsafe_alloc[Scalar[type]](m, alignment=alignment)
+    var ref_out = TileTensor(ref_out_storage, row_major[m]())
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -114,11 +107,7 @@ def test_gemv() raises:
         Float64(bytes_per_iteration) / serial_perf.mean()
     ) / gigabyte
     print(
-        "Serial GEMV Bandwidth: ",
-        serial_bandwidth,
-        "(",
-        serial_perf.mean(),
-        ")",
+        t"Serial GEMV Bandwidth:  {serial_bandwidth} ( {serial_perf.mean()} )"
     )
     print("Serial GEMV GFLOP/s", 1e-9 * ((2 * m * k) / serial_perf.mean()))
 
@@ -130,24 +119,14 @@ def test_gemv() raises:
     var par_perf = bench_run(bench_fn_parallel)
     std.benchmark.keep(out[10])
 
-    var rhs_mat = TileTensor(
-        rhs_storage.as_unsafe_any_origin(), row_major[k, 1]()
-    )
-    var out_mat = TileTensor(
-        out_storage.as_unsafe_any_origin(), row_major[m, 1]()
-    )
+    var rhs_mat = TileTensor(rhs_storage, row_major[k, 1]())
+    var out_mat = TileTensor(out_storage, row_major[m, 1]())
 
     # Compute speedup and bandwidth stats
     var par_bandwidth = (
         Float64(bytes_per_iteration) / par_perf.mean()
     ) / gigabyte
-    print(
-        "Parallel GEMV Bandwidth: ",
-        par_bandwidth,
-        "(",
-        par_perf.mean(),
-        ")",
-    )
+    print(t"Parallel GEMV Bandwidth:  {par_bandwidth} ( {par_perf.mean()} )")
     print("Parallel GEMV GFLOP/s", 1e-9 * ((2 * m * k) / par_perf.mean()))
 
     var bandwidth_increase = par_bandwidth / serial_bandwidth
@@ -167,10 +146,10 @@ def test_gemv() raises:
     matmul_perf.print()
     print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))
 
-    lhs_storage.free()
-    rhs_storage.free()
-    out_storage.free()
-    ref_out_storage.free()
+    lhs_storage.unsafe_free()
+    rhs_storage.unsafe_free()
+    out_storage.unsafe_free()
+    ref_out_storage.unsafe_free()
 
 
 def main() raises:

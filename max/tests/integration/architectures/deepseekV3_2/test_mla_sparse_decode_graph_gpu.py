@@ -21,9 +21,12 @@ layout masks the ``-1`` padding inside the scan, including for a reused row.
 ``test_mla_graph_sparse_plain_topk_selection_lag`` checks the same for a
 reused plain top-k row, through the decode and the combined op.
 ``test_mla_decode_graph_sparse_bf16_gfx950_matches_dense`` checks the gfx950
-gather arm against dense attention, and
+BF16 sparse arm, which reads the selected rows in place, against dense
+attention, and
 ``test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound`` checks that it
 drops slots past ``topk_lengths``.
+``test_mla_decode_graph_sparse_bf16_gfx950_poisoned_scratch`` reruns both with
+every device allocation NaN-filled.
 ``test_mla_decode_graph_sparse_multi_step_smoke`` runs prefill and decode through
 :class:`SparseLatentAttentionWithRopeFp8` and :class:`PagedKVCacheManager`.
 The prefill-routing tests live in ``test_mla_sparse_prefill_graph_gpu.py``.
@@ -33,6 +36,10 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import os
+import re
+import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -40,6 +47,7 @@ import numpy as np
 import pytest
 import torch
 from _mla_sparse_test_utils import (
+    make_deepseek_rope,
     paged_kv_from_flat_graph_inputs,
     random_weights,
 )
@@ -48,18 +56,21 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.attention.multi_latent_attention_fp8 import (
-    LatentAttentionWithRopeFp8,
-)
-from max.nn.kernels import mla_decode_graph, mla_prefill_decode_graph
+from max.nn._graph_ops import mla_decode_graph, mla_prefill_decode_graph
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
+    LatentAttentionWithRopeFp8,
+)
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -68,10 +79,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
     SparseLatentAttentionWithRopeFp8,
 )
@@ -477,9 +485,9 @@ def _sparse_decode_fixture(
     topk: int,
     variants: Sequence[_Fp8DecodeVariant],
     cache_len: int = _SPARSE_CACHE_LEN,
+    num_heads: int = _SPARSE_NUM_HEADS,
 ) -> _SparseDecodeFixture:
     """Builds one single-token decode graph per variant over one cache."""
-    num_heads = _SPARSE_NUM_HEADS
     hidden_size = 1024
     q_lora_rank = 256
     kv_lora_rank = 512
@@ -662,6 +670,153 @@ def _sparse_decode_fixture(
     return _SparseDecodeFixture(models, kv_inputs, q, kv, row_offsets)
 
 
+def _bf16_sparse_decode_fixture(
+    topk: int,
+    cache_len: int = _SPARSE_CACHE_LEN,
+    num_heads: int = 128,
+) -> _SparseDecodeFixture:
+    """Builds one single-token BF16-cache decode graph at ``num_heads``.
+
+    The BF16 cache takes the V-gather CTA pair at 128 heads (the promoted
+    default), so this exercises the only BF16 cluster launch under capture
+    and replay.
+    """
+    hidden_size = 1024
+    q_lora_rank = 256
+    kv_lora_rank = 512
+    qk_nope_head_dim = 128
+    qk_rope_head_dim = 64
+    v_head_dim = 128
+
+    kv_params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=kv_lora_rank + qk_rope_head_dim,
+        num_layers=1,
+        page_size=_SPARSE_PAGE_SIZE,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+    )
+    rope = make_deepseek_rope(num_heads, 2 * cache_len)
+    attn = LatentAttentionWithRope(
+        rope=rope,
+        num_attention_heads=num_heads,
+        num_key_value_heads=1,
+        hidden_size=hidden_size,
+        kv_params=kv_params,
+        dtype=DType.bfloat16,
+        devices=[DeviceRef.GPU()],
+        graph_mode="decode",
+        q_lora_rank=q_lora_rank,
+        kv_lora_rank=kv_lora_rank,
+        qk_nope_head_dim=qk_nope_head_dim,
+        qk_rope_head_dim=qk_rope_head_dim,
+        v_head_dim=v_head_dim,
+        buffer_size=4096,
+    )
+
+    gpu = DeviceRef.GPU()
+    q_type = TensorType(
+        DType.bfloat16,
+        ["total_tokens", num_heads, qk_nope_head_dim + qk_rope_head_dim],
+        gpu,
+    )
+    kv_type = TensorType(
+        DType.bfloat16,
+        ["total_tokens", kv_lora_rank + qk_rope_head_dim],
+        gpu,
+    )
+    row_off_type = TensorType(DType.uint32, ["row_offsets_len"], gpu)
+    sparse_idx_type = TensorType(DType.int32, ["total_tokens", topk], gpu)
+    topk_len_type = TensorType(DType.int32, ["batch"], gpu)
+    sink_type = TensorType(DType.float32, ["batch"], gpu)
+    kv_sym = tree.leaves(kv_params.get_symbolic_inputs()[0])
+
+    def construct() -> Graph:
+        with Graph(
+            "mla_decode_sparse_bf16_pair",
+            input_types=[
+                q_type,
+                kv_type,
+                row_off_type,
+                sparse_idx_type,
+                topk_len_type,
+                sink_type,
+                *kv_sym,
+            ],
+        ) as g:
+            q = g.inputs[0].tensor
+            kv = g.inputs[1].tensor
+            input_row_offsets = g.inputs[2].tensor
+            sparse_indices = g.inputs[3].tensor
+            sparse_topk_lengths = g.inputs[4].tensor
+            sparse_attn_sink = g.inputs[5].tensor
+            kv_collection = paged_kv_from_flat_graph_inputs(
+                kv_params, list(g.inputs[6:])
+            )
+            assert kv_collection.attention_dispatch_metadata is not None
+            assert kv_collection.mla_num_partitions is not None
+            out = mla_decode_graph(
+                q,
+                kv,
+                input_row_offsets,
+                ops.cast(rope.freqs_cis, q.dtype).to(q.device),
+                attn.kv_a_proj_layernorm,
+                attn.w_uk,
+                attn.w_uv,
+                kv_params,
+                kv_collection,
+                ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+                MHAMaskVariant.CAUSAL_MASK,
+                attn.scale,
+                1e-6,
+                v_head_dim,
+                kv_collection.attention_dispatch_metadata,
+                kv_collection.mla_num_partitions,
+                sparse_indices=sparse_indices,
+                physical_indices=False,
+                sparse_topk_lengths=sparse_topk_lengths,
+                sparse_attn_sink=sparse_attn_sink,
+                sparse_indices_stride=topk,
+            )
+            g.output(out)
+        return g
+
+    device = Accelerator(0)
+    session = InferenceSession(devices=[Accelerator()])
+    weights = random_weights(attn)
+    model = session.load(construct(), weights_registry=weights)
+
+    kv_inputs = paged_kv_cache_inputs(kv_params, [1], cache_lengths=[cache_len])
+    blocks = (
+        torch.randn(tuple(kv_inputs.kv_blocks.shape), dtype=torch.float32) * 0.5
+    )
+    kv_inputs = dataclasses.replace(
+        kv_inputs,
+        kv_blocks=Buffer.from_dlpack(blocks.to(torch.bfloat16)).to(device),
+    )
+    q = Buffer.from_dlpack(
+        (
+            torch.randn(
+                (1, num_heads, qk_nope_head_dim + qk_rope_head_dim),
+                dtype=torch.float32,
+            )
+            * 0.1
+        ).to(torch.bfloat16)
+    ).to(device)
+    kv = Buffer.from_dlpack(
+        (
+            torch.randn(
+                (1, kv_lora_rank + qk_rope_head_dim), dtype=torch.float32
+            )
+            * 0.1
+        ).to(torch.bfloat16)
+    ).to(device)
+    row_offsets = Buffer.from_numpy(np.array([0, 1], dtype=np.uint32)).to(
+        device
+    )
+    return _SparseDecodeFixture([model], kv_inputs, q, kv, row_offsets)
+
+
 @pytest.mark.skipif(
     accelerator_api() == "hip",
     reason="Sparse MLA decode graph is only wired for NVIDIA GPUs.",
@@ -771,6 +926,115 @@ def test_mla_decode_graph_sparse_page_placement_invariant() -> None:
     assert np.array_equal(fx.run(model, indices), want)
     with_cache(moved_lut, blocks)
     assert not np.array_equal(fx.run(model, indices), want)
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip",
+    reason="Sparse MLA decode graph is only wired for NVIDIA GPUs.",
+)
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="Sparse MLA decode kernel is SM100-class (B100/B200); skip elsewhere.",
+)
+@pytest.mark.parametrize(
+    "topk",
+    [
+        200,  # one partition, a partial follower half in the last tile
+        2048,  # split-K against a 4096 cache, reduced by the combine kernel
+    ],
+)
+def test_mla_decode_graph_sparse_h128_pair_capture_replay(topk: int) -> None:
+    """The 128-head decode replays bit-identically from a device graph.
+
+    At 128 heads the FP8 sparse decode launches as a 2-CTA cluster, the
+    only cluster launch on this path, so this pins that launch under
+    capture and replay. The -1 slots fall in the last tile's halves.
+    """
+    fx = _sparse_decode_fixture(topk, [_Fp8DecodeVariant()], num_heads=128)
+    (model,) = fx.models
+    device = Accelerator(0)
+
+    rng = np.random.default_rng(1)
+    logical = rng.choice(
+        _SPARSE_CACHE_LEN + 1, size=(1, topk), replace=False
+    ).astype(np.int32)
+    logical[0, -3:] = -1
+    logical[0, topk - 70] = -1
+    indices = Buffer.from_numpy(logical).to(device)
+
+    want = fx.run(model, indices)
+    assert torch.isfinite(torch.from_numpy(want).view(torch.bfloat16)).all()
+    inputs = (
+        fx.q,
+        fx.kv,
+        fx.row_offsets,
+        indices,
+        *tree.leaves(fx.kv_inputs),
+    )
+    (captured,) = model.capture(1, *inputs)
+    for _ in range(2):
+        model.replay(1, *inputs)
+        got = from_dlpack(captured).cpu().view(torch.int16).numpy()
+        assert np.array_equal(got, want)
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip",
+    reason="Sparse MLA decode graph is only wired for NVIDIA GPUs.",
+)
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="Sparse MLA decode kernel is SM100-class (B100/B200); skip elsewhere.",
+)
+@pytest.mark.parametrize(
+    "topk",
+    [
+        200,  # one partition, a partial follower half in the last tile
+        2048,  # split-K against a 4096 cache, reduced by the combine kernel
+    ],
+)
+def test_mla_decode_graph_sparse_bf16_h128_pair_capture_replay(
+    topk: int,
+) -> None:
+    """The 128-head BF16-cache pair replays bit-identically from a device graph.
+
+    The promoted BF16 default launches the 2-CTA V-gather pair, the only
+    BF16 cluster launch on this path. This pins that launch (and its graph
+    capture key) under capture and replay; the -1 slots fall in the last
+    tile's halves.
+    """
+    fx = _bf16_sparse_decode_fixture(topk)
+    (model,) = fx.models
+    device = Accelerator(0)
+
+    rng = np.random.default_rng(1)
+    logical = rng.choice(
+        _SPARSE_CACHE_LEN + 1, size=(1, topk), replace=False
+    ).astype(np.int32)
+    logical[0, -3:] = -1
+    logical[0, topk - 70] = -1
+    indices = Buffer.from_numpy(logical).to(device)
+    topk_lengths = Buffer.from_numpy(np.array([topk], dtype=np.int32)).to(
+        device
+    )
+    sink = Buffer.from_numpy(np.array([0.0], dtype=np.float32)).to(device)
+
+    want = fx.run(model, indices, topk_lengths, sink)
+    assert torch.isfinite(torch.from_numpy(want).view(torch.bfloat16)).all()
+    inputs = (
+        fx.q,
+        fx.kv,
+        fx.row_offsets,
+        indices,
+        topk_lengths,
+        sink,
+        *tree.leaves(fx.kv_inputs),
+    )
+    (captured,) = model.capture(1, *inputs)
+    for _ in range(2):
+        model.replay(1, *inputs)
+        got = from_dlpack(captured).cpu().view(torch.int16).numpy()
+        assert np.array_equal(got, want)
 
 
 @pytest.mark.skipif(
@@ -1319,13 +1583,15 @@ def _scattered_rows(
 
 
 @pytest.mark.skipif(
-    not is_gfx950(), reason="Exercises the gfx950 sparse MLA gather arm."
+    not is_gfx950(), reason="Exercises the gfx950 BF16 sparse MLA arm."
 )
 @pytest.mark.parametrize(
     "cache_len, seq_len",
     [
         (200, 1),
-        # Past one 256-token gather chunk, so the second chunk's offsets apply.
+        # A few keys per row, so one extra masked-in slot is visible.
+        (2, 3),
+        # Several hundred query tokens in one launch, each with its own row.
         (8, 290),
     ],
 )
@@ -1366,7 +1632,7 @@ def test_mla_decode_graph_sparse_bf16_gfx950_matches_dense(
 
 
 @pytest.mark.skipif(
-    not is_gfx950(), reason="Exercises the gfx950 sparse MLA gather arm."
+    not is_gfx950(), reason="Exercises the gfx950 BF16 sparse MLA arm."
 )
 def test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound() -> None:
     """Slots past ``topk_lengths`` are dropped even when they hold keys.
@@ -1394,6 +1660,65 @@ def test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound() -> None:
         np.array([_GFX950_SPARSE_WIDTH], dtype=np.int32),
     )
     assert np.array_equal(got, want)
+
+
+_POISON_ENV = "MODULAR_DEBUG_DEVICE_ALLOCATOR"
+_POISONED_CHILD_TIMEOUT_S = 600
+# The child's cases: three `matches_dense` shapes and `topk_lengths_bound`.
+_POISONED_CHILD_CASES = 4
+
+
+@pytest.mark.compile_on_gpu(
+    "Compiles nothing itself; its child pytest replays the recorded cases"
+)
+@pytest.mark.skipif(
+    not is_gfx950(), reason="Exercises the gfx950 BF16 sparse MLA arm."
+)
+@pytest.mark.skipif(
+    os.environ.get(_POISON_ENV) == "poison-all",
+    reason="Already running under the poisoned allocator.",
+)
+def test_mla_decode_graph_sparse_bf16_gfx950_poisoned_scratch() -> None:
+    """The gfx950 checks pass when every allocation starts as NaN.
+
+    The sparse arm allocates its zero row inside the op, and fresh memory there
+    is usually zero or finite, so an arm that skips clearing it still passes.
+    ``poison-all`` fills each allocation with 0xFF, a BF16 NaN, so the masked
+    reads of an uncleared zero row turn the output NaN. The allocator reads
+    the setting when the device is created, hence the child process.
+    """
+    # Under bazel the child inherits the replay environment; loading the
+    # plugin too lets it reuse the recorded compiles instead of compiling
+    # every case again on the GPU.
+    replay = (
+        ["-p", "precompile_mefs_plugin"]
+        if os.environ.get("PRECOMPILE_MEFS_MODE") == "replay"
+        else []
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            __file__,
+            "-q",
+            "--tb=line",
+            "-p",
+            "no:cacheprovider",
+            *replay,
+            "-k",
+            "bf16_gfx950_matches_dense or bf16_gfx950_topk_lengths_bound",
+        ],
+        env=os.environ | {_POISON_ENV: "poison-all"},
+        capture_output=True,
+        text=True,
+        timeout=_POISONED_CHILD_TIMEOUT_S,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    # A child that skipped or deselected cases would exit 0 too.
+    assert re.search(rf"\b{_POISONED_CHILD_CASES} passed\b", result.stdout), (
+        result.stdout
+    )
 
 
 @pytest.mark.skipif(

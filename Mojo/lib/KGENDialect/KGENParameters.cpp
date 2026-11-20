@@ -18,6 +18,7 @@
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -110,17 +111,13 @@ template <typename BaseT>
 BaseT IndexDepthAdjuster::replaceCached(BaseT value) {
   if (!value)
     return value;
-  CompilerCaches *caches = CompilerCaches::get(value.getContext());
-  if (!caches)
-    return IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
   std::tuple<const void *, int64_t, unsigned> key(
       value.getAsOpaquePointer(), adjustDepth, onlyAdjustIndexRef);
-  if (const void *hit = caches->depthAdjust.lookup(key))
-    return BaseT::getFromOpaquePointer(hit);
-  BaseT result = IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
-  if (result)
-    caches->depthAdjust.insert(key, result.getAsOpaquePointer());
-  return result;
+  return BaseT::getFromOpaquePointer(CompilerCaches::getOrCompute(
+      value.getContext(), &CompilerCaches::depthAdjust, key, [&] {
+        return IndexParameterReplacer<IndexDepthAdjuster>::replace(value)
+            .getAsOpaquePointer();
+      }));
 }
 
 template Attribute IndexDepthAdjuster::replaceCached(Attribute);
@@ -129,6 +126,110 @@ template Type IndexDepthAdjuster::replaceCached(Type);
 //===----------------------------------------------------------------------===//
 // ParameterCollector
 //===----------------------------------------------------------------------===//
+
+ParameterCollector::AttrOrType
+ParameterCollector::fromSignature(const Signature &signature) {
+  if (auto attrScope = dyn_cast<ParameterScopeAttrInterface>(signature))
+    return Attribute(attrScope);
+  return Type(cast<ParameterScopeTypeInterface>(signature));
+}
+
+ParameterCollector::Analysis
+ParameterCollector::Analysis::makeThreadCache(const Analysis &base) {
+  assert(!base.base && "layering over a layered cache is not supported");
+  Analysis layer;
+  layer.base = &base;
+  return layer;
+}
+
+bool ParameterCollector::isInParameterLessCache(AttrOrType expr) const {
+  const void *key = isa<Attribute>(expr)
+                        ? cast<Attribute>(expr).getAsOpaquePointer()
+                        : cast<Type>(expr).getAsOpaquePointer();
+  return cache.lookup(key) != nullptr;
+}
+
+unsigned ParameterCollector::getOrCreateSignatureContextId(size_t depth) {
+  // A stack with fewer than `depth` signatures gives a shorter sequence. A
+  // shorter sequence never gets the same id as a sequence of length `depth`.
+  size_t numSignatures = std::min(depth, signatures.size());
+  unsigned id = 0;
+  for (const Signature &sig :
+       llvm::reverse(ArrayRef(signatures).take_back(numSignatures))) {
+    unsigned nextId = signatureContextIds.size() + 1;
+    id = signatureContextIds.try_emplace({id, fromSignature(sig)}, nextId)
+             .first->second;
+  }
+  return id;
+}
+
+ParameterCollector::VisitedInfo
+ParameterCollector::verifyAndCollect(AttrOrType expr) {
+  SmallVector<ParamDeclRefAttr> allUses;
+  VisitedInfo info;
+  if (auto attr = dyn_cast<Attribute>(expr))
+    collectUsesFromAttrUncached(attr, allUses, info.hasCtxEvalExpr,
+                                info.requiredSignatureDepth);
+  else
+    collectUsesFromTypesUncached(cast<Type>(expr), allUses, info.hasCtxEvalExpr,
+                                 info.requiredSignatureDepth);
+  // Each child of `expr` contributes each use of the child once. Different
+  // children can contribute the same use. The loop below keeps the first
+  // occurrence of each use.
+  DenseSet<ParamDeclRefAttr> seen;
+  for (ParamDeclRefAttr use : allUses)
+    if (seen.insert(use).second)
+      info.uses.push_back(use);
+  return info;
+}
+
+void ParameterCollector::collectMemoized(
+    AttrOrType expr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
+  auto mergeIntoReturnValues = [&](const VisitedInfo &info) {
+    uses.append(info.uses.begin(), info.uses.end());
+    hasCtxEvalExpr |= info.hasCtxEvalExpr;
+    requiredSignatureDepth =
+        std::max(requiredSignatureDepth, info.requiredSignatureDepth);
+  };
+
+  if (auto it = visited.find(expr); it != visited.end()) {
+    const VisitedInfo &result = it->second;
+    unsigned contextId =
+        getOrCreateSignatureContextId(result.requiredSignatureDepth);
+    if (result.verifiedContextIds.contains(contextId)) {
+      mergeIntoReturnValues(result);
+      return;
+    }
+
+    // TODO(dgurchenkov): Skip the step below for uses of ParameterCollector
+    // that do not verify or issue errors.
+    //
+    // Verification depends on the signature context, so verify `expr` in this
+    // one. The facts do not depend on the context, so the scan finds the same
+    // facts as `result`.
+    [[maybe_unused]] VisitedInfo rescanned = verifyAndCollect(expr);
+    // The scan can insert into `visited`, which invalidates `result`.
+    VisitedInfo &entry = visited.find(expr)->second;
+    assert(rescanned.uses == entry.uses &&
+           rescanned.hasCtxEvalExpr == entry.hasCtxEvalExpr &&
+           rescanned.requiredSignatureDepth == entry.requiredSignatureDepth &&
+           "the facts of a sub-expression must not depend on the context");
+    entry.verifiedContextIds.insert(contextId);
+    mergeIntoReturnValues(entry);
+    return;
+  }
+
+  VisitedInfo info = verifyAndCollect(expr);
+  mergeIntoReturnValues(info);
+
+  // `cache` answers later visits to `expr` before this function runs.
+  if (isInParameterLessCache(expr))
+    return;
+  info.verifiedContextIds.insert(
+      getOrCreateSignatureContextId(info.requiredSignatureDepth));
+  visited.try_emplace(expr, std::move(info));
+}
 
 void ParameterCollector::collectUsesFromAttr(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
@@ -153,14 +254,19 @@ void ParameterCollector::collectUsesFromAttrImpl(
     bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
-  if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
-      it != cache.parameterLess.end()) {
-    hasCtxEvalExpr |= it->second.hasCtxEvalExpr;
+  if (const auto *info = cache.lookup(attr.getAsOpaquePointer())) {
+    hasCtxEvalExpr |= info->hasCtxEvalExpr;
     requiredSignatureDepth =
-        std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
+        std::max(requiredSignatureDepth, info->requiredSignatureDepth);
     return;
   }
 
+  collectMemoized(attr, uses, hasCtxEvalExpr, requiredSignatureDepth);
+}
+
+void ParameterCollector::collectUsesFromAttrUncached(
+    Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+    bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   // Look through any SugarAttr's we encounter.
   if (auto sugar = dyn_cast<SugarAttr>(attr)) {
     collectUsesFromAttr(sugar.getCanonical(), uses, hasCtxEvalExpr,
@@ -255,7 +361,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
     return;
   }
 
-  // Check any SymbolConstantAttr's we encounter.
+  // Check any symbol references we encounter.
   if (auto ref = dyn_cast<DeclRefAttrInterface>(attr))
     verifyRefAttr(ref);
 
@@ -266,16 +372,18 @@ void ParameterCollector::collectUsesFromAttrImpl(
   bool hasNestedCtxEvalExpr = false;
   size_t nestedRequiredDepth = 0;
 
-  // Recursively check for any nested types/attributes, e.g. the elements of an
-  // array attribute.
   attr.walkImmediateSubElements(
       [&](Attribute attr) {
+        size_t innerRequiredDepth = 0;
         collectUsesFromAttr(attr, uses, hasNestedCtxEvalExpr,
-                            nestedRequiredDepth);
+                            innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       },
       [&](Type type) {
+        size_t innerRequiredDepth = 0;
         collectUsesFromType(type, uses, hasNestedCtxEvalExpr,
-                            nestedRequiredDepth);
+                            innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       });
 
   // If the attribute had no uses, remember that so we don't have to re-scan it
@@ -283,7 +391,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
   if (oldSize == uses.size() && !nestedRequiredDepth) {
     // Check whether this is a parameterless expression.
     hasNestedCtxEvalExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
-    cache.parameterLess.try_emplace(
+    cache.try_emplace(
         attr.getAsOpaquePointer(),
         Analysis::ParameterlessInfo{hasNestedCtxEvalExpr, nestedRequiredDepth});
     hasCtxEvalExpr |= hasNestedCtxEvalExpr;
@@ -314,14 +422,19 @@ void ParameterCollector::collectUsesFromTypesImpl(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasCtxEvalExpr,
     size_t &requiredSignatureDepth) {
   // Ignore types we have already scanned.
-  if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
-      it != cache.parameterLess.end()) {
-    hasCtxEvalExpr |= it->second.hasCtxEvalExpr;
+  if (const auto *info = cache.lookup(type.getAsOpaquePointer())) {
+    hasCtxEvalExpr |= info->hasCtxEvalExpr;
     requiredSignatureDepth =
-        std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
+        std::max(requiredSignatureDepth, info->requiredSignatureDepth);
     return;
   }
 
+  collectMemoized(type, uses, hasCtxEvalExpr, requiredSignatureDepth);
+}
+
+void ParameterCollector::collectUsesFromTypesUncached(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasCtxEvalExpr,
+    size_t &requiredSignatureDepth) {
   // Check any StructType's we encounter.
   if (auto refType = dyn_cast<StructTypeInterface>(type))
     verifyRefType(refType);
@@ -336,19 +449,21 @@ void ParameterCollector::collectUsesFromTypesImpl(
   // function type, types like !kgen.scalar<ty> etc.
   type.walkImmediateSubElements(
       [&](Attribute attr) {
-        collectUsesFromAttr(attr, uses, hasNestedConstExpr,
-                            nestedRequiredDepth);
+        size_t innerRequiredDepth = 0;
+        collectUsesFromAttr(attr, uses, hasNestedConstExpr, innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       },
       [&](Type type) {
-        collectUsesFromType(type, uses, hasNestedConstExpr,
-                            nestedRequiredDepth);
+        size_t innerRequiredDepth = 0;
+        collectUsesFromType(type, uses, hasNestedConstExpr, innerRequiredDepth);
+        nestedRequiredDepth = std::max(nestedRequiredDepth, innerRequiredDepth);
       });
 
   // If the type had parameter uses or constant expressions, don't consider it
   // "parameterless".  We want other operations using the same type to record
   // the uses as well.
   if (oldSize == uses.size() && !nestedRequiredDepth) {
-    cache.parameterLess.try_emplace(
+    cache.try_emplace(
         type.getAsOpaquePointer(),
         Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});
     hasCtxEvalExpr |= hasNestedConstExpr;
@@ -365,8 +480,10 @@ namespace {
 class VerifyingParameterCollector : public ParameterCollector {
 public:
   VerifyingParameterCollector(SymTabEvaluationContext *evaluationContext,
-                              ParameterCollector::Analysis &cache)
-      : ParameterCollector(cache), evaluationContext(evaluationContext) {}
+                              ParameterCollector::Analysis &cache,
+                              bool runChecks)
+      : ParameterCollector(cache), evaluationContext(evaluationContext),
+        runChecks(runChecks) {}
 
   /// The first time we encounter an attribute with a reference to an
   /// out-of-line declaration, verify it.
@@ -381,10 +498,9 @@ public:
   void maybeVerify(
       function_ref<LogicalResult(function_ref<InFlightDiagnostic()>)> verifyFn)
       override {
-#ifndef MODULAR_PRODUCTION
-    if (failed(verifyFn([&] { return mlir::emitError(op->getLoc()); })))
+    if (runChecks &&
+        failed(verifyFn([&] { return mlir::emitError(op->getLoc()); })))
       hadError = true;
-#endif
   }
 
   /// Whether a verification error occurred.
@@ -394,16 +510,17 @@ public:
 
 private:
   /// The symbol to use to verify symbol references.
-  [[maybe_unused]] SymTabEvaluationContext *evaluationContext;
+  SymTabEvaluationContext *evaluationContext;
+  /// Whether to run the checks, rather than only collect the parameters.
+  bool runChecks;
   /// Cached references that have already been verified.
   DenseSet<const void *> verifiedRefs;
 };
 } // namespace
 
 void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
-#ifndef MODULAR_PRODUCTION
   // We only check this during the op verification phase.
-  if (!evaluationContext)
+  if (!runChecks || !evaluationContext)
     return;
 
   if (!verifiedRefs.insert(refAttr.getAsOpaquePointer()).second)
@@ -416,23 +533,20 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
     op->emitOpError("invalid symbol use within this operator");
     hadError = true;
   }
-#endif
 }
 
 void VerifyingParameterCollector::verifyRefType(StructTypeInterface refType) {
-#ifndef MODULAR_PRODUCTION
-  VerboseCompilerTimeTraceScope traceScope("verifyRefType");
-
   // We only check this during the op verification phase.
-  if (!evaluationContext)
+  if (!runChecks || !evaluationContext)
     return;
+
+  VerboseCompilerTimeTraceScope traceScope("verifyRefType");
 
   if (!verifiedRefs.insert(refType.getAsOpaquePointer()).second)
     return;
 
   if (failed(refType.verifySymbolUses(*evaluationContext, op->getLoc())))
     hadError = true;
-#endif
 }
 
 //===----------------------------------------------------------------------===//
@@ -488,13 +602,14 @@ static std::optional<size_t> findFirstReferenceImpl(
                             : static_cast<size_t>(hasReference);
 }
 
-std::optional<size_t>
-ParamIndexRefAttrFinder::findOneReference(TypedAttr value) {
-  return findFirstReferenceImpl(value, 0, cached);
+std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(TypedAttr value,
+                                                                size_t depth) {
+  return findFirstReferenceImpl(value, depth, cached);
 }
 
-std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(Type type) {
-  return findFirstReferenceImpl(type, 0, cached);
+std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(Type type,
+                                                                size_t depth) {
+  return findFirstReferenceImpl(type, depth, cached);
 }
 
 //===----------------------------------------------------------------------===//
@@ -779,6 +894,12 @@ static void emitCycleError(ParameterUseDefGraph &g,
   }
 }
 
+bool M::KGEN::runParamVerifier(MLIRContext *ctx) {
+  auto *dialect = ctx->getLoadedDialect<KGENDialect>();
+  return dialect ? dialect->getRunParameterVerifier()
+                 : kVerifyParametersByDefault;
+}
+
 LogicalResult ParameterUseDefGraph::calculateOrVerify(
     SymTabEvaluationContext *evaluationContext,
     ParameterCollector::Analysis &cache) {
@@ -790,11 +911,9 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
         return scope->getParentOp()->getName().getStringRef().str();
       });
 
-  // Defer the processing of the use-def node for region declarations until
-  // after nested scopes have been analyzed.
-  SmallVector<std::pair<ParamDeclAttr, SmallVector<Region *, 0>>> regionValues;
   // The parameter collector to use.
-  VerifyingParameterCollector c(evaluationContext, cache);
+  VerifyingParameterCollector c(evaluationContext, cache,
+                                runParamVerifier(scope->getContext()));
 
   auto processOp = [&](Operation *op) -> WalkResult {
     // Set the operation for which we are collecting parameters. It will be used
@@ -865,10 +984,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
           c.collectUsesFromAttr(expr, (*def)->uses, unusedHasConstExpr,
                                 unusedRequiredSignatureDepth);
         }
-        // If the definition of this parameter depends on a region, defer
-        // processing of the nested region uses.
-        if (!value.regions.empty())
-          regionValues.emplace_back(decl, value.regions);
       });
       if (hadError)
         return WalkResult::interrupt();
@@ -964,18 +1079,6 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
     }
 
     nestedScopes.try_emplace(nestedScope, std::move(nested));
-  }
-
-  // The parameter uses that a region parameter declaration depend on are
-  // computed after the walk, since the walk is performed pre-order. Now that
-  // we have the uses in the nested scopes, compute their dependent parameters.
-  for (auto &[decl, regions] : regionValues) {
-    ParamDefinition &def = defs.find(decl.getName())->second;
-    for (Region *region : regions) {
-      auto it = nestedScopes.find(region);
-      assert(it != nestedScopes.end() && "didn't visit nested body?");
-      llvm::append_range(def.uses, it->second.usesFromAbove);
-    }
   }
 
   // Check that there is a definite partial ordering between parameters and emit

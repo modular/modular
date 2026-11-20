@@ -13,7 +13,7 @@
 """Custom dispatch tests on real 2 GPUs."""
 
 from max.driver import Accelerator
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from functional._custom_dispatch import CustomDispatchTests
 

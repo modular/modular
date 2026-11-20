@@ -17,12 +17,15 @@ from std.testing import assert_equal, TestSuite
 
 
 def vec_func[
-    op: def(Float32, Float32) capturing[_] -> Float32
+    OpType: ImplicitlyCopyable
+    & RegisterPassable
+    & def(Float32, Float32) -> Float32
 ](
     in0: Pointer[Float32, ImmutAnyOrigin],
     in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
+    op: OpType,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var len = Int(len_dev)
@@ -50,27 +53,19 @@ def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = 2
 
-    @__parameter
-    def add(lhs: Float32, rhs: Float32) -> Float32:
+    def add(lhs: Float32, rhs: Float32) {var capture} -> Float32:
         return capture + lhs + rhs
 
     var block_dim = 32
-    comptime kernel = vec_func[add]
+    comptime kernel = vec_func[type_of(add)]
     ctx.enqueue_function[kernel](
         in0,
         in1,
         out,
         Int32(length),
+        host_args=(add,),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
-    )
-    print(
-        "number of captures:",
-        ctx.compile_function[vec_func[add]]()._func_impl.num_captures,
-    )
-    assert_equal(
-        ctx.compile_function[vec_func[add]]()._func_impl.num_captures,
-        1,
     )
     ctx.synchronize()
 

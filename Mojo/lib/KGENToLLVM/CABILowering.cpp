@@ -15,6 +15,9 @@
 #include "CABIAAPCS.h"
 #include "CABISystemV.h"
 #include "LLVMLoweringUtils.h"
+#include "Mojo/KGENDialect/KGENTypes.h"
+#include "Mojo/POPDialect/POPTypes.h"
+#include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -41,9 +44,99 @@ static llvm::ManagedStatic<CABIOptions> CABIOpts;
 // CABIInfo base implementation
 //===----------------------------------------------------------------------===//
 
+CABIInfo::CABIInfo(mlir::MLIRContext *ctx,
+                   const POPToLLVMTypeConverter &typeConverter)
+    : ctx(ctx), typeConverter(typeConverter), dataLayout(typeConverter) {}
+
+mlir::Type CABIInfo::convertType(mlir::Type type) const {
+  mlir::Type llvmType = typeConverter.convertType(type);
+  assert(llvmType && "C ABI type must convert to an LLVM type");
+  return llvmType;
+}
+
+int64_t CABIInfo::getTypeABIAlign(mlir::Type type) const {
+  int64_t align = dataLayout.getTypeABIAlign(convertType(type));
+  if (std::optional<int64_t> kgenAlign =
+          DataLayoutInterface::getTypeABIAlign(typeConverter.getTarget(), type))
+    align = std::max(align, *kgenAlign);
+  return align;
+}
+
+int64_t CABIInfo::getNaturalTypeABIAlign(mlir::Type type) const {
+  auto structType = dyn_cast<StructType>(type);
+  if (!structType)
+    return getTypeABIAlign(type);
+  std::optional<SmallVector<mlir::Type>> members = structType.getElementTypes();
+  if (!members)
+    return getTypeABIAlign(type);
+  int64_t align = 1;
+  for (mlir::Type member : *members)
+    align = std::max(align, getTypeABIAlign(member));
+  return align;
+}
+
 SignatureClassification
 CABIInfo::computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
-                               mlir::Location loc, size_t numFixedArgs) const {
+                               mlir::Location loc, CABIRole role,
+                               size_t numFixedArgs) const {
+  SignatureClassification result =
+      classifySignature(argTypes, retType, loc, numFixedArgs);
+  // FIXME(MOCO-5129) - Here be dragons!
+  // Because we flatten single-element structs early on during LowerLIT, we
+  // can't distinguish between the C equivalents of passing 'char' vs 'struct {
+  // char; }'. These need to be lowered differently - 'i8 signext' vs 'i8'.
+  // As such we must be conservatively correct and strip extension attributes
+  // differently depending on Mojo's role:
+  if (role == CABIRole::Caller) {
+    // If we were to set an extension attr on the *return* we get back from C,
+    // our codegen would be able to assume it's extended when it may not have
+    // been:
+    //   %a = call signext i8 @some_c_fn()
+    //   %b = sext i8 to i64
+    // If, in C, we have defined struct { char c; } some_c_fn() { ... }
+    // then we have not in fact received a sign-extended integer! The code
+    // generator would essentially be able to elide the sext instruction.
+    result.ret.ext = IntExtKind::None;
+  } else {
+    // If we were to set extension attrs on the *arguments* of an exported
+    // function (i.e., we are defining the callee), our codegen could assume
+    // that arguments have been extended by the C-side caller when they may not
+    // have been:
+    //
+    //   define i32 @some_exported_fn(signext i8 %arg) {
+    //     %a = sext i8 to i32
+    //     ret i32 %a
+    //   }
+    //
+    // If a C program was in fact:
+    //   extern int some_exported_fn(struct { char; });
+    //
+    // Then it would not extend arguments before calling into Mojo. Our codegen
+    // would then be able to elide the extension incorrectly!
+    for (CoercionInfo &info : result.args)
+      info.ext = IntExtKind::None;
+  }
+
+  // The LLVM type of an `@align` struct has tail padding to the size of the
+  // struct, but its alignment is that of its members. Give the struct
+  // alignment to the memory that a pointer to the value points to.
+  auto setIndirectAlign = [&](CoercionInfo &info, mlir::Type type) {
+    int64_t align = getTypeABIAlign(type);
+    if (align > dataLayout.getTypeABIAlign(convertType(type)))
+      info.indirectAlign = align;
+  };
+  for (auto [info, type] : llvm::zip(result.args, argTypes))
+    if (info.useIndirect)
+      setIndirectAlign(info, type);
+  if (result.ret.useSRet)
+    setIndirectAlign(result.ret, retType);
+  return result;
+}
+
+SignatureClassification CABIInfo::classifySignature(mlir::TypeRange argTypes,
+                                                    mlir::Type retType,
+                                                    mlir::Location loc,
+                                                    size_t numFixedArgs) const {
   SignatureClassification result;
   if (retType)
     result.ret = classifyReturnType(retType, loc);
@@ -110,21 +203,59 @@ mlir::LLVM::LLVMFunctionType SignatureClassification::getFunctionType(
   return mlir::LLVM::LLVMFunctionType::get(resultType, paramTypes, isVarArg);
 }
 
+static llvm::StringRef getExtAttrName(IntExtKind kind) {
+  switch (kind) {
+  case IntExtKind::None:
+    return {};
+  case IntExtKind::ZExt:
+    return mlir::LLVM::LLVMDialect::getZExtAttrName();
+  case IntExtKind::SExt:
+    return mlir::LLVM::LLVMDialect::getSExtAttrName();
+  }
+  llvm_unreachable("unknown IntExtKind");
+}
+
 llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
-    mlir::TypeRange argTypes, mlir::Type retType, size_t numArgs) const {
+    mlir::TypeRange argTypes, mlir::Type retType, mlir::ArrayAttr argAttrs,
+    size_t numArgs) const {
   numArgs = std::min(numArgs, args.size());
   llvm::SmallVector<mlir::NamedAttrList> attrs(getLLVMParamIndex(numArgs));
   if (ret.useSRet)
     attrs[0].set(mlir::LLVM::LLVMDialect::getStructRetAttrName(),
                  mlir::TypeAttr::get(retType));
   unsigned paramIdx = getLLVMParamIndex(0);
-  for (auto [coercion, type] :
-       llvm::zip(llvm::ArrayRef(args).take_front(numArgs), argTypes)) {
-    if (coercion.useIndirect && coercion.useByval)
+  for (auto [argIdx, coercion] :
+       llvm::enumerate(llvm::ArrayRef(args).take_front(numArgs))) {
+    mlir::Type type = argTypes[argIdx];
+    if (argAttrs && argIdx < argAttrs.size()) {
+      if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[argIdx]))
+        attrs[paramIdx].append(dict.begin(), dict.end());
+      if (!coercion.useIndirect && isa<mlir::LLVM::LLVMStructType>(type))
+        attrs[paramIdx].erase(mlir::LLVM::LLVMDialect::getNoUndefAttrName());
+    }
+    if (coercion.useIndirect && coercion.useByval) {
       attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getByValAttrName(),
                           mlir::TypeAttr::get(type));
+      // The stack slot of a byval argument has the alignment of this
+      // attribute, or else of the LLVM type.
+      if (coercion.indirectAlign)
+        attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getAlignAttrName(),
+                            mlir::IntegerAttr::get(
+                                mlir::IntegerType::get(type.getContext(), 64),
+                                coercion.indirectAlign));
+    }
+    if (llvm::StringRef ext = getExtAttrName(coercion.ext); !ext.empty())
+      attrs[paramIdx].set(ext, mlir::UnitAttr::get(type.getContext()));
     paramIdx += coercion.getNumLLVMParams();
   }
+  return attrs;
+}
+
+mlir::NamedAttrList
+SignatureClassification::getResultAttrs(mlir::MLIRContext *ctx) const {
+  mlir::NamedAttrList attrs;
+  if (llvm::StringRef ext = getExtAttrName(ret.ext); !ext.empty())
+    attrs.set(ext, mlir::UnitAttr::get(ctx));
   return attrs;
 }
 
@@ -134,12 +265,12 @@ llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
 
 std::unique_ptr<CABIInfo>
 M::KGEN::createCABIInfo(const llvm::Triple &triple, mlir::MLIRContext *ctx,
-                        const LLVMDataLayout &dataLayout) {
+                        const POPToLLVMTypeConverter &typeConverter) {
 
   // Check if C ABI functionality is enabled
   if (!CabiUtils::isCABIEnabled()) {
     // C ABI disabled - use default pass-through ABI
-    return std::make_unique<DefaultCABIInfo>(ctx, dataLayout);
+    return std::make_unique<DefaultCABIInfo>(ctx, typeConverter);
   }
 
   // Detect architecture and select appropriate ABI
@@ -148,7 +279,7 @@ M::KGEN::createCABIInfo(const llvm::Triple &triple, mlir::MLIRContext *ctx,
   switch (arch) {
   case llvm::Triple::x86_64:
     // x86-64: Use System V AMD64 ABI (Linux, macOS, BSD)
-    return std::make_unique<SystemVABIInfo>(ctx, dataLayout);
+    return std::make_unique<SystemVABIInfo>(ctx, typeConverter);
 
   case llvm::Triple::aarch64:
   case llvm::Triple::aarch64_be:
@@ -156,16 +287,17 @@ M::KGEN::createCABIInfo(const llvm::Triple &triple, mlir::MLIRContext *ctx,
     // ARM64: Use AAPCS (Procedure Call Standard for ARM 64-bit)
     // Used on: Linux ARM64, macOS Apple Silicon, iOS
     // isDarwin controls variadic HFA coercion (Darwin=GP-only va_list).
-    return std::make_unique<AAPCSABIInfo>(ctx, dataLayout, triple.isOSDarwin());
+    return std::make_unique<AAPCSABIInfo>(ctx, typeConverter,
+                                          triple.isOSDarwin());
 
   case llvm::Triple::x86:
     // 32-bit x86: Use default pass-through ABI
     // TODO: Could implement cdecl/stdcall/fastcall variants if needed
-    return std::make_unique<DefaultCABIInfo>(ctx, dataLayout);
+    return std::make_unique<DefaultCABIInfo>(ctx, typeConverter);
 
   default:
     // Unsupported architecture: use default pass-through ABI
-    return std::make_unique<DefaultCABIInfo>(ctx, dataLayout);
+    return std::make_unique<DefaultCABIInfo>(ctx, typeConverter);
   }
 }
 
@@ -180,50 +312,93 @@ int64_t CabiUtils::getStructSize(mlir::LLVM::LLVMStructType type,
   return dataLayout.getTypeStoreSize(type);
 }
 
-/// Recursively determine the canonical leaf float bit width for a struct.
-///
-/// Traverses all fields (recursing into nested LLVMStructType fields) and
-/// returns the bit width if every leaf field is the same float type.
-/// Returns 0 if any non-float field is found, the struct is empty, or
-/// float types are mixed (e.g., f32 and f64 together).
-static unsigned getLeafFloatBitWidth(mlir::LLVM::LLVMStructType type) {
-  std::optional<unsigned> canonicalBitWidth;
-  for (mlir::Type fieldType : type.getBody()) {
-    unsigned fieldBitWidth = 0;
-    if (auto floatType = dyn_cast<mlir::FloatType>(fieldType)) {
-      fieldBitWidth = floatType.getWidth();
-    } else if (auto vecType = dyn_cast<mlir::VectorType>(fieldType)) {
-      if (auto floatElem = dyn_cast<mlir::FloatType>(vecType.getElementType()))
-        fieldBitWidth = floatElem.getWidth();
-      else
-        return 0; // Non-float vector element
-    } else if (auto nestedStruct =
-                   dyn_cast<mlir::LLVM::LLVMStructType>(fieldType)) {
-      fieldBitWidth = getLeafFloatBitWidth(nestedStruct);
-      if (fieldBitWidth == 0)
-        return 0; // Nested struct contains non-float or mixed floats
-    } else {
-      return 0; // Non-float field (integer, pointer, etc.)
-    }
-    if (!canonicalBitWidth)
-      canonicalBitWidth = fieldBitWidth;
-    else if (*canonicalBitWidth != fieldBitWidth)
-      return 0; // Heterogeneous: mixed float types (e.g., f32 + f64)
+void CabiUtils::forEachMember(
+    mlir::Type type, int64_t offset, const LLVMDataLayout &dataLayout,
+    llvm::function_ref<void(mlir::Type, int64_t)> callback) {
+  // A type without size is not opened: an empty struct, a zero-length array,
+  // or an array of either.
+  if (dataLayout.getTypeAllocSize(type) == 0) {
+    callback(type, offset);
+    return;
   }
-  return canonicalBitWidth.value_or(0);
+
+  if (auto arrayType = dyn_cast<mlir::LLVM::LLVMArrayType>(type)) {
+    mlir::Type elementType = arrayType.getElementType();
+    int64_t elementSize = dataLayout.getTypeAllocSize(elementType);
+    for (int64_t i = 0, e = arrayType.getNumElements(); i < e; ++i)
+      forEachMember(elementType, offset + i * elementSize, dataLayout,
+                    callback);
+    return;
+  }
+
+  if (auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
+    // The classifiers assume aligned fields, and the fields of a packed struct
+    // can be unaligned. Mojo does not emit a packed struct.
+    assert(!structType.isPacked() &&
+           "packed structs are not supported; their fields may be unaligned");
+    for (auto [fieldType, fieldOffset] :
+         llvm::zip_equal(structType.getBody(),
+                         dataLayout.getStructFieldOffsets(structType)))
+      forEachMember(fieldType, offset + fieldOffset, dataLayout, callback);
+    return;
+  }
+
+  callback(type, offset);
 }
 
-bool CabiUtils::isAllFloatStruct(mlir::LLVM::LLVMStructType type) {
-  auto fields = type.getBody();
-  if (fields.empty())
-    return false;
+void CabiUtils::forEachMember(
+    mlir::Type type, int64_t offset,
+    const POPToLLVMTypeConverter &typeConverter,
+    llvm::function_ref<void(mlir::Type, int64_t)> callback) {
+  TargetInfoAttr target = typeConverter.getTarget();
 
-  // ARM64 AAPCS HFA (Homogeneous Floating-point Aggregate) limit: at most 4
-  // top-level fields. Note: this checks top-level fields, not leaf float count.
-  if (fields.size() > 4)
-    return false;
+  // The fields are at the KGEN offsets, which the conversion to an LLVM
+  // struct keeps by adding padding for KGEN alignment that LLVM does not know.
+  if (auto structType = dyn_cast<StructType>(type)) {
+    std::optional<llvm::SmallVector<mlir::Type>> fieldTypes =
+        structType.getElementTypes();
+    std::optional<llvm::SmallVector<int64_t>> fieldOffsets =
+        structType.getElementOffsets(target);
+    assert(fieldTypes && fieldOffsets && "C ABI struct type must be resolved");
+    for (auto [fieldType, fieldOffset] :
+         llvm::zip_equal(*fieldTypes, *fieldOffsets))
+      forEachMember(fieldType, offset + fieldOffset, typeConverter, callback);
+    return;
+  }
 
-  return getLeafFloatBitWidth(type) != 0;
+  // The members of a union overlap, so all of them are at its offset.
+  if (auto unionType = dyn_cast<POP::UnionType>(type)) {
+    for (mlir::Type memberType : unionType.getTypes())
+      forEachMember(memberType, offset, typeConverter, callback);
+    return;
+  }
+  if (auto unionType = dyn_cast<UntaggedUnionType>(type)) {
+    auto members = dyn_cast<ParamListAttr>(unionType.getVariadic());
+    assert(members && "C ABI union type must be resolved");
+    for (TypedAttr member : members.getValues())
+      forEachMember(ParamType::get(member), offset, typeConverter, callback);
+    return;
+  }
+
+  if (auto arrayType = dyn_cast<POP::ArrayType>(type)) {
+    std::optional<int64_t> numElements = arrayType.getResolvedSize();
+    assert(numElements && "C ABI array type must be resolved");
+    mlir::Type elementType = arrayType.getElementType();
+    std::optional<int64_t> elementSize =
+        DataLayoutInterface::getTypeAllocSize(target, elementType);
+    assert(elementSize && "C ABI array element must have a known size");
+    for (int64_t i = 0; i < *numElements; ++i) {
+      forEachMember(elementType, offset + i * *elementSize, typeConverter,
+                    callback);
+    }
+    return;
+  }
+
+  // Other types have the same members as their LLVM type.
+  mlir::Type llvmType = typeConverter.convertType(type);
+  assert(llvmType && "C ABI type must convert to an LLVM type");
+  forEachMember(llvmType, offset,
+                static_cast<const LLVMDataLayout &>(typeConverter), callback);
 }
 
 mlir::IntegerType CabiUtils::getIntegerTypeForSize(int64_t size,
@@ -248,6 +423,23 @@ CoercionInfo CabiUtils::classifySmallIntegerStruct(int64_t size,
   CoercionInfo info;
   info.argClass = ABIArgClass::Integer;
   info.coercedType = getIntegerTypeForSize(size, ctx);
+  return info;
+}
+
+CoercionInfo
+CabiUtils::classifyExtendedScalar(mlir::Type type,
+                                  const POPToLLVMTypeConverter &typeConverter) {
+  CoercionInfo info;
+  // The integers narrower than C `int`, which is 32 bits on every target that
+  // uses this.
+  auto intTy = dyn_cast<mlir::IntegerType>(typeConverter.convertType(type));
+  if (!intTy || intTy.getWidth() >= 32)
+    return info;
+  // LLVM integers are signless, so the sign comes from the KGEN dtype.
+  std::optional<KGENDType> dtype;
+  if (auto simd = dyn_cast<SIMDType>(type); simd && simd.getResolvedSize() == 1)
+    dtype = simd.getResolvedDType();
+  info.ext = dtype && dtype->isSInt() ? IntExtKind::SExt : IntExtKind::ZExt;
   return info;
 }
 

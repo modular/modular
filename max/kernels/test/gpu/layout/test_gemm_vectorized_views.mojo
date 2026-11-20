@@ -17,7 +17,6 @@ from max.gpu.host import DeviceContext
 from layout import row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from matmul_kernels import gemm_kernel_6, matmul_kernel_tc
-from max.gpu import WARP_SIZE
 
 
 def a_value(row: Int, k: Int) -> Float32:
@@ -34,7 +33,7 @@ def c_value(row: Int, col: Int) -> Float32:
 
 def test_views[
     M: Int, N: Int, K: Int, use_tensor_cores: Bool = False
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     print("matmul views:", M, N, K, use_tensor_cores)
     comptime a_layout = row_major[M, K]()
     comptime b_layout = row_major[K, N]()
@@ -62,9 +61,9 @@ def test_views[
     b.to_device()
     c.to_device()
 
-    var a_device = a.device_tensor().as_imm().as_unsafe_any_origin()
-    var b_device = b.device_tensor().as_imm().as_unsafe_any_origin()
-    var c_device = c.device_tensor().as_unsafe_any_origin()
+    var a_device = a.device_tensor().as_imm()
+    var b_device = b.device_tensor().as_imm()
+    var c_device = c.device_tensor()
     comptime if use_tensor_cores:
         comptime MMA_N = 8 if ctx.target.is_nvidia_gpu() else 16
         comptime MMA_K = 8 if ctx.target.is_nvidia_gpu() else 4
@@ -81,13 +80,16 @@ def test_views[
             16,
             MMA_N,
             MMA_K,
+            A_origin=a_device.origin,
+            B_origin=b_device.origin,
+            C_origin=c_device.origin,
         ]
         ctx.enqueue_function[kernel](
             a_device,
             b_device,
             c_device,
             grid_dim=(N // 64, M // 64),
-            block_dim=(4 * WARP_SIZE,),
+            block_dim=(4 * ctx.default_device_info.warp_size,),
         )
     else:
         comptime kernel = gemm_kernel_6[
@@ -101,6 +103,9 @@ def test_views[
             8,
             8,
             256,
+            a_origin=a_device.origin,
+            b_origin=b_device.origin,
+            c_origin=c_device.origin,
         ]
         ctx.enqueue_function[kernel](
             a_device,

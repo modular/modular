@@ -13,7 +13,7 @@
 
 """Cold-start policy for the eager interpreter's graph-compiler models.
 
-Standard-library only, so :mod:`max.experimental.executor` can read the policy
+Standard-library only, so :mod:`max.tensor.executor` can read the policy
 without importing the Mojo-backed :mod:`max._interpreter_ops`.
 """
 

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 
 def compute_vision_freqs_cis(
@@ -141,7 +141,7 @@ def apply_multidimensional_rope(
     corresponding slice of the frequency tensor, then concatenates the results.
 
     Uses the complex-multiplication convention from
-    :class:`~max.nn.rotary_embedding.RotaryEmbedding` (non-interleaved).
+    :class:`~max.nn.legacy.rotary_embedding.RotaryEmbedding` (non-interleaved).
 
     This is the MAX graph equivalent of ``apply_multidimensional_rope`` from the
     HuggingFace Gemma4 reference (vision encoder path).

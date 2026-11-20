@@ -59,6 +59,11 @@ from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu, is_cpu
 import max.gpu.primitives.warp as warp
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -72,7 +77,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
 
@@ -103,11 +108,11 @@ def _attend_key[
     heads_per_warp: Int,
     round_p: Bool,
 ](
-    k: SIMD[DType.float32, lane_width],
-    q: Array[SIMD[DType.float32, lane_width], heads_per_warp],
+    k: SIMD[.float32, lane_width],
+    q: Array[SIMD[.float32, lane_width], heads_per_warp],
     mut m: Array[Float32, heads_per_warp],
     mut l: Array[Float32, heads_per_warp],
-    mut acc: Array[SIMD[DType.float32, lane_width], heads_per_warp],
+    mut acc: Array[SIMD[.float32, lane_width], heads_per_warp],
 ):
     """One online-softmax step for every head this warp owns.
 
@@ -127,7 +132,7 @@ def _attend_key[
         var p = exp(s - m[i])
         l[i] = l[i] + p
         comptime if round_p:
-            p = p.cast[DType.bfloat16]().cast[DType.float32]()
+            p = p.cast[.bfloat16]().cast[.float32]()
         acc[i] = acc[i] + p * k
 
 
@@ -166,59 +171,64 @@ def _latent_sparse_attention_gpu_kernel[
     var lane = Int(lane_id())
     var h0 = (block_idx.y * warps_per_block + Int(warp_id())) * heads_per_warp
     var nh = Int(num_heads)
+
     if h0 >= nh:
         return
 
-    var b = _batch_of_row(t, row_offsets, Int(num_batches))
-    var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
     var d0 = lane * lane_width
 
-    var q = Array[SIMD[DType.float32, lane_width], heads_per_warp](
-        fill=SIMD[DType.float32, lane_width](0)
+    var q = Array[SIMD[.float32, lane_width], heads_per_warp](
+        fill=SIMD[.float32, lane_width](0)
     )
     var m = Array[Float32, heads_per_warp](fill=min_or_neg_inf[DType.float32]())
     var l = Array[Float32, heads_per_warp](fill=Float32(0))
-    var acc = Array[SIMD[DType.float32, lane_width], heads_per_warp](
-        fill=SIMD[DType.float32, lane_width](0)
+    var acc = Array[SIMD[.float32, lane_width], heads_per_warp](
+        fill=SIMD[.float32, lane_width](0)
     )
-    comptime for i in range(heads_per_warp):
-        var h = h0 + i
-        if h < nh:
-            q[i] = (
-                q_ptr.unsafe_load[width=lane_width](
-                    t * Int(q_stride0) + h * Int(q_stride1) + d0
-                ).cast[DType.float32]()
-                * scale
+
+    with PDL():
+        var b = _batch_of_row(t, row_offsets, Int(num_batches))
+        var pos = (
+            swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
+        )
+        comptime for i in range(heads_per_warp):
+            var h = h0 + i
+            if h < nh:
+                q[i] = (
+                    q_ptr.unsafe_load[width=lane_width](
+                        t * Int(q_stride0) + h * Int(q_stride1) + d0
+                    ).cast[.float32]()
+                    * scale
+                )
+
+        var start = max(pos - window + 1, 0)
+        for p in range(start, pos + 1):
+            var k = swa_cache.load[width=lane_width, output_dtype=.float32](
+                b, 0, p, d0
             )
+            _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
 
-    var start = max(pos - window + 1, 0)
-    for p in range(start, pos + 1):
-        var k = swa_cache.load[width=lane_width, output_dtype=DType.float32](
-            b, 0, p, d0
-        )
-        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
-
-    for j in range(Int(num_comp)):
-        var e = Int(
-            comp_indices[
-                unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
-            ]
-        )
-        if e < 0:
-            continue
-        var k = comp_cache.load[width=lane_width, output_dtype=DType.float32](
-            b, 0, e, d0
-        )
-        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
-
-    comptime for i in range(heads_per_warp):
-        var h = h0 + i
-        if h < nh:
-            var den = l[i] + exp(attn_sink[unsafe_offset=h] - m[i])
-            out_ptr.unsafe_store(
-                t * Int(out_stride0) + h * Int(out_stride1) + d0,
-                (acc[i] / den).cast[out_type](),
+        for j in range(Int(num_comp)):
+            var e = Int(
+                comp_indices[
+                    unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
+                ]
             )
+            if e < 0:
+                continue
+            var k = comp_cache.load[width=lane_width, output_dtype=.float32](
+                b, 0, e, d0
+            )
+            _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
+
+        comptime for i in range(heads_per_warp):
+            var h = h0 + i
+            if h < nh:
+                var den = l[i] + exp(attn_sink[unsafe_offset=h] - m[i])
+                out_ptr.unsafe_store(
+                    t * Int(out_stride0) + h * Int(out_stride1) + d0,
+                    (acc[i] / den).cast[out_type](),
+                )
 
 
 @inline(.always)
@@ -238,7 +248,7 @@ def _cpu_attend[
     for d in range(head_dim):
         s += (
             qh[unsafe_offset=d]
-            * cache.load[width=1, output_dtype=DType.float32](b, 0, key, d)[0]
+            * cache.load[width=1, output_dtype=.float32](b, 0, key, d)[0]
         )
     if s > m:
         var corr = exp(m - s)
@@ -250,7 +260,7 @@ def _cpu_attend[
     l += p
     for d in range(head_dim):
         acc[unsafe_offset=d] += (
-            p * cache.load[width=1, output_dtype=DType.float32](b, 0, key, d)[0]
+            p * cache.load[width=1, output_dtype=.float32](b, 0, key, d)[0]
         )
 
 
@@ -284,8 +294,8 @@ def _latent_sparse_attention_cpu[
 ):
     """Scalar reference path; the same math as the GPU kernel, one key at a time.
     """
-    var acc_alloc = alloc(AllocLayout[Float32](count=head_dim))
-    var qh_alloc = alloc(AllocLayout[Float32](count=head_dim))
+    var acc_alloc = alloc(AllocLayout[Float32](length=head_dim))
+    var qh_alloc = alloc(AllocLayout[Float32](length=head_dim))
     var acc = rebind[Pointer[Float32, MutAnyOrigin]](acc_alloc.unsafe_ptr())
     var qh = rebind[Pointer[Float32, MutAnyOrigin]](qh_alloc.unsafe_ptr())
     for t in range(num_rows):
@@ -358,49 +368,53 @@ def _sm100_decode_plan_kernel[
     one, a token-count bound that means nothing for compressed entries, so
     `row_lengths` holds the list length itself and the clamp never cuts it.
     """
-    var t = Int(block_idx.x)
+    var t = block_idx.x
     var lane = Int(lane_id())
-    var b = _batch_of_row(t, row_offsets, Int(num_batches))
-    var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
     var nc = Int(num_comp)
     var out_base = t * Int(comp_stride)
-
     var count = 0
-    for c0 in range(0, nc, WARP_SIZE):
-        var j = c0 + lane
-        var e = Int32(-1)
-        if j < nc:
-            e = comp_indices[
-                unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
-            ]
-        var valid = Int32(1) if e >= 0 else Int32(0)
-        var slot = count + Int(warp.prefix_sum[exclusive=True](valid))
-        if e >= 0:
-            comp_rows[unsafe_offset=out_base + slot] = Int32(
-                comp_cache.row_idx(UInt32(b), UInt32(e))
-            )
-        count += Int(warp.sum(valid))
-    for j in range(count + lane, Int(comp_stride), WARP_SIZE):
-        comp_rows[unsafe_offset=out_base + j] = -1
 
-    var start = max(pos - window + 1, 0)
-    for i in range(lane, window, WARP_SIZE):
-        var p = start + i
-        var r = Int32(-1)
-        if p <= pos:
-            r = Int32(swa_cache.row_idx(UInt32(b), UInt32(p)))
-        win_rows[unsafe_offset=t * window + i] = r
+    with PDL():
+        var b = _batch_of_row(t, row_offsets, Int(num_batches))
+        var pos = (
+            swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
+        )
 
-    if lane == 0:
-        comp_len[unsafe_offset=t] = Int32(count)
-        win_len[unsafe_offset=t] = Int32(pos - start + 1)
-        row_batches[unsafe_offset=t] = UInt32(t)
-        row_lengths[unsafe_offset=t] = UInt32(count)
-        if t == 0:
-            row_batches[unsafe_offset=Int(num_rows)] = UInt32(num_rows)
-            scalar_args[unsafe_offset=0] = Int64(num_rows)
-            scalar_args[unsafe_offset=1] = 1
-            scalar_args[unsafe_offset=2] = 0
+        for c0 in range(0, nc, WARP_SIZE):
+            var j = c0 + lane
+            var e = Int32(-1)
+            if j < nc:
+                e = comp_indices[
+                    unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
+                ]
+            var valid = Int32(1) if e >= 0 else Int32(0)
+            var slot = count + Int(warp.prefix_sum[exclusive=True](valid))
+            if e >= 0:
+                comp_rows[unsafe_offset=out_base + slot] = Int32(
+                    comp_cache.row_idx(UInt32(b), UInt32(e))
+                )
+            count += Int(warp.sum(valid))
+        for j in range(count + lane, Int(comp_stride), WARP_SIZE):
+            comp_rows[unsafe_offset=out_base + j] = -1
+
+        var start = max(pos - window + 1, 0)
+        for i in range(lane, window, WARP_SIZE):
+            var p = start + i
+            var r = Int32(-1)
+            if p <= pos:
+                r = Int32(swa_cache.row_idx(UInt32(b), UInt32(p)))
+            win_rows[unsafe_offset=t * window + i] = r
+
+        if lane == 0:
+            comp_len[unsafe_offset=t] = Int32(count)
+            win_len[unsafe_offset=t] = Int32(pos - start + 1)
+            row_batches[unsafe_offset=t] = UInt32(t)
+            row_lengths[unsafe_offset=t] = UInt32(count)
+            if t == 0:
+                row_batches[unsafe_offset=Int(num_rows)] = UInt32(num_rows)
+                scalar_args[unsafe_offset=0] = Int64(num_rows)
+                scalar_args[unsafe_offset=1] = 1
+                scalar_args[unsafe_offset=2] = 0
 
 
 def _flat_row_view[
@@ -409,15 +423,15 @@ def _flat_row_view[
     //,
 ](
     cache: PagedKVCache[dtype, kv_params, ...],
-    row_lengths: Pointer[UInt32, MutAnyOrigin],
+    row_lengths: MutPointer[UInt32, _],
     num_rows: Int,
 ) -> PagedKVCacheCollection[
     dtype,
     kv_params,
     _VIEW_PAGE,
-    MutAnyOrigin,
-    ImmutAnyOrigin,
-    ImmutAnyOrigin,
+    type_of(cache).blocks_origin,
+    ImmOrigin(row_lengths.origin),
+    type_of(cache).lookup_table_origin,
     MutUntrackedOrigin,
 ]:
     """Views one layer of a leaf as a single-layer cache whose rows are flat.
@@ -430,17 +444,9 @@ def _flat_row_view[
     index and never reads it.
     """
     var num_pages = ceildiv(cache.num_kv_rows(), _VIEW_PAGE)
-    return PagedKVCacheCollection[
-        dtype,
-        kv_params,
-        _VIEW_PAGE,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutUntrackedOrigin,
-    ](
+    return {
         TileTensor(
-            rebind[Pointer[Scalar[dtype], MutAnyOrigin]](cache.blocks.ptr),
+            cache.blocks.ptr,
             row_major(
                 Int64(num_pages),
                 Idx[1],
@@ -450,12 +456,9 @@ def _flat_row_view[
                 Idx[kv_params.head_size],
             ),
         ),
+        TileTensor(row_lengths.as_imm(), row_major(Int64(num_rows))),
         TileTensor(
-            rebind[Pointer[UInt32, ImmutAnyOrigin]](row_lengths),
-            row_major(Int64(num_rows)),
-        ),
-        TileTensor(
-            rebind[Pointer[UInt32, ImmutAnyOrigin]](cache.lookup_table.ptr),
+            cache.lookup_table.ptr,
             row_major(
                 Int64(cache.lookup_table.dim[0]()),
                 Int64(cache.lookup_table.dim[1]()),
@@ -463,7 +466,7 @@ def _flat_row_view[
         ),
         UInt32(1),
         cache.max_context_length(),
-    )
+    }
 
 
 def _latent_sparse_attention_sm100[
@@ -553,7 +556,8 @@ def _latent_sparse_attention_sm100[
         Int32(idx_stride0),
         Int32(idx_stride1),
         grid_dim=num_rows,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     var comp_view = _flat_row_view(
@@ -569,6 +573,7 @@ def _latent_sparse_attention_sm100[
         ragged=True,
         sparse=True,
         has_extra_k=True,
+        kernels=SM100MLA,
     ](
         TileTensor(out_ptr, row_major(num_rows, Idx[num_heads], Idx[head_dim])),
         TileTensor(q_ptr, row_major(num_rows, Idx[num_heads], Idx[head_dim])),
@@ -583,8 +588,9 @@ def _latent_sparse_attention_sm100[
         indices_stride=comp_stride,
         topk_lengths=NonNullPointer[DType.int32](comp_len),
         attn_sink_ptr=NonNullPointer[DType.float32](attn_sink),
-        # Equal by the assert above; the compiler compares the two views'
-        # parameters symbolically and can't see it.
+        # Equal by the assert above up to the leaves' origins, which the
+        # compiler compares symbolically. Both leaves are arguments, so
+        # either origin outlives this call.
         extra_k=rebind[type_of(comp_view)](swa_view),
         extra_d_indices=win_rows_ptr,
         extra_indices_stride=window,
@@ -604,7 +610,6 @@ def latent_sparse_attention_ragged_paged[
     q_type: DType,
     out_type: DType,
     //,
-    target: StaticString,
     window: Int,
     split_k: Bool = True,
     portable_p_bf16: Bool = False,
@@ -626,7 +631,6 @@ def latent_sparse_attention_ragged_paged[
     Parameters:
         q_type: Query element type (inferred).
         out_type: Output element type (inferred).
-        target: Compilation target string, selects the CPU or GPU path.
         window: Sliding window length in tokens; a query at ``pos`` sees
             positions ``max(0, pos - window + 1) .. pos``.
         split_k: Whether the SM100 route may split a row's keys across
@@ -650,9 +654,68 @@ def latent_sparse_attention_ragged_paged[
         scale: Softmax scale applied to the scores.
         ctx: Device context used to enqueue the GPU kernel.
     """
+    comptime if not ctx.target.is_cpu() and _is_sm10x_gpu(
+        ctx.default_device_info
+    ):
+        latent_sparse_attention_ragged_paged_sm100[
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_cache,
+            comp_cache,
+            scale,
+            ctx,
+        )
+    else:
+        latent_sparse_attention_ragged_paged_portable[
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_cache,
+            comp_cache,
+            scale,
+            ctx,
+        )
+
+
+def latent_sparse_attention_ragged_paged_sm100[
+    q_type: DType,
+    out_type: DType,
+    //,
+    window: Int,
+    split_k: Bool = True,
+    portable_p_bf16: Bool = False,
+](
+    output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    comp_indices: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    swa_cache: PagedKVCache[...],
+    comp_cache: PagedKVCache[...],
+    scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Runs `latent_sparse_attention_ragged_paged` on the SM100 decode when
+    the shape and layout allow it, else on the portable GPU kernel."""
     comptime swa_t = type_of(swa_cache)
     comptime comp_t = type_of(comp_cache)
     comptime head_dim = swa_t.kv_params.head_size
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime assert (
         comp_t.kv_params.head_size == head_dim
     ), "window and compressed leaves must share the latent width"
@@ -660,7 +723,7 @@ def latent_sparse_attention_ragged_paged[
         swa_t.kv_params.num_heads == 1 and comp_t.kv_params.num_heads == 1
     ), "the latent leaves hold a single shared head"
     comptime assert (
-        head_dim % WARP_SIZE == 0
+        head_dim % warp_size == 0
     ), "head_dim must be a multiple of the warp size"
     comptime assert output.flat_rank == 3 and q.flat_rank == 3
     comptime assert comp_indices.flat_rank == 2
@@ -693,7 +756,7 @@ def latent_sparse_attention_ragged_paged[
 
     comptime q_heads = q.static_shape[1]
     comptime use_sm100 = (
-        not is_cpu[target]()
+        not ctx.target.is_cpu()
         and _is_sm10x_gpu(ctx.default_device_info)
         and q_type == .bfloat16
         and out_type == .bfloat16
@@ -749,7 +812,88 @@ def latent_sparse_attention_ragged_paged[
             )
             return
 
-    comptime if is_cpu[target]():
+    latent_sparse_attention_ragged_paged_portable[
+        window=window,
+        split_k=split_k,
+        portable_p_bf16=portable_p_bf16,
+    ](
+        output,
+        q,
+        input_row_offsets,
+        comp_indices,
+        attn_sink,
+        swa_cache,
+        comp_cache,
+        scale,
+        ctx,
+    )
+
+
+def latent_sparse_attention_ragged_paged_portable[
+    q_type: DType,
+    out_type: DType,
+    //,
+    window: Int,
+    split_k: Bool = True,
+    portable_p_bf16: Bool = False,
+](
+    output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    comp_indices: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    swa_cache: PagedKVCache[...],
+    comp_cache: PagedKVCache[...],
+    scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Runs `latent_sparse_attention_ragged_paged` on the CPU or the
+    portable GPU kernel."""
+    comptime swa_t = type_of(swa_cache)
+    comptime comp_t = type_of(comp_cache)
+    comptime head_dim = swa_t.kv_params.head_size
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime assert (
+        comp_t.kv_params.head_size == head_dim
+    ), "window and compressed leaves must share the latent width"
+    comptime assert (
+        swa_t.kv_params.num_heads == 1 and comp_t.kv_params.num_heads == 1
+    ), "the latent leaves hold a single shared head"
+    comptime assert (
+        head_dim % warp_size == 0
+    ), "head_dim must be a multiple of the warp size"
+    comptime assert output.flat_rank == 3 and q.flat_rank == 3
+    comptime assert comp_indices.flat_rank == 2
+    comptime assert (
+        input_row_offsets.flat_rank == 1 and attn_sink.flat_rank == 1
+    )
+
+    var num_rows = Int(q.dim[0]())
+    var num_heads = Int(q.dim[1]())
+    var num_batches = Int(input_row_offsets.dim[0]()) - 1
+    var num_comp = Int(comp_indices.dim[1]())
+    var q_stride0 = Int(q.dynamic_stride(0))
+    var q_stride1 = Int(q.dynamic_stride(1))
+    var out_stride0 = Int(output.dynamic_stride(0))
+    var out_stride1 = Int(output.dynamic_stride(1))
+    var idx_stride0 = Int(comp_indices.dynamic_stride(0))
+    var idx_stride1 = Int(comp_indices.dynamic_stride(1))
+    debug_assert(
+        Int(q.dynamic_stride(2)) == 1 and Int(output.dynamic_stride(2)) == 1,
+        "q and output must be contiguous along head_dim",
+    )
+    if num_rows == 0:
+        return
+
+    var out_ptr = output.unsafe_ptr().as_unsafe_any_origin()
+    var q_ptr = q.unsafe_ptr().as_unsafe_any_origin()
+    var offs_ptr = input_row_offsets.unsafe_ptr().as_unsafe_any_origin()
+    var idx_ptr = comp_indices.unsafe_ptr().as_unsafe_any_origin()
+    var sink_ptr = attn_sink.unsafe_ptr().as_unsafe_any_origin()
+
+    comptime if ctx.target.is_cpu():
         _latent_sparse_attention_cpu[head_dim=head_dim, window=window](
             out_ptr,
             q_ptr,
@@ -804,5 +948,6 @@ def latent_sparse_attention_ragged_paged[
             Int32(idx_stride1),
             scale,
             grid_dim=(num_rows, ceildiv(num_heads, heads_per_block)),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=warp_size * warps_per_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

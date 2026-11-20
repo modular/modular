@@ -42,7 +42,7 @@ COLLECT_EXCLUDES = (
 
 def is_private_name(name: str) -> bool:
     """True for a single-underscore name; dunders are public."""
-    stem = name.removesuffix(".py")
+    stem = Path(name).stem
     return stem.startswith("_") and not (
         stem.startswith("__") and stem.endswith("__")
     )
@@ -164,21 +164,31 @@ _sybil = Sybil(
         SkipParser(),
     ],
     path=str(_SCAN_ROOT),
-    patterns=["*.py"],
+    patterns=["*.py", "*.pyi"],
     # Directory excludes need a glob suffix for Sybil's matcher.
     excludes=[
         exclude + "*" if exclude.endswith("/") else exclude
         for exclude in COLLECT_EXCLUDES
     ],
-    document_types={".py": _PublicDocStringDocument},
+    document_types={
+        ".py": _PublicDocStringDocument,
+        ".pyi": _PublicDocStringDocument,
+    },
 )
 _collect_file = _sybil.pytest()
 
 
-def _should_collect(path: Path) -> bool:
-    """True if ``path`` is a public source Sybil should scan for examples."""
+def _should_collect(path: Path, stub_examples: bool) -> bool:
+    """True if ``path`` is a public source Sybil should scan for examples.
+
+    ``stub_examples`` scans ``.pyi`` stubs and skips ``.py`` sources. The
+    two never mix in one session, so a stub target over a directory that
+    also holds private tooling (for example ``_core/max_license``) stays
+    scoped to the stubs.
+    """
+    suffix = ".pyi" if stub_examples else ".py"
     return (
-        path.suffix == ".py"
+        path.suffix == suffix
         and not is_private_name(path.name)
         and _sybil.should_parse(path)
     )
@@ -193,13 +203,19 @@ def pytest_ignore_collect(collection_path: Path, config: Any) -> bool | None:
     module and fail on any optional top-level dependency it carries. Ignoring
     the path here happens before any module import.
     """
-    if collection_path.suffix == ".py" and not _should_collect(collection_path):
+    if collection_path.suffix in (".py", ".pyi") and not _should_collect(
+        collection_path, stub_examples=config.getoption("--stub-examples")
+    ):
         return True
     return None
 
 
 def pytest_collect_file(file_path: Path, parent: Any) -> Any:
     """Collect docstring examples from a public module under max/python/max."""
+    if not _should_collect(
+        file_path, stub_examples=parent.config.getoption("--stub-examples")
+    ):
+        return None
     return _collect_file(file_path, parent)
 
 
@@ -213,6 +229,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("sybil_collect")
     group.addoption("--shard-id", type=int, default=0)
     group.addoption("--num-shards", type=int, default=1)
+    group.addoption(
+        "--stub-examples",
+        action="store_true",
+        default=False,
+        help=(
+            "Collect docstring examples from .pyi stub files and skip .py "
+            "sources. Used by the target that tests the generated _core "
+            "stubs, whose docstrings originate in the C++ nanobind bindings."
+        ),
+    )
 
 
 #: Directives that begin a new example group; the blocks that follow one

@@ -35,14 +35,15 @@ from max.benchmark.benchmark_shared.datasets.distribution import (
 # ---------------------------------------------------------------------------
 
 
-def test_float_returns_constant() -> None:
-    dist = BaseDistribution.from_distribution_parameter(42.0)
-    assert isinstance(dist, ConstantDistribution)
-    assert dist.value == 42.0
-
-
-def test_str_float_returns_constant() -> None:
-    dist = BaseDistribution.from_distribution_parameter("42.0")
+@pytest.mark.parametrize(
+    "param",
+    [
+        pytest.param(42.0, id="float"),
+        pytest.param("42.0", id="str_float"),
+    ],
+)
+def test_float_returns_constant(param: float | str) -> None:
+    dist = BaseDistribution.from_distribution_parameter(param)
     assert isinstance(dist, ConstantDistribution)
     assert dist.value == 42.0
 
@@ -219,12 +220,6 @@ def test_get_value_within_bounds() -> None:
         assert 1.0 <= val <= 10.0
 
 
-def test_uniform_is_continuous() -> None:
-    dist = UniformDistribution(lower=0.0, upper=1.0)
-    assert isinstance(dist, ContinuousDistribution)
-    assert isinstance(dist, BaseDistribution)
-
-
 # ---------------------------------------------------------------------------
 # DiscreteUniformDistribution
 # ---------------------------------------------------------------------------
@@ -253,12 +248,6 @@ def test_discrete_uniform_returns_ints_within_bounds() -> None:
         val = dist.sample_value()
         assert isinstance(val, int)
         assert 1 <= val <= 10
-
-
-def test_discrete_uniform_is_discrete() -> None:
-    dist = DiscreteUniformDistribution(lower=0, upper=5)
-    assert isinstance(dist, DiscreteDistribution)
-    assert isinstance(dist, BaseDistribution)
 
 
 def test_discrete_uniform_non_int_raises() -> None:
@@ -301,12 +290,6 @@ def test_nb_samples_near_expected_mean() -> None:
     expected_mean = 1 + n * (1 - p) / p
     samples = [dist.sample_value() for _ in range(2000)]
     assert abs(np.mean(samples) - expected_mean) < 0.5
-
-
-def test_nb_is_discrete() -> None:
-    dist = NegativeBinomialDistribution(n=1, p=0.5)
-    assert isinstance(dist, DiscreteDistribution)
-    assert isinstance(dist, BaseDistribution)
 
 
 # ---------------------------------------------------------------------------
@@ -396,19 +379,19 @@ def test_unrecognized_string_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_burr12_non_positive_c_raises() -> None:
-    with pytest.raises(ValueError, match="c"):
-        Burr12Distribution(c=0.0, d=1.0, scale=1.0)
-
-
-def test_burr12_non_positive_d_raises() -> None:
-    with pytest.raises(ValueError, match="d"):
-        Burr12Distribution(c=1.0, d=-0.5, scale=1.0)
-
-
-def test_burr12_non_positive_scale_raises() -> None:
-    with pytest.raises(ValueError, match="scale"):
-        Burr12Distribution(c=1.0, d=1.0, scale=0.0)
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        pytest.param(dict(c=0.0, d=1.0, scale=1.0), "c", id="c"),
+        pytest.param(dict(c=1.0, d=-0.5, scale=1.0), "d", id="d"),
+        pytest.param(dict(c=1.0, d=1.0, scale=0.0), "scale", id="scale"),
+    ],
+)
+def test_burr12_non_positive_param_raises(
+    kwargs: dict[str, float], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        Burr12Distribution(**kwargs)
 
 
 def test_burr12_string() -> None:

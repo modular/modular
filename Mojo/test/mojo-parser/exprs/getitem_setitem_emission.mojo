@@ -13,6 +13,8 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+from std.builtin.builtin_slice import ContiguousSlice
+
 
 struct WeirdArray(Movable where False):
     def __getitem__(self, x: Int) -> Int:
@@ -98,6 +100,28 @@ def test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
     # CHECK-SAME: :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable !Int>(%i, %j, %k, {{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j:k]
+
+
+struct ParamAndSliceArray(Movable where False):
+    def __getitem__(self, s: ContiguousSlice) -> Int:
+        return 1
+
+    def __getitem_param__[idx: Int](self) -> Int:
+        return idx
+
+
+# CHECK-LABEL: lit.fn @"test_slice_literal_with_param_getter
+def test_slice_literal_with_param_getter(a: ParamAndSliceArray, i: Int, j: Int):
+    # CHECK: lit.call {{.*}}@ContiguousSlice::@"__init__
+    # CHECK: lit.call {{.*}}@ParamAndSliceArray::@"__getitem__{{.*}}::ContiguousSlice)"
+    _ = a[0:2]
+
+    # CHECK: lit.call {{.*}}@ContiguousSlice::@"__init__
+    # CHECK: lit.call {{.*}}@ParamAndSliceArray::@"__getitem__{{.*}}::ContiguousSlice)"
+    _ = a[i:j]
+
+    # CHECK: lit.call {{.*}}@ParamAndSliceArray::@"__getitem_param__
+    _ = a[3]
 
 
 struct IndexArray(Movable where False):
@@ -293,7 +317,7 @@ def test_ref_subscript_binding(mut d: MinimalDict) raises -> ref[d[0]] Int:
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}@MinimalDict::@"__getitem__{{.*}}([[DIMM]], [[ZERO]], %__error__, %__call_result_tmp__)
-    # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+    # CHECK: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
     # CHECK-NEXT: [[REFR:%.*]] = kgen.rebind [[REF]] {{.*}} to !lit.ref<!Int
     # CHECK-NEXT: lit.call {{.*}}take_ref{{.*}}([[REFR]])
     take_ref(d[0])

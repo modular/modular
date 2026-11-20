@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import functools
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max import tree
@@ -25,31 +26,38 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
+    Value,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm import Allreduce
-from max.nn.embedding import VocabParallelEmbedding
+from max.nn._graph_ops.state_space import GatedDeltaReplayInputs
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
-    packed_page_stride,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.transformer import ReturnHiddenStates, forward_sequential_layers
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import MRoPEPositions
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs, forward_sequential_layers
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
-from max.nn.transformer.transformer import forward_sharded_layers
+from max.nn.legacy.transformer.transformer import forward_sharded_layers
+from max.nn.outputs import ReturnHiddenStates
+from max.nn.quant_config import QuantConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_batch_inputs,
     signal_inputs,
@@ -59,12 +67,17 @@ from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.tree import Tree
 
 from .layers.attention import Qwen3_5Attention
-from .layers.gated_deltanet import GatedDeltaNet, GatedDeltaReplayInputs
+from .layers.gated_deltanet import GatedDeltaNet
 from .layers.text_rotary import Qwen3_5TextRotaryEmbedding
-from .layers.visual_transformer import VisionTransformer
+from .layers.visual_transformer import Qwen3_5VisionTransformer
 from .model_config import Qwen3_5Config
 from .quantization import storage_dtype
-from .state_cache import GatedDeltaStateAccess, layer_state_access
+from .state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    GatedDeltaStateAccess,
+    layer_state_access,
+)
 
 
 def _shard_mlp_and_norms(
@@ -168,6 +181,7 @@ class Qwen3_5FullAttentionBlock(Module):
         layer_idx: TensorValue,
         signal_buffers: list[BufferValue],
         kv_blocks: list[BufferValue],
+        page_stride: list[TensorValue],
         cache_lengths: list[TensorValue],
         lookup_table: list[TensorValue],
         max_prompt_length: list[TensorValue],
@@ -176,7 +190,9 @@ class Qwen3_5FullAttentionBlock(Module):
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
         freq_row_ids: list[TensorValue] | None = None,
+        mixed_step_split: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
+        """Runs the block over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # `o_proj` is row-parallel, so each device holds a partial sum.
         attn_outs = self.allreduce(
@@ -186,7 +202,7 @@ class Qwen3_5FullAttentionBlock(Module):
                     norm_xs[i],
                     PagedCacheValues(
                         kv_blocks=kv_blocks[i],
-                        page_stride=packed_page_stride(kv_blocks[i]),
+                        page_stride=page_stride[i],
                         cache_lengths=cache_lengths[i],
                         lookup_table=lookup_table[i],
                         max_prompt_length=max_prompt_length[i],
@@ -194,10 +210,13 @@ class Qwen3_5FullAttentionBlock(Module):
                         attention_dispatch_metadata=(
                             attention_dispatch_metadata[i]
                         ),
+                        mixed_step_split=(
+                            mixed_step_split[i] if mixed_step_split else None
+                        ),
                     ),
                     freqs_cis[i],
                     input_row_offsets[i],
-                    None if freq_row_ids is None else freq_row_ids[i],
+                    freq_row_ids[i] if freq_row_ids else None,
                 )
                 for i, shard in enumerate(self.self_attn_shards)
             ],
@@ -253,6 +272,7 @@ class Qwen3_5LinearAttentionBlock(Module):
             ssm_dtype=config.mamba_ssm_dtype,
             proj_dtype=storage_dtype(attn_quant_config, compute_dtype),
             quant_config=attn_quant_config,
+            scalar_dtypes=config.linear_attn_scalar_dtypes,
         )
         self.mlp = MLP(
             storage_dtype(mlp_quant_config, compute_dtype),
@@ -289,6 +309,7 @@ class Qwen3_5LinearAttentionBlock(Module):
         state: list[GatedDeltaStateAccess],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
+        """Runs the linear-attention block and advances its recurrent state."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # Each device owns a slice of the value heads, so `out_proj` emits a
         # partial sum over the full hidden dim. The state rows arrive already
@@ -324,6 +345,63 @@ class Qwen3_5LinearAttentionBlock(Module):
         return [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
 
+def rotary_embedding(
+    config: Qwen3_5Config, *, mrope: bool
+) -> Llama3RotaryEmbedding:
+    """Returns the rotary embedding for the full-attention layers.
+
+    It rotates only the partial rotary dims, over 3-axis positions when
+    ``mrope`` is set.
+    """
+    rotary_dim = int(
+        config.attn_kv_params.head_dim * config.partial_rotary_factor
+    )
+    if mrope:
+        assert config.mrope_section is not None
+        return Qwen3_5TextRotaryEmbedding(
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_theta,
+            max_seq_len=config.max_seq_len,
+            mrope_section=config.mrope_section,
+            head_dim=rotary_dim,
+            interleaved=config.interleaved_rope_weights,
+            scaling_params=config.rope_scaling_params,
+        )
+    return Llama3RotaryEmbedding(
+        dim=config.hidden_size,
+        n_heads=config.num_attention_heads,
+        theta=config.rope_theta,
+        max_seq_len=config.max_seq_len,
+        head_dim=rotary_dim,
+        interleaved=config.interleaved_rope_weights,
+        scaling_params=config.rope_scaling_params,
+    )
+
+
+def norm_factory(config: Qwen3_5Config) -> Callable[..., RMSNorm]:
+    """Returns the factory for Qwen3.5's RMSNorms.
+
+    Every norm it builds scales by ``1 + weight``.
+
+    Raises:
+        ValueError: If the config doesn't name RMSNorm and its epsilon.
+    """
+    if config.norm_method != "rms_norm" or config.rms_norm_eps is None:
+        raise ValueError(
+            "Qwen3.5 requires RMSNorm. Set norm_method='rms_norm' "
+            "and provide rms_norm_eps."
+        )
+    return functools.partial(
+        RMSNorm,
+        config.hidden_size,
+        dtype=config.norm_dtype or DType.float32,
+        eps=config.rms_norm_eps,
+        weight_offset=1.0,
+        multiply_before_cast=False,
+    )
+
+
 class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
     """Qwen3.5 hybrid attention model.
 
@@ -343,11 +421,6 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         if config.model_quantization_encoding is not None:
             raise NotImplementedError("GGUFQ Qwen3.5 is not implemented yet")
 
-        # Create RoPE embedding for full attention layers
-        # Only the partial rotary dimension gets rotation
-        rotary_dim = int(
-            config.attn_kv_params.head_dim * config.partial_rotary_factor
-        )
         # An image compresses many soft-token patches into far fewer
         # position steps on each of three axes, so every token after it needs
         # an explicit 3-axis position rather than the kernels' default
@@ -357,56 +430,10 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         #
         # The KV cache dtype does not enter into this: rope is applied to K
         # before the value is cast into the cache.
-        # `vision_config` stands in for "an image can appear in context". The
-        # fused speculative graph compiles no encoder yet still verifies
-        # tokens that follow one, so it sets `mrope_without_encoder` to keep
-        # the 3-axis positions without the tower.
-        self.mrope_enabled = config.mrope_section is not None and (
-            config.vision_config is not None or config.mrope_without_encoder
-        )
-        rope: Llama3RotaryEmbedding
-        if self.mrope_enabled:
-            assert config.mrope_section is not None
-            rope = Qwen3_5TextRotaryEmbedding(
-                dim=config.hidden_size,
-                n_heads=config.num_attention_heads,
-                theta=config.rope_theta,
-                max_seq_len=config.max_seq_len,
-                mrope_section=config.mrope_section,
-                head_dim=rotary_dim,
-                interleaved=config.interleaved_rope_weights,
-                scaling_params=config.rope_scaling_params,
-            )
-        else:
-            rope = Llama3RotaryEmbedding(
-                dim=config.hidden_size,
-                n_heads=config.num_attention_heads,
-                theta=config.rope_theta,
-                max_seq_len=config.max_seq_len,
-                head_dim=rotary_dim,
-                interleaved=config.interleaved_rope_weights,
-                scaling_params=config.rope_scaling_params,
-            )
+        self.mrope_enabled = config.mrope_enabled
+        rope = rotary_embedding(config, mrope=self.mrope_enabled)
         self.rope = rope
-
-        # Norm factory (uses (1 + weight) offset for Qwen3.5)
-        if config.norm_method != "rms_norm" or config.rms_norm_eps is None:
-            raise ValueError(
-                "Qwen3.5 requires RMSNorm. Set norm_method='rms_norm' "
-                "and provide rms_norm_eps."
-            )
-
-        create_norm = functools.partial(
-            RMSNorm,
-            config.hidden_size,
-            dtype=config.norm_dtype or DType.float32,
-            eps=config.rms_norm_eps,
-            weight_offset=1.0,
-            multiply_before_cast=False,
-        )
-        # Kept so the MTP draft head builds its norms from the same factory
-        # rather than a copy that could drift from the (1 + w) convention.
-        self.create_norm = create_norm
+        create_norm = norm_factory(config)
 
         # Quantization is per module, not per model: this checkpoint's MLPs are
         # NVFP4 while its attention and GDN projections are per-tensor FP8, so
@@ -482,10 +509,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
 
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
+        self.return_hidden_states = config.return_hidden_states
 
         # Vision encoder (only present in multimodal checkpoints)
-        self.vision_encoder: VisionTransformer | None = (
-            VisionTransformer(config=config.vision_config)
+        self.vision_encoder: Qwen3_5VisionTransformer | None = (
+            Qwen3_5VisionTransformer(config=config.vision_config)
             if config.vision_config is not None
             else None
         )
@@ -501,7 +529,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         image_embeddings: list[TensorValue] | None = None,
         image_token_indices: list[TensorValue] | None = None,
         position_ids: TensorValue | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Forward pass through the hybrid model.
 
         The state pools are mutable graph inputs the SSM kernels write in
@@ -617,6 +645,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     layer_idx_tensor,
                     signal_buffers,
                     [kv.kv_blocks for kv in kv_collections],
+                    [kv.page_stride for kv in kv_collections],
                     [kv.cache_lengths for kv in kv_collections],
                     [kv.lookup_table for kv in kv_collections],
                     [kv.max_prompt_length for kv in kv_collections],
@@ -628,9 +657,13 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     ],
                     freqs_cis,
                     row_offsets,
+                    [] if freq_row_ids is None else freq_row_ids,
+                    [
+                        kv.mixed_step_split
+                        for kv in kv_collections
+                        if kv.mixed_step_split is not None
+                    ],
                 ]
-                if freq_row_ids is not None:
-                    full_attn_inputs.append(freq_row_ids)
                 return full_attn_inputs
             # All linear layers share one compiled subgraph, whose body is
             # built from the first of them. Only the arguments vary per call,
@@ -683,14 +716,13 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             weight_prefix_for_layer=lambda i: f"layers.{i}.",
         )
 
-        logits = self._postprocess_logits(
+        return self._postprocess_logits(
             hs,
             row_offsets,
             return_n_logits,
             signal_buffers,
             capture_hidden_states=capture_hidden_states,
         )
-        return tuple(logits)
 
     def input_tree(
         self, kv_params: KVCacheParamInterface
@@ -719,7 +751,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         if self.mrope_enabled:
             # One shared table drives every full-attention layer, so the
             # positions arrive once rather than per device.
-            inputs["mrope"] = OrderedDict(
+            inputs["mrope"] = MRoPEPositions(
                 position_ids=TensorType(
                     DType.int64,
                     shape=[3, "total_seq_len"],
@@ -733,3 +765,72 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
     ) -> tuple[TensorType | BufferType, ...]:
         """Get input types for graph construction."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the language graph for :attr:`kv_params`.
+
+        The graph's inputs are the leaves of :meth:`input_tree`.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits the cache
+        into its attention collections and recurrent state, and passes the
+        vision and M-RoPE inputs when the graph takes them.
+
+        Args:
+            *input_types: The graph's input types.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        treedef = tree.flatten(self.input_tree(self.kv_params))[1]
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            named = tree.unflatten(treedef, iter(inputs))
+            assert isinstance(named, OrderedDict)
+            batch, kv = named["batch"], named["kv"]
+            state = tree.leaves(
+                kv[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            )
+            assert state, (
+                "Qwen3.5 graph requires linear attention layers; the cache"
+                " declared no recurrent state child"
+            )
+            vision = named.get("vision")
+            mrope = named.get("mrope")
+            return self(
+                batch["tokens"].tensor,
+                tree.leaves(kv[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice),
+                batch["return_n_logits"].tensor,
+                batch["row_offsets"].tensor,
+                [v.buffer for v in named["signals"]["signal"]],
+                list(state),
+                None
+                if vision is None
+                else [v.tensor for v in vision["image_embeddings"]],
+                None
+                if vision is None
+                else [v.tensor for v in vision["image_token_indices"]],
+                None if mrope is None else mrope["position_ids"].tensor,
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

@@ -59,6 +59,7 @@ class ToolConfig(BaseModel):
     _profile: TurnProfile = PrivateAttr()
 
     def model_post_init(self, context: object, /) -> None:
+        """Builds the turn profile from the configured lengths and delay."""
         self._profile = TurnProfile.from_parameters(
             input_len=self.input_len,
             output_len=self.output_len,

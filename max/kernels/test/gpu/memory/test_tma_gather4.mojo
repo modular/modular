@@ -41,7 +41,7 @@ from std.math import ceildiv
 from std.sys.info import size_of
 
 from max.gpu import block_dim, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     TMADescriptor,
@@ -74,6 +74,7 @@ from layout import (
     TileTensor,
     row_major,
     stack_allocation,
+    Idx,
 )
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
@@ -93,10 +94,10 @@ from std.testing import assert_equal
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 def gather4_raw_smoke_kernel[
-    dtype: DType, row_width: Int
+    dtype: DType, row_width: Int, out_origin: MutOrigin
 ](
     descriptor: TMADescriptor,
-    d_out: MutPointer[Scalar[dtype], MutAnyOrigin],
+    d_out: MutPointer[Scalar[dtype], out_origin],
     row0: Int32,
     row1: Int32,
     row2: Int32,
@@ -110,7 +111,7 @@ def gather4_raw_smoke_kernel[
     ]()
 
     var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
-    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).unsafe_bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:
@@ -146,7 +147,7 @@ def _verify_gathered_rows[
     dtype: DType, row_width: Int
 ](
     h_out: ImmPointer[Scalar[dtype], _],
-    h_source: ImmPointer[Scalar[dtype], _],
+    h_source: ImmSpan[Scalar[dtype], _],
     h_indices: ImmPointer[Int32, _],
     num_rows: Int,
 ) raises:
@@ -202,12 +203,10 @@ def _typed_row_major[
     return ConcLayout(shape_c, stride_c)
 
 
-comptime _PagedCollection[
-    dtype: DType, kv_params: KVCacheStaticParams, page_size: Int
-] = PagedKVCacheCollection[
-    dtype,
-    kv_params,
-    page_size,
+comptime _PagedCollection = PagedKVCacheCollection[
+    _,
+    _,
+    _,
     MutAnyOrigin,
     ImmutAnyOrigin,
     ImmutAnyOrigin,
@@ -270,10 +269,8 @@ def _paged_collection[
     )
 
 
-comptime _ContinuousCollection[
-    dtype: DType, kv_params: KVCacheStaticParams
-] = ContinuousBatchingKVCacheCollection[
-    dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+comptime _ContinuousCollection = ContinuousBatchingKVCacheCollection[
+    _, _, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
 ]
 
 
@@ -333,13 +330,8 @@ def test_raw_smoke[
 ](ctx: DeviceContext) raises:
     """Single gather4 via raw intrinsic -- minimal smoke test."""
     print(
-        "== test_raw_smoke [",
-        dtype,
-        ", row_width=",
-        row_width,
-        ", num_tokens=",
-        num_tokens,
-        "]",
+        t"== test_raw_smoke [ {dtype} , row_width= {row_width} , num_tokens="
+        t" {num_tokens} ]"
     )
 
     var num_elems = num_tokens * row_width
@@ -349,11 +341,11 @@ def test_raw_smoke[
     var d_data = ctx.enqueue_create_buffer[dtype](num_elems)
     ctx.enqueue_copy(d_data, h_data)
 
-    var tma_desc = create_tma_descriptor[dtype, 2](
+    var tma_desc = create_tma_descriptor[dtype](
         d_data,
         (num_tokens, row_width),
-        (row_width, 1),
-        (1, row_width),
+        (row_width, Idx[1]),
+        (Idx[1], row_width),
     )
 
     var r0 = Int32(3)
@@ -368,7 +360,9 @@ def test_raw_smoke[
 
     var shared_mem_bytes = 4 * row_width * size_of[dtype]()
 
-    comptime kernel = gather4_raw_smoke_kernel[dtype, row_width]
+    comptime kernel = gather4_raw_smoke_kernel[
+        dtype, row_width, origin_of(d_out)
+    ]
     ctx.enqueue_function[kernel](
         tma_desc,
         d_out,
@@ -391,7 +385,7 @@ def test_raw_smoke[
     h_indices[2] = r2
     h_indices[3] = r3
     _verify_gathered_rows[dtype, row_width](
-        h_out.unsafe_ptr(), h_data.unsafe_ptr(), h_indices.unsafe_ptr(), 4
+        h_out.unsafe_ptr(), h_data.as_span(), h_indices.unsafe_ptr(), 4
     )
     print("  PASSED: all 4 gathered rows match expected data")
 
@@ -428,17 +422,19 @@ def _run_paged_gather4_test[
 
     # Build the 6D blocks tensor.
     # Shape: [num_blocks, kv_dim, num_layers, page_size, num_heads, head_size]
-    comptime shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
 
     # Fill entire buffer with random data.
-    var block_elems = (
-        num_blocks * kv_dim * num_layers * page_size * num_heads * head_size
-    )
-    rand[dtype](blocks_host.unsafe_ptr(), block_elems)
+    rand(blocks_host.as_span())
 
     # Build cache_lengths.
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
@@ -514,6 +510,8 @@ def _run_paged_gather4_test[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -533,30 +531,20 @@ def _run_paged_gather4_test[
     # which equals phys_row * row_width + col.
     _verify_gathered_rows[dtype, row_width](
         h_out.unsafe_ptr(),
-        blocks_host.unsafe_ptr(),
+        blocks_host.as_span(),
         h_indices.unsafe_ptr(),
         topk,
     )
 
     comptime if use_mha_operand:
         print(
-            "  PASSED: all",
-            topk,
-            "rows from KVCacheMHAOperand (",
-            topk // 4,
-            "iterations, page_size=",
-            page_size,
-            ") match",
+            t"  PASSED: all {topk} rows from KVCacheMHAOperand ("
+            t" {topk // 4} iterations, page_size= {page_size} ) match"
         )
     else:
         print(
-            "  PASSED: all",
-            topk,
-            "rows from PagedKVCache (",
-            topk // 4,
-            "iterations, page_size=",
-            page_size,
-            ") match",
+            t"  PASSED: all {topk} rows from PagedKVCache ("
+            t" {topk // 4} iterations, page_size= {page_size} ) match"
         )
 
     _ = d_indices
@@ -617,17 +605,19 @@ def test_continuous_kv_cache[
 
     # Build the 6D blocks tensor.
     # Shape: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
-    comptime shape_6d = IndexList[6](
-        num_blocks, 2, num_layers, max_seq_len, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        2,
+        num_layers,
+        max_seq_len,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
 
     # Fill entire buffer with random data.
-    var block_elems = (
-        num_blocks * 2 * num_layers * max_seq_len * num_heads * head_size
-    )
-    rand[dtype](blocks_host.unsafe_ptr(), block_elems)
+    rand(blocks_host.as_span())
 
     # Build cache_lengths.
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
@@ -690,6 +680,8 @@ def test_continuous_kv_cache[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -705,16 +697,13 @@ def test_continuous_kv_cache[
 
     _verify_gathered_rows[dtype, row_width](
         h_out.unsafe_ptr(),
-        blocks_host.unsafe_ptr(),
+        blocks_host.as_span(),
         h_indices.unsafe_ptr(),
         topk,
     )
     print(
-        "  PASSED: all",
-        topk,
-        "rows from ContinuousBatchingKVCache (",
-        topk // 4,
-        "iterations) match",
+        t"  PASSED: all {topk} rows from ContinuousBatchingKVCache ("
+        t" {topk // 4} iterations) match"
     )
 
     _ = d_indices
@@ -731,15 +720,8 @@ def test_device_buffer_overload[
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
 
     print(
-        "== test_device_buffer_overload [",
-        dtype,
-        ", row_width=",
-        row_width,
-        ", num_tokens=",
-        num_tokens,
-        ", topk=",
-        topk,
-        "]",
+        t"== test_device_buffer_overload [ {dtype} , row_width= {row_width} ,"
+        t" num_tokens= {num_tokens} , topk= {topk} ]"
     )
 
     var num_elems = num_tokens * row_width
@@ -776,6 +758,8 @@ def test_device_buffer_overload[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         TensorMapSwizzle.SWIZZLE_NONE,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -790,7 +774,7 @@ def test_device_buffer_overload[
     ctx.synchronize()
 
     _verify_gathered_rows[dtype, row_width](
-        h_out.unsafe_ptr(), h_data.unsafe_ptr(), h_indices.unsafe_ptr(), topk
+        h_out.unsafe_ptr(), h_data.as_span(), h_indices.unsafe_ptr(), topk
     )
     print("  PASSED: all", topk, "rows from DeviceBuffer overload match")
 
@@ -836,10 +820,12 @@ def gather4_kernel[
     tile_shape_param: Coord,
     desc_shape_param: Coord,
     swizzle_mode: TensorMapSwizzle,
+    out_origin: MutOrigin,
+    indices_origin: MutOrigin,
 ](
     kv_tile: TMATensorTile[dtype, tile_shape_param, desc_shape_param],
-    d_out: MutPointer[Scalar[dtype], MutAnyOrigin],
-    d_indices: MutPointer[Int32, MutAnyOrigin],
+    d_out: MutPointer[Scalar[dtype], out_origin],
+    d_indices: MutPointer[Int32, indices_origin],
     num_tiles: Int32,
 ):
     """While-loop gather4 loader using the level 3 TMATensorTile API.
@@ -849,11 +835,12 @@ def gather4_kernel[
     over column groups.  The box width and number of column groups are
     derived from the tile's compile-time shape ``tile_shape_param[1]``.
     """
-    comptime box_width = Int(tile_shape_param[1].value())
+    comptime box_width = Int(tile_shape_param[1])
     comptime num_col_groups = ceildiv(tile_width, box_width)
     var smem_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
     ](row_major[4, box_width]())
+    var smem_flat = smem_tile.reshape[4 * box_width]()
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -864,7 +851,7 @@ def gather4_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init(1)
-        var desc_ptr = Pointer(to=kv_tile.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=kv_tile.descriptor).unsafe_bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
     barrier()
 
@@ -909,7 +896,7 @@ def gather4_kernel[
                     + cg * box_width
                     + col_in_group
                 )
-                d_out[out_idx] = smem_tile.unsafe_ptr()[Int(swizzle(i))]
+                d_out[out_idx] = smem_flat[Int(swizzle(i))]
 
             barrier()
             phase ^= 1
@@ -928,15 +915,8 @@ def test_wide_gather4_device_buffer[
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
 
     print(
-        "== test_wide_gather4_device_buffer [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        ", num_tokens=",
-        num_tokens,
-        ", topk=",
-        topk,
-        "]",
+        t"== test_wide_gather4_device_buffer [ {dtype} , tile_width="
+        t" {tile_width} , num_tokens= {num_tokens} , topk= {topk} ]"
     )
 
     var num_elems = num_tokens * tile_width
@@ -973,6 +953,8 @@ def test_wide_gather4_device_buffer[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -988,7 +970,7 @@ def test_wide_gather4_device_buffer[
 
     # Verify: output row i should match source row h_indices[i].
     _verify_gathered_rows[dtype, tile_width](
-        h_out.unsafe_ptr(), h_data.unsafe_ptr(), h_indices.unsafe_ptr(), topk
+        h_out.unsafe_ptr(), h_data.as_span(), h_indices.unsafe_ptr(), topk
     )
     print(
         "  PASSED: all",
@@ -1024,24 +1006,22 @@ def test_wide_gather4_paged_kv[
     comptime tile_width = num_heads * head_size
 
     print(
-        "== test_wide_gather4_paged_kv [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        "]",
+        t"== test_wide_gather4_paged_kv [ {dtype} , tile_width= {tile_width} ]"
     )
 
     # Build the 6D blocks tensor.
-    comptime shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
 
-    var block_elems = (
-        num_blocks * kv_dim * num_layers * page_size * num_heads * head_size
-    )
-    rand[dtype](blocks_host.unsafe_ptr(), block_elems)
+    rand(blocks_host.as_span())
 
     # Build cache_lengths.
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
@@ -1108,6 +1088,8 @@ def test_wide_gather4_paged_kv[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1123,7 +1105,7 @@ def test_wide_gather4_paged_kv[
 
     _verify_gathered_rows[dtype, tile_width](
         h_out.unsafe_ptr(),
-        blocks_host.unsafe_ptr(),
+        blocks_host.as_span(),
         h_indices.unsafe_ptr(),
         topk,
     )
@@ -1162,25 +1144,24 @@ def test_wide_gather4_continuous_kv[
     comptime tile_width = num_heads * head_size
 
     print(
-        "== test_wide_gather4_continuous_kv [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        "]",
+        t"== test_wide_gather4_continuous_kv [ {dtype} , tile_width="
+        t" {tile_width} ]"
     )
 
     # Build the 6D blocks tensor.
     # Shape: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
-    comptime shape_6d = IndexList[6](
-        num_blocks, 2, num_layers, max_seq_len, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        2,
+        num_layers,
+        max_seq_len,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
 
-    var block_elems = (
-        num_blocks * 2 * num_layers * max_seq_len * num_heads * head_size
-    )
-    rand[dtype](blocks_host.unsafe_ptr(), block_elems)
+    rand(blocks_host.as_span())
 
     # Build cache_lengths.
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
@@ -1243,6 +1224,8 @@ def test_wide_gather4_continuous_kv[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1258,7 +1241,7 @@ def test_wide_gather4_continuous_kv[
 
     _verify_gathered_rows[dtype, tile_width](
         h_out.unsafe_ptr(),
-        blocks_host.unsafe_ptr(),
+        blocks_host.as_span(),
         h_indices.unsafe_ptr(),
         topk,
     )
@@ -1298,24 +1281,23 @@ def test_wide_gather4_mha_operand[
     comptime tile_width = num_heads * head_size
 
     print(
-        "== test_wide_gather4_mha_operand [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        "]",
+        t"== test_wide_gather4_mha_operand [ {dtype} , tile_width="
+        t" {tile_width} ]"
     )
 
     # Build the 6D blocks tensor.
-    comptime shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
 
-    var block_elems = (
-        num_blocks * kv_dim * num_layers * page_size * num_heads * head_size
-    )
-    rand[dtype](blocks_host.unsafe_ptr(), block_elems)
+    rand(blocks_host.as_span())
 
     # Build cache_lengths.
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
@@ -1383,6 +1365,8 @@ def test_wide_gather4_mha_operand[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1398,7 +1382,7 @@ def test_wide_gather4_mha_operand[
 
     _verify_gathered_rows[dtype, tile_width](
         h_out.unsafe_ptr(),
-        blocks_host.unsafe_ptr(),
+        blocks_host.as_span(),
         h_indices.unsafe_ptr(),
         topk,
     )
@@ -1444,27 +1428,16 @@ def test_non_divisible_width[
     ](ctx, d_data, num_tokens)
 
     comptime box_width = Int(
-        type_of(kv_tile).tile_shape.element_types[1].static_value.value()
+        type_of(kv_tile).tile_shape.element_types[1].static_value
     )
     comptime num_col_groups = ceildiv(tile_width, box_width)
     comptime padded_row_width = num_col_groups * box_width
 
     print(
-        "== test_non_divisible_width [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        ", box_width=",
-        box_width,
-        ", num_col_groups=",
-        num_col_groups,
-        ", padded_row_width=",
-        padded_row_width,
-        ", num_tokens=",
-        num_tokens,
-        ", topk=",
-        topk,
-        "]",
+        t"== test_non_divisible_width [ {dtype} , tile_width= {tile_width} ,"
+        t" box_width= {box_width} , num_col_groups= {num_col_groups} ,"
+        t" padded_row_width= {padded_row_width} , num_tokens= {num_tokens} ,"
+        t" topk= {topk} ]"
     )
 
     # Build gather indices.
@@ -1492,6 +1465,8 @@ def test_non_divisible_width[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1541,13 +1516,8 @@ def test_non_divisible_width[
             )
 
     print(
-        "  PASSED: all",
-        topk,
-        "rows verified (",
-        num_col_groups,
-        "col groups, last group zero-fills",
-        padded_row_width - tile_width,
-        "elements)",
+        t"  PASSED: all {topk} rows verified ( {num_col_groups} col groups,"
+        t" last group zero-fills {padded_row_width - tile_width} elements)"
     )
 
     _ = d_data
@@ -1568,10 +1538,12 @@ def gather4_tile_api_kernel[
     num_threads: Int,
     tile_shape: Coord,
     desc_shape: Coord,
+    indices_origin: MutOrigin,
+    output_origin: MutOrigin,
 ](
     g4t_tma: TMATensorTile[dtype, tile_shape, desc_shape],
-    d_indices: MutPointer[Int32, MutAnyOrigin],
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    d_indices: MutPointer[Int32, indices_origin],
+    output: MutPointer[Scalar[dtype], output_origin],
 ):
     """Loads bn rows via async_copy_gather4_tile, then copies SMEM to
     global output for verification."""
@@ -1579,8 +1551,10 @@ def gather4_tile_api_kernel[
     var smem_base = external_memory[
         UInt8, address_space=.SHARED, alignment=128
     ]()
-    var smem_ptr = smem_base.bitcast[Scalar[dtype]]()
-    var mbar = (smem_base + smem_bytes).bitcast[SharedMemBarrier]()
+    var smem_ptr = smem_base.unsafe_bitcast[Scalar[dtype]]()
+    var mbar = smem_base.unsafe_offset(smem_bytes).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var tid = thread_idx.x
     var elect_one_thread = tid == 0
@@ -1618,15 +1592,8 @@ def test_gather4_tile_api[
     comptime total_smem_bytes = smem_bytes + metadata_bytes
 
     print(
-        "== test_gather4_tile_api [",
-        dtype,
-        ", bn=",
-        bn,
-        ", cols=",
-        cols,
-        ", total_tokens=",
-        total_tokens,
-        "]",
+        t"== test_gather4_tile_api [ {dtype} , bn= {bn} , cols= {cols} ,"
+        t" total_tokens= {total_tokens} ]"
     )
 
     # ---- Allocate full K buffer [total_tokens, cols] ----
@@ -1635,7 +1602,7 @@ def test_gather4_tile_api[
         row_major[total_tokens, cols](), ctx
     )
     var k_full_host = k_full.host_tensor()
-    randn[dtype](k_full_host.unsafe_ptr(), total_tokens * cols)
+    randn(k_full_host.as_span())
 
     # ---- Build bn non-contiguous indices ----
     var h_indices = ctx.enqueue_create_host_buffer[.int32](bn)
@@ -1669,6 +1636,8 @@ def test_gather4_tile_api[
         num_threads,
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
+        origin_of(d_indices),
+        origin_of(out_device),
     ]
     ctx.enqueue_function[kernel](
         g4t_tma,
@@ -1677,9 +1646,6 @@ def test_gather4_tile_api[
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 
@@ -1704,14 +1670,8 @@ def test_gather4_tile_api[
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "  MISMATCH r=",
-                            r,
-                            " c=",
-                            c,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"  MISMATCH r= {r}  c= {c}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     if mismatches > 0:
@@ -1761,28 +1721,23 @@ def test_gather4_tile_api_paged[
     comptime paged_stride = kv_dim * num_layers * page_size
 
     print(
-        "== test_gather4_tile_api_paged [",
-        dtype,
-        ", row_width=",
-        row_width,
-        ", topk=",
-        topk,
-        ", page_size=",
-        page_size,
-        "]",
+        t"== test_gather4_tile_api_paged [ {dtype} , row_width= {row_width} ,"
+        t" topk= {topk} , page_size= {page_size} ]"
     )
 
     # ---- Build the 6D blocks tensor ----
-    comptime pg_shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime pg_shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(pg_shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
     seed(42)
-    var block_elems = (
-        num_blocks * kv_dim * num_layers * page_size * num_heads * head_size
-    )
-    rand[dtype](blocks_host.unsafe_ptr(), block_elems)
+    rand(blocks_host.as_span())
 
     # ---- Build cache_lengths ----
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
@@ -1834,12 +1789,13 @@ def test_gather4_tile_api_paged[
 
     # ---- Build reference K_gathered on host ----
     var k_ref = ctx.enqueue_create_host_buffer[dtype](topk * row_width)
+    var blocks_rows = blocks_host.reshape(
+        row_major(blocks_host.num_elements() // row_width, row_width)
+    )
     for i in range(topk):
         var src_row = Int(h_indices[i])
         for c in range(row_width):
-            k_ref[i * row_width + c] = blocks_host.unsafe_ptr()[
-                src_row * row_width + c
-            ]
+            k_ref[i * row_width + c] = blocks_rows[src_row, c]
 
     # ---- Allocate output buffer ----
     var out_device = ctx.enqueue_create_buffer[dtype](topk * row_width)
@@ -1857,6 +1813,8 @@ def test_gather4_tile_api_paged[
         num_threads,
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
+        origin_of(d_indices),
+        origin_of(out_device),
     ]
     ctx.enqueue_function[kernel](
         g4t_tma,
@@ -1865,9 +1823,6 @@ def test_gather4_tile_api_paged[
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 
@@ -1892,14 +1847,8 @@ def test_gather4_tile_api_paged[
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "  MISMATCH r=",
-                            r,
-                            " c=",
-                            c,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"  MISMATCH r= {r}  c= {c}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     if mismatches > 0:

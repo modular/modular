@@ -1,0 +1,15 @@
+{
+  "target": "msa_mixed_split",
+  "spec": {
+    "decode_rows": 28,
+    "prompt_rows": 3,
+    "decode_first": 0,
+    "k": 7,
+    "shape_seed": 2097152,
+    "ceiling": 1
+  },
+  "verdict": "PASS",
+  "oracle": "diff",
+  "detail": "Prompt rows first and 8-token verify rows last, as Mach batches a mixed step: the tail view's rebased offsets address the verify rows, and the split equals each view run alone, bit for bit.",
+  "findings": []
+}

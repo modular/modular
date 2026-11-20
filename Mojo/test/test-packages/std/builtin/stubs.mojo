@@ -330,6 +330,12 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     ]:
         return {}
 
+    @always_inline("builtin")
+    def __truediv__(
+        self, rhs: FloatLiteral
+    ) -> type_of(FloatLiteral(self) / rhs):
+        return {}
+
 
 @__nonmaterializable(FloatDyn)
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
@@ -543,7 +549,7 @@ struct StringSpan[origin: ImmOrigin](TrivialRegisterPassable):
         return self._slice._len
 
 
-comptime StaticString = StringSlice[ImmStaticOrigin]
+comptime StaticString = StringSpan[ImmStaticOrigin]
 
 
 struct InlineLevel(ImplicitlyCopyable, TrivialRegisterPassable):
@@ -612,13 +618,13 @@ struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
     def __len__(self) -> Int:
         return 0
 
-    def __contains__(self, substr: StringSlice) -> Bool:
+    def __contains__(self, substr: StringSpan) -> Bool:
         return True
 
-    def __add__(self, other: StringSlice) -> String:
+    def __add__(self, other: StringSpan) -> String:
         pass
 
-    def __iadd__(mut self, rhs: StringSlice):
+    def __iadd__(mut self, rhs: StringSpan):
         pass
 
     def byte_length(self) -> Int:
@@ -639,7 +645,7 @@ struct Bool(EnumLike, TrivialRegisterPassable):
         "False".value, "True".value
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        NoneType, NoneType
+        Tuple[], Tuple[]
     ].values
 
     @stable
@@ -977,7 +983,7 @@ trait EnumLike:
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     TrivialRegisterPassable
 ):
-    comptime size: Int = Int(
+    comptime length: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
             type_of(Self.values),
@@ -1167,7 +1173,6 @@ struct TypeList[
 
     comptime tabulate[
         Trait: type_of(AnyType),
-        ToT: Trait,
         //,
         count: Int,
         Mapper: __generator_type[Idx: Int] Trait,
@@ -1177,7 +1182,7 @@ struct TypeList[
             `#kgen.param_list.tabulate<`,
             count.__mlir_index__(),
             `,`,
-            _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+            _IndexToIntTypeTabulateWrap[Trait=Trait, Mapper, ...],
             `> : `,
             _MLIR.KGENParamListType[Trait],
         ],
@@ -1190,7 +1195,7 @@ struct TypeList[
     comptime splat[
         Trait: type_of(AnyType), //, count: Int, type: Trait
     ] = TypeList.tabulate[
-        Trait=Trait, ToT=type, count, Self._SplatTypeTabulator[Trait, type, _]
+        Trait=Trait, count, Self._SplatTypeTabulator[Trait, type, _]
     ]
 
     comptime _MapTabulator[
@@ -1212,7 +1217,6 @@ struct TypeList[
 
 comptime _IndexToIntTypeTabulateWrap[
     Trait: type_of(AnyType),
-    ToT: Trait,
     //,
     ToWrap: __generator_type[Idx: Int] Trait,
     idx: __mlir_type.index,
@@ -1290,7 +1294,7 @@ struct VariadicList[
         var elt_ptr = Pointer[_, ImmUntrackedOrigin](
             __mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
-                Int(0).__mlir_index__(),
+                Int(0)._mlir_value,
             )
         ).unsafe_bitcast[Self._EltPointerType]()
         var size_tmp = size  # FIXME: Weird MLIR syntax error?
@@ -1385,7 +1389,7 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
     comptime _enum_case_types: _MLIR.KGENParamListType[
         AnyType
     ] = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
     comptime _enum_is_exhaustive = False
 
@@ -1400,6 +1404,12 @@ struct AddressSpace(EnumLike, TrivialRegisterPassable):
     @always_inline("builtin")
     def __mlir_index__(self) -> __mlir_type.index:
         return self._value.__mlir_index__()
+
+    @always_inline("builtin")
+    def __eq__(self, other: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index.cmp_predicate<eq>`
+        ](self.__mlir_index__(), other.__mlir_index__())
 
 
 struct Pointer[
@@ -1505,16 +1515,22 @@ struct Pointer[
         ]
         # Do this delicately since we're manufacturing an interior origin here.
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ptr_type._mlir_lit_ref](
-                self._mlir_value
-            )
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ptr_type._mlir_lit_ref, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @always_inline
-    def unsafe_take_pointee[
-        U: Movable, //
-    ](self: Pointer[U, _]) -> U where type_of(self).mut:
-        return __get_address_as_owned_value(self._mlir_value)
+    def unsafe_take_pointee(
+        self,
+    ) -> Self.T where (
+        Self.mut
+        and Self.address_space == .GENERIC
+        and conforms_to(Self.T, Movable)
+    ):
+        return __get_address_as_owned_value(
+            self.unsafe_address_space_cast[.GENERIC]()._mlir_value
+        )
 
     @always_inline("builtin")
     def unsafe_bitcast[
@@ -1523,6 +1539,16 @@ struct Pointer[
         return __mlir_op.`pop.pointer.bitcast`[
             _type=Pointer[
                 U, Self.origin, address_space=Self.address_space
+            ]._mlir_type,
+        ](self._mlir_value)
+
+    @always_inline("builtin")
+    def unsafe_address_space_cast[
+        target_address_space: AddressSpace = Self.address_space,
+    ](self) -> Pointer[Self.T, Self.origin, address_space=target_address_space]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Pointer[
+                Self.T, Self.origin, address_space=target_address_space
             ]._mlir_type,
         ](self._mlir_value)
 
@@ -1574,17 +1600,10 @@ struct Pointer[
         return {self._mlir_value}  # allow kgen.pointer to convert.
 
 
-comptime UnsafePointer[
-    mut: Bool,
-    //,
-    T: AnyType,
-    origin: Origin[mut=mut],
-    *,
-    address_space: AddressSpace = .GENERIC,
-] = Pointer[T, origin, address_space=address_space]
-
-
-struct Tuple[*element_types: Movable](ImplicitlyCopyable):
+struct Tuple[*element_types: Movable](
+    ImplicitlyCopyable,
+    RegisterPassable where conforms_to(element_types.values, RegisterPassable),
+):
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
         _MLIR.KGENParamListType[Movable],
@@ -1598,17 +1617,15 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
             pass
 
     @implicit
-    def __init__(out self, *args: *Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         while True:
             pass
 
     def __init__(out self, *, copy: Self):
-        while True:
-            pass
+        self._mlir_value = copy._mlir_value
 
     def __init__(out self, *, deinit move: Self):
-        while True:
-            pass
+        self._mlir_value = move._mlir_value
 
     def __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:
         while True:
@@ -1623,6 +1640,8 @@ comptime MutOpaquePointer[
 
 
 struct _StridedRangeIterator(Iterator, TrivialRegisterPassable):
+    comptime Element = Int
+
     var start: Int
     var end: Int
     var step: Int
@@ -1731,7 +1750,12 @@ def paramfor_next_value[
         abort()
 
 
-struct Optional[T: Movable](Copyable, EnumLike):
+struct Optional[T: Movable](
+    Copyable where conforms_to(T, Copyable),
+    EnumLike,
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
+    RegisterPassable where conforms_to(T, RegisterPassable),
+):
     def __deinit__(deinit self):
         pass
 
@@ -1761,7 +1785,7 @@ struct Optional[T: Movable](Copyable, EnumLike):
         "None".value, "Some".value
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        NoneType, Self.T
+        Tuple[], Tuple[Self.T]
     ].values
 
     def _get_enum_discriminant(self) -> Int:
@@ -1771,8 +1795,8 @@ struct Optional[T: Movable](Copyable, EnumLike):
         id: Int
     ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
         comptime assert id != 0, "cannot get payload for None case"
-        comptime elt_type = TypeList[Self._enum_case_types]()[id]
-        return rebind[elt_type](self.value())
+        while True:
+            pass
 
 
 # ===-----------------------------------------------------------------------===#

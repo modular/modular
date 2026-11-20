@@ -36,7 +36,7 @@ from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     prefetch_tma_descriptor,
@@ -228,22 +228,32 @@ def dense_mma_ws_ts_kernel[
     ]()
 
     # ---- Q SMEM region ----
-    var q_smem_ptr = smem_base.bitcast[Scalar[OP_TYPE]]()
+    var q_smem_ptr = smem_base.unsafe_bitcast[Scalar[OP_TYPE]]()
     var q_smem_tile = TileTensor(q_smem_ptr, Q_SMEM_LAYOUT)
 
     # ---- K SMEM region (starts after Q) ----
-    var k_smem_ptr = (smem_base + K_SMEM_OFFSET).bitcast[Scalar[OP_TYPE]]()
+    var k_smem_ptr = smem_base.unsafe_offset(K_SMEM_OFFSET).unsafe_bitcast[
+        Scalar[OP_TYPE]
+    ]()
     var k_smem_tile = TileTensor(k_smem_ptr, K_SMEM_LAYOUT)
 
     # ---- Metadata region (after both SMEM tiles) ----
-    var metadata_ptr = (smem_base + METADATA_OFFSET).bitcast[UInt32]()
+    var metadata_ptr = smem_base.unsafe_offset(METADATA_OFFSET).unsafe_bitcast[
+        UInt32
+    ]()
     var ptr_tmem_addr = metadata_ptr
     # Q barrier at offset +8 bytes (2 x UInt32) from metadata start.
-    var q_mbar = (metadata_ptr + 2).bitcast[SharedMemBarrier]()
+    var q_mbar = metadata_ptr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
     # K barrier at offset +16 bytes from metadata start.
-    var k_mbar = (metadata_ptr + 4).bitcast[SharedMemBarrier]()
+    var k_mbar = metadata_ptr.unsafe_offset(4).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
     # MMA barrier at offset +24 bytes from metadata start.
-    var mma_mbar = (metadata_ptr + 6).bitcast[SharedMemBarrier]()
+    var mma_mbar = metadata_ptr.unsafe_offset(6).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var tid = thread_idx.x
     var wid = get_warp_id()
@@ -337,7 +347,7 @@ def dense_mma_ws_ts_kernel[
         ACCUM_TYPE,  # d_type
         OP_TYPE,  # a_type (bf16)
         OP_TYPE,  # b_type (bf16)
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        (UInt32(MMA_M), UInt32(MMA_N)),
         transpose_b=True,
     ]()
 
@@ -489,18 +499,28 @@ def sparse_mma_ws_ts_kernel[
     ]()
 
     # ---- Q SMEM region ----
-    var q_smem_ptr = smem_base.bitcast[Scalar[op_type]]()
+    var q_smem_ptr = smem_base.unsafe_bitcast[Scalar[op_type]]()
     var q_smem_tile = TileTensor(q_smem_ptr, q_smem_layout)
 
     # ---- K SMEM region (starts after Q) ----
-    var k_smem_ptr = (smem_base + k_smem_offset).bitcast[Scalar[op_type]]()
+    var k_smem_ptr = smem_base.unsafe_offset(k_smem_offset).unsafe_bitcast[
+        Scalar[op_type]
+    ]()
 
     # ---- Metadata region ----
-    var metadata_ptr = (smem_base + metadata_offset).bitcast[UInt32]()
+    var metadata_ptr = smem_base.unsafe_offset(metadata_offset).unsafe_bitcast[
+        UInt32
+    ]()
     var ptr_tmem_addr = metadata_ptr
-    var q_mbar = (metadata_ptr + 2).bitcast[SharedMemBarrier]()
-    var k_mbar = (metadata_ptr + 4).bitcast[SharedMemBarrier]()
-    var mma_mbar = (metadata_ptr + 6).bitcast[SharedMemBarrier]()
+    var q_mbar = metadata_ptr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var k_mbar = metadata_ptr.unsafe_offset(4).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = metadata_ptr.unsafe_offset(6).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     var tid = thread_idx.x
     var wid = get_warp_id()
@@ -526,7 +546,7 @@ def sparse_mma_ws_ts_kernel[
 
         # Prefetch K gather4 descriptor into constant cache.
         prefetch_tma_descriptor(
-            Pointer(to=k_gather4_tma.descriptor).bitcast[NoneType]()
+            Pointer(to=k_gather4_tma.descriptor).unsafe_bitcast[NoneType]()
         )
 
     barrier()
@@ -555,7 +575,7 @@ def sparse_mma_ws_ts_kernel[
     barrier()
 
     # ---- K TMA gather4: all calls on a single barrier ----
-    comptime box_width = Int(k_tile_shape[1].value())
+    comptime box_width = Int(k_tile_shape[1])
     comptime num_col_groups = ceildiv(cols, box_width)
     comptime num_4row_chunks = rows // 4
     comptime total_calls = num_col_groups * num_4row_chunks
@@ -572,7 +592,7 @@ def sparse_mma_ws_ts_kernel[
                 var idx_base = c * 4
                 var chunk_elem_off = c * 4 * box_width
                 var elem_off = cg_elem_off + chunk_elem_off
-                var smem_dst_ptr = k_smem_ptr + elem_off
+                var smem_dst_ptr = k_smem_ptr.unsafe_offset(elem_off)
                 var smem_dst_tile = TileTensor(
                     smem_dst_ptr, row_major[4, box_width]()
                 )
@@ -605,7 +625,7 @@ def sparse_mma_ws_ts_kernel[
         accum_type,
         op_type,
         op_type,
-        Index[dtype=DType.uint32](mma_m, mma_n),
+        (UInt32(mma_m), UInt32(mma_n)),
         transpose_b=True,
     ]()
 
@@ -672,12 +692,12 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
     # ---- Allocate and fill Q input with random values ----
     seed(42)
     var q_inp = HostDeviceTileTensor[OP_TYPE](row_major[ROWS, COLS](), ctx)
-    randn[OP_TYPE](q_inp.host_tensor().unsafe_ptr(), ROWS * COLS)
+    randn(q_inp.host_tensor().as_span())
     q_inp.to_device()
 
     # ---- Allocate and fill K input with random values ----
     var k_inp = HostDeviceTileTensor[OP_TYPE](row_major[K_ROWS, K_COLS](), ctx)
-    randn[OP_TYPE](k_inp.host_tensor().unsafe_ptr(), K_ROWS * K_COLS)
+    randn(k_inp.host_tensor().as_span())
     k_inp.to_device()
 
     # ---- Allocate P output buffer (MMA result) ----
@@ -708,9 +728,6 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=TOTAL_SMEM_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(TOTAL_SMEM_BYTES)
-        ),
     )
     ctx.synchronize()
 
@@ -721,18 +738,18 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
     # Summing P[:, 0:64] + P[:, 64:128] gives the full 64x64 Q x K^T.
     print("  Verifying P = Q x K^T (MMA TS .ws, dual GEMM fold)...")
     p_out_buf.to_host()
-    var p_out_ptr = p_out_buf.host_tensor().unsafe_ptr()
+    var p_out = p_out_buf.host_tensor()
     print(
         "  P raw[0,0]="
-        + String(p_out_ptr[0])
+        + String(p_out[0, 0])
         + " P raw[0,64]="
-        + String(p_out_ptr[64])
+        + String(p_out[0, 64])
     )
     print(
         "  P raw[63,63]="
-        + String(p_out_ptr[63 * P_COLS + 63])
+        + String(p_out[63, 63])
         + " P raw[63,127]="
-        + String(p_out_ptr[63 * P_COLS + 127])
+        + String(p_out[63, 127])
     )
 
     # Compute reference on GPU using the naive matmul kernel:
@@ -803,8 +820,8 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
             var ref_val = p_ref_host[r * P_REF_COLS + c]
 
             # GPU result: sum of the two halves.
-            var gpu_half0 = Float32(p_out_ptr[r * P_COLS + c])
-            var gpu_half1 = Float32(p_out_ptr[r * P_COLS + c + P_ROWS])
+            var gpu_half0 = Float32(p_out[r, c])
+            var gpu_half1 = Float32(p_out[r, c + P_ROWS])
             var gpu_val = gpu_half0 + gpu_half1
 
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
@@ -901,7 +918,7 @@ def test_sparse_mma_ws_ts[
     # ---- Allocate and fill Q input [rows, cols] with random values ----
     seed(42)
     var q_inp = HostDeviceTileTensor[op_type](row_major[rows, cols](), ctx)
-    randn[op_type](q_inp.host_tensor().unsafe_ptr(), rows * cols)
+    randn(q_inp.host_tensor().as_span())
     q_inp.to_device()
 
     # ---- Allocate the full K buffer [total_tokens, cols] ----
@@ -909,7 +926,7 @@ def test_sparse_mma_ws_ts[
         row_major[total_tokens, cols](), ctx
     )
     var k_full_host = k_full.host_tensor()
-    randn[op_type](k_full_host.unsafe_ptr(), total_tokens * cols)
+    randn(k_full_host.as_span())
     k_full.to_device()
 
     # ---- Build non-contiguous indices into the full K buffer ----
@@ -963,9 +980,6 @@ def test_sparse_mma_ws_ts[
         grid_dim=(1, 1),
         block_dim=(num_threads),
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 
@@ -975,14 +989,14 @@ def test_sparse_mma_ws_ts[
         " (MMA TS .ws, sparse + dual GEMM fold)..."
     )
     p_out_buf.to_host()
-    var p_out_ptr = p_out_buf.host_tensor().unsafe_ptr()
+    var p_out = p_out_buf.host_tensor()
     print(
         "  P raw[0,0]="
-        + String(p_out_ptr[0])
+        + String(p_out[0, 0])
         + " P raw[0,"
         + String(rows)
         + "]="
-        + String(p_out_ptr[rows])
+        + String(p_out[0, rows])
     )
 
     # Compute reference: P_ref = Q x K_gathered^T.
@@ -1046,8 +1060,8 @@ def test_sparse_mma_ws_ts[
         for c in range(p_ref_cols):
             var ref_val = p_ref_host[r * p_ref_cols + c]
 
-            var gpu_half0 = Float32(p_out_ptr[r * p_cols + c])
-            var gpu_half1 = Float32(p_out_ptr[r * p_cols + c + p_rows])
+            var gpu_half0 = Float32(p_out[r, c])
+            var gpu_half1 = Float32(p_out[r, c + p_rows])
             var gpu_val = gpu_half0 + gpu_half1
 
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
@@ -1157,7 +1171,7 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Build the 6D blocks tensor ----
     # Shape: [num_blocks, kv_dim, num_layers, page_size, num_heads, head_size]
-    comptime pg_shape_6d = IndexList[6](
+    comptime pg_shape_6d = Index(
         num_blocks,
         kv_dim,
         num_layers,
@@ -1237,7 +1251,7 @@ def test_sparse_paged_mma_ws_ts[
     # ---- Allocate and fill Q input [rows, cols] with random values ----
     seed(42)
     var q_inp = HostDeviceTileTensor[op_type](row_major[rows, cols](), ctx)
-    randn[op_type](q_inp.host_tensor().unsafe_ptr(), rows * cols)
+    randn(q_inp.host_tensor().as_span())
     q_inp.to_device()
 
     # ---- Build gather indices from the paged cache ----
@@ -1254,12 +1268,13 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Build reference K_gathered on host ----
     var k_ref_host = ctx.enqueue_create_host_buffer[op_type](topk * row_width)
+    var blocks_rows = blocks_host.reshape(
+        row_major(blocks_host.num_elements() // row_width, row_width)
+    )
     for i in range(topk):
         var src_row = Int(h_indices[i])
         for c in range(row_width):
-            k_ref_host[i * row_width + c] = blocks_host.unsafe_ptr()[
-                src_row * row_width + c
-            ]
+            k_ref_host[i * row_width + c] = blocks_rows[src_row, c]
 
     var k_ref_device = ctx.enqueue_create_buffer[op_type](topk * row_width)
     ctx.enqueue_copy(k_ref_device, k_ref_host)
@@ -1297,9 +1312,6 @@ def test_sparse_paged_mma_ws_ts[
         grid_dim=(1, 1),
         block_dim=(num_threads),
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 
@@ -1309,14 +1321,14 @@ def test_sparse_paged_mma_ws_ts[
         " (MMA TS .ws, sparse paged + dual GEMM fold)..."
     )
     p_out_buf.to_host()
-    var p_out_ptr = p_out_buf.host_tensor().unsafe_ptr()
+    var p_out = p_out_buf.host_tensor()
     print(
         "  P raw[0,0]="
-        + String(p_out_ptr[0])
+        + String(p_out[0, 0])
         + " P raw[0,"
         + String(rows)
         + "]="
-        + String(p_out_ptr[rows])
+        + String(p_out[0, rows])
     )
 
     # Compute reference: P_ref = Q x K_gathered^T.
@@ -1380,8 +1392,8 @@ def test_sparse_paged_mma_ws_ts[
         for c in range(p_ref_cols):
             var ref_val = p_ref_host[r * p_ref_cols + c]
 
-            var gpu_half0 = Float32(p_out_ptr[r * p_cols + c])
-            var gpu_half1 = Float32(p_out_ptr[r * p_cols + c + p_rows])
+            var gpu_half0 = Float32(p_out[r, c])
+            var gpu_half1 = Float32(p_out[r, c + p_rows])
             var gpu_val = gpu_half0 + gpu_half1
 
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))

@@ -26,7 +26,7 @@ from std.utils.index import Index, IndexList
 
 def bench_rms_norm_rope_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
@@ -68,29 +68,25 @@ def bench_rms_norm_rope_gpu[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def cos_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var cos_vals} -> SIMD[dtype, width]:
-        var idx = cos_vals.layout(coords)
-        return cos_vals.raw_load[width=width, alignment=alignment](idx)
+        return cos_vals.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def sin_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var sin_vals} -> SIMD[dtype, width]:
-        var idx = sin_vals.layout(coords)
-        return sin_vals.raw_load[width=width, alignment=alignment](idx)
+        return sin_vals.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[width=width, alignment=alignment](idx, val)
+        output_buf.store[alignment=alignment](coords, val)
 
     @inline(.always)
     def bench_fn(
@@ -106,13 +102,12 @@ def bench_rms_norm_rope_gpu[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             rms_norm_rope[
                 dtype,
                 dtype,
                 dtype,
                 rank,
-                target="gpu",
                 multiply_before_cast=False,
             ](
                 input_fn,

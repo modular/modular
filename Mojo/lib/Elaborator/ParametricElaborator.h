@@ -15,6 +15,7 @@
 #define KGEN_ELABORATOR_PARAMETRICELABORATOR_H
 
 #include "Cache/CachedTransform.h"
+#include "ElaboratorHelper.h"
 #include "InterpreterCache.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/BytecodeInterpreter.h"
@@ -103,7 +104,8 @@ public:
 
   /// Lookup an existing concrete function.
   InstantiatedOpInterface lookupInstantiatedOp(StringAttr name) {
-    InstantiatedOpInterface localResult = (*tlInsts)[name];
+    // This has to be a reference because it is reassigned below.
+    InstantiatedOpInterface &localResult = (*tlInsts)[name];
     if (!localResult) {
       localResult =
           concreteNodes.read([name](auto &map) { return map.at(name)->inst; });
@@ -124,7 +126,7 @@ public:
   /// elaborate the generator or interface and return the first concrete
   /// implementation. Return none if the specialization is not ready yet.
   ErrorTreeOr<FuncOp> getConcreteFunction(PImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol);
+                                          FuncSymbolGenerator symbol);
 
   /// Look up the callee symbol (for a struct generator). If elaboration is
   /// already in-progress or done, return the concrete symbol reference.
@@ -149,7 +151,7 @@ public:
   /// current thread. Populates the value from the global cache if necessary.
   TypedAttr lookupCachedInterpretation(Operation *op,
                                        ParameterExprArrayAttr operands,
-                                       SymbolConstantAttr symbol) {
+                                       FuncSymbolGenerator symbol) {
     TypedAttr &tlValue = (*tlInterp)[{op, operands, symbol}];
     if (!tlValue) {
       tlValue = interpCache.read([op, operands, symbol](auto &map) {
@@ -163,7 +165,7 @@ public:
   std::pair<TypedAttr, bool>
   writeGlobalCachedInterpretation(Operation *op,
                                   ParameterExprArrayAttr operands,
-                                  SymbolConstantAttr symbol, TypedAttr value) {
+                                  FuncSymbolGenerator symbol, TypedAttr value) {
     TypedAttr result = value;
     (*tlInterp)[{op, operands, symbol}] = value;
 
@@ -185,7 +187,8 @@ public:
       llvm::errs() << "value: " << value << "\n";
       llvm::errs() << "operands: " << operands << "\n";
       llvm::errs() << "\n";
-      op->dump();
+      op->print(llvm::errs());
+      llvm::errs() << "\n";
     }
 
     assert(result == value && "non-deterministic interpreter results");
@@ -236,11 +239,7 @@ private:
 
   /// Process a `kgen.param.apply` operation by concretizing its operands and
   /// callee and then invoking the interpreter.
-  ElaborationState
-  processParamApplyOp(PImplNode *inode,
-                      ParamApplyOp op); //,
-                                        // SymbolConstantAttr calleeSymbol);//,
-                                        // FuncOp func, GeneratorOp gen);
+  ElaborationState processParamApplyOp(PImplNode *inode, ParamApplyOp op);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
@@ -250,7 +249,7 @@ private:
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
   ElaborationState processGeneratorUser(GeneratorUserOpInterface user,
-                                        SymbolConstantAttr calleeSymbol,
+                                        FuncSymbolGenerator calleeSymbol,
                                         PImplNode *parent);
 
   /// Process a comptime.if op by evaluating the condition and elaborating and
@@ -336,7 +335,7 @@ private:
   /// `inputParamKey` is not populated, then the callee is a direct function
   /// reference.
   std::pair<ElaborationState, PImplNode *> instantiateGeneratorReference(
-      PImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+      PImplNode *parent, Operation *user, FuncSymbolGenerator calleeSymbol,
       ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
       function_ref<bool(PParamNode *)> shouldWait = [](PParamNode *) {
         return true;
@@ -366,6 +365,9 @@ private:
   /// The elaborator config.
   ElaborateGeneratorsOptions config;
 
+  /// What each `comptime for` produced, when `config.printStats` is set.
+  Shared<std::vector<ComptimeForRecord>> comptimeForStats;
+
   /// This is the symbol table of the new module.
   /// Map from name to op + concrete function to implementation node.
   Shared<DenseMap<StringAttr, PImplNode *>> concreteNodes;
@@ -373,9 +375,9 @@ private:
   mlir::ThreadLocalCache<DenseMap<StringAttr, InstantiatedOpInterface>> tlInsts;
 
   /// This is used to cache interpreter invocations across the elaborator.
-  using InterpreterMapTy = DenseMap<
-      std::tuple<Operation *, ParameterExprArrayAttr, SymbolConstantAttr>,
-      TypedAttr>;
+  using InterpreterMapTy =
+      DenseMap<std::tuple<Operation *, ParameterExprArrayAttr, TypedAttr>,
+               TypedAttr>;
   Shared<InterpreterMapTy> interpCache;
   mlir::ThreadLocalCache<InterpreterMapTy> tlInterp;
 
@@ -426,21 +428,6 @@ private:
   Shared<llvm::SetVector<CompileOffloadOp>> compileOffloadOps;
 
   friend class ParametricIREvaluator;
-
-public:
-  std::atomic<uint64_t> paramReplacerCacheTlsHits = 0;
-  std::atomic<uint64_t> paramReplacerCacheGlobalHits = 0;
-  std::atomic<uint64_t> paramReplacerCacheMisses = 0;
-
-  std::atomic<uint64_t> applyCacheMisses = 0;
-  std::atomic<uint64_t> applyCacheTlsHit = 0;
-  std::atomic<uint64_t> applyCacheGlobalHit = 0;
-  std::atomic<uint64_t> applyCacheDuplicates = 0;
-
-  Shared<llvm::DenseMap<uint64_t, uint64_t>> cacheSizes;
-
-  Shared<llvm::DenseMap<const void *, std::tuple<Attribute, Type, uint64_t>>>
-      replacerStats;
 };
 
 } // namespace M::KGEN

@@ -140,7 +140,8 @@ def test_bicubic_kernel[
         " upsampling kernel--------------------------------"
     )
     # Call the bicubic upsampling kernel.
-    resize_bicubic[target="cpu"](output_host, input_host, ctx)
+    with DeviceContext.CPU(api="cpu") as cpu_ctx:
+        resize_bicubic(output_host, input_host, cpu_ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
         " kernel--------------------------------"
@@ -550,30 +551,16 @@ def test_bicubic_kernel[
                 if not is_match:
                     mismatch_count += 1
                     print(
-                        "Mismatch at [0,",
-                        c,
-                        ",",
-                        h,
-                        ",",
-                        w,
-                        "]: Actual =",
-                        actual,
-                        ", Expected =",
-                        expected,
-                        ", Diff =",
-                        abs(actual - expected),
+                        t"Mismatch at [0, {c} , {h} , {w} ]: Actual ="
+                        t" {actual} , Expected = {expected} , Diff ="
+                        t" {abs(actual - expected)}"
                     )
 
     if mismatch_count == 0:
         print(
-            (
-                "--------------------------------All values match within"
-                " tolerances (rel:"
-            ),
-            rel_tolerance * 100,
-            "%, abs:",
-            abs_tolerance,
-            ")--------------------------------",
+            t"--------------------------------All values match within"
+            t" tolerances (rel: {rel_tolerance * 100} %, abs:"
+            t" {abs_tolerance} )--------------------------------"
         )
     else:
         print(
@@ -599,7 +586,7 @@ def test_bicubic_kernel[
     comptime H = output_dim.element_types[2].static_value
     comptime W = output_dim.element_types[3].static_value
 
-    resize_bicubic[target="gpu"](output_dev_nd, input_dev_nd, ctx)
+    resize_bicubic(output_dev_nd, input_dev_nd, ctx)
 
     ctx.enqueue_copy(output_ref_host_ptr, output_dev)
     ctx.synchronize()

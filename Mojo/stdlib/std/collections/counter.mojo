@@ -34,7 +34,7 @@ from std.collections.dict import (
     _DictValueIter,
 )
 import std.format._utils as fmt
-from std.hashlib import Hasher, default_hasher
+from std.hash import Hasher, default_hasher
 
 from std.utils import Variant
 
@@ -42,7 +42,7 @@ from std.utils import Variant
 @fieldwise_init
 struct Counter[
     V: KeyElement & Copyable & Deinitable,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Boolable,
     Copyable,

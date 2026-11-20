@@ -138,3 +138,51 @@ kgen.generator @fold_not<a: scalar<bool>, b: scalar<bool>>() {
   kgen.param.constant: scalar<bool> = <and(not(a), not(and(a, b)))>
   hlcf.return
 }
+
+// COM: A leading conjunction seeds the set without being refolded, so each
+// COM: later clause must still interact with the seeded ones as it would in a
+// COM: refold. A conjunction in any other position is refolded.
+// CHECK-LABEL: @fold_onto_conjunction
+kgen.generator @fold_onto_conjunction<a: scalar<bool>, b: scalar<bool>, c: scalar<bool>, d: scalar<bool>, e: scalar<bool>, t: type, t1: type, t2: type, t3: type>() {
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b)>
+  kgen.param.constant: scalar<bool> = <and(and(a, b), a)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <and(and(a, b), not(a))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(c, identical(:type t1, t2, t3))>
+  kgen.param.constant: scalar<bool> = <and(and(c, identical(:type t1, t2)), identical(:type t3, t2))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <and(and(c, identical(:type t1, i32)), identical(:type t1, i1))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(b), a, c)>
+  kgen.param.constant: scalar<bool> = <and(and(c, not(and(a, b))), a)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, c)>
+  kgen.param.constant: scalar<bool> = <and(and(c, or(a, b)), a)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(c, conforms_to(:type t, :type [typevalue<#kgen.trait_ref<[@A, @B]>>, type]))>
+  kgen.param.constant: scalar<bool> = <and(and(c, conforms_to(:type t, :type #A)), conforms_to(:type t, :type #AB))>
+
+  // COM: A leaf ahead of the conjunction it joins.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b, c)>
+  kgen.param.constant: scalar<bool> = <and(c, and(a, b))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <and(not(a), and(a, b))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(b), a, c)>
+  kgen.param.constant: scalar<bool> = <and(a, and(c, not(and(a, b))))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(c, identical(:type t1, t2, t3))>
+  kgen.param.constant: scalar<bool> = <and(identical(:type t3, t2), and(c, identical(:type t1, t2)))>
+
+  // COM: Two multi-clause conjunctions, in either order.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(d), a, b, c)>
+  kgen.param.constant: scalar<bool> = <and(and(a, b), and(c, not(and(a, d))))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(d), a, b, c)>
+  kgen.param.constant: scalar<bool> = <and(and(c, not(and(a, d))), and(a, b))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <and(and(a, b), and(c, not(and(a, b))))>
+
+  // COM: A shorter conjunction ahead of a longer one.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(e), a, b, c, d)>
+  kgen.param.constant: scalar<bool> = <and(and(a, d), and(b, c, not(and(a, e))))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <and(and(a, d), and(b, c, not(and(a, b))))>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b, c, identical(:type t1, t2, t3))>
+  kgen.param.constant: scalar<bool> = <and(and(a, identical(:type t3, t2)), and(b, c, identical(:type t1, t2)))>
+  hlcf.return
+}

@@ -35,7 +35,7 @@ import io
 import logging
 import os
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -262,11 +262,16 @@ def _declared_frame_count(
     return max(total, 0)
 
 
-def probe_video(source: VideoSource) -> VideoStreamInfo:
+def probe_video(
+    source: VideoSource, default_fps: float = _DEFAULT_FPS
+) -> VideoStreamInfo:
     """Reads a video's header without decoding any frame.
 
     Args:
         source: The video to probe.
+        default_fps: Frame rate assumed when the container declares none,
+            to estimate the frame count from the duration. Pass the rate the
+            caller indexes frames at, or its targets miss the real stream.
 
     Returns:
         The stream metadata. ``num_frames`` is the header's best-effort count
@@ -286,7 +291,7 @@ def probe_video(source: VideoSource) -> VideoStreamInfo:
             return VideoStreamInfo(
                 fps=fps,
                 num_frames=_declared_frame_count(
-                    stream, container, fps or _DEFAULT_FPS
+                    stream, container, fps or default_fps
                 ),
                 width=stream.width or 0,
                 height=stream.height or 0,
@@ -745,6 +750,8 @@ def decode_video_frames(
     max_decoded_bytes: int | None = None,
     default_fps: float = _DEFAULT_FPS,
     threads: int | None = None,
+    sample_indices: Callable[[int, float, int | None], Sequence[int]]
+    | None = None,
 ) -> SampledVideo:
     """Decodes a subsampled set of frames from a video.
 
@@ -779,6 +786,13 @@ def decode_video_frames(
         default_fps: Frame rate assumed when the container declares none.
         threads: Decode worker count; defaults to
             ``MODULAR_VIDEO_DECODE_THREADS`` or 16.
+        sample_indices: A model's own frame-selection rule, for a reference
+            whose rule none of the arguments above express. Called with the
+            source frame count, the frame rate, and the most frames the
+            decode may keep -- ``max_frames`` and ``max_decoded_bytes``
+            combined, or ``None`` when neither applies -- and returns
+            ascending source indices, which may repeat. Replaces
+            ``num_frames``, ``target_fps`` and the other sampling arguments.
 
     Returns:
         The sampled frames, their source indices, and the stream metadata.
@@ -789,13 +803,29 @@ def decode_video_frames(
     """
     if num_frames is not None and target_fps is not None:
         raise ValueError("pass at most one of num_frames / target_fps")
+    if sample_indices is not None and (
+        num_frames is not None or target_fps is not None
+    ):
+        raise ValueError(
+            "sample_indices replaces num_frames / target_fps; pass one"
+        )
 
-    info = probe_video(source)
+    info = probe_video(source, default_fps)
     fps = info.fps or default_fps
     budget_frames = _budget_frame_limit(info, max_decoded_bytes)
     worker_count = _decode_threads() if threads is None else max(1, threads)
 
     def plan(total: int) -> list[int]:
+        if sample_indices is not None:
+            caps = [c for c in (max_frames, budget_frames) if c is not None]
+            # The forward decode skips a target behind it, so an out-of-order
+            # hook would silently get neighbouring frames instead.
+            return sorted(
+                int(index)
+                for index in sample_indices(
+                    total, fps, min(caps) if caps else None
+                )
+            )
         return _plan_indices(
             total,
             fps,

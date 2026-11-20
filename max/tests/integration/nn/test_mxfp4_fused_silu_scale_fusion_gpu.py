@@ -39,13 +39,13 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.comm.ep.ep_kernels import fused_silu_quantized
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     block_scaled_preshuffle_b_5d,
     block_scaled_preshuffle_grouped_scale_4d,
     grouped_dynamic_block_scaled_matmul_amd,
     quantize_dynamic_block_scaled_mxfp4,
 )
+from max.nn._graph_ops.ep import fused_silu_quantized
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -370,6 +370,7 @@ def test_up_proj_dispatch_matmul_ab(
             padded_m_scalar,
             n_active_scalar,
             num_experts=n_experts,
+            max_rows_per_expert=padded_m,
         )
 
         est_m = ops.constant(total_tokens, dtype=DType.uint32, device=cpu_ref)

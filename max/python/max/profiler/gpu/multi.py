@@ -38,7 +38,8 @@ class GPUDiagContext:
         with GPUDiagContext() as ctx:
             stats = ctx.get_stats()
             for gpu_id, gpu_stats in stats.items():
-                print(f"GPU {gpu_id}:  {gpu_stats.memory.used_bytes} bytes used")
+                if gpu_stats.memory is not None:
+                    print(f"GPU {gpu_id}:  {gpu_stats.memory.used_bytes} bytes used")
     """
 
     def __init__(self) -> None:

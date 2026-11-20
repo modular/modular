@@ -91,15 +91,11 @@ def _config(*, use_subgraphs: bool) -> Qwen3_5Config:
         vocab_size=VOCAB,
         dtype=DType.float32,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=kv_params,
         norm_dtype=DType.float32,
         rms_norm_eps=1e-6,
         attention_multiplier=float(HEAD_DIM) ** -0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[device],
-        clip_qkv=None,
         layer_types=list(LAYER_TYPES),
         linear_key_head_dim=LINEAR_KEY_HEAD_DIM,
         linear_value_head_dim=LINEAR_VALUE_HEAD_DIM,
@@ -187,7 +183,7 @@ def _rows_selected_building(
             signal_buffers,
             list(state),
         )
-        graph.output(*outputs)
+        graph.output(outputs)
 
     return selected
 

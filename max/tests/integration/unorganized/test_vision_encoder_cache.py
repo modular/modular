@@ -1363,6 +1363,47 @@ def test_prepare_vision_outputs_returns_embeddings_and_indices() -> None:
     np.testing.assert_array_equal(indices, [0, 1, 2])
 
 
+def test_disabled_merge_indices_follow_rows_not_the_span() -> None:
+    """An image span can be wider than the rows its encoder emits.
+
+    Some tokenizers hold tokens inside a span that embed as text, such as a
+    mistral_large4 image's break and end tokens, and record the row count on
+    the image. Scattering span-wide would overwrite those text positions and
+    drop encoder rows.
+    """
+    cache = _make_cache_sized(0)  # caching disabled
+    hidden = 4
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            ImageMetadata(
+                start_idx=4,
+                end_idx=12,
+                pixel_values=np.zeros((1, 3), dtype=np.float32),
+                image_hash=0xA,
+                num_embedding_rows=6,
+            )
+        ],
+        image_token_indices=np.array([4, 5, 6, 7, 8, 9], dtype=np.int32),
+        processed_length=0,
+        active_length=20,
+    )
+    uncached = cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    assert len(uncached) == 1
+
+    vision_embeds = [_make_buffer(6, hidden)]
+    _, indices = cache.prepare_vision_outputs(
+        context_batch=_as_vlm_batch([ctx]),
+        uncached_contexts=uncached,
+        uncached_images=_miss_images(cache, uncached),
+        vision_embeds=vision_embeds,
+        per_image_token_counts=[6],
+        n_devices=1,
+        empty_embeddings=[_make_buffer(0, hidden)],
+    )
+    np.testing.assert_array_equal(indices, [4, 5, 6, 7, 8, 9])
+
+
 def test_prepare_vision_outputs_chunked_prefill() -> None:
     """A straddling image is stored in full but assembled window-bounded."""
     cache = _make_cache()
@@ -1885,13 +1926,72 @@ def test_derive_disabled_cache_chunked_prefill_no_false_raise() -> None:
     assert [c for c, _ in selection] == [ctx]
     assert [img.image_hash for _, miss in selection for img in miss] == [0xB]
     result = VisionEncodeResult(embeddings=[_make_buffer(5, 4)])
-    embeds, _indices = manager.cache_vision_embeddings(
+    embeds, indices = manager.cache_vision_embeddings(
         context_batch=_as_vlm_batch([ctx]),
         selection=selection,
         encode_result=result,
         empty_embeddings=[_make_buffer(0, 4)],
     )
     assert int(embeds[0].shape[0]) == 5
+    # One index per encoded row: B's five tokens, all in this window.
+    assert indices.tolist() == [0, 1, 2, 3, 4]
+
+
+def test_disabled_cache_indices_follow_the_selection() -> None:
+    """Disabled cache, two images in different prefill chunks.
+
+    Only the in-window image is encoded, so the scatter indices must cover
+    its rows alone, not the later chunk's image too.
+    """
+    manager = _make_manager(budget_bytes_per_device=0)
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    img_b = _make_image_meta(6, 10, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img_a, img_b],
+        next_images=[img_a],  # B starts past this chunk's window
+        image_token_indices=np.array([0, 1, 2, 3, 6, 7, 8, 9], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert [img.image_hash for _, miss in selection for img in miss] == [0xA]
+    embeds, indices = manager.cache_vision_embeddings(
+        context_batch=_as_vlm_batch([ctx]),
+        selection=selection,
+        encode_result=VisionEncodeResult(embeddings=[_make_buffer(4, 4)]),
+        empty_embeddings=[_make_buffer(0, 4)],
+    )
+    assert int(embeds[0].shape[0]) == 4
+    assert indices.tolist() == [0, 1, 2, 3]
+
+
+def test_disabled_cache_bisected_image_masks_rows_past_the_window() -> None:
+    """An image the window bisects is encoded whole; its rows past the window
+    get the out-of-bounds sentinel, after a prior context's active tokens."""
+    manager = _make_manager(budget_bytes_per_device=0)
+    oob = int(np.iinfo(np.int32).min)
+    text_only = FakeContext(
+        request_id=RequestID("r0"), needs_vision=False, active_length=3
+    )
+    img = _make_image_meta(3, 7, image_hash=0xA)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[img],
+        next_images=[img],
+        image_token_indices=np.array([3, 4, 5, 6], dtype=np.int32),
+        processed_length=0,
+        active_length=5,
+    )
+    batch = _as_vlm_batch([text_only, ctx])
+    selection = manager.select(batch)
+    _embeds, indices = manager.cache_vision_embeddings(
+        context_batch=batch,
+        selection=selection,
+        encode_result=VisionEncodeResult(embeddings=[_make_buffer(4, 4)]),
+        empty_embeddings=[_make_buffer(0, 4)],
+    )
+    assert indices.tolist() == [6, 7, oob, oob]
 
 
 def test_derive_enabled_partial_hit_counts_match_selection() -> None:
@@ -2446,6 +2546,12 @@ def test_finalize_vision_inputs_sets_real_embeddings() -> None:
     np.testing.assert_array_equal(
         inputs.vision_scatter_indices[0].to_numpy(), scatter
     )
+
+    # Real index buffers belong to their step: the count varies between
+    # batches, so buffers kept per count would never be freed.
+    first = inputs.vision_scatter_indices[0]
+    cache.finalize_vision_inputs(model, inputs, devices, (embeds, scatter))
+    assert inputs.vision_scatter_indices[0] is not first
 
 
 def test_finalize_vision_inputs_empty_scatter_uses_empties() -> None:

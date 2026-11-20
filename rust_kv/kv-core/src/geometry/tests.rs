@@ -20,8 +20,8 @@
 //! unrelated geometry into the shared pool would cost.
 //!
 //! Python's `test_padded_invalid_arguments` also rejects `cache_sizes` and
-//! `row_sizes` naming different caches; a [`CachePage`] carries both, so that
-//! case cannot be written here. Python's environment-variable tests become
+//! `stride_alignments` naming different caches; a [`CachePage`] carries both,
+//! so that case cannot be written here. Python's environment-variable tests become
 //! checks on [`SearchBounds`].
 
 use super::{
@@ -62,14 +62,14 @@ fn mha_row_bytes(n_kv_heads: u64, head_dim: u64) -> u64 {
     n_kv_heads * head_dim * BF16
 }
 
-fn pages(data_bytes: &[u64], row_bytes: &[u64]) -> Vec<CachePage> {
-    assert_eq!(data_bytes.len(), row_bytes.len());
+fn pages(data_bytes: &[u64], stride_alignments: &[Option<u64>]) -> Vec<CachePage> {
+    assert_eq!(data_bytes.len(), stride_alignments.len());
     data_bytes
         .iter()
-        .zip(row_bytes)
-        .map(|(&data_bytes, &row_bytes)| CachePage {
+        .zip(stride_alignments)
+        .map(|(&data_bytes, &stride_alignment)| CachePage {
             data_bytes,
-            row_bytes,
+            stride_alignment,
         })
         .collect()
 }
@@ -97,18 +97,26 @@ fn check_tiles_exactly(cache_sizes: &[u64], ratios: &[usize]) -> u64 {
 
 /// Asserts the allocator invariants every padded geometry owes the kernel.
 ///
-/// A padded page must still divide the huge block, or a huge block does not
-/// hold a whole number of them, and must still be a whole number of rows, or
-/// `PagedKVCache._stride()` has no exact row index for the start of a page.
-fn check_row_aligned_and_tiling(geometry: &JengaGeometry, row_sizes: &[u64]) {
-    for (cache, (&page, &row)) in geometry.padded_sizes.iter().zip(row_sizes).enumerate() {
+/// A page must divide the huge block, or a huge block does not hold a whole
+/// number of them. A page past its data must be a stride its kernels can
+/// address, a multiple of its alignment, and a cache without one stays
+/// packed.
+fn check_aligned_and_tiling(
+    geometry: &JengaGeometry,
+    cache_sizes: &[u64],
+    stride_alignments: &[Option<u64>],
+) {
+    for (cache, &page) in geometry.padded_sizes.iter().enumerate() {
         assert_eq!(geometry.huge_page_bytes % page, 0, "cache {cache}");
         assert_eq!(
             geometry.huge_page_bytes / page,
             geometry.ratios[cache] as u64,
             "cache {cache}"
         );
-        assert_eq!(page % row, 0, "cache {cache}");
+        if page != cache_sizes[cache] {
+            let alignment = stride_alignments[cache].expect("a packed cache was padded");
+            assert_eq!(page % alignment, 0, "cache {cache}");
+        }
     }
 }
 
@@ -346,12 +354,13 @@ fn invalid_arguments() {
 #[test]
 fn padding_is_not_spent_when_pages_already_divide() {
     // gemma4's global page is exactly a tenth of its sliding one, so exact
-    // tiling is already cheap and the search must not pad to beat it.
+    // tiling is already cheap and the search must not pad to beat it, even
+    // with both caches allowed to.
     let cache_sizes = [mha_page_bytes(50, 16, 256), mha_page_bytes(10, 4, 512)];
-    let row_sizes = [mha_row_bytes(16, 256), mha_row_bytes(4, 512)];
+    let alignments = [Some(mha_row_bytes(16, 256)), Some(mha_row_bytes(4, 512))];
     let geometry = plan_jenga_geometry(
         120 * GIB,
-        &pages(&cache_sizes, &row_sizes),
+        &pages(&cache_sizes, &alignments),
         true,
         &SearchBounds::default(),
     )
@@ -365,7 +374,7 @@ fn padding_is_not_spent_when_pages_already_divide() {
     for (cache, &size) in cache_sizes.iter().enumerate() {
         assert_eq!(geometry.padding_fraction(cache, size), 0.0);
     }
-    check_row_aligned_and_tiling(&geometry, &row_sizes);
+    check_aligned_and_tiling(&geometry, &cache_sizes, &alignments);
 }
 
 #[test]
@@ -378,15 +387,15 @@ fn vision_encoder_stops_exploding_the_huge_block() {
         mha_page_bytes(10, 4, 512),
         siglip_vision_page_bytes(),
     ];
-    let row_sizes = [
-        mha_row_bytes(16, 256),
-        mha_row_bytes(4, 512),
-        mha_row_bytes(16, 1152 / 16),
+    let alignments = [
+        Some(mha_row_bytes(16, 256)),
+        Some(mha_row_bytes(4, 512)),
+        Some(mha_row_bytes(16, 1152 / 16)),
     ];
     let exact = compute_jenga_ratios(120 * GIB, &cache_sizes, true).unwrap();
     let geometry = plan_jenga_geometry(
         120 * GIB,
-        &pages(&cache_sizes, &row_sizes),
+        &pages(&cache_sizes, &alignments),
         true,
         &padded_bounds(0.25),
     )
@@ -397,7 +406,7 @@ fn vision_encoder_stops_exploding_the_huge_block() {
     // from unusable to a real pool.
     assert!(geometry.huge_page_bytes < 128 * MIB);
     assert!(geometry.num_huge_blocks > 1000);
-    check_row_aligned_and_tiling(&geometry, &row_sizes);
+    check_aligned_and_tiling(&geometry, &cache_sizes, &alignments);
     // Nothing pays more than the cap for it.
     for (cache, &size) in cache_sizes.iter().enumerate() {
         assert!(geometry.padding_fraction(cache, size) <= 0.25);
@@ -418,7 +427,7 @@ fn v4_pro_seven_leaf_geometry() {
         31 * 8 * 4096,
         30 * 4 * 2048,
     ];
-    let row_sizes = [576, 576, 576, 68, 8192, 4096, 2048];
+    let alignments = [576, 576, 576, 68, 8192, 4096, 2048].map(Some);
     // Exact tiling wants a quarter of a terabyte for one huge block, so the
     // exact path cannot even return a geometry here -- it rejects the budget.
     assert!(lcm_of(cache_sizes).unwrap() > 200 * GIB);
@@ -427,36 +436,79 @@ fn v4_pro_seven_leaf_geometry() {
 
     let geometry = plan_jenga_geometry(
         100 * GIB,
-        &pages(&cache_sizes, &row_sizes),
+        &pages(&cache_sizes, &alignments),
         true,
         &padded_bounds(0.25),
     )
     .unwrap();
     assert!(geometry.huge_page_bytes <= 128 * MIB);
     assert!(geometry.num_huge_blocks > 2000);
-    check_row_aligned_and_tiling(&geometry, &row_sizes);
+    check_aligned_and_tiling(&geometry, &cache_sizes, &alignments);
+}
+
+/// DeepSeek-V4.1-Flash's packed record leaves and its index keys, which take
+/// a 16-byte stride.
+fn dsv4_1_flash_pages() -> (Vec<u64>, Vec<Option<u64>>) {
+    (
+        vec![
+            43 * 128 * 528,
+            3 * 64 * 288,
+            128 * 288,
+            3 * 64 * 68,
+            128 * 68,
+        ],
+        vec![None, None, None, Some(16), Some(16)],
+    )
 }
 
 #[test]
-fn a_page_that_is_a_fraction_of_a_row_is_rejected() {
-    // Real leaf sizes are a product that includes the row, so this cannot
-    // happen by construction -- it catches a caller mixing conventions, e.g.
-    // sizing pages from a packed 584-byte entry while declaring MAX's 576-byte
-    // value row, which silently breaks the row division in the kernel.
-    let error = plan_jenga_geometry(
-        120 * GIB,
-        &pages(&[61 * 64 * 584], &[576]),
+fn only_caches_with_a_stride_alignment_are_padded() {
+    // The index keys' 17 cannot tile the packed leaves' 2^12 * 3^3 * 11 * 43
+    // base, which exact tiling would multiply by 17 into an 848 MiB block.
+    // Padding them to 2^9 * 27 and 2^10 * 9 keeps the base itself.
+    let (cache_sizes, alignments) = dsv4_1_flash_pages();
+    let geometry = plan_jenga_geometry(
+        25 * GIB,
+        &pages(&cache_sizes, &alignments),
         true,
         &SearchBounds::default(),
     )
-    .unwrap_err();
-    assert!(error.to_string().contains("not a whole number of its"));
+    .unwrap();
+
+    assert_eq!(geometry.huge_page_bytes, 52_310_016);
+    assert_eq!(
+        geometry.padded_sizes,
+        [
+            cache_sizes[0],
+            cache_sizes[1],
+            cache_sizes[2],
+            13_824,
+            9_216
+        ]
+    );
+    check_aligned_and_tiling(&geometry, &cache_sizes, &alignments);
+
+    // With nothing opted in, nothing pads, and the exact block is all there
+    // is even past the ceiling.
+    let packed = [None; 5];
+    let geometry = plan_jenga_geometry(
+        25 * GIB,
+        &pages(&cache_sizes, &packed),
+        true,
+        &padded_bounds(1.0),
+    )
+    .unwrap();
+    assert_eq!(geometry.padded_sizes, cache_sizes);
+    assert_eq!(
+        Some(geometry.huge_page_bytes),
+        lcm_of(cache_sizes.iter().copied())
+    );
 }
 
 #[test]
 fn padded_invalid_arguments() {
     let page = mha_page_bytes(50, 16, 256);
-    let row = mha_row_bytes(16, 256);
+    let row = Some(mha_row_bytes(16, 256));
     let bounds = SearchBounds::default();
     let plan = |available_bytes, pages: &[CachePage]| {
         plan_jenga_geometry(available_bytes, pages, true, &bounds)
@@ -465,7 +517,9 @@ fn padded_invalid_arguments() {
     };
 
     assert!(plan(120 * GIB, &[]).contains("cache_sizes must be non-empty"));
-    assert!(plan(120 * GIB, &pages(&[page], &[0])).contains("row_sizes must be positive"));
+    assert!(
+        plan(120 * GIB, &pages(&[page], &[Some(0)])).contains("stride_alignments must be positive")
+    );
     assert!(plan(0, &pages(&[page], &[row])).contains("available_bytes must be positive"));
     assert!(plan(page, &pages(&[page], &[row])).contains("too small to build a pool"));
 }
@@ -485,25 +539,37 @@ fn gated_delta_state_bytes(num_layers: u64) -> (Vec<u64>, Vec<u64>) {
 }
 
 #[test]
-fn a_hybrid_ssm_geometry_is_not_padded_by_default() {
-    let (mut cache_sizes, mut row_sizes) = gated_delta_state_bytes(48);
+fn a_hybrid_ssm_geometry_pads_only_what_opts_in() {
+    let (mut cache_sizes, row_sizes) = gated_delta_state_bytes(48);
     cache_sizes.push(mha_page_bytes(61, 4, 144));
-    row_sizes.push(mha_row_bytes(4, 144));
-    let hybrid = pages(&cache_sizes, &row_sizes);
-
-    let geometry = plan_jenga_geometry(120 * GIB, &hybrid, true, &SearchBounds::default()).unwrap();
+    // State leaves are addressed by packed row, so they never opt in.
+    let packed = [None, None, None];
+    let geometry = plan_jenga_geometry(
+        120 * GIB,
+        &pages(&cache_sizes, &packed),
+        true,
+        &padded_bounds(0.25),
+    )
+    .unwrap();
     assert_eq!(geometry.padded_sizes, cache_sizes);
-    for (cache, &size) in cache_sizes.iter().enumerate() {
-        assert_eq!(geometry.padding_fraction(cache, size), 0.0);
-    }
-    check_row_aligned_and_tiling(&geometry, &row_sizes);
 
-    // Allowing padding pads two of the three leaves -- which is exactly what
-    // made the buffers strided -- and buys a much finer allocation quantum.
-    // That trade is the reason the knob exists rather than being hardcoded.
-    let padded = plan_jenga_geometry(120 * GIB, &hybrid, true, &padded_bounds(0.25)).unwrap();
+    // Opting every leaf in pads them -- which is exactly what made the
+    // buffers strided -- and buys a much finer allocation quantum.
+    let aligned = [
+        Some(row_sizes[0]),
+        Some(row_sizes[1]),
+        Some(mha_row_bytes(4, 144)),
+    ];
+    let padded = plan_jenga_geometry(
+        120 * GIB,
+        &pages(&cache_sizes, &aligned),
+        true,
+        &padded_bounds(0.25),
+    )
+    .unwrap();
     assert_ne!(padded.padded_sizes, cache_sizes);
     assert!(padded.num_huge_blocks > geometry.num_huge_blocks);
+    check_aligned_and_tiling(&padded, &cache_sizes, &aligned);
 }
 
 #[test]
@@ -513,7 +579,7 @@ fn search_bounds_default_to_the_python_environment_defaults() {
     assert_eq!(
         SearchBounds::default(),
         SearchBounds {
-            max_padding_fraction: 0.0,
+            max_padding_fraction: 0.1,
             max_huge_page_bytes: 128 * MIB,
             max_tiling_ratio: 256,
         }
@@ -525,16 +591,16 @@ fn a_lower_huge_page_ceiling_bounds_the_padded_geometry() {
     // The v4-pro leaves are all under 3 MiB, so a 16 MiB ceiling still leaves
     // the search room, and it must not return a block above it.
     let cache_sizes = [61 * 64 * 576, 31 * 2 * 576, 30 * 64 * 68, 30 * 4 * 8192];
-    let row_sizes = [576, 576, 68, 8192];
+    let alignments = [576, 576, 68, 8192].map(Some);
     let bounds = SearchBounds {
         max_padding_fraction: 0.25,
         max_huge_page_bytes: 16 * MIB,
         ..SearchBounds::default()
     };
     let geometry =
-        plan_jenga_geometry(100 * GIB, &pages(&cache_sizes, &row_sizes), true, &bounds).unwrap();
+        plan_jenga_geometry(100 * GIB, &pages(&cache_sizes, &alignments), true, &bounds).unwrap();
     assert!(geometry.huge_page_bytes <= 16 * MIB);
-    check_row_aligned_and_tiling(&geometry, &row_sizes);
+    check_aligned_and_tiling(&geometry, &cache_sizes, &alignments);
 }
 
 #[test]
@@ -563,7 +629,7 @@ fn a_least_common_multiple_past_u64_is_larger_than_any_budget() {
 
     let geometry = plan_jenga_geometry(
         120 * GIB,
-        &pages(&cache_sizes, &[64; 5]),
+        &pages(&cache_sizes, &[Some(64); 5]),
         true,
         &padded_bounds(0.25),
     )

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -I=%S/inputs -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -split-input-file -I%S/inputs -verify-diagnostics %s
 
 # Bare `import pkg` does not expose submodules as attributes (gated ImportOp).
 import visibility_pkg

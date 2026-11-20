@@ -36,7 +36,7 @@ Coverage:
   where each thread owns a single vector.
 """
 
-from max.gpu import WARP_SIZE, thread_idx
+from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import (
@@ -45,8 +45,8 @@ from max.gpu.memory import (
 )
 
 from layout import Coord, Idx, TileTensor, row_major
-from layout.layout_tensor import ThreadScope
-from layout.tile_layout import Layout as TileLayout
+from layout.tile_io import ThreadScope
+from layout.layout import Layout
 from layout.swizzle import Swizzle
 from layout.tile_io import (
     copy_dram_to_local,
@@ -75,9 +75,11 @@ comptime _V_COLS = 16
 comptime _V_WIDTH = 4
 
 
-def dram_to_sram_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def dram_to_sram_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through shared memory using the free-function wrappers.
     """
@@ -94,9 +96,11 @@ def dram_to_sram_to_dram_kernel(
     copy_sram_to_dram[thread_layout](dst, smem)
 
 
-def dram_to_local_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def dram_to_local_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through registers using the free-function wrappers.
 
@@ -114,9 +118,11 @@ def dram_to_local_to_dram_kernel(
     copy_local_to_dram[thread_layout](dst, local)
 
 
-def sram_local_sram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def sram_local_sram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip a tile through shared -> local -> shared -> generic.
 
@@ -146,9 +152,11 @@ def sram_local_sram_kernel(
     copy_sram_to_dram[thread_layout](dst, smem_out)
 
 
-def swizzled_local_to_shared_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_local_to_shared_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Swizzled roundtrip via the wrappers: GENERIC -> LOCAL -> SHARED
     (swizzled) -> GENERIC (swizzled).
@@ -175,9 +183,11 @@ def swizzled_local_to_shared_kernel(
     copy_sram_to_dram[thread_layout, swizzle=swizzle](dst, smem)
 
 
-def swizzled_vectorized_sram_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_vectorized_sram_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """SHARED (swizzled) -> GENERIC with vectorized tiles.
 
@@ -194,16 +204,18 @@ def swizzled_vectorized_sram_to_dram_kernel(
 
     if thread_idx.x == 0:
         for i in range(_V_ROWS * _V_COLS):
-            smem.ptr[swizzle(i)] = src_ptr[i]
+            smem.reshape[_V_ROWS * _V_COLS]()[swizzle(i)] = src_ptr[i]
     barrier()
     copy_sram_to_dram[thread_layout, swizzle=swizzle](
         dst.vectorize[1, _V_WIDTH](), smem.vectorize[1, _V_WIDTH]()
     )
 
 
-def swizzled_vectorized_local_to_shared_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def swizzled_vectorized_local_to_shared_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """LOCAL -> SHARED (swizzled) with vectorized tiles.
 
@@ -224,14 +236,15 @@ def swizzled_vectorized_local_to_shared_kernel(
     )
 
     if thread_idx.x == 0:
-        for i in range(_V_ROWS * _V_COLS):
-            smem.ptr[i] = -1.0
+        for row in range(_V_ROWS):
+            for col in range(_V_COLS):
+                smem[row, col] = -1.0
     barrier()
 
-    var row = Int(thread_idx.x) // threads_per_row
-    var col = (Int(thread_idx.x) % threads_per_row) * _V_WIDTH
+    var row = thread_idx.x // threads_per_row
+    var col = (thread_idx.x % threads_per_row) * _V_WIDTH
     for j in range(_V_WIDTH):
-        local.ptr[j] = src_ptr[row * _V_COLS + col + j]
+        local[0, j] = src_ptr[row * _V_COLS + col + j]
     copy_local_to_shared[thread_layout, swizzle=swizzle](
         smem.vectorize[1, _V_WIDTH](), local.vectorize[1, _V_WIDTH]()
     )
@@ -239,12 +252,14 @@ def swizzled_vectorized_local_to_shared_kernel(
 
     if thread_idx.x == 0:
         for i in range(_V_ROWS * _V_COLS):
-            dst_ptr[i] = smem.ptr[swizzle(i)]
+            dst_ptr[i] = smem.reshape[_V_ROWS * _V_COLS]()[swizzle(i)]
 
 
-def async_dram_to_sram_to_dram_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_dram_to_sram_to_dram_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Roundtrip through shared memory using `copy_dram_to_sram_async` for the
     DRAM->SMEM leg.
@@ -269,9 +284,9 @@ def async_dram_to_sram_to_dram_kernel(
 
 
 def _run_roundtrip[
-    kernel_fn: def(
-        MutPointer[Float32, MutAnyOrigin],
-        MutPointer[Float32, MutAnyOrigin],
+    kernel_fn: def[src_origin: MutOrigin, dst_origin: MutOrigin](
+        MutPointer[Float32, src_origin],
+        MutPointer[Float32, dst_origin],
     ) thin -> None,
     num_elements: Int = _NUM_ELEMENTS,
     block_dim: Int = _BLOCK_DIM,
@@ -291,7 +306,7 @@ def _run_roundtrip[
     ctx.enqueue_copy(src_dev, src_host)
     ctx.enqueue_copy(dst_dev, dst_host)
 
-    ctx.enqueue_function[kernel_fn](
+    ctx.enqueue_function[kernel_fn[origin_of(src_dev), origin_of(dst_dev)]](
         src_dev, dst_dev, grid_dim=(1), block_dim=(block_dim)
     )
 
@@ -350,17 +365,19 @@ def test_async_dram_to_sram_to_dram(ctx: DeviceContext) raises:
 
 def _bounded_local_to_dram_kernel[
     ROWS: Int,
+    dst_origin: MutOrigin,
+    after_origin: MutOrigin,
     NUM_THREADS: Int = 32,
     SCOPE: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
-    after_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, dst_origin],
+    after_ptr: MutPointer[Float32, after_origin],
     valid0: Int32,
     valid1: Int32,
     row_stride: Int32,
 ):
     comptime thread_layout = row_major[8, 4]()
-    var worker = Int(thread_idx.x)
+    var worker = thread_idx.x
     var warp = worker // 32
     var lane = worker % 32
     var owner = stack_allocation[.float32, address_space=.LOCAL, alignment=16](
@@ -370,14 +387,12 @@ def _bounded_local_to_dram_kernel[
     owner[ROWS + 1] = Float32(-7001)
     comptime for i in range(ROWS):
         owner[i + 1] = Float32(warp * 100000 + lane * 1000 + i)
-    var local = TileTensor[address_space=.LOCAL](
-        owner.ptr + 1, row_major[ROWS // 4, 4]()
-    )
-    var layout = TileLayout(
-        Coord(Idx[ROWS], Idx[32]), Coord(row_stride, Idx[1])
-    )
+    var local = owner.slice[1 : ROWS + 1]().reshape(row_major[ROWS // 4, 4]())
+    var layout = Layout(Coord(Idx[ROWS], Idx[32]), Coord(row_stride, Idx[1]))
     var offset = 9 + (warp * (ROWS + 4) + 2) * Int(row_stride) + 32
-    var dst = TileTensor[linear_idx_type=.int32](dst_ptr + offset, layout)
+    var dst = TileTensor[linear_idx_type=.int32](
+        dst_ptr.unsafe_offset(offset), layout
+    )
     var valid_rows = Int(valid0 if warp == 0 else valid1)
     copy_local_to_dram[
         thread_layout, num_threads=NUM_THREADS, thread_scope=SCOPE
@@ -415,14 +430,20 @@ def _check_bounded_local_to_dram[
         host[i] = Float32(-9999)
     for i in range(64 * (ROWS + 2)):
         after_host[i] = Float32(-9999)
-    assert_equal(Int(device.unsafe_ptr() + prefix) % 4, 0)
+    assert_equal(Int(device.unsafe_ptr().unsafe_offset(prefix)) % 4, 0)
     for tile in range(2):
         var offset = prefix + (tile * (ROWS + 4) + 2) * stride + 32
-        assert_equal(Int(device.unsafe_ptr() + offset) % 8, 4)
+        assert_equal(Int(device.unsafe_ptr().unsafe_offset(offset)) % 8, 4)
     ctx.enqueue_copy(device, host)
     ctx.enqueue_copy(after_device, after_host)
     ctx.enqueue_function[
-        _bounded_local_to_dram_kernel[ROWS, NUM_THREADS, SCOPE]
+        _bounded_local_to_dram_kernel[
+            ROWS,
+            NUM_THREADS=NUM_THREADS,
+            SCOPE=SCOPE,
+            dst_origin=origin_of(device),
+            after_origin=origin_of(after_device),
+        ]
     ](
         device,
         after_device,
@@ -506,5 +527,5 @@ def main() raises:
         test_swizzled_vectorized_sram_to_dram(ctx)
         test_swizzled_vectorized_local_to_shared(ctx)
         test_async_dram_to_sram_to_dram(ctx)
-        comptime if WARP_SIZE == 32:
+        comptime if ctx.default_device_info.warp_size == 32:
             test_bounded_local_to_dram(ctx)

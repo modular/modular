@@ -89,8 +89,11 @@ class _CastFamily(gc_compile.GCFamilySpec):
     name = "cast"
 
     def build_module(self) -> Module:
-        """Builds every (device, src, dst) graph across CPU + all accelerators
-        into one module, shared by the warm producer and the batched sweep."""
+        """Builds every (device, src, dst) cast graph into one module.
+
+        Covers CPU and all accelerators. Shared by the warm producer and the
+        batched sweep.
+        """
         module = Module()
         for device in self.sweep_devices():
             self.build_module_for_device(device, module)
@@ -99,9 +102,10 @@ class _CastFamily(gc_compile.GCFamilySpec):
     def build_module_for_device(
         self, device: Device, module: Module | None = None
     ) -> Module:
-        """Builds every (src, dst) graph for one device slot. Per-slot so the
-        warm is device-count-independent: a k-GPU consumer adopts slots
-        ``0..k-1``.
+        """Builds every (src, dst) cast graph for one device slot.
+
+        Per-slot so the warm is device-count-independent: a k-GPU consumer
+        adopts slots ``0..k-1``.
         """
         if module is None:
             module = Module()

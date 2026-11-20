@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # Tests indirect calls through both plain Mojo and abi("C") function pointers
-# using the same struct type, verifying that CallIndirectOpConversion applies
+# using the same struct type, verifying that ConvertKGENCallIndirect applies
 # the right calling convention in each case.
 #
 # FloatPair ({float, float}, 8 bytes) is SSE-classified on x86-64 SysV
@@ -20,7 +20,7 @@
 # any mixing of the two paths.
 #
 # Four functions (two Mojo-ABI, two abi("C")) are called indirectly through
-# matching pointer types to exercise both branches of CallIndirectOpConversion.
+# matching pointer types to exercise both branches of ConvertKGENCallIndirect.
 #
 # RUN: %mojo %s | FileCheck %s
 

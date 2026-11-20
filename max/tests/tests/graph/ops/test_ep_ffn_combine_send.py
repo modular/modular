@@ -23,8 +23,10 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.comm.ep import EPBatchManager, EPConfig, ep_kernels
-from max.nn.moe import MoEQuantized
+from max.nn._graph_ops import ep as ep_kernels
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.moe import MoEQuantized
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

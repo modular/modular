@@ -84,55 +84,14 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SessionMessage,
 )
 from PIL import Image
+from tests.benchmark.benchmark_fakes import FakeTokenizer, fake_loader
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
-class _FakeTokenizer:
-    """Picklable stand-in for `PreTrainedTokenizerBase` used by unit tests.
-
-    `_fake_loader` constructs one per spawn worker; the parent uses an
-    instance of this class directly. Behavior is deterministic so tests
-    can assert on outputs (no Mock call-count plumbing).
-    """
-
-    name_or_path = "_fake_"
-    vocab_size = 1000
-    unk_token_id = None
-    all_special_ids: frozenset[int] = frozenset({0, 1, 2})
-
-    def __init__(self, model_max_length: int = 4096) -> None:
-        self.model_max_length = model_max_length
-
-    def encode(
-        self, text: str, add_special_tokens: bool = False, **_: object
-    ) -> list[int]:
-        # Length-aware so multiturn-fit tests that scale messages to a
-        # target token count round-trip through encode→decode→encode and
-        # see a meaningful encoded length.
-        return list(range(max(4, len(text))))
-
-    def decode(
-        self, ids: list[int], skip_special_tokens: bool = False, **_: object
-    ) -> str:
-        return "Z" * len(ids)
-
-    def convert_tokens_to_ids(self, token: str) -> int:
-        return 223
-
-
-def _fake_loader(
-    name_or_path: str,
-    model_max_length: int | None,
-    trust_remote_code: bool,
-    revision: str | None,
-) -> _FakeTokenizer:
-    return _FakeTokenizer(model_max_length=model_max_length or 4096)
-
-
-class _RoundTripTokenizer(_FakeTokenizer):
+class _RoundTripTokenizer(FakeTokenizer):
     """Fake tokenizer whose decode(encode(x)) == x.
 
-    `_FakeTokenizer.decode` returns filler, which hides which pool a body came
+    `FakeTokenizer.decode` returns filler, which hides which pool a body came
     from.
     """
 
@@ -161,7 +120,7 @@ def _raising_loader(
     model_max_length: int | None,
     trust_remote_code: bool,
     revision: str | None,
-) -> _FakeTokenizer:
+) -> FakeTokenizer:
     raise OSError("simulated Hub-offline tokenizer load failure")
 
 
@@ -200,11 +159,11 @@ def test_tokenizer_pool_progress_keeps_input_order(
 ) -> None:
     """Results stay in input order across many chunks, and the labelled
     progress bar goes to stderr unless `disable_tqdm` is set."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     texts = ["x" * (4 + i % 97) for i in range(1000)]
 
     with TokenizerPool(
-        tok, loader=_fake_loader, disable_tqdm=disable_tqdm
+        tok, loader=fake_loader, disable_tqdm=disable_tqdm
     ) as pool:
         lens = pool.encode_lens(texts, desc="test-progress")
 
@@ -359,12 +318,21 @@ def test_benchmark_dataset_from_flags_nonexistent_path(
     mock_exists.assert_called_once_with("/nonexistent/path.json")
 
 
-def test_benchmark_dataset_from_flags_unknown_dataset() -> None:
+@pytest.mark.parametrize(
+    "dataset_name",
+    [
+        pytest.param("unknown_dataset", id="unknown_dataset"),
+        pytest.param("vision-arena-unknown", id="registered_name_prefix"),
+    ],
+)
+def test_benchmark_dataset_from_flags_unknown_dataset(
+    dataset_name: str,
+) -> None:
     """Test that unknown dataset names raise ValueError."""
     with pytest.raises(ValueError) as exc_info:
-        BenchmarkDataset.from_flags(dataset_name="unknown_dataset")
+        BenchmarkDataset.from_flags(dataset_name=dataset_name)
 
-    assert "Unknown dataset: unknown_dataset" in str(exc_info.value)
+    assert f"Unknown dataset: {dataset_name}" in str(exc_info.value)
     assert "Available datasets:" in str(exc_info.value)
 
 
@@ -375,14 +343,6 @@ def test_benchmark_dataset_get_dataset_class() -> None:
 
     dataset_class = BenchmarkDataset._get_dataset_class("code_debug")
     assert dataset_class == CodeDebugBenchmarkDataset
-
-
-def test_benchmark_dataset_get_dataset_class_unknown() -> None:
-    """Test _get_dataset_class with unknown dataset name."""
-    with pytest.raises(ValueError) as exc_info:
-        BenchmarkDataset._get_dataset_class("unknown_dataset")
-
-    assert "Unknown dataset: unknown_dataset" in str(exc_info.value)
 
 
 @patch("os.path.exists")
@@ -425,58 +385,34 @@ def test_benchmark_dataset_repr(mock_exists: Mock) -> None:
     assert "has_multiturn_chat_support=True" in repr_str
 
 
-@patch("os.path.exists")
-@patch(
-    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
+@pytest.mark.parametrize(
+    ("dataset_name", "repo_id", "filename"),
+    [
+        ("code_debug", "xinrongzhang2022/InfiniteBench", "code_debug.jsonl"),
+        (
+            "sharegpt",
+            "anon8231489123/ShareGPT_Vicuna_unfiltered",
+            "ShareGPT_V3_unfiltered_cleaned_split.json",
+        ),
+    ],
 )
-def test_code_debug_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
-    """Test fetching code_debug dataset from HuggingFace Hub."""
-    mock_download.return_value = "/path/to/downloaded/file.jsonl"
-    mock_exists.return_value = True  # Mock downloaded file exists
+def test_huggingface_dataset_from_flags_downloads(
+    dataset_name: str, repo_id: str, filename: str
+) -> None:
+    """from_flags fetches a Hugging Face dataset's file from the Hub."""
+    with (
+        patch("os.path.exists", return_value=True),
+        patch(
+            "max.benchmark.benchmark_shared.datasets."
+            f"{dataset_name}.hf_hub_download_with_retry",
+            return_value="/path/to/downloaded/file",
+        ) as mock_download,
+    ):
+        dataset = BenchmarkDataset.from_flags(dataset_name=dataset_name)
 
-    dataset = BenchmarkDataset.from_flags(dataset_name="code_debug")
-
-    assert dataset.dataset_path == "/path/to/downloaded/file.jsonl"
+    assert dataset.dataset_path == "/path/to/downloaded/file"
     mock_download.assert_called_once_with(
-        repo_id="xinrongzhang2022/InfiniteBench",
-        filename="code_debug.jsonl",
-        repo_type="dataset",
-    )
-
-
-@patch(
-    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
-)
-def test_code_debug_from_flags_unknown(mock_download: Mock) -> None:
-    """Test fetching unknown dataset raises ValueError."""
-    mock_download.return_value = "/tmp/fake_code_debug.jsonl"
-    dataset = BenchmarkDataset.from_flags(dataset_name="code_debug")
-    # CodeDebugBenchmarkDataset now inherits from HuggingFaceBenchmarkDataset
-    # and will fetch from HF by default, so we test the fetch method directly
-    with patch.object(CodeDebugBenchmarkDataset, "fetch") as mock_fetch:
-        mock_fetch.side_effect = ValueError(
-            "Unknown dataset for CodeDebugBenchmarkDataset: unknown_dataset"
-        )
-        with pytest.raises(ValueError, match="Unknown dataset"):
-            dataset.fetch()
-
-
-@patch("os.path.exists")
-@patch(
-    "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
-)
-def test_sharegpt_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
-    """Test fetching ShareGPT dataset from HuggingFace Hub."""
-    mock_download.return_value = "/path/to/downloaded/file.json"
-    mock_exists.return_value = True  # Mock downloaded file exists
-
-    dataset = BenchmarkDataset.from_flags(dataset_name="sharegpt")
-
-    assert dataset.dataset_path == "/path/to/downloaded/file.json"
-    mock_download.assert_called_once_with(
-        repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-        filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-        repo_type="dataset",
+        repo_id=repo_id, filename=filename, repo_type="dataset"
     )
 
 
@@ -491,11 +427,11 @@ def test_random_from_flags() -> None:
 
 def test_random_sample_requests() -> None:
     """Test sampling random requests."""
-    tok = _FakeTokenizer(model_max_length=50)
+    tok = FakeTokenizer(model_max_length=50)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=2,
             tokenizer=tok,
@@ -514,11 +450,11 @@ def test_random_sample_requests() -> None:
 def test_random_sample_requests_with_images() -> None:
     """--random-image-count/--random-image-size still work after the
     _generate_random_image extraction into image_augmentation.py."""
-    tok = _FakeTokenizer(model_max_length=200)
+    tok = FakeTokenizer(model_max_length=200)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=3,
             tokenizer=tok,
@@ -543,11 +479,11 @@ def test_random_sample_requests_with_images() -> None:
 
 def test_shared_contexts_empty_when_no_sys_prompt() -> None:
     """shared_contexts is empty when sys_prompt_ratio is 0."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=5,
             tokenizer=tok,
@@ -563,11 +499,11 @@ def test_shared_contexts_empty_when_no_sys_prompt() -> None:
 
 def test_shared_contexts_one_entry_per_unique_idx() -> None:
     """shared_contexts has exactly one SharedContext per unique sys_prompt_idx."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=10,
             tokenizer=tok,
@@ -584,12 +520,12 @@ def test_shared_contexts_one_entry_per_unique_idx() -> None:
 
 def test_shared_contexts_at_most_max_unique() -> None:
     """shared_contexts has at most max_num_unique_sys_prompt entries."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
     max_unique = 3
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=30,
             tokenizer=tok,
@@ -606,87 +542,52 @@ def test_shared_contexts_at_most_max_unique() -> None:
         assert entry.num_tokens > 0
 
 
-@patch("os.path.exists")
-def test_sonnet_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that SonnetBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="sonnet", dataset_path="/path/to/sonnet.txt"
-    )
-
-    assert isinstance(dataset, SonnetBenchmarkDataset)
-    assert dataset.dataset_name == "sonnet"
-    assert dataset.dataset_path == "/path/to/sonnet.txt"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_vision_arena_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that VisionArenaBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="vision-arena", dataset_path="/path/to/vision_arena.json"
-    )
-
-    assert isinstance(dataset, VisionArenaBenchmarkDataset)
-    assert dataset.dataset_name == "vision-arena"
-    assert dataset.dataset_path == "/path/to/vision_arena.json"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_axolotl_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that AxolotlBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="axolotl", dataset_path="/path/to/axolotl.json"
-    )
-
-    assert isinstance(dataset, AxolotlBenchmarkDataset)
-    assert dataset.dataset_name == "axolotl"
-    assert dataset.dataset_path == "/path/to/axolotl.json"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_arxiv_summarization_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that ArxivSummarizationBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="arxiv-summarization", dataset_path="/path/to/arxiv.json"
-    )
-
-    assert isinstance(dataset, ArxivSummarizationBenchmarkDataset)
-    assert dataset.dataset_name == "arxiv-summarization"
-    assert dataset.dataset_path == "/path/to/arxiv.json"
-    assert dataset.dataset_mode == "local"
-
-
-def test_vision_arena_from_flags_unknown() -> None:
-    """Test fetching unknown dataset raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown dataset"):
-        BenchmarkDataset.from_flags(dataset_name="vision-arena-unknown")
-
-
-@patch("os.path.exists")
-def test_obfuscated_conversations_from_flags_local_mode(
-    mock_exists: Mock,
+@pytest.mark.parametrize(
+    ("dataset_name", "dataset_path", "dataset_class"),
+    [
+        pytest.param(
+            "sonnet", "/path/to/sonnet.txt", SonnetBenchmarkDataset, id="sonnet"
+        ),
+        pytest.param(
+            "vision-arena",
+            "/path/to/vision_arena.json",
+            VisionArenaBenchmarkDataset,
+            id="vision_arena",
+        ),
+        pytest.param(
+            "axolotl",
+            "/path/to/axolotl.json",
+            AxolotlBenchmarkDataset,
+            id="axolotl",
+        ),
+        pytest.param(
+            "arxiv-summarization",
+            "/path/to/arxiv.json",
+            ArxivSummarizationBenchmarkDataset,
+            id="arxiv_summarization",
+        ),
+        pytest.param(
+            "obfuscated-conversations",
+            "/path/to/obfuscated.jsonl",
+            ObfuscatedConversationsBenchmarkDataset,
+            id="obfuscated_conversations",
+        ),
+    ],
+)
+def test_from_flags_with_dataset_path_is_local_mode(
+    dataset_name: str,
+    dataset_path: str,
+    dataset_class: type[LocalBenchmarkDataset],
 ) -> None:
-    """Test that ObfuscatedConversationsBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
+    """from_flags builds a local-mode dataset from an explicit path."""
+    with patch("os.path.exists", return_value=True):
+        dataset = BenchmarkDataset.from_flags(
+            dataset_name=dataset_name, dataset_path=dataset_path
+        )
 
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="obfuscated-conversations",
-        dataset_path="/path/to/obfuscated.jsonl",
-    )
-
-    assert isinstance(dataset, ObfuscatedConversationsBenchmarkDataset)
-    assert dataset.dataset_name == "obfuscated-conversations"
-    assert dataset.dataset_path == "/path/to/obfuscated.jsonl"
+    assert isinstance(dataset, dataset_class)
+    assert dataset.dataset_name == dataset_name
+    assert dataset.dataset_path == dataset_path
     assert dataset.dataset_mode == "local"
 
 
@@ -834,45 +735,6 @@ def test_local_datasets_require_dataset_path() -> None:
     sonnet_dataset.fetch()
     assert sonnet_dataset.dataset_path is not None
     assert "sonnet_4x.txt" in sonnet_dataset.dataset_path
-
-
-def test_huggingface_datasets_fetch_behavior() -> None:
-    """Test that HuggingFace datasets fetch from HF when used directly."""
-    # Test CodeDebugBenchmarkDataset
-    with patch(
-        "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
-    ) as mock_download:
-        mock_download.return_value = "/path/to/downloaded/file.jsonl"
-
-        code_debug_dataset = CodeDebugBenchmarkDataset()
-        code_debug_dataset.dataset_name = "code_debug"
-        code_debug_dataset.fetch()
-
-        assert (
-            code_debug_dataset.dataset_path == "/path/to/downloaded/file.jsonl"
-        )
-        mock_download.assert_called_once_with(
-            repo_id="xinrongzhang2022/InfiniteBench",
-            filename="code_debug.jsonl",
-            repo_type="dataset",
-        )
-
-    # Test ShareGPTBenchmarkDataset
-    with patch(
-        "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
-    ) as mock_download:
-        mock_download.return_value = "/path/to/downloaded/file.json"
-
-        sharegpt_dataset = ShareGPTBenchmarkDataset()
-        sharegpt_dataset.dataset_name = "sharegpt"
-        sharegpt_dataset.fetch()
-
-        assert sharegpt_dataset.dataset_path == "/path/to/downloaded/file.json"
-        mock_download.assert_called_once_with(
-            repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-            filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-            repo_type="dataset",
-        )
 
 
 def test_local_datasets_with_default_files() -> None:
@@ -1043,10 +905,10 @@ def test_synthetic_pixel_dataset_sample_requests_for_image_to_video() -> None:
 def test_random_multiturn_emits_zero_prefix_turns() -> None:
     """gen_multiturn_random_requests always emits prefix_turns=0; the runner
     owns warmup prefix-turn assignment via _pick_warmup_population."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.gen_multiturn_random_requests(
             input_len=32,
             output_len=16,
@@ -1067,19 +929,21 @@ def test_resolve_constant_delay_ms() -> None:
     assert resolve_constant_delay_ms("0") == 0.0
 
 
+@pytest.mark.parametrize("max_output_len", [None, 12])
 @patch.object(InstructCoderBenchmarkDataset, "_load_pairs")
 def test_instruct_coder_multiturn_fit_distributions(
     mock_load_pairs: Mock,
+    max_output_len: int | None,
 ) -> None:
     """``fit_length_distributions`` honors turn count, lengths, and delay."""
     body = "hello world " * 80
     mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
 
-    tok = _FakeTokenizer(model_max_length=50_000)
+    tok = FakeTokenizer(model_max_length=50_000)
     dataset = InstructCoderBenchmarkDataset()
     dataset.dataset_path = "/tmp/instruct_coder_mock.json"
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.gen_multiturn_sessions(
             num_sessions=4,
             tokenizer=tok,
@@ -1089,6 +953,7 @@ def test_instruct_coder_multiturn_fit_distributions(
             num_turns="DU(3,3)",
             input_len="80",
             output_len="20",
+            max_output_len=max_output_len,
             delay_between_turns_dist="100",
             sys_prompt_ratio=0.0,
         )
@@ -1098,7 +963,7 @@ def test_instruct_coder_multiturn_fit_distributions(
         assert len(session.messages) == 6
         for assistant in session.messages[1::2]:
             assert assistant.source == "assistant"
-            assert assistant.num_tokens == 20
+            assert assistant.num_tokens == (max_output_len or 20)
         # Each reply carries the delay before the turn that follows it; the
         # last reply has no such turn.
         assert [m.delay_until_next_message for m in session.messages[1::2]] == [
@@ -1121,11 +986,11 @@ def test_instruct_coder_multiturn_compatible_with_image_augmentation(
     body = "hello world " * 80
     mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
 
-    tok = _FakeTokenizer(model_max_length=50_000)
+    tok = FakeTokenizer(model_max_length=50_000)
     dataset = InstructCoderBenchmarkDataset()
     dataset.dataset_path = "/tmp/instruct_coder_mock.json"
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.gen_multiturn_sessions(
             num_sessions=4,
             tokenizer=tok,
@@ -1187,7 +1052,7 @@ def test_chat_judge_gen_chat_sessions_sets_per_turn_delay(
 
     samples = dataset.gen_chat_sessions(
         num_sessions=1,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         shuffle=False,
         delay_between_turns_dist="100",
     )
@@ -1216,7 +1081,7 @@ def test_chat_judge_gen_chat_sessions_no_delay_by_default(
 
     samples = dataset.gen_chat_sessions(
         num_sessions=1,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         shuffle=False,
     )
 
@@ -1226,12 +1091,12 @@ def test_chat_judge_gen_chat_sessions_no_delay_by_default(
 
 def test_every_user_body_is_marked_distinct() -> None:
     """Every body carries its own ``[N] `` marker, wrap or no wrap."""
-    tok = _FakeTokenizer(model_max_length=50_000)
+    tok = FakeTokenizer(model_max_length=50_000)
     pool_texts = ["alpha body text", "beta body text", "gamma body text"]
     num_sessions = 5
     turns_per_session = 2  # 10 total turns, pool only has 3 -> wraps
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = build_fitted_chat_samples(
             pool=pool,
             user_text_pool=pool_texts,
@@ -1277,8 +1142,8 @@ def test_a_truncated_session_still_ends_without_a_delay() -> None:
     Truncation cuts the plan short, so the emitted last reply is not the
     planned last one.
     """
-    tok = _FakeTokenizer(model_max_length=200)
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    tok = FakeTokenizer(model_max_length=200)
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = build_fitted_chat_samples(
             pool=pool,
             user_text_pool=["alpha body text", "beta body text"],
@@ -1305,7 +1170,7 @@ def test_truncated_sessions_logged_once_in_aggregate(
     per truncated session."""
     # model_max_length is small enough that a second turn always overflows the
     # 0.95 * max_context budget, so every session is truncated after turn 0.
-    tok = _FakeTokenizer(model_max_length=200)
+    tok = FakeTokenizer(model_max_length=200)
     pool_texts = ["alpha body text", "beta body text", "gamma body text"]
     num_sessions = 5
 
@@ -1313,7 +1178,7 @@ def test_truncated_sessions_logged_once_in_aggregate(
         "max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit"
     )
     with caplog.at_level(logging.INFO, logger=module):
-        with TokenizerPool(tok, loader=_fake_loader) as pool:
+        with TokenizerPool(tok, loader=fake_loader) as pool:
             samples = build_fitted_chat_samples(
                 pool=pool,
                 user_text_pool=pool_texts,
@@ -1731,7 +1596,7 @@ def test_aa_requires_input_len() -> None:
     """input_len is mandatory."""
     dataset = _make_aa_dataset(["word " * 100])
     with pytest.raises(ValueError, match="input_len is required"):
-        dataset.sample_requests(num_requests=1, tokenizer=_FakeTokenizer())
+        dataset.sample_requests(num_requests=1, tokenizer=FakeTokenizer())
 
 
 def test_aa_sizes_prompts_to_budget_and_rotates_tasks() -> None:
@@ -1745,7 +1610,7 @@ def test_aa_sizes_prompts_to_budget_and_rotates_tasks() -> None:
 
     samples = dataset.sample_requests(
         num_requests=4,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         output_lengths=[1000, 1500, 2000, 1000],
         input_len=input_len,
     )
@@ -1773,7 +1638,7 @@ def test_aa_without_output_lengths_leaves_eos_enabled() -> None:
 
     samples = dataset.sample_requests(
         num_requests=2,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         input_len=2000,
     )
 
@@ -1789,7 +1654,7 @@ def test_aa_sampled_output_len_caps_with_eos_enabled() -> None:
 
     samples = dataset.sample_requests(
         num_requests=2,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         input_len=2000,
         output_len=50,  # constant distribution -> deterministic cap
     )
@@ -1834,9 +1699,9 @@ def _has_system_block(content: str) -> bool:
 
 def test_system_prefix_lands_on_the_first_turn_only() -> None:
     """A session resends its history, so a later system block is a duplicate."""
-    tok = _FakeTokenizer(model_max_length=50_000)
+    tok = FakeTokenizer(model_max_length=50_000)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = build_fitted_chat_samples(
             pool=pool,
             user_text_pool=[f"body-{i} " * 40 for i in range(20)],
@@ -2173,3 +2038,33 @@ def test_session_message_images_can_be_populated() -> None:
         source="user", content="hi", num_tokens=1, images=[image]
     )
     assert message.images == [image]
+
+
+@pytest.mark.parametrize("max_output_len", [None, 64])
+def test_fitted_output_ceiling_precedes_context_budget(
+    max_output_len: int | None,
+) -> None:
+    tok = FakeTokenizer(model_max_length=1000)
+    with TokenizerPool(tok, loader=fake_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=["body " * 40],
+            num_sessions=1,
+            num_turns="3",
+            input_len="50",
+            output_len="2000",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0,
+            max_num_unique_sys_prompt=1,
+            max_output_len=max_output_len,
+        )
+    if max_output_len is None:
+        assert not samples.chat_sessions
+    else:
+        assert len(samples.chat_sessions) == 1
+        outputs = [
+            message.num_tokens
+            for message in samples.chat_sessions[0].messages
+            if message.source == "assistant"
+        ]
+        assert outputs == [64, 64, 64]

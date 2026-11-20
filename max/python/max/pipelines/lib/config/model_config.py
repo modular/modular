@@ -76,11 +76,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("max.pipelines")
 
-# Encodings that can be casted to/from each other.
-# We currently only support float32 <-> bfloat16 weight type casting.
+# Encodings whose weights can be cast to one another at load time.
 _ALLOWED_CAST_ENCODINGS = {
     "float32",
     "bfloat16",
+    "float16",
 }
 
 
@@ -215,7 +215,7 @@ def _resolve_dtype_cast(
     ):
         raise ValueError(
             f"Cannot cast from '{from_encoding}' to '{to_encoding}' on device '{default_device_spec}'. "
-            f"We only support float32 <-> bfloat16 weight type casting."
+            f"We only support weight casts between float32, bfloat16 and float16."
         )
 
     if not supported_encoding_supported_on(to_encoding, default_device_spec):
@@ -425,7 +425,7 @@ def _resolve_given_quantization_encoding(
     Pure counterpart of the old
     ``_validate_and_resolve_with_given_quantization_encoding``: when the
     requested encoding differs from what the weight files actually carry (and
-    both are float32/bfloat16), it records a load-time cast and returns the
+    both are castable floats), it records a load-time cast and returns the
     file's encoding. Read-only -- does not mutate *config*.
 
     Returns:
@@ -460,8 +460,12 @@ def _resolve_given_quantization_encoding(
         return encoding, None, None
 
     # No weight_path: if the repo carries a single castable encoding whose
-    # files exist, record a cast from it to the requested encoding.
-    for from_encoding in config.huggingface_weight_repo.supported_encodings:
+    # files exist, record a cast from it to the requested encoding. Files in
+    # the requested encoding win over a cast.
+    supported_encodings = config.huggingface_weight_repo.supported_encodings
+    if encoding in supported_encodings:
+        return encoding, None, None
+    for from_encoding in supported_encodings:
         if not (
             from_encoding in _ALLOWED_CAST_ENCODINGS
             and encoding in _ALLOWED_CAST_ENCODINGS
@@ -493,7 +497,7 @@ def _select_encoding_and_dtype_cast(
 
     Arch-aware sibling of :func:`_infer_quantization_encoding`: the consumer
     calls this with the architecture's ``default_encoding`` to obtain the
-    effective ``quantization_encoding`` plus any float32<->bfloat16 load-time
+    effective ``quantization_encoding`` plus any float-to-float load-time
     cast. Read-only -- does not mutate *config*.
 
     Prefer :func:`_select_quantization_encoding` (encoding only) or
@@ -537,17 +541,28 @@ def _select_encoding_and_dtype_cast(
     return encoding, cast_from, cast_to
 
 
-def _select_quantization_encoding(
+def select_quantization_encoding(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding,
 ) -> SupportedEncoding:
     """Resolves the encoding a model will run with, against its architecture.
 
-    The consumer (an ``ArchConfig``) calls this with the architecture's
-    ``default_encoding`` to obtain the effective ``quantization_encoding``.
-    Read-only -- does not mutate *config*.
+    An ``ArchConfig`` calls this with its architecture's ``default_encoding``
+    to get the effective ``quantization_encoding``. It doesn't change
+    ``config``.
+
+    Args:
+        config: The model's config.
+        default_encoding: The encoding to use when neither ``config`` nor
+            the checkpoint names one.
+
+    Returns:
+        The encoding the model runs with.
     """
     return _select_encoding_and_dtype_cast(config, default_encoding)[0]
+
+
+_select_quantization_encoding = select_quantization_encoding
 
 
 def _select_dtype_cast(
@@ -556,7 +571,7 @@ def _select_dtype_cast(
 ) -> tuple[SupportedEncoding | None, SupportedEncoding | None]:
     """Resolves the load-time weight dtype cast for a model, if any.
 
-    Returns ``(cast_from, cast_to)`` describing a float32<->bfloat16 cast
+    Returns ``(cast_from, cast_to)`` describing a float-to-float cast
     applied when loading weights against the resolved encoding, or
     ``(None, None)`` when no cast applies. Read-only -- does not mutate
     *config*.
@@ -743,6 +758,60 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """The degree of data parallelism for replicating the model."""
 
+    decode_context_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Decode context parallelism: the number of attention "
+            "tensor-parallel ranks that split each request's KV cache by "
+            "token position instead of replicating it. Must divide the "
+            "attention tensor-parallel degree; 1 disables it. Only an engine "
+            "serving the model's pipeline artifact honors it: MAX's own KV "
+            "cache manager doesn't split positions yet, so max serve and max "
+            "generate refuse it."
+        ),
+    )
+    """The decode context parallel degree within each attention replica."""
+
+    decode_context_parallel_interleave: int = Field(
+        default=1,
+        description=(
+            "Under decode context parallelism, the number of consecutive "
+            "token positions a rank owns before the next rank's turn: "
+            "position p lives on rank (p // interleave) % degree. 1 stripes "
+            "tokens; the KV page size stripes whole pages, which lets "
+            "disaggregated inference move pages between ranks unchanged. "
+            "Must divide the KV page size and needs a degree above 1. Honored "
+            "where decode_context_parallel_degree is."
+        ),
+    )
+    """Consecutive positions a decode context parallel rank owns in turn."""
+
+    dcp_q_replicate: bool | None = Field(
+        default=None,
+        description=(
+            "Under decode context parallelism, whether every rank computes "
+            "all of its group's query heads from replicated query weights "
+            "(True) or absorbs its own tensor-parallel heads and all-gathers "
+            "them (False). None takes the default, True, for every "
+            "architecture. Set only by the gen-mef export, like "
+            "decode_context_parallel_degree."
+        ),
+    )
+    """Whether decode context parallel ranks replicate the query."""
+
+    prefill_context_parallel: bool | None = Field(
+        default=None,
+        description=(
+            "Under decode context parallelism, whether prefill steps split "
+            "their query rows over each DCP group's ranks (prefill context "
+            "parallelism) instead of running DCP's per-rank attention over "
+            "every row. Needs a replicated query. None takes the default, "
+            "off: PCP is opt-in. Honored where "
+            "decode_context_parallel_degree is."
+        ),
+    )
+    """Whether prefill steps run prefill context parallelism over DCP."""
+
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
     )
@@ -928,6 +997,24 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Override the attention sliding-window size in tokens."""
 
+    max_image_dimension: int = Field(
+        default=8192,
+        gt=0,
+        description=(
+            "Largest width or height, in pixels, accepted for a generated "
+            "image or video request. Larger requests are rejected as invalid."
+        ),
+    )
+
+    max_diffusion_steps: int = Field(
+        default=100,
+        gt=0,
+        description=(
+            "Largest denoising step count accepted for a generated image or "
+            "video request. Larger requests are rejected as invalid."
+        ),
+    )
+
     enable_echo: bool = Field(
         default=False,
         description="Whether the model should be built with echo capabilities.",
@@ -1095,11 +1182,14 @@ class MAXModelConfig(MAXModelConfigBase):
             self._generation_config = self._make_generation_config()
 
     def _has_loadable_hf_config(self) -> bool:
-        """Whether the model repo exposes a loadable HuggingFace config.
+        """Whether the model repo exposes a config this process can load.
 
         Mirrors :func:`load_huggingface_config`'s lookup (``config.json``, then
         the diffusers ``scheduler_config.json`` fallback) so eager loading is
-        skipped -- not raised -- for config-less components.
+        skipped -- not raised -- for config-less components. That lookup also
+        derives a config from a checkpoint's ``params.json``, which this does
+        not wait on: a repo that ships only ``params.json`` is loaded by the
+        lazy getter, on first access, exactly as before.
         """
         repo = self.huggingface_model_repo
         prefix = f"{repo.subfolder}/" if repo.subfolder is not None else ""
@@ -1176,10 +1266,15 @@ class MAXModelConfig(MAXModelConfigBase):
             vision_config_overrides=dict(args.vision_config_overrides),
             rope_type=args.rope_type,
             sliding_window=args.sliding_window,
+            max_image_dimension=args.max_image_dimension,
+            max_diffusion_steps=args.max_diffusion_steps,
             enable_echo=args.enable_echo,
             chat_template=args.chat_template,
             use_subgraphs=args.use_subgraphs,
             data_parallel_degree=args.data_parallel_degree,
+            decode_context_parallel_degree=args.decode_context_parallel_degree,
+            decode_context_parallel_interleave=args.decode_context_parallel_interleave,
+            prefill_context_parallel=args.prefill_context_parallel,
             pool_embeddings=args.pool_embeddings,
             max_length=args.max_length,
             kv_cache=args.kv_cache.model_copy(deep=True),
@@ -1804,6 +1899,7 @@ def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
     # For compound types (list, dict) the raw CLI string is JSON, so try
     # json.loads first; fall back to the raw string for plain scalars.
     field_info = MAXModelConfig.model_fields[field_name]
+    assert field_info.annotation is not None
     adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
     try:
         parsed_value = json.loads(raw_value)

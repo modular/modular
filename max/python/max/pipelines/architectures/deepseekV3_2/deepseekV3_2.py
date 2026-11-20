@@ -17,7 +17,8 @@ from __future__ import annotations
 import functools
 import os
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any, cast
 
 from max import tree
@@ -27,35 +28,38 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
+from max.graph import Module as GraphModule
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import ColumnParallelLinear
-from max.nn.moe import MoE
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
+from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import forward_sequential_layers
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs, forward_sequential_layers
+from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.tree import Tree
 
 from ..deepseekV3.deepseekV3 import (
@@ -85,10 +89,16 @@ def _validate_parallelism_config(config: DeepseekV3_2Config) -> None:
     Supported multi-GPU modes:
       - DP attention + EP MoE: ``data_parallel_degree == num_devices``
       - TP attention + EP MoE: ``data_parallel_degree == 1``
-    ``DeepseekV3_2Config.__post_init__`` already enforces
-    ``data_parallel_degree in (1, num_devices)``.
     """
     num_devices = len(config.devices)
+    # The pipeline sets the degree after `DeepseekV3_2Config.__post_init__`
+    # has checked it, so check it again here.
+    if config.data_parallel_degree not in (1, num_devices):
+        raise ValueError(
+            "data_parallel_degree for DeepseekV3.2"
+            f" ({config.data_parallel_degree}) must be 1 (TP attention) or the"
+            f" number of devices ({num_devices})."
+        )
     # Skip EP validation in virtual device mode (compilation-only) since EP
     # will be disabled later due to NVSHMEM linking requirements
     if (
@@ -302,8 +312,7 @@ class DeepseekV3_2DecoderLayer(Module):
     def _get_mlp(
         self, config: DeepseekV3_2Config, layer_idx: int
     ) -> DeepseekV3_2MLP | DeepseekV3_2MoE | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
@@ -419,6 +428,7 @@ class DeepseekV3_2DecoderLayer(Module):
         # and this step's token.
         selection_lag: int = 0,
     ) -> list[TensorValue]:
+        """Runs one decoder layer over the hidden states."""
         # Dual-carry Pre-LN: attention uses ``xs_norm``; residuals use ``xs_raw``.
         apply_next = bool(next_input_gamma)
 
@@ -735,7 +745,8 @@ class DeepseekV3_2(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -916,4 +927,74 @@ class DeepseekV3_2(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, taken from the input tree."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph over the leaves of :meth:`input_tree`.
+
+        The leaves carry the config's KV cache parameters.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits off the
+        signal buffers and splits the KV cache into its MLA and indexer
+        collections. The EP inputs pass through as the trailing inputs.
+
+        Args:
+            *input_types: The graph's input types.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.config.devices)
+
+        def forward(
+            tokens: Value[Any],
+            row_offsets: Value[Any],
+            host_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            data_parallel_splits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> DecoderOutputs:
+            remaining = iter(variadic_args)
+            signal_buffers = [next(remaining).buffer for _ in range(n_devices)]
+            mla_kv_collections, indexer_kv_collections = (
+                self.config.kv_params.unflatten_basic_kv_tree(remaining)
+            )
+            batch_context_lengths = [
+                next(remaining).tensor for _ in range(n_devices)
+            ]
+            return self(
+                tokens.tensor,
+                signal_buffers,
+                mla_kv_collections,
+                indexer_kv_collections,
+                return_n_logits.tensor,
+                row_offsets.tensor,
+                host_row_offsets.tensor,
+                data_parallel_splits.tensor,
+                batch_context_lengths,
+                list(remaining),
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

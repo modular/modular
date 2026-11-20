@@ -10,8 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Model worker process: runs the GPU pipeline and serves it over ZMQ."""
+
 from __future__ import annotations
 
+import dataclasses
 import logging
 import multiprocessing
 import os
@@ -23,8 +27,7 @@ from contextlib import (
     AsyncExitStack,
     asynccontextmanager,
 )
-from multiprocessing.synchronize import Event
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import uvloop
 from max.driver import (
@@ -35,7 +38,7 @@ from max.driver import (
 )
 from max.driver.driver import load_device
 from max.dtype import DType
-from max.experimental.nn._compilation_timer import collect_compilation_stats
+from max.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import (
     DummyKVCache,
@@ -47,6 +50,7 @@ from max.pipelines.lib import (
     PipelineModel,
     PipelineRole,
     ProfilingConfig,
+    memory_ledger,
 )
 from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
@@ -64,16 +68,15 @@ from max.serve.pipelines.eplb_stats_rpc import (
 )
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.process_control import subprocess_manager
+from max.serve.process_control import Liveness, subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
-from max.serve.telemetry import common as telemetry
-from max.serve.telemetry.common import (
+from max.serve.telemetry import _log_context, _tracing
+from max.serve.telemetry._tracing import (
     configure_kernel_tracing,
-    configure_logging,
-    configure_metrics,
     configure_tracing,
 )
+from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.gc_utils import (
     _release_free_host_memory,
     freeze_gc_heap,
@@ -90,32 +93,39 @@ from max.serve.worker_interface.lora_request_processor import (
     LoRARequestProcessor,
 )
 
+# Annotation only: _configure_kernel_capture() imports the module lazily.
+if TYPE_CHECKING:
+    from max.serve.telemetry._kernel_capture import KernelCapture
+
 logger = logging.getLogger("max.serve")
 
 GiB = 1024 * 1024 * 1024
 
 
 def _configure_kernel_capture(
-    settings: Settings, pipeline_role: PipelineRole
-) -> bool:
-    """Returns whether requests may arm kernel captures in this worker,
-    loading the profiler plugin if they may."""
+    settings: Settings, pipeline_role: PipelineRole, profiling: ProfilingConfig
+) -> KernelCapture | None:
+    """Returns the scheduler's kernel capture when requests may arm one.
+
+    Also loads the profiler plugin if requests may.
+    """
     # Only load_scheduler's prefill_and_decode scheduler takes a capture, so
     # other roles skip the profiler plugin, though non-text pipelines in that
     # role still load it, harmlessly.
     if (
-        not telemetry._trace_level_header_enabled
+        not _tracing.trace_level_header_honored()
         or pipeline_role != "prefill_and_decode"
     ):
-        return False
+        return None
     # Lazy so default startup skips the capture module.
     from max.serve.telemetry._kernel_capture import (
+        KernelCapture,
         configure_kernel_capture,
-        kernel_capture_permitted,
     )
 
-    configure_kernel_capture(settings)
-    return kernel_capture_permitted()
+    return (
+        KernelCapture(profiling) if configure_kernel_capture(settings) else None
+    )
 
 
 def _configure_worker_tracing(
@@ -147,8 +157,8 @@ def _warn_raised_kernel_trace_limits(
     # the one role whose scheduler emits them. A capture implies tracing.
     batch_spans = kernel_capture or (
         pipeline_role == "prefill_and_decode"
-        and telemetry.batch_spans_enabled()
-        and telemetry._tracing_enabled()
+        and _tracing.batch_spans_enabled()
+        and _log_context.tracing_enabled()
     )
     if not batch_spans:
         return
@@ -193,14 +203,22 @@ def _warn_raised_kernel_trace_limits(
 
 @runtime_checkable
 class SupportsGraphCaptureWarmup(Protocol):
+    """A pipeline that can warm its graph capture up front."""
+
     max_batch_size: int
 
-    def warmup_graph_capture(self) -> None: ...
+    def warmup_graph_capture(self) -> None:
+        """Warms the graph capture before serving."""
+        ...
 
 
 @runtime_checkable
 class SupportsGraphSynthesisBuckets(Protocol):
-    def prepare_graph_synthesis_buckets(self) -> None: ...
+    """A pipeline that can prepare its graph synthesis buckets."""
+
+    def prepare_graph_synthesis_buckets(self) -> None:
+        """Prepares the graph synthesis buckets."""
+        ...
 
 
 def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
@@ -281,7 +299,6 @@ def get_reset_prefix_cache_backend(
         A reset backend and the KV cache manager when the pipeline uses a real
         paged or Jenga manager; ``(None, None)`` otherwise.
     """
-
     if hasattr(pipeline, "kv_manager"):
         kv_manager = pipeline.kv_manager
         if isinstance(
@@ -294,6 +311,7 @@ def get_reset_prefix_cache_backend(
 def get_pipeline_model(
     pipeline: Pipeline[Any, Any],
 ) -> PipelineModel[Any] | None:
+    """Returns the pipeline's model, when it exposes one."""
     return getattr(pipeline, "_pipeline_model", None)
 
 
@@ -334,7 +352,7 @@ class ModelWorker:
     @staticmethod
     @traced
     async def run(
-        alive: Event,
+        liveness: Liveness,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -354,11 +372,13 @@ class ModelWorker:
         and executes the main worker loop.
 
         Args:
-            pc: Process control for managing worker lifecycle
+            liveness: Liveness signal the worker marks ready and beats.
             model_factory: Factory function to create the model pipeline
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory function to create metric client
+            model_worker_interface: Worker-side interface that opens the
+                queues shared with the API process.
             zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
                 the API server process and this worker process.
             memory_plan: The memory plan the pipeline was sized against,
@@ -371,13 +391,16 @@ class ModelWorker:
         # Tracing first: configure_logging adds the dd.trace_id field only
         # when tracing is on.
         _configure_worker_tracing(settings, pipeline_config.profiling)
-        configure_logging(settings)
+        configure_logging(settings, sets_request_ids=False)
         configure_kernel_tracing(settings)
         pipeline_role = pipeline_config.runtime.pipeline_role
+        kernel_capture = _configure_kernel_capture(
+            settings, pipeline_role, pipeline_config.profiling
+        )
         _warn_raised_kernel_trace_limits(
             pipeline_config.profiling,
             pipeline_role,
-            _configure_kernel_capture(settings, pipeline_role),
+            kernel_capture is not None,
         )
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
@@ -481,6 +504,7 @@ class ModelWorker:
                     warmup_start_s = time.monotonic()
                     pipeline.warmup_graph_capture()
                     warmup_duration_s = time.monotonic() - warmup_start_s
+                    memory_ledger.check_capture(pipeline)
                     logger.info(
                         "Device graph capture warmup completed in %.2fs "
                         "(model=%s, max_batch_size=%d).",
@@ -547,6 +571,15 @@ class ModelWorker:
                 model_worker_interface.model_worker_queues()
             )
 
+            # The pipeline sized its KV cache once loaded, and may have
+            # lowered the max length and batch size the API process planned.
+            memory_plan = getattr(pipeline, "memory_plan", None) or memory_plan
+            if memory_plan is not None:
+                liveness.report_plan(
+                    memory_plan.planned_max_length,
+                    memory_plan.planned_max_batch_size,
+                )
+
             # Retrieve Scheduler.
             scheduler = load_scheduler(
                 pipeline,
@@ -554,6 +587,7 @@ class ModelWorker:
                 settings,
                 worker_queues,
                 memory_plan,
+                kernel_capture=kernel_capture,
             )
 
             # Get the reset prefix cache backend.
@@ -638,8 +672,9 @@ class ModelWorker:
             logger.debug("Started model worker!")
 
             count_no_progress = 0
+            liveness.set_ready()
             while True:
-                alive.set()
+                liveness.beat()
                 # Checks for new LoRA requests and processes them.
                 if lora_request_processor is not None:
                     lora_request_processor.process_lora_requests()
@@ -672,7 +707,7 @@ class ModelWorker:
     @staticmethod
     @traced
     def __call__(
-        alive: Event,
+        liveness: Liveness,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -693,18 +728,24 @@ class ModelWorker:
         requests and manages the lifecycle of the underlying model pipeline.
 
         Args:
-            pc: Process control for managing worker lifecycle
+            liveness: Liveness signal the worker marks ready and beats.
             model_factory: Factory for creating model pipeline instances
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory for creating metric client instances
+            model_worker_interface: Worker-side interface that opens the
+                queues shared with the API process.
             zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
                 the API server process and this worker process.
+            memory_plan: The memory plan the pipeline was sized against,
+                consumed by the scheduler config.
+            spawn_start_wall_ts: ``time.time()`` recorded in the parent just
+                before spawning this worker, used to log startup time.
         """
         try:
             uvloop.run(
                 ModelWorker.run(
-                    alive,
+                    liveness,
                     model_factory,
                     pipeline_config,
                     settings,
@@ -720,20 +761,22 @@ class ModelWorker:
 
 
 def _enable_driver_staging_for_worker(pipeline_config: PipelineConfig) -> None:
-    """Sets ``HSA_USERPTR_FOR_PAGED_MEM=0`` for the model worker when its KV
-    connector config asks for a driver-allocated host staging region.
+    """Sets ``HSA_USERPTR_FOR_PAGED_MEM=0`` for a driver-allocated staging region.
 
-    HIP latches this once, at its own first driver call, so it has to be in
-    the environment before the worker makes that call. Setting it inside the
-    worker itself would often be too late if something ahead of the KV
-    connector (such as a device probe) already touched HIP first.
+    Applies to the model worker when its KV connector config asks for a
+    driver-allocated host staging region.
 
-    The model worker is spawned as a fresh ``multiprocessing`` ``spawn``
-    process rather than a fork, so it inherits this (parent) process's
-    environment at its own startup and reads the variable from there at its
-    own, independent HIP init -- whether this process has already
-    initialized HIP for its own device probing (it has, by this point, via
-    ``scan_available_devices``) has no bearing on the worker's HIP state.
+    HIP latches this once, at its own first driver call, so it has to be in the
+    environment before the worker makes that call. Setting it inside the worker
+    itself would often be too late if something ahead of the KV connector (such
+    as a device probe) already touched HIP first.
+
+    The model worker is spawned as a fresh ``multiprocessing`` ``spawn`` process
+    rather than a fork, so it inherits this (parent) process's environment at its
+    own startup and reads the variable from there at its own, independent HIP
+    init -- whether this process has already initialized HIP for its own device
+    probing (it has, by this point, via ``scan_available_devices``) has no bearing
+    on the worker's HIP state.
     """
     try:
         kv_connector_config = pipeline_config.model.kv_cache.kv_connector_config
@@ -746,6 +789,38 @@ def _enable_driver_staging_for_worker(pipeline_config: PipelineConfig) -> None:
         and accelerator_api() == "hip"
     ):
         os.environ["HSA_USERPTR_FOR_PAGED_MEM"] = "0"
+
+
+def _served_plan(
+    memory_plan: MemoryPlan | None, liveness: Liveness
+) -> MemoryPlan | None:
+    """The plan with the bounds the worker reported it sized its cache for."""
+    if memory_plan is None:
+        return None
+    max_length, max_batch_size = liveness.reported_plan()
+    if max_length is None or max_batch_size is None:
+        return memory_plan
+    if (
+        max_length != memory_plan.planned_max_length
+        or max_batch_size != memory_plan.planned_max_batch_size
+    ):
+        logger.info(
+            "Model worker sized its KV cache for max_length=%d, "
+            "max_batch_size=%d",
+            max_length,
+            max_batch_size,
+        )
+    return dataclasses.replace(
+        memory_plan,
+        planned_max_length=max_length,
+        planned_max_batch_size=max_batch_size,
+        planned_max_batch_total_tokens=(
+            max_length
+            if memory_plan.planned_max_batch_total_tokens
+            == memory_plan.planned_max_length
+            else memory_plan.planned_max_batch_total_tokens
+        ),
+    )
 
 
 @asynccontextmanager
@@ -788,11 +863,11 @@ async def start_model_worker(
 
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:
-        alive = mp.Event()
+        liveness = Liveness(mp)
         spawn_start_wall_ts = time.time()
         proc.start(
             ModelWorker(),
-            alive,
+            liveness,
             model_factory,
             pipeline_config,
             settings,
@@ -804,11 +879,12 @@ async def start_model_worker(
         )
 
         logger.info("Waiting for model worker readiness")
-        await proc.ready(alive, timeout=settings.mw_timeout_s)
+        await proc.ready(liveness, timeout=settings.mw_timeout_s)
         logger.info("Model worker ready")
+        served_plan = _served_plan(memory_plan, liveness)
 
         if settings.use_heartbeat:
-            proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)
+            proc.watch_heartbeat(liveness, timeout=settings.mw_health_fail_s)
 
         logger.debug("Model worker task is ready")
 
@@ -818,4 +894,5 @@ async def start_model_worker(
             # from "queue full." Reuses the model-worker readiness budget.
             await model_worker.wait_until_connected(settings.mw_timeout_s)
             logger.debug("Model worker channel connected")
+            model_worker.memory_plan = served_plan
             yield model_worker

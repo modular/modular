@@ -20,25 +20,23 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-)
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import (
+from max.nn import Module
+from max.nn._graph_ops import fused_qkv_ragged_matmul
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import (
     QKVLinear,
     RowParallelLinear,
     col_parallel,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import fused_qkv_ragged_matmul
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import KVCacheParams
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from ..model_config import NemotronHConfig
 
@@ -65,20 +63,44 @@ class NemotronHAttention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         self.n_heads = config.num_attention_heads
         self.head_dim = config.head_dim
         self.q_dim = self.n_heads * self.head_dim
-        # repeat_kv_heads_for_tp repeats each KV head once per device in its
-        # group, so that column parallelism gives every device a whole head.
-        kv_dim = config.sharded_kv_heads * self.head_dim
+        self.n_kv_heads = config.num_key_value_heads
+        kv_dim = self.n_kv_heads * self.head_dim
         self.qkv_proj = QKVLinear(
             config.hidden_size, q_dim=self.q_dim, kv_dim=kv_dim
         )
         # Shard Q, K, and V on their own output dims. Half of the fused
         # rows is not one device's heads: Q is much wider than K or V.
         col_parallel(self.qkv_proj.q_proj)
-        col_parallel(self.qkv_proj.k_proj)
-        col_parallel(self.qkv_proj.v_proj)
+        self.kv_repeats = max(len(config.devices) // self.n_kv_heads, 1)
+        for proj in (self.qkv_proj.k_proj, self.qkv_proj.v_proj):
+            if self.kv_repeats > 1:
+                # With more devices than KV heads, a split would cut a head,
+                # so the graph repeats each head once per device in its
+                # group before splitting.
+                proj.weight = Tensor.zeros(
+                    [kv_dim, config.hidden_size], device=CPU()
+                )
+            else:
+                col_parallel(proj)
         self.o_proj = RowParallelLinear(
             self.q_dim, config.hidden_size, bias=False
         )
+
+    def qkv_weight(self, mesh: DeviceMesh) -> Tensor:
+        """Returns the fused q||k||v weight, each device holding its heads."""
+        if self.kv_repeats == 1:
+            return self.qkv_proj.fused_weight
+        hidden = int(self.qkv_proj.k_proj.weight.shape[1])
+        heads = [self.n_kv_heads, 1, self.head_dim * hidden]
+        repeated = [self.n_kv_heads, self.kv_repeats, self.head_dim * hidden]
+        rows = NamedMapping(mesh, (TP, None))
+        k, v = (
+            F.broadcast_to(proj.weight.reshape(heads), repeated)
+            .reshape([-1, hidden])
+            .to(rows)
+            for proj in (self.qkv_proj.k_proj, self.qkv_proj.v_proj)
+        )
+        return F.concat([self.qkv_proj.q_proj.weight, k, v], axis=0)
 
     def forward(
         self,
@@ -86,13 +108,14 @@ class NemotronHAttention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
         n_devices = kv_collection.n_devices
         q = F.functional(fused_qkv_ragged_matmul)(
             self.kv_params,
             input=x,
             input_row_offsets=input_row_offsets,
-            wqkv=self.qkv_proj.fused_weight,
+            wqkv=self.qkv_weight(x.mesh),
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads // n_devices,

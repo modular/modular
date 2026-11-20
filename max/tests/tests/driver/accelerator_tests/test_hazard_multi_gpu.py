@@ -219,3 +219,28 @@ def test_a_copy_into_pinned_host_memory_is_waited_on_the_source_queue(
     )
     assert isinstance(box["value"], np.ndarray)
     np.testing.assert_array_equal(box["value"], _SENTINEL)
+
+
+def test_a_peer_copy_waits_for_its_source_queue(
+    gpus: tuple[Accelerator, Accelerator],
+) -> None:
+    gpu0, gpu1 = gpus
+    zeros = np.zeros_like(_SENTINEL)
+    src = Buffer.from_numpy(_SENTINEL).to(gpu0)
+    overwrite = Buffer.from_numpy(zeros).to(gpu0)
+    dst = Buffer(dtype=DType.int32, shape=[4], device=gpu1)
+    gpu0.synchronize()
+    gpu1.synchronize()
+
+    flag = CompletionFlag(gpu0)
+    gpu0.default_queue.wait_for_host_value(flag, 1)
+    try:
+        # The overwrite stays queued behind the gate on gpu0.
+        src.inplace_copy_from(overwrite)
+        dst.inplace_copy_from(src)
+        # Long enough for an unordered copy on gpu1 to read the stale source.
+        time.sleep(_GATE_HOLD_SECONDS)
+    finally:
+        flag.signal(1)
+
+    np.testing.assert_array_equal(dst.to_numpy(), zeros)

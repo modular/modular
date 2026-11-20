@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3-VL-MoE tokenizer."""
 
 from __future__ import annotations
 
@@ -27,25 +28,8 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import requests
-from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
-    mrope_pos_ids_3d,
-)
-from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import smart_resize
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    QWEN3VL_MAX_PIXELS,
-    get_bilinear_interpolation_weights_and_indices,
-    get_rope_index,
-    get_seqlens,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
-    QWEN3VL_VIDEO_FPS,
-    QWEN3VL_VIDEO_MAX_FRAMES,
-    QWEN3VL_VIDEO_MAX_PIXELS,
-    QWEN3VL_VIDEO_MIN_FRAMES,
-    QWEN3VL_VIDEO_MIN_PIXELS,
-    preprocess_clip,
-)
 from max.pipelines.context import (
+    GrammarEnforcementState,
     ImageMetadata,
     TokenBuffer,
 )
@@ -57,7 +41,11 @@ from max.pipelines.lib import (
     resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
+from max.pipelines.lib.tokenizer import (
+    checked_token_ids,
+    encode_dkv_cache_hint,
+    resolve_token_id_bound,
+)
 from max.pipelines.modeling.types import (
     ImageContentPart,
     MessageContent,
@@ -73,6 +61,22 @@ from PIL import Image
 from transformers import AutoTokenizer
 
 from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
+from .data_processing import (
+    QWEN3VL_MAX_PIXELS,
+    get_bilinear_interpolation_weights_and_indices,
+    get_rope_index,
+    get_seqlens,
+    mrope_pos_ids_3d,
+    smart_resize,
+)
+from .video_processing import (
+    QWEN3VL_VIDEO_FPS,
+    QWEN3VL_VIDEO_MAX_FRAMES,
+    QWEN3VL_VIDEO_MAX_PIXELS,
+    QWEN3VL_VIDEO_MIN_FRAMES,
+    QWEN3VL_VIDEO_MIN_PIXELS,
+    preprocess_clip,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -154,7 +158,6 @@ def qwen3vl_image_preprocessing(
         - pixel_values: Flattened patch values as numpy array
         - image_grid_thw: Grid dimensions (temporal, height, width)
     """
-
     width, height = image.size
 
     resized_height, resized_width = smart_resize(
@@ -389,7 +392,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
     - image_processor is a custom image processor that handles image preprocessing without PyTorch dependencies.
     - tokenizer uses transformers' tokenizer directly instead of AutoProcessor to avoid dependency on PyTorch.
-    - clips go through :mod:`~.nn.video_processing`, which is a separate path
+    - clips go through :mod:`~.video_processing`, which is a separate path
       rather than a per-frame reuse of the image one: a clip's resize depends
       on its frame count, and each of its patch rows spans two distinct
       consecutive frames.
@@ -470,6 +473,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         huggingface_config = pipeline_config.model.huggingface_config
@@ -673,7 +679,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         One entry per clip, not per run: the encoder consumes a clip as a
         single ``(grid_t, h, w)`` grid item, so splitting it would change what
-        ``mo.spatial_merge`` and the per-frame attention segments see. The
+        ``vision.spatial_merge`` and the per-frame attention segments see. The
         entry's span therefore covers all ``grid_t`` runs AND the timestamp
         text between them, and ``num_embedding_rows`` records that the encoder
         emits fewer rows than that span is wide.
@@ -951,7 +957,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         if isinstance(prompt, str):
             tokenizer_outputs = self.delegate(text, **tokenizer_kwargs)
         else:
-            token_ids = [int(token) for token in prompt]
+            token_ids = checked_token_ids(prompt, self._token_id_bound).tolist()
             tokenizer_outputs = {
                 "input_ids": [token_ids],
                 "attention_mask": [[1] * len(token_ids)],
@@ -995,6 +1001,14 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if request.response_format
             and request.response_format.json_schema is not None
             else None
+        )
+
+        grammar = (
+            request.response_format.grammar if request.response_format else None
+        )
+
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
@@ -1161,6 +1175,8 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            grammar=grammar,
+            grammar_state=grammar_state,
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,

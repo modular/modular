@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Cancels a non-streaming request when its client disconnects."""
+"""Cancels a request when its client disconnects before the response starts."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ CLIENT_CLOSED_REQUEST = 499
 
 
 class ClientDisconnected(Exception):
-    """The client hung up before its non-streaming response was ready.
+    """The client hung up before its response started.
 
     The ``request_session`` middleware answers it with a 499, so a route
     needs no handler of its own.
@@ -37,12 +37,14 @@ async def raise_on_disconnect(request: Request) -> None:
     """Raises :class:`ClientDisconnected` once the client hangs up.
 
     Starlette cancels a streaming response when its client disconnects, but
-    never a plain endpoint, so without this watch a non-streaming request
-    keeps its batch slot and KV blocks until it reaches ``max_tokens``. Run in
-    a :class:`~max.support._taskgroups.CancelGroup` beside the completion, the
-    raise cancels the completion, which unwinds the model worker stream and
-    sends the cancel that releases the request whether it is still queued or
-    already decoding.
+    never a plain endpoint, and a streaming route awaits its first token
+    before the response starts. Without this watch a non-streaming request
+    keeps its batch slot and KV blocks until it reaches ``max_tokens``, and a
+    queued streaming request is still prefilled. Run in a
+    :class:`~max.support._taskgroups.CancelGroup` beside the completion or the
+    first-token wait, the raise cancels it, which unwinds the model worker
+    stream and sends the cancel that releases the request whether it is still
+    queued or already decoding.
 
     Start the watch only after the route has read the request body: it reads
     and discards every message until the disconnect, so started earlier it

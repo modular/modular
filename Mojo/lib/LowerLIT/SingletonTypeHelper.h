@@ -100,6 +100,14 @@ public:
   /// type. Otherwise, returns a null result.
   mlir::TypedAttr getSingletonValue(mlir::Type type);
 
+  /// Classifies every processed struct decl, so that later lookups of those
+  /// decls only read the caches.
+  void populateAll();
+
+  /// While frozen, the caches are read from several threads and must not
+  /// change, so a lookup that would populate them is a fatal error.
+  void setFrozen(bool value) { frozen = value; }
+
 private:
   using StructCacheTy = llvm::DenseMap<
       mlir::StringAttr,
@@ -140,6 +148,8 @@ private:
   /// again, it is not checked again, but immediately returns as _not_ a
   /// singleton type (since it is actually illegal, and will be caught later).
   llvm::DenseSet<mlir::StringAttr> inProgressStructs;
+
+  bool frozen = false;
 };
 
 } // namespace M::KGEN::LIT

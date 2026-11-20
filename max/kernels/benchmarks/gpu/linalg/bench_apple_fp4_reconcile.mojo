@@ -43,7 +43,7 @@ from std.random import random_si64, seed
 from std.time import perf_counter
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.fp4_utils import NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
@@ -410,11 +410,11 @@ def _bench_crossover(ctx: DeviceContext, m: Int, n: Int, k: Int) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     print("=== FUSED vs MAT vs m2d vs DENSE across M ===")
-    print("=== warmup=", WARMUP, " hot=", HOT, " best-of-", REPS, " ===")
+    print(t"=== warmup= {WARMUP}  hot= {HOT}  best-of- {REPS}  ===")
 
     print(
         "\n########## REPRESENTATIVE (half-scale FLUX.2-dev, comparable)"

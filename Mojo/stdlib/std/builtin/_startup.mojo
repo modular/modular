@@ -18,16 +18,16 @@ from std.sys import stderr
 
 
 def _init_global_runtime() -> (
-    OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+    Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
 ):
     return external_call[
         "KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ]()
 
 
 def _destroy_global_runtime(
-    ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+    ptr: Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
 ):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice", NoneType](ptr)
@@ -37,7 +37,7 @@ def _destroy_global_runtime(
 def _ensure_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ]()
     if current_runtime:
         return

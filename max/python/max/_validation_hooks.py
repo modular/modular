@@ -29,8 +29,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from max.driver import Device
     from max.engine import Model
-    from max.experimental.tensor import Tensor
-    from max.experimental.validation import EagerUsageValidator
+    from max.tensor import Tensor
+    from max.tensor.validation import EagerUsageValidator
 
 VALIDATORS: ContextVar[tuple[EagerUsageValidator, ...]] = ContextVar(
     "max_validators", default=()

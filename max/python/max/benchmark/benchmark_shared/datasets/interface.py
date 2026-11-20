@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The interface every benchmark dataset implements."""
+
 from __future__ import annotations
 
 import os
@@ -148,7 +150,6 @@ class BenchmarkDataset(ABC):
         Raises:
             ValueError: If dataset_name is not recognized
         """
-
         if dataset_name not in DATASET_REGISTRY:
             available_datasets = ", ".join(DATASET_REGISTRY.keys())
             raise ValueError(

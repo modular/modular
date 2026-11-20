@@ -32,7 +32,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import MLP, Allreduce, Module, Signals
+from max.nn.legacy import MLP, Allreduce, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
 from torch import nn
 

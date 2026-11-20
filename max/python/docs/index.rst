@@ -32,10 +32,12 @@ Modules
    dtype
    engine
    experimental
+   functional
    graph
    nn
    pipelines
    profiler
    serve.media
-   support.image
+   support
+   tensor
    tree

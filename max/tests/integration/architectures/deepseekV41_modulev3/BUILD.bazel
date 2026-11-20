@@ -1,0 +1,354 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Stages the V4.1 stub on SM100 virtual devices, with no GPU, so the input ABI
+# Mach transcribes is recorded from the graph the stub builds. The stub itself
+# is test-only: no served graph ever reads it, so it lives here, not in the
+# production package.
+modular_py_library(
+    name = "abi_contract",
+    testonly = True,
+    srcs = [
+        "abi_contract.py",
+        "f1_config.py",
+        "stub.py",
+    ],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    imports = ["."],
+    # The Mach contract recorder wraps this library's staging; the package
+    # default stays //max/tests-only.
+    visibility = [
+        "//:__pkg__",
+        "//mach/tools/deepseek-v41-contract:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_binary(
+    name = "record_abi_contract",
+    testonly = True,
+    srcs = ["record_abi_contract.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    main = "record_abi_contract.py",
+    tags = ["manual"],
+    deps = [":abi_contract"],
+)
+
+modular_py_test(
+    name = "test_param_tree",
+    size = "large",
+    srcs = ["test_param_tree.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tensor",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+    ],
+)
+
+# The decoder's host-planned kept rows: the kept rows keep their absolute
+# positions, outputs gather at the kept offsets (a chunk longer than the
+# window plus the draft width would catch a stale-offset gather), a plan
+# that drops nothing leaves the full batch, and the export switch declares
+# the replay inputs only when it is on. Eager ops on a CPU mesh.
+modular_py_test(
+    name = "test_decoder_replay",
+    size = "large",
+    srcs = ["test_decoder_replay.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
+    },
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_engram_lookback_history",
+    size = "small",
+    srcs = ["test_engram_lookback_history.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        requirement("numpy"),
+    ],
+)
+
+# The real module's declared parameters against the checkpoint census,
+# leaf for leaf in dtype and byte extent -- the property Mach's weight
+# registry checks at boot, so a host transform that writes new bytes
+# fails here in CI and not on the engine box.
+modular_py_test(
+    name = "test_model_census",
+    size = "large",
+    srcs = ["test_model_census.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_abi_contract",
+    size = "large",
+    srcs = ["test_abi_contract.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# The graph compiler has no NVPTX target on macOS, so this runs on Linux:
+# ./bazelw test --config=remote-intel
+modular_py_test(
+    name = "test_stub_compile",
+    size = "large",
+    srcs = ["test_stub_compile.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":abi_contract",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+    ],
+)
+
+modular_py_test(
+    name = "test_inputs",
+    srcs = ["test_inputs.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+    ],
+)
+
+modular_py_test(
+    name = "test_model_config",
+    srcs = ["test_model_config.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+# MXFP4-packed Engram tables: the quantization config's engram_embed_* keys,
+# the weight adapter's packed views, and the unpack to E4M3 as they are
+# pinned, bit-exact against FP8 twins. CPU only.
+modular_py_test(
+    name = "test_engram_mxfp4_tables",
+    srcs = ["test_engram_mxfp4_tables.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Resolver regressions against the published checkpoint's layer mapping,
+# including its three trailing DSpark draft ratio rows.
+modular_py_test(
+    name = "test_layer_resolver",
+    srcs = ["test_layer_resolver.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_registration",
+    size = "small",
+    srcs = ["test_registration.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "vision_fixtures",
+    testonly = True,
+    srcs = ["vision_fixtures.py"],
+    ignore_unresolved_imports = [
+        "tokenizers.AddedToken",
+        "tokenizers.Tokenizer",
+        "tokenizers.decoders",
+        "tokenizers.models",
+        "tokenizers.pre_tokenizers",
+    ],
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/modeling",
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+# The shared code the image path relies on: module_registration's decoder
+# and VISION role inputs (decoder_input_types, decoder_vision_input_types),
+# its image layout export (vision_metadata_for, max/_artifact/vision.py),
+# the vision cache's encode protocol (vision_encoder_cache.VisionEncodeResult,
+# concat_device_buffers, vision_batching.create_empty_image_embeddings), and
+# TextTokenizer's --tokenizer-impl chat encoder (pipelines/lib/tokenizer.py,
+# pipelines/lib/_chat_encoder.py). CPU only; nothing compiles.
+modular_py_test(
+    name = "test_vision_contract",
+    size = "small",
+    srcs = ["test_vision_contract.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        ":vision_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# The image path's own checks: the encoder declares the checkpoint's vision
+# tensors, and the host inputs, launches, masks and spans. Only this model's
+# code can break them, so CI does not run them (idiomatic bring-up rule 3);
+# run them by name. CPU only; nothing compiles.
+modular_py_test(
+    name = "test_vision",
+    size = "small",
+    srcs = ["test_vision.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    tags = ["manual"],
+    deps = [
+        ":abi_contract",
+        ":vision_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)

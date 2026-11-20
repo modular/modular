@@ -26,7 +26,7 @@ from max.gpu.compute.mma import (
 from internal_utils import assert_equal
 from std.random import rand
 from layout import TensorLayout, Coord, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
@@ -41,19 +41,22 @@ def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: TileLayout,
-    b_layout: TileLayout,
-    c_layout: TileLayout,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
     WMMA_M: Int,
     WMMA_N: Int,
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: ImmOrigin,
+    b_gmem_origin: ImmOrigin,
+    c_gmem_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    a_gmem: TileTensor[a_type, type_of(a_layout), ImmutAnyOrigin],
-    b_gmem: TileTensor[b_type, type_of(b_layout), ImmutAnyOrigin],
-    c_gmem: TileTensor[c_type, type_of(c_layout), MutAnyOrigin],
+    a_gmem: TileTensor[a_type, type_of(a_layout), a_gmem_origin],
+    b_gmem: TileTensor[b_type, type_of(b_layout), b_gmem_origin],
+    c_gmem: TileTensor[c_type, type_of(c_layout), c_gmem_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -73,9 +76,9 @@ def wgmma_kernel_ss[
     comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = StaticTuple[Float32, num_output_regs](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N
@@ -130,12 +133,8 @@ def wgmma_e4m3_e4m3_f32[
     transpose_b: Bool = False,
     a_reg: Bool = False,
 ](ctx: DeviceContext) raises:
-    print(
-        "== wgmma_e4m3_e4m3_f32_64xNx16(N, r/s) => ",
-        N,
-        ", r" if a_reg else ", s",
-        sep="",
-    )
+    var operand = ", r" if a_reg else ", s"
+    print(t"== wgmma_e4m3_e4m3_f32_64xNx16(N, r/s) => {N}{operand}")
 
     comptime a_shape = row_major[M, K]()
     comptime b_shape = row_major[
@@ -190,12 +189,15 @@ def wgmma_e4m3_e4m3_f32[
         a_smem_layout,
         b_smem_layout,
         transpose_b=transpose_b,
+        a_gmem_origin=a_device_tt.origin,
+        b_gmem_origin=b_device_tt.origin,
+        c_gmem_origin=c_device_tt.origin,
     ]
 
     ctx.enqueue_function[kernel](
-        a_device_tt.as_imm().as_unsafe_any_origin(),
-        b_device_tt.as_imm().as_unsafe_any_origin(),
-        c_device_tt.as_unsafe_any_origin(),
+        a_device_tt.as_imm(),
+        b_device_tt.as_imm(),
+        c_device_tt,
         grid_dim=(1, 1),
         block_dim=(128),
     )

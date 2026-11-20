@@ -42,7 +42,12 @@ def _default_server_is_ready() -> bool:
 
 def _gracefully_stop(process: Popen[bytes]) -> None:
     start_time = time.time()
-    process.send_signal(signal.SIGINT)
+    try:
+        # Signal the whole group, as ctrl-c in a terminal does. A launcher
+        # such as ./bazelw run may not pass a SIGINT on to the server.
+        os.killpg(os.getpgid(process.pid), signal.SIGINT)
+    except ProcessLookupError:
+        return
     try:
         process.wait(25)
         shutdown_seconds = int(time.time() - start_time)

@@ -33,11 +33,11 @@ replaceSymNames(Operation *op,
     return;
 
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&symToRename](SymbolConstantAttr attr) {
+  replacer.addReplacement([&](FuncSymbolAttr attr) {
     auto iter = symToRename.find(attr.getSymbol());
     if (iter != symToRename.end())
-      return SymbolConstantAttr::get(iter->second, attr.getType(),
-                                     attr.getParamValues());
+      return FuncSymbolAttr::get(iter->second, attr.getType(),
+                                 attr.getParamValues());
     return attr;
   });
 
@@ -129,28 +129,6 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
     symToRename[FlatSymbolRefAttr::get(oldSym)] = newName;
     func.setSymName(newName);
     DebugInfo::updateSubprogram(func, newName);
-
-    // On host targets, also rename the companion populate_captures stub when
-    // a host function carries an explicit linkage name. Offload kernels live
-    // only in standalone offload modules and never have stubs in the host
-    // module, so this is a no-op for offload targets.
-    if (!isGPU) {
-      MLIRContext *ctx = theModule.getContext();
-      SmallString<128> stubOldStr(oldSym.getValue());
-      stubOldStr += "_populate_captures";
-      SmallString<128> stubNewStr(newName.getValue());
-      stubNewStr += "_populate_captures";
-      if (Operation *stubOp = mlir::SymbolTable::lookupSymbolIn(
-              theModule, StringRef(stubOldStr))) {
-        // populate_captures stubs are always FuncOps — created as such in
-        // evaluateCompileOffloadClosureAttr. A non-FuncOp here is a bug.
-        auto stubFunc = cast<FuncOp>(stubOp);
-        StringAttr stubOldAttr = StringAttr::get(ctx, StringRef(stubOldStr));
-        StringAttr stubNewAttr = StringAttr::get(ctx, StringRef(stubNewStr));
-        symToRename[FlatSymbolRefAttr::get(stubOldAttr)] = stubNewAttr;
-        stubFunc.setSymName(stubNewAttr);
-      }
-    }
   }
 
   replaceSymNames(theModule, symToRename);
@@ -186,8 +164,8 @@ ErrorTreeOrSuccess KGEN::sortAndBundleOffloadOps(
       return offloadFuncOr.takeError();
     auto [symbol, func] = offloadFuncOr.takeValue();
 
-    // Use mangleParameterValues for the bundling name so it matches the name
-    // evaluateCompileOffloadClosureAttr uses for the _populate_captures stub.
+    // Bundle by the auto-mangled name rather than the `@__name` linkage name,
+    // which several instantiations may share.
     StringAttr name = StringAttr::get(
         op.getContext(), mangleParameterValues(func, symbol.getParamValues()));
     items.push_back({name, op});
@@ -222,4 +200,10 @@ ErrorTreeOrSuccess KGEN::sortAndBundleOffloadOps(
   }
 
   return success();
+}
+
+int64_t M::KGEN::countOps(Region &region) {
+  int64_t count = 0;
+  region.walk([&](Operation *) { ++count; });
+  return count;
 }

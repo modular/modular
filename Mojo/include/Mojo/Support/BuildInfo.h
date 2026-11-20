@@ -18,6 +18,14 @@
 
 namespace M::KGEN {
 std::string getVersionString();
+
+/// Returns the canonical path of the binary whose build ID getVersionString()
+/// embeds, or an empty string if it cannot be determined.
+std::string getVersionBinaryPath();
+
+/// Returns the build ID getVersionString() embeds, without the
+/// MODULAR_NVPTX_COMPILER_PATH hash.
+std::string getVersionBuildID();
 } // namespace M::KGEN
 
 #endif // KGEN_SUPPORT_BUILDINFO_H

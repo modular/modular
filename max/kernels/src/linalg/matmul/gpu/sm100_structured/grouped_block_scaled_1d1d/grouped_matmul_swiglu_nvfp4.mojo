@@ -28,7 +28,6 @@ package's `dispatch.mojo`) and the `RealSwiGLUOutput` carrier (in
 
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
-from std.memory import UnsafePointer
 from layout import Idx, TileTensor, row_major
 
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
@@ -40,7 +39,6 @@ from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 def grouped_matmul_swiglu_nvfp4_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     # When True (default), the in-tile fused epilogue casts fp32 -> bf16
     # -> fp32 in the SMEM scatter so its output is byte-identical to the
@@ -92,7 +90,6 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     Parameters:
         transpose_b: Whether to transpose the `B` weight in the matmul
             (defaults to True).
-        target: Compilation target backend string (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level controlling the
             kernel's PDL launch attributes (defaults to `PDLLevel.ON`).
         match_bf16: When True (default), the in-tile fused epilogue casts
@@ -158,20 +155,20 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     # SF tile shape (n_blocks, sf_dim1, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K).
     # The static dim1 is ceildiv(D, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K).
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+    var c_packed_ptr = rebind[MutPointer[UInt8, MutAnyOrigin]](
         c_packed._storage
     )
 
     # The fused path never reads or writes C. It only carries `c_type` and `N`
     # and fills the kernel ABI, so alias `c_packed` rather than allocate.
     var dummy_c_tensor = TileTensor(
-        c_packed_ptr.bitcast[Scalar[c_type]](),
+        c_packed_ptr.unsafe_bitcast[Scalar[c_type]](),
         row_major(Idx[1], Idx[N]),
     )
     var c_swiglu_scales_ptr = rebind[
-        UnsafePointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
+        MutPointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
     ](c_swiglu_scales._storage)
-    var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+    var c_input_scales_ptr = rebind[ImmPointer[Float32, ImmutAnyOrigin]](
         c_input_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[
@@ -192,7 +189,6 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
 
     grouped_matmul_nvfp4_dispatch[
         transpose_b=transpose_b,
-        target=target,
         pdl_level=pdl_level,
         fuse_swiglu=True,
         SwiGLUOutputT=type_of(swiglu_out),

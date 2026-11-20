@@ -339,9 +339,9 @@ kgen.func @invalid_simd_reduce_and(%arg0: i32) {
 // -----
 
 kgen.func @invalid_memcpy(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.pointer<scalar<i32>>) {
-  %0 = kgen.param.constant: index = <4>
+  %memcpylen1 = kgen.param.constant: scalar<index> = <4>
   // expected-error @below {{'pop.memcpy' op source and destination must have same element type, got '!kgen.scalar<i32>' and '!kgen.scalar<f32>'}}
-  pop.memcpy %dst, %src, %0 : !kgen.pointer<scalar<i32>> -> !kgen.pointer<scalar<f32>, 3>
+  pop.memcpy %dst, %src, %memcpylen1 : !kgen.pointer<scalar<i32>> -> !kgen.pointer<scalar<f32>, 3>
   hlcf.return
 }
 
@@ -359,7 +359,7 @@ kgen.generator @global_alloc_initializer_count_not_1() {
 // packs expand into operands after this runs; see pop-to-llvm/globals-error.mlir.
 kgen.func @external_call_negative_num_fixed_args(%a: !kgen.simd<1, ui32>) {
   // expected-error @below {{'pop.external_call' op 'numFixedArgs' must be non-negative, found -1}}
-  pop.external_call @bar(%a) attributes {numFixedArgs = -1 : index}
-    : (!kgen.simd<1, ui32>) -> ()
+  pop.external_call @bar(%a)
+    : (!kgen.simd<1, ui32>) -> () <numFixedArgs = -1 : index>
   hlcf.return
 }

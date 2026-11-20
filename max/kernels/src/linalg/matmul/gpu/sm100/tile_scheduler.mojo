@@ -25,10 +25,11 @@ from max.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from ..tile_scheduler import RasterOrder
+from std.utils.coord import Coord
 
 
 @fieldwise_init
@@ -65,9 +66,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32] = Index[
-        dtype=DType.uint32
-    ](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ](TrivialRegisterPassable):
@@ -81,7 +80,7 @@ struct TileScheduler[
         num_stages: Number of pipeline stages used for producer/consumer
             synchronization across waves; `0` means only the initial wave
             is valid and subsequent work is invalid.
-        cluster_shape: Three-element `IndexList` giving the number of CTA
+        cluster_shape: Three-element `Coord` giving the number of CTA
             blocks per cluster along the M, N, and K output-tile axes
             (defaults to `(1, 1, 1)`).
         rasterize_order: Direction the scheduler rasterizes clusters across
@@ -105,17 +104,15 @@ struct TileScheduler[
     var log_cluster_dim_k: FastDiv[.uint32]
 
     @__allow_legacy_any_origin_fields
-    var clc_response: UnsafePointer[
-        UInt128, MutAnyOrigin, address_space=.SHARED
-    ]
+    var clc_response: MutPointer[UInt128, MutAnyOrigin, address_space=.SHARED]
 
     @__allow_legacy_any_origin_fields
-    var full_mbar: UnsafePointer[
+    var full_mbar: MutPointer[
         SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
-    var empty_mbar: UnsafePointer[
+    var empty_mbar: MutPointer[
         SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
@@ -123,15 +120,9 @@ struct TileScheduler[
     def __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
-        clc_response_ptr: UnsafePointer[
-            mut=True, UInt128, _, address_space=.SHARED
-        ],
-        full_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=.SHARED
-        ],
-        empty_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=.SHARED
-        ],
+        clc_response_ptr: MutPointer[UInt128, _, address_space=.SHARED],
+        full_mbar_ptr: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
+        empty_mbar_ptr: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     ):
         comptime assert Self.block_swizzle_size in [
             0,
@@ -152,7 +143,7 @@ struct TileScheduler[
     @inline(.always)
     @staticmethod
     def work_info_from_clc_response(
-        result: UnsafePointer[mut=True, UInt128, _, address_space=.SHARED],
+        result: MutPointer[UInt128, _, address_space=.SHARED],
     ) -> WorkInfo:
         comptime asm = """{
             .reg .pred p1;
@@ -283,7 +274,7 @@ struct TileScheduler[
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
-            self.clc_response + consumer_state.index()
+            self.clc_response.unsafe_offset(consumer_state.index())
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
@@ -311,8 +302,10 @@ struct TileScheduler[
 
         if elect_one_sync():
             clusterlaunchcontrol_try_cancel[multicast=multicast](
-                self.clc_response + clc_state.index(),
-                (self.full_mbar + clc_state.index()).bitcast[Int64](),
+                self.clc_response.unsafe_offset(clc_state.index()),
+                self.full_mbar.unsafe_offset(clc_state.index()).unsafe_bitcast[
+                    Int64
+                ](),
             )
 
         return clc_state.next()

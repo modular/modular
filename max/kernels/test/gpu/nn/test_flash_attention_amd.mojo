@@ -44,29 +44,16 @@ def test[
 ](
     seq_len: Int,
     num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     is_benchmark: Bool = False,
     use_index_input: Bool = False,
     use_adversarial_softmax_input: Bool = False,
 ) raises:
     print(
-        "test_flash_attention",
-        "batch_size:",
-        batch_size,
-        "num_partitions:",
-        num_partitions.or_else(-1),
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "mask_type:",
-        mask_type,
-        "mask_rank:",
-        mask_rank,
-        "depth:",
-        depth,
+        t"test_flash_attention batch_size: {batch_size} num_partitions:"
+        t" {num_partitions.or_else(-1)} seq_len: {seq_len} num_keys:"
+        t" {num_keys} qkv_type: {qkv_type} mask_type: {mask_type} mask_rank:"
+        t" {mask_rank} depth: {depth}"
     )
 
     comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."
@@ -200,7 +187,7 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         comptime if mask_rank == 3:
             flash_attention(
@@ -321,7 +308,7 @@ def test[
 
 def test_context_encoding[
     batch_size: Int, depth: Int
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     # # fp32 arbitrary depth and num_heads, baseline impl.
     # test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
     # # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
@@ -453,8 +440,8 @@ def test_context_encoding[
     # Long-context AMD CDNA prefill gate. seq_len=4096 with BF16-output
     # causal prefill on CDNA fires the gate in `flash_attention_dispatch`,
     # routing through `mha_prefill_v2`. Validates that (a) the gate builds
-    # + launches the kernel correctly, (b) the `LayoutTensor → TileTensor`
-    # adapters in the gate preserve the data, and (c) the output matches
+    # + launches the kernel correctly, (b) the tensor adapters in the gate
+    # preserve the data, and (c) the output matches
     # the gpu_naive reference within BF16 attention tolerance. Guarded on
     # depth in {64, 128} (the gate's depth eligibility); other depths fall
     # through to FA2.
@@ -474,7 +461,7 @@ def test_decoding[
     depth: Int,
     num_partitions: Optional[Int] = None,
     qkv_type: DType = .bfloat16,
-](ctx: DeviceContext, use_index_input: Bool) raises:
+](ctx: DeviceContext[], use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     # BF16 token gen
     test[
@@ -585,13 +572,18 @@ def test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime depths = [64, 80, 128, 256, 512]
+        comptime depths = [64, 72, 80, 128, 256, 512]
 
         comptime for i in range(len(depths)):
             comptime depth = depths[i]
             test_context_encoding[1, depth](ctx)
 
-            comptime for batch_size in range(1, 5, 3):
-                test_decoding[batch_size, depth, 1](ctx, False)
-                test_decoding[batch_size, depth, 1, DType.float32](ctx, False)
-            test_decoding[1, depth, None](ctx, False)
+            # Decode at depth 72 takes the naive kernel, which is also the
+            # reference, so only prefill runs there.
+            comptime if depth != 72:
+                comptime for batch_size in range(1, 5, 3):
+                    test_decoding[batch_size, depth, 1](ctx, False)
+                    test_decoding[batch_size, depth, 1, DType.float32](
+                        ctx, False
+                    )
+                test_decoding[1, depth, None](ctx, False)

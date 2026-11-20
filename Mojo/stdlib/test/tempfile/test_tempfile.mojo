@@ -14,6 +14,7 @@
 import std.os
 from std.os.path import exists, split
 from std.pathlib import Path
+from std.sys import size_of
 from std.tempfile import (
     NamedTemporaryFile,
     TemporaryDirectory,
@@ -213,13 +214,13 @@ def test_named_temporary_file_deletion() raises:
     tmp_file = NamedTemporaryFile()
     file_path = tmp_file.name
     assert_true(exists(file_path), "Failed to create file " + file_path)
-    tmp_file.close()
+    tmp_file^.close()
     assert_false(exists(file_path), "Failed to delete file " + file_path)
 
     tmp_file = NamedTemporaryFile(delete=False)
     file_path = tmp_file.name
     assert_true(exists(file_path), "Failed to create file " + file_path)
-    tmp_file.close()
+    tmp_file^.close()
     assert_true(exists(file_path), "File " + file_path + " should still exist")
     std.os.remove(file_path)
 
@@ -236,6 +237,20 @@ def test_named_temporary_file_write() raises:
         contents = my_file.read()
     assert_equal("hello world", contents)
     std.os.remove(file_name)
+
+
+def test_optional_named_temporary_file_uses_niche() raises:
+    comptime assert (
+        size_of[Optional[NamedTemporaryFile]]() == size_of[NamedTemporaryFile]()
+    )
+
+    var maybe = Optional(NamedTemporaryFile())
+    __guard case .Some(temp_file) = maybe else:
+        raise Error("expected a temporary file")
+    var file_path = temp_file.name
+    maybe = None
+    assert_false(maybe)
+    assert_false(exists(file_path), "Failed to delete file " + file_path)
 
 
 def main() raises:

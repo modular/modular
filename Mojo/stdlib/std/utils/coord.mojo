@@ -441,7 +441,7 @@ struct Coord[*element_types: CoordLike](
                 if Coord(self[i]) != Coord(other[i]):
                     return False
             elif T.is_value and U.is_value:
-                if Int(self[i].value()) != Int(other[i].value()):
+                if Int(self[i]) != Int(other[i]):
                     return False
             else:
                 comptime assert False, String(
@@ -853,7 +853,6 @@ def _crd2idx_flat[
     return result
 
 
-# Implementation based off runtime_tuple.mojo's crd2idx.
 def crd2idx[
     Index: CoordLike,
     Shape: CoordLike,
@@ -1042,8 +1041,8 @@ def idx2crd[
                     rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
             else:
-                var stride_val = Int(stride_t[i].value())
-                var shape_val = Int(shape_t[i].value())
+                var stride_val = Int(stride_t[i])
+                var shape_val = Int(shape_t[i])
                 var coord_val = _linear_idx_to_coord(idx, stride_val, shape_val)
 
                 Pointer(to=result[i]).write(
@@ -1055,9 +1054,7 @@ def idx2crd[
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         else:
-            var coord_val = _linear_idx_to_coord(
-                idx, Int(stride.value()), Int(shape.value())
-            )
+            var coord_val = _linear_idx_to_coord(idx, Int(stride), Int(shape))
 
             comptime for i in range(shape_len):
                 Pointer(to=result[i]).write(
@@ -1127,7 +1124,7 @@ def idx2crd[
             comptime if Shape.ParamListType[i].is_tuple:
                 # Nested shape: recurse into sub-shape/sub-stride.
                 var nested = idx2crd[out_dtype=out_dtype](
-                    Int(idx.value()), shape_t[i], stride_t[i]
+                    Int(idx), shape_t[i], stride_t[i]
                 )
                 Pointer(to=result[i]).write(rebind[ResultTypes[i]](nested))
             elif (
@@ -1145,10 +1142,10 @@ def idx2crd[
                 # All static: result is ComptimeInt, already default-initialized.
                 pass
             else:
-                var stride_val = Int(stride_t[i].value())
-                var shape_val = Int(shape_t[i].value())
+                var stride_val = Int(stride_t[i])
+                var shape_val = Int(shape_t[i])
                 var coord_val = _linear_idx_to_coord(
-                    Int(idx.value()), stride_val, shape_val
+                    Int(idx), stride_val, shape_val
                 )
                 Pointer(to=result[i]).write(
                     rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
@@ -1167,7 +1164,7 @@ def idx2crd[
             pass
         else:
             var coord_val = _linear_idx_to_coord(
-                Int(idx.value()), Int(stride.value()), Int(shape.value())
+                Int(idx), Int(stride), Int(shape)
             )
 
             comptime for i in range(shape_len):
@@ -1196,7 +1193,7 @@ def coord_to_index_list[
     var result = IndexList[value.rank]()
 
     comptime for i in range(type_of(value).__len__()):
-        result[i] = Int(value[i].value())
+        result[i] = Int(value[i])
 
     return result
 
@@ -1329,7 +1326,7 @@ def _get_flattened_helper[
             ](tuple)
     else:
         comptime if flat_idx == current_offset:
-            return Int(tuple[i].value())
+            return Int(tuple[i])
         else:
             return _get_flattened_helper[flat_idx, current_offset + 1, i + 1](
                 tuple

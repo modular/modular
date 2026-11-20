@@ -168,9 +168,11 @@ def _jenga_slab(
         else leaf.bytes_per_page // tp_degree
         for leaf_id, leaf in leaves.items()
     }
-    rows = {leaf_id: leaf.row_bytes for leaf_id, leaf in leaves.items()}
+    alignments = {
+        leaf_id: leaf.stride_alignment for leaf_id, leaf in leaves.items()
+    }
     geometry = plan_jenga_geometry(
-        huge_blocks * max(pages.values()), pages, rows
+        huge_blocks * max(pages.values()), pages, alignments
     )
     slab = Buffer.zeros(
         shape=(geometry.num_huge_blocks, geometry.huge_page_bytes),

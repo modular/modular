@@ -15,7 +15,6 @@
 #include "../../TypeSystem/MojoTypeSystem.h"
 #include "../../Utils/Errors.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
@@ -61,7 +60,8 @@ public:
     return GetSyntheticValue()->GetChildAtIndex(idx);
   }
 
-  llvm::Expected<size_t> GetIndexOfChildWithName(ConstString name) override {
+  llvm::Expected<size_t>
+  GetIndexOfChildWithName(llvm::StringRef name) override {
     return GetSyntheticValue()->GetIndexOfChildWithName(name);
   }
 

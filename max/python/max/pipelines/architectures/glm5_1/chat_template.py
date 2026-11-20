@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# The Jinja excerpts in this file (_QUADRATIC_TOOL_RESULT_BLOCK and
-# _IN_ORDER_TOOL_RESULT_BLOCK) are copied from GLM-5.3's chat_template.jinja
+# The Jinja excerpts in this file (_QUADRATIC_TOOL_RESULT_BLOCK,
+# _SORTED_ID_TOOL_RESULT_BLOCK and _IN_ORDER_TOOL_RESULT_BLOCK) are copied from
+# GLM-5.3's chat_template.jinja
 # and are distributed under the GLM-5.3 License:
 #
 # Copyright (c) 2026 Z.AI
@@ -58,17 +59,18 @@
 
 GLM-5.3's template renders a run of ``tool`` messages in the order of the
 preceding assistant turn's ``tool_calls`` when every result id is present,
-unique, and matches a call. It decides this with nested loops of Jinja macros,
-which costs O(n^2) in the number of tool calls in one turn: 1,000 calls take
-about 17 s to render and 2,000 about 70 s. A history with thousands of calls
-in one turn therefore stalls the server before the prompt-length check can
-reject it.
+unique, and matches a call. Earlier revisions decided this with nested loops
+of Jinja macros, which costs O(n^2) in the number of tool calls in one turn:
+1,000 calls took about 17 s to render and 2,000 about 70 s. A history with
+thousands of calls in one turn therefore stalled the server before the
+prompt-length check could reject it. The current revision swapped those loops
+for a sorted-id pass with the same semantics, so both forms are recognized
+here.
 
-The fix splits that decision out of the template. :func:`linearize_tool_results`
-replaces the quadratic block with the template's own in-order fallback loop,
-and :func:`order_tool_results` reorders the messages in Python beforehand,
-applying the same rules in O(n). The two together render the same prompt as
-the unmodified template.
+:func:`linearize_tool_results` replaces either block with the template's own
+in-order fallback loop, and :func:`order_tool_results` reorders the messages
+in Python beforehand, applying the same rules in O(n). The two together
+render the same prompt as the unmodified template, old or new.
 """
 
 from __future__ import annotations
@@ -155,6 +157,81 @@ _QUADRATIC_TOOL_RESULT_BLOCK = """\
         {%- endfor -%}
     {%- endif -%}"""
 
+# Verbatim from the current GLM-5.3 chat_template.jinja: the same ordering
+# decision as _QUADRATIC_TOOL_RESULT_BLOCK, with the loop nest swapped for a
+# sorted-id pass. Matched exactly, so a template that differs here in any way
+# is left alone.
+_SORTED_ID_TOOL_RESULT_BLOCK = """\
+    {%- set ns_chk = namespace(can_sort=true, res=[], mk=[], ek=[], tcs=[]) -%}
+    {%- for k in range(block_start, ns_blk.end + 1) -%}
+        {%- set m = messages[k] -%}
+        {%- if is_list_of_outputs(m) -%}
+            {%- for entry in m.content -%}
+                {%- set ns_chk.res = ns_chk.res + [id_of(entry)] -%}
+                {%- set ns_chk.mk = ns_chk.mk + [k] -%}
+                {%- set ns_chk.ek = ns_chk.ek + [loop.index0] -%}
+            {%- endfor -%}
+        {%- else -%}
+            {%- set ns_chk.res = ns_chk.res + [id_of(m)] -%}
+            {%- set ns_chk.mk = ns_chk.mk + [k] -%}
+            {%- set ns_chk.ek = ns_chk.ek + [-1] -%}
+        {%- endif -%}
+    {%- endfor -%}
+    {%- if not ns_a.tool_calls -%}
+        {%- set ns_chk.can_sort = false -%}
+    {%- else -%}
+        {%- for tc in ns_a.tool_calls -%}
+            {%- set ns_chk.tcs = ns_chk.tcs + [id_of(tc)] -%}
+        {%- endfor -%}
+        {%- if '' in ns_chk.res or '' in ns_chk.tcs -%}
+            {%- set ns_chk.can_sort = false -%}
+        {%- elif ns_chk.res | unique(case_sensitive=true) | list | length != ns_chk.res | length -%}
+            {%- set ns_chk.can_sort = false -%}
+        {%- elif ns_chk.tcs | unique(case_sensitive=true) | list | length != ns_chk.tcs | length -%}
+            {%- set ns_chk.can_sort = false -%}
+        {%- else -%}
+            {%- for eid in ns_chk.res -%}
+                {%- if eid not in ns_chk.tcs -%}
+                    {%- set ns_chk.can_sort = false -%}
+                    {%- break -%}
+                {%- endif -%}
+            {%- endfor -%}
+        {%- endif -%}
+    {%- endif -%}
+    {%- if ns_chk.can_sort -%}
+        {%- set ns_ord = namespace(res=[], tcs=[], j=0, pairs=[]) -%}
+        {%- for eid in ns_chk.res -%}
+            {%- set ns_ord.res = ns_ord.res + [{'id': eid, 'p': loop.index0}] -%}
+        {%- endfor -%}
+        {%- for tc_id in ns_chk.tcs -%}
+            {%- set ns_ord.tcs = ns_ord.tcs + [{'id': tc_id, 'i': loop.index0}] -%}
+        {%- endfor -%}
+        {%- set ns_ord.res = ns_ord.res | sort(attribute='id', case_sensitive=true) -%}
+        {%- for tc in ns_ord.tcs | sort(attribute='id', case_sensitive=true) -%}
+            {%- if ns_ord.j < ns_ord.res | length and ns_ord.res[ns_ord.j].id == tc.id -%}
+                {%- set ns_ord.pairs = ns_ord.pairs + [{'i': tc.i, 'p': ns_ord.res[ns_ord.j].p}] -%}
+                {%- set ns_ord.j = ns_ord.j + 1 -%}
+            {%- endif -%}
+        {%- endfor -%}
+        {%- for pair in ns_ord.pairs | sort(attribute='i') -%}
+            {%- set m = messages[ns_chk.mk[pair.p]] -%}
+            {%- if ns_chk.ek[pair.p] >= 0 -%}
+                {%- set entry = m.content[ns_chk.ek[pair.p]] -%}
+                {%- if entry.output is iterable and entry.output is not string and entry.output is not mapping and entry.output and entry.output.0.type == "tool_reference" -%}
+                    {{- tool_references_to_response(entry.output) -}}
+                {%- else -%}
+                    {{- tool_response(visible_text(entry.output)) -}}
+                {%- endif -%}
+            {%- else -%}
+                {{- render_tool_response(m) -}}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- else -%}
+        {%- for k in range(block_start, ns_blk.end + 1) -%}
+            {{- render_tool_response(messages[k]) -}}
+        {%- endfor -%}
+    {%- endif -%}"""
+
 # The template's own fallback branch: render the block's results in order.
 _IN_ORDER_TOOL_RESULT_BLOCK = """\
         {%- for k in range(block_start, ns_blk.end + 1) -%}
@@ -163,7 +240,7 @@ _IN_ORDER_TOOL_RESULT_BLOCK = """\
 
 
 def linearize_tool_results(template: str) -> str | None:
-    """Replaces GLM-5.3's quadratic tool-result ordering with an in-order loop.
+    """Replaces GLM-5.3's tool-result ordering with an in-order loop.
 
     The returned template no longer reorders tool results itself, so it must
     be rendered with messages that went through :func:`order_tool_results`.
@@ -172,13 +249,18 @@ def linearize_tool_results(template: str) -> str | None:
         template: The chat template source.
 
     Returns:
-        The patched template, or ``None`` if ``template`` does not contain
-        GLM-5.3's tool-result block exactly once.
+        The patched template, or ``None`` unless exactly one of GLM-5.3's
+        tool-result blocks appears exactly once: a template carrying a block
+        twice, or one of each generation, is left alone, because rewriting
+        only part of it and then reordering the messages would render a
+        prompt the original never produces.
     """
-    if template.count(_QUADRATIC_TOOL_RESULT_BLOCK) != 1:
+    blocks = (_QUADRATIC_TOOL_RESULT_BLOCK, _SORTED_ID_TOOL_RESULT_BLOCK)
+    counts = tuple(template.count(block) for block in blocks)
+    if counts not in ((1, 0), (0, 1)):
         return None
     return template.replace(
-        _QUADRATIC_TOOL_RESULT_BLOCK, _IN_ORDER_TOOL_RESULT_BLOCK
+        blocks[counts.index(1)], _IN_ORDER_TOOL_RESULT_BLOCK
     )
 
 

@@ -15,7 +15,7 @@ functions on the host and on GPUs."""
 
 from .compare import compare
 from .lgamma import lgamma_bit_refs, lgamma_zeros_f32, lgamma_zeros_f64
-from .libm import libm_call, libm_call_binary
+from .libm import libm_call, libm_call_binary, libm_call_f64, libm_scalb
 from .log10 import (
     f32_max_subnormal_bits,
     f32_min_subnormal_bits,
@@ -31,6 +31,7 @@ from .pair_inputs import (
     hypot_specials,
     pair_inputs,
     remainder_specials,
+    scalb_specials,
 )
-from .rng import SplitMix64
+from .rng import SplitMix64, xorshift64
 from .ulp import ulp_diff, ulp_distance, within_two_ulp

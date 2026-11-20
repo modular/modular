@@ -87,7 +87,7 @@ def bench_rms_norm_gemm_pdl[
     num_pipeline_stages: Int = 16,
     swap_ab: Bool = False,
     prefetch_tiles_n: Int = 2,
-](num_rows: Int, mut b: Bench, ctx: DeviceContext) raises:
+](num_rows: Int, mut b: Bench, ctx: DeviceContext[]) raises:
     """Bench the RMSNorm -> GEMM pair across the PDL configurations.
 
     Parameters:
@@ -114,8 +114,8 @@ def bench_rms_norm_gemm_pdl[
     comptime MMA_K = 16
 
     comptime gemm_config_off = MatmulConfig[dtype, dtype, dtype, True](
-        cluster_shape=Index(cta_group, 1, 1),
-        mma_shape=Index(mma_m, mma_n, MMA_K),
+        cluster_shape=(Int(cta_group), Int(1), Int(1)),
+        mma_shape=(Int(mma_m), Int(mma_n), Int(MMA_K)),
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1,
@@ -124,8 +124,8 @@ def bench_rms_norm_gemm_pdl[
         AB_swapped=swap_ab,
     )
     comptime gemm_config_prefetch = MatmulConfig[dtype, dtype, dtype, True](
-        cluster_shape=Index(cta_group, 1, 1),
-        mma_shape=Index(mma_m, mma_n, MMA_K),
+        cluster_shape=(Int(cta_group), Int(1), Int(1)),
+        mma_shape=(Int(mma_m), Int(mma_n), Int(MMA_K)),
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1,
@@ -138,9 +138,9 @@ def bench_rms_norm_gemm_pdl[
     var a_elems = num_rows * num_cols
     var w_elems = gemm_n * num_cols
     var c_elems = num_rows * gemm_n
-    var epsilon = Float32(1e-5)
+    comptime epsilon = Float32(1e-5)
     # 0.0 matches the plain RMSNorm this pair models (no Gemma-style offset).
-    var weight_offset = Scalar[dtype](0.0)
+    comptime weight_offset = Float32(0.0)
 
     var a_host = List[Scalar[dtype]](unsafe_uninit_length=a_elems)
     rand(a_host.unsafe_ptr(), a_elems)
@@ -154,10 +154,9 @@ def bench_rms_norm_gemm_pdl[
 
     var cb_weights = CacheBustingBuffer[dtype](w_elems, simd_size, ctx, True)
     print(
-        "cache-busting windows: weights=",
-        cb_weights.buffer_size // cb_weights.stride,
-        " (1 means the buster COLLAPSED -- raise budget_bytes)",
-        sep="",
+        t"cache-busting windows:"
+        t" weights={cb_weights.buffer_size // cb_weights.stride} (1 means the"
+        t" buster COLLAPSED -- raise budget_bytes)"
     )
     # Fill the WHOLE allocation, not just the first window: an iteration landing
     # on an unwritten window would read garbage, and NaNs there make the
@@ -182,7 +181,7 @@ def bench_rms_norm_gemm_pdl[
     var gamma = TileTensor(gamma_dev, row_major(Idx[num_cols]))
     var c_out = TileTensor(c_dev, row_major(num_rows, Idx[gemm_n]))
     var c_ref = TileTensor(c_ref_dev, row_major(num_rows, Idx[gemm_n]))
-    var norm_shape = Index(num_rows, num_cols)
+    var norm_shape = (num_rows, num_cols)
 
     # `[N, K]` (transpose_b) with BOTH dims static, as the SM100 kernel needs.
     # Built from the rotating cache-bust window rather than the base pointer so
@@ -200,16 +199,6 @@ def bench_rms_norm_gemm_pdl[
     comptime NormShapeType = type_of(norm_shape)
 
     @inline(.always)
-    @__copy_capture(a_normed)
-    @__parameter
-    def output_fn[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        a_normed.raw_store[width=width, alignment=alignment](
-            a_normed.layout(coords), val
-        )
-
-    @inline(.always)
     def run_pair[
         norm_pdl: PDLLevel,
         gemm_pdl: PDLLevel,
@@ -217,31 +206,35 @@ def bench_rms_norm_gemm_pdl[
         norm_only: Bool = False,
         gemm_only: Bool = False,
     ](
-        ctx_inner: DeviceContext,
+        ctx_inner: DeviceContext[],
         cache_iter: Int,
         mut c_tile: TileTensor[mut=True, dtype, ...],
         a_raw: ARawType,
         a_normed: ANormedType,
         mut cb_weights: CBWeightsType,
         gamma: GammaType,
-        epsilon: Float32,
-        weight_offset: Scalar[dtype],
         norm_shape: NormShapeType,
     ) raises {}:
         @inline(.always)
-        @__copy_capture(a_raw)
-        @__parameter
-        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-            return a_raw.raw_load[width=width](a_raw.layout(coords))
+        def input_fn[
+            width: Int
+        ](coords: Coord) {var a_raw} -> SIMD[dtype, width]:
+            return a_raw.load[width=width](coords)
+
+        @inline(.always)
+        def output_fn[
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {var a_normed} -> None:
+            a_normed.store[alignment=alignment](coords, val)
 
         comptime if not gemm_only:
             rms_norm_gpu[
                 2,
-                input_fn,
-                output_fn,
+                epsilon=epsilon,
+                weight_offset=weight_offset,
                 multiply_before_cast=True,
                 pdl_level=norm_pdl,
-            ](Coord(norm_shape), gamma, epsilon, weight_offset, ctx_inner)
+            ](input_fn, output_fn, Coord(norm_shape), gamma, ctx_inner)
 
         comptime if not norm_only:
             comptime gemm_config = (
@@ -273,8 +266,6 @@ def bench_rms_norm_gemm_pdl[
         a_normed,
         cb_weights,
         gamma,
-        epsilon,
-        weight_offset,
         norm_shape,
     )
     ctx.synchronize()
@@ -295,8 +286,6 @@ def bench_rms_norm_gemm_pdl[
             a_normed,
             cb_weights,
             gamma,
-            epsilon,
-            weight_offset,
             norm_shape,
         )
         ctx.synchronize()
@@ -352,15 +341,13 @@ def bench_rms_norm_gemm_pdl[
 
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {
             mut c_out,
             mut cb_weights,
             imm a_raw,
             imm a_normed,
             imm gamma,
-            var epsilon,
-            var weight_offset,
             var norm_shape,
         }:
             run_pair[
@@ -377,8 +364,6 @@ def bench_rms_norm_gemm_pdl[
                 a_normed,
                 cb_weights,
                 gamma,
-                epsilon,
-                weight_offset,
                 norm_shape,
             )
 
@@ -426,15 +411,8 @@ def main() raises:
 
     with DeviceContext() as ctx:
         print(
-            "Paired RMSNorm -> GEMM, PDL: ",
-            dtype,
-            ", M=",
-            num_rows,
-            " K=",
-            num_cols,
-            " N=",
-            gemm_n,
-            sep="",
+            t"Paired RMSNorm -> GEMM, PDL: {dtype},"
+            t" M={num_rows} K={num_cols} N={gemm_n}"
         )
         var m = Bench(BenchConfig(num_repetitions=num_reps))
         bench_rms_norm_gemm_pdl[

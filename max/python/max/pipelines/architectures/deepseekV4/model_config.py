@@ -26,8 +26,8 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -38,35 +38,10 @@ from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
-from max.pipelines.speculative.config import (
-    SpeculativeConfig,
-    SpeculativeMethod,
-)
+from max.pipelines.speculative.config import SpeculativeMethod
+from max.support.math import ceildiv
 from transformers import AutoConfig
 from typing_extensions import Self, override
-
-
-def dspark_draft_width(
-    speculative: SpeculativeConfig,
-    target_huggingface_config: Any,
-    draft_huggingface_config: Any,
-) -> int:
-    """The DSpark block width: the checkpoint's ``dspark_block_size``.
-
-    Every block position drafts a token, so the width is the block size. The
-    stages unroll the Markov chain over the block, so a different
-    ``--num-speculative-tokens`` is rejected rather than silently overridden.
-    """
-    del draft_huggingface_config
-    block_size = int(target_huggingface_config.dspark_block_size)
-    requested = speculative.num_speculative_tokens
-    if requested is not None and requested != block_size:
-        # TODO(dsv4-dspark W4): take the block width at run time.
-        raise ValueError(
-            f"DeepSeek-V4 DSpark drafts dspark_block_size={block_size} tokens;"
-            f" --num-speculative-tokens={requested} is not supported yet"
-        )
-    return block_size
 
 
 @dataclass(frozen=True)
@@ -96,6 +71,15 @@ class KVLeafSpec:
         )
 
 
+# Pad the window leaf's layer count to a multiple of this value. Jenga sets
+# one huge block to the least common multiple of all leaf page sizes, and each
+# leaf holds whole huge blocks. The page sizes of the other leaves have only
+# the prime factors 2, 3, 5 and 7. An odd prime factor in the window layer
+# count multiplies the huge block by that prime. The padded layers are never
+# read or written.
+_WINDOW_LAYER_MULTIPLE = 8
+
+
 def kv_leaf_specs(
     *,
     compress_ratios: Sequence[int],
@@ -121,7 +105,10 @@ def kv_leaf_specs(
             window_size=sliding_window,
             head_dim=head_dim,
             kv_dim=1,
-            num_layers=num_hidden_layers + num_dspark_stages,
+            num_layers=ceildiv(
+                num_hidden_layers + num_dspark_stages, _WINDOW_LAYER_MULTIPLE
+            )
+            * _WINDOW_LAYER_MULTIPLE,
             float32=False,
         )
     ]
@@ -336,9 +323,6 @@ class DeepseekV4Config(ArchConfigWithKVCache):
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
-    # Whether to build the DSpark draft stages (``mtp.*``). The non-speculative
-    # serving graph leaves them out and its adapter drops their weights.
-    dspark_stages: bool = True
 
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
@@ -378,9 +362,11 @@ class DeepseekV4Config(ArchConfigWithKVCache):
             )
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @property
@@ -389,6 +375,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         return self.head_dim - self.qk_rope_head_dim
 
     def layer_compress_ratio(self, layer_idx: int) -> int:
+        """The compression ratio the given layer runs with."""
         return self.compress_ratios[layer_idx]
 
     @property
@@ -397,9 +384,11 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         return sorted(set(self.compress_ratios[: self.num_hidden_layers]) - {0})
 
     def layer_has_indexer(self, layer_idx: int) -> bool:
+        """Whether the given layer runs an indexer."""
         return self.compress_ratios[layer_idx] == 4
 
     def layer_is_hash_routed(self, layer_idx: int) -> bool:
+        """Whether the given layer routes by hash."""
         return layer_idx < self.num_hash_layers
 
     @property
@@ -420,6 +409,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         )
 
     def kv_leaf_specs(self) -> list[KVLeafSpec]:
+        """The KV leaf specifications in params-tree order."""
         return kv_leaf_specs(
             compress_ratios=self.compress_ratios,
             num_hidden_layers=self.num_hidden_layers,
@@ -435,6 +425,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         return upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
             default=model_config.max_length,
@@ -442,6 +433,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The number of hidden layers in the checkpoint."""
         return huggingface_config.num_hidden_layers
 
     @staticmethod

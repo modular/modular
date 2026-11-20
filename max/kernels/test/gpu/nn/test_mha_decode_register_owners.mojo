@@ -19,7 +19,7 @@ from std.sys import size_of
 from std.testing import assert_almost_equal, assert_equal
 from std.utils.numerics import get_accum_type
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from nn.attention.gpu.mha import mha_decoding_single_batch
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
@@ -30,12 +30,12 @@ from nn.attention.mha_operand import TileTensorMHAOperand, MHAOperand
 def _decode_kernel[
     dtype: DType, k_t: MHAOperand, v_t: MHAOperand
 ](
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    q: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    exp_sum: UnsafePointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
-    qk_max: UnsafePointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    exp_sum: MutPointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
+    qk_max: MutPointer[Scalar[get_accum_type[dtype]()], MutAnyOrigin],
 ):
     # Keep platform-width Int values inside the GPU launch boundary.
     mha_decoding_single_batch[
@@ -136,15 +136,12 @@ def _check_decode[dtype: DType](ctx: DeviceContext) raises:
         q.unsafe_ptr().as_unsafe_any_origin(),
         k,
         v,
-        (out_buffer.unsafe_ptr() + guard).as_unsafe_any_origin(),
+        out_buffer.unsafe_ptr().unsafe_offset(guard).as_unsafe_any_origin(),
         exp_sum_buffer.unsafe_ptr().as_unsafe_any_origin(),
         qk_max_buffer.unsafe_ptr().as_unsafe_any_origin(),
         grid_dim=(1, 1, 1),
         block_dim=32,
         shared_mem_bytes=smem,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem)
-        ),
     )
     ctx.enqueue_copy(out_host, out_buffer)
     ctx.synchronize()

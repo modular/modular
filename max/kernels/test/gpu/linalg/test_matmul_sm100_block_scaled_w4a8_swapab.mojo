@@ -37,7 +37,7 @@ def main() raises:
                     K=1152,
                     mma_n=mma_n,
                     cta_group=cta_group,
-                    cluster_shape=(cta_group, 1, 1),
+                    cluster_shape=(Int(cta_group), Int(1), Int(1)),
                     swapAB=True,
                 ](ctx, 16)
 
@@ -46,7 +46,7 @@ def main() raises:
                     K=8192,
                     mma_n=mma_n,
                     cta_group=cta_group,
-                    cluster_shape=(4, 4, 1),
+                    cluster_shape=(Int(4), Int(4), Int(1)),
                     swapAB=True,
                     k_group_size=2,
                 ](ctx, 100)
@@ -57,7 +57,7 @@ def main() raises:
                 K=16384,
                 mma_n=64,
                 cta_group=2,
-                cluster_shape=(4, 1, 1),
+                cluster_shape=(Int(4), Int(1), Int(1)),
                 swapAB=True,
                 num_accum_pipeline_stages=1,
                 num_clc_pipeline_stages=0,
@@ -68,7 +68,7 @@ def main() raises:
             K=16384,
             mma_n=64,
             cta_group=2,
-            cluster_shape=(2, 1, 1),
+            cluster_shape=(Int(2), Int(1), Int(1)),
             swapAB=True,
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
@@ -79,7 +79,7 @@ def main() raises:
             K=1152,
             mma_n=64,
             cta_group=1,
-            cluster_shape=(1, 1, 1),
+            cluster_shape=(Int(1), Int(1), Int(1)),
             swapAB=True,
             fused_epilogue=True,
         ](ctx, 16)
@@ -89,7 +89,7 @@ def main() raises:
             K=1152,
             mma_n=64,
             cta_group=1,
-            cluster_shape=(1, 1, 1),
+            cluster_shape=(Int(1), Int(1), Int(1)),
             swapAB=True,
             realistic_data=True,
         ](ctx, 16, alpha=0.3)
@@ -99,7 +99,7 @@ def main() raises:
             K=8192,
             mma_n=128,
             cta_group=2,
-            cluster_shape=(4, 4, 1),
+            cluster_shape=(Int(4), Int(4), Int(1)),
             swapAB=True,
             k_group_size=2,
             realistic_data=True,

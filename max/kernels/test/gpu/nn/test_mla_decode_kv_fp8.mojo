@@ -21,7 +21,7 @@ from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import TileTensorMHAOperand
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
@@ -97,25 +97,14 @@ def test[
 ](
     seq_len: Int,
     num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     use_index_input: Bool = False,
 ) raises:
     print(
-        "test_mla_decoding",
-        "batch_size:",
-        batch_size,
-        "num_partitions:",
-        num_partitions.or_else(-1),
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "q_type:",
-        q_type,
-        "kv_type:",
-        kv_type,
-        "mla_mask_type:",
-        mla_mask_type.value,
+        t"test_mla_decoding batch_size: {batch_size} num_partitions:"
+        t" {num_partitions.or_else(-1)} seq_len: {seq_len} num_keys:"
+        t" {num_keys} q_type: {q_type} kv_type: {kv_type} mla_mask_type:"
+        t" {mla_mask_type.value}"
     )
 
     comptime assert (
@@ -188,12 +177,13 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[ctx.target],
     ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[
                 config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
+                kernels=SM100MLA,
             ](
                 out_tt.as_unsafe_any_origin(),
                 q_tt,
@@ -208,6 +198,7 @@ def test[
             flare_mla_decoding[
                 config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
+                kernels=SM100MLA,
             ](
                 out_tt.as_unsafe_any_origin(),
                 q_tt,
@@ -341,7 +332,7 @@ def test_decoding[
     num_partitions: Optional[Int] = 1,
     against_gpu_naive: Bool = True,
 ](
-    ctx: DeviceContext, use_index_input: Bool, seq_len: Int, num_keys: Int
+    ctx: DeviceContext[], use_index_input: Bool, seq_len: Int, num_keys: Int
 ) raises:
     test[
         mla_mask_type,
@@ -390,7 +381,7 @@ def test_decoding_partial_head_group[
     num_partitions: Optional[Int] = 1,
     against_gpu_naive: Bool = True,
 ](
-    ctx: DeviceContext, use_index_input: Bool, seq_len: Int, num_keys: Int
+    ctx: DeviceContext[], use_index_input: Bool, seq_len: Int, num_keys: Int
 ) raises:
     """Covers head counts whose last head group is partial, with a
     full-multiple control at the same shape so a failure is attributable to
@@ -418,7 +409,7 @@ def test_decoding_k3_head_counts[
     mla_mask_type: MLAMaskType,
     split_k: Bool = False,
     num_partitions: Optional[Int] = 1,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     """Kimi K3's TP8 Q-head count, 12, with 128 as the same-shape control.
 
     Every other single-head-group count in this file is a power of two. 12 is

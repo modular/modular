@@ -358,12 +358,6 @@ TEST_RESOURCES = {
             "memory": 2448,
         },
     },
-    "//max/tests/integration/kv_cache:test_print_kv_cache": {
-        "default": {
-            "cpu": 2,
-            "memory": 13339,
-        },
-    },
     "//max/tests/integration/kv_cache:test_rms_norm_key_cache": {
         "default": {
             "cpu": 2,
@@ -469,12 +463,6 @@ TEST_RESOURCES = {
         },
     },
     "//max/tests/integration/architectures/qwen3vl:test_vision_functions": {
-        "default": {
-            "cpu": 2,
-            "memory": 935,
-        },
-    },
-    "//max/tests/integration/architectures/whisper:whisper": {
         "default": {
             "cpu": 2,
             "memory": 935,

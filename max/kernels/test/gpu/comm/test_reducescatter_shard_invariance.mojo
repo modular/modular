@@ -93,22 +93,13 @@ def shard_invariance_test[
     ngpus: Int,
     rows: Int,
     cols: Int,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Runs the collective and gates the bit-exactness oracle."""
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime accum_t = get_accum_type[dtype]()
 
     print(
-        String(
-            "====reducescatter-shard-invariance-",
-            dtype,
-            "-",
-            ngpus,
-            "gpus-rows",
-            rows,
-            "-cols",
-            cols,
-        )
+        t"====reducescatter-shard-invariance-{dtype}-{ngpus}gpus-rows{rows}-cols{cols}"
     )
 
     var num_elements = rows * cols
@@ -252,7 +243,7 @@ def main() raises:
     )
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
-    var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
+    var list_of_ctx = List[DeviceContext[]](capacity=MAX_GPUS)
     for i in range(DeviceContext.number_of_devices()):
         list_of_ctx.append(DeviceContext(i))
 

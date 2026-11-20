@@ -23,7 +23,7 @@ def _run_badbuf(ctx: DeviceContext) raises:
     comptime alloc_size = 256
 
     # Construct a bad buffer by adopting the host pointer.
-    var host_ptr = alloc[Int8]({count = alloc_size}).unsafe_leak()
+    var host_ptr = alloc[Int8]({length = alloc_size}).unsafe_leak()
     var bad_buf = DeviceBuffer(ctx, host_ptr, alloc_size, owning=True)
 
     # Make a call that should succeed even with a bad buffer having been constructed.
@@ -52,7 +52,7 @@ def test_buffer() raises:
     var ctx = create_test_device_context()
 
     print("-------")
-    print("Running test_buffer(" + ctx.name() + "):")
+    print("Running test_buffer(" + ctx.device().get_name() + "):")
 
     _run_badbuf(ctx)
 

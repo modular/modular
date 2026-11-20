@@ -6,7 +6,6 @@ hide_title: true
 hide_table_of_contents: true
 compiler_verified: "2026-09-29, Mojo 1.2.0.dev2026092905 (aa3b777f)"
 last_updated: "2026-09-29 (1.2.0.dev nightly update)"
-build_version: "1.2.0.dev"
 ---
 
 import {
@@ -348,7 +347,7 @@ var total = v.reduce_add() # SIMD-wide reduce
 - Unsafe operations carry the `unsafe_` prefix or an `unsafe_` keyword
 - `unsafe_ptr()` has contiguous storage and is never null, even when
   empty. Check lengths before access
-- `Pointer` is non-null by design; use `OptionalPointer` when the pointer
+- `Pointer` is non-null by design; use `Optional[Pointer]` when the pointer
   may be null
 - The pointer's origin keeps its owner alive until its last use, but it doesn't
   protect against reallocation. After a `List` grows or a `String` changes,

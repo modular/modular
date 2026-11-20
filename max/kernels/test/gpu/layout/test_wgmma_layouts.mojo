@@ -22,7 +22,7 @@ from max.gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout import TensorLayout, Coord, Idx, TileTensor, row_major, col_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -37,10 +37,10 @@ from std.memory import bitcast
 # Preserve the column-major logical fill order used by the printed oracle.
 def _arange_2d_col_major_tensor(t: TileTensor[mut=True, ...]):
     var size = t.num_elements()
+    var rows = Int(t.dim[0]())
 
     for i in range(size):
-        var idx = t.layout(Coord(i))
-        t.ptr[idx] = Scalar[t.dtype](i)
+        t.store((i % rows, i // rows), Scalar[t.dtype](i))
 
 
 def wgmma_tf32_tf32_f32_kernel[
@@ -54,10 +54,13 @@ def wgmma_tf32_tf32_f32_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.float32, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.float32, type_of(row_major[K, N]()), MutAnyOrigin],
-    result_c: TileTensor[.float32, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.float32, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.float32, type_of(row_major[K, N]()), b_gmem_origin],
+    result_c: TileTensor[.float32, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -206,7 +209,7 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext) raises:
     comptime a_smem_layout = tile_layout_k_major_typed[.float32, M, BK=8]
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[4], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[32]), Idx[4]),
     )
@@ -221,14 +224,17 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext) raises:
         8,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -329,13 +335,13 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext) raises:
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-A.png
-    comptime a_smem_layout = TileLayout(
+    comptime a_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[8]), Coord(Idx[4], Idx[2])),
         Coord(Coord(Idx[4], Idx[32]), Coord(Idx[1], Idx[256])),
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[4], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[32]), Idx[4]),
     )
@@ -350,13 +356,16 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext) raises:
         8,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -380,10 +389,13 @@ def wgmma_bf16_bf16_f32_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.bfloat16, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.bfloat16, type_of(col_major[N, K]()), MutAnyOrigin],
-    result_c: TileTensor[.float32, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.bfloat16, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.bfloat16, type_of(col_major[N, K]()), b_gmem_origin],
+    result_c: TileTensor[.float32, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -545,14 +557,17 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -666,14 +681,17 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -697,10 +715,13 @@ def wgmma_f16_f16_f32_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.float16, type_of(col_major[N, K]()), MutAnyOrigin],
-    result_c: TileTensor[.float32, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.float16, type_of(col_major[N, K]()), b_gmem_origin],
+    result_c: TileTensor[.float32, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -862,14 +883,17 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -983,14 +1007,17 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -1014,10 +1041,13 @@ def wgmma_f16_f16_f16_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.float16, type_of(row_major[K, N]()), MutAnyOrigin],
-    result_c: TileTensor[.float16, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.float16, type_of(row_major[K, N]()), b_gmem_origin],
+    result_c: TileTensor[.float16, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -1167,7 +1197,7 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext) raises:
     comptime a_smem_layout = tile_layout_k_major_typed[.float16, BM=64, BK=16]
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[64]), Idx[8]),
     )
@@ -1183,14 +1213,17 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -1291,7 +1324,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     comptime a_smem_layout = tile_layout_k_major_typed[.float16, BM=64, BK=16]
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[64]), Idx[8]),
     )
@@ -1307,13 +1340,16 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -1332,19 +1368,22 @@ def wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: TileLayout,
-    b_layout: TileLayout,
-    c_layout: TileLayout,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
     WMMA_M: Int,
     WMMA_N: Int,
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    c_gmem_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    a_gmem: TileTensor[a_type, type_of(a_layout), MutAnyOrigin],
-    b_gmem: TileTensor[b_type, type_of(b_layout), MutAnyOrigin],
-    c_gmem: TileTensor[c_type, type_of(c_layout), MutAnyOrigin],
+    a_gmem: TileTensor[a_type, type_of(a_layout), a_gmem_origin],
+    b_gmem: TileTensor[b_type, type_of(b_layout), b_gmem_origin],
+    c_gmem: TileTensor[c_type, type_of(c_layout), c_gmem_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -1363,9 +1402,9 @@ def wgmma_kernel[
 
     var c_reg = SIMD[.float32, 4](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N
@@ -1515,13 +1554,16 @@ def wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32(ctx: DeviceContext) raises:
         a_smem_layout,
         b_smem_layout,
         transpose_b=True,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        c_gmem_origin=origin_of(res),
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )

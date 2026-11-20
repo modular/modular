@@ -16,7 +16,7 @@ kgen.func @zero_starting_range() {
     %1 = index.sub %idx2, %arg0
     kgen.call @foo(%1) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -36,7 +36,7 @@ kgen.func @sequential_range() {
     %0 = index.add %arg0, %idx1
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -57,7 +57,7 @@ kgen.func @strided_range() {
     %0 = index.add %arg0, %idx2
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -91,9 +91,9 @@ kgen.func @nested_unroll_loops() {
       %4 = index.add %1, %arg1
       kgen.call @foo(%4) : (index) -> ()
       hlcf.for.yield [induction_var (%3 : index)] [retvals ()] [iterargs ()]
-    } {unrollLevel = #hlcf<unroll_level full>}
+    } <unrollLevel = #hlcf<unroll_level full>>
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -140,9 +140,9 @@ kgen.func @loop_carried_dependency() {
       kgen.call @foo(%8) : (index) -> ()
       %10 = index.add %arg3, %arg4
       hlcf.for.yield [induction_var (%7 : index)] [retvals (%10: index)] [iterargs ()]
-    } {unrollLevel = #hlcf<unroll_level full>}
+    } <unrollLevel = #hlcf<unroll_level full>>
     hlcf.for.yield [induction_var (%3 : index)] [retvals (%5, %6: index, index)] [iterargs ()]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
   hlcf.return
@@ -150,7 +150,7 @@ kgen.func @loop_carried_dependency() {
 
 // CHECK-LABEL: @loop_has_side_effect
 kgen.func @loop_has_side_effect(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)>) -> index {
-  // CHECK: [[IDX:%.*]] = index.constant 1
+  // CHECK: [[IDX:%.*]] = kgen.param.constant: scalar<index> = <1>
   // CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align<1> : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !kgen.scalar<f32> to !kgen.scalar<index>
@@ -172,9 +172,10 @@ kgen.func @loop_has_side_effect(%arg0: !kgen.struct<(pointer<scalar<f32>>, index
     %5 = pop.cast %4 : !kgen.scalar<f32> to !kgen.scalar<index>
     %6 = pop.cast_to_builtin %5 : !kgen.scalar<index> to index
     %7 = index.add %arg1, %6
-    %8 = pop.offset %arg2[%idx1] : !kgen.pointer<scalar<f32>>
+    %offidx1 = kgen.param.constant: scalar<index> = <1>
+    %8 = pop.offset %arg2[%offidx1] : !kgen.pointer<scalar<f32>>
     hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !kgen.pointer<scalar<f32>>)]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return %1 : index
 }
 
@@ -195,7 +196,8 @@ kgen.func @single_iteration_no_decorator(%arg0: !kgen.struct<(pointer<scalar<f32
     %5 = pop.cast %4 : !kgen.scalar<f32> to !kgen.scalar<index>
     %6 = pop.cast_to_builtin %5 : !kgen.scalar<index> to index
     %7 = index.add %arg1, %6
-    %8 = pop.offset %arg2[%idx1] : !kgen.pointer<scalar<f32>>
+    %offidx2 = kgen.param.constant: scalar<index> = <1>
+    %8 = pop.offset %arg2[%offidx2] : !kgen.pointer<scalar<f32>>
     hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !kgen.pointer<scalar<f32>>)]
 
   }
@@ -257,7 +259,7 @@ kgen.func @unroll_factor_divisible() -> index {
     %0 = index.sub %arg0, %idx1
     kgen.call @foo(%arg1, %arg2) : (index, index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals (%0: index)] [iterargs (%0: index)]
-  } {unrollLevel = #hlcf<unroll_level 2>}
+  } <unrollLevel = #hlcf<unroll_level 2>>
   hlcf.return %1 : index
 }
 
@@ -289,7 +291,7 @@ kgen.func @unroll_factor_not_divisible() -> index {
     %0 = index.sub %arg0, %idx1
     kgen.call @foo(%arg1, %arg2) : (index, index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals (%0: index)] [iterargs (%0: index)]
-  } {unrollLevel = #hlcf<unroll_level 3> }
+  } <unrollLevel = #hlcf<unroll_level 3>>
 
   hlcf.return %1 : index
 }
@@ -317,7 +319,7 @@ kgen.func @unroll_factor_not_divisible() -> index {
      %1 = index.add %arg0, %idx1
      kgen.call @foo(%1) : (index) -> ()
      hlcf.for.yield [induction_var (%1 : index)] [retvals (%1: index)] [iterargs ()]
-   } {unrollLevel = #hlcf<unroll_level full>}
+   } <unrollLevel = #hlcf<unroll_level full>>
    hlcf.return %0 : index
  }
 
@@ -351,7 +353,7 @@ kgen.func @unroll_factor_not_divisible() -> index {
      %1 = index.add %arg0, %idx1
      kgen.call @foo(%1) : (index) -> ()
      hlcf.for.yield [induction_var (%1 : index)] [retvals (%1: index)] [iterargs ()]
-   } {unrollLevel = #hlcf<unroll_level 3> }
+   } <unrollLevel = #hlcf<unroll_level 3>>
    hlcf.return %0 : index
  }
 

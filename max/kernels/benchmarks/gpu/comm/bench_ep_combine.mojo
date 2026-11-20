@@ -16,10 +16,19 @@ Covers `combine_async`, `combine_wait`, and the fused kernel that replaces
 both, on 8 GPUs sharing an NVLink or XGMI fabric. Multi-node SHMEM is out of
 scope; the single-node path is the one these kernels are tuned for.
 
-Combine has no token format -- it moves whatever dtype the experts produced --
-so the dtype axis here is message size: BF16 is the real case, FP8 halves the
-bytes. Two shapes run per dtype: a decode-sized point, where cost is per
-launch, and a prefill-sized point, where it is per byte.
+Combine has no token format of its own -- it moves whatever the experts
+produced -- and this bench dispatches with `BF16TokenFormat`, so every arm
+here is BF16; dtype is not an axis. What varies is the shape, and both shapes
+run in one process: a decode-sized point (`n_tok_decode`, default 16
+tokens/rank, where cost is per launch) and a prefill-sized point
+(`n_tok_prefill`, default 2048, where it is per byte). Those two, with their
+iteration counts `slots_decode` / `slots_prefill`, are compile-time defines;
+the yaml sets hidden size, top_k, expert count and rank count, not them.
+
+Every arm of both shapes lands in one `Bench` and one `dump_report()`, because
+kbench writes `$KBENCH_OUTFILE` with `"w"`: a second dump replaces the first
+shape's rows rather than adding to them. Each row carries its shape in
+`BenchId`'s input id, since kbench keys multi-row output on that field.
 
 Routing comes in two modes, selected at run time so one binary serves both:
 
@@ -39,7 +48,7 @@ from std.random import random_float64, seed
 from std.os import getenv
 from std.sys import get_defined_int
 from std.time import perf_counter_ns
-from std.sys import default_accelerator, size_of
+from std.sys import size_of
 
 from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
@@ -53,23 +62,26 @@ from std.benchmark import (
     Report,
     ThroughputMeasure,
 )
+from std.memory.alloc import unsafe_alloc
+from algorithm.bisect import bisect_left
 from comm.sync import enable_p2p
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from layout import Coord, TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from shmem.ep import (
     ep_combine_async_kernel_api,
     ep_combine_wait_kernel_api,
     ep_fused_combine_kernel_api,
 )
 from shmem.ep_comm import (
+    EP_NO_INPUT_SCALES,
     BF16TokenFormat,
     EPLocalSyncCounters,
     combine_async_kernel,
+    NullExpertLoad,
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
-from std.utils.index import IndexList
 
 
 # Routing mode is read at run time, not baked in: measuring an optimization
@@ -163,7 +175,7 @@ def routing_cdf[n_experts: Int, n_ranks: Int](out result: List[Float64]) raises:
 def fill_topk_ids[
     origin: MutOrigin, //, n_experts: Int, top_k: Int
 ](
-    topk_ids: UnsafePointer[Int32, origin],
+    topk_ids: MutPointer[Int32, origin],
     n_tokens: Int,
     cdf: List[Float64],
 ) -> None:
@@ -179,18 +191,16 @@ def fill_topk_ids[
         if uniform:
             return Int32(Int(random_float64(0.0, Float64(n_experts))))
         var u = random_float64(0.0, 1.0)
-        var lo = 0
-        var hi = n_experts - 1
-        while lo < hi:
-            var mid = (lo + hi) // 2
-            if u <= cdf[mid]:
-                hi = mid
-            else:
-                lo = mid + 1
-        return Int32(lo)
+        return Int32(
+            bisect_left(
+                n_experts - 1,
+                u,
+                lambda (i: Int) {cdf} -> Float64: cdf[i],
+            )
+        )
 
     for tok in range(n_tokens):
-        var row = topk_ids + tok * top_k
+        var row = topk_ids.unsafe_offset(tok * top_k)
         for k in range(top_k):
             var pick = draw()
             var clash = True
@@ -212,7 +222,31 @@ def bench_combine[
     n_ranks: Int,
     n_slots: Int,
     n_tokens_per_rank: Int,
-](list_of_ctx: List[DeviceContext]) raises:
+](
+    list_of_ctx: List[DeviceContext[]],
+    mut b_final: Bench,
+    shape_id: String,
+) raises:
+    """Times every combine arm at one shape, appending the rows to `b_final`.
+
+    Parameters:
+        hidden_size: Hidden dimension of the tokens being reduced.
+        top_k: Experts each token routes to.
+        n_experts: Total experts across all ranks.
+        n_ranks: Number of participating GPUs.
+        n_slots: Buffer slots, and therefore timed iterations per arm; each
+            iteration consumes one slot.
+        n_tokens_per_rank: Tokens per rank at this shape.
+
+    Args:
+        list_of_ctx: One device context per rank.
+        b_final: Report accumulated across shapes; dumped once by the caller,
+            since a second `dump_report()` would truncate the first.
+        shape_id: Shape tag written into every row's `BenchId`. kbench keys
+            multi-row output on the text after `/input_id:`, so each arm
+            appends its own tag: with only the shape there, all arms of a
+            shape would share one downstream key and collide.
+    """
     comptime input_type = DType.bfloat16
     comptime n_local_experts = n_experts // n_ranks
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
@@ -229,18 +263,9 @@ def bench_combine[
     comptime num_bytes = combine_msg_bytes * top_k * n_tokens_per_rank
 
     print(
-        "Running ep_combine bench: input_type:",
-        input_type,
-        "hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_experts:",
-        n_experts,
-        "n_ranks:",
-        n_ranks,
-        "n_tokens_per_rank:",
-        n_tokens_per_rank,
+        t"Running ep_combine bench: input_type: {input_type} hidden_size:"
+        t" {hidden_size} top_k: {top_k} n_experts: {n_experts} n_ranks:"
+        t" {n_ranks} n_tokens_per_rank: {n_tokens_per_rank}"
     )
 
     # fmt: off
@@ -257,7 +282,7 @@ def bench_combine[
     # Shared atomic counter buffer for dispatch and combine
     var atomic_counters_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = Array[UnsafePointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
+    var host_topk_ids_list = Array[MutPointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
 
     var device_topk_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -289,7 +314,7 @@ def bench_combine[
         ))
         ctx.enqueue_memset(atomic_counters_list[i], Int32(0))
 
-        host_topk_ids_list[i] = alloc[Int32](n_slots * n_tokens_per_rank * top_k).as_unsafe_any_origin()
+        host_topk_ids_list[i] = unsafe_alloc[Int32](n_slots * n_tokens_per_rank * top_k).as_unsafe_any_origin()
 
         device_topk_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * n_tokens_per_rank * top_k))
         device_input_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * hidden_size))
@@ -335,8 +360,8 @@ def bench_combine[
     # (destination expert, source rank), the unit of work one thread block
     # owns, so `max/mean` over pairs is the factor by which the slowest block
     # outlasts the average one.
-    var pair_counts = alloc[Int32](n_experts * n_ranks)
-    var rank_counts = alloc[Int32](n_ranks)
+    var pair_counts = unsafe_alloc[Int32](n_experts * n_ranks)
+    var rank_counts = unsafe_alloc[Int32](n_ranks)
     for i in range(n_experts * n_ranks):
         pair_counts[i] = 0
     for i in range(n_ranks):
@@ -357,58 +382,54 @@ def bench_combine[
     for i in range(n_ranks):
         if Int(rank_counts[i]) > max_rank:
             max_rank = Int(rank_counts[i])
+    var routing_mode = "skewed" if skew_enabled() else "uniform"
     print(
-        "ROUTING mode:",
-        "skewed" if skew_enabled() else "uniform",
-        ",max_pair:",
-        max_pair,
-        ",mean_pair:",
-        mean_pair,
-        ",pair_imbalance:",
-        Float64(max_pair) / mean_pair,
-        ",busiest_gpu_share:",
-        Float64(max_rank) / Float64(total),
+        t"ROUTING mode:"
+        t" {routing_mode} ,max_pair:"
+        t" {max_pair} ,mean_pair: {mean_pair} ,pair_imbalance:"
+        t" {Float64(max_pair) / mean_pair} ,busiest_gpu_share:"
+        t" {Float64(max_rank) / Float64(total)}"
     )
-    pair_counts.free()
-    rank_counts.free()
+    pair_counts.unsafe_free()
+    rank_counts.unsafe_free()
 
     # fmt: off
     # Dispatch buffers
-    var dispatch_recv_bufs_inputs = Array[Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
-    var dispatch_recv_count_bufs_inputs = Array[Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var dispatch_recv_bufs_inputs = Array[Array[MutPointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var dispatch_recv_count_bufs_inputs = Array[Array[MutPointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
 
     # Combine buffers
-    var combine_recv_bufs_inputs = Array[Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
-    var combine_recv_count_bufs_inputs = Array[Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var combine_recv_bufs_inputs = Array[Array[MutPointer[UInt8, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
+    var combine_recv_count_bufs_inputs = Array[Array[MutPointer[UInt64, MutAnyOrigin], n_ranks], n_slots](uninitialized=True)
 
     for slot_idx in range(n_slots):
         for dev_idx in range(n_ranks):
-            dispatch_recv_bufs_inputs[slot_idx][dev_idx] = (dispatch_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * msg_bytes).as_unsafe_any_origin()
-            dispatch_recv_count_bufs_inputs[slot_idx][dev_idx] = (dispatch_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
-            combine_recv_bufs_inputs[slot_idx][dev_idx] = (combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
-            combine_recv_count_bufs_inputs[slot_idx][dev_idx] = (combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
+            dispatch_recv_bufs_inputs[slot_idx][dev_idx] = dispatch_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * msg_bytes).as_unsafe_any_origin()
+            dispatch_recv_count_bufs_inputs[slot_idx][dev_idx] = dispatch_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
+            combine_recv_bufs_inputs[slot_idx][dev_idx] = combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
+            combine_recv_count_bufs_inputs[slot_idx][dev_idx] = combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
 
     # Dispatch helpers
     @inline(.always)
-    def get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises {mut dispatch_send_bufs_list, imm}:
-        result = (dispatch_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes).as_unsafe_any_origin()
+    def get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut dispatch_send_bufs_list, imm}:
+        result = dispatch_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * msg_bytes).as_unsafe_any_origin()
 
     # Combine helpers
     @inline(.always)
-    def get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises {mut combine_send_bufs_list, imm}:
-        result = (combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes).as_unsafe_any_origin()
+    def get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut combine_send_bufs_list, imm}:
+        result = combine_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * combine_msg_bytes).as_unsafe_any_origin()
 
     @inline(.always)
-    def get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises {mut combine_recv_bufs_list, imm}:
-        result = (combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
+    def get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt8, MutAnyOrigin]) raises {mut combine_recv_bufs_list, imm}:
+        result = combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
 
     @inline(.always)
-    def get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutAnyOrigin]) raises {mut combine_recv_count_bufs_list, imm}:
-        result = (combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
+    def get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: MutPointer[UInt64, MutAnyOrigin]) raises {mut combine_recv_count_bufs_list, imm}:
+        result = combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts).as_unsafe_any_origin()
 
     @inline(.always)
     def get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises {mut atomic_counters_list, imm}:
-        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * EPLocalSyncCounters[n_experts].total_size())
+        return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * EPLocalSyncCounters[n_experts].total_size()))
 
     # fmt: off
     comptime counters_size = EPLocalSyncCounters[n_experts].total_size()
@@ -418,7 +439,7 @@ def bench_combine[
     @inline(.always)
     def get_atomic_counters_tt(dev_idx: Int, slot_idx: Int, out result: get_atomic_counters_tt_result_type) raises {mut atomic_counters_list, imm}:
         return type_of(result)(
-            ptr=(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
+            ptr=atomic_counters_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
         )
     # fmt: on
 
@@ -434,8 +455,9 @@ def bench_combine[
     ) raises {imm}:
         return type_of(result)(
             ptr=(
-                device_topk_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_tokens_per_rank * top_k
+                device_topk_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * n_tokens_per_rank * top_k)
             ).as_unsafe_any_origin(),
             layout=topk_ids_layout,
         )
@@ -452,8 +474,9 @@ def bench_combine[
     ) raises {imm}:
         return type_of(result)(
             ptr=(
-                device_input_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_tokens_per_rank * hidden_size
+                device_input_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * n_tokens_per_rank * hidden_size)
             ).as_unsafe_any_origin(),
             layout=input_tokens_layout,
         )
@@ -470,8 +493,9 @@ def bench_combine[
     ) raises {mut device_output_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_output_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * max_recv_num_tokens * hidden_size
+                device_output_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * max_recv_num_tokens * hidden_size)
             ).as_unsafe_any_origin(),
             layout=output_tt_layout,
         )
@@ -488,8 +512,9 @@ def bench_combine[
     ) raises {mut device_row_offsets_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_row_offsets_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * (n_local_experts + 1)
+                device_row_offsets_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * (n_local_experts + 1))
             ).as_unsafe_any_origin(),
             layout=row_offsets_layout,
         )
@@ -506,8 +531,9 @@ def bench_combine[
     ) raises {mut device_expert_ids_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_expert_ids_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_local_experts
+                device_expert_ids_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * n_local_experts)
             ).as_unsafe_any_origin(),
             layout=expert_ids_layout,
         )
@@ -524,8 +550,9 @@ def bench_combine[
     ) raises {mut device_src_token_info_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_src_token_info_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * max_recv_num_tokens * 2
+                device_src_token_info_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(slot_idx * max_recv_num_tokens * 2)
             ).as_unsafe_any_origin(),
             layout=src_token_info_layout,
         )
@@ -542,8 +569,11 @@ def bench_combine[
     ) raises {mut device_output_2_bufs_list, imm}:
         return type_of(result)(
             ptr=(
-                device_output_2_bufs_list[dev_idx].unsafe_ptr()
-                + slot_idx * n_tokens_per_rank * top_k * hidden_size
+                device_output_2_bufs_list[dev_idx]
+                .unsafe_ptr()
+                .unsafe_offset(
+                    slot_idx * n_tokens_per_rank * top_k * hidden_size
+                )
             ).as_unsafe_any_origin(),
             layout=output_2_layout,
         )
@@ -566,6 +596,7 @@ def bench_combine[
         n_ranks,  # p2p world size
         token_fmt_type,
         use_shmem=False,
+        InputScalesFnType=type_of(EP_NO_INPUT_SCALES),
     ]
 
     # Dispatch callback kernel
@@ -608,6 +639,7 @@ def bench_combine[
             dispatch_recv_count_bufs_inputs[slot_idx],
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
+            host_args=(EP_NO_INPUT_SCALES,),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -624,6 +656,7 @@ def bench_combine[
             dispatch_recv_count_bufs_inputs[slot_idx][dev_idx],
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -636,32 +669,32 @@ def bench_combine[
     # The kernel APIs take peer pointers as uint64 tensors, one entry per
     # rank, rather than the raw arrays the kernels themselves take.
     # fmt: off
-    var c_send_ptrs = alloc[UInt64](n_slots * n_ranks)
-    var c_recv_ptrs = alloc[UInt64](n_slots * n_ranks)
-    var c_recv_count_ptrs = alloc[UInt64](n_slots * n_ranks)
+    var c_send_ptrs = unsafe_alloc[UInt64](n_slots * n_ranks)
+    var c_recv_ptrs = unsafe_alloc[UInt64](n_slots * n_ranks)
+    var c_recv_count_ptrs = unsafe_alloc[UInt64](n_slots * n_ranks)
     for slot_idx in range(n_slots):
         for dev_idx in range(n_ranks):
             var ptr_idx = slot_idx * n_ranks + dev_idx
-            c_send_ptrs[ptr_idx] = UInt64(Int(combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes))
-            c_recv_ptrs[ptr_idx] = UInt64(Int(combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes))
-            c_recv_count_ptrs[ptr_idx] = UInt64(Int(combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts))
+            c_send_ptrs[ptr_idx] = UInt64(Int(combine_send_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * combine_msg_bytes)))
+            c_recv_ptrs[ptr_idx] = UInt64(Int(combine_recv_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes)))
+            c_recv_count_ptrs[ptr_idx] = UInt64(Int(combine_recv_count_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * n_experts)))
 
     var c_ptrs_layout = row_major[n_ranks]()
 
     comptime get_c_send_ptrs_result_type = TileTensor[.uint64, type_of(c_ptrs_layout), ImmutAnyOrigin]
     @inline(.always)
     def get_c_send_ptrs(slot_idx: Int, out result: get_c_send_ptrs_result_type) raises {imm}:
-        return type_of(result)(ptr=(c_send_ptrs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
+        return type_of(result)(ptr=c_send_ptrs.unsafe_offset(slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
 
     comptime get_c_recv_ptrs_result_type = TileTensor[.uint64, type_of(c_ptrs_layout), ImmutAnyOrigin]
     @inline(.always)
     def get_c_recv_ptrs(slot_idx: Int, out result: get_c_recv_ptrs_result_type) raises {imm}:
-        return type_of(result)(ptr=(c_recv_ptrs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
+        return type_of(result)(ptr=c_recv_ptrs.unsafe_offset(slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
 
     comptime get_c_recv_count_ptrs_result_type = TileTensor[.uint64, type_of(c_ptrs_layout), ImmutAnyOrigin]
     @inline(.always)
     def get_c_recv_count_ptrs(slot_idx: Int, out result: get_c_recv_count_ptrs_result_type) raises {imm}:
-        return type_of(result)(ptr=(c_recv_count_ptrs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
+        return type_of(result)(ptr=c_recv_count_ptrs.unsafe_offset(slot_idx * n_ranks).as_unsafe_any_origin(), layout=c_ptrs_layout)
     # fmt: on
 
     # combine_wait reduces over top_k only when it is given router weights;
@@ -672,7 +705,7 @@ def bench_combine[
     @inline(.always)
     def unit_router_weight[
         width: Int
-    ](token_idx: Int, topk_id: Int) capturing -> SIMD[.float32, width]:
+    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
         return SIMD[.float32, width](1.0)
 
     @inline(.always)
@@ -686,7 +719,6 @@ def bench_combine[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
             use_shmem=False,
         ](
             get_atomic_counters_tt(dev_idx, slot_idx),
@@ -704,14 +736,12 @@ def bench_combine[
         var output_2_tensor = get_output_2_tensor(dev_idx, slot_idx)
 
         @inline(.always)
-        @__parameter
-        @__copy_capture(output_2_tensor)
         def store_output_2[
-            dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_2_tensor}:
             output_2_tensor.store[
                 width=width, alignment=alignment * size_of[dtype]()
-            ](Coord(coords), rebind[SIMD[input_type, width]](val))
+            ](coords, rebind[SIMD[input_type, width]](val))
 
         ep_combine_wait_kernel_api[
             input_type,
@@ -721,15 +751,14 @@ def bench_combine[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
-            store_output_2,
-            router_weights_wrapper=unit_router_weight,
         ](
             n_tokens_per_rank,
             get_atomic_counters_tt(dev_idx, slot_idx),
             get_c_recv_ptrs(slot_idx),
             get_c_recv_count_ptrs(slot_idx),
             ctx,
+            store_output_2,
+            unit_router_weight,
         )
 
     @inline(.always)
@@ -743,14 +772,12 @@ def bench_combine[
         var output_2_tensor = get_output_2_tensor(dev_idx, slot_idx)
 
         @inline(.always)
-        @__parameter
-        @__copy_capture(output_2_tensor)
         def store_output_2[
-            dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_2_tensor}:
             output_2_tensor.store[
                 width=width, alignment=alignment * size_of[dtype]()
-            ](Coord(coords), rebind[SIMD[input_type, width]](val))
+            ](coords, rebind[SIMD[input_type, width]](val))
 
         ep_fused_combine_kernel_api[
             hidden_size,
@@ -759,9 +786,6 @@ def bench_combine[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
-            store_output_2,
-            router_weights_wrapper=unit_router_weight,
             use_shmem=False,
         ](
             n_tokens_per_rank,
@@ -772,6 +796,8 @@ def bench_combine[
             get_c_recv_ptrs(slot_idx),
             get_c_recv_count_ptrs(slot_idx),
             ctx,
+            store_output_2,
+            unit_router_weight,
         )
 
     @inline(.always)
@@ -859,8 +885,8 @@ def bench_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_combine(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+    def call_fn_combine(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
+        var dev_id = Int(ctx.device().id)
         run_combine_async(dev_id, cache_iter)
 
     def per_gpu_combine(i: Int) raises {mut results_b, imm}:
@@ -873,7 +899,7 @@ def bench_combine[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench combine"),
+            BenchId("bench combine", shape_id + "_combine"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
         )
@@ -890,17 +916,17 @@ def bench_combine[
             max_time = val
             max_loc = i
 
-    var b_final = Bench()
     b_final.info_vec.append(results_b[max_loc].copy())
-    b_final.dump_report()
 
     # Then, bench the combine_wait kernel overhead
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_combine_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+    def call_fn_combine_wait(
+        ctx: DeviceContext[], cache_iter: Int
+    ) raises {imm}:
+        var dev_id = Int(ctx.device().id)
         run_combine_async_wait(dev_id, cache_iter)
 
     def per_gpu_combine_wait(i: Int) raises {mut results_b, imm}:
@@ -913,7 +939,7 @@ def bench_combine[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench combine_wait"),
+            BenchId("bench combine_wait", shape_id + "_combine_wait"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
         )
@@ -930,9 +956,7 @@ def bench_combine[
             max_time = val
             max_loc = i
 
-    b_final = Bench()
     b_final.info_vec.append(results_b[max_loc].copy())
-    b_final.dump_report()
 
     # Split vs fused, timed identically: one host thread per rank, each
     # timing its own device with `execution_time_iter`, then take the
@@ -956,8 +980,8 @@ def bench_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+    def call_fn_e2e_split(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
+        var dev_id = Int(ctx.device().id)
         run_e2e(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_split(i: Int) raises {mut results_b, imm}:
@@ -976,7 +1000,7 @@ def bench_combine[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench e2e_split"),
+            BenchId("bench e2e_split", shape_id + "_e2e_split"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots - 1,
         )
@@ -993,9 +1017,7 @@ def bench_combine[
             max_time = val
             max_loc = i
 
-    b_final = Bench()
     b_final.info_vec.append(results_b[max_loc].copy())
-    b_final.dump_report()
 
     for dev_i in range(n_ranks):
         clean_up(dev_i)
@@ -1007,8 +1029,8 @@ def bench_combine[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+    def call_fn_e2e_fused(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
+        var dev_id = Int(ctx.device().id)
         run_fused_combine(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_fused(i: Int) raises {mut results_b, imm}:
@@ -1024,7 +1046,7 @@ def bench_combine[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench e2e_fused"),
+            BenchId("bench e2e_fused", shape_id + "_e2e_fused"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots - 1,
         )
@@ -1041,35 +1063,84 @@ def bench_combine[
             max_time = val
             max_loc = i
 
-    b_final = Bench()
     b_final.info_vec.append(results_b[max_loc].copy())
-    b_final.dump_report()
+
+    # Same-code control: the split arm again, from the same restore as the
+    # arms above. Two measurements of one code path give the run-to-run floor,
+    # so a split-vs-fused delta that does not clear this pair's spread is
+    # noise, not a kernel difference.
+    for dev_i in range(n_ranks):
+        clean_up(dev_i)
+        list_of_ctx[dev_i].synchronize()
+    for dev_i in range(n_ranks):
+        for slot_idx in range(n_slots):
+            run_full_dispatch(dev_i, slot_idx)
+    for dev_i in range(n_ranks):
+        list_of_ctx[dev_i].synchronize()
+
+    def per_gpu_e2e_split_control(i: Int) raises {mut results_b, imm}:
+        @inline(.always)
+        def bench_iter(mut b: Bencher) raises {imm}:
+            bencher_iter_custom(b, call_fn_e2e_split, list_of_ctx[i])
+
+        run_e2e(i, 0)
+        list_of_ctx[i].synchronize()
+
+        var bench_config = BenchConfig()
+        bench_config.show_progress = False
+        var b = Bench(bench_config^)
+        b.bench_function(
+            bench_iter,
+            BenchId("bench e2e_split_control", shape_id + "_e2e_split_control"),
+            [ThroughputMeasure(BenchMetric.bytes, 0)],
+            fixed_iterations=n_slots - 1,
+        )
+        results_b[i] = b.info_vec[0].copy()
+
+    sync_parallelize(per_gpu_e2e_split_control, n_ranks)
+
+    max_time = 0.0
+    max_loc = 0
+
+    for i in range(n_ranks):
+        var val = results_b[i].result.mean(unit="ms")
+        if val > max_time:
+            max_time = val
+            max_loc = i
+
+    b_final.info_vec.append(results_b[max_loc].copy())
 
     for dev_idx in range(n_ranks):
-        host_topk_ids_list[dev_idx].free()
+        host_topk_ids_list[dev_idx].unsafe_free()
 
 
-def bench_all_dtypes[
+def bench_shape[
     n_ranks: Int, n_tokens_per_rank: Int, n_slots: Int
-](list_of_ctx: List[DeviceContext]) raises:
-    """Runs combine at one shape.
+](
+    list_of_ctx: List[DeviceContext[]],
+    mut b_final: Bench,
+    shape_id: String,
+) raises:
+    """Runs every combine arm at one shape.
 
-    Only BF16: combine moves the experts\' outputs, which the dispatch setup
-    in this benchmark produces, so its dtype is not independently selectable
-    the way a dispatch token format is. BF16 is what MoE experts emit.
+    Only BF16: combine moves the experts' outputs, which the dispatch setup in
+    this benchmark produces, so its dtype is not independently selectable the
+    way a dispatch token format is. BF16 is what MoE experts emit.
+
+    Parameters:
+        n_ranks: Number of participating GPUs.
+        n_tokens_per_rank: Tokens per rank at this shape.
+        n_slots: Buffer slots, and therefore timed iterations per arm.
+
+    Args:
+        list_of_ctx: One device context per rank.
+        b_final: Report shared by every shape; dumped once by `main`.
+        shape_id: Shape tag carried into every row's name.
     """
     print(
-        "\n===== combine shape: tokens_per_rank=",
-        n_tokens_per_rank,
-        " slots=",
-        n_slots,
-        " hidden=",
-        HIDDEN,
-        " top_k=",
-        TOP_K,
-        " n_experts=",
-        N_EXPERTS,
-        " =====",
+        t"\n===== combine shape: tokens_per_rank= {n_tokens_per_rank}  slots="
+        t" {n_slots}  hidden= {HIDDEN}  top_k= {TOP_K}  n_experts= {N_EXPERTS} "
+        t" shape_id= {shape_id} ====="
     )
 
     bench_combine[
@@ -1079,7 +1150,7 @@ def bench_all_dtypes[
         n_ranks=n_ranks,
         n_slots=n_slots,
         n_tokens_per_rank=n_tokens_per_rank,
-    ](list_of_ctx)
+    ](list_of_ctx, b_final, shape_id)
 
 
 def main() raises:
@@ -1099,20 +1170,26 @@ def main() raises:
         print("This benchmark requires exactly 8 GPUs; skipping.")
         return
 
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(n_ranks):
         ctx.append(DeviceContext(device_id=i))
 
+    # One report for both shapes: `dump_report` opens `$KBENCH_OUTFILE` with
+    # "w", so dumping per shape would leave only the second shape's rows.
+    var b_final = Bench()
+
     # Decode first: it is the cheap one, and running it before the prefill
     # allocations keeps peak device memory down.
-    bench_all_dtypes[
+    bench_shape[
         n_ranks=n_ranks,
         n_tokens_per_rank=N_TOK_DECODE,
         n_slots=SLOTS_DECODE,
-    ](ctx)
+    ](ctx, b_final, "decode_tok" + String(N_TOK_DECODE))
 
-    bench_all_dtypes[
+    bench_shape[
         n_ranks=n_ranks,
         n_tokens_per_rank=N_TOK_PREFILL,
         n_slots=SLOTS_PREFILL,
-    ](ctx)
+    ](ctx, b_final, "prefill_tok" + String(N_TOK_PREFILL))
+
+    b_final.dump_report()

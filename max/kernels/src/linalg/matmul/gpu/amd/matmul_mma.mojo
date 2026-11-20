@@ -26,11 +26,10 @@ live in structured_kernels.amd_tile_io.
 
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu import lane_id, WARP_SIZE
-from std.utils import IndexList
 from layout import TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from structured_kernels.amd_tile_io import SMemTile, load_lds_fragment
 
@@ -43,7 +42,7 @@ from structured_kernels.amd_tile_io import SMemTile, load_lds_fragment
 struct QuadrantMmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     num_k_groups: Int,
     num_m_mmas: Int,
@@ -135,11 +134,9 @@ struct QuadrantMmaOp[
         self._c_reg = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self._c_reg_layout
         )
-        comptime num_c_elems = (
-            Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
-        )
-        comptime for i in range(num_c_elems):
-            self._c_reg.raw_store(i, Scalar[Self.out_type](0))
+        comptime for m in range(Self.num_m_mmas):
+            comptime for n in range(Self.num_n_mmas * Self.c_frag_size):
+                self._c_reg[m, n] = 0
 
     # === Quadrant methods for ping-pong schedule ===
     # The schedule calls load_a_quadrant/load_b_quadrant to fill one half
@@ -236,7 +233,7 @@ struct QuadrantMmaOp[
 struct TiledMma[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     group_size: Int,
 ]:
     """Stateless MMA computation on TileTensors.
@@ -321,7 +318,7 @@ struct TiledMma[
 struct MmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     num_k_tiles: Int,
     num_m_mmas: Int,
@@ -404,11 +401,9 @@ struct MmaOp[
         self._c_reg = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self._c_reg_layout
         )
-        comptime num_c_elems = (
-            Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
-        )
-        comptime for i in range(num_c_elems):
-            self._c_reg.raw_store(i, Scalar[Self.out_type](0))
+        comptime for m in range(Self.num_m_mmas):
+            comptime for n in range(Self.num_n_mmas * Self.c_frag_size):
+                self._c_reg[m, n] = 0
 
     @inline(.always)
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):

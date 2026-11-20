@@ -50,7 +50,7 @@ def bench_shape[
     NType: CoordLike,
     KType: CoordLike,
     //,
-](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+](ctx: DeviceContext[], m: MType, n: NType, k: KType) raises:
     comptime input_type = DType.float8_e4m3fn
     comptime c_type = DType.bfloat16
     comptime transpose_b = True
@@ -60,9 +60,9 @@ def bench_shape[
     comptime warmup = 5
     comptime batches = 5
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     var a_size = M * K
     var b_size = N * K
@@ -102,18 +102,20 @@ def bench_shape[
         row_major(Coord(ceildiv(N, BLOCK_SCALE_N), ceildiv(K, BLOCK_SCALE_K))),
     )
 
-    def run_mine(c: DeviceContext) raises {imm}:
+    def run_mine(c: DeviceContext[]) raises {imm}:
         blockwise_scaled_fp8_matmul_amd[
             transpose_b=transpose_b,
             N_SCALE=BLOCK_SCALE_N,
             K_SCALE=BLOCK_SCALE_K,
         ](c_my_dev, a_dev, b_dev, as_dev, bs_dev, c)
 
-    def run_naive(c: DeviceContext) raises {imm}:
+    def run_naive(c: DeviceContext[]) raises {imm}:
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                1, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
         ](
             c_ref_dev,
             a_dev,
@@ -147,23 +149,11 @@ def bench_shape[
     var tflops_naive = flops / (med_naive * 1.0e9)
 
     print(
-        "MxNxK=",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " | tiled: ",
-        med_mine,
-        " ms (",
-        tflops_mine,
-        " TFLOP/s) | naive: ",
-        med_naive,
-        " ms (",
-        tflops_naive,
-        " TFLOP/s) | speedup: ",
-        med_naive / med_mine,
-        "x",
+        (
+            t"MxNxK={M}x{N}x{K} | tiled: {med_mine} ms ({tflops_mine} TFLOP/s)"
+            t" | naive: {med_naive} ms ({tflops_naive} TFLOP/s) | speedup:"
+            t" {med_naive / med_mine}x"
+        ),
         sep="",
     )
 

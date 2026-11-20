@@ -148,62 +148,68 @@ def _format_tags_resources(resources):
         result.append("resources:memory:{}".format(resources["memory"]))
     return result
 
-def get_resources_exec_properties(name, test):
-    """Get cpu resource estimates for explicitly listed targets
+def get_resources_exec_properties(name):
+    """Get resource estimates for a test listed in TEST_RESOURCES
 
     Args:
-        name: The target's name
-        test: Whether the target is a test
+        name: The test's name
     Returns:
-        A dictionary of exec properties for remote execution
+        Exec properties for remote execution. A configuration the test isn't
+        listed for gets none, so BuildBuddy's measured sizing applies there.
     """
     resources = TEST_RESOURCES.get("//" + native.package_name() + ":" + name, {})
     if not resources:
         return {}
-    default_resources = resources.get("default", {})
+
+    # Each cap is the smallest executor in the pools that configuration runs
+    # on; BuildBuddy never schedules a request larger than every executor.
     return select({
-        "@@//:asan": _format_exec_properties_resources(resources.get("asan", {}) if "asan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
-        "@@//:tsan": _format_exec_properties_resources(resources.get("tsan", {}) if "tsan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
-        "@@//:ubsan": _format_exec_properties_resources(resources.get("ubsan", {}) if "ubsan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
-        "@@//:b200_gpu": _format_exec_properties_resources(resources.get("b200", {}) if "b200" in resources else default_resources, test, max_cpu = 32, max_memory = 150 * 1024 * 1024 * 1024),
-        "@@//:mi355_gpu": _format_exec_properties_resources(resources.get("mi355", {}) if "mi355" in resources else default_resources, test, max_cpu = 11, max_memory = 150 * 1024 * 1024 * 1024),
-        "@platforms//os:macos": _format_exec_properties_resources(resources.get("macos", {}) if "macos" in resources else default_resources, test, max_cpu = 12, max_memory = 30 * 1024 * 1024 * 1024),
-        "//conditions:default": _format_exec_properties_resources(default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:asan": _format_exec_properties_resources(resources.get("asan"), max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:tsan": _format_exec_properties_resources(resources.get("tsan"), max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:ubsan": _format_exec_properties_resources(resources.get("ubsan"), max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:b200_gpu": _format_exec_properties_resources(resources.get("b200"), max_cpu = 32, max_memory = 150 * 1024 * 1024 * 1024),
+        "@@//:mi355_gpu": _format_exec_properties_resources(resources.get("mi355"), max_cpu = 11, max_memory = 150 * 1024 * 1024 * 1024),
+        "@platforms//os:macos": _format_exec_properties_resources(resources.get("macos"), max_cpu = 12, max_memory = 30 * 1024 * 1024 * 1024),
+        "//conditions:default": _format_exec_properties_resources(resources.get("default"), max_cpu = 60, max_memory = 90 * 1024 * 1024 * 1024),
     })
 
-def _format_exec_properties_resources(resources, test, max_cpu = None, max_memory = None):
-    """Format resources for the target
+def _format_exec_properties_resources(resources, max_cpu, max_memory):
+    """Format a test's resources for one configuration
 
     Args:
-        resources: The target's resources
-        test: Whether the target is a test
+        resources: The test's resources in this configuration, or None
         max_cpu: The maximum cpu resource
         max_memory: The maximum memory resource
     Returns:
-        A dictionary of exec properties for the target
+        A dictionary of exec properties for the test
     """
+    if not resources:
+        return {}
+
+    # A measured or predicted size would replace these estimates entirely.
     result = {
         "debug-disable-measured-task-size": "true",
         "debug-disable-predicted-task-size": "true",
     }
-
-    if test:
-        if "cpu" in resources:
-            result["test.EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
-        if "memory" in resources:
-            result["test.EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
-    else:
-        if "cpu" in resources:
-            result["EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
-        if "memory" in resources:
-            result["EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
+    if "cpu" in resources:
+        result["test.EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
+    if "memory" in resources:
+        result["test.EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
     return result
+
+def _gpu_count(exec_properties):
+    for count in [4, 2]:
+        if float(exec_properties.get("test.resources:gpu-{}".format(count), "0")) > 0:
+            return count
+    return 1
 
 def get_default_test_env(exec_properties):
     """Get environment variables that should be shared between different test target types.
 
     Args:
-        exec_properties: The target's 'exec_properties'
+        exec_properties: The target's 'exec_properties', merged over the ones
+            'get_default_exec_properties' returns so the GPU count covers
+            'gpu_constraints' too
 
     Returns:
         A dictionary that should be added to the test target's 'env'
@@ -220,6 +226,8 @@ def get_default_test_env(exec_properties):
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
+            # Read by nvidia_device_wrapper, which pins only single-GPU tests.
+            "MODULAR_TEST_GPU_COUNT": str(_gpu_count(exec_properties)),
         },
         "//conditions:default": {},
     }) | select({
@@ -244,7 +252,9 @@ def get_default_test_env(exec_properties):
         "//conditions:default": {},
     })
 
-_TOOLS = {}
+_TOOLS = {
+    Label("@llvm-project//llvm:llvm-symbolizer"): "LLVM_SYMBOLIZER_PATH",
+}
 
 def env_for_available_tools(
         *,
@@ -281,45 +291,23 @@ def env_for_available_tools(
 
     # Silence buildifier warnings here, since these are accessed from external repos.
 
+    # SDLC-4549: the OSS tree builds Mojo/MAX from source, so MODULAR_MOJO_MAX_PACKAGE_ROOT
+    # no longer points at an unpacked prebuilt wheel — only the debug-server path is set.
     os_specifics = select({
         "@platforms//os:linux": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x)},
         "@platforms//os:macos": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x)},
-    }) | select({
-        # buildifier: disable=canonical-repository
-        "@@//:use_prebuilt_mojo_toolchain_disabled": {},
-        # buildifier: disable=canonical-repository
-        "@@//:linux_aarch64_prebuilt_mojo_toolchain_enabled": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x)},
-        # buildifier: disable=canonical-repository
-        "@@//:linux_x86_64_prebuilt_mojo_toolchain_enabled": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x)},
-        # buildifier: disable=canonical-repository
-        "@@//:macos_prebuilt_mojo_toolchain_enabled": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x)},
     })
     if os == "linux_x86_64":
         os_specifics = {
             "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
-        } | select({
-            # buildifier: disable=canonical-repository
-            "@@//:use_prebuilt_mojo_toolchain_disabled": {},
-            # buildifier: disable=canonical-repository
-            "@@//conditions:default": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x)},
-        })
+        }
     elif os == "linux_aarch64":
         os_specifics = {
             "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
-        } | select({
-            # buildifier: disable=canonical-repository
-            "@@//:use_prebuilt_mojo_toolchain_disabled": {},
-            # buildifier: disable=canonical-repository
-            "@@//conditions:default": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x)},
-        })
+        }
     elif os == "macos":
         os_specifics = {
             "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x),
-        } | select({
-            # buildifier: disable=canonical-repository
-            "@@//:use_prebuilt_mojo_toolchain_disabled": {},
-            # buildifier: disable=canonical-repository
-            "@@//conditions:default": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x)},
-        })
+        }
 
     return env | os_specifics

@@ -37,7 +37,6 @@ from std.sys import (
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
@@ -173,7 +172,7 @@ def _reducescatter_rmsnorm_kernel[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(col_idx)).cast[
+            gamma.load[width=simd_width, alignment=align]((col_idx,)).cast[
                 accum_type
             ]()
             + weight_offset.cast[accum_type]()
@@ -189,6 +188,13 @@ def _reducescatter_rmsnorm_kernel[
         rank_sigs, rank_sigs[my_rank], my_rank
     )
 
+    # With PDL the end barrier is split: a block tells its peers it is done
+    # reading their inputs right after its last row's loads, and waits for the
+    # peers' flags only after the last row's norm, so the wait overlaps that
+    # compute instead of sitting on the dependent's release path.
+    comptime split_end_barrier = pdl_level > PDLLevel.OFF
+    var arrived = False
+
     # Grid-strided over local owned rows; the ragged partition bounds them, so
     # no `row < rows` guard is needed.
     for local_row in range(block_idx.x, my_count, num_blocks):
@@ -201,8 +207,8 @@ def _reducescatter_rmsnorm_kernel[
             comptime for gpu_idx in range(ngpus):
                 accum += (
                     ptrs[gpu_idx]
-                    .address_space_cast[_target_address_space]()
-                    .load[
+                    .unsafe_address_space_cast[_target_address_space]()
+                    .unsafe_load[
                         width=simd_width,
                         alignment=align,
                         invariant=True,
@@ -223,15 +229,27 @@ def _reducescatter_rmsnorm_kernel[
                 reduced = (
                     reduced.cast[accum_type]()
                     + residual[]
-                    .load[width=simd_width, alignment=align](
-                        Coord(row, col_idx)
-                    )
+                    .load[width=simd_width, alignment=align]((row, col_idx))
                     .cast[accum_type]()
                 ).cast[in_dtype]()
         var reduced_f = reduced.cast[accum_type]()
         if is_valid:
             # `reduced` == the standalone reduce-scatter shard (residual stream).
-            sum_out.store[width=simd_width](Coord(local_row, col_idx), reduced)
+            sum_out.store((local_row, col_idx), reduced)
+
+        # The `sum_out` store depends on every P2P load of this row, so all of
+        # this block's reads of the peers' inputs are done once the block
+        # syncs here (the loads are invariant, so only that data dependency
+        # keeps them above the barrier).
+        comptime if split_end_barrier:
+            if local_row + num_blocks >= my_count:
+                _multi_gpu_barrier[
+                    ngpus,
+                    is_start=False,
+                    wait=False,
+                    domain_id=domain_id,
+                ](rank_sigs, rank_sigs[my_rank], my_rank)
+                arrived = True
 
         # Mean-square over the full row. Divide by `cols` (full H) FIRST, add
         # epsilon SECOND (not the shard count; epsilon outside the division).
@@ -246,20 +264,37 @@ def _reducescatter_rmsnorm_kernel[
         if is_valid:
             # (x * norm) * gamma in f32, cast to in_dtype last: mbc=True.
             var normalized = (reduced_f * norm_factor) * gamma_vec
-            normed_out.store[width=simd_width](
-                Coord(local_row, col_idx), normalized.cast[in_dtype]()
-            )
+            normed_out.store((local_row, col_idx), normalized.cast[in_dtype]())
 
     # End barrier: peers P2P-read this rank's `src_ptrs`, so they must not be
     # reused until every peer is done. Deferring to the next collective's start
     # barrier breaks once a second grouped op shares the domain (`domain_id`).
-    _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-        rank_sigs, rank_sigs[my_rank], my_rank
-    )
+    comptime if split_end_barrier:
+        # A block with no rows has not arrived yet.
+        if not arrived:
+            _multi_gpu_barrier[
+                ngpus,
+                is_start=False,
+                wait=False,
+                domain_id=domain_id,
+            ](rank_sigs, rank_sigs[my_rank], my_rank)
+        _multi_gpu_barrier[
+            ngpus,
+            is_start=False,
+            sync_after_wait=True,
+            arrive=False,
+            domain_id=domain_id,
+        ](rank_sigs, rank_sigs[my_rank], my_rank)
+    else:
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, rank_sigs[my_rank], my_rank
+        )
 
     # Must stay after the end barrier: released earlier, the next kernel could
     # reuse `src_ptrs` memory while peers are still reading it. The graph
     # compiler sees this op as the last reader and cannot know about the peers.
+    # Only the first warp waits on the peers inside the barrier, hence the
+    # block sync after the wait.
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
 
@@ -497,7 +532,7 @@ def reducescatter_rmsnorm[
     if not is_p2p_enabled():
         raise Error("reducescatter_rmsnorm requires P2P access between GPUs")
 
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     if not 0 <= global_rank < ngpus:
         raise Error(
             String(
@@ -534,10 +569,13 @@ def reducescatter_rmsnorm[
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192) on all targets (no AR two-width dispatch). Assert fit +
     # divisibility below.
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
     comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
-    comptime max_supported_cols = WARP_SIZE * simd_width * max_warps_per_block
+    comptime max_supported_cols = warp_size * simd_width * max_warps_per_block
     if cols > max_supported_cols:
         raise Error(
             String(
@@ -646,7 +684,6 @@ def _dispatch_rs_norm[
     TwoLaunchFuncType: def() raises -> None,
     has_residual: Bool = False,
     group_size: Int = ngpus,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -697,8 +734,6 @@ def _dispatch_rs_norm[
         group_size: Number of devices per independent reduce-scatter group.
             Must evenly divide `ngpus`. Defaults to `ngpus` (one full-world
             group, byte-identical to the pre-grouping behavior).
-        pdl_level: PDL setting for the fused kernel; see `reducescatter_rmsnorm`.
-            Comptime, so it cannot make the fuse gate below group-variant.
 
     Args:
         input_buffers: Input buffers from ALL `ngpus` devices as TileTensors,
@@ -733,7 +768,7 @@ def _dispatch_rs_norm[
     # This device's group. `group_start` is 0 for a full-world collective
     # (group_size == ngpus), so every group_start-relative read below is
     # byte-identical to the pre-grouping `input_buffers[0]` in that case.
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     var group_start = ualign_down(global_rank, group_size)
 
     # Fuse-vs-two-launch MUST be invariant across every group sharing a barrier
@@ -777,7 +812,7 @@ def _dispatch_rs_norm[
         reducescatter_rmsnorm[
             has_residual=has_residual,
             group_size=group_size,
-            pdl_level=pdl_level,
+            pdl_level=PDLLevel.ON,
         ](
             input_buffers,
             normed_out,

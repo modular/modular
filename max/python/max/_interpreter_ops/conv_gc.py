@@ -40,7 +40,9 @@ from max.graph.type import ConvInputLayout, FilterLayout
 
 
 def _supported_dtypes(device: Device) -> list[DType]:
-    """Mirrors matmul_gc's dtype policy (see module docstring): the shared
+    """Returns the dtype set conv sweeps on *device*.
+
+    Mirrors matmul_gc's dtype policy (see module docstring): the shared
     per-device float set, plus int32/int64 on CPU only (conv lowers to
     matmul there). int8/int16 aren't added even though matmul's CPU set
     includes them -- the old conv kernel never supported them and

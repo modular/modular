@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Base pipeline for the token-generating pipelines."""
+
 from __future__ import annotations
 
 import logging
@@ -169,9 +171,10 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
 def _apply_stop_truncation(
     merged: TokenGeneratorOutput,
 ) -> TokenGeneratorOutput:
-    """Drop the stop string and anything after it from a flushed chunk's
-    content. The coalescer buffers, so a matched stop string is normally
-    wholly present in the merged text and located exactly by find().
+    """Drop the stop string and anything after it from a flushed chunk's content.
+
+    The coalescer buffers, so a matched stop string is normally wholly present in the
+    merged text and located exactly by find().
 
     Accepted limitation: a stop string split across an already-emitted prior
     chunk boundary cannot be retroactively trimmed. This matches every
@@ -222,6 +225,8 @@ async def _coalesce_chunks(
 
 
 class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
+    """Shared request, batch, and output handling for the pipelines."""
+
     def __init__(
         self,
         model_name: str,
@@ -667,6 +672,9 @@ class TokenGeneratorPipeline(
                         if is_first_chunk:
                             server_ttft_ms = ttft_sw.elapsed_ms
                             METRICS.ttft(server_ttft_ms)
+                            METRICS.ttft_by_prompt_length(
+                                server_ttft_ms, context.tokens.prompt_length
+                            )
                             hops = (
                                 dict(ttft_join_hops) if ttft_join_hops else {}
                             )

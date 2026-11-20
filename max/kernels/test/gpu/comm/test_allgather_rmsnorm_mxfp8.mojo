@@ -34,11 +34,16 @@ owns the numerics, this one owns the wiring.
 """
 
 from std.memory import bitcast
-from std.sys import default_accelerator, simd_width_of, size_of
+from std.sys import simd_width_of, size_of
 from std.testing import assert_equal, assert_true
 from std.utils.index import Index
 
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    get_gpu_target,
+    default_accelerator,
+)
 from layout import Coord, TileTensor, row_major
 
 from comm import Signal, group_end, group_start
@@ -72,7 +77,7 @@ def _gathered_value[dtype: DType](row: Int, col: Int) -> Scalar[dtype]:
 
 def _run_case[
     in_dtype: DType, ngpus: Int, num_cols: Int, route_two_launch: Bool = False
-](num_rows: Int, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, list_of_ctx: List[DeviceContext[]]) raises:
     """Byte-compare the fused epilogue against gather+norm followed by quantize.
 
     Arm B always enters through `_dispatch_ag_norm_quant`; `route_two_launch`
@@ -290,22 +295,23 @@ def _run_case[
         )
         var ctx_i = list_of_ctx[i]
 
-        # `@__copy_capture` is mandatory: without it these locals reach the
-        # device as host-stack pointers and the stores land out of bounds.
-        @__copy_capture(quant_view, scale_view)
-        @__parameter
+        # The `{var}` copies are mandatory: captured by reference, these
+        # locals reach the device as host-stack pointers and the stores land
+        # out of bounds.
         @inline(.always)
         def mx_epilogue[
             width: Int
-        ](row: Int, col: Int, val: SIMD[in_dtype, width]):
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) {
+            var quant_view, var scale_view
+        }:
             comptime if route_two_launch:
                 # Poison: `threshold = 0` forces the two-launch branch, so the
                 # fused kernel must never reach this epilogue. Storing a byte
                 # the quantizer cannot emit is what makes the route visible to
                 # a compare that is otherwise blind to it.
                 if col < num_cols:
-                    quant_view.store[width=width](
-                        Coord(row, col),
+                    quant_view.store(
+                        (row, col),
                         bitcast[.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
                     )
             else:
@@ -319,10 +325,10 @@ def _run_case[
                     SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
                 ](val)
                 if col < num_cols:
-                    quant_view.store[width=width](Coord(row, col), quantized)
+                    quant_view.store((row, col), quantized)
                     if col % MXFP8_SF_VECTOR_SIZE == 0:
                         scale_view.store(
-                            Coord(row, col // MXFP8_SF_VECTOR_SIZE), e8m0
+                            (row, col // MXFP8_SF_VECTOR_SIZE), e8m0
                         )
 
         # This branch owes the SAME outputs as the fused one; dropping the
@@ -350,7 +356,7 @@ def _run_case[
                 )
                 quantize_mx_amd(ctx_i, quant_view, scale_view, normed_view)
 
-        _dispatch_ag_norm_quant[quant_epilogue=mx_epilogue,](
+        _dispatch_ag_norm_quant(
             in_shards,
             normed_view,
             sum_view,
@@ -359,6 +365,7 @@ def _run_case[
             weight_offset,
             rank_sigs,
             ctx_i,
+            mx_epilogue,
             two_launch_with_quant,
             threshold=threshold,
         )
@@ -414,18 +421,10 @@ def _run_case[
                 distinct_scales.append(b)
 
     print(
-        "  M=",
-        num_rows,
-        " quant_mismatch=",
-        total_quant_mismatch,
-        " scale_mismatch=",
-        total_scale_mismatch,
-        " normed_mismatch=",
-        total_normed_mismatch,
-        " nonzero=",
-        nonzero_quant,
-        " distinct_scales=",
-        len(distinct_scales),
+        t"  M= {num_rows}  quant_mismatch= {total_quant_mismatch} "
+        t" scale_mismatch= {total_scale_mismatch}  normed_mismatch="
+        t" {total_normed_mismatch}  nonzero= {nonzero_quant}  distinct_scales="
+        t" {len(distinct_scales)}"
     )
 
     assert_equal(
@@ -465,7 +464,7 @@ def main() raises:
         print("SKIPPED: the MXFP8 quantize path is CDNA4-only")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_devices):
         list_of_ctx.append(DeviceContext(device_id=i))
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")

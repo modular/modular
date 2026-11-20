@@ -25,7 +25,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.memory.maybe_uninit import MaybeUninit
 from std.memory.alloc import (
     alloc,
@@ -34,10 +34,11 @@ from std.memory.alloc import (
     ThinAllocation,
     Layout,
 )
+from std.utils._nicheable import _FieldNicheable
 
 
 @doc_hidden
-struct _ArcPointerInner[T: Movable & Deinitable](
+struct _ArcPointerInner[T: Movable](
     not Movable,
 ):
     """
@@ -77,24 +78,24 @@ struct _ArcPointerInner[T: Movable & Deinitable](
         #
         # This is further explained in the [boost documentation]
         # (https://www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-        _ = self.strong.fetch_add[ordering=Ordering.RELAXED](1)
+        _ = self.strong.fetch_add[ordering=.relaxed](1)
 
     def drop_strong(mut self) -> Bool:
         """Atomically decrement the strong refcount and return true if the
         result hits zero."""
 
-        # `RELEASE` is needed to ensure that all data access happens before
-        # decreasing the refcount. `ACQUIRE_RELEASE` is not needed since we
-        # don't need the guarantees of `ACQUIRE` on the load portion of
+        # `release` is needed to ensure that all data access happens before
+        # decreasing the refcount. `acquire_release` is not needed since we
+        # don't need the guarantees of `acquire` on the load portion of
         # fetch_sub if the refcount does not reach zero.
-        if self.strong.fetch_sub[ordering=Ordering.RELEASE](1) != 1:
+        if self.strong.fetch_sub[ordering=.release](1) != 1:
             return False
 
-        # However, if the refcount results in zero, this `ACQUIRE` fence is
-        # needed to synchronize with the `fetch_sub[RELEASE]` above, ensuring
+        # However, if the refcount results in zero, this `acquire` fence is
+        # needed to synchronize with the `fetch_sub[release]` above, ensuring
         # that use of data happens before the fence and therefore before the
         # deletion of the data.
-        fence[ordering=Ordering.ACQUIRE]()
+        fence[ordering=.acquire]()
         return True
 
     def try_add_strong(mut self) -> Bool:
@@ -102,55 +103,60 @@ struct _ArcPointerInner[T: Movable & Deinitable](
 
         Used by `WeakPointer.try_upgrade` to refuse resurrecting a destroyed payload.
         """
-        var cur = self.strong.load[ordering=Ordering.RELAXED]()
+        var cur = self.strong.load[ordering=.relaxed]()
         while cur != 0:
             # On failure, `compare_exchange` rewrites `cur` with the observed
             # value, so the next iteration retries against the fresh count.
             if self.strong.compare_exchange[
-                success_ordering=Ordering.ACQUIRE,
-                failure_ordering=Ordering.RELAXED,
+                success_ordering=.acquire,
+                failure_ordering=.relaxed,
             ](cur, cur + 1):
                 return True
         return False
 
     def strong_count(self) -> UInt64:
         """Return the current strong refcount."""
-        return self.strong.load[ordering=Ordering.RELAXED]()
+        return self.strong.load[ordering=.relaxed]()
 
     def add_weak(mut self):
         """Atomically increment the weak refcount."""
-        _ = self.weak.fetch_add[ordering=Ordering.RELAXED](1)
+        _ = self.weak.fetch_add[ordering=.relaxed](1)
 
     def drop_weak(mut self) -> Bool:
         """Atomically decrement the weak refcount and return true if the
         result hits zero."""
-        if self.weak.fetch_sub[ordering=Ordering.RELEASE](1) != 1:
+        if self.weak.fetch_sub[ordering=.release](1) != 1:
             return False
-        fence[ordering=Ordering.ACQUIRE]()
+        fence[ordering=.acquire]()
         return True
 
     def weak_count_with_implicit(self) -> UInt64:
         """Return the raw weak counter, including the implicit +1 held
         collectively by all strong references."""
-        return self.weak.load[ordering=Ordering.RELAXED]()
+        return self.weak.load[ordering=.relaxed]()
 
-    def destroy_payload(mut self):
-        """Run the destructor of the held value. Caller must ensure this
-        runs exactly once, on the last strong drop."""
-        self.payload.unsafe_ptr().unsafe_deinit_pointee()
+    def destroy_payload(mut self, deinit_func: Some[def(var Self.T)]):
+        """Pass the held value to `deinit_func` to destroy it. Caller must
+        ensure this runs exactly once, on the last strong drop."""
+        self.payload.unsafe_ptr().unsafe_deinit_pointee_with(deinit_func)
 
     def payload_ref(ref self) -> ref[self.payload] Self.T:
         """Return a reference to the (assumed-initialized) payload."""
         return self.payload.unsafe_assume_init()
 
 
-struct ArcPointer[T: Movable & Deinitable](
+struct ArcPointer[T: Movable](
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy an `ArcPointer` whose"
+        " element type is not `Deinitable`"
+    ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Identifiable,
     ImplicitlyCopyable,
     RegisterPassable,
     Writable where conforms_to(T, Writable),
+    _FieldNicheable,
 ):
     """Atomic reference-counted pointer.
 
@@ -266,25 +272,62 @@ struct ArcPointer[T: Movable & Deinitable](
         self._inner = _inner
 
     @inline(.never)
-    def __deinit__(deinit self):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         """Delete the smart pointer.
 
         Decrement the reference count for the stored value. If there are no more
-        references, delete the object and free its memory."""
+        references, delete the object and free its memory.
+
+        Constraints:
+            `T` must be `Deinitable`. When it is not, consume the
+            `ArcPointer` with `deinit_with()`.
+        """
+        self^.deinit_with(deinit[Self.T])
+
+    def deinit_with(deinit self, var f: Some[def(var Self.T)], /):
+        """Consumes this pointer, passing the managed value to `f` if this is
+        the last strong reference.
+
+        This decrements the reference count like the implicit destructor. If
+        other `ArcPointer`s to the value remain, `f` is not called. Use this
+        to destroy an `ArcPointer` whose element type is not `Deinitable`.
+
+        Args:
+            f: The function that takes ownership of the managed value to
+                destroy it. Called only by the last strong reference.
+
+        Examples:
+
+        ```mojo
+        from std.memory import ArcPointer
+
+        @fieldwise_init
+        struct Resource(Movable, not Deinitable):
+            var id: Int
+
+            def close(deinit self):
+                pass
+
+        var p = ArcPointer(Resource(1))
+        var p2 = p.copy()
+        p^.deinit_with(Resource.close)  # `p2` still holds the value.
+        p2^.deinit_with(Resource.close)  # Calls `Resource.close`.
+        ```
+        """
         if not self._inner[].drop_strong():
             return
 
         # Last strong reference: destroy the payload. The control block
         # itself stays alive while any Weak references still hold the
         # implicit-weak refcount.
-        self._inner[].destroy_payload()
+        self._inner[].destroy_payload(f)
 
         # Drop the implicit weak reference held collectively by all strong
         # pointers. If we are also the last weak, free the allocation.
         if self._inner[].drop_weak():
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._inner).unsafe_with_layout(
-                    {count = 1}
+                    {length = 1}
                 )
             )
 
@@ -326,28 +369,6 @@ struct ArcPointer[T: Movable & Deinitable](
             Pointer(to=self._inner[].payload_ref())
             .as_imm()
             .unsafe_origin_cast[ImmOrigin(origin)]()
-        )
-
-    @doc_hidden
-    @deprecated(use=ptr)
-    def unsafe_ptr[
-        mut: Bool,
-        origin: Origin[mut=mut],
-        //,
-    ](ref[origin] self) -> Pointer[Self.T, origin]:
-        """Retrieves a pointer to the underlying memory.
-
-        Parameters:
-            mut: Whether the pointer is mutable.
-            origin: The origin of the pointer.
-
-        Returns:
-            A `Pointer` to the pointee.
-        """
-        return (
-            Pointer(to=self._inner[].payload_ref())
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
         )
 
     def count(self) -> UInt64:
@@ -466,10 +487,10 @@ struct ArcPointer[T: Movable & Deinitable](
             TypeNames[Self.T](),
         ).fields(Repr(self[]))
 
+    comptime _KgenNichedFieldName = "_inner".value
 
-struct WeakPointer[T: Movable & Deinitable](
-    ImplicitlyCopyable, RegisterPassable
-):
+
+struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):
     """Non-owning atomic reference to an `ArcPointer`'s allocation.
 
     A `WeakPointer` may _not_ be directly subscripted to dereference
@@ -547,12 +568,13 @@ struct WeakPointer[T: Movable & Deinitable](
     @inline(.never)
     def __deinit__(deinit self):
         """Decrement the weak count and free the allocation if last."""
-        if self._inner and self._inner.unsafe_value()[].drop_weak():
-            dealloc(
-                ThinAllocation(
-                    unsafe_owned_ptr=self._inner.unsafe_value()
-                ).unsafe_with_layout({count = 1})
-            )
+        if case .Some(inner) = self._inner:
+            if inner[].drop_weak():
+                dealloc(
+                    ThinAllocation(unsafe_owned_ptr=inner).unsafe_with_layout(
+                        {length = 1}
+                    )
+                )
 
     def try_upgrade(self) -> Optional[ArcPointer[Self.T]]:
         """Attempts to obtain a strong reference.
@@ -561,8 +583,9 @@ struct WeakPointer[T: Movable & Deinitable](
             An `ArcPointer` sharing the allocation, or `None` if the
             payload has already been destroyed (strong count reached 0).
         """
-        if self._inner and self._inner.unsafe_value()[].try_add_strong():
-            return {ArcPointer[Self.T](_inner=self._inner.unsafe_value())}
+        if case .Some(inner) = self._inner:
+            if inner[].try_add_strong():
+                return {ArcPointer[Self.T](_inner=inner)}
         return Optional[ArcPointer[Self.T]]()
 
     def strong_count(self) -> UInt64:
@@ -585,12 +608,11 @@ struct WeakPointer[T: Movable & Deinitable](
             The approximate number of outstanding `WeakPointer`s.
         """
 
-        if case .Some(inner) = self._inner:
-            var w = inner[].weak_count_with_implicit()
-            if inner[].strong_count() == 0:
-                return w
-            # If there are any strong remaining, we don't want to
-            # include the implicit weak in the returned count.
-            return w - 1
-        else:
+        __guard case .Some(inner) = self._inner else:
             return 0
+        var w = inner[].weak_count_with_implicit()
+        if inner[].strong_count() == 0:
+            return w
+        # If there are any strong remaining, we don't want to
+        # include the implicit weak in the returned count.
+        return w - 1

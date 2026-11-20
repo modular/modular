@@ -10,18 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen3Embedding with the registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    GraphRole,
     SupportedArchitecture,
     TextTokenizer,
 )
 from max.pipelines.modeling.types import PipelineTask
 
-from .batch_processor import Qwen3EmbeddingBatchProcessor
-from .model import Qwen3EmbeddingModel
+from .encoder import Qwen3EmbeddingEncoder
 from .model_config import Qwen3EmbeddingConfig
 
 qwen3_embedding_arch = SupportedArchitecture(
@@ -34,7 +35,7 @@ qwen3_embedding_arch = SupportedArchitecture(
     ],
     default_encoding=Qwen3EmbeddingConfig.DEFAULT_ENCODING,
     supported_encodings=Qwen3EmbeddingConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=Qwen3EmbeddingModel,
+    modules={GraphRole.ENCODER: Qwen3EmbeddingEncoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -44,5 +45,4 @@ qwen3_embedding_arch = SupportedArchitecture(
     },
     config=Qwen3EmbeddingConfig,
     supports_device_graph_capture=False,
-    batching=Qwen3EmbeddingBatchProcessor,
 )

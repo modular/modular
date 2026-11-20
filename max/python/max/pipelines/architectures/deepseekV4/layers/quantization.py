@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """FP8 activation quantize/dequantize, as DeepSeek-V4 trained with it.
 
 ``inference/model.py`` calls ``act_quant(kv[..., :-rd], 64, scale_fmt,
@@ -45,14 +44,12 @@ from typing import TYPE_CHECKING, NoReturn
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
-from max.nn.linear import Linear
-from max.nn.quant_config import (
-    QuantConfig,
-)
+from max.nn.legacy.linear import Linear
+from max.nn.quant_config import QuantConfig
 
 if TYPE_CHECKING:
     from ..model_config import DeepseekV4Config
@@ -291,7 +288,7 @@ class DeepseekV4Fp8Linear(Linear):
     ``fast_round_scale``), and the checkpoint was trained that way. So this
     quantizes with e8m0 scales -- the kernel's e8m0 branch is exactly
     ``2 ** ceil(log2(amax / 448))`` and divides by the (exact) power of two --
-    then widens the scales to float32 for ``mo.matmul_dynamic_scaled_fp8``,
+    then widens the scales to float32 for ``matmul.dynamic_scaled_fp8``,
     which accepts nothing else. Verified bit-identical to the reference
     ``act_quant`` on the G4 experiment (PROGRESS-194-QUANT §1).
 
@@ -347,6 +344,7 @@ class DeepseekV4Fp8Linear(Linear):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the matmul with FP8 weights."""
         assert self.quant_config is not None
         assert self.weight_scale is not None
         leading = list(x.shape[:-1])
@@ -373,6 +371,26 @@ class DeepseekV4Fp8Linear(Linear):
         )
         out = ops.cast(out, x.dtype)
         return ops.reshape(out, leading + [out.shape[-1]])
+
+
+def dequantize_fp8_blocks(
+    weight: TensorValue, scale: TensorValue, dtype: DType
+) -> TensorValue:
+    """An fp8 weight times its ``[N / 128, K / 128]`` block scale, in ``dtype``.
+
+    Exact in bfloat16 for this checkpoint's power-of-two scales: an e4m3
+    value (3 mantissa bits) times a power of two fits bf16's 7 mantissa bits.
+    """
+    rows, cols = (int(d) for d in weight.shape)
+    block = LINEAR_QUANT_BLOCK
+    values = ops.reshape(
+        ops.cast(weight, DType.float32),
+        [rows // block, block, cols // block, block],
+    )
+    scales = ops.reshape(
+        scale.to(weight.device), [rows // block, 1, cols // block, 1]
+    )
+    return ops.cast(ops.reshape(values * scales, [rows, cols]), dtype)
 
 
 def linear_for(

@@ -1,6 +1,6 @@
 """Wrapper for the upstream pyo3_extension rule to apply modular specific defaults."""
 
-load("@rules_rust_pyo3//:defs.bzl", "pyo3_extension")
+load("@rules_rust//extensions/pyo3:defs.bzl", "pyo3_extension")
 
 def modular_pyo3_extension(
         name,
@@ -25,7 +25,7 @@ def modular_pyo3_extension(
         rustc_flags: Extra flags passed to rustc.
         target_compatible_with: Platform constraints, added to the sanitizer gating below.
         deps: Rust crates the extension links. pyo3 itself is injected by the
-            `rules_rust_pyo3` toolchain, so it must not be listed.
+             toolchain, so it must not be listed.
         **kwargs: Forwarded to `pyo3_extension`.
     """
     pyo3_extension(

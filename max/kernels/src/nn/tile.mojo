@@ -15,7 +15,6 @@
 from layout import Coord, TileTensor, coord_to_index_list
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu
 from std.memory import unsafe_memcpy
 from std.sys.info import simd_width_of
 from std.utils import IndexList, StaticTuple
@@ -138,8 +137,8 @@ def _tile_cpu[
             dst_index += coord * out_stride[axis]
 
         unsafe_memcpy(
-            dest=output.ptr + dst_index,
-            src=input.ptr + src_index,
+            dest=output.ptr.unsafe_offset(dst_index),
+            src=input.ptr.unsafe_offset(src_index),
             count=dims[0],
         )
         for rep in range(1, reps[0]):
@@ -149,8 +148,10 @@ def _tile_cpu[
             # of exclusivity with an unsafe any-origin: unsafe_memcpy's
             # non-overlap is a caller contract the checker can't prove.
             unsafe_memcpy(
-                dest=output.ptr + dst_index + rep * dims[0],
-                src=(output.ptr + dst_index).as_unsafe_any_origin(),
+                dest=output.ptr.unsafe_offset(dst_index).unsafe_offset(
+                    rep * dims[0]
+                ),
+                src=output.ptr.unsafe_offset(dst_index).as_unsafe_any_origin(),
                 count=dims[0],
             )
 
@@ -187,7 +188,9 @@ def _tile_cpu[
                 base_index += coord * out_stride[outer]
 
             for rep in range(1, reps[axis]):
-                var dst_ptr = output.ptr + base_index + rep * chunk
+                var dst_ptr = output.ptr.unsafe_offset(
+                    base_index
+                ).unsafe_offset(rep * chunk)
                 # dst_ptr and src_ptr are non-overlapping slices of the
                 # same `output` buffer (shared origin). Opt out of
                 # exclusivity with an unsafe any-origin:
@@ -195,7 +198,9 @@ def _tile_cpu[
                 # checker can't prove.
                 unsafe_memcpy(
                     dest=dst_ptr,
-                    src=(output.ptr + base_index).as_unsafe_any_origin(),
+                    src=output.ptr.unsafe_offset(
+                        base_index
+                    ).as_unsafe_any_origin(),
                     count=chunk,
                 )
 
@@ -204,7 +209,6 @@ def _tile_cpu[
 def _tile_gpu[
     dtype: DType,
     type_repeats: DType,
-    target: StaticString,
 ](
     input: TileTensor[dtype, address_space=.GENERIC, ...],
     repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
@@ -252,12 +256,12 @@ def _tile_gpu[
 
     # All extents are read on the host and captured by value: the source
     # coordinate of each output element wraps per axis by the input extent.
-    var input_dims = coord_to_index_list(input.layout.shape_coord())
-    var output_dims = coord_to_index_list(output.layout.shape_coord())
+    var input_dims = input.layout.shape_coord()
+    var output_dims = output.layout.shape_coord()
     comptime rank = input.rank
     var in_dims_t = StaticTuple[Int64, rank](fill=0)
     comptime for axis in range(rank):
-        in_dims_t[axis] = Int64(input_dims[axis])
+        in_dims_t[axis] = Int64(Int(input_dims[axis]))
 
     var in_inner = Int(input_dims[rank - 1])
     var out_inner = Int(output_dims[rank - 1])
@@ -285,7 +289,7 @@ def _tile_gpu[
             var in_coord = out_coord
             comptime for axis in range(rank):
                 in_coord[axis] = out_coord[axis] % Int(in_dims_t[axis])
-            output.store[width=simd_width](
+            output.store(
                 Coord(out_coord),
                 input.load[width=simd_width](Coord(in_coord)),
             )
@@ -294,19 +298,16 @@ def _tile_gpu[
             if width == full_width:
                 elementwise[
                     simd_width=full_width,
-                    target=target,
                     _trace_description="tile",
                 ](copy_row, output.layout.shape_coord(), ctx)
             else:
                 elementwise[
                     simd_width=1,
-                    target=target,
                     _trace_description="tile",
                 ](copy_row, output.layout.shape_coord(), ctx)
         else:
             elementwise[
                 simd_width=1,
-                target=target,
                 _trace_description="tile",
             ](copy_row, output.layout.shape_coord(), ctx)
     else:
@@ -333,7 +334,6 @@ def _tile_gpu[
 
         elementwise[
             simd_width=1,
-            target=target,
             _trace_description="tile",
         ](copy_element, output.layout.shape_coord(), ctx)
 
@@ -354,7 +354,6 @@ def tile[
 def tile[
     dtype: DType,
     type_repeats: DType,
-    target: StaticString,
 ](
     input: TileTensor[dtype, address_space=.GENERIC, ...],
     repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
@@ -362,10 +361,10 @@ def tile[
     ctx: DeviceContext,
 ) raises:
     """Tiles `input` into `output` on CPU or GPU."""
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         _tile_cpu(input, repeats, output)
     else:
-        _tile_gpu[dtype, type_repeats, target](input, repeats, output, ctx)
+        _tile_gpu[dtype, type_repeats](input, repeats, output, ctx)
 
 
 @inline(.always)

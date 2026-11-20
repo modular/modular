@@ -33,8 +33,10 @@ Host reference (per query row):
 
 from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn
+from std.sys import get_defined_int
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -109,9 +111,9 @@ def _coprime_multiplier(n: Int) -> Int:
 def host_reference[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    kv_sparse_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    kv_sparse_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -153,7 +155,7 @@ def host_reference[
                 var q_base = bs * num_heads * qk_depth + h * qk_depth
 
                 var mi = Float64(min_or_neg_inf[.float32]())
-                var s_buf = alloc[Float64](n_valid)
+                var s_buf = unsafe_alloc[Float64](n_valid)
 
                 for k in range(n_valid):
                     var kv_base = (bs * topk + k) * qk_depth
@@ -207,7 +209,7 @@ def host_reference[
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
 
-                s_buf.free()
+                s_buf.unsafe_free()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -275,18 +277,8 @@ def run_test_prefill_sparse[
     `valid_topk` keys to contribute.
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_heads:",
-        num_heads,
-        " num_kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  seq_len: {seq_len} "
+        t" num_heads: {num_heads}  num_kv_tokens: {num_kv_tokens}  topk: {topk}"
     )
 
     var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))
@@ -317,14 +309,14 @@ def run_test_prefill_sparse[
     # Generate random BF16 KV data: [batch_size * num_kv_tokens, qk_depth]
     # -----------------------------------------------------------------------
     var kv_total = batch_size * num_kv_tokens * QK_DEPTH
-    var kv_host = alloc[Scalar[q_type]](kv_total)
+    var kv_host = unsafe_alloc[Scalar[q_type]](kv_total)
     randn[q_type](kv_host, kv_total, mean=0.0, standard_deviation=qkv_std)
 
     # -----------------------------------------------------------------------
     # Build shuffled page mapping (coprime permutation).
     # -----------------------------------------------------------------------
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_kv_tokens, PAGE_SIZE)
@@ -339,7 +331,7 @@ def run_test_prefill_sparse[
     # -----------------------------------------------------------------------
     # Fill KV cache blocks from random data with paged layout.
     # -----------------------------------------------------------------------
-    var blocks_host = alloc[Scalar[q_type]](block_elems)
+    var blocks_host = unsafe_alloc[Scalar[q_type]](block_elems)
     # Multi-layer: seed every layer with distinct random data so a gather
     # into the wrong layer (the num_layers>1 addressing bug) reads garbage
     # and trips the cosine / tail gates. Layer `layer_idx` is overwritten
@@ -388,7 +380,7 @@ def run_test_prefill_sparse[
     # SMALL (small kv_std => small V), so the scale-calibrated error gates
     # stay valid (bf16 ULP ~ output_magnitude * 2^-8).
     var q_std_eff = qkv_std if q_std < 0.0 else q_std
-    var q_host = alloc[Scalar[q_type]](q_elems)
+    var q_host = unsafe_alloc[Scalar[q_type]](q_elems)
     randn[q_type](q_host, q_elems, mean=0.0, standard_deviation=q_std_eff)
 
     # -----------------------------------------------------------------------
@@ -397,7 +389,7 @@ def run_test_prefill_sparse[
     # selections (catches per-query stride bugs in the kernel).
     # selected_tokens[bs * topk + i] = which physical-row in batch `b` to use
     # -----------------------------------------------------------------------
-    var selected_tokens = alloc[Int](total_q_tokens * topk)
+    var selected_tokens = unsafe_alloc[Int](total_q_tokens * topk)
     var sel_mult = _coprime_multiplier(num_kv_tokens)
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -413,7 +405,7 @@ def run_test_prefill_sparse[
     # Gather selected rows from the full KV buffer per query.
     # -----------------------------------------------------------------------
     var kv_sparse_size = total_q_tokens * topk * QK_DEPTH
-    var kv_sparse = alloc[Scalar[q_type]](kv_sparse_size)
+    var kv_sparse = unsafe_alloc[Scalar[q_type]](kv_sparse_size)
 
     for bi in range(batch_size):
         for s in range(seq_len):
@@ -429,7 +421,7 @@ def run_test_prefill_sparse[
     # Compute host reference output
     # -----------------------------------------------------------------------
     var out_elems = total_q_tokens * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[q_type]](out_elems)
+    var ref_host = unsafe_alloc[Scalar[q_type]](out_elems)
     # Host ref iterates over only the *valid* per-query keys (the kernel
     # masks the rest to -inf so they contribute zero).  `kv_sparse` rows
     # `[valid_topk..topk)` exist in memory but are never read by the
@@ -455,7 +447,7 @@ def run_test_prefill_sparse[
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
 
@@ -477,7 +469,7 @@ def run_test_prefill_sparse[
     # indices[bs * topk + i] = physical_block * PAGE_SIZE + tok_in_page.
     # -----------------------------------------------------------------------
     var total_indices = total_q_tokens * topk
-    var h_indices = alloc[UInt32](total_indices)
+    var h_indices = unsafe_alloc[UInt32](total_indices)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
@@ -509,7 +501,7 @@ def run_test_prefill_sparse[
     var reported_topk_length = (
         valid_topk if topk_lengths_override < 0 else topk_lengths_override
     )
-    var h_topk_lengths = alloc[UInt32](total_q_tokens)
+    var h_topk_lengths = unsafe_alloc[UInt32](total_q_tokens)
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_topk_length)
 
@@ -609,18 +601,20 @@ def run_test_prefill_sparse[
     # `None` (kernel skips the `exp2(sink - mi)` softmax term). Non-empty ->
     # a device buffer of EXACTLY `num_heads` Float32 so a broken sub-64
     # padded-row guard reading sink[num_heads..63] is a real OOB.
-    var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
-        var sink_host = alloc[Float32](len(sink_values))
+        var sink_host = unsafe_alloc[Float32](len(sink_values))
         for i in range(len(sink_values)):
             sink_host[i] = sink_values[i]
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
-        sink_host.free()
-        attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](
-            sink_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin()
+        sink_host.unsafe_free()
+        attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
+            sink_device.unsafe_ptr()
+            .unsafe_bitcast[Float32]()
+            .as_unsafe_any_origin()
         )
 
     mla_prefill_sparse[
@@ -644,7 +638,7 @@ def run_test_prefill_sparse[
     # -----------------------------------------------------------------------
     # Verify output against host reference
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_elems)
+    var out_host = unsafe_alloc[Scalar[q_type]](out_elems)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -739,14 +733,8 @@ def run_test_prefill_sparse[
                             nonzero_high_head += 1
                     total_checked += 1
     print(
-        "  DIAG: max_err=",
-        max_err,
-        " max_abs_actual=",
-        max_actual,
-        " num_nonzero=",
-        num_nonzero,
-        "/",
-        total_checked,
+        t"  DIAG: max_err= {max_err}  max_abs_actual= {max_actual} "
+        t" num_nonzero= {num_nonzero} / {total_checked}"
     )
     print(
         "  max_err by depth: low(0..255)=",
@@ -768,14 +756,8 @@ def run_test_prefill_sparse[
         for d in [0, 64, 128, 192]:
             var idx = base + d
             print(
-                "    h=",
-                h,
-                " d=",
-                d,
-                " out=",
-                out_host[idx].cast[.float64](),
-                " ref=",
-                ref_host[idx].cast[.float64](),
+                t"    h= {h}  d= {d}  out= {out_host[idx].cast[.float64]()} "
+                t" ref= {ref_host[idx].cast[.float64]()}"
             )
 
     # Fail hard on ANY non-finite output/reference. This is the check the
@@ -858,17 +840,9 @@ def run_test_prefill_sparse[
             + String(atol)
         )
     print(
-        "  PASSED: max_err=",
-        max_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " cosine=",
-        cosine,
-        " n_err_gt_1e-2=",
-        n_err_gt_1em2,
-        " checked=",
-        total_checked,
-        " elements",
+        t"  PASSED: max_err= {max_err}  mean_abs_err= {mean_abs_err}  cosine="
+        t" {cosine}  n_err_gt_1e-2= {n_err_gt_1em2}  checked= {total_checked} "
+        t" elements"
     )
 
     # -----------------------------------------------------------------------
@@ -883,17 +857,17 @@ def run_test_prefill_sparse[
     _ = topk_lengths_device
     _ = sink_device
 
-    blocks_host.free()
-    kv_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    q_host.free()
-    kv_sparse.free()
-    selected_tokens.free()
-    ref_host.free()
-    out_host.free()
-    h_indices.free()
-    h_topk_lengths.free()
+    blocks_host.unsafe_free()
+    kv_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    q_host.unsafe_free()
+    kv_sparse.unsafe_free()
+    selected_tokens.unsafe_free()
+    ref_host.unsafe_free()
+    out_host.unsafe_free()
+    h_indices.unsafe_free()
+    h_topk_lengths.unsafe_free()
 
 
 def main() raises:
@@ -901,6 +875,19 @@ def main() raises:
         comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
+            comptime if get_defined_int[
+                "MLA_SPARSE_PREFILL_FP16_CONTRACT", 0
+            ]():
+                run_test_prefill_sparse[.float16, 8, 64](
+                    "fp16_h8_contract", 1, 2, 128, ctx
+                )
+                run_test_prefill_sparse[.float16, 64, 64](
+                    "fp16_h64_contract", 1, 2, 128, ctx
+                )
+                run_test_prefill_sparse[.float16, 128, 128](
+                    "fp16_h128_contract", 1, 2, 256, ctx
+                )
+                return
             # ===============================================================
             # Production DSv3.2/GLM regime: constant broadcast topk_lengths.
             # ---------------------------------------------------------------

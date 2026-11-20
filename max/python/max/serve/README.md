@@ -17,4 +17,4 @@ but we're currently not accepting contributions to the serving library.
 ## License
 
 Users must adhere to the terms of usage for MAX and Mojo.
-[Modular Community License](https://www.modular.com/legal/community).
+[MAX License](https://modular.com/legal/max-license).

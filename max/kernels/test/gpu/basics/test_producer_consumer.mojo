@@ -148,7 +148,9 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext) raises:
 
 def cpaysnc_producer_consumer_pipeline_kernel[
     num_stages: Int,
-](src: Span[Float32, ImmutAnyOrigin], dst: Span[Float32, MutAnyOrigin]):
+    src_origin: ImmOrigin,
+    dst_origin: MutOrigin,
+](src: Span[Float32, src_origin], dst: Span[Float32, dst_origin],):
     comptime size_per_copy = 16 // size_of[DType.float32]()
     comptime size_per_stage = size_per_copy * 128
 
@@ -197,8 +199,10 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             var offset = i * size_per_stage + thread_idx.x * size_per_copy
             async_copy[16](
-                (src.unsafe_ptr() + offset).address_space_cast[.GLOBAL](),
-                smem + offset,
+                src.unsafe_ptr()
+                .unsafe_offset(offset)
+                .unsafe_address_space_cast[.GLOBAL](),
+                smem.unsafe_offset(offset),
             )
             async_copy_arrive(produced_mbar[i].unsafe_ptr())
             _ = produced_mbar[i].arrive()
@@ -236,12 +240,18 @@ def test_cpasync_producer_consumer_pipeline[
 
     var dst_device_buffer = ctx.enqueue_create_buffer[.float32](size)
 
-    comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
+    var src_span = Span[Float32](
+        unsafe_ptr=src_device_buffer.unsafe_ptr(), length=size
+    ).as_imm()
+    var dst_span = Span[Float32](
+        unsafe_ptr=dst_device_buffer.unsafe_ptr(), length=size
+    )
+    comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[
+        num_stages, type_of(src_span).origin, type_of(dst_span).origin
+    ]
     ctx.enqueue_function[kernel](
-        Span[Float32](
-            unsafe_ptr=src_device_buffer.unsafe_ptr(), length=size
-        ).as_imm(),
-        Span[Float32](unsafe_ptr=dst_device_buffer.unsafe_ptr(), length=size),
+        src_span,
+        dst_span,
         grid_dim=(1),
         block_dim=(256),
     )

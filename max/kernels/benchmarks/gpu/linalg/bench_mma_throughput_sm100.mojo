@@ -82,7 +82,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.memory import external_memory
@@ -293,20 +293,22 @@ def mma_throughput_kernel[
         (b_size * size_of[a_type]()) % 16
     ) == 0, "preserve alignment"
 
-    var b_smem = (a_smem + a_size).bitcast[Scalar[a_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[a_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
     # Shared memory pointer for tensor memory address handshake + mbarriers.
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[a_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -347,7 +349,7 @@ def mma_throughput_kernel[
         accum_type,
         a_type,
         a_type,
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        (UInt32(MMA_M), UInt32(MMA_N)),
         transpose_b=True,
     ]()
 
@@ -528,6 +530,7 @@ def main() raises:
             row_major[1, num_threads](), ctx
         )
         var sink_dev = sink.device_tensor()
+        _ = sink_dev  # silence 'unused' warning.
 
         var a_tma_op = create_tensor_tile[
             coord[BM, BK_DESC], swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
@@ -558,7 +561,7 @@ def main() raises:
         ]
 
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut sink, imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut sink, imm}:
             ctx.enqueue_function[kernel](
                 a_tma_op,
                 b_tma_op,
@@ -566,9 +569,6 @@ def main() raises:
                 grid_dim=(1, 1, 1),
                 block_dim=(num_threads,),
                 shared_mem_bytes=smem_use,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(smem_use)
-                ),
             )
 
         @inline(.always)

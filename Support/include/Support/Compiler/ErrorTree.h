@@ -20,6 +20,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 #include <optional>
@@ -32,7 +33,7 @@ namespace M {
 /// This error class is a complex error consisting of various possible nested
 /// causes at certain IR locations. The error consists of a single top-level
 /// simple error and potential nested errors.
-class ErrorTree {
+class MODULAR_CXX_EXPORT ErrorTree {
 public:
   /// Construct an error tree with just a main error.
   template <typename U>

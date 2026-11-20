@@ -20,6 +20,7 @@ Q output and KV cache contents against the unfused reference path.
 from internal_utils.fp8_utils import cast_saturating
 from std.collections import Set
 from std.memory import unsafe_memcpy
+from std.memory.alloc import unsafe_alloc
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
@@ -42,6 +43,7 @@ from nn.rope_split_store import (
 )
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 def execute_test[
@@ -84,7 +86,7 @@ def execute_test[
 
     comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
 
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -99,7 +101,7 @@ def execute_test[
     # --- Allocate device and host buffers ---
     var qkv_size = total_length * combined_dim
     var qkv_device = ctx.enqueue_create_buffer[dtype](qkv_size)
-    var qkv_host_ptr = alloc[Scalar[dtype]](qkv_size)
+    var qkv_host_ptr = unsafe_alloc[Scalar[dtype]](qkv_size)
 
     var qkv_host_tt = TileTensor(
         qkv_host_ptr,
@@ -113,7 +115,7 @@ def execute_test[
 
     var kv_block_total = kv_block_shape.flattened_length()
     var fused_kv_device = ctx.enqueue_create_buffer[dtype](kv_block_total)
-    var fused_kv_host_ptr = alloc[Scalar[dtype]](kv_block_total)
+    var fused_kv_host_ptr = unsafe_alloc[Scalar[dtype]](kv_block_total)
     var fused_kv_host_tt = TileTensor(
         fused_kv_host_ptr,
         row_major(
@@ -132,7 +134,7 @@ def execute_test[
     # Copy the same initial KV data for the unfused path.
     ctx.enqueue_copy(unfused_kv_device, fused_kv_host_ptr)
 
-    var row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var row_offsets_host_ptr = unsafe_alloc[UInt32](batch_size + 1)
     var offset = 0
     for i in range(batch_size):
         row_offsets_host_ptr[i] = UInt32(offset)
@@ -141,14 +143,14 @@ def execute_test[
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host_ptr)
 
-    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_host_ptr = unsafe_alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = UInt32(cache_lens[i])
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
     var paged_lut_total = paged_lut_shape.flattened_length()
-    var paged_lut_host_ptr = alloc[UInt32](paged_lut_total)
+    var paged_lut_host_ptr = unsafe_alloc[UInt32](paged_lut_total)
     var block_set = Set[Int]()
     var paged_lut_col_count = ceildiv(max_full_context_length, page_size)
     for bs in range(batch_size):
@@ -166,7 +168,7 @@ def execute_test[
 
     var freqs_size = max_seq_len * head_dim
     var freqs_device = ctx.enqueue_create_buffer[dtype](freqs_size)
-    var freqs_host_ptr = alloc[Scalar[dtype]](freqs_size)
+    var freqs_host_ptr = unsafe_alloc[Scalar[dtype]](freqs_size)
     var freqs_host_tt = TileTensor(
         freqs_host_ptr,
         row_major((max_seq_len, Idx[head_dim])),
@@ -257,7 +259,7 @@ def execute_test[
         fused_output_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -273,8 +275,8 @@ def execute_test[
     var qkv_dev_ptr = qkv_device.unsafe_ptr()
 
     # Store raw K and V to unfused cache
-    var k_ptr = qkv_dev_ptr + q_dim_val
-    var v_ptr = qkv_dev_ptr + q_dim_val + k_dim_val
+    var k_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val)
+    var v_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val).unsafe_offset(k_dim_val)
     var k_stride0 = combined_dim
     var v_stride0 = combined_dim
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
@@ -284,40 +286,34 @@ def execute_test[
         row_major(Int64(batch_size + 1)),
     )
 
-    @__parameter
-    @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) -> SIMD[dtype, width]:
+        width: Int, alignment: Int
+    ](idx: Coord) {var k_ptr, var k_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * k_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * k_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (k_ptr + flat).load[width=width]()
+        return k_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    @__parameter
-    @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) -> SIMD[dtype, width]:
+        width: Int, alignment: Int
+    ](idx: Coord) {var v_ptr, var v_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * v_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * v_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (v_ptr + flat).load[width=width]()
+        return v_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    kv_cache_store_ragged[target="gpu", input_fn=k_load_fn](
+    kv_cache_store_ragged(
         unfused_k_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
+        k_load_fn,
         ctx,
     )
-    kv_cache_store_ragged[target="gpu", input_fn=v_load_fn](
+    kv_cache_store_ragged(
         unfused_v_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
+        v_load_fn,
         ctx,
     )
 
@@ -326,11 +322,11 @@ def execute_test[
     # Extract Q into a contiguous [total_length, num_q_heads, head_dim]
     # buffer on the host, then upload to device.
     var q_contig_size = total_length * num_q_heads * head_dim
-    var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
+    var q_contig_host_ptr = unsafe_alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
         unsafe_memcpy(
-            dest=q_contig_host_ptr + t * q_dim_val,
-            src=qkv_host_ptr + t * combined_dim,
+            dest=q_contig_host_ptr.unsafe_offset(t * q_dim_val),
+            src=qkv_host_ptr.unsafe_offset(t * combined_dim),
             count=q_dim_val,
         )
     var q_contig_device = ctx.enqueue_create_buffer[dtype](q_contig_size)
@@ -349,7 +345,6 @@ def execute_test[
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,
-        target="gpu",
     ](
         q_proj=q_tile,
         input_row_offsets=row_offsets_tile,
@@ -370,9 +365,9 @@ def execute_test[
     # layout and q_dim == num_q_heads * head_dim.
     # =====================================================================
     print("Comparing Q outputs...")
-    var fused_q_host_ptr = alloc[Scalar[dtype]](output_size)
+    var fused_q_host_ptr = unsafe_alloc[Scalar[dtype]](output_size)
     ctx.enqueue_copy(fused_q_host_ptr, fused_output_device)
-    var unfused_q_host_ptr = alloc[Scalar[dtype]](q_contig_size)
+    var unfused_q_host_ptr = unsafe_alloc[Scalar[dtype]](q_contig_size)
     ctx.enqueue_copy(unfused_q_host_ptr, rope_q_out_device)
     ctx.synchronize()
     for i in range(total_length * hidden_size):
@@ -389,9 +384,9 @@ def execute_test[
     # Compare KV block buffers
     # =====================================================================
     print("Comparing KV block buffers...")
-    var fused_kv_result_ptr = alloc[Scalar[dtype]](kv_block_total)
+    var fused_kv_result_ptr = unsafe_alloc[Scalar[dtype]](kv_block_total)
     ctx.enqueue_copy(fused_kv_result_ptr, fused_kv_device)
-    var unfused_kv_result_ptr = alloc[Scalar[dtype]](kv_block_total)
+    var unfused_kv_result_ptr = unsafe_alloc[Scalar[dtype]](kv_block_total)
     ctx.enqueue_copy(unfused_kv_result_ptr, unfused_kv_device)
     ctx.synchronize()
     var nl = num_layers
@@ -482,7 +477,7 @@ def execute_test_with_position_ids[
     # --- Layouts ---
     comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
 
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -497,7 +492,7 @@ def execute_test_with_position_ids[
     # --- Allocate device and host buffers ---
     var qkv_size = total_length * combined_dim
     var qkv_device = ctx.enqueue_create_buffer[dtype](qkv_size)
-    var qkv_host_ptr = alloc[Scalar[dtype]](qkv_size)
+    var qkv_host_ptr = unsafe_alloc[Scalar[dtype]](qkv_size)
     var qkv_host_tt = TileTensor(
         qkv_host_ptr,
         row_major((total_length, Idx[combined_dim])),
@@ -510,7 +505,7 @@ def execute_test_with_position_ids[
 
     var kv_block_total = kv_block_shape.flattened_length()
     var fused_kv_device = ctx.enqueue_create_buffer[dtype](kv_block_total)
-    var fused_kv_host_ptr = alloc[Scalar[dtype]](kv_block_total)
+    var fused_kv_host_ptr = unsafe_alloc[Scalar[dtype]](kv_block_total)
     var fused_kv_host_tt = TileTensor(
         fused_kv_host_ptr,
         row_major(
@@ -528,7 +523,7 @@ def execute_test_with_position_ids[
     var unfused_kv_device = ctx.enqueue_create_buffer[dtype](kv_block_total)
     ctx.enqueue_copy(unfused_kv_device, fused_kv_host_ptr)
 
-    var row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var row_offsets_host_ptr = unsafe_alloc[UInt32](batch_size + 1)
     var offset = 0
     for i in range(batch_size):
         row_offsets_host_ptr[i] = UInt32(offset)
@@ -537,14 +532,14 @@ def execute_test_with_position_ids[
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host_ptr)
 
-    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_host_ptr = unsafe_alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = UInt32(cache_lens[i])
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
     var paged_lut_total = paged_lut_shape.flattened_length()
-    var paged_lut_host_ptr = alloc[UInt32](paged_lut_total)
+    var paged_lut_host_ptr = unsafe_alloc[UInt32](paged_lut_total)
     var block_set = Set[Int]()
     var paged_lut_col_count = ceildiv(max_full_context_length, page_size)
     for bs in range(batch_size):
@@ -562,7 +557,7 @@ def execute_test_with_position_ids[
 
     var freqs_size = max_seq_len * head_dim
     var freqs_device = ctx.enqueue_create_buffer[dtype](freqs_size)
-    var freqs_host_ptr = alloc[Scalar[dtype]](freqs_size)
+    var freqs_host_ptr = unsafe_alloc[Scalar[dtype]](freqs_size)
     var freqs_host_tt = TileTensor(
         freqs_host_ptr,
         row_major((max_seq_len, Idx[head_dim])),
@@ -577,7 +572,7 @@ def execute_test_with_position_ids[
     # Generate deterministic position_ids: cache_length + token_offset + section*7
     # to give each section distinct positions while staying in bounds.
     var pos_ids_total = num_sections * total_length
-    var pos_ids_host_ptr = alloc[UInt32](pos_ids_total)
+    var pos_ids_host_ptr = unsafe_alloc[UInt32](pos_ids_total)
     var tok_offset = 0
     for b in range(batch_size):
         for t in range(prompt_lens[b]):
@@ -674,9 +669,7 @@ def execute_test_with_position_ids[
         pos_ids_device, row_major(num_sections, total_length)
     )
 
-    _rope_split_store_ragged_with_position_ids[
-        target="gpu", interleaved=interleaved
-    ](
+    _rope_split_store_ragged_with_position_ids[interleaved=interleaved,](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -692,8 +685,8 @@ def execute_test_with_position_ids[
     # =====================================================================
     var qkv_dev_ptr = qkv_device.unsafe_ptr()
 
-    var k_ptr = qkv_dev_ptr + q_dim_val
-    var v_ptr = qkv_dev_ptr + q_dim_val + k_dim_val
+    var k_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val)
+    var v_ptr = qkv_dev_ptr.unsafe_offset(q_dim_val).unsafe_offset(k_dim_val)
     var k_stride0 = combined_dim
     var v_stride0 = combined_dim
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
@@ -703,50 +696,44 @@ def execute_test_with_position_ids[
         row_major(Int64(batch_size + 1)),
     )
 
-    @__parameter
-    @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) -> SIMD[dtype, width]:
+        width: Int, alignment: Int
+    ](idx: Coord) {var k_ptr, var k_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * k_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * k_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (k_ptr + flat).load[width=width]()
+        return k_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    @__parameter
-    @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) -> SIMD[dtype, width]:
+        width: Int, alignment: Int
+    ](idx: Coord) {var v_ptr, var v_stride0} -> SIMD[dtype, width]:
         var flat = (
-            Int(idx[0].value()) * v_stride0
-            + Int(idx[1].value()) * head_dim
-            + Int(idx[2].value())
+            Int(idx[0]) * v_stride0 + Int(idx[1]) * head_dim + Int(idx[2])
         )
-        return (v_ptr + flat).load[width=width]()
+        return v_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    kv_cache_store_ragged[target="gpu", input_fn=k_load_fn](
+    kv_cache_store_ragged(
         unfused_k_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
+        k_load_fn,
         ctx,
     )
-    kv_cache_store_ragged[target="gpu", input_fn=v_load_fn](
+    kv_cache_store_ragged(
         unfused_v_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
+        v_load_fn,
         ctx,
     )
 
     # Apply rope to Q and K-in-cache with position_ids.
     var q_contig_size = total_length * num_q_heads * head_dim
-    var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
+    var q_contig_host_ptr = unsafe_alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
         unsafe_memcpy(
-            dest=q_contig_host_ptr + t * q_dim_val,
-            src=qkv_host_ptr + t * combined_dim,
+            dest=q_contig_host_ptr.unsafe_offset(t * q_dim_val),
+            src=qkv_host_ptr.unsafe_offset(t * combined_dim),
             count=q_dim_val,
         )
     var q_contig_device = ctx.enqueue_create_buffer[dtype](q_contig_size)
@@ -762,14 +749,12 @@ def execute_test_with_position_ids[
         row_major(total_length, Idx[num_q_heads], Idx[head_dim]),
     )
 
-    var pos_ids_immut = TileTensor(
-        pos_ids_tile._storage.as_unsafe_any_origin(),
-        pos_ids_tile.layout,
-    ).as_imm()
+    var pos_ids_immut = rebind[
+        TileTensor[.uint32, type_of(pos_ids_tile).LayoutType, ImmutAnyOrigin]
+    ](pos_ids_tile.reshape(pos_ids_tile.layout))
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,
-        target="gpu",
     ](
         q_proj=q_tile,
         input_row_offsets=row_offsets_tile,
@@ -786,9 +771,9 @@ def execute_test_with_position_ids[
     # Compare Q outputs
     # =====================================================================
     print("Comparing Q outputs...")
-    var fused_q_host_ptr = alloc[Scalar[dtype]](output_size)
+    var fused_q_host_ptr = unsafe_alloc[Scalar[dtype]](output_size)
     ctx.enqueue_copy(fused_q_host_ptr, fused_output_device)
-    var unfused_q_host_ptr = alloc[Scalar[dtype]](q_contig_size)
+    var unfused_q_host_ptr = unsafe_alloc[Scalar[dtype]](q_contig_size)
     ctx.enqueue_copy(unfused_q_host_ptr, rope_q_out_device)
     ctx.synchronize()
     for i in range(total_length * hidden_size):
@@ -805,9 +790,9 @@ def execute_test_with_position_ids[
     # Compare KV block buffers
     # =====================================================================
     print("Comparing KV block buffers...")
-    var fused_kv_result_ptr = alloc[Scalar[dtype]](kv_block_total)
+    var fused_kv_result_ptr = unsafe_alloc[Scalar[dtype]](kv_block_total)
     ctx.enqueue_copy(fused_kv_result_ptr, fused_kv_device)
-    var unfused_kv_result_ptr = alloc[Scalar[dtype]](kv_block_total)
+    var unfused_kv_result_ptr = unsafe_alloc[Scalar[dtype]](kv_block_total)
     ctx.enqueue_copy(unfused_kv_result_ptr, unfused_kv_device)
     ctx.synchronize()
     var nl = num_layers
@@ -892,7 +877,7 @@ def execute_test_fp8[
     # --- Layouts ---
     comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
 
-    var kv_block_shape = IndexList[6](
+    var kv_block_shape = Index(
         num_paged_blocks,
         2,
         num_layers,
@@ -907,7 +892,7 @@ def execute_test_fp8[
     # --- QKV input (BF16, shared by both runs) ---
     var qkv_size = total_length * combined_dim
     var qkv_device = ctx.enqueue_create_buffer[compute_dtype](qkv_size)
-    var qkv_host_ptr = alloc[Scalar[compute_dtype]](qkv_size)
+    var qkv_host_ptr = unsafe_alloc[Scalar[compute_dtype]](qkv_size)
     var qkv_host_tt = TileTensor(
         qkv_host_ptr,
         row_major((total_length, Idx[combined_dim])),
@@ -923,7 +908,7 @@ def execute_test_fp8[
     # --- KV cache buffers (zero-initialized) ---
     var kv_block_total = kv_block_shape.flattened_length()
 
-    var bf16_kv_host_ptr = alloc[Scalar[compute_dtype]](kv_block_total)
+    var bf16_kv_host_ptr = unsafe_alloc[Scalar[compute_dtype]](kv_block_total)
     for i in range(kv_block_total):
         bf16_kv_host_ptr[i] = Scalar[compute_dtype](0)
     var bf16_kv_device = ctx.enqueue_create_buffer[compute_dtype](
@@ -931,14 +916,14 @@ def execute_test_fp8[
     )
     ctx.enqueue_copy(bf16_kv_device, bf16_kv_host_ptr)
 
-    var fp8_kv_host_ptr = alloc[Scalar[fp8_dtype]](kv_block_total)
+    var fp8_kv_host_ptr = unsafe_alloc[Scalar[fp8_dtype]](kv_block_total)
     for i in range(kv_block_total):
         fp8_kv_host_ptr[i] = Scalar[fp8_dtype](0)
     var fp8_kv_device = ctx.enqueue_create_buffer[fp8_dtype](kv_block_total)
     ctx.enqueue_copy(fp8_kv_device, fp8_kv_host_ptr)
 
     # --- Row offsets, cache lengths, paged LUT, freqs ---
-    var row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var row_offsets_host_ptr = unsafe_alloc[UInt32](batch_size + 1)
     var offset = 0
     for i in range(batch_size):
         row_offsets_host_ptr[i] = UInt32(offset)
@@ -947,14 +932,14 @@ def execute_test_fp8[
     var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host_ptr)
 
-    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_host_ptr = unsafe_alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = UInt32(cache_lens[i])
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
     var paged_lut_total = paged_lut_shape.flattened_length()
-    var paged_lut_host_ptr = alloc[UInt32](paged_lut_total)
+    var paged_lut_host_ptr = unsafe_alloc[UInt32](paged_lut_total)
     var block_set = Set[Int]()
     var paged_lut_col_count = ceildiv(max_full_context_length, page_size)
     for bs in range(batch_size):
@@ -972,7 +957,7 @@ def execute_test_fp8[
 
     var freqs_size = max_seq_len * head_dim
     var freqs_device = ctx.enqueue_create_buffer[compute_dtype](freqs_size)
-    var freqs_host_ptr = alloc[Scalar[compute_dtype]](freqs_size)
+    var freqs_host_ptr = unsafe_alloc[Scalar[compute_dtype]](freqs_size)
     var freqs_host_tt = TileTensor(
         freqs_host_ptr,
         row_major((max_seq_len, Idx[head_dim])),
@@ -1073,7 +1058,7 @@ def execute_test_fp8[
         bf16_q_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -1092,7 +1077,7 @@ def execute_test_fp8[
         fp8_q_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -1110,8 +1095,8 @@ def execute_test_fp8[
     # to the output type. Deterministic cast → exact match.
     # =====================================================================
     print("Comparing Q outputs (FP8 vs BF16→FP8)...")
-    var bf16_q_host = alloc[Scalar[compute_dtype]](output_size)
-    var fp8_q_host = alloc[Scalar[fp8_dtype]](output_size)
+    var bf16_q_host = unsafe_alloc[Scalar[compute_dtype]](output_size)
+    var fp8_q_host = unsafe_alloc[Scalar[fp8_dtype]](output_size)
     ctx.enqueue_copy(bf16_q_host, bf16_q_device)
     ctx.enqueue_copy(fp8_q_host, fp8_q_device)
     ctx.synchronize()
@@ -1135,8 +1120,8 @@ def execute_test_fp8[
     # the FP8 values stored by the kernel.
     # =====================================================================
     print("Comparing KV caches (FP8 vs BF16→FP8)...")
-    var bf16_kv_result = alloc[Scalar[compute_dtype]](kv_block_total)
-    var fp8_kv_result = alloc[Scalar[fp8_dtype]](kv_block_total)
+    var bf16_kv_result = unsafe_alloc[Scalar[compute_dtype]](kv_block_total)
+    var fp8_kv_result = unsafe_alloc[Scalar[fp8_dtype]](kv_block_total)
     ctx.enqueue_copy(bf16_kv_result, bf16_kv_device)
     ctx.enqueue_copy(fp8_kv_result, fp8_kv_device)
     ctx.synchronize()

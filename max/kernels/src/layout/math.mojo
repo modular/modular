@@ -121,15 +121,14 @@ def max(
         storage.unsafe_ptr().unsafe_bitcast[x.ElementType](), x.layout
     )
     comptime for i in range(x.LayoutType.static_product):
-        var offset = x.layout(Idx[i])
         # Strided SIMD cells may have only scalar alignment.
-        var a = x.raw_load[width=x.element_size, alignment=align_of[x.dtype]()](
-            offset
+        var a = x.load[alignment=align_of[x.dtype]()](Coord(Idx[i]))
+        var b = y.load[width=x.element_size, alignment=align_of[y.dtype]()](
+            Coord(Idx[i])
         )
-        var b = y.raw_load[width=x.element_size, alignment=align_of[y.dtype]()](
-            offset
+        storage.store[alignment=align_of[x.dtype]()](
+            Coord(x.layout(Idx[i])), b_max(a, b)
         )
-        res.raw_store(offset, b_max(a, b))
     return res
 
 
@@ -322,15 +321,15 @@ def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     """
 
     @inline(.always)
-    @__parameter
     def input_fn_1d[
         dtype_: DType, width: Int
-    ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(idx)
-        return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
+    ](idx: Int) {imm} -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](
+            src.load[width=width, alignment=align_of[src.dtype]()](Coord(idx))
+        )
 
-    return reduction.variance[src.dtype, input_fn_1d](
-        src.num_elements(), correction
+    return reduction.variance[src.dtype](
+        src.num_elements(), input_fn_1d, correction
     )
 
 
@@ -350,12 +349,12 @@ def mean(src: TileTensor) raises -> Scalar[src.dtype]:
 
     assert src.num_elements() != 0, "input must not be empty"
 
-    @__parameter
     @inline(.always)
     def input_fn_1d[
         dtype_: DType, width: Int
-    ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(idx)
-        return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
+    ](idx: Int) {imm} -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](
+            src.load[width=width, alignment=align_of[src.dtype]()](Coord(idx))
+        )
 
-    return reduction.mean[src.dtype, input_fn_1d](src.num_elements())
+    return reduction.mean[src.dtype](src.num_elements(), input_fn_1d)

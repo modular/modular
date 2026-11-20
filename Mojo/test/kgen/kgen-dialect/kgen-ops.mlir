@@ -13,8 +13,8 @@ kgen.generator @kernel() {
 kgen.generator @compile_offload_with_target_attrs() {
   kgen.param.declare dummy: target = <#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>>
 
-  // CHECK: kgen.compile_offload<dummy, 0, "", "", :() -> () @kernel {target_attrs = {backend.flag = true, backend.shape = [2, 4]}}> : !kgen.none
-  %0 = kgen.compile_offload<dummy, 0, "", "", : ()->() @kernel {target_attrs = {"backend.shape" = [2, 4], "backend.flag" = true}}> : !kgen.none
+  // CHECK: kgen.compile_offload<dummy, 0, "", "", :() -> () @kernel> : !kgen.none <target_attrs = {backend.flag = true, backend.shape = [2, 4]}>
+  %0 = kgen.compile_offload<dummy, 0, "", "", : ()->() @kernel> : !kgen.none <target_attrs = {"backend.shape" = [2, 4], "backend.flag" = true}>
 
   hlcf.return
 }
@@ -46,8 +46,8 @@ kgen.generator @width(%arg0: !kgen.scalar<index>) -> !kgen.scalar<index> {
 
 // CHECK-LABEL: kgen.generator @lifted_signature
 // CHECK-SAME: (%arg0: !kgen.simd<to_builtin(:scalar<index> *"(lifted)apply_0"), ui8>)
-// CHECK-SAME: attributes {funcTypeGenerator = !kgen.generator<<scalar<index>>(!kgen.simd<to_builtin(:scalar<index> apply(:(!kgen.scalar<index>) -> !kgen.scalar<index> @width, *(0,0))), ui8>) -> !kgen.scalar<index>>}
-kgen.generator @lifted_signature<n: scalar<index>>(%arg0: !kgen.simd<to_builtin(:scalar<index> *"(lifted)apply_0"), ui8>) -> !kgen.scalar<index> attributes {funcTypeGenerator = !kgen.generator<<scalar<index>>(!kgen.simd<to_builtin(:scalar<index> apply(:(!kgen.scalar<index>) -> !kgen.scalar<index> @width, *(0,0))), ui8>) -> !kgen.scalar<index>>} {
+// CHECK-SAME: signature !kgen.generator<<scalar<index>>(!kgen.simd<to_builtin(:scalar<index> apply(:(!kgen.scalar<index>) -> !kgen.scalar<index> @width, *(0,0))), ui8>) -> !kgen.scalar<index>>
+kgen.generator @lifted_signature<n: scalar<index>>(%arg0: !kgen.simd<to_builtin(:scalar<index> *"(lifted)apply_0"), ui8>) -> !kgen.scalar<index> signature !kgen.generator<<scalar<index>>(!kgen.simd<to_builtin(:scalar<index> apply(:(!kgen.scalar<index>) -> !kgen.scalar<index> @width, *(0,0))), ui8>) -> !kgen.scalar<index>> {
   kgen.param.apply *"(lifted)apply_0" = [(!kgen.scalar<index>) -> !kgen.scalar<index>: @width](n)
   %0 = kgen.param.constant: scalar<index> = <n>
   hlcf.return %0 : !kgen.scalar<index>

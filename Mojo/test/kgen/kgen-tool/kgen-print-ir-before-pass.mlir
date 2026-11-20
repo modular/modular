@@ -1,4 +1,4 @@
-// RUN: kgen --emit=llvm --mlir-print-ir-before=cse %s -o /dev/null 2>&1 | FileCheck %s
+// RUN: kgen --emit=llvm -mllvm --mlir-print-ir-before=cse %s -o /dev/null 2>&1 | FileCheck %s
 // CHECK: IR Dump Before CSEPass: cse
 kgen.generator export @exp_f32(%arg: f32) -> f32 {
   hlcf.return %arg : f32

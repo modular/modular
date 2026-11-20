@@ -37,7 +37,7 @@ from std.collections.string.iterators import (
     GraphemeIndicesIter,
     GraphemeSliceIter,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.format._utils import _TotalWritableBytes, _FlushingWriteBuffer
 from std.math import align_down
 from std.os import PathLike, abort
@@ -46,24 +46,38 @@ from std.ffi import c_char, CStringSpan
 from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
-from std.bit.mask import is_negative, splat
+from std.bit.mask import splat
 from std.memory import unsafe_memcmp, pack_bits
-from std.python import Python, PythonObject
+from std.utils._nicheable import _FieldNicheable
+from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
 
+@deprecated(use=StringSpan)
 comptime StringSlice = StringSpan
-"""Provides a compatibility alias for `StringSpan`."""
+"""Deprecated: The former name of `StringSpan`.
 
-comptime ImmStringSpan[origin: ImmOrigin] = StringSpan[origin]
-"""Provides read-only access to the string data it views.
+Use `StringSpan` instead.
+"""
+
+
+@deprecated(use=StringSpan)
+comptime ImmStringSpan = StringSpan[_]
+"""Deprecated: An immutable `StringSpan`.
+
+`StringSpan` is always immutable. Use `StringSpan` instead.
 
 Parameters:
     origin: The origin of the string data.
 """
 
-comptime ImmStringSlice = ImmStringSpan
-"""Provides a compatibility alias for `ImmStringSpan`."""
+
+@deprecated(use=StringSpan)
+comptime ImmStringSlice = StringSpan
+"""Deprecated: The former name of `ImmStringSpan`.
+
+Use `StringSpan` instead.
+"""
 
 comptime StaticString = StringSpan[ImmStaticOrigin]
 """An immutable static string span.
@@ -95,6 +109,7 @@ print(format_string.format("bats", 6))     # => bats: 6
 
 struct StringSpan[origin: ImmOrigin](
     Boolable,
+    ConvertibleToPython,
     Defaultable,
     Equatable,
     FloatableRaising,
@@ -105,6 +120,7 @@ struct StringSpan[origin: ImmOrigin](
     PathLike,
     TrivialRegisterPassable,
     Writable,
+    _FieldNicheable,
 ):
     """An immutable, non-owning view into encoded string data.
 
@@ -195,9 +211,7 @@ struct StringSpan[origin: ImmOrigin](
     def __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
-        var length: Int = Int(
-            SIMDLength(mlir_value=__mlir_op.`pop.string.size`(_kgen))
-        )
+        var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         var ptr = ImmPointer[_, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).unsafe_bitcast[Byte]()
@@ -514,6 +528,27 @@ struct StringSpan[origin: ImmOrigin](
         except:
             raise cpython.get_error()
 
+    comptime _KgenNichedFieldName = "_slice".value
+
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A `PythonObject` representing this value.
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSpan` is guaranteed to
+        # be valid UTF-8.
+        var unicode = cpy.PyUnicode_DecodeUTF8(self)
+        if not unicode:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=unicode)
+
     # ===------------------------------------------------------------------===#
     # Operator dunders
     # ===------------------------------------------------------------------===#
@@ -558,6 +593,17 @@ struct StringSpan[origin: ImmOrigin](
             If the `StringSpan` is equal to the input in length and contents.
         """
         return self == StringSpan(rhs)
+
+    def __eq__(self, rhs: StringLiteral) -> Bool:
+        """Verify if a `StringSpan` is equal to a `StringLiteral`.
+
+        Args:
+            rhs: The `StringLiteral` to compare against.
+
+        Returns:
+            If the `StringSpan` is equal to the input in length and contents.
+        """
+        return self == StaticString(rhs)
 
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
@@ -605,6 +651,19 @@ struct StringSpan[origin: ImmOrigin](
 
         Args:
             rhs: The `StringSpan` to compare against.
+
+        Returns:
+            If the `StringSpan` is not equal to the input in length and
+            contents.
+        """
+        return not self == rhs
+
+    @inline(.always)
+    def __ne__(self, rhs: StringLiteral) -> Bool:
+        """Verify if a `StringSpan` is not equal to a `StringLiteral`.
+
+        Args:
+            rhs: The `StringLiteral` to compare against.
 
         Returns:
             If the `StringSpan` is not equal to the input in length and
@@ -846,23 +905,14 @@ struct StringSpan[origin: ImmOrigin](
             i += 1
         var start_bytes = total_bytes - iter.remaining_byte_length()
 
-        if not end_opt:
-            return Self(
-                unsafe_from_utf8=Span[Byte, Self.origin](
-                    unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(
-                        start_bytes
-                    ),
-                    length=total_bytes - start_bytes,
-                )
-            )
-
-        var end_idx = end_opt.unsafe_value()
-        while i < end_idx:
-            if not iter.next():
-                _ = check_slice_bounds(grapheme, i)
-                break
-            i += 1
-        var end_bytes = total_bytes - iter.remaining_byte_length()
+        var end_bytes = total_bytes
+        if case .Some(end_idx) = end_opt:
+            while i < end_idx:
+                if not iter.next():
+                    _ = check_slice_bounds(grapheme, i)
+                    break
+                i += 1
+            end_bytes = total_bytes - iter.remaining_byte_length()
 
         return Self(
             unsafe_from_utf8=Span[Byte, Self.origin](
@@ -876,7 +926,7 @@ struct StringSpan[origin: ImmOrigin](
         # Show source location where user provided incorrect index by skipping
         # two levels of inlining above this function call.
         var location = call_location[inline_count=2]()
-        check_bounds(idx, self.byte_length(), location)
+        check_bounds(idx, length=self.byte_length(), location=location)
         # Subscripting checks codepoint boundaries unconditionally, to avoid
         # breaking methods that assume valid utf8.
         debug_assert[assert_mode="safe"](
@@ -907,7 +957,7 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
           True if the string contains the substring.
         """
-        return self.find(substr) != -1
+        return Bool(self.find(substr))
 
     @inline(.always)
     def __int__(self) raises -> Int:
@@ -1001,19 +1051,6 @@ struct StringSpan[origin: ImmOrigin](
     # Methods
     # ===------------------------------------------------------------------===#
 
-    @deprecated(use=as_c_string_span)
-    @__allow_legacy_custom_self_type
-    @inline(.always)
-    def as_c_string_slice(
-        self: StaticString,
-    ) -> CStringSpan[ImmStaticOrigin]:
-        """Return a CStringSpan for this StaticString.
-
-        Returns:
-            A c-compatible CStringSpan.
-        """
-        return self.as_c_string_span()
-
     @__allow_legacy_custom_self_type
     @inline(.always)
     def as_c_string_span(
@@ -1064,9 +1101,9 @@ struct StringSpan[origin: ImmOrigin](
         var current_pos = 0
 
         for _ in range(occurrences):
-            var idx = self.find(old, current_pos)
-
-            assert idx >= 0, "expected to find occurrence during find"
+            __guard case .Some(idx) = self.find(old, current_pos) else:
+                assert False, "expected to find occurrence during find"
+                break
 
             # Copy preceding unchanged chars
             res += StringSpan(unsafe_from_utf8=self.as_bytes()[current_pos:idx])
@@ -1465,10 +1502,10 @@ struct StringSpan[origin: ImmOrigin](
         var iter = self.graphemes()
         var split_bytes = 0
         for _ in range(n):
-            var g = iter.next()
-            if not g:
+            if case .Some(g) = iter.next():
+                split_bytes += g.byte_length()
+            else:
                 break
-            split_bytes += g.unsafe_value().byte_length()
 
         var total = len(self._slice)
         var prefix = Self.Immutable(
@@ -1801,23 +1838,36 @@ struct StringSpan[origin: ImmOrigin](
         """
         return _FormatUtils.format(self, *args)
 
-    def find(self, substr: StringSpan, start: Int = 0) -> Int:
+    def find(self, substr: StringSpan, start: Int = 0) -> Optional[Int]:
         """Finds the offset in bytes of the first occurrence of `substr`
-        starting at `start`. If not found, returns `-1`.
+        starting at `start`.
 
         Args:
             substr: The substring to find.
-            start: The offset in bytes from which to find.
+            start: The offset in bytes from which to find. A negative value
+                counts back from the end of the string.
 
         Returns:
-            The offset in bytes of `substr` relative to the beginning of the
-            string.
+            An `Optional` holding the offset in bytes of `substr` relative to
+            the beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        var text = StringSpan("héllo, wörld")
+        print(text.find("l"))  # 3 (offsets are in bytes; "é" is 2 bytes)
+        print(text.find("l", start=4))  # 4
+        print(text.find("xyz"))  # None
+
+        if case .Some(index) = text.find(","):
+            print(text[byte=:index])  # héllo
+        ```
         """
         if not substr:
             return 0
 
         if self.byte_length() < substr.byte_length() + start:
-            return -1
+            return None
 
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
@@ -1826,33 +1876,43 @@ struct StringSpan[origin: ImmOrigin](
         )
         var haystack = self.as_bytes()[start_byte:]
 
-        var loc = _memmem(
+        __guard case .Some(loc) = _memmem(
             haystack.as_imm(),
             substr.as_bytes().as_imm(),
-        )
+        ) else:
+            return None
+        return Int(loc) - Int(self.unsafe_ptr())
 
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
-
-    def rfind(self, substr: StringSpan, start: Int = 0) -> Int:
-        """Finds the offset in bytes of the last occurrence of `substr` starting at
-        `start`. If not found, returns `-1`.
+    def rfind(self, substr: StringSpan, start: Int = 0) -> Optional[Int]:
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`.
 
         Args:
             substr: The substring to find.
-            start: The offset in bytes from which to find.
+            start: The offset in bytes from which to find. A negative value
+                counts back from the end of the string.
 
         Returns:
-            The offset in bytes of `substr` relative to the beginning of the
-            string.
+            An `Optional` holding the offset in bytes of `substr` relative to
+            the beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        var path = StringSpan("/home/user/notes.txt")
+        print(path.rfind("/"))  # 10
+        print(path.rfind("."))  # 16
+        print(path.rfind(":"))  # None
+
+        if case .Some(index) = path.rfind("/"):
+            print(path[byte=index + 1 :])  # notes.txt
+        ```
         """
         if not substr:
             return self.byte_length()
 
         if self.byte_length() < substr.byte_length() + start:
-            return -1
+            return None
 
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
@@ -1861,15 +1921,12 @@ struct StringSpan[origin: ImmOrigin](
         )
         var haystack = self.as_bytes()[start_byte:]
 
-        var loc = _memrmem(
+        __guard case .Some(loc) = _memrmem(
             haystack,
             substr.as_bytes(),
-        )
-
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
+        ) else:
+            return None
+        return Int(loc) - Int(self.unsafe_ptr())
 
     @doc_hidden
     @deprecated(use=is_ascii_whitespace)
@@ -2064,7 +2121,7 @@ struct StringSpan[origin: ImmOrigin](
         python newline character. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+        `"\\r\\n"` and `"\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Parameters:
             single_character: Whether to evaluate the stringslice as a single
@@ -2097,7 +2154,7 @@ struct StringSpan[origin: ImmOrigin](
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+        `"\\r\\n"` and `"\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
         Args:
             keepends: If True, line breaks are kept in the resulting strings.
@@ -2198,12 +2255,8 @@ struct StringSpan[origin: ImmOrigin](
         var res = 0
         var offset = 0
 
-        while True:
-            var pos = self.find(substr, offset)
-            if pos == -1:
-                break
+        while case .Some(pos) = self.find(substr, offset):
             res += 1
-
             offset = pos + substr.byte_length()
 
         return res
@@ -2645,8 +2698,8 @@ def _unsafe_strlen(ptr: ImmPointer[Byte, _], max: Int = Int.MAX) -> Int:
 @inline(.always)
 def _memchr[
     dtype: DType, //
-](source: ImmSpan[Scalar[dtype], _], char: Scalar[dtype]) -> OptionalPointer[
-    Scalar[dtype], source.origin
+](source: ImmSpan[Scalar[dtype], _], char: Scalar[dtype]) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     if (
         __is_run_in_comptime_interpreter
@@ -2668,8 +2721,8 @@ def _memchr_impl[
 ](
     source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[
-    Scalar[dtype], source.origin
+) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     var haystack = source.unsafe_ptr()
     var length = len(source)
@@ -2698,7 +2751,7 @@ def _memmem[
 ](
     haystack_span: ImmSpan[Scalar[dtype], _],
     needle_span: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack_span.origin]]:
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2735,7 +2788,7 @@ def _memmem_impl[
 ](
     haystack_span: ImmSpan[Scalar[dtype], _],
     needle_span: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack_span.origin]]:
     var haystack: Pointer[
         Scalar[dtype], haystack_span.origin
     ] = haystack_span.unsafe_ptr()
@@ -2804,8 +2857,8 @@ def _memrchr[
 ](
     source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[
-    Scalar[dtype], source.origin
+) -> Optional[
+    Pointer[Scalar[dtype], source.origin]
 ]:
     var base: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
     for i in reversed(range(len(source))):
@@ -2820,7 +2873,7 @@ def _memrmem[
 ](
     haystack: ImmSpan[Scalar[dtype], _],
     needle: ImmSpan[Scalar[dtype], _],
-) -> OptionalPointer[Scalar[dtype], haystack.origin]:
+) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     var hp: Pointer[Scalar[dtype], haystack.origin] = haystack.unsafe_ptr()
     if not needle:
         return hp
@@ -2885,9 +2938,8 @@ def _split[
 
     while lhs <= str_byte_len:
         # FIXME(#3526): use str_span and sep_span
-        rhs = src_str.find(sep, lhs)
         # if not found go to the end
-        rhs += is_negative(rhs) & (str_byte_len + 1)
+        rhs = src_str.find(sep, lhs).or_else(str_byte_len)
 
         comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)

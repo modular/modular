@@ -51,7 +51,7 @@ internally reverses to CUDA fastest-first (tma.mojo:383-388), so pass slowest-fi
   innermost box[4]=gran=64 -> 64*2 = 128 == SWIZZLE_128B.bytes(). OK.
 
 One TMA per page (2 issues). CUDA-order (fastest-first) coordinate is
-  Index(0, 0, depth_chunk_base, p*atom_rows_per_page, head_idx).
+  coord[0, 0, depth_chunk_base, p*atom_rows_per_page, head_idx].
 depth_chunk_base=0 (single stage, box covers all chunks). Page p's SMEM dest base
   = p * (atom_rows_per_page*fold_chunks*CM*gran) = p * 8192 elements.
 
@@ -77,17 +77,23 @@ B200-only (SM100 TMA). Single block / single elected thread, no cluster setup.
 
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    default_accelerator,
+)
 from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
+from max.gpu.host.nvidia.tma import (
+    TensorMapSwizzle,
+    create_tma_descriptor,
+)
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation
-from std.sys import default_accelerator, size_of
-from std.utils.index import Index, IndexList
+from std.sys import size_of
 
-from layout import UNKNOWN_VALUE, coord, row_major
+from layout import UNKNOWN_VALUE, coord, row_major, Idx
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
     SharedMemBarrier,
@@ -174,8 +180,8 @@ def _rowmajor_fold_spike_kernel[
     ), "SWIZZLE_128B: innermost box dim must be gran*dtype = 128 bytes"
 
     # Two BN x head_size buffers (32 KB each at bf16) exceed the 48 KB static
-    # shared-memory limit, so place them in DYNAMIC shared memory (opted-in via
-    # FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES at launch). The base is
+    # shared-memory limit, so place them in DYNAMIC shared memory (opted-in by
+    # the launch's `shared_mem_bytes`). The base is
     # 1024 B-aligned so every 1 KB swizzle-atom offset is itself 1024 B-aligned
     # (matching the per-atom swizzle tile). The tiny barrier stays static.
     var smem_base = external_memory[
@@ -185,7 +191,7 @@ def _rowmajor_fold_spike_kernel[
         name="rowmajor_fold_spike_smem",
     ]()
     var smem_ref = smem_base
-    var smem_test = smem_base + smem_elems
+    var smem_test = smem_base.unsafe_offset(smem_elems)
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -208,8 +214,12 @@ def _rowmajor_fold_spike_kernel[
         # Both paths land on this single barrier.
         mbar[].expect_bytes(Int32(expect_total))
 
-        var ref_desc_ptr = Pointer(to=ref_tma.descriptor).bitcast[NoneType]()
-        var test_desc_ptr = Pointer(to=test_tma.descriptor).bitcast[NoneType]()
+        var ref_desc_ptr = Pointer(to=ref_tma.descriptor).unsafe_bitcast[
+            NoneType
+        ]()
+        var test_desc_ptr = Pointer(to=test_tma.descriptor).unsafe_bitcast[
+            NoneType
+        ]()
 
         # ---- REFERENCE: one TMA per atom, landing at chunk-inner offset ------
         # gmem coord (CUDA fastest-first) for the rank-2 (head_size, BN)-like
@@ -226,25 +236,25 @@ def _rowmajor_fold_spike_kernel[
                     var row = p * page_size + ar * CM
                     var depth = c * gran
                     cp_async_bulk_tensor_shared_cluster_global(
-                        (smem_ref + smem_off),
+                        (smem_ref.unsafe_offset(smem_off)),
                         ref_desc_ptr,
                         mbar,
-                        IndexList[2](depth, row),
+                        (depth, row),
                     )
 
         # ---- TEST (raw): one rank-5 TMA per page (chunk-inner box) -----------
         # CUDA-order coord = [gran, CM, chunk, atom_row, head] =
-        # Index(0, 0, depth_chunk_base, p*atom_rows_per_page, head_idx).
+        # coord[0, 0, depth_chunk_base, p*atom_rows_per_page, head_idx].
         # depth_chunk_base=0: the box covers all chunks in one issue. Skipped
         # when `via_issue_site` (the production `tma_copy_k` path issues instead).
         comptime if not via_issue_site:
             comptime for p in range(pages_per_iter):
                 var smem_off = p * (atom_rows_per_page * num_chunks * CM * gran)
                 cp_async_bulk_tensor_shared_cluster_global(
-                    (smem_test + smem_off),
+                    (smem_test.unsafe_offset(smem_off)),
                     test_desc_ptr,
                     mbar,
-                    IndexList[5](0, 0, 0, p * atom_rows_per_page, head_idx),
+                    (Idx[0], Idx[0], Idx[0], p * atom_rows_per_page, head_idx),
                 )
 
     # Ensure lane 0's `expect_bytes` is visible to all lanes before the
@@ -315,34 +325,12 @@ def run_spike[
     comptime atom_rows_per_page = page_size // CM
 
     print(
-        "run_spike: via_builder=",
-        via_builder,
-        " via_issue_site=",
-        via_issue_site,
-        " dtype=",
-        dtype,
-        " num_heads=",
-        num_heads,
-        " head_size=",
-        head_size,
-        " BN=",
-        BN,
-        " page_size=",
-        page_size,
-        " head_idx=",
-        head_idx,
-        " gran=",
-        gran,
-        " CM=",
-        CM,
-        " num_chunks=",
-        num_chunks,
-        " num_atom_rows=",
-        num_atom_rows,
-        " pages_per_iter=",
-        pages_per_iter,
-        " atom_rows_per_page=",
-        atom_rows_per_page,
+        t"run_spike: via_builder= {via_builder}  via_issue_site="
+        t" {via_issue_site}  dtype= {dtype}  num_heads= {num_heads}  head_size="
+        t" {head_size}  BN= {BN}  page_size= {page_size}  head_idx= {head_idx} "
+        t" gran= {gran}  CM= {CM}  num_chunks= {num_chunks}  num_atom_rows="
+        t" {num_atom_rows}  pages_per_iter= {pages_per_iter} "
+        t" atom_rows_per_page= {atom_rows_per_page}"
     )
     comptime assert pages_per_iter >= 1
     comptime assert (
@@ -370,20 +358,20 @@ def run_spike[
     # offset to head `head_idx` so coord (depth, row) addresses
     # gmem[row, head_idx, depth].  globalDim/strides describe the 2D
     # [row, depth] sub-view with row stride = num_heads*head_size.
-    comptime ref_box = Index(CM, gran)
-    var head_base = gmem_ptr + head_idx * head_size
-    var ref_desc = create_tma_descriptor[dtype, 2, swizzle](
+    comptime ref_box = coord[CM, gran]
+    var head_base = gmem_ptr.unsafe_offset(head_idx * head_size)
+    var ref_desc = create_tma_descriptor[dtype, swizzle_mode=swizzle](
         DeviceBuffer(
             ctx,
-            head_base.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+            head_base,
             1,
             owning=False,
         ),
         # repo (slowest-first) globalDim:  [row, depth] = [BN, head_size]
-        Index(BN, head_size),
+        (BN, head_size),
         # repo globalStrides (elements):   row stride = num_heads*head_size,
         #                                  depth stride = 1
-        Index(num_heads * head_size, 1),
+        (num_heads * head_size, 1),
         ref_box,
     )
     var ref_tma = TMATensorTile[dtype, coord[CM, gran], is_k_major=True](
@@ -411,22 +399,22 @@ def run_spike[
     else:
         # Step A: hand-rolled rank-5 descriptor (slowest-first / repo order =
         # [head, atom_row, chunk, CM, gran]).
-        var test_desc = create_tma_descriptor[dtype, 5, swizzle](
+        var test_desc = create_tma_descriptor[dtype, swizzle_mode=swizzle](
             DeviceBuffer(
                 ctx,
-                gmem_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+                gmem_ptr,
                 1,
                 owning=False,
             ),
             # repo globalDim:  [num_heads, BN/CM, head_size/gran, CM, gran]
-            Index(num_heads, BN // CM, head_size // gran, CM, gran),
+            (num_heads, BN // CM, head_size // gran, CM, gran),
             # repo globalStrides (elements):
             #   head      -> head_size
             #   atom_row  -> CM*num_heads*head_size
             #   chunk     -> gran
             #   CM (row)  -> num_heads*head_size
             #   gran      -> 1
-            Index(
+            (
                 head_size,
                 CM * num_heads * head_size,
                 gran,
@@ -434,7 +422,7 @@ def run_spike[
                 1,
             ),
             # repo box: [head, atom_row, chunk, CM, gran]
-            Index(1, atom_rows_per_page, num_chunks, CM, gran),
+            (1, atom_rows_per_page, num_chunks, CM, gran),
         )
         test_tma = SplitLastDimTMATensorTile[dtype, test_smem_dim, swizzle](
             test_desc
@@ -465,9 +453,6 @@ def run_spike[
         grid_dim=1,
         block_dim=32,
         shared_mem_bytes=dyn_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(dyn_smem_bytes)
-        ),
     )
 
     var mismatch_host = ctx.enqueue_create_host_buffer[.uint32](1)
@@ -493,18 +478,8 @@ def run_spike[
         rem = rem % per_chunk
         var rr, g = divmod(rem, gran)
         print(
-            "  first-mismatch decode (chunk-inner): page=",
-            page,
-            " atom_row=",
-            atom_row,
-            " chunk=",
-            chunk,
-            " rr=",
-            rr,
-            " g=",
-            g,
-            " ref=",
-            "(see device)",
+            t"  first-mismatch decode (chunk-inner): page= {page}  atom_row="
+            t" {atom_row}  chunk= {chunk}  rr= {rr}  g= {g}  ref= (see device)"
         )
 
     assert_equal(Int(mismatch_host[0]), 0)

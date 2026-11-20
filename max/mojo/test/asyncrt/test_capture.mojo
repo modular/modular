@@ -117,7 +117,7 @@ def run_captured_func(ctx: DeviceContext, captured: Float32) raises:
         in1,
         out,
         Int32(length),
-        host_arg=add_with_captured,
+        host_args=(add_with_captured,),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -176,11 +176,7 @@ def test_capture_five_host_args() raises:
         in1,
         out,
         Int32(length),
-        host_arg=op0,
-        host_arg2=op1,
-        host_arg3=op2,
-        host_arg4=op3,
-        host_arg5=op4,
+        host_args=(op0, op1, op2, op3, op4),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

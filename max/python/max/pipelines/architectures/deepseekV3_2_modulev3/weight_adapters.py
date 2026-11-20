@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Re-exports the ModuleV3 DeepSeek-V3 safetensor weight adapter."""
 
 from __future__ import annotations
 

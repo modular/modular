@@ -61,11 +61,11 @@ from nn.attention.gpu.mla_index_kpool import (
 )
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
+from nn.attention.gpu.mla_common import SparseRowLayout
 from std.utils.numerics import min_or_neg_inf
 
 comptime Q_DEPTH = 576
@@ -424,6 +424,7 @@ def run_case[
             sparse_row=SparseRowLayout(
                 kpool=kpool, pool_topk=pool_topk, select_tail=select_tail
             ),
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -445,6 +446,7 @@ def run_case[
             config=MHAConfig[kv_type](NUM_HEADS, Q_DEPTH),
             ragged=True,
             sparse=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -494,28 +496,12 @@ def run_case[
                 worst_row = row
     var ok = min_cos >= min_row_cosine and max_rel <= max_row_rel_err
     print(
-        "PASS" if ok else "FAIL",
-        name,
-        ": batch_size=",
-        batch_size,
-        " cache_len=",
-        cache_len,
-        " q_len=",
-        q_len,
-        " logical=",
-        use_logical,
-        " lag=",
-        lag,
-        " min_row_cosine=",
-        min_cos,
-        " max_row_rel_err=",
-        max_rel,
-        " (token ",
-        worst_row // NUM_HEADS,
-        ", visible ",
-        cache_len + (worst_row // NUM_HEADS) % q_len + 1,
-        ") max_abs_err=",
-        max_err,
+        t"""{"PASS" if ok else "FAIL"} {name} : batch_size= {batch_size} """
+        t" cache_len= {cache_len}  q_len= {q_len}  logical= {use_logical}  lag="
+        t" {lag}  min_row_cosine= {min_cos}  max_row_rel_err= {max_rel}  (token"
+        t"  {worst_row // NUM_HEADS} , visible "
+        t" {cache_len + (worst_row // NUM_HEADS) % q_len + 1} ) max_abs_err="
+        t" {max_err}"
     )
 
     _ = mla_args

@@ -43,6 +43,7 @@ from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import TMATensorTile, create_tma_tile
 from std.memory import unsafe_stack_allocation
+from std.sys import align_of
 from std.testing import assert_equal
 
 comptime M = 128
@@ -70,13 +71,16 @@ def tma_store_uint32_kernel[
     # offset, so each thread writes consecutive integers at its assigned
     # 4-element chunk.
     var iota = SIMD[.uint32, VEC](0, 1, 2, 3)
+    var smem_flat = smem.reshape[M * N]()
 
     for it in range(ITERS):
         # Conflict-free canonical (non-swizzled) placement: 8 consecutive
         # threads write 32 contiguous uint32 == one full sweep over all 32
         # banks.
         var base = UInt32(it * ELEMS_PER_ITER) + UInt32(tid) * UInt32(VEC)
-        smem.unsafe_ptr().store(Int(base), SIMD[.uint32, VEC](base) + iota)
+        smem_flat.store[alignment=align_of[DType.uint32]()](
+            Coord(Int(base)), SIMD[.uint32, VEC](base) + iota
+        )
 
     barrier()
     fence_async_view_proxy()

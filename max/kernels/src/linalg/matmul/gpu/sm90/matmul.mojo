@@ -18,13 +18,11 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.primitives.grid_controls import pdl_launch_attributes
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from layout import (
     Idx,
-    Layout,
     coord,
     DefaultEngine,
     TensorLayout,
@@ -36,6 +34,7 @@ from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger
 from std.bit import log2_floor
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -50,13 +49,12 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
 from .matmul_kernel_persistent import HopperMatmulSM90Kernel
-from std.collections import OptionalReg
 
 comptime logger = Logger()
 
 
 def _is_valid_cluster_shape[
-    cluster_shape: IndexList[3]
+    cluster_shape: Tuple[Int, Int, Int]
 ](grid_shape: IndexList[2], num_tiles_n: Int) -> Bool:
     if num_tiles_n % cluster_shape[0] != 0:
         return False
@@ -72,7 +70,7 @@ def _is_valid_cluster_shape[
 
 
 def _get_grid_shape[
-    cluster_shape: IndexList[3] = Index(1, 1, 1)
+    cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1)
 ](num_tiles_n: Int) -> IndexList[2]:
     # Hardcode values on purpose until we move this inside tile scheduler
     # in a more robust way.
@@ -93,7 +91,7 @@ def _get_grid_shape[
 
 
 def _is_valid_grid_shape[
-    grid_shape: IndexList[2], cluster_shape: IndexList[3]
+    grid_shape: IndexList[2], cluster_shape: Tuple[Int, Int, Int]
 ](num_tiles_n: Int) -> Bool:
     comptime assert (
         grid_shape[0] * grid_shape[1] <= H100.sm_count
@@ -118,7 +116,7 @@ def warp_specialize_gemm_with_multicasting[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -223,7 +221,7 @@ def warp_specialize_gemm_with_multicasting[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -297,7 +295,7 @@ def warp_specialize_gemm_with_multicasting[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -305,7 +303,7 @@ def warp_specialize_gemm_with_multicasting[
     raster_order: RasterOrder = RasterOrder.AlongM,
     swapAB: Bool = False,
 ](
-    c_shape: IndexList[2],
+    c_shape: Tuple[Int, Int],
     a_device: TileTensor[a_type, ...],
     b_device: TileTensor[b_type, ...],
     epilogue_fn: EpilogueFnType,
@@ -346,7 +344,7 @@ def warp_specialize_gemm_with_multicasting[
         a_device: Input `A` tensor on device with shape `(M, K)`.
         b_device: Input `B` tensor on device with shape `(N, K)`.
         epilogue_fn: Stores each output element. Signature:
-            `def[dtype, width, *, alignment](IndexList[2], SIMD)`, with
+            `def[dtype, width, *, alignment](Coord, SIMD)`, with
             coordinates in the `(M, N)` output.
         ctx: Device context used to enqueue the kernel.
     """
@@ -359,9 +357,7 @@ def warp_specialize_gemm_with_multicasting[
     # The epilogue owns every store, so the kernel never dereferences C;
     # it reads only C's shape, and C's TMA descriptor is encoded over a
     # null address.
-    var c_ptr: Optional[
-        UnsafePointer[Scalar[c_type], MutUntrackedOrigin]
-    ] = None
+    var c_ptr: Optional[MutPointer[Scalar[c_type], MutUntrackedOrigin]] = None
     var c_shape_only = TileTensor(
         c_ptr._unsafe_nullable(), row_major(c_shape[0], Idx[N])
     )
@@ -389,7 +385,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -489,22 +485,18 @@ def _warp_specialize_gemm_with_multicasting_impl[
             sep=" ",
         )
 
-    comptime grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
-        config.cluster_shape
-    ](
+    comptime grid_shape_adjusted = IndexList[2](
+        grid_shape.value()
+    ) if grid_shape else _get_grid_shape[config.cluster_shape](
         ceildiv(N_static, BN)
     )
 
-    comptime cluster_shape = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_shape = config.cluster_shape
 
     comptime CLUSTER_N = Int(cluster_shape[0])
     comptime CLUSTER_M = Int(cluster_shape[1])
 
-    comptime c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_shape[
         config.block_tile_shape,
         a_type,
         b_type,
@@ -517,15 +509,11 @@ def _warp_specialize_gemm_with_multicasting_impl[
     # Compute C shared memory tile dimensions
     # For normal: rows stay full, cols are divided by num_consumer
     # For swapAB: rows are divided by num_consumer, cols stay full
-    comptime c_smem_rows_reg = c_smem_layout.shape[0].value()
-    comptime c_smem_cols_reg = c_smem_layout.shape[
-        1
-    ].value() // config.num_consumer
+    comptime c_smem_rows_reg = c_smem_layout[0]
+    comptime c_smem_cols_reg = c_smem_layout[1] // config.num_consumer
 
-    comptime c_smem_rows_swapAB = c_smem_layout.shape[
-        0
-    ].value() // config.num_consumer
-    comptime c_smem_cols_swapAB = c_smem_layout.shape[1].value()
+    comptime c_smem_rows_swapAB = c_smem_layout[0] // config.num_consumer
+    comptime c_smem_cols_swapAB = c_smem_layout[1]
 
     comptime c_smem_rows = c_smem_rows_reg if not swapAB else c_smem_rows_swapAB
     comptime c_smem_cols = c_smem_cols_reg if not swapAB else c_smem_cols_swapAB
@@ -596,7 +584,8 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_layout,
         b_layout,
         c_layout,
-        c_smem_layout,
+        c_smem_layout[0],
+        c_smem_layout[1],
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
@@ -609,7 +598,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
         partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level=config.pdl_level(),
         hilbert_swizzle=hilbert_swizzle,
         k_group_size=k_group_size,
         swapAB=swapAB,
@@ -707,15 +695,15 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     c_tma_op,
                     c_device.as_unsafe_any_origin(),
                     Index(M, N, K),
-                    host_arg=epilogue_fn,
-                    host_arg2=compute_fn,
-                    grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
-                    block_dim=(num_threads),
-                    shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(
+                            grid_shape_adjusted[0],
+                            grid_shape_adjusted[1],
+                        ),
+                        block_dim=(num_threads),
+                        shared_mem_bytes=smem_size,
                     ),
-                    attributes=pdl_launch_attributes(config.pdl_level()),
+                    host_args=(epilogue_fn, compute_fn),
                 )
             else:
                 comptime kernel = matmul_kernel_regular[
@@ -744,15 +732,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     b_device.as_imm().as_unsafe_any_origin(),
                     c_device.as_unsafe_any_origin(),
                     lut_ptr,
-                    host_arg=epilogue_fn,
-                    host_arg2=compute_fn,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(num_threads),
-                    shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                        block_dim=(num_threads),
+                        shared_mem_bytes=smem_size,
                     ),
-                    attributes=pdl_launch_attributes(config.pdl_level()),
+                    host_args=(epilogue_fn, compute_fn),
                 )
         else:
             var a_tma_op = create_tensor_tile[
@@ -796,15 +781,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     a_device.as_imm().as_unsafe_any_origin(),
                     c_device.as_unsafe_any_origin(),
                     lut_ptr,
-                    host_arg=epilogue_fn,
-                    host_arg2=compute_fn,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(num_threads),
-                    shared_mem_bytes=smem_size,
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        UInt32(smem_size)
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                        block_dim=(num_threads),
+                        shared_mem_bytes=smem_size,
                     ),
-                    attributes=pdl_launch_attributes(config.pdl_level()),
+                    host_args=(epilogue_fn, compute_fn),
                 )
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
@@ -827,27 +809,24 @@ def _warp_specialize_gemm_with_multicasting_impl[
             a_device.as_imm().as_unsafe_any_origin(),
             b_device.as_imm().as_unsafe_any_origin(),
             c_device.as_unsafe_any_origin(),
-            host_arg=epilogue_fn,
-            host_arg2=compute_fn,
-            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-            block_dim=(num_threads),
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_size)
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(num_threads),
+                shared_mem_bytes=smem_size,
             ),
-            attributes=pdl_launch_attributes(config.pdl_level()),
+            host_args=(epilogue_fn, compute_fn),
         )
 
 
-def _get_c_smem_layout[
-    block_tile_shape: IndexList[3],
+def _get_c_smem_shape[
+    block_tile_shape: Tuple[Int, Int, Int],
     a_type: DType,
     b_type: DType,
     c_type: DType,
     num_pipeline_stages: Int,
     k_group_size: Int,
     swapAB: Bool = False,
-]() -> Layout:
+]() -> Tuple[Int, Int]:
     comptime BM: Int = block_tile_shape[0]
     comptime BN: Int = block_tile_shape[1]
     comptime BK: Int = block_tile_shape[2]
@@ -888,13 +867,11 @@ def _get_c_smem_layout[
 
     comptime assert available_smem_size > (
         pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
-    ), (
-        "There is not enough SMEM to fit the pipeline yet alone the"
-        " output tile!"
-        + " available_smem_size: "
-        + String(available_smem_size)
-        + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
-        + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
+    ), String(
+        t"There is not enough SMEM to fit the pipeline yet alone the output"
+        t" tile! available_smem_size: {available_smem_size} "
+        t"pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
+        t"{pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]()}"
     )
 
     def _get_max_wg_bn() -> Int:
@@ -907,9 +884,7 @@ def _get_c_smem_layout[
         return WG_BN
 
     comptime max_wg_bn = _get_max_wg_bn()
-    return Layout.row_major(max_wg_bn, WG_BM) if swapAB else Layout.row_major(
-        WG_BM, max_wg_bn
-    )
+    return (max_wg_bn, WG_BM) if swapAB else (WG_BM, max_wg_bn)
 
 
 def warp_specialize_gemm_with_multicasting_splitk[
@@ -1006,16 +981,12 @@ def warp_specialize_gemm_with_multicasting_splitk[
     logger.info("cluster_shape:", config.cluster_shape)
     logger.info("mma_shape:", config.mma_shape)
 
-    comptime cluster_shape = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_shape = config.cluster_shape
 
     comptime CLUSTER_N = Int(cluster_shape[0])
     comptime CLUSTER_M = Int(cluster_shape[1])
 
-    comptime c_smem_layout = _get_c_smem_layout[
+    comptime c_smem_layout = _get_c_smem_shape[
         config.block_tile_shape,
         a_type,
         b_type,
@@ -1024,8 +995,8 @@ def warp_specialize_gemm_with_multicasting_splitk[
         k_group_size,
     ]()
     comptime c_smem_tile = coord[
-        c_smem_layout.shape[0].value(),
-        c_smem_layout.shape[1].value() // config.num_consumer,
+        c_smem_layout[0],
+        c_smem_layout[1] // config.num_consumer,
     ]
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -1066,7 +1037,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         UInt32(splits),
         UInt32(config.num_consumer),
         UInt32(config.num_pipeline_stages),
-        Index(config.cluster_shape[1], config.cluster_shape[0]),
+        (Int(config.cluster_shape[1]), Int(config.cluster_shape[0])),
         raster_order,
     ]
 
@@ -1080,7 +1051,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     var NUM_TILES = scheduler.get_num_tiles(
         Index(M, N, K),
         config.block_tile_shape,
-        Index(config.cluster_shape[1], config.cluster_shape[0]),
+        (Int(config.cluster_shape[1]), Int(config.cluster_shape[0])),
     )
 
     var workspace_data = ctx.enqueue_create_buffer[accum_type](
@@ -1094,7 +1065,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
         ](
             Index(M, N, K),
             config.block_tile_shape,
-            Index(CLUSTER_M, CLUSTER_N),
+            (Int(CLUSTER_M), Int(CLUSTER_N)),
         )
     )
 
@@ -1111,7 +1082,8 @@ def warp_specialize_gemm_with_multicasting_splitk[
         type_of(a_device).LayoutType,
         type_of(b_device).LayoutType,
         type_of(c_device).LayoutType,
-        c_smem_layout,
+        c_smem_layout[0],
+        c_smem_layout[1],
         config.block_tile_shape,
         config.mma_shape,
         cluster_shape,
@@ -1124,7 +1096,6 @@ def warp_specialize_gemm_with_multicasting_splitk[
         partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level=config.pdl_level(),
         a_engine=type_of(a_device).Engine,
         b_engine=type_of(b_device).Engine,
         c_engine=type_of(c_device).Engine,
@@ -1160,19 +1131,16 @@ def warp_specialize_gemm_with_multicasting_splitk[
         workspace_ptr,
         locks_ptr,
         Index(M, N, K),
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
-        grid_dim=(
-            launch_grid_shape[0],
-            launch_grid_shape[1],
-            launch_grid_shape[2],
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                launch_grid_shape[0],
+                launch_grid_shape[1],
+                launch_grid_shape[2],
+            ),
+            block_dim=(num_threads),
+            shared_mem_bytes=smem_size,
         ),
-        block_dim=(num_threads),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
-        attributes=pdl_launch_attributes(config.pdl_level()),
+        host_args=(epilogue_fn, compute_fn),
     )
 
     _ = workspace_data^

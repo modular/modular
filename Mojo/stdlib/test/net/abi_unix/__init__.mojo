@@ -34,6 +34,14 @@ from std.net._sys.inet import (
     in_port_t,
 )
 from std.net._sys.unix import (
+    F_GETFL,
+    F_SETFL,
+    IPV6_MULTICAST_HOPS,
+    IPV6_MULTICAST_LOOP,
+    IPV6_V6ONLY,
+    IP_MULTICAST_LOOP,
+    IP_MULTICAST_TTL,
+    IP_TTL,
     AF_INET,
     AF_INET6,
     AF_UNIX,
@@ -73,18 +81,40 @@ from std.net._sys.unix import (
     SO_SNDTIMEO,
     SO_TYPE,
     TCP_NODELAY,
+    linger,
+    sockaddr,
+    sockaddr_in,
+    sockaddr_in6,
+    sockaddr_storage,
+    sockaddr_un,
     socklen_t,
+    suseconds_t,
+    timeval,
 )
+from std.sys._libc import FcntlCommands
 
 comptime CABI_INCLUDES: List[StaticString] = [
     "<fcntl.h>",
     "<netinet/in.h>",
     "<netinet/tcp.h>",
     "<sys/socket.h>",
+    "<sys/time.h>",
+    "<sys/un.h>",
 ]
 """The headers that declare the C side."""
 
-comptime CABI_STRUCTS = TypeList.of[Trait=AnyType, in_addr, in6_addr]()
+comptime CABI_STRUCTS = TypeList.of[
+    Trait=AnyType,
+    in_addr,
+    in6_addr,
+    sockaddr,
+    sockaddr_in,
+    sockaddr_in6,
+    sockaddr_un,
+    sockaddr_storage,
+    timeval,
+    linger,
+]()
 """The struct mirrors to check."""
 
 comptime CABI_TYPEDEFS = TypeList.of[
@@ -92,6 +122,7 @@ comptime CABI_TYPEDEFS = TypeList.of[
     AbiTypedef["in_port_t", in_port_t],
     AbiTypedef["in_addr_t", in_addr_t],
     AbiTypedef["socklen_t", socklen_t],
+    AbiTypedef["suseconds_t", suseconds_t],
 ]()
 """The type aliases to check."""
 
@@ -141,5 +172,14 @@ comptime CABI_CONSTANTS = [
     AbiConstant("SHUT_WR", SHUT_WR),
     AbiConstant("SHUT_RDWR", SHUT_RDWR),
     AbiConstant("O_NONBLOCK", O_NONBLOCK),
+    AbiConstant("IP_TTL", IP_TTL),
+    AbiConstant("IP_MULTICAST_TTL", IP_MULTICAST_TTL),
+    AbiConstant("IP_MULTICAST_LOOP", IP_MULTICAST_LOOP),
+    AbiConstant("IPV6_MULTICAST_HOPS", IPV6_MULTICAST_HOPS),
+    AbiConstant("IPV6_MULTICAST_LOOP", IPV6_MULTICAST_LOOP),
+    AbiConstant("IPV6_V6ONLY", IPV6_V6ONLY),
+    AbiConstant("F_GETFL", F_GETFL),
+    AbiConstant("F_SETFL", F_SETFL),
+    AbiConstant("F_DUPFD_CLOEXEC", FcntlCommands.F_DUPFD_CLOEXEC),
 ]
 """The constants to check."""

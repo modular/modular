@@ -18,9 +18,11 @@
 #include "OverloadSet.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "Mojo/lib/MojoParser/ParamBindings.h"
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
 #include "ParamInf.h"
+#include "ParserEvaluationContext.h"
 #include "StabilityMarkers.h"
 #include "Traits.h"
 
@@ -32,7 +34,6 @@
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/DeclResolver.h"
-#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"
@@ -59,19 +60,108 @@ static constexpr unsigned kBestOverloadCandidatesInlineSize = 1;
 
 OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                          ParamBindings &&paramBindings, CallSyntax syntax,
-                         bool erroneous)
+                         ASTType contextualType, bool erroneous)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()),
-      paramBindings(std::move(paramBindings)), syntax(syntax),
-      erroneous(erroneous) {
-  assert(llvm::all_of(fnDecls,
-                      [](ASTDecl *decl) {
-                        return decl->resolvedness >=
-                               DeclResolvedness::signature;
-                      }) &&
-         "Overload set must contain fully resolved declarations");
+      explicitParamBindings(std::move(paramBindings)),
+      contextualType(contextualType), syntax(syntax), erroneous(erroneous) {
+  additionalAssumptions =
+      explicitParamBindings.declScope.getShared().noAssumptions;
+  for (auto fnDecl : fnDecls) {
+    assert(fnDecl->resolvedness >= DeclResolvedness::signature &&
+           "Overload set must contain fully resolved declarations");
+
+    // TODO: partially bind the call target here using contextual type.
+  }
+}
+
+OverloadSet::OverloadSet(ASTDecl &declScope, const ExprNode *expr,
+                         CallSyntax syntax, bool erroneous,
+                         ASTType contextualType)
+    : explicitParamBindings(declScope, expr), contextualType(contextualType),
+      syntax(syntax), erroneous(erroneous) {
+  additionalAssumptions = declScope.getShared().noAssumptions;
 }
 
 SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
+
+/// Create a (possibly partially unbound) set of bindings for the given type.
+/// This can be used to initialize the binding set for methods. If the given
+/// type is not a parametric user defined type, this returns empty bindings.
+
+/// TODO: Just return a ParamExprArrayAttr here, the binding here is already
+/// verified (otherwise we won't be able to construct the type at the first
+/// place).
+static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
+                                                ASTType type,
+                                                const ExprNode *expr) {
+  ParamBindings paramBindings(declScope, expr);
+  // We need to do extra work to forward a generator's parameters.
+  if (auto gen = LIT::StructTypeGenerator::dynCast(type)) {
+    GeneratorType genType = gen.getType();
+    for (PogMetadataAttr pog : genType.getParamListAttrs().getPogs())
+      paramBindings.addUnprovided(expr, pog.getName());
+
+    return paramBindings;
+  }
+
+  if (sugarIsa<LIT::StructType>(type)) {
+    auto structDecl = cast<StructASTDecl>(type.getDecl(declScope.getShared()));
+    ArrayRef<PogMetadataAttr> pogs =
+        structDecl->getOp().getSignature().getParamListAttrs().getPogs();
+    for (auto [value, pog] : llvm::zip_equal(type.getParamBindings(), pogs)) {
+      paramBindings.add(expr, value, pog.getName());
+    }
+    return paramBindings;
+  }
+
+  ASTDecl *decl = type.getDecl(declScope.getShared());
+  auto traitSelfName = StringAttr::get(decl->getContext(), "_Self");
+  // When binding a trait function, add the self type bindings.
+  if (isa_and_nonnull<TraitASTDecl>(decl)) {
+    auto typeAttr = PValue(type).get();
+
+    // The source value be something of trait type like Movable, or it may be
+    // something of AnyTraitType type, like
+    //   def ex[Trait: MovableMetaType, T: Trait](argument: T):
+    // where T is some type that is known to conform to Movable.  In the latter
+    // case we just know that the input type conforms to Movable, and we want to
+    // look up members to bind in Movable, so bind the Trait type here.  If this
+    // is a struct, or simple trait, keep it.
+    if (auto paramType = sugarDynCast<ParamType>(type.extractMetaType())) {
+      auto simpleTraitType =
+          sugarCast<AnyTraitType>(paramType.getParam().getType())
+              .getTraitType();
+      // Upcast from a parametric type of trait metatype value (e.g. "some
+      // type that conforms to Movable) to the simple trait type (Movable)
+      // so we can substitute the value into the signature.
+      typeAttr = UpcastAttr::get(simpleTraitType, PValue(type));
+    }
+    paramBindings.add(expr, typeAttr, traitSelfName);
+  } else if (isa<TraitType>(decl->getIfTypeValue())) {
+    // If this is a trait composition, the method signature's self type won't
+    // match directly (need to upcast the composition into the trait type that
+    // declared the method). Add as _not_ prechecked.
+    paramBindings.add(expr, PValue(type), traitSelfName);
+  }
+  return paramBindings;
+}
+
+ASTType OverloadSet::getContextualType(ASTDecl *candidate) const {
+  if (!contextualType)
+    return contextualType;
+  if (ASTType nmTarget = contextualType.getNonmaterializableTarget(getShared());
+      nmTarget && candidate->getParentDecl() == nmTarget.getDecl(getShared()))
+    return nmTarget;
+  return contextualType;
+}
+
+ParamBindings OverloadSet::getParamBindings(ASTDecl *candidate) const {
+  ParamBindings result(getDeclScope(), getExpr());
+  if (ASTType ctxType = getContextualType(candidate))
+    result = getBindingsForDeclaredType(getDeclScope(), ctxType, getExpr());
+  result.append(explicitParamBindings);
+  return result;
+}
 
 /// For method and static method calls, extract the location of the method
 /// name identifier from the expression. This is used for fixit suggestions
@@ -88,10 +178,14 @@ static SMLoc getAttributeNameLoc(const ExprNode *expr) {
   return {};
 }
 
-/// Resolve the callee into a single PValue callee.
-static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
-                        CallSyntax syntax,
-                        const VerifiedParamBindings &verifiedBindings = {}) {
+PValue OverloadSet::getCallee(ASTDecl *fnDecl) const {
+  return getCallee(fnDecl, VerifiedParamBindings());
+}
+
+PValue
+OverloadSet::getCallee(ASTDecl *fnDecl,
+                       const VerifiedParamBindings &verifiedBindings) const {
+  ParamBindings paramBindings = getParamBindings(fnDecl);
   // Check deprecation and stability warnings for the resolved function.
   // For method calls (instance or static via attribute access), compute the
   // fixit location as the method identifier, not the full expression.
@@ -102,14 +196,35 @@ static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
                          paramBindings.declScope, paramBindings.shared,
                          paramBindings.getExpr()->getRange(), syntax, fixitLoc);
 
+  ASTType ctxType = getContextualType(fnDecl);
   // Take the fast path to avoid verify binding again if a verified binding has
   // been provided.
-  if (verifiedBindings) {
+  if (verifiedBindings || paramBindings.empty()) {
+    // Bindings inferred through a struct type generator are in the
+    // generator's parameter space, so bind the callee to it first.
+    if (ctxType && isa<DefASTDecl>(fnDecl)) {
+      if (auto genCtx = LIT::StructTypeGenerator::dynCast(ctxType))
+        return getCtxBoundConstAttrForFn(
+            *fnDecl, paramBindings.shared, genCtx, verifiedBindings,
+            paramBindings.declScope, paramBindings.getExprLoc());
+    }
     return getBoundConstAttrForFn(*fnDecl, paramBindings.shared,
                                   verifiedBindings, paramBindings.declScope,
                                   paramBindings.getExprLoc());
   }
-  return getBoundConstAttrForFn(*fnDecl, paramBindings);
+
+  FnTypeGeneratorType signature = fnDecl->getDeclFullSignature(ctxType);
+  // Check that the signature can be rebound with our set of bindings.
+  ParamInf inference(paramBindings, signature.getInputParamTypes(),
+                     signature.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, fnDecl,
+                     /*discardError=*/false,
+                     paramBindings.declScope.getShared().noAssumptions);
+  VerifiedParamBindings verified = inference.inferForStruct();
+  if (!verified)
+    return {};
+
+  return getCallee(fnDecl, verified);
 }
 
 /// Return if the given fitness is valid or function constraint inconclusive,
@@ -367,8 +482,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   bool allInvalid = true;
   for (ASTDecl *candidate : fnDecls) {
     evaluations.emplace_back(
-        candidate, OverloadFitness::evaluate(candidate, *this,
-                                             baseValue.ir.getIfPValue()));
+        candidate, OverloadFitness::evaluateDirectCall(candidate, *this));
     OverloadFitness::Validity validity =
         evaluations.back().second.getValidity();
     allInvalid &= validity == OverloadFitness::Validity::kInvalid;
@@ -424,13 +538,12 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
         bestFitness.getValidity() ==
             OverloadFitness::Validity::kFunctionConstraintInconclusive) {
       for (ConstraintAttr c : bestFitness.getUnprovableConstraints())
-        deferredTypingContext->deferredConstraints.push_back({c, getExprLoc()});
+        deferredTypingContext->addInconclusive(c, getExprLoc());
     }
 
     // On success, wrap things up into one callee, we know that the best fitness
     // has a verified bindings coming out of parameter inference.
-    return getCallee(selectedDecl, paramBindings, syntax,
-                     bestFitness.getParamBindings());
+    return getCallee(selectedDecl, bestFitness.getParamBindings());
   }
   if (isErroneous())
     return {};
@@ -612,7 +725,6 @@ CalleeResult OverloadSet::filterOverloadSet(
   // We allow implicit conversion of the operands to this call unless it is
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
   bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
-
   std::optional<OperandValue> savedSelfOperand;
 
   // Evaluate the fitness of each candidate in our overload set.
@@ -644,9 +756,9 @@ CalleeResult OverloadSet::filterOverloadSet(
       operands.hasSelfOperand = false;
     }
 
-    FnTypeGeneratorType desiredSignature = candidate->getDeclFullSignature();
     if (isa<WitnessASTDecl>(candidate)) {
-      auto sig = cast<FnTypeGeneratorType>(getCanonicalType(desiredSignature));
+      auto sig = cast<FnTypeGeneratorType>(getCanonicalType(
+          candidate->getDeclFullSignature(getContextualType(candidate))));
       ArrayRef<Type> inputParamTypes = sig.getInputParamTypes();
       if (inputParamTypes.empty() || !isa<TraitType>(inputParamTypes[0]))
         continue;
@@ -662,9 +774,8 @@ CalleeResult OverloadSet::filterOverloadSet(
     }
 
     evaluations.emplace_back(
-        candidate,
-        OverloadFitness::evaluate(desiredSignature, candidate, *this, operands,
-                                  allowImplicitConversions));
+        candidate, OverloadFitness::evaluateDirectCall(
+                       candidate, *this, operands, allowImplicitConversions));
     OverloadFitness::Validity validity =
         evaluations.back().second.getValidity();
     allInvalid &= validity == OverloadFitness::Validity::kInvalid;
@@ -857,8 +968,8 @@ CalleeResult OverloadSet::filterOverloadSet(
 
     // Finally, wrap things up into one callee, resolving it to a PValue with
     // the parameters bound and substituted into its signature.
-    PValue boundFunction = getCallee(selectedDecl, paramBindings, syntax,
-                                     bestFitness.getParamBindings());
+    PValue boundFunction =
+        getCallee(selectedDecl, bestFitness.getParamBindings());
 
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedDecl->getDeclImplicitConversionKind() ==
@@ -909,7 +1020,7 @@ CalleeResult OverloadSet::filterOverloadSet(
       if (bestFitness.getValidity() ==
           OverloadFitness::Validity::kFunctionConstraintInconclusive) {
         for (ConstraintAttr c : bestFitness.getUnprovableConstraints())
-          context->deferredConstraints.push_back({c, getExprLoc()});
+          context->addInconclusive(c, getExprLoc());
       }
     }
 
@@ -962,20 +1073,21 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
   //
   // TODO: We could also support generating a lambda for fancy implicit
   // conversions and subtyping some day.
-  auto getBindingsAndBoundCandidateType = [&](GeneratorType candidateType)
+  auto getBindingsAndBoundCandidateType = [&](ASTDecl *candidate,
+                                              GeneratorType candidateType)
       -> std::pair<VerifiedParamBindings, GeneratorType> {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
+    ParamBindings paramBindings = getParamBindings(candidate);
+    // TODO(MOCO-5244): Speculative trials install no DeferredTypingContext.
     ParamInf inference(paramBindings, candidateType.getInputParamTypes(),
                        candidateType.getParamListAttrs(),
                        /*allowImplicitConversions=*/true,
                        /*declIfDirect=*/nullptr,
-                       /*discardError=*/true,
-                       /*deferredTypingContext=*/nullptr,
-                       additionalAssumptions);
+                       /*discardError=*/true, additionalAssumptions);
     VerifiedParamBindings newBindings = inference.inferForStruct();
     if (!newBindings)
       return {{}, nullptr}; // If there is an error, return the problem.
@@ -995,7 +1107,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
     // Pass our assumptions along: dropping the candidate's generator body
     // constraints to reach `functionType` may depend on them.
     auto conversion = IREmitter::classifyImplicitConversionWithDetails(
-        {UnboundAttr::get(boundCandidateType), getExpr()}, functionType,
+        {UnknownAttr::get(boundCandidateType), getExpr()}, functionType,
         getDeclScope(), additionalAssumptions, /*deferralCtx=*/nullptr);
     if (conversion.isYes())
       return Candidacy::kValid;
@@ -1025,7 +1137,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
         candidateFn.getFuncLiteralGenerator(getShared().getEvaluationContext())
             .getType();
     auto [newBindings, boundCandidateType] = getBindingsAndBoundCandidateType(
-        sugarCast<GeneratorType>(candidateType));
+        candidate, sugarCast<GeneratorType>(candidateType));
     if (!boundCandidateType)
       continue;
 
@@ -1078,8 +1190,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(getDeclScope(), EC_OverloadResolution);
-    PValue callee = getCallee(selectedMethod, paramBindings, syntax,
-                              candidateBindings.front());
+    PValue callee = getCallee(selectedMethod, candidateBindings.front());
     PValue result = emitter.emitPValue({callee, getExpr()},
                                        EC_OverloadResolution, functionType);
     assert(result && "Conversion should always succeed");
@@ -1113,13 +1224,14 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 
   for (ASTDecl *candidate : declsToReport) {
     diag.attachNote(*candidate) << "candidate declared here with type ";
-    FnTypeGeneratorType candidateType = candidate->getDeclFullSignature();
+    FnTypeGeneratorType candidateType =
+        candidate->getDeclFullSignature(getContextualType(candidate));
     // If there are bindings, specialize the candidate type and print the
     // specialized type.
     bool hadCandidate = false;
-    if (!paramBindings.empty()) {
+    if (!getParamBindings(candidate).empty()) {
       auto [newBindings, boundCandidateType] =
-          getBindingsAndBoundCandidateType(candidateType);
+          getBindingsAndBoundCandidateType(candidate, candidateType);
       if (boundCandidateType) {
         diag << ASTType(boundCandidateType) << " (specialized from "
              << ASTType(candidateType) << ")";
@@ -1135,12 +1247,12 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 }
 
 /// Perform substitutions of the specified bindings into the symbol, returning
-/// the resultant LITSymbolConstant attr or producing an error message and
+/// the resultant function reference or producing an error message and
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(fnDecls[0], paramBindings, syntax);
+    return getCallee(fnDecls[0]);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1168,7 +1280,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
                                 function_ref<void()> errorHandler) {
   SharedState &shared = declScope.getShared();
 
-  OverloadSet result(declScope, expr, syntax, /*isErroneous=*/false);
+  OverloadSet result(declScope, expr, syntax, /*isErroneous=*/false, type);
   result.baseName = methodName;
 
   // If this is a previously-reported error, ignore and don't report an
@@ -1331,7 +1443,9 @@ PValue OverloadSet::getDirectSymbol(
 
   // If the overload set has parameter bindings, try to resolve the candidates
   // using them.
-  if (!paramBindings.empty())
+  if (llvm::any_of(fnDecls, [&](ASTDecl *candidate) {
+        return !getParamBindings(candidate).empty();
+      }))
     return filterOverloadSetForParamBindings(deferredTypingContext);
 
   // Otherwise, emit the "cannot form a reference to overloaded decl" error.
@@ -1344,8 +1458,7 @@ PValue OverloadSet::getIfPValue() const {
   // TODO: A conversion can be emitted if the base value is a PValue.
   if (baseValue || fnDecls.size() != 1)
     return {};
-
-  return getBoundConstAttrForFn(*fnDecls.front(), paramBindings);
+  return getCallee(fnDecls.front());
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
@@ -1391,120 +1504,6 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   return {};
 }
 
-//===----------------------------------------------------------------------===//
-// Call Emission Implementation
-//===----------------------------------------------------------------------===//
-
-CValue IREmitter::emitIndirectCallInTryBlock(
-    CValue callee, CallOperands &&operands,
-    std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  return emitCallInTryBlock(
-      callee, std::move(operands),
-      [&](CallOperands &&operands) {
-        return emitIndirectCall(callee, std::move(operands));
-      },
-      std::move(emitCatchLogic));
-}
-
-/// Emit a call to `callee` in a try block, invoking a callback to generate
-/// logic in the 'catch' block that is wrapped around the call. This ensures
-/// that the ExprDest is updated and live after the try block, which only works
-/// if the "catch" logic doesn't fall through.
-///
-/// This emits an error and returns null on failure.
-CValue IREmitter::emitCallInTryBlock(
-    CValue callee, CallOperands &&operands,
-    function_ref<CValue(CallOperands &&)> emitCall,
-    std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  ExprDest finalDest(operands.dest.getContext());
-
-  auto calleeSig = FnOrFnLiteralTypeGeneratorType::get(callee.getRValueType());
-  auto callExpr = operands.callExpr;
-  auto loc = translateLocation(callExpr->getLoc());
-
-  // If the ExprDest is a lazy materialized vardecl, we need to materialize
-  // it outside the try block. Note that we still don't know the result type
-  // that we're binding to - the signature of the callee might have implicit
-  // origins or other things substituted through it that can only be determined
-  // as the call is emitted.
-  VarDeclOp tmpResult;
-  if (calleeSig.isRefResult()) {
-    // A ref result will infer the origin of the ref from the arguments.
-    // We will do an indirect dance here since the type will be inferred
-    // from the result.
-    auto varDecl =
-        emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
-                    loc, VarDeclKind::Bind);
-    finalDest = std::move(operands.dest);
-    operands.dest = ExprDest(varDecl, finalDest.getContext());
-  } else if (operands.dest.hasExistingMemoryDest()) {
-    // Emit the call result directly into the existing destination.
-  } else {
-    tmpResult = emitVarDecl("anonymous*", UnresolvedType::get(getContext()),
-                            loc, VarDeclKind::Synthesized);
-    finalDest = std::move(operands.dest);
-    operands.dest = ExprDest(tmpResult, finalDest.getContext());
-  }
-
-  VarDeclOp errDecl =
-      emitVarDecl("__call_error_tmp__", calleeSig.getUserThrownType(), loc,
-                  VarDeclKind::Synthesized);
-
-  // We're going to move the builder around, but restore it to the same
-  // insertion point when we're done.
-  auto savedBuilder = builder;
-  auto tryOp = TryOp::create(*builder, loc, errDecl,
-                             /*suppressWarnings=*/true);
-  // Stub out the else and finally regions of this try.
-  builder->createBlock(&tryOp.getElseRegion());
-  TryYieldOp::create(*builder, tryOp.getLoc());
-  builder->createBlock(&tryOp.getFinallyRegion());
-  TryYieldOp::create(*builder, tryOp.getLoc());
-  // Emit this call into the try region.
-  builder->createBlock(&tryOp.getTryRegion());
-
-  CValue result = emitCall(std::move(operands));
-  if (!result)
-    finalDest.resetForError(*this);
-  TryYieldOp::create(*builder, tryOp.getLoc());
-
-  // Emit the except block now that we're good to go.
-  builder->createBlock(&tryOp.getExceptRegion());
-  emitCatchLogic(errDecl);
-
-  // If we had a ref result, we would have emitted a call into our
-  // __ref_result_tmp__ temporary above, and then call emission would have
-  // emitted a lit.load.consume to get the value.  The problem is that it
-  // drops it INTO the try block and we need it live afterwards.  Move it
-  // now.
-  if (calleeSig.isRefResult()) {
-    Value resultVal = result.getIfMBValue();
-    assert(resultVal && "ref result must be a MBValue");
-
-    // We might have a rebind to adjust type sugar.
-    if (auto rebindOp = resultVal.getDefiningOp<RebindOp>()) {
-      rebindOp->moveAfter(tryOp);
-      resultVal = rebindOp.getOperand();
-    }
-
-    auto loadConsume = resultVal.getDefiningOp<LIT::LoadConsumeOp>();
-    assert(loadConsume && "expected ref result to be a lit.load.consume");
-    loadConsume->moveAfter(tryOp);
-
-    // Rebind the result of the ref call.  Assigning through the VarDecl
-    // will turn this into an MBValue, stripping (parametric) mutability.
-    // Restore this.
-    result = CValue::getMValueForRef(resultVal);
-  } else if (tmpResult) {
-    // If we made a temporary, we can definitely move from it.
-    result = MRValue(tmpResult);
-  }
-
-  // Emit the result into the "dest" ExprDest outside of the try block.
-  builder = savedBuilder;
-  return emitCResult(result, callExpr, finalDest);
-}
-
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(CallOperands &&operands, IREmitter &emitter) {
@@ -1530,7 +1529,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
           sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getRValueType())) {
     // An indirect call to a function literal typed candidate becomes a direct
     // call to the literal itself.
-    auto target = calleeSig.getSymbolConstantAttr();
+    auto target = calleeSig.getFuncSymbolAttr();
     return emitIndirectCall(target, std::move(operands));
   }
 
@@ -1551,12 +1550,8 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
   }
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*fnDecls=*/{},
-                       ParamBindings(getDeclScope(), callExpr),
-                       operands.syntax};
-  auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
-                                           bindings, operands,
-                                           /*allowImplicitConversions=*/true);
+  auto fitness = OverloadFitness::evaluateIndirectCall(
+      calleeSig, getDeclScope(), operands);
   if (fitness.getValidity() != OverloadFitness::Validity::kValid) {
     // If not, diagnose it with an error.
     if (fitness.isInconclusive()) {
@@ -1596,11 +1591,9 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
       const VerifiedParamBindings &paramBindings = fitness.getParamBindings();
       auto discharged = KGEN::getDenseBoolArrayAttr(
           getContext(), paramBindings.getDischargedBodyConstraints());
-      auto paramValues =
-          ParameterExprArrayAttr::get(getContext(), paramBindings.getValues());
       Location loc = translateLocation(callExpr->getLoc());
-      auto bindOp = BindParamsOp::create(*builder, loc, calleeVal, paramValues,
-                                         discharged);
+      auto bindOp = BindParamsOp::create(
+          *builder, loc, calleeVal, paramBindings.getBindings(), discharged);
       boundCalleeRV = SRValue(bindOp.getResult());
     }
   }
@@ -1734,6 +1727,8 @@ CValue IREmitter::emitConstructorCall(ASTType type,
   // Check to see if we can invoke an __init__ method to convert it.
   const ExprNode *expr = callOperands.getExpr();
   type = getConstructorLookupType(type, getDeclScope());
+  // Bind the parameters of the type we're creating from the contextual type,
+  // since they can't be inferred from the result type.
   OverloadSet callee = OverloadSet::lookup(getDeclScope(), type, "__init__",
                                            expr, callOperands.syntax);
 
@@ -1798,10 +1793,6 @@ CValue IREmitter::emitConstructorCall(ASTType type,
     }
   }
 
-  // Set the parameter bindings for the type we're creating - they can't be
-  // inferred from the result type.
-  callee.paramBindings =
-      ParamBindings::getForDeclaredType(getDeclScope(), type, expr);
   callee.selfResultType = type;
   return callee.emitCall(std::move(callOperands), *this);
 }
@@ -1823,6 +1814,8 @@ FailureOr<CalleeResult> OverloadSet::canConstructType(
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
   requiredType = getConstructorLookupType(requiredType, declScope);
+  // Bind the Self type parameters from the contextual type, since they cannot
+  // be inferred from the result.
   OverloadSet callee = OverloadSet::lookup(
       declScope, requiredType, "__init__", operands.getExpr(), operands.syntax,
       /*no error emission on failure */ {});
@@ -1832,10 +1825,6 @@ FailureOr<CalleeResult> OverloadSet::canConstructType(
     return callee.isErroneous() ? FailureOr<CalleeResult>(failure())
                                 : CalleeResult::no();
 
-  // Install the Self type parameters on the callee directly, since they cannot
-  // be inferred from the result.
-  callee.paramBindings = ParamBindings::getForDeclaredType(
-      declScope, requiredType, operands.getExpr());
   callee.selfResultType = requiredType;
 
   // Determine if we can emit this using an IREmitter in the parameter domain.
@@ -1851,23 +1840,6 @@ FailureOr<CalleeResult> OverloadSet::canConstructType(
 
   if (callee.isErroneous())
     return FailureOr<CalleeResult>(failure());
-  if (!result.isYes())
-    return result;
-
-  // If we found an unambiguous initializer to build this value, make sure that
-  // it returns the right thing we were expecting.  It is possible that
-  // conditional conformances constrain the result type more than we were
-  // expecting.
-  auto resultTy = FnOrFnLiteralTypeGeneratorType::get(result.getYes().getType())
-                      .getUserResultType();
-  auto &shared = paramEmitter.shared;
-  if (!requiredType.isEqualCanon(resultTy)) {
-    // It is ok if the self type has different parameters than the
-    // declaration, this is a form of conditional conformance.
-    // TODO(requires / cond conformance): replace this with a better mechanism.
-    if (!ASTType(requiredType).isEqualAllowingUnbound(resultTy, shared))
-      return FailureOr<CalleeResult>(failure());
-  }
 
   return result;
 }
@@ -1882,11 +1854,13 @@ void OverloadSet::dump() const {
     f->dump();
     os << "\n";
   }
-  if (paramBindings.empty()) {
-    os << "no bound params, ";
+  if (contextualType)
+    os << "contextual type: " << contextualType << ", ";
+  if (explicitParamBindings.empty()) {
+    os << "no explicitly bound params, ";
   } else {
-    os << "param bindings: ";
-    paramBindings.dump();
+    os << "explicit param bindings: ";
+    explicitParamBindings.dump();
   }
   os << syntax << " call syntax";
   if (erroneous)

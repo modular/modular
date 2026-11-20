@@ -23,7 +23,7 @@
 
 
 # CHECK-LABEL: lit.struct.decl @DeprecatedStruct
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"struct">
+# CHECK: } <{{.*}}deprecationInfo = <"struct">
 @deprecated("struct")
 struct DeprecatedStruct(Movable where False):
     pass
@@ -37,14 +37,14 @@ def deprecated_func():
 
 
 # CHECK-LABEL: lit.trait.decl @DeprecatedTrait
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"trait">
+# CHECK: } <{{.*}}deprecationInfo = <"trait">
 @deprecated("trait")
 trait DeprecatedTrait:
     pass
 
 
 # CHECK-LABEL: lit.alias.decl *"deprecated_alias
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"alias">
+# CHECK-SAME: deprecationInfo = <"alias">
 @deprecated("alias")
 comptime deprecated_alias = 1
 
@@ -59,7 +59,7 @@ struct DeprecatedStructTarget(Movable where False):
 
 
 # CHECK-LABEL: lit.struct.decl @DeprecatedStructUse
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"'DeprecatedStructUse' is deprecated, use 'DeprecatedStructTarget' instead", "DeprecatedStructTarget">
+# CHECK: } <{{.*}}deprecationInfo = <"'DeprecatedStructUse' is deprecated, use 'DeprecatedStructTarget' instead", "DeprecatedStructTarget">
 @deprecated(use=DeprecatedStructTarget)
 struct DeprecatedStructUse(Movable where False):
     pass
@@ -81,7 +81,7 @@ trait DeprecatedTraitTarget:
 
 
 # CHECK-LABEL: lit.trait.decl @DeprecatedTraitUse
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"'DeprecatedTraitUse' is deprecated, use 'DeprecatedTraitTarget' instead", "DeprecatedTraitTarget">
+# CHECK: } <{{.*}}deprecationInfo = <"'DeprecatedTraitUse' is deprecated, use 'DeprecatedTraitTarget' instead", "DeprecatedTraitTarget">
 @deprecated(use=DeprecatedTraitTarget)
 trait DeprecatedTraitUse:
     pass
@@ -91,7 +91,7 @@ comptime deprecated_alias_target = 1
 
 
 # CHECK-LABEL: lit.alias.decl *"deprecated_alias_use
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_alias_use' is deprecated, use 'deprecated_alias_target' instead", "deprecated_alias_target">
+# CHECK-SAME: deprecationInfo = <"'deprecated_alias_use' is deprecated, use 'deprecated_alias_target' instead", "deprecated_alias_target">
 @deprecated(use=deprecated_alias_target)
 comptime deprecated_alias_use = 1
 

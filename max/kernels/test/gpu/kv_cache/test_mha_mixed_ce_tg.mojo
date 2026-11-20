@@ -106,13 +106,11 @@ def execute_ragged_flash_attention[
 
         var mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
 
-        var true_ce_offset = (
-            true_ce_q_ragged_host.unsafe_ptr()
-            + (true_ce_row_offset + mixed_ce_cache_len) * head_stride
+        var true_ce_offset = true_ce_q_ragged_host.unsafe_ptr().unsafe_offset(
+            (true_ce_row_offset + mixed_ce_cache_len) * head_stride
         )
-        var mixed_ce_offset = (
-            mixed_ce_q_ragged_host.unsafe_ptr()
-            + mixed_ce_row_offset * head_stride
+        var mixed_ce_offset = mixed_ce_q_ragged_host.unsafe_ptr().unsafe_offset(
+            mixed_ce_row_offset * head_stride
         )
 
         unsafe_memcpy(

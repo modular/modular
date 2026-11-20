@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Architecture registration for the InternVL chat models."""
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import InternVLBatchProcessor
-from .memory_planner import InternVLMemoryPlanner
 from .model import InternVLModel
 from .model_config import InternVLConfig
 from .tokenizer import InternVLTokenizer
@@ -40,7 +41,6 @@ internvl_arch = SupportedArchitecture(
     },
     config=InternVLConfig,
     batching=InternVLBatchProcessor,
-    memory_planner=InternVLMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

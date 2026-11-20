@@ -39,6 +39,7 @@ from max.pipelines.context import (
 from max.profiler import Tracer, traced
 from typing_extensions import Self
 
+from .sampling_config import SamplingConfig
 from .seeds import request_row_seed
 
 if TYPE_CHECKING:
@@ -62,36 +63,93 @@ class FrequencyData:
     sequence's data."""
 
 
-def _to_pinned_host_buffer(
-    values: Sequence[Any], device: Device, dtype: DType = DType.float32
-) -> Buffer:
-    """Copies a sequence of values into a buffer, pinned when device is not host.
+def greedy_argmax_suffices(
+    context_batch: Sequence[TextContext],
+    sampling_config: SamplingConfig,
+    *,
+    constrained_decoding: bool,
+) -> bool:
+    """Returns whether a plain argmax over the raw logits picks every token.
+
+    A model that samples on device may return its argmax as
+    ``ModelOutputs.next_tokens`` only for a batch where this holds; the
+    pipeline then skips the sampler graph for that step.
 
     Args:
-        values: Values to copy into the buffer.
-        device: Target device (buffer is pinned if this is a non-host device).
-        dtype: Buffer dtype. Defaults to float32.
+        context_batch: The contexts of the step.
+        sampling_config: The pipeline's sampling configuration.
+        constrained_decoding: Whether the pipeline can apply a structured
+            output bitmask (``PipelineConfig.needs_bitmask_constraints``).
 
     Returns:
-        A buffer containing the values, with pinning if applicable.
+        ``True`` if every context samples greedily and nothing in the batch
+        reshapes the logits or needs them after sampling (log-probabilities
+        and label scoring both read the full logits).
     """
-    if device.is_host:
-        buffer = Buffer(
-            shape=(len(values),),
-            dtype=dtype,
-            device=device,
-        )
-    else:
-        buffer = Buffer(
-            shape=(len(values),),
-            dtype=dtype,
-            device=device,
-            usage=Usage.STAGING | Usage.UNTRACKED,
-        )
+    if constrained_decoding:
+        return False
+    for ctx in context_batch:
+        params = ctx.sampling_params
+        if params.top_k != 1 or params.logits_processors:
+            return False
+        if sampling_config.enable_penalties and params.needs_penalties:
+            return False
+        if sampling_config.enable_min_tokens and params.min_new_tokens > 0:
+            return False
+        if ctx.log_probabilities or ctx.log_probabilities_echo:
+            return False
+        if ctx.label_token_ids:
+            return False
+    return True
 
-    buffer_np = buffer.to_numpy()
-    buffer_np[:] = values
-    return buffer
+
+_PACKED_ROW_ALIGNMENT = 64
+
+
+def _packed_rows_to_device(
+    rows: Sequence[tuple[DType, npt.NDArray[Any]]], device: Device
+) -> list[Buffer]:
+    """Copies equal-length rows to ``device`` in one copy.
+
+    Each copy is its own stream op, so between the model's last kernel and
+    the sampler five small copies cost several times what one does.
+
+    Args:
+        rows: One ``(dtype, values)`` pair per row, every row the same length.
+        device: Target device. The host staging buffer is pinned when it is
+            not the host.
+
+    Returns:
+        One rank-1 buffer per row, each a view into the single device copy.
+    """
+    length = len(rows[0][1])
+    # The floor keeps an empty batch from allocating a zero-byte buffer.
+    row_bytes = max(1, length) * max(dtype.size_in_bytes for dtype, _ in rows)
+    stride = (
+        (row_bytes + _PACKED_ROW_ALIGNMENT - 1)
+        // _PACKED_ROW_ALIGNMENT
+        * _PACKED_ROW_ALIGNMENT
+    )
+    host = Buffer(
+        shape=(len(rows) * stride,),
+        dtype=DType.uint8,
+        device=device,
+        usage=Usage.DEFAULT
+        if device.is_host
+        else Usage.STAGING | Usage.UNTRACKED,
+    )
+    host_np = host.to_numpy()
+    for index, (dtype, values) in enumerate(rows):
+        start = index * stride
+        end = start + length * dtype.size_in_bytes
+        host_np[start:end].view(dtype.to_numpy())[:] = values
+    packed = host.to(device)
+    return [
+        packed[
+            index * stride : index * stride + length * dtype.size_in_bytes
+        ].view(dtype, (length,))
+        for index, (dtype, _) in enumerate(rows)
+    ]
 
 
 class FusedSamplingProcessor:
@@ -649,51 +707,54 @@ class SamplerInputs:
         Returns:
             SamplerInputs containing the sampling parameter tensors.
         """
-        temperature_host = _to_pinned_host_buffer(
-            [context.sampling_params.temperature for context in batch],
-            device=device,
-        )
-        temperature = temperature_host.to(device)
-
-        # top_k is a tensor of shape (batch_size,)
-        top_k_host = _to_pinned_host_buffer(
+        top_k_np = np.array(
             [context.sampling_params.top_k for context in batch],
-            device=device,
-            dtype=DType.int64,
+            dtype=np.int64,
         )
-        top_k = top_k_host.to(device)
-
-        # max_k is a scalar 0-d tensor. It does not need to be pinned since it
-        # is not copied to the device.
-        max_k_np = np.array(batch_max_k(top_k_host.to_numpy()), dtype=np.int64)
-        max_k = Buffer.from_numpy(max_k_np)
-
-        # top_p is a tensor of shape (batch_size,)
-        top_p_host = _to_pinned_host_buffer(
+        top_p_np = np.array(
             [context.sampling_params.top_p for context in batch],
-            device=device,
+            dtype=np.float32,
         )
-        top_p = top_p_host.to(device)
-
-        # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
-        # is not copied to the device.
-        min_top_p_np = np.array(np.min(top_p_host.to_numpy()), dtype=np.float32)
-        min_top_p = Buffer.from_numpy(min_top_p_np)
-
-        # min_p is a tensor of shape (batch_size,)
-        min_p_host = _to_pinned_host_buffer(
-            [context.sampling_params.min_p for context in batch],
-            device=device,
+        top_k, seed, temperature, top_p, min_p = _packed_rows_to_device(
+            [
+                (DType.int64, top_k_np),
+                (
+                    DType.uint64,
+                    np.array(
+                        [request_row_seed(context) for context in batch],
+                        dtype=np.uint64,
+                    ),
+                ),
+                (
+                    DType.float32,
+                    np.array(
+                        [
+                            context.sampling_params.temperature
+                            for context in batch
+                        ],
+                        dtype=np.float32,
+                    ),
+                ),
+                (DType.float32, top_p_np),
+                (
+                    DType.float32,
+                    np.array(
+                        [context.sampling_params.min_p for context in batch],
+                        dtype=np.float32,
+                    ),
+                ),
+            ],
+            device,
         )
-        min_p = min_p_host.to(device)
 
-        # seed is a tensor of shape (batch_size,)
-        seed_host = _to_pinned_host_buffer(
-            [request_row_seed(context) for context in batch],
-            device=device,
-            dtype=DType.uint64,
+        # max_k and min_top_p are 0-d host tensors: the sampler reads them on
+        # the host, so they are never copied to the device.
+        max_k = Buffer.from_numpy(
+            np.array(batch_max_k(top_k_np), dtype=np.int64)
         )
-        seed = seed_host.to(device)
+        min_top_p = Buffer.from_numpy(
+            np.array(np.min(top_p_np), dtype=np.float32)
+        )
 
         return cls(
             top_k=top_k,

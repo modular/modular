@@ -87,7 +87,7 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::interpretGeneratorWithResultSlot(
 
   ParametricIREvaluator nestedEvaluator(*this);
   nestedEvaluator.setErrorLoc(loc);
-  auto callee = extractSymbolConstantAttr(cast<TypedAttr>(calleeAttr));
+  auto callee = extractFuncSymbolGenerator(cast<TypedAttr>(calleeAttr));
   ErrorOr<std::pair<Region *, Operation *>> bodyOr =
       nestedEvaluator.lookupParametricFunctionBody(callee.getSymbol());
 
@@ -135,7 +135,7 @@ ErrorTreeOr<TypedAttr> ParametricIREvaluator::interpretGenerator(
   ParametricIREvaluator nestedEvaluator(*this);
   nestedEvaluator.setErrorLoc(loc);
 
-  auto callee = extractSymbolConstantAttr(cast<TypedAttr>(calleeAttr));
+  auto callee = extractFuncSymbolGenerator(cast<TypedAttr>(calleeAttr));
   auto bodyOr =
       nestedEvaluator.lookupParametricFunctionBody(callee.getSymbol());
   if (bodyOr.isError())
@@ -492,9 +492,6 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
   if (auto getBaseTypeNameAttr = dyn_cast<GetBaseTypeNameAttr>(attr))
     return evaluateGetBaseTypeNameAttr(getBaseTypeNameAttr);
 
-  if (auto compileOffloadClosureAttr =
-          dyn_cast<CompileOffloadClosureAttr>(attr))
-    return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
   if (auto compileAssemblyAttr = dyn_cast<CompileAssemblyAttr>(attr))
     return evaluateCompileAssemblyAttr(compileAssemblyAttr);
 
@@ -518,9 +515,37 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
   switch (op.getOpcode()) {
-  case POC::CurrentTarget:
+  case POC::CurrentTarget: {
     // Retrieve the contextual compilation target info.
-    return {TargetParamAttr::get(elaborator->getTarget())};
+    TargetInfoAttr target = elaborator->getTarget();
+    // `bundleCompileOffloadOp` rewrote these to generator references so their
+    // generators would be sliced in; undo that here, so a kernel reading the
+    // plugin sees the instance references it would have seen on the host.
+    if (target.getOpaquePlugin()) {
+      mlir::AttrTypeReplacer replacer;
+      bool concretizeFailed = false;
+      replacer.addReplacement(
+          [&](TypeGeneratorRefAttr genRef) -> std::pair<Attribute, WalkResult> {
+            ErrorTreeOr<TypeInstanceRefAttr> instRef =
+                elaborator->getConcreteStructTypeReference(parent, *errorLoc,
+                                                           genRef);
+            if (instRef.isError()) {
+              emitError(instRef.takeError());
+              concretizeFailed = true;
+              return {genRef, WalkResult::interrupt()};
+            }
+            return {instRef.takeValue(), WalkResult::skip()};
+          });
+      Attribute rewritten = replacer.replace(Attribute(target));
+      if (concretizeFailed) {
+        return failure();
+      }
+      if (auto newTarget = dyn_cast_or_null<TargetInfoAttr>(rewritten)) {
+        target = newTarget;
+      }
+    }
+    return {TargetParamAttr::get(target)};
+  }
   case POC::AcceleratorArch:
     return {StringAttr::get(elaborator->options.targetAccelerator,
                             StringType::get(op.getContext()))};
@@ -629,7 +654,11 @@ FailureOr<TypedAttr>
 ParametricIREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot) {
   auto symbol =
-      extractSymbolConstantAttr(getReboundAttribute(op.getOperands().front()));
+      extractFuncSymbolGenerator(getReboundAttribute(op.getOperands().front()));
+  if (!symbol)
+    return failure();
+  assert(!hasUnresolvedParamValue(symbol) &&
+         "the symbol must be fully bound for calls");
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = elaborator->oldSymTab.lookup<GeneratorOp>(name);
 
@@ -765,8 +794,14 @@ void ParametricIREvaluator::withEvaluator(
   callback(nestedEvaluator.getCurrentParamEvalFrame().evaluator);
 }
 
-void ParametricIREvaluator::emitMaterializationError(const Twine &message) {
-  IREvaluatorContext::emitError({*errorLoc, message.str()});
+void ParametricIREvaluator::emitMaterializationError(
+    const Twine &message, MaterializationErrorKind kind) {
+  ErrorTree error(*errorLoc, message.str());
+  std::optional<ErrorTree> *pending = pendingUnfoldedError();
+  if (kind == MaterializationErrorKind::Illegal || !pending)
+    return IREvaluatorContext::emitError(std::move(error));
+  if (!*pending)
+    *pending = std::move(error);
 }
 
 TargetInfoAttr ParametricIREvaluator::getTargetInfo() const {
@@ -785,7 +820,7 @@ GeneratorOp ParametricIREvaluator::getGenerator(SymbolRefAttr symbol) {
 
 ErrorOr<CrossDeviceFunction>
 ParametricIREvaluator::compileAsm(MLIRContext *ctx, GeneratorOp func,
-                                  SymbolConstantAttr symbol, StringAttr name,
+                                  FuncSymbolAttr symbol, StringAttr name,
                                   TargetInfoAttr target, EmitAs emissionKind,
                                   EmissionOptions emissionOptions) {
   SymbolTable symtabCopy = elaborator->oldSymTab;
@@ -840,54 +875,16 @@ ParametricIREvaluator::concretizeParameterExpr(PImplNode *parent, Location loc,
   errorLoc = loc;
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
+  std::optional<ErrorTree> pending;
+  auto *outerPending = std::exchange(pendingUnfoldedError(), &pending);
+  auto restorePending = llvm::scope_exit(
+      [outerPending] { pendingUnfoldedError() = outerPending; });
 
   Attribute result = getReboundAttribute(expr);
   if (error)
     return std::move(*error);
-
-  if (!result)
-    return Attribute();
-
-  // If we can fold this to a simple constant result, do.
-  if (ParameterAttr::isSimpleConstant(result))
-    return result;
-
-  // Otherwise we had an error folding the expression tree or we just have a
-  // some foreign attribute that doesn't participate in the parameter system.
-  // Walk the attribute tree postorder - if we see any attribute that has
-  // all-simple-constant leaves, then we check to see if it is erroneous so we
-  // can report the error.  We do this in postorder because you could have:
-  //    add(4, div(8000000000, 4))
-  // and the problem is that div isn't target invariant.  The problem isn't the
-  // add outside it.
-  result.walk<mlir::WalkOrder::PostOrder>(
-      [&](Attribute attr) -> mlir::WalkResult {
-        bool allSimple = true;
-        attr.walkImmediateSubElements(
-            [&](Attribute sub) {
-              if (allSimple)
-                allSimple = ParameterAttr::isSimpleConstant(sub);
-            },
-            [&](Type T) {});
-
-        // If this is an attribute with simple operands that refused to fold,
-        // see if we're able to get a custom error message from it to explain
-        // what is going on.
-        if (allSimple) {
-          if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-            auto errorMessage = itf.validateForElaborator();
-            if (errorMessage.isError()) {
-              emitError(ErrorTree(loc, errorMessage.takeError()));
-              return WalkResult::interrupt();
-            }
-          }
-        }
-        return WalkResult::advance();
-      });
-
-  if (error)
-    return std::move(*error);
-
+  if (pending && result && !ParameterAttr::isSimpleConstant(result))
+    return std::move(*pending);
   return result;
 }
 
@@ -899,9 +896,15 @@ ParametricIREvaluator::concretizeParameterExpr(PImplNode *parent, Location loc,
   errorLoc = loc;
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
+  std::optional<ErrorTree> pending;
+  auto *outerPending = std::exchange(pendingUnfoldedError(), &pending);
+  auto restorePending = llvm::scope_exit(
+      [outerPending] { pendingUnfoldedError() = outerPending; });
 
   Type result = getReboundType(expr);
   if (error)
     return std::move(*error);
+  if (pending && result && isParameterizedType(result))
+    return std::move(*pending);
   return result;
 }

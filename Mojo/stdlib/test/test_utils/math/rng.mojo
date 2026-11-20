@@ -69,3 +69,18 @@ struct SplitMix64:
             A float64 with 53 random bits.
         """
         return Float64(self.next() >> 11) / Float64(1 << 53)
+
+
+def xorshift64(mut state: UInt64) -> UInt64:
+    """Advances a xorshift64 generator.
+
+    Args:
+        state: The generator state, which must not be zero.
+
+    Returns:
+        The new state, which is also the next 64 random bits.
+    """
+    state ^= state << 13
+    state ^= state >> 7
+    state ^= state << 17
+    return state

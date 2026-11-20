@@ -13,8 +13,8 @@
 
 """PyTorch reference for the manifold-constrained hyper-connection layer.
 
-Shared by the ModuleV2 (:class:`max.nn.HyperConnection`) and ModuleV3
-(:class:`max.experimental.nn.HyperConnection`) tests so both are measured
+Shared by the ModuleV2 (:class:`max.nn.legacy.HyperConnection`) and ModuleV3
+(:class:`max.nn.HyperConnection`) tests so both are measured
 against one definition of the layer.
 """
 
@@ -34,7 +34,7 @@ def hyper_connection_reference(
     hc_sinkhorn_iters: int,
     hc_eps: float,
     rms_norm_eps: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Computes the mHC gates and the collapsed stream in float32.
 
     Args:
@@ -50,7 +50,7 @@ def hyper_connection_reference(
         rms_norm_eps: Epsilon of the unweighted RMSNorm applied to the streams.
 
     Returns:
-        A tuple ``(post, comb, collapsed)``. ``comb`` is
+        A tuple ``(post, comb, collapsed, pre)``. ``comb`` is
         ``[total_seq_len, hc_mult, hc_mult]``; ``collapsed`` carries
         ``hidden_streams``' dtype.
     """
@@ -78,4 +78,4 @@ def hyper_connection_reference(
         comb = comb / (comb.sum(dim=-2, keepdim=True) + hc_eps)
 
     collapsed = (pre.unsqueeze(-1) * streams).sum(dim=1)
-    return post, comb, collapsed.to(hidden_streams.dtype)
+    return post, comb, collapsed.to(hidden_streams.dtype), pre

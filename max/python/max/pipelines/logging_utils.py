@@ -62,7 +62,7 @@ def log_pipeline_info(
     arch_entries: list[tuple[str, Any]] = [
         ("architecture", arch.name),
         ("pipeline_class", pipeline_class.__name__),
-        ("pipeline_model", arch.pipeline_model.__name__),
+        ("pipeline_model", getattr(arch.pipeline_model, "__name__", None)),
         ("tokenizer", arch.tokenizer_cls.__name__),
     ]
 

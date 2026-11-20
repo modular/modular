@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import logging
 import random
+import re
 import time
 from collections.abc import Sequence
 
@@ -61,6 +62,12 @@ from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
 
+# The special tokens of OpenAI's Harmony format. A model can echo them into
+# its message text, where a Harmony chat template rejects them.
+_HARMONY_WIRE_TAG = re.compile(
+    r"<\|(?:start|end|channel|message|constrain|return|call)\|>"
+)
+
 
 def _image_content_blocks(
     images: Sequence[OpenAIImage],
@@ -75,6 +82,12 @@ def _poisson_interval(request_rate: float, burstiness: float) -> float:
     """Gamma-distributed inter-arrival time for a target Poisson session rate."""
     theta = 1.0 / (request_rate * burstiness)
     return float(np.random.gamma(shape=burstiness, scale=theta))
+
+
+def _cap_output_len(output_len: int, max_output_len: int | None) -> int:
+    if max_output_len is None:
+        return output_len
+    return min(output_len, max_output_len)
 
 
 async def chat_session_driver(
@@ -94,7 +107,10 @@ async def chat_session_driver(
     use_session_id_as_cache_salt: bool = False,
     lora_id: str | None = None,
     disable_ignore_eos: bool = False,
+    max_output_len: int | None = None,
+    strip_harmony_wire_tags: bool = False,
 ) -> list[RequestFuncOutput]:
+    """Runs one chat session's turns through the request driver."""
     request_func_input = RequestFuncInput(
         model=model_id,
         session_id=str(chat_session.id),
@@ -163,7 +179,11 @@ async def chat_session_driver(
         chat_len += messages[content_idx].num_tokens
         if content_idx == 0 and run_prefix:
             chat_len += run_prefix_len
-        output_len = messages[content_idx + 1].num_tokens
+        # A fitted workload is already capped, before its context budgeting;
+        # this catches datasets whose lengths come from their own messages.
+        output_len = _cap_output_len(
+            messages[content_idx + 1].num_tokens, max_output_len
+        )
         if chat_len + output_len > max_chat_len:
             logger.warning(
                 f"Ending conversation: hitting max chat length {max_chat_len}"
@@ -270,18 +290,27 @@ async def chat_session_driver(
                 )
             break
 
+        assistant_text = response.generated_text
+        stripped_tags = 0
+        if strip_harmony_wire_tags:
+            assistant_text, stripped_tags = _HARMONY_WIRE_TAG.subn(
+                "", assistant_text
+            )
         message_history.append(
             ChatMessage(
                 role="assistant",
-                content=[TextContentBlock(text=response.generated_text)],
+                content=[TextContentBlock(text=assistant_text)],
             )
         )
         # What the turn actually produced, not what it drew: a constrained turn
         # stops at schema completion, so charging the drawn length would report
         # a prompt_len the next turn never sends and compound it down the
         # session. Falls back to the draw when the server reports no usage,
-        # which is exact for an ignore_eos turn.
-        chat_len += response.server_token_stats.completion_tokens or output_len
+        # which is exact for an ignore_eos turn. Each Harmony wire tag is one
+        # token, so a stripped tag is one token the next turn does not send.
+        chat_len += (
+            response.server_token_stats.completion_tokens or output_len
+        ) - stripped_tags
 
         if next_delay_ms := messages[content_idx + 1].delay_until_next_message:
             sleep_s = next_delay_ms / 1000
@@ -304,6 +333,7 @@ async def prerun_warmup_turns(
     max_concurrency: int,
     disable_tqdm: bool = False,
     use_session_id_as_cache_salt: bool = False,
+    max_output_len: int | None = None,
 ) -> None:
     """Send one warmup request per session with prefix_turns > 0.
 
@@ -357,8 +387,11 @@ async def prerun_warmup_turns(
                 images=[],
                 api_url=api_url,
                 prompt_len=chat_len,
-                max_tokens=output_len,
+                # The reply is discarded; history takes the dataset's text.
+                max_tokens=_cap_output_len(output_len, max_output_len),
                 ignore_eos=True,
+                tools=messages[content_idx].tools,
+                is_cache_warmup=True,
             )
             assistant_content = messages[content_idx + 1].content
             if not assistant_content:
@@ -440,13 +473,14 @@ async def run_multiturn_benchmark(
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
     disable_ignore_eos: bool = False,
+    max_output_len: int | None = None,
+    strip_harmony_wire_tags: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario.
 
     chat_sessions is already reordered (warmup picks first, with
     prefix_turns set). The orchestrator runs warmup before the timer.
     """
-
     # Track total sent requests among chat sessions
     request_counter = RequestCounter(
         max_requests=max_requests,
@@ -483,6 +517,8 @@ async def run_multiturn_benchmark(
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,
+                max_output_len=max_output_len,
+                strip_harmony_wire_tags=strip_harmony_wire_tags,
             )
         session_id = (
             str(chat_session.id)
@@ -569,6 +605,7 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> BaseRequestFuncOutput:
+        """Sends the request under the driver's concurrency limit."""
         async with self._semaphore:
             if deadline_passed(self._benchmark_should_end_time):
                 return request_func_input.get_output_type()(
@@ -612,6 +649,7 @@ async def run_kv_cache_stress_benchmark(
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
     disable_ignore_eos: bool = False,
+    strip_harmony_wire_tags: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
@@ -728,6 +766,7 @@ async def run_kv_cache_stress_benchmark(
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,
+                strip_harmony_wire_tags=strip_harmony_wire_tags,
             )
             session_id = (
                 str(chat_session.id)
@@ -784,9 +823,11 @@ async def chat_judge_session_driver(
     benchmark_should_end_time: int | None = None,
     use_session_id_as_cache_salt: bool = False,
 ) -> list[RequestFuncOutput]:
-    """Drive one chat-judge session: every turn already has its full
-    context inlined as text in the user message, so we send
-    ``[system?, user]`` per turn without accumulating assistant responses.
+    """Drive one chat-judge session.
+
+    Every turn already has its full context inlined as text in the user
+    message, so we send ``[system?, user]`` per turn without accumulating
+    assistant responses.
 
     If the session's first message is a system prompt
     (``source="system"``), it is prepended to every user turn; otherwise

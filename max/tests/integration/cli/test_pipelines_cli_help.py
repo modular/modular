@@ -170,12 +170,10 @@ def test_serve_recipe_enables_cascade(
 ) -> None:
     served: list[str] = []
 
-    async def fake_serve(
-        *, pipeline_args: PipelineArgs, **kwargs: object
-    ) -> None:
+    async def fake_serve(pipeline_args: PipelineArgs, **kwargs: object) -> None:
         served.append(pipeline_args.model_path)
 
-    monkeypatch.setattr(cascade_main, "serve", fake_serve)
+    monkeypatch.setattr(cascade_main, "_serve_deployed", fake_serve)
     result = CliRunner().invoke(
         pipelines.main,
         ["serve", "--config-file", str(_write_cascade_recipe(tmp_path))],
@@ -192,7 +190,7 @@ def test_serve_no_cascade_flag_overrides_recipe(
     async def fake_serve(**kwargs: object) -> None:
         served.append("cascade")
 
-    monkeypatch.setattr(cascade_main, "serve", fake_serve)
+    monkeypatch.setattr(cascade_main, "_serve_deployed", fake_serve)
     CliRunner().invoke(
         pipelines.main,
         [

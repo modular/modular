@@ -64,12 +64,12 @@
 from std.collections import Set
 from max.gpu import block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.math import max, min
+from std.math import align_up, max, min
 from std.random import random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
 from std.utils.numerics import min_or_neg_inf
 
-from layout import Coord, TensorLayout, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
 
@@ -192,8 +192,7 @@ def _snap_block_dim(bd: Int) -> Int:
     keeps every launch valid regardless of what the orchestrator's generic shrink
     passes for `block_dim` (it treats the field as a free Int).
     """
-    var w = 64
-    var up = ((max(1, bd) + w - 1) // w) * w
+    var up = align_up(max(1, bd), 64)
     return max(64, min(1024, up))
 
 
@@ -241,9 +240,11 @@ def gen_specs(n: Int) -> List[CaseSpec]:
 def _select_test_kernel[
     ScoresLT: TensorLayout,
     OutLT: TensorLayout,
+    ScoresEngine: TensorEngine,
+    OutEngine: TensorEngine,
 ](
-    scores: TileTensor[score_type, ScoresLT, MutAnyOrigin],
-    out_idxs: TileTensor[out_idx_type, OutLT, MutAnyOrigin],
+    scores: TileTensor[score_type, ScoresLT, MutAnyOrigin, Engine=ScoresEngine],
+    out_idxs: TileTensor[out_idx_type, OutLT, MutAnyOrigin, Engine=OutEngine],
     num_blocks_dev: Int32,
     k_dev: Int32,
 ):
@@ -352,13 +353,16 @@ def run_one_case(
     out_dev.enqueue_fill(Int32(-2))
 
     var data_buf = DeviceBuffer[score_type](
-        ctx, scores_dev.unsafe_ptr() + 1, n_scores, owning=False
+        ctx, scores_dev.unsafe_ptr().unsafe_offset(1), n_scores, owning=False
     )
     var scores_t = TileTensor(data_buf, row_major((num_rows, num_blocks)))
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))
 
     comptime kernel = _select_test_kernel[
-        type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+        type_of(scores_t).LayoutType,
+        type_of(out_t).LayoutType,
+        type_of(scores_t).Engine,
+        type_of(out_t).Engine,
     ]
     ctx.enqueue_function[kernel](
         scores_t,
@@ -413,16 +417,9 @@ def run_one_case(
             var idx = Int(out_host[r * k + j])
             if idx < 0 or idx >= num_blocks:
                 print(
-                    "FUZZ_CONTRACT_FAIL kind=index_out_of_range row=",
-                    r,
-                    "pos=",
-                    j,
-                    "idx=",
-                    idx,
-                    "num_blocks=",
-                    num_blocks,
-                    "dist=",
-                    _dist_name(spec.dist),
+                    t"FUZZ_CONTRACT_FAIL kind=index_out_of_range row= {r} pos="
+                    t" {j} idx= {idx} num_blocks= {num_blocks} dist="
+                    t" {_dist_name(spec.dist)}"
                 )
                 raise Error("selected index out of range [0, num_blocks)")
             if idx in got:
@@ -436,26 +433,17 @@ def run_one_case(
             got.add(idx)
             if not _is_selectable(scores_host[base + idx]):
                 print(
-                    "FUZZ_CONTRACT_FAIL kind=selected_dead_block row=",
-                    r,
-                    "idx=",
-                    idx,
-                    "score=",
-                    scores_host[base + idx],
+                    t"FUZZ_CONTRACT_FAIL kind=selected_dead_block row= {r} idx="
+                    t" {idx} score= {scores_host[base + idx]}"
                 )
                 raise Error("selected a dead/NaN block (not selectable)")
 
         for j in range(n_written, k):
             if Int(out_host[r * k + j]) != -1:
                 print(
-                    "FUZZ_CONTRACT_FAIL kind=tail_not_sentinel row=",
-                    r,
-                    "pos=",
-                    j,
-                    "got=",
-                    Int(out_host[r * k + j]),
-                    "n_written=",
-                    n_written,
+                    t"FUZZ_CONTRACT_FAIL kind=tail_not_sentinel row= {r} pos="
+                    t" {j} got= {Int(out_host[r * k + j])} n_written="
+                    t" {n_written}"
                 )
                 raise Error("output tail must be -1")
 
@@ -518,7 +506,10 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         var out_t = TileTensor(out_dev, row_major((num_rows, k)))
 
         comptime kernel = _select_test_kernel[
-            type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+            type_of(scores_t).LayoutType,
+            type_of(out_t).LayoutType,
+            type_of(scores_t).Engine,
+            type_of(out_t).Engine,
         ]
         ctx.enqueue_function[kernel](
             scores_t,
@@ -541,20 +532,10 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
                 if out_host[i] != ref_out[i]:
                     var row, pos = divmod(i, k)
                     print(
-                        "FUZZ_NUMERIC_FAIL kind=width_nondeterminism width=",
-                        bd,
-                        "ref_width=",
-                        _snap_block_dim(widths[0]),
-                        "row=",
-                        row,
-                        "pos=",
-                        pos,
-                        "got=",
-                        Int(out_host[i]),
-                        "ref=",
-                        Int(ref_out[i]),
-                        "dist=",
-                        _dist_name(spec.dist),
+                        t"FUZZ_NUMERIC_FAIL kind=width_nondeterminism width="
+                        t" {bd} ref_width= {_snap_block_dim(widths[0])} row="
+                        t" {row} pos= {pos} got= {Int(out_host[i])} ref="
+                        t" {Int(ref_out[i])} dist= {_dist_name(spec.dist)}"
                     )
                     raise Error(
                         "block_select_topk output depends on block_dim"
@@ -636,12 +617,8 @@ def _check_topk_invariant(
 
     if have_sel and have_non and sel_min < non_max:
         print(
-            "FUZZ_NUMERIC_FAIL kind=topk_invariant row=",
-            row,
-            "sel_min=",
-            sel_min,
-            "non_max=",
-            non_max,
+            t"FUZZ_NUMERIC_FAIL kind=topk_invariant row= {row} sel_min="
+            t" {sel_min} non_max= {non_max}"
         )
         raise Error("selected element ranked below an excluded one")
 
@@ -666,22 +643,10 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "num_rows=",
-                specs[i].num_rows,
-                "num_blocks=",
-                specs[i].num_blocks,
-                "k=",
-                specs[i].k,
-                "block_dim=",
-                specs[i].block_dim,
-                "dist=",
-                specs[i].dist,
-                "force=",
-                specs[i].force,
-                "seed=",
-                specs[i].seed,
+                t"FUZZ_SPEC idx= {i} num_rows= {specs[i].num_rows} num_blocks="
+                t" {specs[i].num_blocks} k= {specs[i].k} block_dim="
+                t" {specs[i].block_dim} dist= {specs[i].dist} force="
+                t" {specs[i].force} seed= {specs[i].seed}"
             )
         return
 
@@ -704,13 +669,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print(
-        "=== fuzz_sparse_indexer seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
-    )
+    print(t"=== fuzz_sparse_indexer seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

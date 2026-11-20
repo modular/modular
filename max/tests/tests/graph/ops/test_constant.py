@@ -21,8 +21,8 @@ from conftest import constant_float_dtypes, integral_dtypes
 from hypothesis import given
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
+from max.tensor import Tensor
 
 # TODO(GEX-3550): creating a device-resident `Tensor` on the Apple GPU
 # (Metal) hangs indefinitely on BuildBuddy macOS workers, so the two tests

@@ -57,7 +57,7 @@ from std.testing import assert_equal, assert_true
 from std.utils.static_tuple import StaticTuple
 
 from layout import Coord, Idx, TileTensor, coord, row_major, stack_allocation
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tmem_engine import (
     TMemEngine,
     TMem16x256bRegisters,
@@ -82,12 +82,12 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
-from max.gpu.host.func_attribute import Attribute
+from max.gpu.host import Attribute
 
 comptime NUM_LANES = 128
 comptime NUM_COLS = 32
 comptime WIDE_COLS = 128
-comptime NUM_WARPS = NUM_LANES // WARP_SIZE
+comptime NUM_WARPS = NUM_LANES // DeviceContext[].default_device_info.warp_size
 comptime NUM_ELEMENTS = NUM_LANES * NUM_COLS
 comptime WIDE_ELEMENTS = NUM_LANES * WIDE_COLS
 
@@ -98,7 +98,7 @@ SM's register file over four 128-thread blocks, which is 128, the most
 registers the ISA lets one `tcgen05` instruction name."""
 
 
-comptime AccumLayout[num_cols: Int] = TileLayout(
+comptime AccumLayout[num_cols: Int] = Layout(
     shape=Coord(Idx[NUM_LANES], Idx[num_cols]),
     stride=Coord(Idx[1], Idx[TMEM_NUM_LANES]),
 )
@@ -107,33 +107,33 @@ comptime AccumLayout[num_cols: Int] = TileLayout(
 comptime AccumTile[num_cols: Int] = TileTensor[
     .float32,
     type_of(AccumLayout[num_cols]),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
-comptime AccumStorage = TMemStorage[.float32, MutAnyOrigin]
+comptime AccumStorage = TMemStorage[.float32, MutUntrackedOrigin]
 
 # This thread's view of its warp's quadrant: one lane, every column.
-comptime ROW_LAYOUT = TileLayout(
+comptime ROW_LAYOUT = Layout(
     shape=Coord(Idx[1], Idx[NUM_COLS]),
     stride=Coord(Idx[1], Idx[TMEM_NUM_LANES]),
 )
 comptime RowTile = TileTensor[
     .float32,
     type_of(ROW_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 
 comptime M64_ROWS = 64
 comptime M64_LANES_PER_WARP = M64_ROWS // NUM_WARPS
-comptime M64_LAYOUT = TileLayout(
+comptime M64_LAYOUT = Layout(
     shape=Coord(Coord(Idx[M64_LANES_PER_WARP], Idx[NUM_WARPS]), Idx[NUM_COLS]),
     stride=Coord(Coord(Idx[1], Idx[WARP_SIZE]), Idx[TMEM_NUM_LANES]),
 )
 comptime M64Tile = TileTensor[
     .float32,
     type_of(M64_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 
@@ -148,14 +148,15 @@ def _expected(lane: Int, col: Int) -> Float32:
 @inline(.always)
 def _round_trip(
     row: TileTensor[
+        mut=True,
         .float32,
         _,
-        MutAnyOrigin,
+        _,
         Engine=TMemEngine,
         ...,
     ],
     tag: Int,
-    output: MutPointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, _],
     out_row: Int,
 ):
     """Copies a `tag`-stamped register row into `row`, copies it back out and
@@ -169,14 +170,12 @@ def _round_trip(
     var back = stack_allocation[dtype=.float32](row_major[1, num_cols]())
     back.copy_from(row)
     comptime for c in range(num_cols):
-        output[unsafe_offset=out_row * num_cols + c] = back[
-            Coord(Idx[0], Idx[c])
-        ]
+        output[unsafe_offset=out_row * num_cols + c] = back[Idx[0], Idx[c]]
 
 
 def _tmem_round_trip_kernel[
-    num_cols: Int
-](output: MutPointer[Float32, MutAnyOrigin]):
+    num_cols: Int, output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
     ]()
@@ -192,7 +191,7 @@ def _tmem_round_trip_kernel[
     )
     # Row 0 of the warp tile is this thread's view: the hardware adds the
     # thread's lane to the warp base, so the storage must stay at the base.
-    var row = warp_tile.tile[1, num_cols](Coord(Idx[0], Idx[0]))
+    var row = warp_tile[:1, :]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     _round_trip(row, lane, output, lane)
 
@@ -202,11 +201,13 @@ def _tmem_round_trip_kernel[
         tcgen05_dealloc[1](smem_addr[], UInt32(num_cols))
 
 
-comptime tmem_round_trip_kernel = _tmem_round_trip_kernel[NUM_COLS]
-comptime tmem_wide_round_trip_kernel = _tmem_round_trip_kernel[WIDE_COLS]
+comptime tmem_round_trip_kernel = _tmem_round_trip_kernel[NUM_COLS, ...]
+comptime tmem_wide_round_trip_kernel = _tmem_round_trip_kernel[WIDE_COLS, ...]
 
 
-def tmem_async_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def tmem_async_round_trip_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
     ]()
@@ -217,9 +218,9 @@ def tmem_async_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
     var tile = AccumTile[NUM_COLS](
         AccumStorage(smem_addr[]), AccumLayout[NUM_COLS]
     )
-    var row = tile.tile[WARP_SIZE, NUM_COLS](
-        Coord(Int(warp_id()), Idx[0])
-    ).tile[1, NUM_COLS](Coord(Idx[0], Idx[0]))
+    var row = tile.tile[WARP_SIZE, NUM_COLS](Coord(Int(warp_id()), Idx[0]))[
+        :1, :
+    ]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     comptime HALF = NUM_COLS // 2
 
@@ -229,20 +230,20 @@ def tmem_async_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
     # Two half-row stores, one wait.
     comptime for h in range(2):
         tmem_copy_async(
-            row.tile[1, HALF](Coord(Idx[0], Idx[h])),
-            regs.tile[1, HALF](Coord(Idx[0], Idx[h])),
+            row[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
+            regs[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
         )
     TMemEngine.wait_store()
 
     var back = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
     comptime for h in range(2):
         tmem_copy_async(
-            back.tile[1, HALF](Coord(Idx[0], Idx[h])),
-            row.tile[1, HALF](Coord(Idx[0], Idx[h])),
+            back[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
+            row[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
         )
     TMemEngine.wait_load()
     comptime for c in range(NUM_COLS):
-        output[unsafe_offset=lane * NUM_COLS + c] = back[Coord(Idx[0], Idx[c])]
+        output[unsafe_offset=lane * NUM_COLS + c] = back[Idx[0], Idx[c]]
 
     barrier()
     if warp_id() == 0:
@@ -254,9 +255,11 @@ def tmem_async_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(NUM_LANES))
 )
 @__llvm_metadata(`nvvm.minctasm`=SIMDLength(BUDGET_MIN_BLOCKS))
-def tmem_budget_round_trip_kernel(
-    input: MutPointer[Float32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def tmem_budget_round_trip_kernel[
+    input_origin: MutOrigin, output_origin: MutOrigin
+](
+    input: MutPointer[Float32, input_origin],
+    output: MutPointer[Float32, output_origin],
 ):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
@@ -268,9 +271,9 @@ def tmem_budget_round_trip_kernel(
     var tile = AccumTile[WIDE_COLS](
         AccumStorage(smem_addr[]), AccumLayout[WIDE_COLS]
     )
-    var row = tile.tile[WARP_SIZE, WIDE_COLS](
-        Coord(Int(warp_id()), Idx[0])
-    ).tile[1, WIDE_COLS](Coord(Idx[0], Idx[0]))
+    var row = tile.tile[WARP_SIZE, WIDE_COLS](Coord(Int(warp_id()), Idx[0]))[
+        :1, :
+    ]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     # Both ends of the round trip live in global memory, so the staging
     # registers of the two copies are the kernel's only wide register use.
@@ -289,7 +292,9 @@ def tmem_budget_round_trip_kernel(
         tcgen05_dealloc[1](smem_addr[], UInt32(WIDE_COLS))
 
 
-def tmem_m64_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def tmem_m64_round_trip_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
     ]()
@@ -323,7 +328,9 @@ comptime HALVES = 2
 comptime FRAG_LANES = WARP_SIZE // HALVES
 
 
-def tmem_16x256b_load_kernel(mismatches: MutPointer[Int32, MutAnyOrigin]):
+def tmem_16x256b_load_kernel[
+    mismatches_origin: MutOrigin
+](mismatches: MutPointer[Int32, mismatches_origin]):
     """Writes rows, reads both halves through `tmem_16x256b`, and counts the
     registers that disagree with the cell `tmem_cell` names."""
     var smem_addr = unsafe_stack_allocation[
@@ -338,7 +345,7 @@ def tmem_16x256b_load_kernel(mismatches: MutPointer[Int32, MutAnyOrigin]):
     var warp_tile = tile.tile[WARP_SIZE, NUM_COLS](
         Coord(Int(warp_id()), Idx[0])
     )
-    var row = warp_tile.tile[1, NUM_COLS](coord[0, 0])
+    var row = warp_tile[:1, :]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     var regs = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
     comptime for c in range(NUM_COLS):
@@ -348,7 +355,7 @@ def tmem_16x256b_load_kernel(mismatches: MutPointer[Int32, MutAnyOrigin]):
     var count: Int32 = 0
     comptime for half in range(HALVES):
         var view = tmem_16x256b(
-            warp_tile.tile[FRAG_LANES, NUM_COLS](coord[half, 0])
+            warp_tile[Idx[half * FRAG_LANES] : Idx[(half + 1) * FRAG_LANES], :]
         )
         var frag = stack_allocation[dtype=.float32](FRAG_REG_LAYOUT)
         frag.copy_from(view)
@@ -367,7 +374,9 @@ def tmem_16x256b_load_kernel(mismatches: MutPointer[Int32, MutAnyOrigin]):
         tcgen05_dealloc[1](smem_addr[], UInt32(NUM_COLS))
 
 
-def tmem_16x256b_store_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def tmem_16x256b_store_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     """Fills both halves through `tmem_16x256b` from the cells `tmem_cell`
     names, reads the rows back, and writes `output[lane * NUM_COLS + col]`."""
     var smem_addr = unsafe_stack_allocation[
@@ -384,7 +393,7 @@ def tmem_16x256b_store_kernel(output: MutPointer[Float32, MutAnyOrigin]):
     )
     comptime for half in range(HALVES):
         var view = tmem_16x256b(
-            warp_tile.tile[FRAG_LANES, NUM_COLS](coord[half, 0])
+            warp_tile[Idx[half * FRAG_LANES] : Idx[(half + 1) * FRAG_LANES], :]
         )
         var frag = stack_allocation[dtype=.float32](FRAG_REG_LAYOUT)
         comptime for r, i, j in product(
@@ -395,7 +404,7 @@ def tmem_16x256b_store_kernel(output: MutPointer[Float32, MutAnyOrigin]):
             frag[cell_coord] = _expected(cell[0], cell[1])
         view.copy_from(frag)
 
-    var row = warp_tile.tile[1, NUM_COLS](coord[0, 0])
+    var row = warp_tile[:1, :]
     var back = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
     back.copy_from(row)
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
@@ -410,7 +419,8 @@ def tmem_16x256b_store_kernel(output: MutPointer[Float32, MutAnyOrigin]):
 def test_codegen_batches_one_instruction_per_direction() raises:
     print("== test_codegen_batches_one_instruction_per_direction")
     var asm = _compile_code[
-        tmem_round_trip_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_round_trip_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     # 32 columns fit one `x32` instruction, and each copy waits exactly once.
     assert_equal(asm.count("tcgen05.st.sync.aligned.32x32b.x32.b32"), 1)
@@ -423,7 +433,8 @@ def test_codegen_batches_one_instruction_per_direction() raises:
 def test_codegen_async_copies_share_one_wait() raises:
     print("== test_codegen_async_copies_share_one_wait")
     var asm = _compile_code[
-        tmem_async_round_trip_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_async_round_trip_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     assert_equal(asm.count("tcgen05.st.sync.aligned.32x32b.x16.b32"), 2)
     assert_equal(asm.count("tcgen05.wait::st.sync.aligned;"), 1)
@@ -434,7 +445,8 @@ def test_codegen_async_copies_share_one_wait() raises:
 def test_codegen_wide_row_caps_registers_per_instruction() raises:
     print("== test_codegen_wide_row_caps_registers_per_instruction")
     var asm = _compile_code[
-        tmem_wide_round_trip_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_wide_round_trip_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     # A 128-column row is two 64-column slices, each with its own wait; a
     # single `x128` would need 128 consecutive registers (ptxas C7602).
@@ -446,12 +458,17 @@ def test_codegen_wide_row_caps_registers_per_instruction() raises:
 
 
 def _check_round_trip[
-    kernel: def(MutPointer[Float32, MutAnyOrigin]) thin, num_cols: Int
+    kernel: def[output_origin: MutOrigin](
+        MutPointer[Float32, output_origin]
+    ) thin,
+    num_cols: Int,
 ](ctx: DeviceContext) raises:
     comptime num_elements = NUM_LANES * num_cols
     var buf = ctx.enqueue_create_buffer[.float32](num_elements)
     buf.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[kernel](buf, grid_dim=1, block_dim=NUM_LANES)
+    ctx.enqueue_function[kernel[origin_of(buf)]](
+        buf, grid_dim=1, block_dim=NUM_LANES
+    )
     var host = ctx.enqueue_create_host_buffer[.float32](num_elements)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
@@ -481,7 +498,11 @@ def test_wide_round_trip_all_lanes(ctx: DeviceContext) raises:
 
 def test_budget_round_trip_does_not_spill(ctx: DeviceContext) raises:
     print("== test_budget_round_trip_does_not_spill")
-    var func = ctx.compile_function[tmem_budget_round_trip_kernel]()
+    var func = ctx.compile_function[
+        tmem_budget_round_trip_kernel[
+            input_origin=MutUntrackedOrigin, output_origin=MutUntrackedOrigin
+        ]
+    ]()
     # The budget only means something if `ptxas` honored the launch bounds.
     assert_true(func.get_attribute(Attribute.NUM_REGS) <= BUDGET_REGS)
     assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
@@ -510,17 +531,18 @@ def test_budget_round_trip_does_not_spill(ctx: DeviceContext) raises:
 
 def test_m64_round_trip(ctx: DeviceContext) raises:
     print("== test_m64_round_trip")
+    comptime warp_size = ctx.default_device_info.warp_size
     var buf = ctx.enqueue_create_buffer[.float32](NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[tmem_m64_round_trip_kernel](
-        buf, grid_dim=1, block_dim=NUM_LANES
-    )
+    ctx.enqueue_function[
+        tmem_m64_round_trip_kernel[output_origin=origin_of(buf)]
+    ](buf, grid_dim=1, block_dim=NUM_LANES)
     var host = ctx.enqueue_create_host_buffer[.float32](NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
     # Logical row r of the M=64 tile lives in lane 32 * (r // 16) + r % 16.
     for row in range(M64_ROWS):
-        var tmem_lane = (row // M64_LANES_PER_WARP) * WARP_SIZE + (
+        var tmem_lane = (row // M64_LANES_PER_WARP) * warp_size + (
             row % M64_LANES_PER_WARP
         )
         for col in range(NUM_COLS):
@@ -535,11 +557,13 @@ def test_codegen_fragment_copies_are_one_16x256b_instruction() raises:
     print("== test_codegen_fragment_copies_are_one_16x256b_instruction")
     # 32 columns are 4 repeats of 256 bits, so each half is one instruction.
     var ld_asm = _compile_code[
-        tmem_16x256b_load_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_16x256b_load_kernel[mismatches_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     assert_equal(ld_asm.count("tcgen05.ld.sync.aligned.16x256b.x4.b32"), 2)
     var st_asm = _compile_code[
-        tmem_16x256b_store_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_16x256b_store_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     assert_equal(st_asm.count("tcgen05.st.sync.aligned.16x256b.x4.b32"), 2)
 
@@ -548,9 +572,9 @@ def test_fragment_load_matches_rows(ctx: DeviceContext) raises:
     print("== test_fragment_load_matches_rows")
     var buf = ctx.enqueue_create_buffer[.int32](NUM_LANES)
     buf.enqueue_fill(Int32(-1))
-    ctx.enqueue_function[tmem_16x256b_load_kernel](
-        buf, grid_dim=1, block_dim=NUM_LANES
-    )
+    ctx.enqueue_function[
+        tmem_16x256b_load_kernel[mismatches_origin=origin_of(buf)]
+    ](buf, grid_dim=1, block_dim=NUM_LANES)
     var host = ctx.enqueue_create_host_buffer[.int32](NUM_LANES)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()

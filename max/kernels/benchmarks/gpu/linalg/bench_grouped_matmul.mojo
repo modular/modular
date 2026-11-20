@@ -50,10 +50,9 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from layout import Coord, Idx, TileTensor, row_major
-from linalg.utils import elementwise_epilogue_type
 
+from std.utils.coord import Coord
 from std.utils import Index, IndexList
-from std.collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -109,11 +108,6 @@ def _get_run_name[
     )
 
 
-comptime epilogue_func_type = def[
-    dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
-
-
 @inline(.always)
 def test_epilogue[
     dtype: DType
@@ -150,7 +144,7 @@ def bench_grouped_matmul[
     pdl_level: Int = 0,
     row_scales: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -176,38 +170,19 @@ def bench_grouped_matmul[
         total_num_tokens += num_tokens
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
     var M = total_num_tokens
-    var total_flops = 2 * M * N * K
 
     # Print parsed inputs for verification (before any GPU work).
     var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
     var eid_str = "[" + ", ".join(expert_ids_input) + "]"
     print(
-        "Config: num_active_experts=",
-        num_active_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " num_experts=",
-        num_experts,
-        sep="",
+        t"Config:"
+        t" num_active_experts={num_active_experts} N={N} K={K} num_experts={num_experts}"
     )
     print(
-        "  tokens_by_expert(len=",
-        len(num_tokens_by_expert),
-        " sum=",
-        total_num_tokens,
-        "): ",
-        tok_str,
-        sep="",
+        t"  tokens_by_expert(len={len(num_tokens_by_expert)} sum={total_num_tokens}):"
+        t" {tok_str}"
     )
-    print(
-        "  expert_ids(len=",
-        len(expert_ids_input),
-        "): ",
-        eid_str,
-        sep="",
-    )
+    print(t"  expert_ids(len={len(expert_ids_input)}): {eid_str}")
     if (
         len(num_tokens_by_expert) != num_active_experts
         or len(expert_ids_input) != num_active_experts
@@ -219,17 +194,24 @@ def bench_grouped_matmul[
                 " entries each (num_active_experts)",
             )
         )
-    for expert_id in expert_ids_input:
-        if expert_id < 0 or expert_id >= num_experts:
+    # -1 marks an inactive expert. Its tokens keep their rows in the buffers,
+    # but the kernels skip its matmul, so they do not count toward the FLOPs.
+    var matmul_tokens = 0
+    for i in range(num_active_experts):
+        var expert_id = expert_ids_input[i]
+        if expert_id < -1 or expert_id >= num_experts:
             raise Error(
                 String(
                     "expert id ",
                     expert_id,
-                    " is outside [0, ",
+                    " is outside [-1, ",
                     num_experts,
                     ")",
                 )
             )
+        if expert_id != -1:
+            matmul_tokens += num_tokens_by_expert[i]
+    var total_flops = 2 * matmul_tokens * N * K
 
     def _ri(v: Int) -> Int64:
         return Int64(v)
@@ -317,26 +299,6 @@ def bench_grouped_matmul[
     ctx.enqueue_copy(a_offsets_dev_buffer, a_offsets_host_ptr)
     ctx.enqueue_copy(expert_ids_dev_buffer, expert_ids_host_ptr)
 
-    # The block-scaled FP8 persistent kernel still takes a legacy capturing
-    # epilogue, so keep this `@__parameter` form for that call site.
-    @inline(.always)
-    @__copy_capture(c_dev)
-    @__parameter
-    def epilogue_fn[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]) -> None:
-        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var new_val = val
-
-        comptime for i in range(width):
-            new_val[i] = test_epilogue(
-                Int(idx[0].value()), Int(idx[1].value()) + i, val[i]
-            )
-
-        c_dev.store[width=width, alignment=alignment](
-            idx, new_val.cast[out_type]()
-        )
-
     @inline(.always)
     def epilogue_value_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
@@ -345,13 +307,9 @@ def bench_grouped_matmul[
         var new_val = val
 
         comptime for i in range(width):
-            new_val[i] = test_epilogue(
-                Int(idx[0].value()), Int(idx[1].value()) + i, val[i]
-            )
+            new_val[i] = test_epilogue(Int(idx[0]), Int(idx[1]) + i, val[i])
 
-        c_dev.store[width=width, alignment=alignment](
-            idx, new_val.cast[out_type]()
-        )
+        c_dev.store[alignment=alignment](idx, new_val.cast[out_type]())
 
     comptime if is_fp4e2m1:
         comptime assert (
@@ -470,7 +428,9 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -676,7 +636,9 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -796,28 +758,31 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
                 else:
-                    comptime umma_shape = Index(64, 64, 32)
+                    comptime umma_shape = (64, 64, 32)
                     comptime transpose_b = True
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        cluster_shape=Index(1, 1, 1),
-                        mma_shape=umma_shape,
+                        cluster_shape=(Int(1), Int(1), Int(1)),
+                        mma_shape=(
+                            Int(umma_shape[0]),
+                            Int(umma_shape[1]),
+                            Int(umma_shape[2]),
+                        ),
                         cta_group=1,
                         AB_swapped=AB_swapped,
                         k_group_size=1,
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-                        config=config,
-                        elementwise_lambda_fn=Optional[
-                            elementwise_epilogue_type
-                        ](epilogue_fn) if has_epilogue else None,
+                        config=config
                     ](
                         c_dev,
                         a_dev,
@@ -873,13 +838,18 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
                 else:
-                    grouped_matmul[has_epilogue_fn=has_epilogue](
+                    grouped_matmul[
+                        has_epilogue_fn=has_epilogue,
+                        pdl_level=PDLLevel(pdl_level),
+                    ](
                         c_dev,
                         a_dev,
                         b_dev,
@@ -947,7 +917,7 @@ def create_grouped_matmul_bench[
     pdl_level: Int = 0,
     row_scales: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -1027,7 +997,7 @@ def main() raises:
     comptime row_scales = get_defined_bool["row_scales", False]()
 
     var b = Bench()
-    comptime expert_shape = IndexList[2](N, K)
+    comptime expert_shape = (N, K)
 
     with DeviceContext() as ctx:
         create_grouped_matmul_bench[

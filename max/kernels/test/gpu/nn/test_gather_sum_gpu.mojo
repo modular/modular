@@ -44,7 +44,7 @@ def test_gather_sum_gpu_basic() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(indices_device, indices_host)
 
-        gather_sum[target="gpu"](
+        gather_sum(
             TileTensor(output_device, output_layout),
             TileTensor(input_device, table_layout),
             TileTensor(indices_device, indices_layout),
@@ -87,7 +87,7 @@ def test_gather_sum_gpu_single_index() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(indices_device, indices_host)
 
-        gather_sum[target="gpu"](
+        gather_sum(
             TileTensor(output_device, output_layout),
             TileTensor(input_device, table_layout),
             TileTensor(indices_device, indices_layout),
@@ -127,7 +127,7 @@ def test_gather_sum_gpu_int64_data() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(indices_device, indices_host)
 
-        gather_sum[target="gpu"](
+        gather_sum(
             TileTensor(output_device, output_layout),
             TileTensor(input_device, table_layout),
             TileTensor(indices_device, indices_layout),
@@ -170,7 +170,7 @@ def test_gather_sum_gpu_negative_indices() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(indices_device, indices_host)
 
-        gather_sum[target="gpu"](
+        gather_sum(
             TileTensor(output_device, output_layout),
             TileTensor(input_device, table_layout),
             TileTensor(indices_device, indices_layout),
@@ -212,7 +212,7 @@ def test_gather_sum_gpu_rank3_output() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(indices_device, indices_host)
 
-        gather_sum[target="gpu"](
+        gather_sum(
             TileTensor(output_device, output_layout),
             TileTensor(input_device, table_layout),
             TileTensor(indices_device, indices_layout),
@@ -263,7 +263,7 @@ def test_gather_sum_gpu_large_embedding_dim() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(indices_device, indices_host)
 
-        gather_sum[target="gpu"](
+        gather_sum(
             TileTensor(output_device, output_layout),
             TileTensor(input_device, table_layout),
             TileTensor(indices_device, indices_layout),

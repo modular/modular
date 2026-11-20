@@ -31,7 +31,9 @@ from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 
 
-def oob_global_write(dst: MutPointer[Float32, MutAnyOrigin], n_dev: Int32):
+def oob_global_write[
+    dst_origin: MutOrigin
+](dst: MutPointer[Float32, dst_origin], n_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
     var thread_id = thread_idx.x
@@ -51,7 +53,7 @@ def main() raises:
     with DeviceContext() as ctx:
         var n = 16
         var dst = ctx.enqueue_create_buffer[.float32](n)
-        ctx.enqueue_function[oob_global_write](
+        ctx.enqueue_function[oob_global_write[origin_of(dst)]](
             dst,
             Int32(n),
             grid_dim=(1,),

@@ -219,6 +219,30 @@ ParseResult KGEN::parseConventionAndVariadicness(
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
   convention = ArgConvention::ImmReg;
+
+  // The printed convention of a variadic argument is the convention of its
+  // elements. A pack holds it in its own convention, and a list in the
+  // argument list.
+  auto applyVariadicConvention = [&]() -> ParseResult {
+    if (variadic == VariadicKind::PackVarArg) {
+      if (convention == ArgConvention::ImmReg)
+        convention = ArgConvention::ImmMem;
+      if (convention != ArgConvention::ImmMem &&
+          convention != ArgConvention::Mut &&
+          convention != ArgConvention::OwnedMem) {
+        return p.emitError(loc, "pack vararg must be 'imm_mem', 'mut' or "
+                                "'owned_in_mem', got: ")
+               << stringifyArgConvention(convention);
+      }
+      convention = getPackConvention(convention);
+    } else if (variadic == VariadicKind::PosVarArg) {
+      origVariadicConvention = convention;
+      if (convention != ArgConvention::OwnedMem)
+        convention = ArgConvention::ImmMem;
+    }
+    return success();
+  };
+
   if (succeeded(p.parseOptionalKeyword(&str))) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(str)) {
       convention = *conv;
@@ -228,26 +252,14 @@ ParseResult KGEN::parseConventionAndVariadicness(
       // Otherwise we also parse a variadicness
       if (parseVariadicness(p, variadic, idx))
         return failure();
-      if (variadic == VariadicKind::PosVarArg ||
-          variadic == VariadicKind::PackVarArg) {
-        origVariadicConvention = convention;
-        if (convention != ArgConvention::OwnedMem)
-          convention = ArgConvention::ImmMem;
-      }
-      return success();
+      return applyVariadicConvention();
     }
 
     std::optional<VariadicKind> kind = symbolizeVariadicKind(str);
     if (!kind.has_value())
       return p.emitError(loc, "expected convention|variadicness, got: ") << str;
     variadic = *kind;
-
-    if (variadic == VariadicKind::PosVarArg ||
-        variadic == VariadicKind::PackVarArg) {
-      origVariadicConvention = convention;
-      if (convention != ArgConvention::OwnedMem)
-        convention = ArgConvention::ImmMem;
-    }
+    return applyVariadicConvention();
   }
   return success();
 }

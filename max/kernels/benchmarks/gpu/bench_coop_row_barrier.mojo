@@ -38,8 +38,8 @@ def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
 def coop_combine_kernel[
     group_size: Int
 ](
-    workspace: UnsafePointer[Int32, MutAnyOrigin],
-    sink: UnsafePointer[Float32, MutAnyOrigin],
+    workspace: MutPointer[Int32, MutAnyOrigin],
+    sink: MutPointer[Float32, MutAnyOrigin],
     iters: Int32,
 ):
     var rank = block_idx.x % group_size
@@ -74,7 +74,7 @@ def main() raises:
         ctx.synchronize()
 
         @inline(.always)
-        def launch(ctx: DeviceContext) raises {mut workspace, mut sink, imm}:
+        def launch(ctx: DeviceContext[]) raises {mut workspace, mut sink, imm}:
             def go[g: Int]() raises {imm}:
                 ctx.enqueue_function[coop_combine_kernel[g]](
                     workspace.unsafe_ptr(),

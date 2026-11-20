@@ -11,9 +11,9 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// This file uses x-macros to define an options enum and `llvm::opt::OptTable`
-// based on the option definitions in a separate file, which must be located at
-// `DRIVER_OPTIONS_PATH`.
+// This file uses x-macros to define an options enum and the
+// `llvm::opt::OptTable` `options::Table`, based on the option definitions in a
+// separate file, which must be located at `DRIVER_OPTIONS_PATH`.
 //
 //===------------------------------------------------------------*- C++ -*-===//
 
@@ -48,6 +48,15 @@ using llvm::opt::HelpHidden;
 // aggregate. The generated block undefines the macro itself.
 #define OPTTABLE_CODE
 #include DRIVER_OPTIONS_PATH
+
+namespace {
+namespace options {
+/// The option table that `DRIVER_OPTIONS_PATH` defines.
+struct Table : public llvm::opt::OptTable {
+  Table() : llvm::opt::OptTable(optionTables()) {}
+};
+} // namespace options
+} // namespace
 
 #endif // DRIVER_OPTIONS_ENUM_ONLY
 

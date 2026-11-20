@@ -16,29 +16,31 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
-    moe_router_group_limited,
-    moe_sigmoid_gemv_router,
-)
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import DeviceMapping, Partial
-from max.experimental.sharding.rules import unary_rule
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn import kernels
+from max.nn import Module
+from max.nn import _graph_ops as kernels
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_ops import (
+    interleave_grouped_scales,
+)
+from max.nn.kernels import moe_router_group_limited, moe_sigmoid_gemv_router
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Partial,
+)
+from max.tensor.sharding.rules import unary_rule
 
 from ..model_config import NemotronHConfig
 from ..quantization import NVFP4_GROUP_SIZE
-from .quantized import (
-    interleave_expert_scales,
-    nvfp4_grouped_matmul,
-    quantized_linear,
-)
-from .sharding import shard_axis
+from .quantized import nvfp4_grouped_matmul, quantized_linear
 
 
 def _relu2_value(x: TensorValue) -> TensorValue:
@@ -64,6 +66,7 @@ class NemotronHMLP(Module[[Tensor], Tensor]):
         self.down_proj = quantized_linear(config, f"{name}.down_proj")
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the MLP over ``x``."""
         return self.down_proj(_relu2(self.up_proj(x)))
 
 
@@ -118,13 +121,14 @@ def _routed_experts(
             token_rows,
         )
         down_out = nvfp4_grouped_matmul(
-            _relu2_value(up_out),
+            up_out,
             down_weight,
             down_block_scale,
             down_scale,
             expert_start_indices,
             scales_offsets[0],
             expert_ids,
+            relu2=True,
         )
     else:
         permuted = ops.gather(x, token_rows, axis=0)
@@ -152,8 +156,7 @@ def _with_shared_slices_value(
     num_routed: int,
     slices: int,
 ) -> tuple[TensorValue, TensorValue]:
-    """Appends every shared-expert slice, at weight 1, to each token's routed
-    experts.
+    """Appends every shared-expert slice, at weight 1, to each token's experts.
 
     Args:
         topk_ids: Each token's routed expert ids, ``[tokens, k]``.
@@ -185,36 +188,96 @@ def _with_shared_slices_value(
 _with_shared_slices = F.functional(_with_shared_slices_value)
 
 
-def _expert_zeros(
-    shape: list[int], axis: int, num_devices: int, dtype: DType | None = None
-) -> Tensor:
-    """Zeros of ``shape`` on each device, sharded on ``axis``."""
-    shape = list(shape)
-    shape[axis] *= num_devices
-    return shard_axis(Tensor.zeros(shape, dtype=dtype), axis)
+def _nvfp4_on_host(out_dim: int, in_dim: int) -> list[Tensor]:
+    """Zeros for an NVFP4 weight, on the host as stored.
 
-
-def _nvfp4_weight(
-    num_experts: int, n: int, k: int, axis: int, num_devices: int
-) -> Tensor:
-    return _expert_zeros(
-        [num_experts, n, k // 2], axis, num_devices, DType.uint8
-    )
-
-
-def _nvfp4_block_scale(
-    num_experts: int, n: int, k: int, axis: int, num_devices: int
-) -> Tensor:
-    """Zeros for the checkpoint's block scales, which stay on the host.
-
-    ``n`` and ``k`` are each device's, and the devices' blocks stack along
-    ``axis`` as the weight's do. The graph interleaves each device's block
-    and copies it to the device, which the graph compiler runs once, at
-    model init (see :meth:`NemotronHMoE._local_params`).
+    The zeros cover the weight's codes, block scales and global scale.
     """
-    shape = [num_experts, n, k // NVFP4_GROUP_SIZE]
-    shape[axis] *= num_devices
-    return Tensor.zeros(shape, dtype=DType.float8_e4m3fn, device=CPU())
+    cpu = CPU()
+    return [
+        Tensor.zeros([out_dim, in_dim // 2], dtype=DType.uint8, device=cpu),
+        Tensor.zeros(
+            [out_dim, in_dim // NVFP4_GROUP_SIZE],
+            dtype=DType.float8_e4m3fn,
+            device=cpu,
+        ),
+        Tensor.zeros([], dtype=DType.float32, device=cpu),
+    ]
+
+
+class _NVFP4Projection(Module[[], None]):
+    """An NVFP4 projection's tensors, which the MoE runs as routed experts."""
+
+    def __init__(self, out_dim: int, in_dim: int) -> None:
+        self.weight, self.weight_scale, self.weight_scale_2 = _nvfp4_on_host(
+            out_dim, in_dim
+        )
+
+
+class _BF16Projection(Module[[], None]):
+    """A BF16 projection's weight, under the checkpoint's name."""
+
+    def __init__(self, out_dim: int, in_dim: int) -> None:
+        self.weight = Tensor.zeros(
+            [out_dim, in_dim], dtype=DType.bfloat16, device=CPU()
+        )
+
+
+class _RoutedExpert(Module[[], None]):
+    """One routed expert's tensors, as the checkpoint stores them.
+
+    The graph stacks them into the grouped matmul's operands (see
+    :meth:`NemotronHMoE.placed_params`).
+    """
+
+    def __init__(self, channels: int, hidden: int, w4a4: bool) -> None:
+        """Initializes the expert.
+
+        Args:
+            channels: The expert's width.
+            hidden: The model's hidden size.
+            w4a4: Whether the expert is NVFP4, run W4A4.
+        """
+        self.up_proj: _NVFP4Projection | _BF16Projection
+        self.down_proj: _NVFP4Projection | _BF16Projection
+        if w4a4:
+            self.up_proj = _NVFP4Projection(channels, hidden)
+            self.down_proj = _NVFP4Projection(hidden, channels)
+        else:
+            self.up_proj = _BF16Projection(channels, hidden)
+            self.down_proj = _BF16Projection(hidden, channels)
+
+
+class _SharedExpertSlices(Module[[], None]):
+    """The shared expert, whose slices run as routed experts."""
+
+    def __init__(self, hidden: int, inner: int) -> None:
+        self.up_proj = _NVFP4Projection(inner, hidden)
+        self.down_proj = _NVFP4Projection(hidden, inner)
+
+    def stacked(self, proj: str, slices: int) -> list[Tensor]:
+        """Returns a projection's codes, block scales and global scales, sliced.
+
+        There is one slice per expert. ``up`` slices its rows and ``down`` its
+        columns, so each slice is laid out as a routed expert's.
+        ``up`` slices its rows and ``down`` its columns, so each slice is
+        laid out as a routed expert's.
+        """
+        weights = getattr(self, f"{proj}_proj")
+
+        def per_slice(t: Tensor) -> Tensor:
+            rows, cols = (int(d) for d in t.shape)
+            if proj == "up":
+                return t.reshape([slices, rows // slices, cols])
+            return F.permute(
+                t.reshape([rows, slices, cols // slices]), [1, 0, 2]
+            )
+
+        return [
+            per_slice(weights.weight),
+            per_slice(weights.weight_scale),
+            F.broadcast_to(weights.weight_scale_2.reshape([1]), [slices]),
+        ]
 
 
 class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
@@ -225,43 +288,54 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
     """
 
     def __init__(self, config: NemotronHConfig) -> None:
+        self.bf16_gate = config.bf16_router_gate
         self.fused = config.fused_router
+        self.gate_dtype = config.router_gate_dtype
         self.num_experts = config.num_experts
         self.num_experts_per_tok = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
         self.routed_scaling_factor = config.routed_scaling_factor
+        # The gate weight loads in the dtype the checkpoint stores it in;
+        # the cast below is weight-only, so the graph runs it once, at init.
         self.weight = Tensor.zeros(
-            [config.num_experts, config.hidden_size], dtype=DType.float32
+            [config.num_experts, config.hidden_size],
+            dtype=config.router_gate_stored_dtype,
         )
         self.e_score_correction_bias = Tensor.zeros(
             [config.num_experts], dtype=DType.float32
         )
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        mesh = x.mesh
-        if mesh.num_devices <= 2:
-            # Every device routes its own replica of the tokens. The replicas
-            # come out of an allreduce, and a two-way sum is the same in
-            # either order, so both devices pick the same experts without a
-            # collective.
-            return self._route(x, self.weight, self.e_score_correction_bias)
-        # A wider allreduce sums in a different order on each device, so a
-        # replica can differ in its last bit and break a near tie the other
-        # way. Device 0 routes for every device.
-        experts, weights = self._route(
-            x.local_shards[0],
-            self.weight.local_shards[0],
-            self.e_score_correction_bias.local_shards[0],
-        )
-        return (
-            F.distributed_broadcast(experts, mesh),
-            F.distributed_broadcast(weights, mesh),
+        """Scores each token's experts and returns the routing weights."""
+        # Every device routes its own replica of the router input. Each
+        # reduction feeding it gives every rank the same bits: the
+        # `comm/allreduce.mojo` kernels add peers in global rank order, and
+        # vendor CCL reduces each element once and forwards it. So no device
+        # can break a near tie differently. `test_allreduce_determinism`
+        # checks the rank order at 4 and 8 ranks only on a 4- or 8-GPU host,
+        # which CI does not run, so a new allreduce path must keep it.
+        # The router is deterministic too: every gate variant reduces its
+        # split in a fixed order with no atomic accumulation, and top-k ties
+        # go to the lower expert id, so equal router inputs give equal
+        # expert ids on every device.
+        # Nemotron-H has no mode that shards the router input: its experts
+        # split by channel over one tensor-parallel axis, and it rejects data
+        # parallelism.
+        return self._route(
+            x,
+            F.cast(self.weight, self.gate_dtype),
+            self.e_score_correction_bias,
         )
 
     def _route(
         self, x: Tensor, weight: Tensor, bias: Tensor
     ) -> tuple[Tensor, Tensor]:
-        if self.fused:
+        if self.bf16_gate:
+            # A tensor-core GEMM. The router reads float32 scores, so the
+            # logits widen before the sigmoid.
+            logits = F.cast(x, DType.bfloat16) @ weight.T
+            scores = F.sigmoid(F.cast(logits, DType.float32))
+        elif self.fused:
             return moe_sigmoid_gemv_router(
                 x,
                 weight,
@@ -270,7 +344,8 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
                 norm_weights=self.norm_topk_prob,
                 routed_scaling_factor=self.routed_scaling_factor,
             )
-        scores = F.sigmoid(F.cast(x, DType.float32) @ weight.T)
+        else:
+            scores = F.sigmoid(F.cast(x, DType.float32) @ weight.T)
         return moe_router_group_limited(
             scores,
             bias,
@@ -304,63 +379,131 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
         self.num_routed_experts = config.num_experts
         self.shared_slices = config.shared_expert_slices(name)
         self.gate = NemotronHRouter(config)
-        # Each device holds its share of every expert's channels, padded
-        # with zeros (see stack_nvfp4_experts): rows of the up projection,
+        # Each expert's tensors, as the checkpoint stores them. The graph
+        # stacks them for the grouped matmul, and each device holds its
+        # share of every expert's channels, padded with zeros to a whole
+        # number of scale atoms and kernel tiles: rows of the up projection,
         # on axis 1, and columns of the down projection, on axis 2. The
-        # shared expert's slices stack after the routed experts.
-        n = len(config.devices)
-        e = config.num_experts + self.shared_slices
+        # experts stay on the host as stored, and the graph cuts and pads
+        # each device's share (see placed_params).
+        self.channels = config.moe_intermediate_size
+        self.channels_per_device = config.moe_intermediate_size_per_device
         hidden = config.hidden_size
-        inner = config.moe_intermediate_size_per_device
-        if w4a4_experts:
-            self.up_weight = _nvfp4_weight(e, inner, hidden, 1, n)
-            self.up_block_scale = _nvfp4_block_scale(e, inner, hidden, 1, n)
-            self.up_scale = Tensor.zeros([e], dtype=DType.float32)
-            self.down_weight = _nvfp4_weight(e, hidden, inner, 2, n)
-            self.down_block_scale = _nvfp4_block_scale(e, hidden, inner, 2, n)
-            self.down_scale = Tensor.zeros([e], dtype=DType.float32)
+        self.experts = ModuleList(
+            [
+                _RoutedExpert(self.channels, hidden, w4a4_experts)
+                for _ in range(config.num_experts)
+            ]
+        )
+        self.shared_experts: NemotronHMLP | _SharedExpertSlices
+        if self.shared_slices:
+            self.shared_experts = _SharedExpertSlices(
+                hidden, config.moe_shared_expert_intermediate_size
+            )
         else:
-            self.up_weight = _expert_zeros([e, inner, hidden], 1, n)
-            self.down_weight = _expert_zeros([e, hidden, inner], 2, n)
-        self.shared_experts: NemotronHMLP | None = None
-        if not self.shared_slices:
             self.shared_experts = NemotronHMLP(config, f"{name}.shared_experts")
 
-    def _local_params(
-        self, proj: str, device: int, num_devices: int
-    ) -> list[TensorValue]:
-        """Returns one device's share of a routed projection's parameters.
+    def _shard_channels(
+        self, stack: Tensor, axis: int, mesh: DeviceMesh
+    ) -> Tensor:
+        """Shards an expert stack's channels across ``mesh``.
 
-        That is the weight, then the W4A4 block and global scales.
+        Each device's share is zero-padded. ``stack`` holds :attr:`channels`
+        channels along ``axis``, maybe several to an element, as packed codes
+        and block scales do.
+        ``stack`` holds :attr:`channels` channels along ``axis``, maybe
+        several to an element, as packed codes and block scales do.
+        """
+        n = mesh.num_devices
+        width = int(stack.shape[axis])
+        share = width // n
+        size = self.channels_per_device * width // self.channels
+        if size != share:
+            paddings = [0] * (2 * stack.rank)
+            paddings[2 * axis + 1] = size - share
+            stack = F.concat(
+                [
+                    F.pad(piece, paddings)
+                    for piece in F.split(stack, [share] * n, axis=axis)
+                ],
+                axis=axis,
+            )
+        spec: list[str | None] = [None] * stack.rank
+        spec[axis] = TP
+        return stack.to(NamedMapping(mesh, tuple(spec)))
+
+    def _stacked(self, proj: str, tensor: str) -> Tensor:
+        """Stacks one stored tensor of every expert's ``proj`` projection.
+
+        The stack is the grouped matmul's operand. It reads only weights, so
+        the graph compiler builds it once, at model init.
 
         Args:
             proj: ``"up"`` or ``"down"``.
-            device: The device.
-            num_devices: The number of devices the expert channels split
-                across.
+            tensor: The stored tensor's name: ``weight``, ``weight_scale``
+                or ``weight_scale_2``.
         """
-        weight = TensorValue(
-            getattr(self, f"{proj}_weight").local_shards[device]
+        return F.stack(
+            [
+                getattr(getattr(expert, f"{proj}_proj"), tensor)
+                for expert in self.experts
+            ],
+            axis=0,
         )
-        if not self.w4a4_experts:
-            return [weight]
-        scales = TensorValue(getattr(self, f"{proj}_block_scale"))
+
+    def placed_params(self, proj: str, mesh: DeviceMesh) -> list[Tensor]:
+        """Returns a routed projection's parameters, sharded across the mesh.
+
+        Each device holds its share of every expert's channels: the stacked
+        weight, then the W4A4 block scales and global scales.
+
+        Args:
+            proj: ``"up"`` or ``"down"``.
+            mesh: The devices the expert channels split across.
+        """
         axis = 1 if proj == "up" else 2
-        block = int(scales.shape[axis]) // num_devices
-        index: list[slice] = [slice(None)] * 3
-        index[axis] = slice(device * block, (device + 1) * block)
-        # Both are weights, so the graph compiler runs this once, at model
-        # init. Interleaving on the host leaves the device only the
-        # interleaved copy.
-        local_scales = interleave_expert_scales(scales[tuple(index)])
-        global_scales = getattr(self, f"{proj}_scale").local_shards[device]
+        stacks = [self._stacked(proj, "weight")]
+        if not self.w4a4_experts:
+            return [self._shard_channels(stacks[0], axis, mesh)]
+        stacks.append(self._stacked(proj, "weight_scale"))
+        global_scales = self._stacked(proj, "weight_scale_2")
+        if isinstance(self.shared_experts, _SharedExpertSlices):
+            *sliced, sliced_scales = self.shared_experts.stacked(
+                proj, self.shared_slices
+            )
+            stacks = [
+                F.concat([routed, shared], axis=0)
+                for routed, shared in zip(stacks, sliced, strict=True)
+            ]
+            global_scales = F.concat([global_scales, sliced_scales], axis=0)
         return [
-            weight,
-            local_scales.to(weight.device),
-            TensorValue(global_scales),
+            *(self._shard_channels(stack, axis, mesh) for stack in stacks),
+            global_scales.to(DeviceMapping.replicated(mesh)),
         ]
 
+    def device_params(
+        self, proj: str, mesh: DeviceMesh
+    ) -> list[list[TensorValue]]:
+        """Returns each device's share of a routed projection's parameters.
+
+        They come back as the grouped matmul reads them: the weight, then the
+        W4A4 interleaved block scales and global scales. All of them read only
+        weights, so the graph compiler prepares them once, at model init.
+        That is the weight, then the W4A4 interleaved block scales and global
+        scales. All of them read only weights, so the graph compiler prepares
+        them once, at model init.
+        """
+        placed = self.placed_params(proj, mesh)
+        if self.w4a4_experts:
+            placed[1] = interleave_grouped_scales(placed[1])
+        with ensure_context():
+            return [
+                [TensorValue(t.local_shards[d]) for t in placed]
+                for d in range(mesh.num_devices)
+            ]
+
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the routed and shared experts over ``x``."""
         experts, weights = self.gate(x)
         if self.shared_slices:
             experts, weights = _with_shared_slices(
@@ -368,22 +511,30 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
             )
         mesh = x.mesh
         n = mesh.num_devices
-        # Each device runs every routed row through its share of each
-        # expert's channels, which gives a partial sum of the output.
+        mapping = DeviceMapping(mesh, (Partial(),)) if n > 1 else x.mapping
+        # Called eagerly, a context runs its ops when it closes, and its graph
+        # values can't be used after it closes, so they all stay in one block.
         with ensure_context():
+            # TODO(MXF-945): Called eagerly, this stacks and places every
+            # routed expert again on each step. Keep the placed params per
+            # mesh after the first eager call.
+            up, down = (
+                self.device_params(proj, mesh) for proj in ("up", "down")
+            )
+            # Each device runs every routed row through its share of each
+            # expert's channels, which gives a partial sum of the output.
             shards = [
                 _routed_experts(
                     TensorValue(x.local_shards[d]),
                     TensorValue(experts.local_shards[d]),
                     TensorValue(weights.local_shards[d]),
-                    self._local_params("up", d, n),
-                    self._local_params("down", d, n),
+                    up[d],
+                    down[d],
                 )
                 for d in range(n)
             ]
-        mapping = DeviceMapping(mesh, (Partial(),)) if n > 1 else x.mapping
-        routed = Tensor.from_shard_values(shards, mapping)
-        if self.shared_experts is None:
+            routed = Tensor.from_shard_values(shards, mapping)
+        if isinstance(self.shared_experts, _SharedExpertSlices):
             return routed
         # Under tensor parallelism both are partial sums, which the residual
         # add reduces with one allreduce.

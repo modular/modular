@@ -60,6 +60,18 @@ M::Globals::getProfilingRangeGlobals() {
   return globals;
 }
 
+MODULAR_CXX_EXPORT M::Globals::CaptureLabelGlobals &
+M::Globals::getCaptureLabelGlobals() {
+  static CaptureLabelGlobals globals;
+  return globals;
+}
+
+MODULAR_CXX_EXPORT M::Globals::CaptureLabelThreadState &
+M::Globals::getCaptureLabelThreadState() {
+  static thread_local CaptureLabelThreadState state;
+  return state;
+}
+
 MODULAR_CXX_EXPORT std::optional<int64_t> &M::Globals::getRequestBatchId() {
   static thread_local std::optional<int64_t> batchId;
   return batchId;

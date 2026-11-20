@@ -1,7 +1,11 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
+
+_LIT_TESTS = [
+    "test_qmatmul_gpu_qint4_dtype_fail.mojo",
+]
 
 _EXTRA_DEPS = {
     "test_qmatmul_k.mojo": ["//max:max_mojo"],
@@ -25,9 +29,20 @@ _EXTRA_DEPS = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = ["test_per_channel_grouped_4bit.mojo"],
+        exclude = _LIT_TESTS + ["test_per_channel_grouped_4bit.mojo"],
     )
 ]
+
+lit_tests(
+    name = "lit",
+    size = "small",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "//max:linalg",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
 
 # TODO(KERN-1880): Re-enable this.
 mojo_test(

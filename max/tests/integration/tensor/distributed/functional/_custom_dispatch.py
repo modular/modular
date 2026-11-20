@@ -29,10 +29,12 @@ from typing import Any, ClassVar
 
 import numpy as np
 import pytest
-from max.experimental import functional as F
-from max.experimental import tensor as _tensor_mod
-from max.experimental.functional import transfer_to
-from max.experimental.sharding import (
+from max import functional as F
+from max.functional import transfer_to
+from max.graph import TensorValue, Value, ops
+from max.tensor import Tensor
+from max.tensor import tensor as _tensor_mod
+from max.tensor.sharding import (
     AxisAssignment,
     DeviceMapping,
     DeviceMesh,
@@ -42,8 +44,6 @@ from max.experimental.sharding import (
     TensorLayout,
     Unknown,
 )
-from max.experimental.tensor import Tensor
-from max.graph import TensorValue, Value, ops
 
 # ═════════════════════════════════════════════════════════════════════════
 #  Shared: placement rule + graph kernel

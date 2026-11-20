@@ -70,7 +70,7 @@ def run_mha_prefill_v2[
     batch_size: Int,
     bench: Bool,
     verify: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     comptime scale = Float32(0.125)  # ~rsqrt(64)
     comptime kv_num_heads = num_heads // group
@@ -138,22 +138,24 @@ def run_mha_prefill_v2[
             mut b: Bencher,
         ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
             @inline(.always)
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def _kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 var q_ptr = (
                     cb_q.offset_ptr(iteration)
-                    .bitcast[BFloat16]()
+                    .unsafe_bitcast[BFloat16]()
                     .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var k_ptr = (
                     cb_k.offset_ptr(iteration)
-                    .bitcast[BFloat16]()
+                    .unsafe_bitcast[BFloat16]()
                     .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var v_ptr = (
                     cb_v.offset_ptr(iteration)
-                    .bitcast[BFloat16]()
+                    .unsafe_bitcast[BFloat16]()
                     .as_imm()
                     .as_unsafe_any_origin()
                 )
@@ -185,7 +187,7 @@ def run_mha_prefill_v2[
                     ),
                 )
                 var o_tt = TileTensor(
-                    cb_o.offset_ptr(iteration).bitcast[Float32](),
+                    cb_o.offset_ptr(iteration).unsafe_bitcast[Float32](),
                     row_major(
                         Int32(batch_size),
                         Int32(seq_len),
@@ -206,7 +208,7 @@ def run_mha_prefill_v2[
                     # `Scalar[qkv_type]` won't unify even when equal.
                     var sw_ptr = (
                         sw_buf.unsafe_ptr()
-                        .bitcast[BFloat16]()
+                        .unsafe_bitcast[BFloat16]()
                         .as_unsafe_any_origin()
                         .as_imm()
                     )
@@ -326,8 +328,8 @@ def main() raises:
     print("  kv_block:", cfg.kv_block)
     print("  group:", cfg.group)
     print("  cache_busting:", cfg.cache_busting)
-    print("  seq_len:", seq_len, " num_keys:", num_keys)
-    print("  batch_size:", batch_size, " verify:", verify)
+    print(t"  seq_len: {seq_len}  num_keys: {num_keys}")
+    print(t"  batch_size: {batch_size}  verify: {verify}")
 
     var m = Bench()
     with DeviceContext() as ctx:

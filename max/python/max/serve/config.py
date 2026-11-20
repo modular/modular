@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""
-Placeholder file for any configs (runtime, models, pipelines, etc)
-"""
+"""Placeholder file for any configs (runtime, models, pipelines, etc)."""
 
 from __future__ import annotations
 
@@ -31,6 +29,8 @@ logger = logging.getLogger("max.serve")
 
 
 class APIType(Enum):
+    """The API dialect a server exposes."""
+
     KSERVE = "kserve"
     OPENAI = "openai"
     SAGEMAKER = "sagemaker"
@@ -91,6 +91,8 @@ class KernelTraceLevel(Enum):
 
 
 class Settings(BaseSettings):
+    """Server settings, read from the environment."""
+
     # env files, direct initialization, and aliases interact in some confusing
     # ways.  this is the way:
     #   1. extra="allow"
@@ -200,6 +202,19 @@ class Settings(BaseSettings):
         default=100 * 1024 * 1024,  # 100 MiB
         ge=0,
         alias="MAX_SERVE_MAX_REQUEST_BYTES",
+    )
+
+    request_body_timeout_s: float = Field(
+        description=(
+            "Maximum time in seconds a client may take to deliver a complete "
+            "HTTP request body. Requests that do not finish sending their body "
+            "in time (for example, a Content-Length larger than the bytes "
+            "actually sent) are rejected with HTTP 408 instead of holding the "
+            "connection open. Set 0 to disable the timeout."
+        ),
+        default=30.0,
+        ge=0,
+        alias="MAX_SERVE_REQUEST_BODY_TIMEOUT_S",
     )
 
     # File URI configuration
@@ -356,7 +371,8 @@ class Settings(BaseSettings):
             "plugin, and is refused when kernel_trace_level is 'kernel'. "
             "Passes run while another capture, such as a Dynolog trace, "
             "holds the profiler are not captured. Ignored while tracing is "
-            "off. Off by default: the header is then never read."
+            "off, and for a request whose span is unsampled. Off by default: "
+            "the header is then never read."
         ),
         alias="MAX_SERVE_KERNEL_TRACE_HEADERS",
     )
@@ -429,15 +445,14 @@ class Settings(BaseSettings):
     )
 
     stream_min_chunk_tokens: int = Field(
-        default=1,
+        default=10,
         ge=1,
         description=(
             "Minimum number of generated tokens to coalesce into a single "
-            "streaming (SSE) chunk. 1 (default) emits each scheduler response "
-            "as its own chunk with no buffering. Higher values buffer decode "
-            "tokens into larger chunks and suppress empty deltas; the first "
-            "chunk is always flushed early so time-to-first-token is "
-            "unaffected."
+            "streaming (SSE) chunk. 1 emits each scheduler response as its own "
+            "chunk with no buffering. Higher values buffer decode tokens into "
+            "larger chunks and suppress empty deltas; the first chunk is "
+            "always flushed early so time-to-first-token is unaffected."
         ),
         alias="MAX_SERVE_STREAM_MIN_CHUNK_TOKENS",
     )
@@ -452,6 +467,7 @@ class Settings(BaseSettings):
     def validate_transaction_recording_file(
         cls, path: Path | None
     ) -> Path | None:
+        """Validates the transaction recording path, if one is set."""
         if path is None:
             return None
         if not path.name.endswith(".rec.jsonl"):
@@ -616,12 +632,28 @@ class Settings(BaseSettings):
         logger.info("")
 
 
+# Device-API name for each Mojo ``--target-accelerator`` vendor name. Mojo
+# names the vendor after the LLVM backend while a device API is named after its
+# runtime, so one target has two spellings; accepting both lets ``--target``
+# take a ``--target-accelerator`` value unchanged. ``metal`` needs no entry:
+# its two names already coincide.
+_API_BY_VENDOR = {
+    "nvidia": "cuda",
+    "amdgpu": "hip",
+    "amd": "hip",
+}
+
+
 def parse_api_and_target_arch(compile_spec: str) -> tuple[str, str]:
-    """Parse the compile-only specification into API and target architecture.
+    """Parses the compile-only specification into API and target architecture.
 
     Supports two formats:
     1. <api> - Uses default target architecture for the API
     2. <api>:<target_arch> - Uses explicit target architecture
+
+    ``<api>`` is either a device-API name (``cuda``, ``hip``, ``metal``) or the
+    Mojo ``--target-accelerator`` vendor name for the same device (``nvidia``,
+    ``amdgpu``/``amd``), which is returned as its device-API name.
 
     Args:
         compile_spec: The compile-only specification string
@@ -637,6 +669,8 @@ def parse_api_and_target_arch(compile_spec: str) -> tuple[str, str]:
         ('cuda', 'sm_80')
         >>> parse_api_and_target_arch("cuda:sm_90")
         ('cuda', 'sm_90')
+        >>> parse_api_and_target_arch("nvidia:sm_90")
+        ('cuda', 'sm_90')
     """
     # Default target architectures for each API
     default_target_archs = {
@@ -648,16 +682,19 @@ def parse_api_and_target_arch(compile_spec: str) -> tuple[str, str]:
     # Parse the compile-only value as <api> or <api>:<target_arch>
     if ":" in compile_spec:
         api, target_arch = compile_spec.split(":", 1)
+        api = _API_BY_VENDOR.get(api, api)
     else:
-        api = compile_spec
+        api = _API_BY_VENDOR.get(compile_spec, compile_spec)
         target_arch = default_target_archs.get(api, "")
 
     # Validate API
     valid_apis = ["cuda", "hip", "metal"]
     if api not in valid_apis:
         raise ValueError(
-            f"Invalid API in --target: '{api}'. "
-            f"Valid APIs are: {', '.join(valid_apis)}"
+            f"Invalid API in --target: '{api}'. Valid APIs are: "
+            f"{', '.join(valid_apis)} (or the equivalent "
+            f"--target-accelerator vendor name: "
+            f"{', '.join(_API_BY_VENDOR)})"
         )
 
     return api, target_arch

@@ -54,7 +54,7 @@ def _unrelated[tag: Int]():
 
 
 def _mark(start_ns: Int, label: String):
-    print("[", Float64(monotonic() - start_ns) / 1.0e6, "ms ] ", label, sep="")
+    print(t"[{Float64(monotonic() - start_ns) / 1.0e6}ms ] {label}")
 
 
 def _abort_hung(name: StaticString) -> Never:
@@ -76,8 +76,8 @@ def _abort_hung(name: StaticString) -> Never:
 def _open_collective[
     *, hold_window: Bool
 ](
-    ctx0: DeviceContext,
-    ctx1: DeviceContext,
+    ctx0: DeviceContext[],
+    ctx1: DeviceContext[],
     start_ns: Int,
     label: StaticString,
 ) raises:
@@ -100,8 +100,8 @@ def _open_collective[
 def _run_scenario[
     tag: Int, *, inner_collective: Bool = False
 ](
-    ctx0: DeviceContext,
-    ctx1: DeviceContext,
+    ctx0: DeviceContext[],
+    ctx1: DeviceContext[],
     opener_worker: Int,
     loader_worker: Int,
     name: StaticString,
@@ -117,8 +117,7 @@ def _run_scenario[
     var collective_error = Optional[Error]()
 
     @inline(.always)
-    @__parameter
-    __async def opener() -> None:
+    __async def opener() {mut collective_error, var} -> None:
         _mark(start_ns, "opener: opening collective")
         try:
             _open_collective[hold_window=True](
@@ -128,9 +127,14 @@ def _run_scenario[
             collective_error = e^
         _mark(start_ns, "opener: collective closed")
 
+    # TODO(MOCO-5158): an async closure whose captures are all
+    # register-passable is invoked with a pointer to a by-value context.
+    # Capturing a String makes the context memory-only; drop it with the fix.
+    var memory_only = String()
+
     @inline(.always)
-    @__parameter
-    __async def loader() -> None:
+    __async def loader() {var} -> None:
+        _ = memory_only
         comptime if inner_collective:
             _mark(start_ns, "loader: opening inner collective")
             try:
@@ -162,6 +166,11 @@ def _run_scenario[
     # its last use, and destroying a group whose tasks are still pending
     # aborts with a runtime error that buries the hang report.
     _ = tg.chain
+    # The coroutines read their closures' captures, but `TaskGroup` drops
+    # their origins (MOCO-771), so nothing else keeps the closures alive
+    # until the tasks finish.
+    _ = opener
+    _ = loader
     _mark(start_ns, "scenario finished")
     if collective_error:
         raise collective_error.take()
@@ -176,8 +185,8 @@ def main() raises:
 
     # The opener and the control's loader must avoid the device workers, which
     # run the per-device launch bodies, and each other.
-    var dev0_worker = task_id_for_device(Int(ctx0.id()))
-    var dev1_worker = task_id_for_device(Int(ctx1.id()))
+    var dev0_worker = task_id_for_device(Int(ctx0.device().id))
+    var dev1_worker = task_id_for_device(Int(ctx1.device().id))
     var spare = List[Int]()
     for worker in range(1, parallelism_level()):
         if worker != dev0_worker and worker != dev1_worker:
@@ -186,15 +195,8 @@ def main() raises:
     var opener_worker = spare[0]
     var other_worker = spare[1]
     print(
-        "workers: dev0=",
-        dev0_worker,
-        " dev1=",
-        dev1_worker,
-        " opener=",
-        opener_worker,
-        " other=",
-        other_worker,
-        sep="",
+        t"workers:"
+        t" dev0={dev0_worker} dev1={dev1_worker} opener={opener_worker} other={other_worker}"
     )
 
     _run_scenario[0](ctx0, ctx1, opener_worker, other_worker, "control")

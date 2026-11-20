@@ -15,6 +15,7 @@
 #define SUPPORT_COMPILER_MLIRDTYPE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -27,37 +28,40 @@ class DType;
 /// semantics. For example, `dtype:f16` is equivalent to `mlir:f16`, whereas
 /// `dtype:bf16` is equivalent to `mlir:bf16` because they represent the same
 /// float type semantics.
-bool areEquivalentFloatTypes(DType dtype, FloatType fpType);
+MODULAR_CXX_EXPORT bool areEquivalentFloatTypes(DType dtype, FloatType fpType);
 
 /// Given a float dtype, return the equivalent MLIR float type which represents
 /// a concrete float type with the same semantics as the dtype. For example,
 /// for `dtype:bf16`, this function returns an instance of `mlir::BFloat16Type`.
 /// Returns the null type if dtype has no representation as an MLIR type.
-FloatType getEquivalentFloatType(MLIRContext *ctx, DType dtype);
+MODULAR_CXX_EXPORT FloatType getEquivalentFloatType(MLIRContext *ctx,
+                                                    DType dtype);
 
 /// Returns true if dtype has an equivalent MLIR float type representation.
-bool hasEquivalentFloatType(DType dtype);
+MODULAR_CXX_EXPORT bool hasEquivalentFloatType(DType dtype);
 
 /// Given an integer dtype, return the equivalent MLIR integer type.
 /// Returns the null type if dtype has no representation as an MLIR type.
-IntegerType getEquivalentIntegerType(MLIRContext *ctx, DType dtype);
+MODULAR_CXX_EXPORT IntegerType getEquivalentIntegerType(MLIRContext *ctx,
+                                                        DType dtype);
 
 /// Returns true if dtype has an equivalent MLIR integer type representation.
-bool hasEquivalentIntegerType(DType dtype);
+MODULAR_CXX_EXPORT bool hasEquivalentIntegerType(DType dtype);
 
 /// Given an MLIR float type, return the equivalent dtype.
 /// Returns the invalid DType if the MLIR type is not representable.
-DType getEquivalentDType(FloatType fpType);
+MODULAR_CXX_EXPORT DType getEquivalentDType(FloatType fpType);
 
 /// Given an MLIR integer type, return the equivalent dtype.
 /// Returns the invalid DType if the MLIR type is not representable.
-DType getEquivalentDType(IntegerType intType);
+MODULAR_CXX_EXPORT DType getEquivalentDType(IntegerType intType);
 
 /// Given an MLIR type, return the equivalent dtype and vector size. The vector
 /// size is std::nullopt if the type a scalar, and is set to the vector size
 /// (i.e., including 1) if present. Returns the invalid DType if the MLIR type
 /// is not representable.
-std::pair<DType, std::optional<int64_t>> getEquivalentDType(Type type);
+MODULAR_CXX_EXPORT std::pair<DType, std::optional<int64_t>>
+getEquivalentDType(Type type);
 
 } // namespace M
 

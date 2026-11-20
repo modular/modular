@@ -36,6 +36,7 @@ def runner() -> LayerTestRunner[
     AttentionDynamicParams,
     list[TextContext],
 ]:
+    """Creates the runner for Qwen2.5VL decoder attention."""
     return create_runner(QWEN2_5VL_ATTENTION)
 
 
@@ -46,6 +47,7 @@ def test_benchmark_smoke(
         list[TextContext],
     ],
 ) -> None:
+    """Benchmarks one shape to check the harness runs."""
     results = runner.benchmark(_SMOKE_SHAPES, iterations=1, warmup=1)
     for _label, stats in results:
         assert stats.mean_ms > 0.0

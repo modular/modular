@@ -60,6 +60,8 @@ from std.math.math import (
     _is_zero_bits,
     _log_accurate,
     _narrow_f32_to_bf16_bits,
+    _scale_down_bits,
+    _scale_up_subnormal,
 )
 from std.memory import bitcast
 from std.sys import bit_width_of, CompilationTarget
@@ -81,6 +83,8 @@ from std.utils.numerics import (
     neg_inf,
     nextafter,
 )
+
+from test_utils.math import SplitMix64
 
 
 def test_sin() raises:
@@ -418,6 +422,40 @@ def test_rsqrt() raises:
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
+def _test_sqrt_rsqrt_comptime[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    comptime x = SIMD[dtype, 4](0.5, 2, 3, 100)
+    comptime sqrt_x = sqrt(x)
+    comptime rsqrt_x = rsqrt(x)
+    assert_equal(sqrt_x, sqrt(x))
+    assert_equal(rsqrt_x, rsqrt(x))
+
+
+def test_sqrt_rsqrt_comptime() raises:
+    _test_sqrt_rsqrt_comptime[.float16]()
+    _test_sqrt_rsqrt_comptime[.bfloat16]()
+    _test_sqrt_rsqrt_comptime[.float32]()
+    _test_sqrt_rsqrt_comptime[.float64]()
+
+
+def _test_sin_cos_comptime[
+    dtype: DType
+]() raises where dtype.is_floating_point():
+    # Compile time folds 16-bit inputs directly, while runtime computes them in
+    # float32 and rounds, so the two can differ by an ulp.
+    comptime x = SIMD[dtype, 4](0.5, 2, 3, 100)
+    comptime sin_x = sin(x)
+    comptime cos_x = cos(x)
+    assert_almost_equal(sin_x, sin(x), atol=0, rtol=1e-2)
+    assert_almost_equal(cos_x, cos(x), atol=0, rtol=1e-2)
+
+
+def test_sin_cos_comptime_16bit() raises:
+    _test_sin_cos_comptime[.float16]()
+    _test_sin_cos_comptime[.bfloat16]()
+
+
 def _test_frexp_impl[
     dtype: DType
 ](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
@@ -586,26 +624,15 @@ def _test_frexp_bits_impl[
 
 
 def test_narrow_f32_to_bf16_bits() raises:
-    # Must agree with the (round-to-nearest-even) `cast`, ties included.
-    var tops: List[UInt32] = [
-        0x0000,
-        0x0001,
-        0x0003,
-        0x007F,
-        0x0080,
-        0x3F80,
-        0x3F81,
-        0x7F7F,
-        0x7F80,
-        0x8001,
-        0x8040,
-        0xBF80,
-        0xFF7F,
-        0xFF80,
-    ]
+    # Must agree with the (round-to-nearest-even) `cast`. Every high half
+    # covers each sign, exponent, NaN and kept mantissa; the low halves sit
+    # at, just below and just above a rounding tie. NaN payloads differ
+    # between targets' casts, so a NaN only has to stay a quiet NaN with
+    # its sign.
     var lows: List[UInt32] = [
         0x0000,
         0x0001,
+        0x1234,
         0x4000,
         0x7FFF,
         0x8000,
@@ -613,28 +640,112 @@ def test_narrow_f32_to_bf16_bits() raises:
         0xBFFF,
         0xFFFF,
     ]
-    for hi in tops:
+    for hi in range(0x10000):
         for lo in lows:
-            var x = bitcast[.float32]((hi << 16) | lo)
-            assert_equal(
-                _narrow_f32_to_bf16_bits(x).to_bits[.uint16](),
-                x.cast[.bfloat16]().to_bits[.uint16](),
-                String(t"narrow of bits {(hi << 16) | lo}"),
-            )
-    for i in range(300):
-        var x = bitcast[.float32](UInt32(i * 2654435761 % 4294967296))
-        if isnan(x):
-            continue
-        assert_equal(
-            _narrow_f32_to_bf16_bits(x).to_bits[.uint16](),
-            x.cast[.bfloat16]().to_bits[.uint16](),
-        )
-    var nan_bf = _narrow_f32_to_bf16_bits(nan[DType.float32]())
-    assert_true(isnan(nan_bf))
+            var bits = (UInt32(hi) << 16) | lo
+            var x = Float32(from_bits=bits)
+            var got = _narrow_f32_to_bf16_bits(x)
+            var want = x.cast[.bfloat16]()
+            if isnan(x):
+                var got_bits = got.to_bits[.uint16]()
+                if got_bits & 0xFFC0 != UInt16(hi & 0x8000) | 0x7FC0:
+                    raise Error(
+                        t"narrow of NaN bits {bits}: got bits {got_bits}"
+                    )
+            elif got.to_bits() != want.to_bits():
+                raise Error(t"narrow of bits {bits}: got {got}, want {want}")
     var v = SIMD[.float32, 4](
         1.0, bitcast[.float32](UInt32(0x00008001)), -2.5, 0.0
     )
     assert_equal(_narrow_f32_to_bf16_bits(v), v.cast[.bfloat16]())
+
+
+def _check_scale_down[shift: Int]() raises:
+    # Exponents near `1 + shift` give subnormal results, smaller ones round
+    # to zero and larger ones stay normal. Clearing the bits below a set bit
+    # `k` makes some shifts discard exactly half an ULP.
+    comptime scale = Float64(from_bits=UInt64(1023 - shift) << 52)
+    var rng = SplitMix64(UInt64(shift))
+    for e in range(1, 255):
+        var r = (rng.next() & 0x7FFFFF).cast[.uint32]()
+        var mantissas: List[UInt32] = [0, 0x7FFFFF, r]
+        for k in range(1, 24):
+            mantissas.append(
+                (r >> UInt32(k) << UInt32(k)) | (UInt32(1) << UInt32(k - 1))
+            )
+        for m in mantissas:
+            for sign in [UInt32(0), UInt32(0x80000000)]:
+                var y = Float32(from_bits=sign | (UInt32(e) << 23) | m)
+                var got = _scale_down_bits[shift](y)
+                var want = (Float64(y) * scale).cast[.float32]()
+                if got.to_bits() != want.to_bits():
+                    raise Error(
+                        t"_scale_down_bits[{shift}]({y}) = {got}, want {want}"
+                    )
+    comptime if shift >= 23:
+        # Zero stays zero once the shift drops the implicit bit. `hypot(0, 0)`
+        # and `scalb(0, n)` pass it in on targets that flush subnormals.
+        for sign in [UInt32(0), UInt32(0x80000000)]:
+            var z = Float32(from_bits=sign)
+            assert_equal(_scale_down_bits[shift](z).to_bits(), z.to_bits())
+
+
+def test_scale_down_bits() raises:
+    _check_scale_down[1]()
+    _check_scale_down[23]()
+    _check_scale_down[24]()
+    _check_scale_down[25]()
+    _check_scale_down[46]()
+    _check_scale_down[64]()
+    _check_scale_down[100]()
+    _check_scale_down[126]()
+    _check_scale_down[130]()
+
+
+def _check_scale_up[shift: Int]() raises:
+    var mantissas: List[UInt32] = [
+        1,
+        2,
+        3,
+        0x12345,
+        0x35555,
+        0x3FFFFF,
+        0x400000,
+        0x400001,
+        0x7FFFFF,
+    ]
+    var rng = SplitMix64(UInt64(shift))
+    for _ in range(512):
+        var m = (rng.next() & 0x7FFFFF).cast[.uint32]()
+        if m != 0:
+            mantissas.append(m)
+    comptime scale = Float64(2) ** Float64(shift)
+    for m in mantissas:
+        for sign in [UInt32(0), UInt32(0x80000000)]:
+            var x = Float32(from_bits=sign | m)
+            var got = _scale_up_subnormal[shift](x)
+            var want = (Float64(x) * scale).cast[.float32]()
+            if got.to_bits() != want.to_bits():
+                raise Error(
+                    t"_scale_up_subnormal[{shift}]({x}) = {got}, want {want}"
+                )
+
+
+def test_scale_up_subnormal() raises:
+    _check_scale_up[23]()
+    _check_scale_up[24]()
+    _check_scale_up[40]()
+    _check_scale_up[46]()
+    _check_scale_up[100]()
+    for m in range(1, 0x400):
+        for sign in [UInt16(0), UInt16(0x8000)]:
+            var h = Float16(from_bits=sign | UInt16(m))
+            var got = _scale_up_subnormal[10](h)
+            var want = (Float64(h) * 1024).cast[.float16]()
+            if got.to_bits() != want.to_bits():
+                raise Error(
+                    t"_scale_up_subnormal[10]({h}) = {got}, want {want}"
+                )
 
 
 def test_frexp_bits() raises:
@@ -911,6 +1022,27 @@ def test_subnormal_bit_classification() raises:
     _check_bit_classification[.bfloat16]()
     _check_bit_classification[.float32]()
     _check_bit_classification[.float64]()
+    var rng = SplitMix64(7)
+    for _ in range(512):
+        var x = rng.bits[.float32]()
+        var magnitude = x.to_bits() & 0x7FFFFFFF
+        assert_equal(_is_zero_bits(x), magnitude == 0)
+        assert_equal(
+            _is_subnormal_bits(x), magnitude != 0 and magnitude < 0x00800000
+        )
+    var tiny = Float32(from_bits=UInt32(1))
+    var min_normal = Float32(from_bits=UInt32(0x00800000))
+    var x = SIMD[.float32, 8](
+        0, -0.0, tiny, -tiny, 1.1e-38, min_normal, -min_normal, 1
+    )
+    assert_equal(
+        _is_subnormal_bits(x),
+        SIMD[.bool, 8](False, False, True, True, True, False, False, False),
+    )
+    var h = SIMD[.float16, 4](0, 6e-8, 6.2e-5, 1)
+    assert_equal(
+        _is_subnormal_bits(h), SIMD[.bool, 4](False, True, False, False)
+    )
 
 
 def test_log_subnormal() raises:

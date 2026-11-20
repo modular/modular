@@ -23,29 +23,19 @@ trait BaseT(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct ImplT(BaseT):
-    @__allow_legacy_any_origin_fields
-    var values: TileTensor[.float32, RowMajorLayout[Int], MutAnyOrigin]
-
-    def __init__(
-        out self,
-        buf: TileTensor[mut=True, .float32, RowMajorLayout[Int], _],
-    ) raises:
-        self.values = buf.as_unsafe_any_origin()
+struct ImplT[origin: MutOrigin](BaseT):
+    var values: TileTensor[.float32, RowMajorLayout[Int], Self.origin]
 
     def get_val(self, idx: Int) -> Float32:
         return self.values[idx]
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
-    @__parameter
-    @__copy_capture(thing)
-    def kernel_fn():
+    def kernel_fn() {var thing}:
         var idx = thread_idx.x
         print(thing.get_val(idx) * 2)
 
-    comptime kernel = kernel_fn
-    ctx.enqueue_function[kernel](grid_dim=(1,), block_dim=(size))
+    ctx.enqueue_function(kernel_fn, grid_dim=(1,), block_dim=(size))
 
 
 def trait_repro(ctx: DeviceContext) raises:

@@ -128,12 +128,9 @@ class CustomOpLibrary:
         @register("grayscale")
         struct Grayscale:
             @staticmethod
-            fn execute[
-                # The kind of device this is running on: "cpu" or "gpu"
-                target: StaticString,
-            ](
-                img_out: OutputTensor[dtype = DType.uint8, rank=2],
-                img_in: InputTensor[dtype = DType.uint8, rank=3],
+            def execute(
+                img_out: Some[Output & Tensor],
+                img_in: Some[Input & Tensor],
                 ctx: DeviceContext,
             ) raises:
                 ...
@@ -216,8 +213,8 @@ class CustomOpLibrary:
         )
 
 
-ParametersDict = Mapping[str, bool | int | str | DType]
-ParameterKey = tuple[str, bool | int | str | DType]
+ParametersDict = Mapping[str, bool | int | float | str | DType]
+ParameterKey = tuple[str, bool | int | float | str | DType]
 
 
 class CustomOp:
@@ -569,7 +566,7 @@ def graph_op(
     """A decorator to create PyTorch custom operations using MAX graph operations.
 
     This decorator allows you to define larger graphs using the functions in
-    :mod:`max.graph.ops` or :mod:`max.nn` modules and
+    :mod:`max.graph.ops` or :mod:`max.nn.legacy` modules and
     call them with PyTorch tensors, or integrate them into PyTorch modules.
     These custom ops can be called eagerly, and support compilation with
     ``torch.compile`` and the Inductor backend.

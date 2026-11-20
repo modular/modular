@@ -11,5 +11,3 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Implements the gpu host package."""
-
-from .info import get_gpu_target

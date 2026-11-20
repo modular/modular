@@ -43,6 +43,30 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_routed_expert_groups_gpu",
+    srcs = ["test_routed_expert_groups_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+    ],
+)
+
+modular_py_test(
     name = "test_top_k_per_row_gpu",
     srcs = ["test_top_k_per_row_gpu.py"],
     exec_properties = {
@@ -61,18 +85,55 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/deepseekV4",
     ],
 )
 
 modular_py_test(
-    name = "test_memory_planner",
-    srcs = ["test_memory_planner.py"],
+    name = "test_rope_tail_gpu",
+    srcs = ["test_rope_tail_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
+        requirement("numpy"),
         "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV4",
-        "//max/python/max/pipelines/kv_cache",
-        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_w4a8_quant_rows_gpu",
+    srcs = ["test_w4a8_quant_rows_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
     ],
 )
 
@@ -82,7 +143,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV4",
     ],
 )

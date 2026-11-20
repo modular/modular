@@ -17,7 +17,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv, exp
 from std.testing import assert_almost_equal, assert_equal
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from nn.attention.gpu.mha import mha_single_batch
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
@@ -35,10 +35,10 @@ def _fa2_kernel[
     keys: Int,
     query_rows: Int,
 ](
-    q: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    q: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     # Keep platform-width Int values inside the GPU, not in its launch ABI.
     mha_single_batch[config=config](
@@ -145,9 +145,6 @@ def _check_fa2[
         grid_dim=(ceildiv(queries, config.block_m()), heads, 1),
         block_dim=config.num_threads(),
         shared_mem_bytes=smem,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem)
-        ),
     )
     ctx.enqueue_copy(out_host, out_buffer)
     ctx.synchronize()

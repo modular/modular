@@ -20,11 +20,11 @@ import os
 import time
 from pathlib import Path
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.tensor import Tensor
 
 
 def run_my_add(extension_path: Path) -> Tensor:

@@ -14,24 +14,26 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import mtp_eh_norm
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.multi_latent_attention import (
+from max.nn import Linear, Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.kernels import mtp_eh_norm
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
+from .layers.prefill_context_parallel import PrefillContextParallelStep
+from .layers.sparse_mla import Selection
 from .layers.transformer_block import DeepseekV3_2TransformerBlock
 from .model_config import DeepseekV3_2Config
 
 
-class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
+class DeepseekV3_2NextN(Module[..., tuple[Tensor, Selection]]):
     """One sparse decoder layer fed by an embedding and a target hidden state.
 
     The draft shares the target's embedding and ``lm_head``, so it holds
@@ -83,7 +85,9 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
         comm_buffers: EPCommBuffers | None = None,
         prev_topk_indices: Tensor | None = None,
         reuse_prev_topk: bool = False,
-    ) -> tuple[Tensor, Tensor]:
+        selection_lag: int = 0,
+        pcp: PrefillContextParallelStep | None = None,
+    ) -> tuple[Tensor, Selection]:
         """Returns the decoder output and its top-k selection.
 
         Args:
@@ -99,6 +103,10 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
             prev_topk_indices: A top-k selection to reuse, or ``None``.
             reuse_prev_topk: Whether to reuse ``prev_topk_indices`` rather
                 than run the indexer.
+            selection_lag: The positions between the token a reused
+                selection was computed for and this call's token.
+            pcp: The step's prefill context parallel split, or ``None``
+                (:mod:`.layers.prefill_context_parallel`).
         """
         dtype = embedded.dtype
         # The enorm and hnorm normalizations and their concatenation, fused.
@@ -109,7 +117,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
             self.hnorm.weight.cast(dtype),
             self.enorm.eps,
         ).rebind_mapping(embedded.mapping)
-        return self.decoder_layer(
+        h, topk_indices, *_ = self.decoder_layer(
             # The draft's caches hold this one layer.
             F.constant(0, DType.uint32, device=CPU()),
             self.eh_proj(normed),
@@ -121,4 +129,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Tensor]]):
             comm_buffers,
             prev_topk_indices,
             reuse_prev_topk,
+            selection_lag=selection_lag,
+            pcp=pcp,
         )
+        return h, topk_indices

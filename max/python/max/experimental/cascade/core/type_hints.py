@@ -27,6 +27,7 @@ from typing import (
 )
 
 import numpy as np
+from typing_extensions import TypeForm
 
 
 class Result(Protocol):
@@ -82,7 +83,7 @@ CascadeValue: TypeAlias = Union[
 ]
 
 
-def arg_types(method: Callable[..., Any]) -> dict[str, object | None]:
+def arg_types(method: Callable[..., Any]) -> dict[str, TypeForm[Any] | None]:
     """Returns the parameter hints of a method keyed by name in order.
 
     Every declared parameter is present (unannotated ones map to None) so
@@ -98,7 +99,7 @@ def arg_types(method: Callable[..., Any]) -> dict[str, object | None]:
     }
 
 
-def return_type(method: Callable[..., Any]) -> object | None:
+def return_type(method: Callable[..., Any]) -> TypeForm[Any] | None:
     """Returns the resolved return hint of a method, or None if unresolvable."""
     try:
         return get_type_hints(method).get("return")
@@ -106,7 +107,7 @@ def return_type(method: Callable[..., Any]) -> object | None:
         return None
 
 
-def async_elem_type(hint: object | None) -> object | None:
+def async_elem_type(hint: TypeForm[Any] | None) -> TypeForm[Any] | None:
     """Returns the element type of an async-iterable hint.
 
     That is, the ``T`` in ``AsyncIterator[T]``, or None for anything else.
@@ -118,6 +119,6 @@ def async_elem_type(hint: object | None) -> object | None:
     return None
 
 
-def stream_elem_type(method: Callable[..., Any]) -> object | None:
+def stream_elem_type(method: Callable[..., Any]) -> TypeForm[Any] | None:
     """Returns the element type of an async-generator method's return hint."""
     return async_elem_type(return_type(method))

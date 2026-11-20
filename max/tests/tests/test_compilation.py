@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.compilation.
+"""Tests for max.tensor.compilation.
 
 Three transforms share one boundary: :func:`stage` records a graph,
 :func:`compile` records and runs one, and :func:`as_subgraph` records a body
@@ -36,21 +36,23 @@ from typing import Any, overload
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.compilation import (
+from max.graph import BufferType, BufferValue, DeviceRef, TensorType
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.kernels import flash_attention_ragged
+from max.nn.kv_cache import MHAKVCacheParams
+from max.tensor import Tensor
+from max.tensor.compilation import (
     CompiledCallable,
     as_layout,
     as_subgraph,
     compile,
     stage,
 )
-from max.experimental.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-)
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.sharding import (
+from max.tensor.sharding import (
     BufferLayout,
     DeviceMapping,
     DeviceMesh,
@@ -58,10 +60,6 @@ from max.experimental.sharding import (
     Sharded,
     TensorLayout,
 )
-from max.experimental.tensor import Tensor
-from max.graph import BufferType, BufferValue, DeviceRef, TensorType
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import MHAKVCacheParams
 from max.tree import flatten as tree_flatten
 from max.tree import paths as tree_paths
 
@@ -765,6 +763,7 @@ class PagedSpec:
     kv_scales: None = None
     attention_dispatch_metadata: TensorLayout | None = None
     mla_num_partitions: None = None
+    mixed_step_split: TensorLayout | None = None
 
     def __tree_flatten__(self) -> tuple[tuple[Any, ...], tuple[str, ...]]:
         names = tuple(f.name for f in fields(self))
@@ -938,6 +937,7 @@ class TestModel:
             attention_dispatch_metadata=_spec_of(
                 declared.attention_dispatch_metadata
             ),
+            mixed_step_split=_spec_of(declared.mixed_step_split),
         )
         x_spec = TensorLayout(
             _F32, ["total_seq_len", hidden], device=DeviceRef.CPU()

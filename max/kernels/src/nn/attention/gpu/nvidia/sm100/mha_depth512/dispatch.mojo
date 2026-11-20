@@ -20,7 +20,12 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, Dim, DeviceBuffer
+from max.gpu.host.nvidia import ClusterAttributeLaunchConfig
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import Coord, TensorEngine
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -44,7 +49,6 @@ from nn.attention.mha_utils import (
     _is_decoding,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    assert_sm_exclusive_smem,
     kv_sub_tile_rows,
     kv_tma_fold_chunks,
     o_store_tma_blocks_per_op,
@@ -74,12 +78,12 @@ def mha_sm100_depth512_dispatch[
     sink: Bool = False,
 ](
     output: DeviceBuffer[output_type],
-    q_arg: UnsafePointer[Scalar[q_type], _],
+    q_arg: Pointer[Scalar[q_type], _],
     k: KVType,
     v: KVType,
     num_rows_q: Int,
     mask: MaskType,
-    valid_length: UnsafePointer[UInt32, _],
+    valid_length: Pointer[UInt32, _],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -168,9 +172,7 @@ def mha_sm100_depth512_dispatch[
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
-    var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
-        q_arg.origin
-    ]()
+    var q = q_arg.unsafe_bitcast[Scalar[KVType.dtype]]()
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -356,7 +358,6 @@ def mha_sm100_depth512_dispatch[
                         PartitionType,
                     ].kernel
 
-                    assert_sm_exclusive_smem[smem_use]()
                     ctx.enqueue_function[kernel](
                         q_tma_op,
                         k_tma_op,
@@ -367,12 +368,14 @@ def mha_sm100_depth512_dispatch[
                         batch_size,
                         max_cache_valid_length,
                         pack,
-                        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                        block_dim=(num_threads, 1, 1),
-                        cluster_dim=Dim(2, 1, 1),
-                        shared_mem_bytes=smem_use,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            UInt32(smem_use)
+                        execution_config=ClusterAttributeLaunchConfig(
+                            grid_dim=SchedulerType.grid_dim(
+                                batch_size, block_x
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            cluster_dim=Dim(2, 1, 1),
+                            shared_mem_bytes=smem_use,
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         ),
                     )
 
@@ -396,7 +399,7 @@ def mha_sm100_depth512_dispatch[
         comptime if sink:
             with_sink[NonNullPointer[KVType.dtype]](
                 {
-                    rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
                         sink_weights.value().ptr
                     )
                 }
@@ -485,7 +488,6 @@ def mha_sm100_depth512_dispatch[
                         PartitionType,
                     ].kernel
 
-                    assert_sm_exclusive_smem[smem_use]()
                     ctx.enqueue_function[kernel](
                         q_tma_op,
                         k_tma_op,
@@ -496,12 +498,14 @@ def mha_sm100_depth512_dispatch[
                         batch_size,
                         max_cache_valid_length,
                         pack,
-                        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                        block_dim=(num_threads, 1, 1),
-                        cluster_dim=Dim(2, 1, 1),
-                        shared_mem_bytes=smem_use,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            UInt32(smem_use)
+                        execution_config=ClusterAttributeLaunchConfig(
+                            grid_dim=SchedulerType.grid_dim(
+                                batch_size, block_x
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            cluster_dim=Dim(2, 1, 1),
+                            shared_mem_bytes=smem_use,
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         ),
                     )
 
@@ -525,7 +529,7 @@ def mha_sm100_depth512_dispatch[
         comptime if sink:
             with_sink_q[NonNullPointer[KVType.dtype]](
                 {
-                    rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
                         sink_weights.value().ptr
                     )
                 }

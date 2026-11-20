@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Tool-call parsers that read model output into structured calls."""
+
 # Re-export ToolParser protocol and generic types from interfaces
 from max.pipelines.modeling.types import (
     ParsedToolCall,

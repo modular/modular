@@ -13,7 +13,7 @@
 
 """Provides GPU matmul configuration selection, block-swizzling, and Hilbert-curve tile-ordering utilities."""
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.math import ceildiv
 from std.math.uutils import uceildiv
 from std.sys import (
@@ -116,7 +116,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](TrivialRegisterPassable, Writable):
+](ImplicitlyCopyable, RegisterPassable, Writable):
     """Static configuration of GPU matmul.
 
     Parameters:
@@ -127,11 +127,11 @@ struct MatmulConfig[
             `False`).
     """
 
-    var block_tile_shape: IndexList[3]
+    var block_tile_shape: Tuple[Int, Int, Int]
 
-    var warp_tile_shape: IndexList[3]
+    var warp_tile_shape: Tuple[Int, Int, Int]
 
-    var mma_shape: IndexList[3]
+    var mma_shape: Tuple[Int, Int, Int]
 
     var num_pipeline_stages: Int
 
@@ -141,7 +141,7 @@ struct MatmulConfig[
 
     var num_warp_k_partitions: Int
 
-    var cluster_shape: IndexList[3]
+    var cluster_shape: Tuple[Int, Int, Int]
 
     var num_consumer: Int
 
@@ -163,18 +163,18 @@ struct MatmulConfig[
 
     comptime OUTPUT_PRECISION = 2
 
-    comptime ACCUM_PRECISION = 1
-
     # TODO: output precision will break the integration test.
     comptime split_k_reduction_type = Self.c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
 
     def __init__(
         out self,
         *,
-        block_tile_shape: IndexList[3] = Index(128, 128, 32),
-        warp_tile_shape: IndexList[3] = Index(64, 64, 32),
-        mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
-        cluster_shape: IndexList[3] = Index(1, 1, 1),
+        block_tile_shape: Tuple[Int, Int, Int] = (128, 128, 32),
+        warp_tile_shape: Tuple[Int, Int, Int] = (64, 64, 32),
+        mma_shape: Tuple[Int, Int, Int] = get_mma_shape[
+            Self.a_type, Self.accum_type
+        ](),
+        cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
         num_pipeline_stages: Int = 4,
         num_k_partitions: Int = 1,
         k_group_size: Int = 1,
@@ -238,15 +238,15 @@ struct MatmulConfig[
             self.num_warp_k_partitions,
         )
 
-    def grid_dim(self, m: Int, n: Int) -> IndexList[3]:
-        return Index(
+    def grid_dim(self, m: Int, n: Int) -> Tuple[Int, Int, Int]:
+        return (
             uceildiv(n, self.block_tile_shape[1]),
             uceildiv(m, self.block_tile_shape[0]),
             self.num_k_partitions,
         )
 
-    def block_dim(self) -> IndexList[3]:
-        return Index(self.num_threads(), 1, 1)
+    def block_dim(self) -> Tuple[Int, Int, Int]:
+        return (self.num_threads(), 1, 1)
 
     def work_space_size(self, M: Int, N: Int) -> Int:
         return M * N * (self.num_k_partitions - 1)
@@ -299,9 +299,10 @@ struct MatmulConfig[
         Self.b_type.__hash__(hasher)
         Self.c_type.__hash__(hasher)
         Self.transpose_b.__hash__(hasher)
-        self.block_tile_shape.__hash__(hasher)
-        self.warp_tile_shape.__hash__(hasher)
-        self.cluster_shape.__hash__(hasher)
+        comptime for i in range(3):
+            self.block_tile_shape[i].__hash__(hasher)
+            self.warp_tile_shape[i].__hash__(hasher)
+            self.cluster_shape[i].__hash__(hasher)
         self.num_pipeline_stages.__hash__(hasher)
         self.num_k_partitions.__hash__(hasher)
         self.num_warp_k_partitions.__hash__(hasher)
@@ -331,7 +332,9 @@ def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
 @inline(.always)
 def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
-](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> Int:
+](
+    block_mnk: Tuple[Int, Int, Int], num_pipeline_stages: Int, slice_k: Int = 1
+) -> Int:
     # fmt: off
     var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[a_type]()
     var b_usage = slice_k * block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[b_type]()
@@ -360,47 +363,39 @@ struct MatmulKernels[
             `False`).
     """
 
-    comptime hopper_128x128_4 = MatmulConfig[
-        Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
-    ](
-        block_tile_shape=Index(128, 128, _bk_base[Self.a_type]()),
-        warp_tile_shape=Index(64, 64, _bk_base[Self.a_type]()),
-        num_pipeline_stages=4,
-    )
-
     comptime ampere_128x128_4 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
-        block_tile_shape=Index(128, 128, _bk_base[Self.a_type]()),
-        warp_tile_shape=Index(64, 64, _bk_base[Self.a_type]()),
+        block_tile_shape=(128, 128, _bk_base[Self.a_type]()),
+        warp_tile_shape=(64, 64, _bk_base[Self.a_type]()),
         num_pipeline_stages=4,
     )
 
     comptime ampere_256x64_4 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
-        block_tile_shape=Index(64, 256, _bk_base[Self.a_type]()),
-        warp_tile_shape=Index(64, 64, _bk_base[Self.a_type]()),
+        block_tile_shape=(64, 256, _bk_base[Self.a_type]()),
+        warp_tile_shape=(64, 64, _bk_base[Self.a_type]()),
         num_pipeline_stages=4,
     )
 
     comptime ampere_256x128_3 = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
-        block_tile_shape=Index(128, 256, 2 * _bk_base[Self.a_type]()),
-        warp_tile_shape=Index(64, 64, 2 * _bk_base[Self.a_type]()),
+        block_tile_shape=(128, 256, 2 * _bk_base[Self.a_type]()),
+        warp_tile_shape=(64, 64, 2 * _bk_base[Self.a_type]()),
         num_pipeline_stages=3,
     )
 
     comptime tuning_config = MatmulConfig[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
-        block_tile_shape=Index(
+        block_tile_shape=(
             get_defined_int["TUNE_BM", 128](),
             get_defined_int["TUNE_BN", 128](),
             get_defined_int["TUNE_BK", 32](),
         ),
-        warp_tile_shape=Index(
+        warp_tile_shape=(
             get_defined_int["TUNE_WM", 64](),
             get_defined_int["TUNE_WN", 64](),
             get_defined_int["TUNE_BK", 32](),
@@ -460,7 +455,7 @@ def select_config[
     comptime min_k_partition = 1024
 
     # Initial values overwritten in loop
-    var best_bmnk = Index(128, 128, _bk_base[a_type]())
+    var best_bmnk = (128, 128, _bk_base[a_type]())
     var best_num_k_partitions = 1
     var best_num_stages = 4
     var min_num_waves = Int.MAX
@@ -489,7 +484,7 @@ def select_config[
         # Skip if it requires more shared memory than the GPU supports.
         if (
             _shared_memory_usage[a_type, b_type, c_type](
-                Index(bm, bn, bk), num_stages
+                (bm, bn, bk), num_stages
             )
             > gpu_info.shared_memory_per_multiprocessor
         ):
@@ -539,7 +534,7 @@ def select_config[
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=best_bmnk,
-        warp_tile_shape=Index(64, 64, best_bmnk[2]),
+        warp_tile_shape=(64, 64, best_bmnk[2]),
         num_pipeline_stages=best_num_stages,
         num_k_partitions=best_num_k_partitions,
     )
@@ -592,7 +587,7 @@ def create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_managed()
+    var host = alloc(AllocLayout[UInt32](length=num_blocks)).into_managed()
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -664,8 +659,8 @@ def get_hilbert_lut_with_cache(
 
     # store the device pointer directly in global cache
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key_str),
-        device_ptr.bitcast[NoneType](),
+        StringSpan(key_str),
+        device_ptr.unsafe_bitcast[NoneType](),
     )
 
     # the buffer will live for the duration of the program

@@ -5,9 +5,9 @@
 // CHECK-LABEL: @co_sizeof_alignof
 kgen.generator @co_sizeof_alignof() {
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_sizeof(!co.routine, #target)>
+  kgen.param.constant: scalar<index> = <get_sizeof(!co.routine, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_alignof(!co.routine, #target)>
+  kgen.param.constant: scalar<index> = <get_alignof(!co.routine, #target)>
 
   hlcf.return
 }

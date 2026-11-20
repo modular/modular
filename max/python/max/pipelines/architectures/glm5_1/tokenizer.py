@@ -151,13 +151,14 @@ def _asks_for_no_reasoning(options: Mapping[str, Any]) -> bool:
 def _apply_glm_clear_thinking_default(
     chat_template_options: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Sets the default for `clear_thinking`.
+    """Defaults ``clear_thinking`` to False, keeping earlier turns' reasoning.
 
-    GLM 5.3's template sets `clear_thinking` to False, but it should be enabled
-    for multi-turn conversations.
+    GLM-5.1's and 5.2's templates drop it when the kwarg is unset, and
+    GLM-5.3's keeps it. Z.ai's Coding Plan endpoint keeps it for every GLM,
+    as its thinking-mode guide recommends for coding and agent workloads.
     """
     options = dict(chat_template_options)
-    options.setdefault("clear_thinking", True)
+    options.setdefault("clear_thinking", False)
     return options
 
 

@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for token_sampler (basic sampling without structured output)."""
 
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
 import pytest
@@ -23,6 +25,9 @@ from max.pipelines.context import SamplingParams, TextContext, TokenBuffer
 from max.pipelines.lib import SamplingConfig, token_sampler
 from max.pipelines.request import RequestID
 from max.pipelines.sampling import SamplerInputs
+from max.pipelines.sampling.sampling_logits_processor import (
+    _PACKED_ROW_ALIGNMENT,
+)
 
 
 @pytest.fixture(scope="module")
@@ -500,6 +505,86 @@ def test_sampler_inputs_max_k(top_ks: list[int], expected_max_k: int) -> None:
     """``max_k`` is ``-1`` whenever any row has no top-k limit."""
     inputs = SamplerInputs.create(_contexts(top_ks, seed=0), CPU())
     assert inputs.max_k.to_numpy().item() == expected_max_k
+
+
+@pytest.mark.parametrize("target", ["gpu", "cpu"])
+def test_sampler_inputs_share_one_device_copy(
+    session: InferenceSession, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """The per-row sampler inputs reach the device through one call.
+
+    Counts the calls that put a buffer on the target device, not the bytes
+    moved: on GPU the one ``Buffer.to`` is the single H2D copy, while on CPU
+    the same-device call may just return a view. Every H2D copy is its own
+    stream op between the model's last kernel and the sampler, so the five
+    per-row parameters are views into one device buffer.
+    """
+    device = session.devices[0] if target == "gpu" else CPU()
+    target_device_calls: list[str] = []
+    original_to = Buffer.to
+    original_inplace_copy_from = Buffer.inplace_copy_from
+
+    def counting_to(self: Buffer, *args: Any, **kwargs: Any) -> Any:
+        result = original_to(self, *args, **kwargs)
+        if isinstance(result, Buffer) and result.device == device:
+            target_device_calls.append("to")
+        return result
+
+    def counting_inplace_copy_from(self: Buffer, src: Buffer) -> None:
+        if self.device == device:
+            target_device_calls.append("inplace_copy_from")
+        original_inplace_copy_from(self, src)
+
+    monkeypatch.setattr(Buffer, "to", counting_to)
+    monkeypatch.setattr(Buffer, "inplace_copy_from", counting_inplace_copy_from)
+    params = [
+        SamplingParams(top_k=1, temperature=0.5, top_p=0.9, min_p=0.0, seed=7),
+        SamplingParams(top_k=-1, temperature=1.0, top_p=1.0, min_p=0.1, seed=8),
+        SamplingParams(top_k=40, temperature=1.5, top_p=0.5, min_p=0.2, seed=9),
+    ]
+    contexts = [
+        TextContext(
+            request_id=RequestID(),
+            max_length=8,
+            tokens=TokenBuffer(np.zeros(2, dtype=np.int64)),
+            sampling_params=p,
+        )
+        for p in params
+    ]
+    inputs = SamplerInputs.create(contexts, device)
+    monkeypatch.undo()
+    assert target_device_calls == ["to"]
+
+    np.testing.assert_array_equal(inputs.top_k.to_numpy(), [1, -1, 40])
+    np.testing.assert_array_equal(inputs.seed.to_numpy(), [9, 10, 11])
+    np.testing.assert_array_equal(
+        inputs.temperature.to_numpy(),
+        np.array([0.5, 1.0, 1.5], dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        inputs.top_p.to_numpy(), np.array([0.9, 1.0, 0.5], dtype=np.float32)
+    )
+    np.testing.assert_array_equal(
+        inputs.min_p.to_numpy(), np.array([0.0, 0.1, 0.2], dtype=np.float32)
+    )
+    assert inputs.max_k.to_numpy().item() == -1
+    assert inputs.min_top_p.to_numpy().item() == np.float32(0.5)
+
+    per_row = [
+        inputs.top_k,
+        inputs.seed,
+        inputs.temperature,
+        inputs.top_p,
+        inputs.min_p,
+    ]
+    assert all(b.device == device for b in per_row)
+    # Back-to-back aligned rows, in any order, mean the copy landed in one
+    # buffer. Three elements of at most 8 bytes fill one alignment unit.
+    stride = _PACKED_ROW_ALIGNMENT
+    pointers = sorted(b._data_ptr() for b in per_row)
+    assert [p - pointers[0] for p in pointers] == [
+        index * stride for index in range(len(per_row))
+    ]
 
 
 @pytest.mark.parametrize("target", ["gpu", "cpu"])

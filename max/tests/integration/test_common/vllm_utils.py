@@ -70,7 +70,7 @@ def _setup_ninja_path() -> None:
             )
 
 
-def _setup_cutlass_path() -> None:
+def setup_cutlass_path() -> None:
     """Expose the ``cutlass`` package shipped by ``nvidia-cutlass-dsl-libs-*``.
 
     vLLM's CUTE kernels (the Kimi-K2.6 vision tower and the bf16x3 router GEMM
@@ -244,6 +244,21 @@ def _setup_flashinfer_cubin_cache() -> None:
         )
 
 
+def _unshadow_native_hf_configs() -> None:
+    """Drops AutoConfig registrations that shadow a transformers-native config.
+
+    MAX's ``hf_config_shims`` register shims with ``exist_ok=True`` for model
+    types older transformers releases lacked (e.g. ``deepseek_v4``). vLLM needs
+    the native class: the shim omits fields the native config derives, such as
+    DeepSeek-V4's ``layer_types``.
+    """
+    from transformers.models.auto.configuration_auto import CONFIG_MAPPING
+
+    for model_type in list(CONFIG_MAPPING._extra_content):
+        if model_type in CONFIG_MAPPING._mapping:
+            del CONFIG_MAPPING._extra_content[model_type]
+
+
 def _resolve_vocab_size(*, llm: Any, tokenizer: Any, model_path: str) -> int:
     """Resolve vocab size for dense logit reconstruction.
 
@@ -328,6 +343,7 @@ def run_text_generation(
     tensor_parallel_size: int = 1,
     extra_kwargs: dict[str, Any] | None = None,
     mm_data_key: str = "image",
+    env: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Run text generation using vLLM.
 
@@ -341,13 +357,18 @@ def run_text_generation(
 
     # Make the `cutlass` package importable for vLLM's CUTE flash-attention
     # path. The wheel relocates it behind a `.pth` file that Bazel does not
-    # process; see `_setup_cutlass_path` for details.
-    _setup_cutlass_path()
+    # process; see `setup_cutlass_path` for details.
+    setup_cutlass_path()
 
     # Redirect flashinfer's cubin directory to a writable mirror so it can
     # create its kernel symlinks (the bundled `flashinfer-cubin` package dir is
     # read-only under Bazel); see `_setup_flashinfer_cubin_cache` for details.
     _setup_flashinfer_cubin_cache()
+
+    _unshadow_native_hf_configs()
+
+    # Spawned workers inherit the environment, so this reaches them too.
+    os.environ.update(env or {})
 
     try:
         from vllm import (  # type: ignore[import-not-found, unused-ignore]

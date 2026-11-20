@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Synthetic pixel generation dataset."""
+
 from __future__ import annotations
 
 import tempfile
@@ -27,6 +29,8 @@ from .types import RequestSamples
 
 
 class SyntheticPixelBenchmarkDataset(PixelBenchmarkDataset):
+    """Synthetic pixel dataset built in memory."""
+
     @override
     def fetch(self) -> None:
         """Fetch Synthetic Pixel dataset.

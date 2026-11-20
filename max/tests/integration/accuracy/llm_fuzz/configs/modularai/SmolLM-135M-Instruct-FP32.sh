@@ -20,6 +20,7 @@ batch_size=64
 max_length=2048
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --device-memory-utilization=0.5
   --enable-prefix-caching
   # No --enable-structured-output: this entry serves on CPU, and MAX refuses

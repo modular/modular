@@ -20,9 +20,10 @@
 
 #include "DeferredTypingContext.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/MojoDiags.h"
-#include "ParserEvaluationContext.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 #include <cstddef>
 
@@ -45,7 +46,7 @@ class StructDeclOp;
 
 /// A set of parameter bindings that have been verified against a particular
 /// Pog list signature by parameter inference. The verified-against-signature
-/// invariant is what differentiates this from a raw `ParameterExprArrayAttr`,
+/// invariant is what differentiates this from a raw `ParamsBindingArrayAttr`,
 /// and is what makes the specialization helpers below well-defined.
 ///
 /// A default-constructed (or null) value represents failed inference; users
@@ -56,19 +57,21 @@ public:
   VerifiedParamBindings() = default;
 
   /// Truthiness reflects whether inference succeeded (i.e. the underlying
-  /// `ParameterExprArrayAttr` is non-null). Note that a successful inference
+  /// `ParamsBindingArrayAttr` is non-null). Note that a successful inference
   /// can still produce zero bindings (for non-parametric callables); use
   /// `empty()` / `size()` to distinguish "no bindings to apply".
   explicit operator bool() const { return bool(bindings); }
-  bool empty() const { return getValues().empty(); }
-  size_t size() const { return getValues().size(); }
+  bool empty() const { return size() == 0; }
+  size_t size() const { return bindings ? bindings.size() : 0; }
 
-  /// Raw access for legacy interop with APIs that take a
-  /// `ParameterExprArrayAttr` or `ArrayRef<TypedAttr>` (e.g.
-  /// `BindParamsAttr::get`, `getCallee`, etc.).
-  ParameterExprArrayAttr asAttr() const { return bindings; }
-  ArrayRef<TypedAttr> getValues() const {
-    return bindings ? bindings.getValue() : ArrayRef<TypedAttr>{};
+  /// Return the bindings, with one entry per parameter of the verified
+  /// signature.
+  ParamsBindingArrayAttr getBindings() const { return bindings; }
+
+  /// Return one value per parameter, null where the parameter is unbound.
+  SmallVector<TypedAttr> getDenseBindingArray() const {
+    return bindings ? bindings.getDenseBindingArray()
+                    : SmallVector<TypedAttr>{};
   }
   /// Mask for body constraints discharged by these bindings.
   const llvm::BitVector &getDischargedBodyConstraints() const {
@@ -86,15 +89,19 @@ public:
   /// `GeneratorType::getSpecializedGenerator` API.
   Type specializeGeneratorType(GeneratorType genType) const;
 
+  void setBindings(ParamsBindingArrayAttr bindings) {
+    this->bindings = bindings;
+  }
+
 private:
-  VerifiedParamBindings(ParameterExprArrayAttr bindings,
+  VerifiedParamBindings(ParamsBindingArrayAttr bindings,
                         llvm::BitVector dischargedBodyConstraints,
                         ParameterEvaluationContext *evaluationContext)
       : bindings(bindings),
         dischargedBodyConstraints(std::move(dischargedBodyConstraints)),
         evaluationContext(evaluationContext) {}
 
-  ParameterExprArrayAttr bindings;
+  ParamsBindingArrayAttr bindings;
   llvm::BitVector dischargedBodyConstraints;
   ParameterEvaluationContext *evaluationContext = nullptr;
 
@@ -154,13 +161,48 @@ private:
   std::function<MojoInflightDiag &(std::optional<SMLoc>)> getDiagClosure;
 };
 
+/// A ParameterEvaluator paired with the param-ref depth of the values handed
+/// to it. Inference recurses past `ParameterScopeTypeInterface`s while matching
+/// signatures, which moves the depth at which index references point back to
+/// the inferred parameters, see PSTIAIRAID.
+class DepthAwareEvaluator : public ParameterEvaluator {
+public:
+  explicit DepthAwareEvaluator(ParameterEvaluator evaluator)
+      : ParameterEvaluator(std::move(evaluator)) {}
+
+  size_t getDepth() const { return depth; }
+
+  /// Enters one more signature scope for the lifetime of the returned object.
+  llvm::SaveAndRestore<size_t> enterSignatureScope() {
+    return llvm::SaveAndRestore<size_t>(depth, depth + 1);
+  }
+
+  /// Returns to the decl scope at depth 0 for the lifetime of the returned
+  /// object.
+  llvm::SaveAndRestore<size_t> enterDeclScope() {
+    return llvm::SaveAndRestore<size_t>(depth, 0);
+  }
+
+  /// Rebinds a value found at the current depth. These hide the base class
+  /// versions, which rebind at depth 0.
+  Type getReboundType(Type type) { return replaceAtDepth(type, depth); }
+  Attribute getReboundAttribute(Attribute attr) {
+    return replaceAtDepth(attr, depth);
+  }
+  TypedAttr getReboundAttribute(TypedAttr attr) {
+    return replaceAtDepth(attr, depth);
+  }
+
+private:
+  size_t depth = 0;
+};
+
 class InferenceState {
 public:
   InferenceState(ASTDecl &declScope, ArrayRef<Type> declaredParamTypes,
                  PogListAttr declaredParamPogs, SMLoc defaultLoc,
-                 bool discardError,
-                 DeferredTypingContext *deferredTypingContext = nullptr,
-                 ArrayRef<ConstraintAttr> additionalAssumptions = {});
+                 bool discardError, TypedAttr additionalAssumptions,
+                 DeferredTypingContext *deferredTypingContext = nullptr);
   virtual ~InferenceState() = default;
 
   ASTDecl &getDeclScope() const { return declScope; }
@@ -198,8 +240,8 @@ public:
 
   /// Facts that hold at the site driving this inference but are not reachable
   /// from `declScope`'s lexical assumptions. This is set once for the lifetime
-  /// of an inference operation. The storage is owned by the caller.
-  ArrayRef<ConstraintAttr> additionalAssumptions;
+  /// of an inference operation.
+  TypedAttr additionalAssumptions;
 
   // Debug util.
   void dump() const;
@@ -212,12 +254,42 @@ public:
 protected:
   friend class ParamMatcher;
 
+  /// Returns how many signature types deep inference is inside parameter
+  /// expressions, which determines which index references we match against.
+  ///
+  /// As we search for param-refs, recursively, we'll be recursing past
+  /// `FnTypeGeneratorType`s (and other `ParameterScopeTimeInterface`s),
+  /// which changes what param-ref depths we're watching for; the param-refs'
+  /// depths would be greater (have to reach further outward so to speak, past
+  /// more generator types) to reference param-decls in the
+  /// ParameterInferenceState's original scope. The depth of `evaluator`
+  /// tracks that number, see PSTIAIRAID.
+  size_t getParamIndexRefDepth() const { return evaluator.getDepth(); }
+
+  /// Enters one more signature scope for the lifetime of the returned object.
+  llvm::SaveAndRestore<size_t> enterSignatureScope() {
+    return evaluator.enterSignatureScope();
+  }
+
+  /// Returns the index of the first reference to a parameter being inferred,
+  /// looking from the current param-ref depth.
+  template <typename T>
+  std::optional<size_t> findOneReference(T value) {
+    return paramFinder.findOneReference(value, getParamIndexRefDepth());
+  }
+  template <typename T>
+  bool hasReferences(T value) {
+    return findOneReference(value).has_value();
+  }
+
   ASTDecl &declScope;
   SharedState &shared;
-  ParameterEvaluator evaluator;
-  ParamIndexRefAttrFinder paramFinder;
+  DepthAwareEvaluator evaluator;
   ArrayRef<Type> declaredParamTypes;
   PogListAttr declaredParamPogs;
+
+private:
+  ParamIndexRefAttrFinder paramFinder;
 
 public:
   OptionalDiag diag;

@@ -41,9 +41,17 @@ def execute_ragged_flash_attention[
     layer_idx: Int,
 ) raises:
     comptime num_blocks = 32
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
-    ]
+    # The origins below are placeholders: only the origin-independent
+    # blocks_tt_layout is queried from this alias. The collection itself is
+    # built at its constructor call below, with origins inferred from the
+    # argument tensors.
+    comptime BlocksLayout = ContinuousBatchingKVCacheCollection[
+        dtype,
+        kv_params,
+        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
+    ].blocks_tt_layout
 
     var batch_size = len(valid_lengths_list)
     debug_assert(
@@ -120,10 +128,8 @@ def execute_ragged_flash_attention[
     for bs in range(batch_size):
         var unpadded_seq_len = valid_lengths_list[bs]
         var ragged_start_idx = Int(input_row_offsets[bs])
-        var padded_ptr = q_padded.ptr + q_padded.layout(Coord(bs, 0, 0, 0))
-        var ragged_ptr = q_ragged.ptr + q_ragged.layout(
-            Coord(ragged_start_idx, 0, 0)
-        )
+        var padded_ptr = q_padded.ptr_at_offset(Coord(bs, 0, 0, 0))
+        var ragged_ptr = q_ragged.ptr_at_offset(Coord(ragged_start_idx, 0, 0))
         unsafe_memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
@@ -169,7 +175,6 @@ def execute_ragged_flash_attention[
         * kv_params.head_size,
         fill=Scalar[dtype](0),
     )
-    comptime BlocksLayout = CollectionType.blocks_tt_layout
     var native_blocks_shape = Coord[*BlocksLayout.shape_types]()
     native_blocks_shape[0] = Int64(num_blocks)
     native_blocks_shape[1] = Int64(2)
@@ -202,10 +207,10 @@ def execute_ragged_flash_attention[
         lookup_table[idx] = UInt32(randval)
         idx += 1
 
-    var kv_collection = CollectionType(
-        kv_block.as_unsafe_any_origin(),
-        cache_lengths.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+    var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
+        kv_block,
+        cache_lengths.as_imm(),
+        lookup_table.as_imm(),
         UInt32(max_prompt_length),
         UInt32(max_context_length),
     )

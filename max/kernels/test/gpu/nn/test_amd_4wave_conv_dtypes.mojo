@@ -121,39 +121,10 @@ def test_conv[
     comptime K_padded = align_up(K_real, 256)
 
     print(
-        "== ",
-        String(a_type),
-        label,
-        " N=",
-        N_batch,
-        " H=",
-        H,
-        " W=",
-        W,
-        " C_in=",
-        C_in,
-        " C_out=",
-        C_out,
-        " RxS=",
-        R,
-        "x",
-        S,
-        " stride=",
-        stride_h,
-        "x",
-        stride_w,
-        " pad=",
-        pad_h,
-        "x",
-        pad_w,
-        " H_out=",
-        H_out,
-        " W_out=",
-        W_out,
-        " M=",
-        M_total,
-        " K_padded=",
-        K_padded,
+        t"==  {String(a_type)} {label}  N= {N_batch}  H= {H}  W= {W}  C_in="
+        t" {C_in}  C_out= {C_out}  RxS= {R} x {S}  stride= {stride_h} x"
+        t" {stride_w}  pad= {pad_h} x {pad_w}  H_out= {H_out}  W_out= {W_out} "
+        t" M= {M_total}  K_padded= {K_padded}"
     )
 
     var input_dev = ctx.enqueue_create_buffer[a_type](N_batch * H * W * C_in)
@@ -232,7 +203,7 @@ def test_conv[
         if conv_host[i] != mm_host[i]:
             mismatches += 1
     if mismatches > 0:
-        print("  FAIL:", mismatches, "/", M_total * C_out, "differ")
+        print(t"  FAIL: {mismatches} / {M_total * C_out} differ")
         raise Error(
             String(a_type) + " amd_4wave_conv != structured_4wave_matmul"
         )

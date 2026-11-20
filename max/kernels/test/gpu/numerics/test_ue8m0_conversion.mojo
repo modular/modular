@@ -184,9 +184,7 @@ def test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     f32_simd[i] = bitcast[.float32, 1](UInt32(0x7F000000))
     i += 1
 
-    comptime kernel = test_simd_f32_to_ue8m0_ptx_kernel[
-        M, DType.float8_e8m0fnu, 18
-    ]
+    comptime kernel = test_simd_f32_to_ue8m0_ptx_kernel[M, .float8_e8m0fnu, 18]
     ctx.enqueue_function[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 

@@ -60,10 +60,10 @@ def _run_case[
     ngpus: Int,
     num_cols: Int,
     use_dispatch: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     dispatch_threshold: Int = RS_NORM_FUSE_THRESHOLD,
 ) raises:
     """Run the fused kernel (or `_dispatch_rs_norm`) and gate both oracles.
@@ -96,8 +96,9 @@ def _run_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](0.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(0.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     # Per-GPU inputs, per-device gamma, signals, and three output shards.
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -182,6 +183,19 @@ def _run_case[
         )
     )
 
+    # The two-launch fallback below runs inside the group. Its rms_norm kernel
+    # is specialized on epsilon and weight_offset, so load it on every device
+    # first: a first-use module load inside the group stalls one rank while its
+    # peer waits at the reduce-scatter barrier.
+    comptime if use_dispatch:
+        for i in range(ngpus):
+            if config.rank_units(i) > 0:
+                _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
+                    1, sum_shard[i], normed[i], gamma_dev[i], list_of_ctx[i]
+                )
+        for i in range(ngpus):
+            list_of_ctx[i].synchronize()
+
     # --- Run the fused kernel (or the auto dispatch) on every rank. ---
     group_start()
     for i in range(ngpus):
@@ -221,17 +235,15 @@ def _run_case[
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
                     in_bufs, world_sum, rank_sigs, list_of_ctx[i], my_rank=i
                 )
-                _rms_norm_shard[in_dtype, num_cols](
+                _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
                     config.rank_units(i),
                     sum_shard[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[pdl_level=pdl_level](
+            _dispatch_rs_norm(
                 in_bufs,
                 normed_view,
                 sum_view,
@@ -379,24 +391,11 @@ def _run_case[
 
     comptime mode_tag = "[dispatch straddle] " if use_dispatch else ""
     print(
-        String(
-            "  ",
-            mode_tag,
-            "M=",
-            num_rows,
-            ": TIGHT(fused vs bf16 ref) frac>1ULP=",
-            frac_gt1_bf * 100.0,
-            "% max_ulp=",
-            max_ulp_bf,
-            " | LOOSE(vs f32 ref) exact-mismatch=",
-            rate_f * 100.0,
-            "% (headroom) max_ulp=",
-            max_ulp_f,
-            " | sum_out mismatches=",
-            sum_mismatch,
-            " max_ulp=",
-            sum_max_ulp,
-        )
+        t"  {mode_tag}M={num_rows}: TIGHT(fused vs bf16 ref)"
+        t" frac>1ULP={frac_gt1_bf * 100.0}% max_ulp={max_ulp_bf} | LOOSE(vs f32"
+        t" ref) exact-mismatch={rate_f * 100.0}% (headroom)"
+        t" max_ulp={max_ulp_f} | sum_out"
+        t" mismatches={sum_mismatch} max_ulp={sum_max_ulp}"
     )
 
     # Tight gate: kernel norms the bf16-rounded sum, matching the bf16 ref
@@ -463,13 +462,13 @@ def _run_case[
 def _rms_norm_shard[
     in_dtype: DType,
     num_cols: Int,
+    epsilon: Float32,
+    weight_offset: Float32,
 ](
     rows: Int,
     src: DeviceBuffer[in_dtype],
     dst: DeviceBuffer[in_dtype],
     gamma: DeviceBuffer[in_dtype],
-    epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
     ctx: DeviceContext,
 ) raises:
     """Standalone `rms_norm_gpu` on one `[rows, num_cols]` shard, M3-config
@@ -500,24 +499,23 @@ def _rms_norm_shard[
     )
 
     @inline(.always)
-    @__copy_capture(src_view)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
-        return src_view.raw_load[width=width](src_view.layout(coords))
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var src_view} -> SIMD[in_dtype, width]:
+        return src_view.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(dst_view)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
-        dst_view.raw_store[width=width, alignment=alignment](
-            dst_view.layout(coords), val
-        )
+    ](coords: Coord, val: SIMD[in_dtype, width]) {var dst_view} -> None:
+        dst_view.store[alignment=alignment](coords, val)
 
-    rms_norm_gpu[2, input_fn, output_fn, multiply_before_cast=True](
-        Coord(Index(rows, num_cols)), gamma_view, epsilon, weight_offset, ctx
-    )
+    rms_norm_gpu[
+        2,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](input_fn, output_fn, Coord(Index(rows, num_cols)), gamma_view, ctx)
 
 
 def _run_prod_oracle_case[
@@ -526,8 +524,8 @@ def _run_prod_oracle_case[
     num_cols: Int,
     use_dispatch: Bool = False,
     group_size: Int = ngpus,
-    pdl_level: PDLLevel = PDLLevel(),
-](num_rows: Int, list_of_ctx: List[DeviceContext]) raises -> Int:
+    pdl_level: PDLLevel = PDLLevel.OFF,
+](num_rows: Int, list_of_ctx: List[DeviceContext[]]) raises -> Int:
     """Compare the fused `normed_out` to the ACTUAL M3 production norm; return the
     fused-vs-production exact-mismatch count.
 
@@ -560,9 +558,10 @@ def _run_prod_oracle_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
+    comptime epsilon = Float32(1e-6)
     # M3 post-attention layernorm is Gemma-style: weight_offset=1.0, mbc=True.
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
@@ -692,20 +691,15 @@ def _run_prod_oracle_case[
                     group_size=group_size,
                     axis=0,
                 ](world_bufs, world_sum, rank_sigs, list_of_ctx[i], my_rank=i)
-                _rms_norm_shard[in_dtype, num_cols](
+                _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
                     config.rank_units(local),
                     sum_shard[i],
                     normed[i],
                     gamma_dev[i],
-                    epsilon,
-                    weight_offset,
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[
-                group_size=group_size,
-                pdl_level=pdl_level,
-            ](
+            _dispatch_rs_norm[group_size=group_size](
                 world_bufs,
                 normed_view,
                 sum_view,
@@ -766,13 +760,11 @@ def _run_prod_oracle_case[
         var local_rows = config.rank_units(i % group_size)
         if local_rows == 0:
             continue
-        _rms_norm_shard[in_dtype, num_cols](
+        _rms_norm_shard[in_dtype, num_cols, epsilon, weight_offset_f32](
             local_rows,
             rs_ref[i],
             prod[i],
             gamma_dev[i],
-            epsilon,
-            weight_offset,
             list_of_ctx[i],
         )
     for i in range(ngpus):
@@ -827,31 +819,15 @@ def _run_prod_oracle_case[
 
     var rate = Float32(normed_mismatch) / Float32(total_elems) * 100.0
     comptime mode_tag = "dispatched-op-vs" if use_dispatch else "fused-vs"
+    var result_tag = (
+        "  <-- BIT-IDENTICAL" if normed_mismatch == 0 else "  <-- diverges"
+    )
     print(
-        String(
-            "  M=",
-            num_rows,
-            " (G=",
-            group_size,
-            " rank0 units=",
-            config.rank_units(0),
-            "): ",
-            mode_tag,
-            "-PRODUCTION mismatch=",
-            normed_mismatch,
-            "/",
-            total_elems,
-            " (",
-            rate,
-            "%) max_ulp=",
-            normed_max_ulp,
-            " | sum_out mismatch=",
-            sum_mismatch,
-            (
-                "  <-- BIT-IDENTICAL" if normed_mismatch
-                == 0 else "  <-- diverges"
-            ),
-        )
+        t"  M={num_rows} (G={group_size} rank0 units={config.rank_units(0)}):"
+        t" {mode_tag}-PRODUCTION"
+        t" mismatch={normed_mismatch}/{total_elems} ({rate}%)"
+        t" max_ulp={normed_max_ulp} | sum_out"
+        t" mismatch={sum_mismatch}{result_tag}"
     )
 
     # sum_out must be bit-identical to the standalone RS shard on AMD at every M
@@ -916,7 +892,7 @@ def _run_residual_case[
     num_cols: Int,
     group_size: Int = ngpus,
     wide_magnitudes: Bool = False,
-](num_rows: Int, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, list_of_ctx: List[DeviceContext[]]) raises:
     """Gate the folded residual against an INDEPENDENT host oracle.
 
     The fold replaces the caller's leader-only pre-add with a per-rank add of
@@ -945,8 +921,9 @@ def _run_residual_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var pre_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
@@ -1264,29 +1241,12 @@ def _run_residual_case[
 
     var normed_frac_gt1 = Float32(normed_gt1_ulp) / Float32(total)
     print(
-        String(
-            "  M=",
-            num_rows,
-            " (G=",
-            group_size,
-            "): residual-fold vs HOST ORACLE mismatch=",
-            oracle_mismatch,
-            "/",
-            total,
-            " | vs leader-add mismatch=",
-            leader_mismatch,
-            " max_ulp=",
-            leader_max_ulp,
-            " | residual-sensitive elems=",
-            changed_by_residual,
-            " | normed vs host frac>1ULP=",
-            normed_frac_gt1 * 100.0,
-            "% max_ulp=",
-            normed_max_ulp,
-            " (arm-vs-arm max_ulp=",
-            normed_arm_max_ulp,
-            ")",
-        )
+        t"  M={num_rows} (G={group_size}): residual-fold vs HOST ORACLE"
+        t" mismatch={oracle_mismatch}/{total} | vs leader-add"
+        t" mismatch={leader_mismatch} max_ulp={leader_max_ulp} |"
+        t" residual-sensitive elems={changed_by_residual} | normed vs host"
+        t" frac>1ULP={normed_frac_gt1 * 100.0}%"
+        t" max_ulp={normed_max_ulp} (arm-vs-arm max_ulp={normed_arm_max_ulp})"
     )
 
     if oracle_mismatch != 0:
@@ -1379,7 +1339,7 @@ def _run_interleaved_barrier_case[
     ngpus: Int,
     group_size: Int,
     num_cols: Int,
-](num_rows: Int, rounds: Int, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, rounds: Int, list_of_ctx: List[DeviceContext[]]) raises:
     """Deadlock gate: a GROUPED fused RS+norm interleaved with a FULL-WORLD
     reduce-scatter on the SAME `Signal` buffers, looped `rounds` times with a
     single up-front barrier init.
@@ -1407,8 +1367,9 @@ def _run_interleaved_barrier_case[
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
@@ -1587,22 +1548,9 @@ def _run_interleaved_barrier_case[
             _ = got^
 
     print(
-        String(
-            "  interleaved barrier (",
-            ngpus,
-            " GPUs, ",
-            ngpus // group_size,
-            "x TP",
-            group_size,
-            ", ",
-            rounds,
-            " rounds, M=",
-            num_rows,
-            "): completed; grouped-sum errors=",
-            grp_bad,
-            " full-world-sum errors=",
-            world_bad,
-        )
+        t"  interleaved barrier ({ngpus} GPUs, {ngpus // group_size}x"
+        t" TP{group_size}, {rounds} rounds, M={num_rows}): completed;"
+        t" grouped-sum errors={grp_bad} full-world-sum errors={world_bad}"
     )
 
     if grp_bad != 0 or world_bad != 0:
@@ -1633,7 +1581,7 @@ def _run_rank_validation_case[
     in_dtype: DType,
     group_size: Int,
     num_cols: Int,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Gate the public API's rank / shard-shape validation.
 
     A wrong-but-in-range rank is a SELF-CONSISTENT out-of-bounds write -- the
@@ -1650,8 +1598,9 @@ def _run_rank_validation_case[
     var config = ReduceScatterConfig[in_dtype, group_size](
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
-    var epsilon = Float32(1e-6)
-    var weight_offset = Scalar[in_dtype](1.0)
+    comptime epsilon = Float32(1e-6)
+    comptime weight_offset_f32 = Float32(1.0)
+    var weight_offset = weight_offset_f32.cast[in_dtype]()
     var length = num_rows * num_cols
     # Allocate for the largest shard so a deliberately mis-sized VIEW below
     # still points at real memory (nothing launches -- the raises fire first).
@@ -1820,20 +1769,13 @@ def _run_grouped_suite[
     The full-world cases cannot fail on any of the grouping logic (local rank ==
     device id, one group, whole-world bins), so these are the only cases that
     cover it."""
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(ngpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "\n=== grouped: ",
-        ngpus,
-        " GPUs as ",
-        ngpus // group_size,
-        "x TP",
-        group_size,
-        " (H=",
-        num_cols,
-        ") ===",
+        t"\n=== grouped:  {ngpus}  GPUs as  {ngpus // group_size} x TP"
+        t" {group_size}  (H= {num_cols} ) ==="
     )
 
     # Every case routes through the dispatch, so `normed_out` bit-identity vs
@@ -1879,7 +1821,7 @@ def _run_grouped_suite[
         wide_magnitudes=True,
     ](8, list_of_ctx)
 
-    print("grouped ", ngpus // group_size, "x TP", group_size, " passed.")
+    print(t"grouped  {ngpus // group_size} x TP {group_size}  passed.")
     _ = list_of_ctx^
 
 
@@ -1891,7 +1833,7 @@ def _run_suite[
     """Run the full correctness suite on `ngpus` GPUs (caller ensures >= ngpus
     are present and P2P is on). Driven at TP2 and TP4 from `main` so a 2-GPU CI
     lane exercises the kernel instead of skipping to a false green."""
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(ngpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 
@@ -1915,11 +1857,8 @@ def _run_suite[
     # M3 config wo=1.0 mbc=True): locates the crossover M* that calibrates
     # RS_NORM_FUSE_THRESHOLD (fuse only where bit-identical to production). ---
     print(
-        "\nfused-vs-production bit-identity sweep (wo=1.0, mbc=True, TP",
-        ngpus,
-        "H=",
-        num_cols,
-        "):",
+        t"\nfused-vs-production bit-identity sweep (wo=1.0, mbc=True, TP"
+        t" {ngpus} H= {num_cols} ):"
     )
     var largest_bit_identical_m = 0
     var smallest_diverging_m = 0
@@ -2045,24 +1984,17 @@ def main() raises:
         _run_grouped_suite[in_dtype, 4, 2, num_cols]()
     else:
         print(
-            "\nSKIPPED grouped-TP coverage (needs >= 4 GPUs, found",
-            num_devices,
-            (
-                "): local-rank remap, group-local slicing, per-group binning"
-                " and the barrier-domain deadlock gate are NOT exercised in"
-                " this run."
-            ),
+            t"\nSKIPPED grouped-TP coverage (needs >= 4 GPUs, found"
+            t" {num_devices} ): local-rank remap, group-local slicing,"
+            t" per-group binning and the barrier-domain deadlock gate are NOT"
+            t" exercised in this run."
         )
     if num_devices >= 8:
         _run_grouped_suite[in_dtype, 8, 4, num_cols]()
     else:
         print(
-            (
-                "\nSKIPPED grouped 2xTP4 (M3's production TP4xDP2 topology,"
-                " needs 8 GPUs, found"
-            ),
-            num_devices,
-            ").",
+            t"\nSKIPPED grouped 2xTP4 (M3's production TP4xDP2 topology, needs"
+            t" 8 GPUs, found {num_devices} )."
         )
 
     print("All fused reduce-scatter + RMSNorm tests passed!")

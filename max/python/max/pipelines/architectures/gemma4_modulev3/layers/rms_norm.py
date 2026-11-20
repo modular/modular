@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.norm.rms_norm import rms_norm
-from max.experimental.sharding import DeviceMapping
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.norm.rms_norm import rms_norm
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
 
 
 class Gemma4RMSNorm(Module[[Tensor], Tensor]):
@@ -40,6 +40,7 @@ class Gemma4RMSNorm(Module[[Tensor], Tensor]):
             self.weight = Tensor.ones([dim])
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x``, scaling by the weight when there is one."""
         if self.with_weight:
             w = self.weight
         else:

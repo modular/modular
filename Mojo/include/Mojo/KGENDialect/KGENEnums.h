@@ -21,7 +21,9 @@
 //===----------------------------------------------------------------------===//
 
 // Pull in all enum type definitions and utility function declarations.
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENEnums.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN {
 
@@ -50,6 +52,9 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     return true;
   }
   llvm_unreachable("invalid argument convention");
@@ -59,6 +64,37 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
 static inline bool isResultSlot(ArgConvention conv) {
   return conv == ArgConvention::ByRefResult ||
          conv == ArgConvention::ByRefError;
+}
+
+/// Return the convention of a variadic pack argument whose elements are passed
+/// as `eltConvention`.
+static inline ArgConvention getPackConvention(ArgConvention eltConvention) {
+  switch (eltConvention) {
+  case ArgConvention::ImmMem:
+    return ArgConvention::PackImmMem;
+  case ArgConvention::Mut:
+    return ArgConvention::PackMut;
+  case ArgConvention::OwnedMem:
+    return ArgConvention::PackOwnedMem;
+  default:
+    llvm_unreachable("unsupported variadic pack element convention");
+  }
+}
+
+/// If `conv` is the convention of a variadic pack argument, return the
+/// convention its elements are passed with.
+static inline std::optional<ArgConvention>
+getPackEltConvention(ArgConvention conv) {
+  switch (conv) {
+  case ArgConvention::PackImmMem:
+    return ArgConvention::ImmMem;
+  case ArgConvention::PackMut:
+    return ArgConvention::Mut;
+  case ArgConvention::PackOwnedMem:
+    return ArgConvention::OwnedMem;
+  default:
+    return std::nullopt;
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -76,15 +112,11 @@ public:
 
   bool isThrows() const { return get(Impl::Throws); }
   bool isAsync() const { return get(Impl::Async); }
-  bool isCapturing() const { return get(Impl::Capturing); }
   bool isCABI() const { return get(Impl::CABI); }
   bool isRefResult() const { return get(Impl::RefResult); }
 
   FnEffects setThrows(bool throws = true) { return set(Impl::Throws, throws); }
   FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
-  FnEffects setCapturing(bool capturing = true) {
-    return set(Impl::Capturing, capturing);
-  }
   FnEffects setCABI(bool value = true) { return set(Impl::CABI, value); }
   FnEffects setRefResult(bool value = true) {
     return set(Impl::RefResult, value);

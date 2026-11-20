@@ -69,6 +69,12 @@ def test_image_provider_options_with_param() -> None:
     assert opts.num_images == 2
 
 
+def test_image_provider_options_caps_num_images() -> None:
+    assert ImageProviderOptions(num_images=4).num_images == 4
+    with pytest.raises(ValidationError, match="less than or equal to 4"):
+        ImageProviderOptions(num_images=5)
+
+
 def test_image_provider_options_frozen() -> None:
     """Test that ImageProviderOptions is frozen (immutable)."""
     opts = ImageProviderOptions(width=512, height=512)

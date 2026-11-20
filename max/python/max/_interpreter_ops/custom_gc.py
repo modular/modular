@@ -33,7 +33,7 @@ from max._interpreter_ops import gc_compile
 from max._mlir_context import in_default_mlir_context
 from max.driver import Device
 from max.dtype import DType
-from max.experimental.custom import (
+from max.functional.custom_op import (
     CustomOp,
     DTypeVar,
     TemplateType,

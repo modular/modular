@@ -124,12 +124,10 @@ def gemm_kernel[
             # Project the warp layout's row index onto A and its column index
             # onto B; `distribute` wraps the thread id modulo the layout size.
             a_reg.copy_from(
-                a_smem_warp_col.distribute[row_major[8]()](
-                    Int(thread_idx.x) // 4
-                )
+                a_smem_warp_col.distribute[row_major[8]()](thread_idx.x // 4)
             )
             b_reg.copy_from(
-                b_smem_warp_row.distribute[row_major[4]()](Int(thread_idx.x))
+                b_smem_warp_row.distribute[row_major[4]()](thread_idx.x)
             )
             outer_product_acc(c_reg, a_reg, b_reg)
 
@@ -143,7 +141,7 @@ def gemm_kernel[
     copy_local_to_dram[thread_layout=warp_layout](c_warp_tile, c_reg)
 
 
-def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
+def test_gemm_kernel_dynamic(ctx: DeviceContext[]) raises:
     comptime NUM_THREADS = 256
     comptime BM = 64
     comptime BN = 64
@@ -248,7 +246,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         comptime nwarmup = 2
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[kernel](
                 mat_c,
                 mat_a.as_imm(),
@@ -278,7 +276,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     _ = b_device
 
 
-def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
+def test_gemm_kernel_minimal(ctx: DeviceContext[]) raises:
     """Minimal debug test with small dimensions to isolate bugs.
 
     Uses single block (64x64) and single K-tile (16) for easier debugging.
@@ -385,16 +383,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
             abs(diff / c_host_ref[i]) if c_host_ref[i] != 0 else 0.0
         )
         print(
-            "  [",
-            i,
-            "] optimized:",
-            c_host[i],
-            " reference:",
-            c_host_ref[i],
-            " diff:",
-            diff,
-            " rel_err:",
-            rel_err,
+            t"  [ {i} ] optimized: {c_host[i]}  reference: {c_host_ref[i]} "
+            t" diff: {diff}  rel_err: {rel_err}"
         )
 
     # Check element at row boundary (element 64 = position [1,0])
@@ -405,16 +395,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         abs(diff / c_host_ref[i]) if c_host_ref[i] != 0 else 0.0
     )
     print(
-        "  [",
-        i,
-        "] (row 1, col 0) optimized:",
-        c_host[i],
-        " reference:",
-        c_host_ref[i],
-        " diff:",
-        diff,
-        " rel_err:",
-        rel_err,
+        t"  [ {i} ] (row 1, col 0) optimized: {c_host[i]}  reference:"
+        t" {c_host_ref[i]}  diff: {diff}  rel_err: {rel_err}"
     )
 
     # Validate all elements
@@ -432,15 +414,8 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
         if not isclose(c_host[i], c_host_ref[i], rtol=3e-4):
             print(
-                "MISMATCH at",
-                i,
-                ":",
-                c_host[i],
-                "vs",
-                c_host_ref[i],
-                "(rel_err:",
-                rel_err,
-                ")",
+                t"MISMATCH at {i} : {c_host[i]} vs {c_host_ref[i]} (rel_err:"
+                t" {rel_err} )"
             )
 
     print("Max relative error:", max_rel_err, "at index", max_err_idx)
@@ -503,15 +478,11 @@ def matmul_kernel_naive[
 
     comptime if transpose_b:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[y, i].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
 
     else:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[i, y].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
 
     comptime assert c.flat_rank >= 2
     c[x, y] = accum.cast[c.dtype]()

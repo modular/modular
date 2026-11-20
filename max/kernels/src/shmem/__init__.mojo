@@ -23,6 +23,7 @@ launch per-GPU threads, as shown below.
 
 ```mojo
 from std.testing import assert_equal
+from max.gpu.host import GridBlockLaunchConfig
 from shmem import shmem_my_pe, shmem_n_pes, shmem_p, SHMEMContext
 
 
@@ -38,7 +39,11 @@ def main() raises:
     with SHMEMContext() as ctx:
         var destination = ctx.enqueue_create_buffer[.int32](1)
         ctx.enqueue_function[simple_shift_kernel](
-            destination, grid_dim=1, block_dim=1
+            destination,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=1,
+                block_dim=1,
+            ),
         )
         ctx.barrier_all()
 

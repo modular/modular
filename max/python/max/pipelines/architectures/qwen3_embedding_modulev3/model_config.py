@@ -10,10 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen3Embedding configuration."""
 
 from dataclasses import dataclass
 from typing import ClassVar
 
+from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
@@ -37,7 +39,28 @@ class Qwen3EmbeddingConfig(ArchConfig):
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
 
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        """The checkpoint's config."""
+        config = self.pipeline_config.model.huggingface_config
+        assert config is not None
+        return config
+
+    @property
+    def devices(self) -> list[DeviceRef]:
+        """The devices the model runs on."""
+        return [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in self.pipeline_config.model.device_specs
+        ]
+
+    @property
+    def pool_embeddings(self) -> bool:
+        """Whether the model returns pooled, normalized embeddings."""
+        return self.pipeline_config.model.pool_embeddings
+
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -46,6 +69,7 @@ class Qwen3EmbeddingConfig(ArchConfig):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The configured ``max_length``, bounded by the checkpoint's."""
         # The configured max_length, bounded by max_position_embeddings.
         model_max = getattr(
             huggingface_config, "max_position_embeddings", 32768
@@ -68,4 +92,5 @@ class Qwen3EmbeddingConfig(ArchConfig):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         return cls(pipeline_config=pipeline_config, max_seq_len=max_seq_len)

@@ -27,17 +27,17 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.sync import schedule_barrier, s_waitcnt
 from std.sys import llvm_intrinsic
-from std.sys.intrinsics import readfirstlane
+from max.gpu.intrinsics import readfirstlane
 
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
-from layout import TensorLayout, TensorEngine, TileTensor
+from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 
 from std.bit import log2_floor
 
@@ -66,16 +66,16 @@ from structured_kernels.amd_tile_io import RegTileWriter, TileLoaderLDS
 struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
     """Block/warp/MMA shape configuration for ping-pong kernels."""
 
-    var block_shape: IndexList[3]
-    var warp_shape: IndexList[3]
-    var mma_shape: IndexList[3]
+    var block_shape: Tuple[Int, Int, Int]
+    var warp_shape: Tuple[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
 
     def __init__(
         out self,
         *,
-        block_shape: IndexList[3],
-        warp_shape: IndexList[3],
-        mma_shape: IndexList[3],
+        block_shape: Tuple[Int, Int, Int],
+        warp_shape: Tuple[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
     ):
         self.block_shape = block_shape
         self.warp_shape = warp_shape
@@ -83,17 +83,21 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
 
     @staticmethod
     def _write_index_list(
-        mut writer: Some[Writer], list: IndexList, sep: StaticString
+        mut writer: Some[Writer], list: Tuple[Int, Int, Int], sep: StaticString
     ):
-        comptime for i in range(list.size):
+        comptime for i in range(3):
             if i != 0:
                 writer.write(sep)
-            writer.write(list[i])
+            writer.write(Int(list[i]))
 
     @inline(.always)
     def num_threads(self) -> Int:
-        var num_warps = self.block_shape // self.warp_shape
-        return num_warps.flattened_length() * WARP_SIZE
+        var num_warps = (
+            (Int(self.block_shape[0]) // Int(self.warp_shape[0]))
+            * (Int(self.block_shape[1]) // Int(self.warp_shape[1]))
+            * (Int(self.block_shape[2]) // Int(self.warp_shape[2]))
+        )
+        return num_warps * WARP_SIZE
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("config_")
@@ -351,7 +355,7 @@ struct AMDPingPongMatmul[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             a_layout: Memory layout of the `a` input tile (inferred).
@@ -398,7 +402,7 @@ struct AMDPingPongMatmul[
     ):
         """Same as `run`, storing `compute_fn(idx, value)` into `c`.
 
-        Launch with `host_arg=compute_fn`.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             a_layout: Memory layout of the `a` input tile (inferred).
@@ -687,6 +691,8 @@ struct AMDPingPongMatmul[
                     s_setprio[Int16(entry.op.wait_value)]()
                 case .SCHEDULE_BARRIER:
                     schedule_barrier()
+                case _:
+                    pass
 
         # Prologue.
         comptime for i in range(schedule.warp_stagger_index):
@@ -731,13 +737,12 @@ struct AMDPingPongMatmul[
                         var m = warp_tile_m + m_mma * MMA_M + thread_m
 
                         if m < M:
-                            comptime src_off = (
-                                m_mma * num_n_mmas * c_frag_size
-                                + n_mma * c_frag_size
-                            )
-                            var v = c_reg.raw_load[width=c_frag_size](
-                                src_off
-                            ).cast[Self.c_type]()
+                            var v = c_reg.load[
+                                width=c_frag_size,
+                                alignment=align_of[Self.accum_dtype](),
+                            ](Coord(m_mma, n_mma * c_frag_size)).cast[
+                                Self.c_type
+                            ]()
 
                             comptime if MMA_M == 32:
                                 for e in range(c_frag_size):
@@ -750,10 +755,8 @@ struct AMDPingPongMatmul[
                                     )
                                     if col < N:
                                         comptime if has_compute_fn:
-                                            c.store_linear[
-                                                alignment=scalar_align
-                                            ](
-                                                IndexList[2](m, col),
+                                            c.store[alignment=scalar_align](
+                                                Coord(m, col),
                                                 compute_fn[
                                                     Self.c_type, 1, alignment=1
                                                 ](
@@ -778,8 +781,8 @@ struct AMDPingPongMatmul[
                                 )
                                 if n < N:
                                     comptime if has_compute_fn:
-                                        c.store_linear[alignment=scalar_align](
-                                            IndexList[2](m, n),
+                                        c.store[alignment=scalar_align](
+                                            Coord(m, n),
                                             compute_fn[
                                                 Self.c_type,
                                                 c_frag_size,
@@ -869,11 +872,13 @@ def amd_ping_pong_matmul[
             a,
             b,
             c,
-            grid_dim=(
-                ceildiv(N, config.block_shape[1]),
-                ceildiv(M, config.block_shape[0]),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    ceildiv(N, config.block_shape[1]),
+                    ceildiv(M, config.block_shape[0]),
+                ),
+                block_dim=config.num_threads(),
             ),
-            block_dim=config.num_threads(),
         )
 
     # Dispatch: FP8 uses 16x16x128 MMA with BK=128.
@@ -890,30 +895,30 @@ def amd_ping_pong_matmul[
 
         # Standard 256x256 config
         comptime config_16x16 = KernelConfig(
-            block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM // 2, BN // 4, BK),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(BM, BN, BK),
+            warp_shape=(BM // 2, BN // 4, BK),
+            mma_shape=(16, 16, 128),
         )
 
         # Skinny 128x256 config (170 FLOP/B, 96 KB LDS)
         comptime skinny_config = KernelConfig(
-            block_shape=Index(128, BN, BK),
-            warp_shape=Index(64, BN // 4, BK),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(128, BN, BK),
+            warp_shape=(64, BN // 4, BK),
+            mma_shape=(16, 16, 128),
         )
 
         # Alternative 256x256 config with 32x32x64 MMA
         comptime config_32x32 = KernelConfig(
-            block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM // 2, BN // 4, BK),
-            mma_shape=Index(32, 32, 64),
+            block_shape=(BM, BN, BK),
+            warp_shape=(BM // 2, BN // 4, BK),
+            mma_shape=(32, 32, 64),
         )
 
         # Small K configuration with 32x32x64 MMA and BK=64
         comptime config_32x32x64 = KernelConfig(
-            block_shape=Index(BM, BN, 64),
-            warp_shape=Index(BM // 2, BN // 4, 64),
-            mma_shape=Index(32, 32, 64),
+            block_shape=(BM, BN, 64),
+            warp_shape=(BM // 2, BN // 4, 64),
+            mma_shape=(32, 32, 64),
         )
 
         # Skinny wins in a mid-M band whose boundaries depend on N:
@@ -930,8 +935,8 @@ def amd_ping_pong_matmul[
         comptime BN = 256
         comptime BK = 64
         comptime config = KernelConfig(
-            block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM // 2, BN // 4, BK),
-            mma_shape=Index(16, 16, 32),
+            block_shape=(BM, BN, BK),
+            warp_shape=(BM // 2, BN // 4, BK),
+            mma_shape=(16, 16, 32),
         )
         run_kernel[config]()

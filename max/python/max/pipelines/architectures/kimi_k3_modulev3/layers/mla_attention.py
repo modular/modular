@@ -1,0 +1,627 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Kimi K3's multi-latent attention (ModuleV3).
+
+``forward`` is the padded/parity form K3's own 0.4B fixture validates
+against. ``forward_ragged`` and ``forward_latent_ragged`` serve over a real
+paged KV cache instead -- the former decompressed, the latter the
+compressed-latent form K3 actually serves.
+
+Neither ``deepseekV3_modulev3``'s ``QuantizedLatentAttentionWithRope`` nor the
+generic V3 building block (``max.nn.common_layers.multi_latent_attention.LatentAttentionWithRope``)
+can be wrapped for this layer:
+
+* NO POSITIONAL ENCODING ANYWHERE. ``mla_use_nope`` is true: there is no
+  ``apply_rotary_pos_emb`` call at all, and the ``qk_rope_head_dim``-wide
+  slice is still split off and re-concatenated, UNROTATED.
+* AN OUTPUT GATE neither V3 class has: ``attn *= sigmoid(g_proj(x))`` BEFORE
+  ``o_proj``, gating on the layer's INPUT, not the attention output. Both V3
+  classes call their own ``o_proj`` internally with no seam to insert this.
+
+This block instead calls the same shared kernel-level primitive the V3
+attention building blocks call (``flash_attention_gpu``) directly, writing
+K3-native orchestration around it -- the same pattern ``moe_latent.py``
+uses for the MoE expert-compute side.
+
+Two more facts this mirrors exactly from the official reference
+(``modeling_kimi_linear.py``), easy to get wrong silently:
+
+* ``scaling`` is ``q_head_dim ** -0.5``, not ``v_head_dim ** -0.5``.
+* ``k_rot`` (the rope-shaped slice) is MQA-shared -- one copy broadcast across
+  every head -- while ``k_pass``/``v`` are per-head.
+
+``q_head_dim`` and ``v_head_dim`` differ, so ``v`` is zero-padded to
+``q_head_dim`` for the fused kernel and the output sliced back -- the
+reference's own recipe, not a workaround.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+import numpy as np
+from max import functional as F
+from max.driver import (
+    CPU,
+    Device,
+    accelerator_architecture_name,
+    accelerator_count,
+)
+from max.dtype import DType
+from max.nn import Linear, Module
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
+from max.nn.kernels import (
+    flare_mla_prefill_plan,
+    flash_attention_gpu,
+    flash_attention_ragged,
+    mla_prefill_decode_graph,
+    store_k_cache_ragged,
+    store_v_cache_ragged,
+)
+from max.nn.kv_cache import KVCacheParams
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
+
+from .tensor_parallel import check_divisible, fuse_rows
+
+# K3's q_a_layernorm/kv_a_layernorm always use this epsilon, independent of
+# the model's general `rms_norm_eps`.
+_KIMI_QKV_A_LAYERNORM_EPS = 1e-6
+
+# The accelerator whose MLA kernel folds the output gate into its `w_uv`
+# projection store.
+_FUSED_MLA_GATE_ARCH = "gfx950"
+
+
+@lru_cache(maxsize=1)
+def _folds_output_gate() -> bool:
+    """Whether this accelerator's MLA kernel folds the layer's output gate.
+
+    The kernel-side fold is target-generic; only gfx950 enables it because
+    that is where it is validated and measured. Other targets keep the
+    separate launch until benchmarked there.
+
+    The fold saves this layer's own ``attn * sigmoid(gate)`` launch by applying
+    the gate inside the kernel: in the decode branch's ``w_uv`` projection
+    store, or in one pass of the prefill branch, which is exactly the multiply
+    it replaces. Which branch runs is the kernel's run-time decision on the
+    batch's max query length, never this layer's; a trace-time row count cannot
+    see a served graph's symbolic extent and would leave every served batch
+    unfused. Asked once per process, since the architecture is process-wide and
+    the probe builds a device handle a step must not pay per layer.
+    """
+    # `accelerator_architecture_name()` raises on a GPU-less host, so the
+    # count check comes first and keeps such a host on the unfused chain.
+    return (
+        accelerator_count() > 0
+        and accelerator_architecture_name().startswith(_FUSED_MLA_GATE_ARCH)
+    )
+
+
+class KimiK3MLAAttention(Module[..., Tensor]):
+    """One ``KimiMLAAttention`` layer: no rotation, output-gated.
+
+    ``forward`` is padded/parity. ``forward_ragged`` and
+    ``forward_latent_ragged`` serve the same layer over a real paged KV
+    cache, decompressed and compressed-latent respectively -- see the module
+    docstring.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        qk_nope_head_dim: int,
+        qk_rope_head_dim: int,
+        v_head_dim: int,
+        q_lora_rank: int,
+        kv_lora_rank: int,
+        kv_params: KVCacheParams | None = None,
+        layer_idx: int = 0,
+    ) -> None:
+        """Builds the MLA attention.
+
+        Args:
+            hidden_size: ``config.hidden_size``.
+            num_heads: ``config.num_attention_heads``.
+            qk_nope_head_dim: ``config.qk_nope_head_dim`` -- the un-encoded
+            query/key width per head.
+            qk_rope_head_dim: ``config.qk_rope_head_dim`` -- the width of the
+            MQA-shared slice a RoPE-shaped port would rotate; this model
+            never does.
+            v_head_dim: ``config.v_head_dim``.
+            q_lora_rank: ``config.q_lora_rank``.
+            kv_lora_rank: ``config.kv_lora_rank`` -- latent width of the
+            compressed key/value.
+            kv_params: Required for :meth:`forward_ragged` and
+            :meth:`forward_latent_ragged`; this layer's leaf of the model's
+            cache tree.
+            layer_idx: This layer's position among the model's full-attention
+            layers, for :meth:`forward_ragged` and
+            :meth:`forward_latent_ragged`.
+        """
+        super().__init__()
+        self.num_heads = num_heads
+        self.qk_nope_head_dim = qk_nope_head_dim
+        self.qk_rope_head_dim = qk_rope_head_dim
+        self.q_head_dim = qk_nope_head_dim + qk_rope_head_dim
+        self.v_head_dim = v_head_dim
+        self.q_lora_rank = q_lora_rank
+        self.kv_lora_rank = kv_lora_rank
+        self.kv_params = kv_params
+        self.layer_idx = layer_idx
+
+        # The three projections that read the layer input, as the checkpoint
+        # stores them; `input_projections` runs them as one GEMM.
+        self.q_a_proj = Linear(
+            in_dim=hidden_size, out_dim=q_lora_rank, bias=False
+        )
+        self.kv_a_proj_with_mqa = Linear(
+            in_dim=hidden_size,
+            out_dim=kv_lora_rank + qk_rope_head_dim,
+            bias=False,
+        )
+        self.g_proj = Linear(
+            in_dim=hidden_size, out_dim=num_heads * v_head_dim, bias=False
+        )
+        self.q_a_layernorm = RMSNorm(q_lora_rank, eps=_KIMI_QKV_A_LAYERNORM_EPS)
+        self.q_b_proj = Linear(
+            in_dim=q_lora_rank,
+            out_dim=num_heads * self.q_head_dim,
+            bias=False,
+        )
+        self.kv_a_layernorm = RMSNorm(
+            kv_lora_rank, eps=_KIMI_QKV_A_LAYERNORM_EPS
+        )
+        self.kv_b_proj = Linear(
+            in_dim=kv_lora_rank,
+            out_dim=num_heads * (qk_nope_head_dim + v_head_dim),
+            bias=False,
+        )
+        self.o_proj = Linear(
+            in_dim=num_heads * v_head_dim, out_dim=hidden_size, bias=False
+        )
+
+    def input_projections(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """Runs the fused input GEMM and splits out its three projections.
+
+        Args:
+            x: The layer input, ``hidden_size`` wide on its last axis.
+
+        Returns:
+            ``(q_a, kv_a, gate_pre)`` over ``x``'s leading axes: the query
+            latent and the compressed key/value with its MQA rope tail, both
+            unnormalized and replicated, and the output gate's pre-sigmoid
+            logits, sharded by head under TP.
+        """
+        # q_a and kv_a are replicated while the gate is head-sharded, so each
+        # rank's block of the fused weight is [q_a | kv_a | g_r], with its own
+        # copy of q_a and kv_a. The fuse depends only on weights, so it runs
+        # once, at initialization.
+        weight = fuse_rows(
+            [
+                self.q_a_proj.weight,
+                self.kv_a_proj_with_mqa.weight,
+                self.g_proj.weight,
+            ]
+        )
+        mesh = weight.mesh
+        tp_size = mesh.axis_size(TP) if TP in mesh.axis_names else 1
+        # The sizes are GLOBAL: a distributed `split` sections each rank's
+        # own [q_a | kv_a | g_r] block.
+        q_a, kv_a, gate_pre = (x.cast(weight.dtype) @ weight.T).split(
+            [
+                tp_size * self.q_lora_rank,
+                tp_size * (self.kv_lora_rank + self.qk_rope_head_dim),
+                self.num_heads * self.v_head_dim,
+            ],
+            axis=-1,
+        )
+        if tp_size > 1:
+            # Every rank's q_a and kv_a pieces are whole copies, not shards:
+            # restate them replicated, as their own GEMMs on a replicated
+            # weight would have produced them.
+            replicated = NamedMapping(q_a.mesh, (None,) * q_a.rank)
+            q_a = q_a.rebind_mapping(replicated)
+            kv_a = kv_a.rebind_mapping(replicated)
+        return q_a, kv_a, gate_pre
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Runs the MLA attention over ``x``.
+
+        Args:
+            x: ``[batch, seq_len, hidden]`` layer input -- also the source
+                of the output gate, so it is read twice.
+
+        Returns:
+            ``[batch, seq_len, hidden]``.
+        """
+        batch, seq_len = x.shape[0], x.shape[1]
+        q_a, compressed_kv, gate_pre = self.input_projections(x)
+
+        q_lat = self.q_a_layernorm(q_a)
+        q = F.reshape(
+            self.q_b_proj(q_lat),
+            [batch, seq_len, self.num_heads, self.q_head_dim],
+        )
+        # This is the identity, since nothing is applied to the rope slice.
+        # Writing it out (instead of just `query = q`) keeps this the exact
+        # site where a RoPE implementation would rotate the slice.
+        query = F.concat(
+            [
+                q[..., : self.qk_nope_head_dim],
+                q[..., self.qk_nope_head_dim :],
+            ],
+            axis=-1,
+        )
+
+        kv = F.reshape(
+            self.kv_b_proj(
+                self.kv_a_layernorm(compressed_kv[..., : self.kv_lora_rank])
+            ),
+            [
+                batch,
+                seq_len,
+                self.num_heads,
+                self.qk_nope_head_dim + self.v_head_dim,
+            ],
+        )
+        if kv.is_distributed:
+            # The slices below need a resolved placement.
+            kv = kv.rebind_mapping(
+                NamedMapping(kv.mesh, (None, None, TP, None))
+            )
+        k_rot = F.broadcast_to(
+            F.unsqueeze(compressed_kv[..., self.kv_lora_rank :], 2),
+            [batch, seq_len, self.num_heads, self.qk_rope_head_dim],
+        )
+        if k_rot.is_distributed:
+            # `concat` does not reshard its replicated operand to match.
+            k_rot = k_rot.to(NamedMapping(k_rot.mesh, (None, None, TP, None)))
+        key = F.concat([kv[..., : self.qk_nope_head_dim], k_rot], axis=-1)
+        value = kv[..., self.qk_nope_head_dim :]
+
+        attn = flash_attention_gpu(
+            query,
+            key,
+            F.pad(
+                value,
+                [0, 0, 0, 0, 0, 0, 0, self.q_head_dim - self.v_head_dim],
+            ),
+            MHAMaskVariant.CAUSAL_MASK,
+            float(self.q_head_dim**-0.5),
+        )
+        # `flash_attention_gpu` has no sharding rule, so restate the
+        # placement before slicing.
+        attn = attn.rebind_mapping(
+            NamedMapping(attn.mesh, (None, None, TP, None))
+        )
+        attn = F.reshape(
+            attn[..., : self.v_head_dim],
+            [batch, seq_len, self.num_heads * self.v_head_dim],
+        )
+
+        # Activated where it multiplies, so the sigmoid fuses into the
+        # product instead of running as its own launch after the GEMM.
+        return self.o_proj(attn * F.sigmoid(gate_pre))
+
+    def forward_ragged(
+        self,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        input_row_offsets: Tensor,
+    ) -> Tensor:
+        """Serves this layer over a decompressed (per-head K/V) paged cache.
+
+        Same arithmetic as :meth:`forward`, ragged instead of padded, with
+        K and V materialized per head and written to the cache so a decode
+        step attends over history instead of recomputing it. Costs
+        ``2 * num_heads * q_head_dim`` bytes per token per layer against
+        :meth:`forward_latent_ragged`'s ``kv_lora_rank + qk_rope_head_dim``
+        -- use this only where the latent path's kernel constraints bar it;
+        see ``model_config.py``'s ``supports_mla_latent_cache``.
+
+        Args:
+            x: ``[total_seq_len, hidden]`` ragged layer input.
+            kv_collection: Paged cache handle for this batch.
+            input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
+
+        Returns:
+            ``[total_seq_len, hidden]``.
+        """
+        assert self.kv_params is not None, (
+            "KimiK3MLAAttention needs kv_params to serve forward_ragged"
+        )
+        total_seq_len = x.shape[0]
+        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        q_a, compressed_kv, gate_pre = self.input_projections(x)
+
+        q_lat = self.q_a_layernorm(q_a)
+        query = F.reshape(
+            self.q_b_proj(q_lat),
+            [total_seq_len, self.num_heads, self.q_head_dim],
+        )
+
+        kv = F.reshape(
+            self.kv_b_proj(
+                self.kv_a_layernorm(compressed_kv[:, : self.kv_lora_rank])
+            ),
+            [
+                total_seq_len,
+                self.num_heads,
+                self.qk_nope_head_dim + self.v_head_dim,
+            ],
+        )
+        if kv.is_distributed:
+            # The slices below need a resolved placement.
+            kv = kv.rebind_mapping(NamedMapping(kv.mesh, (None, TP, None)))
+        k_rot = F.broadcast_to(
+            F.unsqueeze(compressed_kv[:, self.kv_lora_rank :], 1),
+            [total_seq_len, self.num_heads, self.qk_rope_head_dim],
+        )
+        if k_rot.is_distributed:
+            # `concat` does not reshard its replicated operand to match.
+            k_rot = k_rot.to(NamedMapping(k_rot.mesh, (None, TP, None)))
+        key = F.concat([kv[:, :, : self.qk_nope_head_dim], k_rot], axis=-1)
+        value = F.pad(
+            kv[:, :, self.qk_nope_head_dim :],
+            [0, 0, 0, 0, 0, self.q_head_dim - self.v_head_dim],
+        )
+
+        store_k_cache_ragged(kv_collection, key, input_row_offsets, layer_idx)
+        store_v_cache_ragged(kv_collection, value, input_row_offsets, layer_idx)
+
+        attn = flash_attention_ragged(
+            self.kv_params,
+            input=query,
+            input_row_offsets=input_row_offsets,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=float(self.q_head_dim**-0.5),
+        )
+        if attn.is_distributed:
+            attn = attn.rebind_mapping(
+                NamedMapping(attn.mesh, (None, TP, None))
+            )
+        attn = F.reshape(
+            attn[:, :, : self.v_head_dim],
+            [total_seq_len, self.num_heads * self.v_head_dim],
+        )
+
+        return self.o_proj(attn * F.sigmoid(gate_pre))
+
+    def forward_latent_ragged(
+        self,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        input_row_offsets: Tensor,
+        prefill_plan: MLAPrefillMetadata,
+        freqs_cis: Tensor,
+    ) -> Tensor:
+        """K3's production serving form: ragged, over a compressed latent cache.
+
+        Same arithmetic as :meth:`forward`, reached a different way. The cache
+        holds the COMPRESSED latent -- one ``kv_lora_rank + qk_rope_head_dim``
+        vector per token, not per-head K and V, 64x fewer bytes -- so
+        ``kv_b_proj`` is absorbed into the kernel instead of materialized:
+        prefill decompresses a bounded window of the cache through ``w_k`` and
+        ``w_uv``; decode projects query into the latent space through ``w_uk``
+        and projects the attention output back out through ``w_uv``, so no
+        per-head K or V is ever formed.
+
+        Args:
+            x: ``[total_seq_len, hidden]`` ragged layer input.
+            kv_collection: Paged cache handle for this batch, from an MLA
+                cache (``n_kv_heads`` 1, ``head_dim`` ``kv_lora_rank +
+                qk_rope_head_dim``).
+            input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
+            prefill_plan: This device's one-shot prefill plan, shared across
+                every MLA layer this step -- see
+                :func:`kimi_k3_mla_prefill_plan`.
+            freqs_cis: The identity rotation -- see
+                :func:`kimi_k3_nope_freqs_cis`.
+
+        Returns:
+            ``[total_seq_len, hidden]``.
+        """
+        assert self.kv_params is not None, (
+            "KimiK3MLAAttention needs kv_params to serve forward_latent_ragged"
+        )
+        total_seq_len = x.shape[0]
+        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        # `kv` stays UNNORMALIZED: the kernel normalizes the latent half in
+        # place in the cache after storing it, so normalizing here would
+        # apply the gain twice.
+        q_a, kv, gate_pre = self.input_projections(x)
+
+        q_lat = self.q_a_layernorm(q_a)
+        query = F.reshape(
+            self.q_b_proj(q_lat),
+            [total_seq_len, self.num_heads, self.q_head_dim],
+        )
+
+        # `kv_b_proj.weight` is `[heads * (qk_nope + v_head_dim), kv_lora_rank]`
+        # with each head's rows contiguous, so a row-sharded TP copy keeps
+        # whole heads and this reshape holds per device.
+        kv_b = F.reshape(
+            self.kv_b_proj.weight.T,
+            [
+                self.kv_lora_rank,
+                self.num_heads,
+                self.qk_nope_head_dim + self.v_head_dim,
+            ],
+        )
+        if kv_b.is_distributed:
+            kv_b = kv_b.rebind_mapping(
+                NamedMapping(kv_b.mesh, (None, TP, None))
+            )
+        w_uk_base = kv_b[:, :, : self.qk_nope_head_dim]
+
+        # The kernel applies the gate when its decode branch runs and falls
+        # back to one gated pass on the prefill branch, so the result does not
+        # depend on which branch the batch takes.
+        fuse_output_gate = _folds_output_gate()
+
+        attn = mla_prefill_decode_graph(
+            q=query,
+            kv=kv,
+            input_row_offsets=input_row_offsets,
+            freqs_cis=F.cast(freqs_cis, query.dtype),
+            kv_norm_gamma=self.kv_a_layernorm.weight,
+            buffer_row_offsets=prefill_plan.buffer_row_offsets,
+            cache_offsets=prefill_plan.cache_offsets,
+            buffer_length=prefill_plan.buffer_lengths,
+            # The same K up-projection twice: `[heads * qk_nope, rank]` for
+            # prefill's plain matmul, `[heads, qk_nope, rank]` for decode's
+            # per-head batched one.
+            w_k=F.reshape(
+                F.permute(w_uk_base, [1, 2, 0]), [-1, self.kv_lora_rank]
+            ),
+            w_uk=F.transpose(w_uk_base, 0, 1),
+            w_uv=F.permute(kv_b[:, :, self.qk_nope_head_dim :], [1, 2, 0]),
+            kv_params=self.kv_params,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=float(self.q_head_dim**-0.5),
+            epsilon=_KIMI_QKV_A_LAYERNORM_EPS,
+            v_head_dim=self.v_head_dim,
+            scalar_args=_require_mla_cache_field(
+                kv_collection.attention_dispatch_metadata,
+                "attention_dispatch_metadata",
+            ),
+            num_partitions_scalar=_require_mla_cache_field(
+                kv_collection.mla_num_partitions, "mla_num_partitions"
+            ),
+            # Folded by the kernel when this accelerator's MLA kernel has the
+            # fold; see `_folds_output_gate`.
+            output_gate=gate_pre if fuse_output_gate else None,
+        )
+        if attn.is_distributed:
+            attn = attn.rebind_mapping(
+                NamedMapping(attn.mesh, (None, TP, None))
+            )
+        attn = F.reshape(
+            attn, [total_seq_len, self.num_heads * self.v_head_dim]
+        )
+
+        if fuse_output_gate:
+            return self.o_proj(attn)
+        return self.o_proj(attn * F.sigmoid(gate_pre))
+
+
+def kimi_k3_mla_prefill_plan(
+    *,
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    input_row_offsets: Tensor,
+    buffer_size: int,
+    buffer_length: Tensor,
+) -> MLAPrefillMetadata:
+    """Plans the one-shot decompression buffer the latent prefill kernel fills.
+
+    Reads only cache lengths and row offsets, neither of which varies by
+    layer, so call this once per device per step and share the result across
+    every :meth:`KimiK3MLAAttention.forward_latent_ragged` call that step --
+    not once per layer.
+
+    The device plan is draft-aware by construction: it is computed on device
+    from the runtime ``cache_lengths`` and ``input_row_offsets`` tensors, so a
+    speculative verify step's ``(1 + K)``-rows-per-request window is planned
+    at its true ``align_up(cache_length + active_length, page_size)`` width.
+    The host-side ``buffer_size`` cap is the decode-assumption risk: the
+    plan kernel clamps every chunk to it and, at ``max_chunks=1``, silently
+    drops the rest -- size it with :func:`spec_mla.kimi_k3_mla_buffer_size`,
+    never from the plain decode-step budget.
+
+    ``buffer_length`` is the host extent the caller sized for this step --
+    the kernel reads it on the host, so it must cover the plan's real total:
+    the cache-to-buffer copy zero-fills an oversized extent past the
+    plan's rows, while an undersized one silently corrupts, the copy
+    launching only the rows it names. Never read the plan's own extent back from the device
+    instead: that read synchronizes with the host, so a graph holding it
+    cannot be device-captured.
+    """
+    layer_idx = F.constant(0, DType.uint32, device=CPU())
+    buffer_row_offsets, cache_offsets, _ = flare_mla_prefill_plan(
+        kv_params,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        buffer_size,
+        max_chunks=1,
+    )
+    return MLAPrefillMetadata(
+        buffer_row_offsets=buffer_row_offsets,
+        cache_offsets=cache_offsets,
+        buffer_lengths=buffer_length,
+    )
+
+
+def kimi_k3_nope_freqs_cis(
+    *, max_seq_len: int, qk_rope_head_dim: int, dtype: DType, device: Device
+) -> Tensor:
+    """Returns the identity rotation the fused MLA kernels apply as their RoPE.
+
+    K3 is NoPE: the rope-shaped slice is split off and re-concatenated
+    unrotated, but the fused MLA kernels have no no-rope path -- they always
+    rotate q and the key cache by ``freqs_cis``, interleaved as (cos, sin)
+    pairs. Feeding cos=1, sin=0 makes that rotation exactly the identity,
+    bit-exact in every float format -- the same trick
+    ``fused_qk_rope.get_identity_rope_coeff`` uses in-kernel.
+    """
+    identity = np.zeros((max_seq_len, qk_rope_head_dim), dtype=np.float32)
+    identity[:, 0::2] = 1.0
+    return Tensor(identity, device=device).cast(dtype)
+
+
+def _require_mla_cache_field(value: Tensor | None, name: str) -> Tensor:
+    """Names the missing MLA cache input rather than tripping an assert later."""
+    if value is None:
+        raise ValueError(
+            f"Kimi K3's latent MLA layers need {name}, which only an MLA KV"
+            " cache provides."
+        )
+    return value
+
+
+def tensor_parallel_mla_attention(
+    layer: KimiK3MLAAttention, mesh: DeviceMesh
+) -> KimiK3MLAAttention:
+    """Shards an MLA layer by head along the ``tp`` mesh axis.
+
+    Follows ``deepseekV3_modulev3``'s
+    ``tensor_parallel_latent_attention_with_rope``: the latent projections
+    stay replicated, ``q_b_proj`` and ``kv_b_proj`` are sharded on their
+    output dim, and ``o_proj`` is sharded on its input dim, so the caller
+    must allreduce the output. The head-sharded output gate joins the
+    latent projections in one GEMM (``input_projections``).
+    """
+    tp_size = mesh.axis_size(TP)
+    if tp_size == 1:
+        return layer
+    check_divisible("MLA head count", layer.num_heads, tp_size)
+
+    row_mapping = NamedMapping(mesh, (TP, None))
+    layer.g_proj.weight = layer.g_proj.weight.to(row_mapping)
+    layer.q_b_proj.weight = layer.q_b_proj.weight.to(row_mapping)
+    layer.kv_b_proj.weight = layer.kv_b_proj.weight.to(row_mapping)
+    layer.o_proj.weight = layer.o_proj.weight.to(NamedMapping(mesh, (None, TP)))
+    return layer

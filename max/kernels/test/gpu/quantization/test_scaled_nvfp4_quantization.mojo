@@ -74,9 +74,9 @@ def test_dynamic_fp4_quant[
     # Run the quantization kernel
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        output_tensor.as_unsafe_any_origin(),
-        scales_tensor.as_unsafe_any_origin(),
-        input_tensor.as_unsafe_any_origin(),
+        output_tensor,
+        scales_tensor,
+        input_tensor.as_imm(),
         num_cols=n,
         num_cols_padded=n,
         tensor_sf=tensor_sf,
@@ -122,7 +122,7 @@ def test_dynamic_fp4_quant[
                         var fp8_sf = get_scale_factor[
                             SF_VECTOR_SIZE=SF_VECTOR_SIZE
                         ](
-                            scales_tensor_host.as_unsafe_any_origin(),
+                            scales_tensor_host,
                             row_idx,
                             col_idx,
                         )

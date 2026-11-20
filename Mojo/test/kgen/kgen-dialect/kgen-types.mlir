@@ -64,6 +64,43 @@ kgen.func @trait_param_pack(
   hlcf.return
 }
 
+// COM: `(...)` is a layout. `[...]` or an expression has no domain unless it
+// COM: says `layout` or `value`. A layout keeps only the layout half of each
+// COM: element, and a value struct keeps what it is given, even plain elements.
+// CHECK-LABEL: @struct_domains
+// CHECK-SAME: %arg0: !kgen.struct<(index, f32)>,
+// CHECK-SAME: %arg1: !kgen.struct<[index, f32]>,
+// CHECK-SAME: %arg2: !kgen.struct<[index, f32] value>,
+// CHECK-SAME: %arg3: !kgen.struct<(T)>,
+// CHECK-SAME: %arg4: !kgen.struct<[T]>,
+// CHECK-SAME: %arg5: !kgen.struct<(T)>,
+// CHECK-SAME: %arg6: !kgen.struct<[T] value>,
+// CHECK-SAME: %arg7: !kgen.struct<Ts>,
+// CHECK-SAME: %arg8: !kgen.struct<Ts layout>,
+// CHECK-SAME: %arg9: !kgen.struct<Ts value>,
+// CHECK-SAME: %arg10: !kgen.struct<Ts isParamPack layout align(8)>,
+// CHECK-SAME: %arg11: !kgen.struct<{{\[\[}}typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>{{\]\]}}>,
+// CHECK-SAME: %arg12: !kgen.struct<(struct<(scalar<f32>)>)>,
+// CHECK-SAME: %arg13: !kgen.struct<{{\[\[}}typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>{{\]\]}} value>
+kgen.generator @struct_domains<T: type, Ts: param_list<type>>(
+  %arg0: !kgen.struct<(index, f32)>,
+  %arg1: !kgen.struct<[index, f32]>,
+  %arg2: !kgen.struct<[index, f32] value>,
+  %arg3: !kgen.struct<(T)>,
+  %arg4: !kgen.struct<[T]>,
+  %arg5: !kgen.struct<[T] layout>,
+  %arg6: !kgen.struct<[T] value>,
+  %arg7: !kgen.struct<Ts>,
+  %arg8: !kgen.struct<Ts layout>,
+  %arg9: !kgen.struct<Ts value>,
+  %arg10: !kgen.struct<Ts isParamPack layout align(8)>,
+  %arg11: !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]]>,
+  %arg12: !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]] layout>,
+  %arg13: !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]] value>
+) {
+  hlcf.return
+}
+
 // CHECK-LABEL: @aligned_struct
 // CHECK-SAME: %arg0: !kgen.struct<(index) align(64)>,
 // CHECK-SAME: %arg1: !kgen.struct<(index) memoryOnly align(128)>

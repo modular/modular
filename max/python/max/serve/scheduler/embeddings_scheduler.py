@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Scheduler for embedding requests."""
+
 import logging
 import queue
 from dataclasses import dataclass
@@ -41,6 +43,8 @@ class EmbeddingsSchedulerConfig:
 
 
 class EmbeddingsScheduler(Scheduler):
+    """Schedules embedding requests."""
+
     def __init__(
         self,
         scheduler_config: EmbeddingsSchedulerConfig,
@@ -80,7 +84,7 @@ class EmbeddingsScheduler(Scheduler):
         return batch
 
     def run_iteration(self) -> SchedulerProgress:
-        """The Scheduler loop that creates batches and schedules them on GPU
+        """The Scheduler loop that creates batches and schedules them on GPU.
 
         Returns:
             SchedulerProgress: Indicates whether work was performed in this iteration.
@@ -98,7 +102,7 @@ class EmbeddingsScheduler(Scheduler):
         batch_executed: dict[RequestID, EmbeddingsContext],
         batch_response: dict[RequestID, EmbeddingsGenerationOutput],
     ) -> None:
-        """Task that handles responses"""
+        """Task that handles responses."""
         already_terminated = set()
         terminated = batch_executed.keys() - batch_response.keys()
         for req_id in terminated:

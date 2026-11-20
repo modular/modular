@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 
 import max.gpu.primitives.warp as warp
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from linalg.gemv import gemv_kernel
@@ -24,16 +24,16 @@ from std.testing import assert_false
 from std.utils.numerics import isnan
 
 
-def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext[]) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
-    var a_host = alloc[BFloat16](M * K)
-    var b_host = alloc[BFloat16](K * N)
-    var c_host = alloc[Float32](M * N)
-    var a_host_n = alloc[Float32](M * K)
-    var b_host_n = alloc[Float32](K * N)
-    var c_host_n = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[BFloat16](M * K)
+    var b_host = unsafe_alloc[BFloat16](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var a_host_n = unsafe_alloc[Float32](M * K)
+    var b_host_n = unsafe_alloc[Float32](K * N)
+    var c_host_n = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = BFloat16(i)
@@ -63,7 +63,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     comptime kernel = gemv_kernel[.float32, .bfloat16, .bfloat16]
 
     @inline(.always)
-    def run_func_gemv(ctx: DeviceContext) raises {imm}:
+    def run_func_gemv(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
@@ -72,7 +72,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
             Int32(N),
             Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            block_dim=ctx.default_device_info.warp_size * WARPS_PER_BLOCK,
         )
 
     var kernelType = "GEMV"
@@ -115,7 +115,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     )
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             .float32,
             .float32,

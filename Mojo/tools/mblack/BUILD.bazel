@@ -64,9 +64,9 @@ _VALIDATE_EXCLUDE = [
     "tests/test_backtick_bracket_scan.py",
     # Keep the deprecated `__match` spelling parseable for source migration.
     "tests/test_match_formatting.py",
-    # Samples include `__enum` declarations the compiler rejects (e.g. a body
-    # of `pass`).
+    # Samples include `__enum` and `__union` declarations the compiler rejects.
     "tests/test_enum_formatting.py",
+    "tests/test_union_formatting.py",
 ]
 
 # Companion to `unit_tests` that compiles every sample with `mojo build`.
@@ -93,17 +93,9 @@ modular_py_test(
     ],
 )
 
-# TODO: Should we do anything with these? Maybe delete some of them?
 filegroup(
     name = "unreferenced-files",
     srcs = [
-        "action/main.py",
-        "scripts/__init__.py",
-        "scripts/check_pre_commit_rev_in_example.py",
-        "scripts/check_version_in_basics_example.py",
-        "scripts/diff_shades_gha_helper.py",
-        "scripts/fuzz.py",
-        "scripts/migrate-black.py",
         "src/mblib2to3/README",
     ],
     tags = ["maybe-unused"],

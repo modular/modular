@@ -11,8 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.format.tstring import _encode_format_string
-from std.testing import assert_equal, assert_raises, TestSuite
+from std.format.tstring import (
+    _count_encoded_bytes,
+    _encode_format_string,
+    _literal_segment,
+)
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
 @fieldwise_init
@@ -551,17 +555,84 @@ def test_raw_tstring_in_tstring() raises:
     assert_equal(String(tstring), "hello \t42, " + r"world \t42")
 
 
+def test_nul_in_literal_text() raises:
+    assert_equal(String(t"a\0b"), "a\0b")
+
+
+def test_nul_in_literal_text_before_field() raises:
+    var x = "ls"
+    assert_equal(String(t"a\0b{x}"), "a\0bls")
+
+
+def test_nul_in_literal_text_after_field() raises:
+    var x = "ls"
+    assert_equal(String(t"{x}\0"), "ls\0")
+
+
+def test_nul_in_literal_text_next_to_escaped_braces() raises:
+    var x = "ls"
+    assert_equal(String(t"{{\0}}{x}"), "{\0}ls")
+
+
+def test_literal_segment_of_255_bytes() raises:
+    # The longest literal segment that fits in the one-byte length prefix.
+    var x = 1
+    var tstring = (
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{x}"
+    )
+    assert_equal(
+        String(tstring),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" * 3
+        + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+    )
+
+
+def test_literal_segments_of_255_bytes_after_fields() raises:
+    # 255-byte segments in the middle and at the end, not only the first.
+    var x = 1
+    var tstring = (
+        t"{x}"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{x}"
+        t"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        t"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        t"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        t"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    )
+    assert_equal(String(tstring), "1" + "a" * 255 + "1" + "b" * 255)
+
+
+def test_literal_segment_of_255_bytes_with_escaped_brace() raises:
+    # `{{` is two characters in the source but one byte in the segment, so
+    # these 256 characters make a 255-byte segment.
+    var x = 1
+    var tstring = (
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{{{x}"
+    )
+    assert_equal(String(tstring), "a" * 254 + "{1")
+
+
 # =============================================================================
 # _encode_format_string tests
 # =============================================================================
 
 
 def _encode(*strings: String) -> List[Byte]:
+    # The expected encoding: each string preceded by its length in bytes.
+    # Comments below write it as [length, "text", length, "text", ...].
     var result = List[Byte]()
     for i in range(len(strings)):
+        result.append(Byte(strings[i].byte_length()))
         for byte in strings[i].as_bytes():
             result.append(byte)
-        result.append(0)
     return result^
 
 
@@ -571,8 +642,133 @@ def _encode_format_string_to_list(format: StaticString) -> List[Byte]:
     def append(byte: Byte) {mut}:
         result.append(byte)
 
-    _encode_format_string(format, append)
+    _ = _encode_format_string(format, append)
     return result^
+
+
+def test_encode_wire_format() raises:
+    # The exact bytes, written out rather than built with `_encode`.
+    var want: List[UInt8] = [
+        5,  # "hello"
+        104,
+        101,
+        108,
+        108,
+        111,
+        0,  # "" between the two fields
+        5,  # "world"
+        119,
+        111,
+        114,
+        108,
+        100,
+    ]
+    assert_equal(_encode_format_string_to_list("hello{}{}world"), want)
+
+
+def test_encode_nul_in_literal_text() raises:
+    # "a\0b{}" -> [3, "a\0b", 0, ""]: the NUL is part of the text.
+    assert_equal(_encode_format_string_to_list("a\0b{}"), _encode("a\0b", ""))
+
+
+def test_encode_length_counts_bytes() raises:
+    # "é" takes two bytes in UTF-8, so "café " is a 6-byte segment.
+    var got = _encode_format_string_to_list("café {}")
+    assert_equal(Int(got[0]), 6)
+    assert_equal(got, _encode("café ", ""))
+
+
+def _check_literal_segment(
+    format: StaticString,
+    start: Int,
+    want_segment: StaticString,
+    want_length: Int,
+    want_end: Int,
+) raises:
+    var segment, length, end = _literal_segment(format, start)
+    assert_equal(segment, want_segment)
+    assert_equal(length, want_length)
+    assert_equal(end, want_end)
+
+
+def test_literal_segment() raises:
+    _check_literal_segment("", 0, "", 0, 0)
+    _check_literal_segment("ab{}c", 0, "ab", 2, 2)
+    _check_literal_segment("ab{}c", 4, "c", 1, 5)
+    _check_literal_segment("ab{}", 4, "", 0, 4)
+    # Escaped braces stay escaped in the segment but count as one byte each.
+    _check_literal_segment("{{x}}{}", 0, "{{x}}", 3, 5)
+    # "é" is two bytes.
+    _check_literal_segment("é{}", 0, "é", 2, 2)
+
+
+def test_count_encoded_bytes() raises:
+    # "ab{}c" -> [2, "ab", 1, "c"]
+    var count, too_long_segment = _count_encoded_bytes("ab{}c")
+    assert_equal(count, 5)
+    assert_true(too_long_segment is None)
+
+
+def test_count_encoded_bytes_segment_of_255_bytes() raises:
+    var count, too_long_segment = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{}"
+    )
+    assert_equal(count, 1 + 255 + 1)
+    assert_true(too_long_segment is None)
+
+
+def test_count_encoded_bytes_reports_too_long_segment() raises:
+    # The second segment is 256 bytes; the first and last ones fit.
+    var _, too_long_segment = _count_encoded_bytes(
+        "head{}"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{}tail"
+    )
+    assert_equal(String(too_long_segment.value()), "a" * 256)
+
+
+def test_count_encoded_bytes_reports_too_long_first_and_last_segment() raises:
+    var _, first = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{}tail"
+    )
+    assert_equal(String(first.value()), "a" * 256)
+    var _, last = _count_encoded_bytes(
+        "head{}"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
+    assert_equal(String(last.value()), "a" * 256)
+
+
+def test_count_encoded_bytes_escaped_brace_at_the_limit() raises:
+    # `{{` is two bytes in the source but one in the segment: 254 "a"s and
+    # `{{` make a 255-byte segment, which fits.
+    var count, fits = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{{"
+    )
+    assert_equal(count, 1 + 255)
+    assert_true(fits is None)
+    # 255 "a"s and `{{` make 256 bytes; the segment comes back as written.
+    var _, too_long = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{{"
+    )
+    assert_equal(String(too_long.value()), "a" * 255 + "{{")
 
 
 def test_encode_plain_text() raises:
@@ -582,19 +778,19 @@ def test_encode_plain_text() raises:
 
 
 def test_encode_empty_string() raises:
-    # "" -> "\0"
+    # "" -> [0, ""]
     assert_equal(_encode_format_string_to_list(""), _encode(""))
 
 
 def test_encode_single_replacement() raises:
-    # "Hello, {}!" -> "Hello, \0!\0"
+    # "Hello, {}!" -> [7, "Hello, ", 1, "!"]
     assert_equal(
         _encode_format_string_to_list("Hello, {}!"), _encode("Hello, ", "!")
     )
 
 
 def test_encode_multiple_replacements() raises:
-    # "{} + {} = {}" -> "\0 + \0 = \0\0"
+    # "{} + {} = {}" -> [0, "", 3, " + ", 3, " = ", 0, ""]
     assert_equal(
         _encode_format_string_to_list("{} + {} = {}"),
         _encode("", " + ", " = ", ""),
@@ -602,14 +798,14 @@ def test_encode_multiple_replacements() raises:
 
 
 def test_encode_escaped_braces() raises:
-    # "{{braces}}" -> "{braces}\0"
+    # "{{braces}}" -> [8, "{braces}"]
     assert_equal(
         _encode_format_string_to_list("{{braces}}"), _encode("{braces}")
     )
 
 
 def test_encode_blog_post_example() raises:
-    # "Hello, {}, {{I'm}} {}!" -> "Hello, \0, {I'm} \0!\0"
+    # "Hello, {}, {{I'm}} {}!" -> [7, "Hello, ", 8, ", {I'm} ", 1, "!"]
     assert_equal(
         _encode_format_string_to_list("Hello, {}, {{I'm}} {}!"),
         _encode("Hello, ", ", {I'm} ", "!"),
@@ -617,48 +813,49 @@ def test_encode_blog_post_example() raises:
 
 
 def test_encode_only_replacement_field() raises:
-    # "{}" -> "\0\0"
+    # "{}" -> [0, "", 0, ""]
     assert_equal(_encode_format_string_to_list("{}"), _encode("", ""))
 
 
 def test_encode_adjacent_replacements() raises:
-    # "{}{}{}" -> "\0\0\0\0"
+    # "{}{}{}" -> [0, "", 0, "", 0, "", 0, ""]
     assert_equal(
         _encode_format_string_to_list("{}{}{}"), _encode("", "", "", "")
     )
 
 
 def test_encode_only_escaped_braces() raises:
-    # "{{}}" -> "{}\0"
+    # "{{}}" -> [2, "{}"]
     assert_equal(_encode_format_string_to_list("{{}}"), _encode("{}"))
 
 
 def test_encode_adjacent_escaped_braces() raises:
-    # "{{}}{{}}" -> "{}{}\0"
+    # "{{}}{{}}" -> [4, "{}{}"]
     assert_equal(_encode_format_string_to_list("{{}}{{}}"), _encode("{}{}"))
 
 
 def test_encode_deeply_nested_escaped_braces() raises:
-    # "{{{{{}}}}}" -> "{{" + NUL (from {}) + "}}\0"
+    # "{{{{{}}}}}" -> [2, "{{", 2, "}}"]: the middle {} is a field
     assert_equal(
         _encode_format_string_to_list("{{{{{}}}}}"), _encode("{{", "}}")
     )
 
 
 def test_encode_escaped_braces_adjacent_to_replacement() raises:
-    # "{{}}{}{{}}": escaped pair + replacement + escaped pair -> "{}\0{}\0"
+    # "{{}}{}{{}}": escaped pair + replacement + escaped pair
+    # -> [2, "{}", 2, "{}"]
     assert_equal(
         _encode_format_string_to_list("{{}}{}{{}}"), _encode("{}", "{}")
     )
 
 
 def test_encode_replacement_at_start() raises:
-    # "{}tail" -> "\0tail\0"
+    # "{}tail" -> [0, "", 4, "tail"]
     assert_equal(_encode_format_string_to_list("{}tail"), _encode("", "tail"))
 
 
 def test_encode_replacement_at_end() raises:
-    # "head{}" -> "head\0\0"
+    # "head{}" -> [4, "head", 0, ""]
     assert_equal(_encode_format_string_to_list("head{}"), _encode("head", ""))
 
 

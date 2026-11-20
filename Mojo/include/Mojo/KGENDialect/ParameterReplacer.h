@@ -39,6 +39,12 @@ public:
     return llvm::cast_if_present<T>(replaceImpl(value, /*depth=*/0));
   }
 
+  /// Remap a value, but starting at `depth`.
+  template <typename T>
+  T replaceAtDepth(T value, size_t depth) {
+    return llvm::cast_if_present<T>(replaceImpl(value, depth));
+  }
+
   /// Remap a range of values.
   template <typename T>
   SmallVector<T> replace(ArrayRef<T> values) {

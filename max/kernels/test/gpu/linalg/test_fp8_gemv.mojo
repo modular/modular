@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple M5 weight-only FP8 (W8A16) matmul.
 
-All shapes require `compute_capability() == 5` (Apple M5, Metal 4). The FP8
+All shapes require `compute_capability() >= 5` (Apple M5, Metal 4). The FP8
 sibling of `test_apple_fp4_matmul.mojo`, exercising the two dispatch routes of
 `enqueue_apple_fp8_matmul` against an INDEPENDENT fp32 host reference (the
 dequant -> bf16-matmul chain, computed in fp32):
@@ -39,7 +39,7 @@ from std.utils import IndexList
 from max.gpu.host import DeviceContext, HostBuffer
 
 from layout import Coord, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp8_gemv import (
@@ -100,7 +100,7 @@ def _check_vs_host_ref[
             var got = Float32(out_host[i * N + j])
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
                 if pass_:
-                    print("FAIL[", name, "]:", i, j, "got", got, "exp", acc)
+                    print(t"FAIL[ {name} ]: {i} {j} got {got} exp {acc}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (", name, "; see FAIL lines above)")
@@ -115,7 +115,7 @@ def _run_fp8_matmul[
     the production launcher, so `M == 1` exercises the GEMV and `M > 1` the
     materialize -> dense path. Runs for the requested output `c_type`.
     """
-    print("== fp8-matmul", name, M, "x", N, "x", K, "c_type", c_type)
+    print(t"== fp8-matmul {name} {M} x {N} x {K} c_type {c_type}")
 
     # Host inputs.
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
@@ -160,7 +160,7 @@ def _run_fp8_matmul_epilogue(
     The epilogue writes `2 * x + 1` to its own buffer; it must match the same
     launch without one, at every `(row, col)`.
     """
-    print("== fp8-matmul-epilogue", name, M, "x", N, "x", K)
+    print(t"== fp8-matmul-epilogue {name} {M} x {N} x {K}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -189,9 +189,7 @@ def _run_fp8_matmul_epilogue(
     ](idx: Coord, val: SIMD[dtype, width]) {var epi_ptr, var N}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var out = val.cast[.float32]() * 2 + 1
-        epi_ptr.unsafe_store[width=width](
-            Int(idx[0].value()) * N + Int(idx[1].value()), out
-        )
+        epi_ptr.unsafe_store[width=width](Int(idx[0]) * N + Int(idx[1]), out)
 
     enqueue_apple_fp8_matmul[c_type=.float32](out_tt, act_tt, weight_tt, ctx)
     enqueue_apple_fp8_matmul[c_type=.float32, has_epilogue_fn=True](
@@ -227,7 +225,7 @@ def _run_fp8_gemv_direct[
     route), so the decode kernel stays validated even if the launcher dispatch
     changes.
     """
-    print("== fp8-gemv", name, "1 x", N, "x", K, "c_type", c_type)
+    print(t"== fp8-gemv {name} 1 x {N} x {K} c_type {c_type}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -277,17 +275,7 @@ def _run_tiled_fp8[
       identical E4M3 weight to the same bf16 (bf16 is exact for E4M3) and use a
       bf16 MMA, so they differ only in fp32 reduction ORDER -- a tight tolerance.
     """
-    print(
-        "== tiled-fp8",
-        name,
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        "c_type",
-        c_type,
-    )
+    print(t"== tiled-fp8 {name} {M} x {N} x {K} c_type {c_type}")
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
@@ -347,14 +335,7 @@ def _run_tiled_fp8[
             if abs(f - o) > Float32(1e-2) + Float32(1.6e-2) * abs(o):
                 if pass_:
                     print(
-                        "PARITY FAIL[",
-                        name,
-                        "]: idx",
-                        i,
-                        "tiled",
-                        f,
-                        "oracle",
-                        o,
+                        t"PARITY FAIL[ {name} ]: idx {i} tiled {f} oracle {o}"
                     )
                 pass_ = False
         if not pass_:
@@ -464,8 +445,8 @@ def test_tiled_matmul2d(ctx: DeviceContext) raises:
 
 def main() raises:
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 (compute_capability == 5) required")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     test_decode_gemv(ctx)
     test_multi_row_launcher(ctx)

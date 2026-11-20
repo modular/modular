@@ -236,21 +236,11 @@ def test_bitwise_vs_reference[
 
     if bad_bytes != 0 or bad_scales != 0:
         print(
-            "    FAIL",
-            name,
-            _fmt_name[fmt](),
-            "M=",
-            M,
-            "K=",
-            K,
-            "->",
-            bad_bytes,
-            "bad bytes,",
-            bad_scales,
-            "bad scales",
+            t"    FAIL {name} {_fmt_name[fmt]()} M= {M} K= {K} ->"
+            t" {bad_bytes} bad bytes, {bad_scales} bad scales"
         )
         return False
-    print("    PASS", name, _fmt_name[fmt](), "M=", M, "K=", K)
+    print(t"    PASS {name} {_fmt_name[fmt]()} M= {M} K= {K}")
     return True
 
 
@@ -316,19 +306,11 @@ def test_roundtrip[
 
     if bad != 0:
         print(
-            "    FAIL roundtrip",
-            _fmt_name[fmt](),
-            "M=",
-            M,
-            "K=",
-            K,
-            "->",
-            bad,
-            "outside bound, worst abs err",
-            worst,
+            t"    FAIL roundtrip {_fmt_name[fmt]()} M= {M} K= {K} ->"
+            t" {bad} outside bound, worst abs err {worst}"
         )
         return False
-    print("    PASS roundtrip", _fmt_name[fmt](), "M=", M, "K=", K)
+    print(t"    PASS roundtrip {_fmt_name[fmt]()} M= {M} K= {K}")
     return True
 
 
@@ -408,12 +390,8 @@ def test_outlier_dominates_block[
 
     if not (s0 > s1):
         print(
-            "    FAIL outlier",
-            _fmt_name[fmt](),
-            "block scales did not separate: s0=",
-            s0,
-            "s1=",
-            s1,
+            t"    FAIL outlier {_fmt_name[fmt]()} block scales did not"
+            t" separate: s0= {s0} s1= {s1}"
         )
         return False
 
@@ -498,12 +476,8 @@ def test_no_poison_left[fmt: FP6Format](ctx: DeviceContext) raises -> Bool:
     # run of them; the bitwise test is what proves the values themselves.
     if poisoned > len(got.data) // 8:
         print(
-            "    FAIL poison",
-            _fmt_name[fmt](),
-            poisoned,
-            "of",
-            len(got.data),
-            "bytes still poison",
+            t"    FAIL poison {_fmt_name[fmt]()} {poisoned} of"
+            t" {len(got.data)} bytes still poison"
         )
         return False
     print("    PASS no-poison-left", _fmt_name[fmt]())

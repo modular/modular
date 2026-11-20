@@ -17,18 +17,26 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 """
 
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute, GridBlockLaunchConfig
 from max.gpu.host.info import is_gpu
 from std.math import ceildiv
-from layout import DefaultEngine, TensorLayout, TileTensor
+from layout import DefaultEngine, TensorEngine, TensorLayout, TileTensor
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import simd_width_of, size_of
-from max.gpu import WARP_SIZE
 from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (
+    EP_P2P_SMALL_COMBINE_BYTES,
+    EP_P2P_SMALL_HIDDEN_MULTIPLE,
+    EP_P2P_SMALL_MAX_TOKENS,
+    get_device_alignment,
+    MAX_GPUS_PER_NODE,
+    EP_PDL_MAX_RANKS,
+    ep_mx_msg_bytes,
     EPLocalSyncCounters,
+    ExpertLoadSink,
+    NullExpertLoad,
     TokenFormat,
     dispatch_async_kernel,
     dispatch_wait_kernel,
@@ -36,10 +44,20 @@ from shmem.ep_comm import (
     combine_async_kernel,
     combine_wait_kernel,
     combine_kernel,
-    ep_combine_store_type,
-    router_weights_wrapper_type,
-    input_scales_wrapper_type,
+    p2p_small_combine_kernel,
+    p2p_small_dispatch_kernel,
+    p2p_prefill_combine_kernel,
+    p2p_prefill_combine_prep_kernel,
+    p2p_prefill_dispatch_count_kernel,
+    p2p_prefill_dispatch_place_kernel,
+    p2p_prefill_dispatch_send_kernel,
+    EP_P2P_PREFILL_PLACE_THREADS,
+    ep_p2p_prefill_on,
+    EPCombineStoreFn,
+    RouterWeightsFn,
+    InputScalesFn,
 )
+from shmem.ep_local import ep_local_combine, ep_local_dispatch
 
 
 @inline(.always)
@@ -57,7 +75,7 @@ def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
         value: An opaque pointer to the resource to cache.
     """
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key),
+        StringSpan(key),
         value,
     )
 
@@ -111,7 +129,7 @@ def pack_ptrs_array[
     _ptrs: TileTensor[.uint64, ptrs_layout, ...],
     my_rank: Int32,
     out result: Array[
-        UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
+        MutPointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
     ],
 ):
     """Pack the pointers into an inline array.
@@ -139,19 +157,132 @@ def pack_ptrs_array[
     @inline(.always)
     def ptr_arr_init(
         i: Int,
-    ) {imm} -> UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin]:
+    ) {imm} -> MutPointer[Scalar[ptr_type], MutUntrackedOrigin]:
         comptime if local_rank_only:
-            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return MutPointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[my_rank])
             )
         else:
-            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return MutPointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[i])
             )
 
     var ptr_arr = Array[_, n_gpus_per_node](fill_with=ptr_arr_init)
 
     return ptr_arr^
+
+
+@inline(.always)
+def ep_token_recv[n_nodes: Int]() -> Bool:
+    """Returns whether the dispatch receives each token once per rank.
+
+    Within one node every rank stores straight into its peers' receive
+    buffers, so a token is copied to a rank once and listed under each of its
+    experts there. Across nodes SHMEM puts publish each expert through its own
+    channel, so each routed pair keeps its own message slot.
+
+    Parameters:
+        n_nodes: Number of physical nodes.
+
+    Returns:
+        The `token_recv` parameter of the dispatch kernels.
+    """
+    return n_nodes == 1
+
+
+def ep_p2p_small_on[
+    n_experts: Int,
+    top_k: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    skip_a2a: Bool,
+    is_amd: Bool,
+    p2p_small_max_tokens: Int,
+    hidden_size: Int,
+    counter_words: Int,
+]() -> Bool:
+    """Returns whether the fused dispatch and combine take the P2P small path.
+
+    Both read this one gate, so they always pair. The graph opts in by giving
+    the counter buffer the small path's words, and does so only when every
+    device holds within one token of every other (see
+    `ep_fused_dispatch_kernel_api`).
+
+    Parameters:
+        n_experts: Total number of experts.
+        top_k: Experts each token is routed to.
+        max_token_per_rank: Maximum tokens a device dispatches.
+        n_gpus_per_node: Number of GPUs per node.
+        n_nodes: Number of physical nodes.
+        fused_shared_expert: Whether the shared expert rides the dispatch.
+        skip_a2a: Whether each device routes within itself.
+        is_amd: Whether the target is an AMD GPU.
+        p2p_small_max_tokens: The small path's bound; 0 turns it off.
+        hidden_size: Model hidden size, which the dispatch and the combine
+            both know.
+        counter_words: Elements of the counter buffer (-1 when dynamic).
+
+    Returns:
+        Whether the small path's kernels run.
+    """
+    return (
+        fused_shared_expert
+        and not skip_a2a
+        and n_nodes == 1
+        and is_amd
+        and p2p_small_max_tokens > 0
+        and max_token_per_rank >= p2p_small_max_tokens
+        and n_gpus_per_node <= MAX_GPUS_PER_NODE
+        and n_gpus_per_node * p2p_small_max_tokens <= 256
+        # One small-kernel thread per local expert group and the shared one.
+        and n_experts // n_gpus_per_node + 1 < 256
+        and top_k * p2p_small_max_tokens * 4 <= EP_P2P_SMALL_COMBINE_BYTES
+        # `_p2p_copy_from_peer` moves whole 16-byte vectors; a message is a
+        # sum of terms aligned to the device alignment.
+        and get_device_alignment() % 16 == 0
+        # `p2p_small_combine_kernel` moves one wavefront of vectors per chunk.
+        # The gate cannot see the combine dtype, so it takes the narrowest
+        # one (16 elements per vector), which divides every other width.
+        and hidden_size % EP_P2P_SMALL_HIDDEN_MULTIPLE == 0
+        and EPLocalSyncCounters[n_experts].has_p2p_small_words(counter_words)
+    )
+
+
+@always_inline
+def ep_local_on[
+    skip_a2a: Bool,
+    is_nvidia: Bool,
+    *,
+    local_rows: Bool = True,
+    has_router_weights: Bool = True,
+]() -> Bool:
+    """Returns whether a fused dispatch or combine runs within one device.
+
+    In the all-reduce mode every device holds every row, so
+    `ep_local_dispatch` and `ep_local_combine` replace the protocol kernels
+    and their cross-CTA handoffs, with the same results bit for bit. Either
+    one pairs with the other's protocol kernels, so the dispatch and the
+    combine decide on their own.
+
+    Parameters:
+        skip_a2a: Whether each device routes within itself.
+        is_nvidia: Whether the target is an NVIDIA GPU.
+        local_rows: Whether the dispatch's token format writes local rows
+            (`TokenFormat.local_rows`). Defaults to True, for the combine,
+            which reads the rows of any format.
+        has_router_weights: Whether the combine sums the routed rows by
+            weight, which the local combine always does. Defaults to True,
+            for the dispatch.
+
+    Returns:
+        Whether `ep_local_dispatch` or `ep_local_combine` runs.
+    """
+    # TODO(KERN-4016): AMD GPUs keep the protocol kernels until a run of
+    # `test_ep_local_allreduce` on AMD shows the local kernels match them bit
+    # for bit there.
+    return skip_a2a and is_nvidia and local_rows and has_router_weights
 
 
 # ===-----------------------------------------------------------------------===#
@@ -161,38 +292,44 @@ def pack_ptrs_array[
 
 @inline(.always)
 def ep_dispatch_async_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    //,
     token_fmt_type: TokenFormat,
     n_experts: Int,
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    input_tokens: TileTensor[mut=False, Engine=DefaultEngine[], ...],
-    topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[mut=False, Engine=InputTokensEngine, ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
 ) raises:
-    """Execute the Expert Parallelism async dispatch kernel.
+    """Execute the Expert Parallelism async dispatch kernel at unit input scale.
 
-    This function launches the dispatch_async_kernel from ep_comm.mojo to
-    initiate token distribution across expert devices. In multi-node
-    scenarios, all the communication buffers need to be allocated using
-    `shmem_malloc`.
+    See the overload taking `input_scales_fn`.
 
     Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
         token_fmt_type: Token format type.
         n_experts: Total experts across all devices.
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
-        input_scales_wrapper: The wrapper for the input scales.
         use_shmem: Whether to enable SHMEM communication.
 
     Arguments:
@@ -205,7 +342,95 @@ def ep_dispatch_async_kernel_api[
         context: Device context pointer
     """
 
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    # Stands in for the input scales `has_input_scales=False` never reads.
+    @inline(.always)
+    def no_input_scales[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        return Scalar[dtype](1)
+
+    ep_dispatch_async_kernel_api[
+        token_fmt_type,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        use_shmem,
+        has_input_scales=False,
+    ](
+        atomic_counters,
+        input_tokens,
+        topk_ids,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        no_input_scales,
+    )
+
+
+@inline(.always)
+def ep_dispatch_async_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    InputScalesFnType: InputScalesFn,
+    //,
+    token_fmt_type: TokenFormat,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    use_shmem: Bool = (n_nodes > 1),
+    has_input_scales: Bool = True,
+](
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[mut=False, Engine=InputTokensEngine, ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    input_scales_fn: InputScalesFnType,
+) raises:
+    """Execute the Expert Parallelism async dispatch kernel.
+
+    This function launches the dispatch_async_kernel from ep_comm.mojo to
+    initiate token distribution across expert devices. In multi-node
+    scenarios, all the communication buffers need to be allocated using
+    `shmem_malloc`.
+
+    Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        InputScalesFnType: The type of `input_scales_fn` (inferred).
+        token_fmt_type: Token format type.
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can send.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+        use_shmem: Whether to enable SHMEM communication.
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
+            The overload without `input_scales_fn` passes `False`.
+
+    Arguments:
+        atomic_counters: EP kernel synchronization counters.
+        input_tokens: Tokens to dispatch to experts.
+        topk_ids: Expert assignments from router.
+        send_ptrs: Send buffer pointers for each local GPU.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer
+        input_scales_fn: The input scales. It runs on the device, so it must
+            copy what it captures.
+    """
+
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         input_tokens.static_shape[1] == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
@@ -229,7 +454,7 @@ def ep_dispatch_async_kernel_api[
     comptime n_ranks = n_gpus_per_node * n_nodes
     comptime hw_info = gpu_ctx.default_device_info
 
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -246,8 +471,10 @@ def ep_dispatch_async_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         token_fmt_type,
-        input_scales_wrapper=input_scales_wrapper,
+        InputScalesFnType=InputScalesFnType,
+        has_input_scales=has_input_scales,
         use_shmem=use_shmem,
+        token_recv=ep_token_recv[n_nodes](),
     ]
 
     @inline(.always)
@@ -264,7 +491,7 @@ def ep_dispatch_async_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.dispatch_async",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -279,12 +506,12 @@ def ep_dispatch_async_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         var recv_ptrs_arr = pack_ptrs_array[.uint8](recv_ptrs, my_rank)
@@ -292,13 +519,13 @@ def ep_dispatch_async_kernel_api[
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
-        gpu_ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            gpu_ctx,
             input_tokens,
             topk_ids,
             send_ptr,
@@ -306,8 +533,12 @@ def ep_dispatch_async_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
+            host_args=(input_scales_fn,),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(
+                PDLLevel.ON if n_ranks <= EP_PDL_MAX_RANKS else PDLLevel.OFF
+            ),
         )
 
 
@@ -319,23 +550,29 @@ def ep_dispatch_async_kernel_api[
 @inline(.always)
 def ep_dispatch_wait_kernel_api[
     token_fmt_type: TokenFormat,
+    RowOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    AtomicCountersEngine: TensorEngine,
     //,
     n_experts: Int,
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[.uint32, Engine=DefaultEngine[], ...],
-    expert_ids: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    src_info: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
+    expert_ids: TileTensor[.int32, Engine=ExpertIdsEngine, ...],
+    src_info: TileTensor[.int32, Engine=SrcInfoEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     context: DeviceContext,
     num_input_tokens: Int = -1,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Execute the Expert Parallelism dispatch completion kernel.
 
@@ -346,12 +583,18 @@ def ep_dispatch_wait_kernel_api[
 
     Parameters:
         token_fmt_type: Token format type.
+        RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
+        ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
         n_experts: Total experts across all devices.
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
-        input_scales_wrapper: The wrapper for the input scales.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -365,11 +608,13 @@ def ep_dispatch_wait_kernel_api[
         num_input_tokens: Per-rank input token count for this layer. When >= 0
             enables the decode-fast-path grid sizing. Default `-1` keeps the
             full-`sm_count` grid for backwards compatibility.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
     comptime n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         recv_ptrs.flat_rank == 1
     ), "Receive pointers must be a 1D tensor."
@@ -378,7 +623,7 @@ def ep_dispatch_wait_kernel_api[
     ), "Receive count pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -397,7 +642,8 @@ def ep_dispatch_wait_kernel_api[
         n_ranks,
         max_token_per_rank,
         token_fmt_type,
-        input_scales_wrapper=input_scales_wrapper,
+        token_recv=ep_token_recv[n_nodes](),
+        ExpertLoadT=ExpertLoadT,
     ]
 
     @inline(.always)
@@ -413,20 +659,20 @@ def ep_dispatch_wait_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.dispatch_wait",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var recv_buf_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_ptrs[gpu_id])
         )
-        var recv_count_ptr = UnsafePointer[UInt64, MutUntrackedOrigin](
+        var recv_count_ptr = MutPointer[UInt64, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_count_ptrs[gpu_id])
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -450,11 +696,11 @@ def ep_dispatch_wait_kernel_api[
             recv_count_ptr,
             ep_counters,
             my_rank,
-            grid_dim=grid_dim_x,
-            block_dim=hw_info.max_thread_block_size,
-            shared_mem_bytes=Int(smem_size),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_size
+            expert_load,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=grid_dim_x,
+                block_dim=hw_info.max_thread_block_size,
+                shared_mem_bytes=Int(smem_size),
             ),
         )
 
@@ -468,57 +714,86 @@ def ep_dispatch_wait_kernel_api[
 def ep_fused_dispatch_kernel_api[
     token_fmt_type: TokenFormat,
     dispatch_dtype: DType,
+    RowOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
     //,
     n_experts: Int,
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
     fused_shared_expert: Bool,
-    target: StaticString,
-    input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
+    dispatch_warp_min_tokens: Int = -1,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[.uint32, Engine=DefaultEngine[], ...],
-    expert_ids: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    src_info: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
+    expert_ids: TileTensor[.int32, Engine=ExpertIdsEngine, ...],
+    src_info: TileTensor[.int32, Engine=SrcInfoEngine, ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
-        mut=False, dispatch_dtype, Engine=DefaultEngine[], ...
+        mut=False, dispatch_dtype, Engine=InputTokensEngine, ...
     ],
-    topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
+    expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
-    """Execute the fused Expert Parallelism dispatch kernel.
+    """Execute the fused Expert Parallelism dispatch kernel at unit input scale.
 
-    This function launches the fused dispatch_kernel from ep_comm.mojo that
-    combines both dispatch_async and dispatch_wait functionality in a single
-    kernel launch. It distributes input tokens to expert devices based on
-    top-k routing decisions, then waits for all tokens to arrive and
-    aggregates them for grouped matmul computation.
+    See the overload taking `input_scales_fn`.
 
     Parameters:
         token_fmt_type: Token format type.
         dispatch_dtype: Data type of the dispatched tokens.
+        RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
+        ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
         n_experts: Total experts across all devices.
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         fused_shared_expert: Whether to pack shared expert inputs with
             routed experts' inputs.
-        target: Target.
-        input_scales_wrapper: The wrapper for the input scales.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
             send tokens within the current device.
         use_shmem: Whether to enable SHMEM communication.
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        dispatch_warp_min_tokens: From this many tokens a rank on, send
+            one token per warp instead of one per CTA, and count each
+            expert's rows with one shared-memory histogram pass at any count.
+            Same bytes and receive layout. -1 (the default) keeps the stock
+            send and count, as does every configuration but single-node NVFP4
+            or MXFP8 without a fused shared expert.
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P dispatch with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_dispatch_kernel` instead, and
+            the steps it declines take the P2P prefill dispatch when
+            `ep_p2p_prefill_on` holds; both need `atomic_counters` to end in
+            the small path's words. Must match the combine's; 0 keeps the
+            protocol kernels.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -532,10 +807,160 @@ def ep_fused_dispatch_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
+    """
+
+    # Stands in for the input scales `has_input_scales=False` never reads.
+    @inline(.always)
+    def no_input_scales[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+        return Scalar[dtype](1)
+
+    ep_fused_dispatch_kernel_api[
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_input_scales=False,
+        dispatch_warp_min_tokens=dispatch_warp_min_tokens,
+        p2p_small_max_tokens=p2p_small_max_tokens,
+        ExpertLoadT=ExpertLoadT,
+    ](
+        token_handler,
+        row_offsets,
+        expert_ids,
+        src_info,
+        atomic_counters,
+        input_tokens,
+        topk_ids,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        no_input_scales,
+        expert_load,
+    )
+
+
+@inline(.always)
+def ep_fused_dispatch_kernel_api[
+    token_fmt_type: TokenFormat,
+    dispatch_dtype: DType,
+    RowOffsetsEngine: TensorEngine,
+    ExpertIdsEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    TopkIdsEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    InputScalesFnType: InputScalesFn,
+    //,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    skip_a2a: Bool = False,
+    use_shmem: Bool = (n_nodes > 1),
+    allreduce_world_size: Int = 1,
+    has_input_scales: Bool = True,
+    dispatch_warp_min_tokens: Int = -1,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
+    ExpertLoadT: ExpertLoadSink = NullExpertLoad,
+](
+    token_handler: token_fmt_type,
+    row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
+    expert_ids: TileTensor[.int32, Engine=ExpertIdsEngine, ...],
+    src_info: TileTensor[.int32, Engine=SrcInfoEngine, ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[
+        mut=False, dispatch_dtype, Engine=InputTokensEngine, ...
+    ],
+    topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    input_scales_fn: InputScalesFnType,
+    expert_load: ExpertLoadT = NullExpertLoad(),
+) raises:
+    """Execute the fused Expert Parallelism dispatch kernel.
+
+    This function launches the fused dispatch_kernel from ep_comm.mojo that
+    combines both dispatch_async and dispatch_wait functionality in a single
+    kernel launch. It distributes input tokens to expert devices based on
+    top-k routing decisions, then waits for all tokens to arrive and
+    aggregates them for grouped matmul computation.
+
+    Parameters:
+        token_fmt_type: Token format type.
+        dispatch_dtype: Data type of the dispatched tokens.
+        RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
+        ExpertIdsEngine: Storage engine backing the `expert_ids` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        TopkIdsEngine: Storage engine backing the `topk_ids` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        InputScalesFnType: The type of `input_scales_fn` (inferred).
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can send.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+        fused_shared_expert: Whether to pack shared expert inputs with
+            routed experts' inputs.
+        skip_a2a: Whether to skip the A2A communication. If true, we will only
+            send tokens within the current device.
+        use_shmem: Whether to enable SHMEM communication.
+        allreduce_world_size: The world size of the allreduce operation. Only
+            needed for skip_a2a. Used to calculate the workload distribution for
+            the shared expert (if has one).
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
+            The overload without `input_scales_fn` passes `False`.
+        dispatch_warp_min_tokens: From this many tokens a rank on, send
+            one token per warp instead of one per CTA, and count each
+            expert's rows with one shared-memory histogram pass at any count.
+            Same bytes and receive layout. -1 (the default) keeps the stock
+            send and count, as does every configuration but single-node NVFP4
+            or MXFP8 without a fused shared expert.
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P dispatch with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_dispatch_kernel` instead, and
+            the steps it declines take the P2P prefill dispatch when
+            `ep_p2p_prefill_on` holds; both need `atomic_counters` to end in
+            the small path's words. Must match the combine's; 0 keeps the
+            protocol kernels.
+        ExpertLoadT: Type of `expert_load`; the default `NullExpertLoad`
+            compiles the counting away.
+
+    Arguments:
+        token_handler: Token handler. Wrapper for the output token tensor.
+        row_offsets: Row offsets for grouped matmul.
+        expert_ids: Expert IDs for grouped matmul.
+        src_info: Source routing information for combine phase.
+        atomic_counters: EP kernel synchronization counters.
+        input_tokens: Tokens to dispatch to experts.
+        topk_ids: Expert assignments from router.
+        send_ptrs: Send buffer pointers for each local GPU.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer.
+        input_scales_fn: The input scales. It runs on the device, so it must
+            copy what it captures.
+        expert_load: Receives each local expert's routed-token count, for
+            EPLB load statistics.
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert dispatch_dtype == .bfloat16
     comptime assert (
         send_ptrs.flat_rank == 1
@@ -558,12 +983,309 @@ def ep_fused_dispatch_kernel_api[
     )
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
+    # A decode step's tokens take the single-launch P2P small path when every
+    # device holds few enough of them. The small kernel decides that from
+    # every device's count, so it always runs; the protocol kernel runs only
+    # when this device's count leaves the decision open or sends the step to
+    # it, and returns at once when the small kernel took the step. That host
+    # decision needs token counts within one of each other on every device
+    # (tensor-parallel attention's even row split), so a device below the
+    # bound knows the step is small; the graph opts in only then
+    # (`EPConfig.uses_p2p_small_path`). The fused combine must follow, and
+    # only a fused shared expert guarantees that: the split dispatch cannot
+    # carry one, so it never pairs with this combine.
+    comptime counter_words = type_of(atomic_counters).static_shape[0]
+    comptime p2p_small = ep_p2p_small_on[
+        n_experts,
+        token_fmt_type.top_k,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        gpu_ctx.target.is_amd_gpu(),
+        p2p_small_max_tokens,
+        token_fmt_type.hid_dim,
+        counter_words,
+    ]()
+    comptime p2p_small_counter_words = counter_words if p2p_small else 0
+    comptime if p2p_small:
+        # The combine cannot see the token format, so a format the small
+        # dispatch cannot serve must not reach here with the words.
+        comptime assert (
+            token_fmt_type.dispatch_smem_size == 0
+        ), "the P2P small path does not serve this dispatch format"
+        comptime small_threads = 256
+        var n_mine = Int(input_tokens.dim(0))
+        comptime small_dispatch = p2p_small_dispatch_kernel[
+            dispatch_dtype,
+            small_threads,
+            input_tokens.LayoutType,
+            topk_ids.LayoutType,
+            row_offsets.LayoutType,
+            expert_ids.LayoutType,
+            src_info.LayoutType,
+            n_experts,
+            n_gpus_per_node,
+            max_token_per_rank,
+            token_fmt_type,
+            InputScalesFnType,
+            fused_shared_expert,
+            has_input_scales,
+            p2p_small_max_tokens,
+            InputTokensEngine=input_tokens.Engine,
+            TopkIdsEngine=topk_ids.Engine,
+            RowOffsetsEngine=row_offsets.Engine,
+            ExpertIdsEngine=expert_ids.Engine,
+            SrcInfoEngine=src_info.Engine,
+            ExpertLoadT=ExpertLoadT,
+        ]
+        var small_func = gpu_ctx.compile_function[small_dispatch]()
+        var small_counters = EPLocalSyncCounters[n_experts](
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
+            )
+        )
+        var small_grid = 1
+        if n_mine <= p2p_small_max_tokens:
+            small_grid = min(
+                n_gpus_per_node * p2p_small_max_tokens,
+                n_gpus_per_node * (n_mine + 1),
+            )
+        small_func._call_with_pack_checked(
+            gpu_ctx,
+            input_tokens,
+            topk_ids,
+            token_handler,
+            row_offsets,
+            expert_ids,
+            src_info,
+            pack_ptrs_array[DType.uint8](recv_ptrs, my_rank),
+            small_counters.get_p2p_small_ptr[counter_words](),
+            my_rank,
+            expert_load,
+            host_args=(input_scales_fn,),
+            grid_dim=small_grid,
+            block_dim=small_threads,
+        )
+        if n_mine < p2p_small_max_tokens:
+            return
+
+    # The other steps take the P2P prefill dispatch, whose kernels return at
+    # once on a step the small path took, so the protocol dispatch never
+    # runs; the combine API pairs it with the partial-row combine.
+    comptime if p2p_small and ep_p2p_prefill_on[
+        n_experts, n_gpus_per_node, token_fmt_type.top_k
+    ]():
+        comptime warp_size = gpu_ctx.default_device_info.warp_size
+        var n_tok = Int(input_tokens.dim(0))
+        var pf_recv = pack_ptrs_array[DType.uint8](recv_ptrs, my_rank)
+        var pf_words = EPLocalSyncCounters[n_experts](
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
+            )
+        ).get_p2p_small_ptr[counter_words]()
+        comptime send = p2p_prefill_dispatch_send_kernel[
+            dispatch_dtype,
+            input_tokens.LayoutType,
+            topk_ids.LayoutType,
+            n_experts,
+            n_gpus_per_node,
+            max_token_per_rank,
+            token_fmt_type,
+            InputScalesFnType,
+            fused_shared_expert,
+            has_input_scales,
+            InputTokensEngine=input_tokens.Engine,
+            TopkIdsEngine=topk_ids.Engine,
+        ]
+        gpu_ctx.compile_function[send]()._call_with_pack_checked(
+            gpu_ctx,
+            input_tokens,
+            topk_ids,
+            token_handler,
+            pf_recv,
+            pf_words,
+            my_rank,
+            host_args=(input_scales_fn,),
+            grid_dim=max(min(n_gpus_per_node * n_tok // 4, 2048), 1),
+            block_dim=warp_size,
+        )
+        comptime count = p2p_prefill_dispatch_count_kernel[
+            256,
+            n_experts,
+            n_gpus_per_node,
+            max_token_per_rank,
+            token_fmt_type.msg_size(),
+            token_fmt_type.top_k,
+            token_fmt_type.topk_info_offset(),
+        ]
+        gpu_ctx.compile_function[count]()._call_with_pack_checked(
+            gpu_ctx,
+            pf_recv,
+            pf_words,
+            my_rank,
+            grid_dim=64,
+            block_dim=256,
+        )
+        comptime place = p2p_prefill_dispatch_place_kernel[
+            EP_P2P_PREFILL_PLACE_THREADS,
+            row_offsets.LayoutType,
+            expert_ids.LayoutType,
+            src_info.LayoutType,
+            n_experts,
+            n_gpus_per_node,
+            max_token_per_rank,
+            token_fmt_type,
+            fused_shared_expert,
+            RowOffsetsEngine=row_offsets.Engine,
+            ExpertIdsEngine=expert_ids.Engine,
+            SrcInfoEngine=src_info.Engine,
+            ExpertLoadT=ExpertLoadT,
+        ]
+        gpu_ctx.compile_function[place]()._call_with_pack_checked(
+            gpu_ctx,
+            token_handler,
+            row_offsets,
+            expert_ids,
+            src_info,
+            Int32(n_tok),
+            pf_recv,
+            pf_words,
+            my_rank,
+            expert_load,
+            grid_dim=max(min(n_gpus_per_node * n_tok // 2, 2048), 1),
+            block_dim=EP_P2P_PREFILL_PLACE_THREADS,
+        )
+        return
+
+    @inline(.always)
+    def description_fn() {imm} -> String:
+        # fmt: off
+        return String(
+            "token_fmt_type=", token_fmt_type.get_type_name(),
+            ";n_experts=", n_experts,
+            ";max_token_per_rank=", max_token_per_rank,
+            ";n_gpus_per_node=", n_gpus_per_node,
+            ";n_nodes=", n_nodes,
+            ";my_rank=", my_rank,
+        )
+        # fmt: on
+
+    comptime if ep_local_on[
+        skip_a2a,
+        gpu_ctx.target.is_nvidia_gpu(),
+        local_rows=token_fmt_type.local_rows,
+    ]():
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+            "ep.dispatch",
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
+            task_id=get_safe_task_id(context),
+        ):
+            comptime assert n_gpus_per_node * n_nodes == 1, (
+                "the all-reduce mode gives each device a one-rank view, so"
+                " `n_experts` counts its own experts"
+            )
+            ep_local_dispatch[
+                n_experts,
+                fused_shared_expert,
+                allreduce_world_size,
+                ExpertLoadT=ExpertLoadT,
+            ](
+                token_handler,
+                row_offsets,
+                expert_ids,
+                src_info,
+                atomic_counters,
+                input_tokens,
+                topk_ids,
+                send_ptrs,
+                context,
+                expert_load,
+            )
+        return
+
+    _ep_fused_dispatch_protocol[
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_input_scales,
+        dispatch_warp_min_tokens,
+        p2p_small_counter_words,
+    ](
+        token_handler,
+        row_offsets,
+        expert_ids,
+        src_info,
+        atomic_counters,
+        input_tokens,
+        topk_ids,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        my_rank,
+        input_scales_fn,
+        expert_load,
+    )
+
+
+@inline(.always)
+def _ep_fused_dispatch_protocol[
+    token_fmt_type: TokenFormat,
+    dispatch_dtype: DType,
+    InputScalesFnType: InputScalesFn,
+    ExpertLoadT: ExpertLoadSink,
+    //,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    skip_a2a: Bool,
+    use_shmem: Bool,
+    allreduce_world_size: Int,
+    has_input_scales: Bool,
+    dispatch_warp_min_tokens: Int,
+    p2p_small_counter_words: Int,
+](
+    token_handler: token_fmt_type,
+    row_offsets: TileTensor[.uint32, ...],
+    expert_ids: TileTensor[.int32, ...],
+    src_info: TileTensor[.int32, ...],
+    atomic_counters: TileTensor[.int32, ...],
+    input_tokens: TileTensor[mut=False, dispatch_dtype, ...],
+    topk_ids: TileTensor[mut=False, .int32, ...],
+    send_ptrs: TileTensor[.uint64, ...],
+    recv_ptrs: TileTensor[.uint64, ...],
+    recv_count_ptrs: TileTensor[.uint64, ...],
+    context: DeviceContext,
+    my_rank: Int32,
+    input_scales_fn: InputScalesFnType,
+    expert_load: ExpertLoadT,
+) raises:
+    """Launches `dispatch_kernel`, the fused dispatch's protocol kernel.
+
+    `ep_fused_dispatch_kernel_api` and `test_ep_local_allreduce` call it.
+    Where `ep_local_on` holds, the API runs `ep_local_dispatch` instead, and
+    the test checks that kernel against this one. `p2p_small_counter_words`
+    is the element count of the counter buffer when the P2P small path is on
+    (`ep_p2p_small_on`), or 0. `my_rank` is the rank of this device. The
+    other parameters and arguments are as in the API.
+    """
+    var gpu_ctx = context
+    var gpu_id = Int(gpu_ctx.device().id)
     comptime hw_info = gpu_ctx.default_device_info
     comptime n_ranks = n_gpus_per_node * n_nodes
 
@@ -581,11 +1303,21 @@ def ep_fused_dispatch_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,  # p2p world size
         token_fmt_type,
+        InputScalesFnType=InputScalesFnType,
         fused_shared_expert=fused_shared_expert,
-        input_scales_wrapper=input_scales_wrapper,
+        has_input_scales=has_input_scales,
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
+        warp_min_tokens=dispatch_warp_min_tokens,
+        token_recv=ep_token_recv[n_nodes](),
+        p2p_small_counter_words=p2p_small_counter_words,
+        InputTokensEngine=input_tokens.Engine,
+        TopkIdsEngine=topk_ids.Engine,
+        RowOffsetsEngine=row_offsets.Engine,
+        ExpertIdsEngine=expert_ids.Engine,
+        SrcInfoEngine=src_info.Engine,
+        ExpertLoadT=ExpertLoadT,
     ]
 
     @inline(.always)
@@ -601,7 +1333,7 @@ def ep_fused_dispatch_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.dispatch",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -623,12 +1355,12 @@ def ep_fused_dispatch_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -639,8 +1371,8 @@ def ep_fused_dispatch_kernel_api[
             DType.uint64, local_rank_only=skip_a2a
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -656,8 +1388,8 @@ def ep_fused_dispatch_kernel_api[
             )
         else:
             grid_dim_x = hw_info.sm_count
-        gpu_ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            gpu_ctx,
             input_tokens,
             topk_ids,
             token_handler,
@@ -669,6 +1401,8 @@ def ep_fused_dispatch_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
+            expert_load,
+            host_args=(input_scales_fn,),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
@@ -683,6 +1417,13 @@ def ep_fused_dispatch_kernel_api[
 
 @inline(.always)
 def ep_combine_async_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    //,
     combine_dtype: DType,
     hidden_size: Int,
     top_k: Int,
@@ -690,17 +1431,17 @@ def ep_combine_async_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
+    mx_msg: Bool = False,
 ](
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
-        mut=False, combine_dtype, Engine=DefaultEngine[], ...
+        mut=False, combine_dtype, Engine=InputTokensEngine, ...
     ],
-    src_info: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    src_info: TileTensor[mut=False, .int32, Engine=SrcInfoEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
@@ -713,6 +1454,12 @@ def ep_combine_async_kernel_api[
     allocated using `shmem_malloc`.
 
     Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
         combine_dtype: Data type for tokens during combine phase.
         hidden_size: Model hidden dimension size.
         top_k: Number of experts each token was routed to.
@@ -720,8 +1467,9 @@ def ep_combine_async_kernel_api[
         max_token_per_rank: Maximum tokens any device can send.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
         use_shmem: Whether to enable SHMEM communication.
+        mx_msg: Send each token as MXFP8 (lossy, peer-to-peer only); the
+            matching `ep_combine_wait_kernel_api` must take it too.
 
     Arguments:
         output_tokens: Output tokens for the shared experts.
@@ -736,7 +1484,7 @@ def ep_combine_async_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         input_tokens.static_shape[1] == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
@@ -745,14 +1493,16 @@ def ep_combine_async_kernel_api[
     ), "Send pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
-    comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+    comptime combine_msg_size = ep_mx_msg_bytes(
+        hidden_size
+    ) if mx_msg else hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
 
     comptime combine_async = combine_async_kernel[
@@ -768,6 +1518,9 @@ def ep_combine_async_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,
         use_shmem=use_shmem,
+        mx_msg=mx_msg,
+        InputTokensEngine=input_tokens.Engine,
+        SrcInfoEngine=src_info.Engine,
     ]
 
     @inline(.always)
@@ -785,7 +1538,7 @@ def ep_combine_async_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.combine",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -800,12 +1553,12 @@ def ep_combine_async_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -814,8 +1567,8 @@ def ep_combine_async_kernel_api[
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -830,6 +1583,9 @@ def ep_combine_async_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(
+                PDLLevel.ON if n_ranks <= EP_PDL_MAX_RANKS else PDLLevel.OFF
+            ),
         )
 
 
@@ -840,6 +1596,11 @@ def ep_combine_async_kernel_api[
 
 @inline(.always)
 def ep_combine_wait_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
+    //,
     combine_dtype: DType,
     hidden_size: Int,
     top_k: Int,
@@ -847,15 +1608,96 @@ def ep_combine_wait_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
-    store_fn: ep_combine_store_type,
-    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
 ](
     num_tokens: Int,
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
+    store_fn: StoreFnType,
+) raises:
+    """Execute the Expert Parallelism combine completion kernel, unweighted.
+
+    Each routed expert's output is stored on its own. See the overload taking
+    `router_weights_fn`.
+
+    Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        combine_dtype: Data type for tokens during combine phase.
+        hidden_size: Model hidden dimension size.
+        top_k: Number of experts each token was routed to.
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can receive.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+
+    Arguments:
+        num_tokens: Number of output tokens.
+        atomic_counters: EP kernel synchronization counters.
+            Used to coordinate between different thread blocks.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer.
+        store_fn: Stores the output tokens, called with
+            `(token_idx, topk_idx, elem)`. It runs on the device, so it must
+            copy what it captures.
+    """
+
+    # Stands in for the router weights `has_router_weights=False` never reads.
+    @inline(.always)
+    def no_router_weights[
+        width: Int
+    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        return SIMD[.float32, width](1)
+
+    ep_combine_wait_kernel_api[
+        combine_dtype,
+        hidden_size,
+        top_k,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        has_router_weights=False,
+    ](
+        num_tokens,
+        atomic_counters,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        store_fn,
+        no_router_weights,
+    )
+
+
+@inline(.always)
+def ep_combine_wait_kernel_api[
+    AtomicCountersEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    //,
+    combine_dtype: DType,
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    has_router_weights: Bool = True,
+    mx_msg: Bool = False,
+](
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
 ) raises:
     """Execute the Expert Parallelism combine completion kernel.
 
@@ -865,6 +1707,11 @@ def ep_combine_wait_kernel_api[
     expert outputs for each token.
 
     Parameters:
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        RouterWeightsFnType: The type of `router_weights_fn` (inferred).
         combine_dtype: Data type for tokens during combine phase.
         hidden_size: Model hidden dimension size.
         top_k: Number of experts each token was routed to.
@@ -872,11 +1719,11 @@ def ep_combine_wait_kernel_api[
         max_token_per_rank: Maximum tokens any device can receive.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
-        store_fn: Stores the output tokens. Called with `(token_idx, elem)`
-            when `router_weights_wrapper` is set, and with
-            `(token_idx, topk_idx, elem)` otherwise.
-        router_weights_wrapper: Wrapper for the optional router weights.
+        has_router_weights: Whether the routed expert outputs are weighted by
+            `router_weights_fn` and summed. The overload without
+            `router_weights_fn` passes `False`.
+        mx_msg: The messages are MXFP8, as `ep_combine_async_kernel_api`
+            sent them with `mx_msg`.
 
     Arguments:
         num_tokens: Number of output tokens.
@@ -885,10 +1732,16 @@ def ep_combine_wait_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
+        store_fn: Stores the output tokens. Called with `(token_idx, elem)`
+            when `has_router_weights`, and with
+            `(token_idx, topk_idx, elem)` otherwise. It runs on the device,
+            so it must copy what it captures.
+        router_weights_fn: The router weights. It runs on the device, so it
+            must copy what it captures.
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     comptime assert (
         recv_ptrs.flat_rank == 1
     ), "Receive pointers must be a 1D tensor."
@@ -897,14 +1750,16 @@ def ep_combine_wait_kernel_api[
     ), "Receive count pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
-    comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+    comptime combine_msg_size = ep_mx_msg_bytes(
+        hidden_size
+    ) if mx_msg else hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
 
     comptime combine_wait = combine_wait_kernel[
@@ -916,8 +1771,10 @@ def ep_combine_wait_kernel_api[
         n_ranks,
         combine_msg_size,
         max_token_per_rank,
-        store_fn,
-        router_weights_wrapper=router_weights_wrapper,
+        StoreFnType,
+        RouterWeightsFnType,
+        has_router_weights,
+        mx_msg=mx_msg,
     ]
 
     @inline(.always)
@@ -935,27 +1792,29 @@ def ep_combine_wait_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.combine_wait",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var recv_buf_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_ptrs[gpu_id])
         )
-        var recv_count_ptr = UnsafePointer[UInt64, MutUntrackedOrigin](
+        var recv_count_ptr = MutPointer[UInt64, MutUntrackedOrigin](
             unsafe_from_address=Int(recv_count_ptrs[gpu_id])
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
         comptime dst_simd_width = simd_width_of[combine_dtype]()
-        comptime n_chunks_per_tok = hidden_size // (WARP_SIZE * dst_simd_width)
+        comptime n_chunks_per_tok = hidden_size // (
+            hw_info.warp_size * dst_simd_width
+        )
         comptime n_warps_per_block = (
-            hw_info.max_thread_block_size // WARP_SIZE
+            hw_info.max_thread_block_size // hw_info.warp_size
         )
         var grid_dim_x: Int
         comptime if gpu_ctx.target.is_amd_gpu():
@@ -973,8 +1832,12 @@ def ep_combine_wait_kernel_api[
             recv_count_ptr,
             ep_counters,
             my_rank,
+            host_args=(store_fn, router_weights_fn),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
+            attributes=pdl_launch_attributes(
+                PDLLevel.ON if n_ranks <= EP_PDL_MAX_RANKS else PDLLevel.OFF
+            ),
         )
 
 
@@ -986,6 +1849,13 @@ def ep_combine_wait_kernel_api[
 @inline(.always)
 def ep_fused_combine_kernel_api[
     combine_dtype: DType,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
     //,
     hidden_size: Int,
     top_k: Int,
@@ -993,25 +1863,160 @@ def ep_fused_combine_kernel_api[
     max_token_per_rank: Int,
     n_gpus_per_node: Int,
     n_nodes: Int,
-    target: StaticString,
-    store_fn: ep_combine_store_type,
-    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
+    *,
+    # The output goes through `store_fn`, so there is no output tile to infer
+    # the engine from.
+    OutputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     num_tokens: Int,
-    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
     input_tokens: TileTensor[
-        mut=False, combine_dtype, Engine=DefaultEngine[], ...
+        mut=False, combine_dtype, Engine=InputTokensEngine, ...
     ],
-    src_info: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
-    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
-    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    src_info: TileTensor[mut=False, .int32, Engine=SrcInfoEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
     context: DeviceContext,
-    topk_ids_p: Optional[UnsafePointer[Int32, ImmUntrackedOrigin]] = None,
+    store_fn: StoreFnType,
+    topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]] = None,
+) raises:
+    """Execute the fused Expert Parallelism combine kernel, unweighted.
+
+    Each routed expert's output is stored on its own. See the overload taking
+    `router_weights_fn`.
+
+    Parameters:
+        combine_dtype: Data type for tokens during combine phase.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        hidden_size: Model hidden dimension size.
+        top_k: Number of experts each token was routed to.
+        n_experts: Total experts across all devices.
+        max_token_per_rank: Maximum tokens any device can receive.
+        n_gpus_per_node: GPUs per physical node.
+        n_nodes: Number of physical nodes.
+        fused_shared_expert: Whether to add shared expert outputs to the
+            combined routed expert outputs.
+        skip_a2a: Whether to skip the A2A communication. If true, we will only
+            send tokens within the current device.
+        use_shmem: Whether to enable SHMEM communication.
+        allreduce_world_size: The world size of the allreduce operation. Only
+            needed for skip_a2a. Used to calculate the workload distribution for
+            the shared expert (if has one).
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P combine with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_combine_kernel` instead, and
+            the steps it declines take the partial-row combine when
+            `ep_p2p_prefill_on` holds; both need `atomic_counters` to end in
+            the small path's words. Must match the dispatch's; 0 keeps the
+            protocol kernels.
+        OutputTokensEngine: Storage engine backing the output tokens tile.
+
+    Arguments:
+        num_tokens: Number of output tokens.
+        atomic_counters: EP kernel synchronization counters.
+        input_tokens: Expert output tokens to send back.
+        src_info: Source routing information from dispatch phase.
+        send_ptrs: Send buffer pointers for each local GPU.
+        recv_ptrs: Receive buffer pointers for each local GPU.
+        recv_count_ptrs: Receive count buffer pointers for each local GPU.
+        context: Device context pointer.
+        store_fn: Stores the output tokens, called with
+            `(token_idx, topk_idx, elem)`. It runs on the device, so it must
+            copy what it captures.
+        topk_ids_p: Pointer to the top-k IDs for each token, only required if
+            skip_a2a is True.
+    """
+
+    # Stands in for the router weights `has_router_weights=False` never reads.
+    @inline(.always)
+    def no_router_weights[
+        width: Int
+    ](token_idx: Int, topk_id: Int) -> SIMD[.float32, width]:
+        return SIMD[.float32, width](1)
+
+    ep_fused_combine_kernel_api[
+        hidden_size,
+        top_k,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_router_weights=False,
+        p2p_small_max_tokens=p2p_small_max_tokens,
+        OutputTokensEngine=OutputTokensEngine,
+    ](
+        num_tokens,
+        atomic_counters,
+        input_tokens,
+        src_info,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        store_fn,
+        no_router_weights,
+        topk_ids_p,
+    )
+
+
+@inline(.always)
+def ep_fused_combine_kernel_api[
+    combine_dtype: DType,
+    AtomicCountersEngine: TensorEngine,
+    InputTokensEngine: TensorEngine,
+    SrcInfoEngine: TensorEngine,
+    SendPtrsEngine: TensorEngine,
+    RecvPtrsEngine: TensorEngine,
+    RecvCountPtrsEngine: TensorEngine,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    //,
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool = False,
+    skip_a2a: Bool = False,
+    use_shmem: Bool = (n_nodes > 1),
+    allreduce_world_size: Int = 1,
+    has_router_weights: Bool = True,
+    p2p_small_max_tokens: Int = EP_P2P_SMALL_MAX_TOKENS,
+    *,
+    # The output goes through `store_fn`, so there is no output tile to infer
+    # the engine from.
+    OutputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
+](
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, Engine=AtomicCountersEngine, ...],
+    input_tokens: TileTensor[
+        mut=False, combine_dtype, Engine=InputTokensEngine, ...
+    ],
+    src_info: TileTensor[mut=False, .int32, Engine=SrcInfoEngine, ...],
+    send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
+    recv_ptrs: TileTensor[.uint64, Engine=RecvPtrsEngine, ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=RecvCountPtrsEngine, ...],
+    context: DeviceContext,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
+    topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]] = None,
 ) raises:
     """Execute the fused Expert Parallelism combine kernel.
 
@@ -1023,17 +2028,20 @@ def ep_fused_combine_kernel_api[
 
     Parameters:
         combine_dtype: Data type for tokens during combine phase.
+        AtomicCountersEngine: Storage engine backing the `atomic_counters` tile.
+        InputTokensEngine: Storage engine backing the `input_tokens` tile.
+        SrcInfoEngine: Storage engine backing the `src_info` tile.
+        SendPtrsEngine: Storage engine backing the `send_ptrs` tile.
+        RecvPtrsEngine: Storage engine backing the `recv_ptrs` tile.
+        RecvCountPtrsEngine: Storage engine backing the `recv_count_ptrs` tile.
+        StoreFnType: The type of `store_fn` (inferred).
+        RouterWeightsFnType: The type of `router_weights_fn` (inferred).
         hidden_size: Model hidden dimension size.
         top_k: Number of experts each token was routed to.
         n_experts: Total experts across all devices.
         max_token_per_rank: Maximum tokens any device can receive.
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
-        target: Target.
-        store_fn: Stores the combined output tokens. Called with
-            `(token_idx, elem)` when `router_weights_wrapper` is set, and
-            with `(token_idx, topk_idx, elem)` otherwise.
-        router_weights_wrapper: Wrapper for the optional router weights.
         fused_shared_expert: Whether to add shared expert outputs to the
             combined routed expert outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
@@ -1042,6 +2050,17 @@ def ep_fused_combine_kernel_api[
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        has_router_weights: Whether the routed expert outputs are weighted by
+            `router_weights_fn` and summed. The overload without
+            `router_weights_fn` passes `False`.
+        p2p_small_max_tokens: Up to this many tokens on every device, a
+            single-node P2P combine with a fused shared expert on AMD GPUs
+            runs the single-launch `p2p_small_combine_kernel` instead, and
+            the steps it declines take the partial-row combine when
+            `ep_p2p_prefill_on` holds; both need `atomic_counters` to end in
+            the small path's words. Must match the dispatch's; 0 keeps the
+            protocol kernels.
+        OutputTokensEngine: Storage engine backing the output tokens tile.
 
     Arguments:
         num_tokens: Number of output tokens.
@@ -1051,12 +2070,19 @@ def ep_fused_combine_kernel_api[
         send_ptrs: Send buffer pointers for each local GPU.
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
-        router_weights: Router weights for the current device.
         context: Device context pointer.
+        store_fn: Stores the combined output tokens. Called with
+            `(token_idx, elem)` when `has_router_weights`, and with
+            `(token_idx, topk_idx, elem)` otherwise. It runs on the device,
+            so it must copy what it captures.
+        router_weights_fn: The router weights. It runs on the device, so it
+            must copy what it captures.
+        topk_ids_p: Pointer to the top-k IDs for each token, only required if
+            skip_a2a is True.
     """
 
     # Ensure this kernel only runs on GPU targets
-    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert context.target.is_gpu(), "EP is only supported on GPU."
     # Ensure the shape for the tensors are correct
     comptime assert (
         input_tokens.static_shape[1] == hidden_size
@@ -1066,7 +2092,7 @@ def ep_fused_combine_kernel_api[
     ), "Send pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -1079,6 +2105,244 @@ def ep_fused_combine_kernel_api[
         if not topk_ids_p:
             raise "topk_ids_p is required when skip_a2a is True."
 
+    # Pairs with the P2P small path in `ep_fused_dispatch_kernel_api`, under
+    # the same gate; each kernel returns at once on the other's steps.
+    comptime counter_words = type_of(atomic_counters).static_shape[0]
+    comptime p2p_small = ep_p2p_small_on[
+        n_experts,
+        top_k,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        gpu_ctx.target.is_amd_gpu(),
+        p2p_small_max_tokens,
+        hidden_size,
+        counter_words,
+    ]()
+    comptime p2p_small_counter_words = counter_words if p2p_small else 0
+    comptime if p2p_small:
+        if num_tokens <= p2p_small_max_tokens:
+            comptime small_threads = 256
+            comptime small_combine = p2p_small_combine_kernel[
+                combine_dtype,
+                small_threads,
+                input_tokens.LayoutType,
+                src_info.LayoutType,
+                top_k,
+                n_gpus_per_node,
+                max_token_per_rank,
+                StoreFnType,
+                RouterWeightsFnType,
+                has_router_weights,
+                fused_shared_expert,
+                p2p_small_max_tokens,
+                InputTokensEngine=input_tokens.Engine,
+                SrcInfoEngine=src_info.Engine,
+            ]
+            var small_func = gpu_ctx.compile_function[small_combine]()
+            var small_counters = EPLocalSyncCounters[n_experts](
+                MutPointer[Int32, MutUntrackedOrigin](
+                    unsafe_from_address=Int(atomic_counters.ptr)
+                )
+            )
+            small_func._call_with_pack_checked(
+                gpu_ctx,
+                input_tokens,
+                src_info,
+                Int32(num_tokens),
+                pack_ptrs_array[DType.uint8](recv_ptrs, my_rank),
+                small_counters.get_p2p_small_ptr[counter_words](),
+                my_rank,
+                host_args=(store_fn, router_weights_fn),
+                grid_dim=128,
+                block_dim=small_threads,
+            )
+            if num_tokens < p2p_small_max_tokens:
+                return
+
+    # Every other step with the small path enabled sends one partial row per
+    # (token, device) instead of one row per top-k slot; see
+    # `p2p_prefill_combine_kernel`. Its kernels return at once on a step the
+    # small path took, so the protocol combine never runs.
+    comptime p2p_prefill = p2p_small and ep_p2p_prefill_on[
+        n_experts, n_gpus_per_node, top_k
+    ]()
+    comptime assert (
+        not p2p_prefill or has_router_weights
+    ), "the partial-row combine needs router weights"
+    comptime if p2p_prefill:
+        comptime prefill_threads = 256
+        var prefill_counters = EPLocalSyncCounters[n_experts](
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
+            )
+        )
+        var prefill_recv = pack_ptrs_array[DType.uint8](recv_ptrs, my_rank)
+        comptime prep = p2p_prefill_combine_prep_kernel[
+            prefill_threads,
+            src_info.LayoutType,
+            top_k,
+            n_experts,
+            n_gpus_per_node,
+            max_token_per_rank,
+            RouterWeightsFnType,
+            SrcInfoEngine=src_info.Engine,
+        ]
+        gpu_ctx.compile_function[prep]()._call_with_pack_checked(
+            gpu_ctx,
+            src_info,
+            Int32(num_tokens),
+            prefill_recv,
+            prefill_counters.get_p2p_small_ptr[counter_words](),
+            my_rank,
+            host_args=(router_weights_fn,),
+            grid_dim=128,
+            block_dim=prefill_threads,
+        )
+        comptime for phase in range(2):
+            comptime reduce = p2p_prefill_combine_kernel[
+                combine_dtype,
+                prefill_threads,
+                input_tokens.LayoutType,
+                top_k,
+                n_gpus_per_node,
+                max_token_per_rank,
+                StoreFnType,
+                fused_shared_expert,
+                phase,
+                InputTokensEngine=input_tokens.Engine,
+            ]
+            gpu_ctx.compile_function[reduce]()._call_with_pack_checked(
+                gpu_ctx,
+                input_tokens,
+                Int32(num_tokens),
+                prefill_recv,
+                prefill_counters.get_p2p_small_ptr[counter_words](),
+                my_rank,
+                host_args=(store_fn,),
+                grid_dim=256,
+                block_dim=prefill_threads,
+            )
+        return
+
+    @inline(.always)
+    def description_fn() {imm} -> String:
+        # fmt: off
+        return String(
+            "combine_dtype=", combine_dtype,
+            ";hidden_size=", hidden_size,
+            ";top_k=", top_k,
+            ";n_experts=", n_experts,
+            ";max_token_per_rank=", max_token_per_rank,
+            ";n_gpus_per_node=", n_gpus_per_node,
+            ";n_nodes=", n_nodes,
+            ";my_rank=", my_rank,
+        )
+        # fmt: on
+
+    comptime if ep_local_on[
+        skip_a2a,
+        gpu_ctx.target.is_nvidia_gpu(),
+        has_router_weights=has_router_weights,
+    ]():
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+            "ep.combine",
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
+            task_id=get_safe_task_id(context),
+        ):
+            comptime assert n_gpus_per_node * n_nodes == 1, (
+                "the all-reduce mode gives each device a one-rank view, so"
+                " `n_experts` counts its own experts"
+            )
+            ep_local_combine[
+                top_k, n_experts, fused_shared_expert, allreduce_world_size
+            ](
+                num_tokens,
+                atomic_counters,
+                input_tokens,
+                src_info,
+                recv_ptrs,
+                context,
+                store_fn,
+                router_weights_fn,
+                topk_ids_p.value(),
+            )
+        return
+
+    _ep_fused_combine_protocol[
+        hidden_size,
+        top_k,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_router_weights,
+        p2p_small_counter_words,
+    ](
+        num_tokens,
+        atomic_counters,
+        input_tokens,
+        src_info,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        my_rank,
+        store_fn,
+        router_weights_fn,
+        topk_ids_p,
+    )
+
+
+@inline(.always)
+def _ep_fused_combine_protocol[
+    combine_dtype: DType,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    //,
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    skip_a2a: Bool,
+    use_shmem: Bool,
+    allreduce_world_size: Int,
+    has_router_weights: Bool,
+    p2p_small_counter_words: Int,
+](
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, ...],
+    input_tokens: TileTensor[mut=False, combine_dtype, ...],
+    src_info: TileTensor[mut=False, .int32, ...],
+    send_ptrs: TileTensor[.uint64, ...],
+    recv_ptrs: TileTensor[.uint64, ...],
+    recv_count_ptrs: TileTensor[.uint64, ...],
+    context: DeviceContext,
+    my_rank: Int32,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
+    topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]],
+) raises:
+    """Launches `combine_kernel`, the fused combine's protocol kernel.
+
+    `ep_fused_combine_kernel_api` and `test_ep_local_allreduce` call it.
+    Where `ep_local_on` holds, the API runs `ep_local_combine` instead, and
+    the test checks that kernel against this one. `p2p_small_counter_words`
+    is the element count of the counter buffer when the P2P small path is on
+    (`ep_p2p_small_on`), or 0. `my_rank` is the rank of this device. The
+    other parameters and arguments are as in the API.
+    """
+    var gpu_ctx = context
+    var gpu_id = Int(gpu_ctx.device().id)
     comptime hw_info = gpu_ctx.default_device_info
     comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes
@@ -1095,12 +2359,16 @@ def ep_fused_combine_kernel_api[
         combine_msg_size,
         max_token_per_rank,
         n_gpus_per_node,
-        store_fn,
-        router_weights_wrapper=router_weights_wrapper,
+        StoreFnType,
+        RouterWeightsFnType,
+        has_router_weights,
         fused_shared_expert=fused_shared_expert,
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
+        p2p_small_counter_words=p2p_small_counter_words,
+        InputTokensEngine=input_tokens.Engine,
+        SrcInfoEngine=src_info.Engine,
     ]
 
     @inline(.always)
@@ -1118,7 +2386,7 @@ def ep_fused_combine_kernel_api[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "ep.combine",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -1135,12 +2403,12 @@ def ep_fused_combine_kernel_api[
                 shmem_module_init(func)
                 global_cache_insert(
                     cached_module_key,
-                    UnsafePointer[NoneType, MutUntrackedOrigin](
+                    MutPointer[NoneType, MutUntrackedOrigin](
                         unsafe_from_address=1
                     ),
                 )
 
-        var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+        var send_ptr = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
@@ -1151,8 +2419,8 @@ def ep_fused_combine_kernel_api[
             DType.uint64, local_rank_only=skip_a2a
         ](recv_count_ptrs, my_rank)
         var ep_counters = EPLocalSyncCounters[n_experts](
-            UnsafePointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=Int(atomic_counters._storage)
+            MutPointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=Int(atomic_counters.ptr)
             )
         )
 
@@ -1163,9 +2431,11 @@ def ep_fused_combine_kernel_api[
         #    distributed across n_warps_per_block * (grid_dim - 1) warps.
         # Take the max to be safe; cap at sm_count.
         comptime dst_simd_width = simd_width_of[combine_dtype]()
-        comptime n_chunks_per_tok = hidden_size // (WARP_SIZE * dst_simd_width)
+        comptime n_chunks_per_tok = hidden_size // (
+            hw_info.warp_size * dst_simd_width
+        )
         comptime n_warps_per_block = (
-            hw_info.max_thread_block_size // WARP_SIZE
+            hw_info.max_thread_block_size // hw_info.warp_size
         )
         var num_input_tokens = Int(input_tokens.dim(0))
         var grid_dim_x: Int
@@ -1178,8 +2448,8 @@ def ep_fused_combine_kernel_api[
             )
         else:
             grid_dim_x = hw_info.sm_count
-        gpu_ctx.enqueue_function(
-            func,
+        func._call_with_pack_checked(
+            gpu_ctx,
             input_tokens,
             src_info,
             Int32(num_tokens),
@@ -1189,6 +2459,7 @@ def ep_fused_combine_kernel_api[
             ep_counters,
             topk_ids_p,
             my_rank,
+            host_args=(store_fn, router_weights_fn),
             grid_dim=grid_dim_x,
             block_dim=hw_info.max_thread_block_size,
             attributes=pdl_launch_attributes(PDLLevel.ON),

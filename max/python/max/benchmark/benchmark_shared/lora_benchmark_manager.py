@@ -32,8 +32,9 @@ logger = logging.getLogger(__name__)
 
 # TODO: make lora_configs a dataclass type than a dict[str, str]
 class LoRABenchmarkManager:
-    """Manages LoRA adapters for benchmarking including configuration,
-    loading/unloading, and traffic distribution.
+    """Manages LoRA adapters for benchmarking.
+
+    Covers configuration, loading and unloading, and traffic distribution.
 
     This class coordinates all LoRA-related operations for benchmarking:
     - Parses LoRA adapter paths and configurations
@@ -62,7 +63,9 @@ class LoRABenchmarkManager:
                            Sum must not exceed 1.0. Remainder goes to base model.
             uniform_ratio: If traffic_ratios not provided, probability of
                           selecting any LoRA uniformly at random (vs base model)
+            max_num_loras: Accepted for call-site compatibility; unused.
             seed: Random seed for shuffling (optional)
+            max_concurrent_lora_ops: LoRA operations allowed in flight at once.
         """
         self.lora_paths = lora_paths
         self.max_concurrent_lora_ops = max_concurrent_lora_ops

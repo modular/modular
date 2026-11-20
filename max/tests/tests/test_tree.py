@@ -850,6 +850,14 @@ def test_dataclass_makes_a_dataclass_a_present_field_node() -> None:
     assert flat == [1, 2, 3, 4, 5]
     assert unflatten(treedef, flat) == node
     assert is_node(node)
+    # Fields are keys, so paths name them.
+    assert treedef.leaf_paths == (
+        "x",
+        "inner.a",
+        "inner.b",
+        "items.0",
+        "items.1",
+    )
 
     # An unset optional is absent from the leaves, and falls back to its default
     # on the way back -- at every nesting depth.
@@ -857,6 +865,7 @@ def test_dataclass_makes_a_dataclass_a_present_field_node() -> None:
     flat, treedef = flatten(sparse)
     assert flat == [1, 2]
     assert unflatten(treedef, flat) == sparse
+    assert treedef.leaf_paths == ("x", "inner.a")
 
     # An already-decorated dataclass keeps its own configuration and only gains
     # the protocol.

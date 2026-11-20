@@ -37,9 +37,9 @@ def cond(val: UInt32) -> Bool:
 
 # ========================== KERNEL CODE ==========================
 def filter_kernel(
-    input: UnsafePointer[UInt32, MutAnyOrigin],
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    output_size: UnsafePointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[UInt32, ImmUntrackedOrigin],
+    output: MutPointer[UInt32, MutUntrackedOrigin],
+    output_size: MutPointer[UInt32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Figure 12.2: Simple unstable filter kernel.
@@ -109,7 +109,7 @@ def main() raises:
 
         # Copy results and verify
         var errors = 0
-        with d_input.map_to_host() as h_input:
+        with d_input.map_to_host():
             with d_output.map_to_host() as h_output:
                 # Create reference on CPU
                 var expected_count = 0

@@ -16,7 +16,7 @@ improve is [open to receiving contributions](contribution-areas.md).
 
 > [!NOTE]
 > Keep each pull request inside a single area. See
-> [keep each pull request to one contribution](issue-pr-etiquette.md#keep-each-pull-request-to-one-contribution).
+> [keep pull requests small](issue-pr-etiquette.md#keep-pull-requests-small).
 
 ### Signal your intent
 
@@ -34,6 +34,9 @@ Before merging your first PR, all contributors must sign the
 your PR stating:
 
 > I have read the CLA Document and I hereby sign the CLA
+
+Signing the CLA is a legal commitment, so you must post this comment
+yourself rather than have an AI agent post it on your behalf.
 
 ## Stage 2: Planning
 

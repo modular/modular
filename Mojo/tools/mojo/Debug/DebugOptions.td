@@ -13,9 +13,9 @@
 
 include "Debug/DebugDescription.td"
 include "Support/Driver/CommonOptions.td"
-include "../Common/CompilationOptions.td"
+include "../Common/BackendOptions.td"
 include "../Common/DiagnosticOptions.td"
-include "../Common/TargetOptions.td"
+include "../Common/TargetQueryOptions.td"
 include "../Common/StandaloneDebugOptions.td"
 
 
@@ -26,19 +26,19 @@ include "../Common/StandaloneDebugOptions.td"
 def AttachOptionGroup : OptionGroup<"Attach options">, Index<2>;
 
 defm pid: CommandOption<["--", "-"], "pid",
-  AttachOptionGroup, Index<1>, MetaVarName<"PID">,
+  AttachOptionGroup, MetaVarName<"PID">,
   HelpText<"Indicates the debugger to attach to the process with the given "
   "PID.">>;
 
 defm process_name: CommandOption<["--", "-"], "process-name",
-  AttachOptionGroup, Index<2>, MetaVarName<"NAME">,
+  AttachOptionGroup, MetaVarName<"NAME">,
   HelpText<"Indicates the debugger to attach to the process with the given "
   "name or path.">>;
 
 // As this option is hidden, it needs to exist within a non-empty option group,
 // so we put it here just because there's no place better.
 def dry_run: Flag<["--", "-"], "dry-run">,
-  Group<AttachOptionGroup>, Index<10>,
+  Group<AttachOptionGroup>,
   Flags<[HelpHidden]>,
   HelpText<"Instead of executing LLDB on the CLI, dumps the command that would "
   "be used to start the LLDB command-line interface. If using the RPC mode, "
@@ -51,17 +51,17 @@ def dry_run: Flag<["--", "-"], "dry-run">,
 def cudaGDBOptionGroup : OptionGroup<"cuda-gdb options">, Index<4>;
 
 def cudaGDB: Flag<["--", "-"], "cuda-gdb">,
-  Group<cudaGDBOptionGroup>, Index<1>,
+  Group<cudaGDBOptionGroup>,
   HelpText<"Uses cuda-gdb instead of LLDB for debugging. In this mode, it's "
   "possible to step into GPU code, but the CPU debugging experience is "
   "degraded.">;
 
 defm cudaGDBPath: CommandOption<["--", "-"], "cuda-gdb-path",
-  cudaGDBOptionGroup, Index<2>, MetaVarName<"CUDA_GDB_PATH">,
+  cudaGDBOptionGroup, MetaVarName<"CUDA_GDB_PATH">,
   HelpText<"Uses the given CUDA_GDB_PATH instead of looking for cuda-gdb in "
   "the PATH environment variable.">>;
 
 def breakOnLaunch: Flag<["--", "-"], "break-on-launch">,
-  Group<cudaGDBOptionGroup>, Index<3>,
+  Group<cudaGDBOptionGroup>,
   HelpText<"Set the breakOnLaunch option for cuda-gdb.  This makes the "
   "debugger break on the first instruction of every launched kernel.">;

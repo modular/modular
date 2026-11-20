@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Chat-judge dataset and the chat samples it produces."""
+
 from __future__ import annotations
 
 import json
@@ -80,6 +82,7 @@ class ChatJudgeBenchmarkDataset(LocalBenchmarkDataset):
         shuffle: bool = True,
         **kwargs,
     ) -> RequestSamples:
+        """Samples chat sessions for judging by a model."""
         raise NotImplementedError(
             "ChatJudgeBenchmarkDataset is multi-turn only; use "
             "gen_chat_sessions() with --num-chat-sessions."

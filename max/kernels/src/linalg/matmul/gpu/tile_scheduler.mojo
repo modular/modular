@@ -25,6 +25,7 @@ from std.math.uutils import udivmod
 from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 from ...utils_gpu import block_swizzle
@@ -53,7 +54,7 @@ struct RasterOrder(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -169,7 +170,7 @@ struct MatmulSchedule(EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -200,7 +201,7 @@ struct MatmulSchedule(EnumLike, TrivialRegisterPassable):
 
 struct TileScheduler[
     problem_shape: IndexList[3],
-    tile_shape: IndexList[3],
+    tile_shape: Coord[Int, Int, Int],
     grid_shape: IndexList[2],
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: UInt32 = 1,
@@ -460,7 +461,7 @@ struct TileScheduler[
 def _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
     """Check if block cluster is along the raster dimension."""
 
-    comptime for i in range(3):
+    for i in range(3):
         if cluster_dims[i] > 1 and i != Int(raster_dim):
             return False
 

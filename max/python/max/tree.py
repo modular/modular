@@ -67,8 +67,11 @@ __all__ = [
     "flatten",
     "flatten_one_level",
     "is_node",
+    "kind",
+    "kind_of",
     "leaves",
     "map",
+    "node_of_kind",
     "nodes",
     "paths",
     "unflatten",
@@ -225,21 +228,17 @@ def dataclass(
         # The init fields, to fall back to None when absent at rebuild.
         init_fields = tuple(f.name for f in fields(typed_cls) if f.init)
 
-        def __tree_flatten__(
-            self: Any,
-        ) -> tuple[tuple[Any, ...], tuple[str, ...]]:
-            present = [
-                (f.name, value)
+        def __tree_flatten__(self: Any) -> tuple[dict[str, Any], None]:
+            return {
+                f.name: value
                 for f in fields(self)
                 if (value := getattr(self, f.name)) is not None
-            ]
-            meta, children = zip(*present, strict=True) if present else ((), ())
-            return children, meta
+            }, None
 
         def __tree_unflatten__(
-            cls_: type[_T], meta: tuple[str, ...], children: Sequence[Any]
+            cls_: type[_T], meta: None, children: Mapping[str, Any]
         ) -> _T:
-            values = dict(zip(meta, children, strict=True))
+            values = dict(children)
             # Flatten drops a field only when it is None, so an absent field was
             # None: restore that rather than a non-None default it never held.
             for name in init_fields:
@@ -251,6 +250,62 @@ def dataclass(
         return cls
 
     return wrap if cls is None else wrap(cls)
+
+
+#: Node classes by the name :func:`kind` registered them under, and back.
+_NODE_KINDS: dict[str, type] = {}
+_KIND_NAMES: dict[type, str] = {}
+
+
+def kind(name: str) -> Callable[[type[_T]], type[_T]]:
+    """Names a node class, so a serialized tree structure can refer to it.
+
+    .. code-block:: python
+
+        @tree.kind("paged_kv")
+        @tree.dataclass
+        class KVCacheInputs: ...
+
+    Args:
+        name: The class's name in serialized structures, unique among
+            registered classes.
+
+    Returns:
+        A decorator that registers the class and returns it.
+
+    Raises:
+        ValueError: If another class is registered under ``name``.
+    """
+
+    def register(cls: type[_T]) -> type[_T]:
+        registered = _NODE_KINDS.setdefault(name, cls)
+        if registered is not cls:
+            raise ValueError(
+                f"tree kind {name!r} already names {registered.__qualname__}"
+            )
+        _KIND_NAMES[cls] = name
+        return cls
+
+    return register
+
+
+def kind_of(cls: type) -> str | None:
+    """Returns the name :func:`kind` registered ``cls`` under, if any."""
+    return _KIND_NAMES.get(cls)
+
+
+def node_of_kind(name: str) -> type:
+    """Returns the node class :func:`kind` registered under ``name``.
+
+    Raises:
+        KeyError: If no class is registered under ``name``.
+    """
+    try:
+        return _NODE_KINDS[name]
+    except KeyError:
+        raise KeyError(
+            f"no tree node class is registered as {name!r}"
+        ) from None
 
 
 #: By exact type: another subclass is a leaf unless it declares the protocol.
@@ -444,7 +499,7 @@ class TreeDef:
 
         .. code-block:: python
 
-            from max.experimental import tree_utils as tree
+            from max import tree
 
             _, treedef = tree.flatten({"a": 1, "b": [2, 3]}, leaf=int)
             other = {"a": [0], "b": [[], {}]}

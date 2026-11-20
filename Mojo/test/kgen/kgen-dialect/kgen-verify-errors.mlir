@@ -192,6 +192,19 @@ kgen.generator @test_cache() {
 
 // -----
 
+// The shared type `simd<*(0,0), f32>` is reached under two different
+// signatures of the same depth. The cached result for the first signature must
+// not be reused for the second signature. The declaration of `p2` must still
+// report the type error.
+kgen.generator @test_cache_same_depth() {
+  kgen.param.declare p1: !kgen.generator<<index>type> = <#kgen.gen<simd<*(0,0), f32>>>
+  // expected-error @below {{type of index reference #kgen.param.index.ref<0, 0> : index does not match parameter type 'i32'}}
+  kgen.param.declare p2: !kgen.generator<<i32>type> = <#kgen.gen<simd<*(0,0), f32>>>
+  hlcf.return
+}
+
+// -----
+
 kgen.generator @bad_index_ref() {
   // expected-error @below {{index reference depth 2 exceeds depth of contextual signatures: 1}}
   kgen.param.declare p1: <index>(!pop.array<*(2,0), i32>) -> () = <*?>
@@ -217,7 +230,7 @@ kgen.generator @bad_index_ref<fn: <i32, !pop.array<*(0,0), i32>>() -> ()>() {
 kgen.generator @two_params<a, b>() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{generator type expects 2 parameters but got bindings for 1}}
-  kgen.param.declare f: <index, index>() -> () = <@two_params<?>>
+  kgen.param.declare f: <index, index>() -> () = <@two_params<*?>>
   hlcf.return
 }
 

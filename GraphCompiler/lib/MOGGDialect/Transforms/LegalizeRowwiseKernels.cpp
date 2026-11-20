@@ -1,0 +1,509 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026, Modular Inc. All rights reserved.
+//
+// Licensed under the MAX License:
+// https://modular.com/legal/max-license
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+//
+// Fills in what a `mogg.call.rowwise` needs to print as a Row API body. Each
+// step is its own pass so it can be tested alone;
+// `mogg-legalize-rowwise-kernels` runs them in order:
+//
+// 1. `mogg-rowwise-create-tile`: a body without a tile (one that skipped
+//    `map-rcse`) gets one that loads the input its first fold reads:
+//
+//      reduce (%i) {                  %t = tile (%k) { yield %x[%k] }
+//        %v = load %x[%i]       =>    reduce (%i) {
+//        ...                            %v = tile.load
+//                                       ...
+//
+// 2. `mogg-rowwise-bind-monoids`: each fold names its monoid's fields and
+//    parameters:
+//
+//      %acc = reduce @ReduceSum (%i) -> f32 { ... }
+//        =>  %acc = reduce @ReduceSum (%i) -> f32 { ... }
+//                       {fields = ["acc"], params = {dtype = f32}}
+//
+// 3. `mogg-rowwise-group-row-stores`: the per-row stores, and the row-level
+//    ops only they read, move into one emit; a load at the row index outside
+//    it becomes a `mogg.rowwise.load_lane` spread by a
+//    `mogg.rowwise.splat_lane`:
+//
+//      %b = load %b[%row]               emit {
+//      %y = add(%acc, %b)       =>        %b = load %b[%row]
+//      store %out[%row] = %y              %y = add(%acc, %b)
+//                                         store %out[%row] = %y
+//                                       }
+//
+// 4. `mogg-rowwise-set-launch-params`: the Row API's launch parameters,
+//    `num_phases`, `dtype_size` and `computationally_expensive` among them,
+//    set as the hand-written kernels set them. A fold that reads a
+//    `mogg.rowwise.cache` doesn't count as a phase, and a cache keeps the
+//    row whole (`dtype_size = 0`).
+//
+//===----------------------------------------------------------------------===//
+
+#include "GraphCompiler/MODialect/MODialect.h"
+#include "GraphCompiler/MODialect/MOInterfaces.h"
+#include "GraphCompiler/MODialect/MOTypes.h"
+#include "GraphCompiler/MOGGDialect/MOGGOps.h"
+#include "GraphCompiler/MOGGDialect/MOGGPasses.h"
+#include "GraphCompiler/MOSHDialect/MOSHAttrs.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/LITDialect/LITAttrs.h"
+#include "Support/AssertStream.h"
+
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Pass/PassManager.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/StringMap.h"
+
+using namespace M;
+using namespace mlir;
+
+namespace M::MOGG {
+
+#define GEN_PASS_DEF_LEGALIZEROWWISEKERNELS
+#define GEN_PASS_DEF_ROWWISECREATETILE
+#define GEN_PASS_DEF_ROWWISEBINDMONOIDS
+#define GEN_PASS_DEF_ROWWISEGROUPROWSTORES
+#define GEN_PASS_DEF_ROWWISESETLAUNCHPARAMS
+#include "GraphCompiler/MOGGDialect/MOGGPasses.h.inc"
+
+namespace {
+
+Block::BlockArgListType captureArgs(CallRowwiseOp op) {
+  return op.getBody().front().getArguments().take_front(
+      op.getCapturing().size());
+}
+
+BlockArgument rowArg(CallRowwiseOp op) {
+  return op.getBody().front().getArguments().back();
+}
+
+auto folds(CallRowwiseOp op) {
+  return op.getBody().front().getOps<RowwiseReduceOp>();
+}
+
+auto phases(CallRowwiseOp op) {
+  return op.getBody().front().getOps<RowwisePhaseOpInterface>();
+}
+
+bool hasCache(CallRowwiseOp op) {
+  return !op.getBody().front().getOps<RowwiseCacheOp>().empty();
+}
+
+// Loads of `tensor` at `phase`'s own index.
+SmallVector<TensorLoadOp> elementLoads(RowwisePhaseOpInterface phase,
+                                       Value tensor) {
+  SmallVector<TensorLoadOp> loads;
+  // A phase that reads a cache gets the cache, not the tile.
+  if (phase.getReadCache())
+    return loads;
+  Value index = phase.getIndexArg();
+  phase->getRegion(0).walk([&](TensorLoadOp load) {
+    if (load.getTensor() == tensor && load.getIndex() == index)
+      loads.push_back(load);
+  });
+  return loads;
+}
+
+// The two values a row's tile can hold, both read by its first fold at the
+// element index: a captured tensor's load, or a concat select over its inputs.
+TensorLoadOp capturedLoadAt(CallRowwiseOp op, RowwiseReduceOp first) {
+  TensorLoadOp found;
+  first.getBody().walk([&](TensorLoadOp load) {
+    if (load.getIndex() != first.getIndexArg() ||
+        !llvm::is_contained(captureArgs(op), load.getTensor()))
+      return WalkResult::advance();
+    found = load;
+    return WalkResult::interrupt();
+  });
+  return found;
+}
+
+IndexConcatSelectOp concatSelectAt(RowwiseReduceOp first) {
+  IndexConcatSelectOp found;
+  first.getBody().walk([&](IndexConcatSelectOp select) {
+    if (select.getIndex() != first.getIndexArg())
+      return WalkResult::advance();
+    found = select;
+    return WalkResult::interrupt();
+  });
+  return found;
+}
+
+// Makes `load`'s tensor the row's tile: each phase's load of it at its own
+// index becomes `mogg.rowwise.tile.load`.
+LogicalResult createLoadTile(CallRowwiseOp op, RowwiseReduceOp first,
+                             TensorLoadOp firstLoad) {
+  Value tensor = firstLoad.getTensor();
+  auto type = cast<SimdType>(firstLoad.getType());
+  OpBuilder builder = OpBuilder::atBlockBegin(&op.getBody().front());
+  auto tile = RowwiseTileOp::create(builder, op.getLoc(), type);
+  Block *block = builder.createBlock(&tile.getBody());
+  BlockArgument index =
+      block->addArgument(first.getIndexArg().getType(), op.getLoc());
+  YieldOp::create(
+      builder, op.getLoc(),
+      TensorLoadOp::create(builder, op.getLoc(), type, tensor, index)
+          .getResult());
+
+  for (RowwisePhaseOpInterface phase : phases(op))
+    for (TensorLoadOp load : elementLoads(phase, tensor)) {
+      OpBuilder phaseBuilder(load);
+      load.replaceAllUsesWith(
+          RowwiseTileLoadOp::create(phaseBuilder, load.getLoc(), type)
+              .getResult());
+      load.erase();
+    }
+  return success();
+}
+
+// Makes `select` the row's tile: the Row's load closure then reads each
+// element from the input holding it. The tile runs ahead of the body, so of the
+// body's own values the select may read only those free to recompute (a
+// constant input of the concat), which are cloned into the tile.
+LogicalResult createSelectTile(CallRowwiseOp op, RowwiseReduceOp first,
+                               IndexConcatSelectOp select) {
+  // Captures, the select's own values, and values from outside the call (such
+  // as a dynamic select's run-time shapes) are all in scope for the tile.
+  auto available = [&](Value v) {
+    Operation *owner = v.getParentRegion()->getParentOp();
+    return v == first.getIndexArg() || llvm::is_contained(captureArgs(op), v) ||
+           select->isAncestor(owner) || !op->isAncestor(owner);
+  };
+  auto recomputable = [](Value v) {
+    Operation *def = v.getDefiningOp();
+    return def && def->getNumOperands() == 0 && def->getNumRegions() == 0 &&
+           isMemoryEffectFree(def);
+  };
+  llvm::SetVector<Operation *> copied;
+  WalkResult outside = select->walk([&](Operation *inner) {
+    for (Value operand : inner->getOperands()) {
+      if (available(operand))
+        continue;
+      if (!recomputable(operand))
+        return WalkResult::interrupt();
+      copied.insert(operand.getDefiningOp());
+    }
+    return WalkResult::advance();
+  });
+  if (outside.wasInterrupted())
+    return select.emitOpError("reads a value of the row body, which the row "
+                              "tile can't");
+
+  auto type = cast<SimdType>(select.getResult().getType());
+  OpBuilder builder = OpBuilder::atBlockBegin(&op.getBody().front());
+  auto tile = RowwiseTileOp::create(builder, op.getLoc(), type);
+  Block *block = builder.createBlock(&tile.getBody());
+  IRMapping mapping;
+  mapping.map(first.getIndexArg(),
+              block->addArgument(first.getIndexArg().getType(), op.getLoc()));
+  for (Operation *def : copied)
+    builder.clone(*def, mapping);
+  YieldOp::create(builder, op.getLoc(),
+                  builder.clone(*select, mapping)->getResult(0));
+
+  OpBuilder foldBuilder(select);
+  select.getResult().replaceAllUsesWith(
+      RowwiseTileLoadOp::create(foldBuilder, select.getLoc(), type)
+          .getResult());
+  select.erase();
+  return success();
+}
+
+// Without a `mogg.rowwise.tile` from MAP, the row's tile holds what its first
+// fold reads at the element index. A captured tensor's load comes first, as a
+// fold reading one beside a concat (`sum(concat(a, b) + c)`) keeps `c` in the
+// tile.
+LogicalResult createPlainTile(CallRowwiseOp op) {
+  if (folds(op).empty())
+    return op.emitOpError("has no fold");
+  RowwiseReduceOp first = *folds(op).begin();
+  if (TensorLoadOp load = capturedLoadAt(op, first))
+    return createLoadTile(op, first, load);
+  if (IndexConcatSelectOp select = concatSelectAt(first))
+    return createSelectTile(op, first, select);
+  return op.emitOpError("has a first fold reading neither a captured tensor "
+                        "nor a concat select at its element index, the values "
+                        "a row's tile can hold");
+}
+
+LogicalResult createTile(CallRowwiseOp op) {
+  if (!op.getTile() && failed(createPlainTile(op)))
+    return failure();
+  unsigned readers = llvm::count_if(phases(op), [](RowwisePhaseOpInterface p) {
+    return p->getRegion(0)
+        .walk([](RowwiseTileLoadOp) { return WalkResult::interrupt(); })
+        .wasInterrupted();
+  });
+  // `Row.cache` computes from the kept tile; without it, every read of the
+  // cache computes it again.
+  op.setKeepTile(readers > 1 || hasCache(op));
+  return success();
+}
+
+// The output field dtype `attr` declares, when it is a constant.
+Attribute fixedDType(Attribute attr) {
+  auto structAttr =
+      dyn_cast<KGEN::LIT::LITStructAttr>(KGEN::SugarAttr::strip(attr));
+  if (!structAttr || structAttr.getValues().size() != 1)
+    return nullptr;
+  return std::get<1>(structAttr.getValues().front());
+}
+
+LogicalResult bindMonoid(RowwiseReduceOp fold) {
+  auto decl = SymbolTable::lookupNearestSymbolFrom<KernelDeclOp>(
+      fold, fold.getMonoidAttr());
+  if (!decl || !decl.getReductionAttr())
+    return fold.emitOpError("'") << fold.getMonoid() << "' is not a reduction";
+  ArrayRef<Attribute> outputs = decl.getReductionAttr().getOutputs().getValue();
+  if (outputs.size() != fold.getNumResults())
+    return fold.emitOpError("has ")
+           << fold.getNumResults() << " results, but the monoid has "
+           << outputs.size() << " output fields";
+
+  MLIRContext *ctx = fold.getContext();
+  llvm::StringMap<Type> bound;
+  SmallVector<StringRef> fields;
+  for (auto [attr, resultType] : llvm::zip(outputs, fold.getResultTypes())) {
+    Type type = cast<SimdType>(resultType).getElementType();
+    auto output = cast<KernelReductionOutputAttr>(attr);
+    fields.push_back(output.getName().getValue());
+    Attribute dtype = output.getDtype();
+    if (auto ref =
+            dyn_cast<KGEN::ParamDeclRefAttr>(KGEN::SugarAttr::strip(dtype))) {
+      auto [it, inserted] = bound.try_emplace(ref.getName().strref(), type);
+      if (!inserted && it->second != type)
+        return fold.emitOpError("binds dtype parameter ")
+               << ref.getName() << " to both " << it->second << " and " << type;
+      continue;
+    }
+    if (fixedDType(dtype) !=
+        KGEN::DTypeConstantAttr::get(ctx, MO::getDTypeOrInvalid(type)))
+      return fold.emitOpError("has a result of type ")
+             << type << ", but the monoid's field is " << dtype;
+  }
+
+  SmallVector<NamedAttribute> params;
+  for (auto &entry : bound)
+    params.emplace_back(StringAttr::get(ctx, entry.getKey()),
+                        TypeAttr::get(entry.getValue()));
+  fold.setParamsAttr(DictionaryAttr::get(ctx, params));
+  fold.setFieldsAttr(OpBuilder(fold).getStrArrayAttr(fields));
+  return success();
+}
+
+LogicalResult bindMonoids(CallRowwiseOp op) {
+  Type accum;
+  for (RowwiseReduceOp fold : folds(op)) {
+    if (failed(bindMonoid(fold)))
+      return failure();
+    auto yield = cast<YieldOp>(fold.getBody().front().getTerminator());
+    for (Type yieldType : yield.getOperandTypes()) {
+      Type type = cast<SimdType>(yieldType).getElementType();
+      if (!accum ||
+          type.getIntOrFloatBitWidth() > accum.getIntOrFloatBitWidth())
+        accum = type;
+    }
+  }
+  if (accum)
+    op.setAccum(accum);
+  return success();
+}
+
+// Moves the stores at the row index, and the row-level ops only they read, into
+// one emit at the end of the body, which prints them one lane per output. A
+// load at the row index left in the body feeds a value a phase reads, so it
+// becomes a `mogg.rowwise.load_lane` spread by a `mogg.rowwise.splat_lane`.
+LogicalResult groupRowStores(CallRowwiseOp op) {
+  Block &body = op.getBody().front();
+  SmallVector<TensorStoreOp> stores;
+  for (TensorStoreOp store : body.getOps<TensorStoreOp>())
+    if (store.getIndex() == rowArg(op))
+      stores.push_back(store);
+  if (!stores.empty()) {
+    OpBuilder builder = OpBuilder::atBlockEnd(&body);
+    auto emit = RowwiseEmitOp::create(builder, op.getLoc());
+    Block *emitBody = builder.createBlock(&emit.getBody());
+    for (TensorStoreOp store : stores)
+      store->moveBefore(emitBody, emitBody->end());
+    auto readByEmit = [&](Operation *user) { return emit->isAncestor(user); };
+    for (Operation &o : llvm::make_early_inc_range(llvm::reverse(body)))
+      if (!o.use_empty() && !isa<RowwisePhaseOpInterface>(o) &&
+          llvm::all_of(o.getUsers(), readByEmit))
+        o.moveBefore(emitBody, emitBody->begin());
+  }
+  for (TensorLoadOp load :
+       llvm::make_early_inc_range(body.getOps<TensorLoadOp>())) {
+    if (load.getIndex() != rowArg(op))
+      continue;
+    OpBuilder builder(load);
+    auto lane =
+        RowwiseLoadLaneOp::create(builder, load.getLoc(), load.getType(),
+                                  load.getTensor(), load.getIndex());
+    load.replaceAllUsesWith(
+        RowwiseSplatLaneOp::create(builder, load.getLoc(), lane).getResult());
+    load.erase();
+  }
+  return success();
+}
+
+// An op that divides or calls a transcendental costs about 16 cheap ones.
+constexpr unsigned kCheapOpCost = 1;
+constexpr unsigned kExpensiveOpCost = 16;
+
+unsigned cost(CallElementwiseOp call) {
+  std::optional<RegisteredOperationName> name =
+      RegisteredOperationName::lookup(call.getMoOpName(), call.getContext());
+  return name && name->hasTrait<MO::MOExpensiveElementwise>() ? kExpensiveOpCost
+                                                              : kCheapOpCost;
+}
+
+unsigned stateBits(RowwiseReduceOp fold) {
+  unsigned bits = 0;
+  for (Type type : fold.getResultTypes())
+    bits += cast<SimdType>(type).getElementType().getIntOrFloatBitWidth();
+  return bits;
+}
+
+LogicalResult setLaunchParams(CallRowwiseOp op,
+                              unsigned expensiveCostThreshold) {
+  SmallVector<RowwiseReduceOp> rowFolds = llvm::to_vector(folds(op));
+  if (rowFolds.empty())
+    return op.emitOpError("has no fold");
+
+  Block &body = op.getBody().front();
+  RowwiseReduceOp widest = rowFolds.front();
+  for (RowwiseReduceOp fold : rowFolds)
+    if (stateBits(fold) > stateBits(widest))
+      widest = fold;
+
+  // Per-element work only: the tile and the folds. Row-level ops run
+  // once per row.
+  unsigned elementCost = 0;
+  auto addCost = [&](Region &region) {
+    region.walk([&](CallElementwiseOp call) { elementCost += cost(call); });
+  };
+  if (RowwiseTileOp tile = op.getTile())
+    addCost(tile.getBody());
+  for (RowwiseReduceOp fold : rowFolds)
+    addCost(fold.getBody());
+
+  // The Row API's launch parameters, set as the hand-written kernels set
+  // them (rowwise_reductions.mojo and rowwise_normalization.mojo):
+  //
+  //   body writes     num_phases      dtype_size      expensive
+  //   one per row     1               0               cost >= threshold
+  //   every element   tile folds + 1  row bytes or 0  true
+  //
+  // A fold of a cache isn't a phase of its own: the Row reads the cache
+  // back from registers. `dtype_size` > 0 lets a long row split across
+  // blocks. rms_norm and softmax, whose folds keep one field, opt in;
+  // layer_norm, whose Welford fold keeps three, doesn't, so neither does a
+  // body with a multi-field fold, nor one with a cache, which can't split.
+  // Every hand-written body that writes every element is expensive: it
+  // reads the row once per fold and writes it once.
+  bool writesEveryElement = !body.getOps<RowwiseMapOp>().empty();
+  bool oneFieldFolds = llvm::all_of(
+      rowFolds, [](RowwiseReduceOp fold) { return fold.getNumResults() == 1; });
+  unsigned tileFolds = llvm::count_if(rowFolds, [](RowwiseReduceOp fold) {
+    return !cast<RowwisePhaseOpInterface>(*fold).getReadCache();
+  });
+  op.setNumPhases(writesEveryElement ? tileFolds + 1 : 1);
+  op.setDtypeSize(0);
+  if (writesEveryElement && oneFieldFolds && !hasCache(op)) {
+    ASSERT_STREAM(op.getTile(), << "the tile is created first");
+    op.setDtypeSize(
+        (op.getTile().getType().getElementType().getIntOrFloatBitWidth() + 7) /
+        8);
+  }
+  op.setComputationallyExpensive(writesEveryElement ||
+                                 elementCost >= expensiveCostThreshold);
+  op.setSimdMonoidAttr(widest.getMonoidAttr());
+  if (auto shape = op.getShape().getDefiningOp<ShapeCreateOp>())
+    if (std::optional<int64_t> cols =
+            MOSH::ShapeAttr::getStaticDim(shape.getShape()[op.getAxis()]))
+      op.setCols(*cols);
+  return success();
+}
+
+LogicalResult forEachRowwise(ModuleOp module,
+                             function_ref<LogicalResult(CallRowwiseOp)> fn) {
+  SmallVector<CallRowwiseOp> ops;
+  module.walk([&](CallRowwiseOp op) {
+    ops.push_back(op);
+    return WalkResult::skip();
+  });
+  bool ok = true;
+  for (CallRowwiseOp op : ops)
+    ok &= succeeded(fn(op));
+  return success(ok);
+}
+
+struct RowwiseCreateTilePass
+    : public impl::RowwiseCreateTileBase<RowwiseCreateTilePass> {
+  void runOnOperation() override {
+    if (failed(forEachRowwise(getOperation(), createTile)))
+      signalPassFailure();
+  }
+};
+
+struct RowwiseBindMonoidsPass
+    : public impl::RowwiseBindMonoidsBase<RowwiseBindMonoidsPass> {
+  void runOnOperation() override {
+    if (failed(forEachRowwise(getOperation(), bindMonoids)))
+      signalPassFailure();
+  }
+};
+
+struct RowwiseGroupRowStoresPass
+    : public impl::RowwiseGroupRowStoresBase<RowwiseGroupRowStoresPass> {
+  void runOnOperation() override {
+    if (failed(forEachRowwise(getOperation(), groupRowStores)))
+      signalPassFailure();
+  }
+};
+
+struct RowwiseSetLaunchParamsPass
+    : public impl::RowwiseSetLaunchParamsBase<RowwiseSetLaunchParamsPass> {
+  using Base::Base;
+
+  void runOnOperation() override {
+    auto set = [&](CallRowwiseOp op) {
+      return setLaunchParams(op, expensiveCostThreshold);
+    };
+    if (failed(forEachRowwise(getOperation(), set)))
+      signalPassFailure();
+  }
+};
+
+struct LegalizeRowwiseKernelsPass
+    : public impl::LegalizeRowwiseKernelsBase<LegalizeRowwiseKernelsPass> {
+  using Base::Base;
+
+  void runOnOperation() override {
+    OpPassManager pm(ModuleOp::getOperationName());
+    pm.addPass(createRowwiseCreateTile());
+    pm.addPass(createRowwiseBindMonoids());
+    pm.addPass(createRowwiseGroupRowStores());
+    pm.addPass(createRowwiseSetLaunchParams(
+        RowwiseSetLaunchParamsOptions{expensiveCostThreshold}));
+    if (failed(runPipeline(pm, getOperation())))
+      signalPassFailure();
+  }
+};
+
+} // namespace
+
+} // namespace M::MOGG

@@ -82,17 +82,8 @@ def test_mxfp4_dequant[
 
     var scale_f32 = _e8m0_to_float32(scale_exp)
     print(
-        "  rows=",
-        num_rows,
-        " cols=",
-        num_cols,
-        " dtype=",
-        out_dtype,
-        " scale_exp=",
-        scale_exp,
-        " (scale=",
-        scale_f32,
-        ")",
+        t"  rows= {num_rows}  cols= {num_cols}  dtype= {out_dtype}  scale_exp="
+        t" {scale_exp}  (scale= {scale_f32} )"
     )
 
     comptime in_size = num_rows * packed_cols
@@ -174,14 +165,8 @@ def test_mxfp4_dequant[
             if num_mismatches < 5:
                 var row, col = divmod(i, num_cols)
                 print(
-                    "    MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    exp,
+                    t"    MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {exp}"
                 )
             num_mismatches += 1
 

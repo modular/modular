@@ -21,7 +21,7 @@ use crate::{
     geometry::pristine_pool_can_satisfy,
     pool::{
         block::{HugeBlock, LittleBlock},
-        free_list::{FreeList, Linked},
+        free_list::{FreeList, FreeQueue, Linked, Stamps},
     },
 };
 
@@ -68,6 +68,36 @@ pub struct PoolOptions {
     /// prefix hit. The tiered connector sets it when the host tier only stages
     /// blocks on their way to disk.
     pub skip_prefix_cache: bool,
+    /// Never hands out a huge block below this id, so every cache allocates
+    /// only at the top of its id space. Zero leaves every block allocatable.
+    ///
+    /// For tests only: index arithmetic that multiplies a block id by a page
+    /// stride overflows at the highest ids first, and a short run on a fresh
+    /// pool never reaches them.
+    pub min_huge_bid: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AllocSource {
+    Claimed,
+    Parked,
+    Huge,
+}
+
+/// What one cache holds of a [`JengaBlockPool`], for observability.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CacheOccupancy {
+    /// Little blocks a request references.
+    pub referenced: usize,
+    /// Unreferenced little blocks still committed, which allocation evicts.
+    pub cached: usize,
+    /// The rest of the cache's free blocks, allocatable without evicting
+    /// one of its own commits.
+    pub free: usize,
+    /// Huge blocks typed to the cache that a request references.
+    pub claimed_huge_blocks: usize,
+    /// Huge blocks parked while still typed to the cache.
+    pub parked_huge_blocks: usize,
 }
 
 /// A pool of huge blocks, each subdividable into one cache's little blocks.
@@ -142,21 +172,30 @@ pub struct JengaBlockPool<H> {
     /// `little_blocks[cache][bid]`, for every cache, including the ones in the
     /// null block's huge block 0.
     pub little_blocks: Vec<Vec<LittleBlock<H>>>,
-    /// Each cache's eviction candidates: blocks in huge blocks it holds (parked
-    /// or claimed) that no request references. A huge block parking does not
-    /// evict its own cache's little blocks from here -- only another cache
-    /// claiming the bytes does -- so a mostly-idle huge block still offers up
-    /// whatever little blocks it was never asked to fill.
-    pub free_little_blocks: Vec<FreeList>,
+    /// Each cache's eviction candidates in huge blocks it has claimed: blocks
+    /// no request references, beside ones a request does.
+    pub free_little_blocks: Vec<FreeQueue>,
+    /// Each cache's eviction candidates in huge blocks parked while typed to
+    /// it. Parking does not evict them -- only another cache claiming the
+    /// bytes does -- so a cache can still allocate or hit them.
+    ///
+    /// Kept apart from `free_little_blocks` so allocation fills claimed huge
+    /// blocks first and lets parked ones stay parked for any cache to claim.
+    pub parked_little_blocks: Vec<FreeQueue>,
+    /// Orders both, so a page keeps its turn when it moves between them.
+    stamps: Stamps,
     /// The huge blocks no cache holds, least recently used first.
     pub free_huge_blocks: FreeList,
     /// Each cache's committed blocks, by hash.
     pub prefix_caches: Vec<HashMap<H, usize>>,
     /// How many of `free_huge_blocks` are parked while still typed to each
     /// cache -- their little blocks are already counted in
-    /// `free_little_blocks`, so `num_free_blocks` must not also count the huge
-    /// block itself for that same cache.
+    /// `parked_little_blocks`, so `num_free_blocks` must not also count the
+    /// huge block itself for that same cache.
     parked_and_typed: Vec<usize>,
+    /// How many of each cache's committed blocks no request references, kept
+    /// up to date so [`Self::occupancy`] need not scan the prefix cache.
+    num_cached: Vec<usize>,
     options: PoolOptions,
 }
 
@@ -192,6 +231,12 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
                 "cache_ratios must be non-empty".to_owned(),
             ));
         }
+        if options.min_huge_bid >= num_huge_blocks {
+            return Err(JengaError::InvalidGeometry(format!(
+                "min_huge_bid must leave a huge block to allocate, found {} of {num_huge_blocks}",
+                options.min_huge_bid
+            )));
+        }
         if let Some(idx) = cache_ratios.iter().position(|&ratio| ratio == 0) {
             return Err(JengaError::InvalidGeometry(format!(
                 "cache_ratios must be positive, but cache {idx}'s ratio is 0"
@@ -202,7 +247,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         // so no cache has any little block in circulation yet.
         let mut huge_blocks: Vec<HugeBlock> =
             (0..num_huge_blocks).map(|_| HugeBlock::default()).collect();
-        let first_huge_bid = usize::from(options.null_block);
+        let first_huge_bid = usize::from(options.null_block).max(options.min_huge_bid);
         let free_huge_blocks =
             FreeList::with_ids(&mut huge_blocks, first_huge_bid..num_huge_blocks);
 
@@ -217,9 +262,12 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
                         .collect()
                 })
                 .collect(),
-            free_little_blocks: (0..num_caches).map(|_| FreeList::default()).collect(),
+            free_little_blocks: (0..num_caches).map(|_| FreeQueue::default()).collect(),
+            parked_little_blocks: (0..num_caches).map(|_| FreeQueue::default()).collect(),
+            stamps: Stamps::default(),
             prefix_caches: (0..num_caches).map(|_| HashMap::new()).collect(),
             parked_and_typed: vec![0; num_caches],
+            num_cached: vec![0; num_caches],
             cache_ratios,
             huge_blocks,
             free_huge_blocks,
@@ -234,36 +282,57 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         self.options.null_block.then_some(NULL_BID)
     }
 
-    /// Returns the huge blocks allocation can hand out: all of them, or all
-    /// but huge block 0 when it holds the null block.
+    /// Returns the huge blocks allocation can hand out: all of them, but huge
+    /// block 0 when it holds the null block and any below
+    /// [`PoolOptions::min_huge_bid`].
     #[must_use]
     pub fn allocatable_huge_bids(&self) -> Range<usize> {
-        usize::from(self.options.null_block)..self.huge_blocks.len()
+        usize::from(self.options.null_block).max(self.options.min_huge_bid)..self.huge_blocks.len()
     }
 
     fn is_null(&self, bid: usize) -> bool {
         self.options.null_block && bid == NULL_BID
     }
 
-    /// Returns true if we should prefer to claim a huge block over a little block
-    /// when both are available to allocate.
+    /// Returns where the next block of `cache` comes from: its claimed huge
+    /// blocks, its parked ones, or a huge block off the parked list.
     ///
-    /// This occurs when evicting a little block from the prefix cache would
-    /// evict a committed block but evicting a huge block would not.
-    fn prefer_claim_huge(&self, cache: usize) -> bool {
-        let free_little_blocks = self.free_little_blocks.get(cache).unwrap();
-        let free_huge_blocks = &self.free_huge_blocks;
-
-        if free_little_blocks.len == 0 || free_huge_blocks.len == 0 {
-            return false;
+    /// Filling claimed huge blocks first keeps a cache's live pages packed
+    /// into few huge blocks, so the rest can park for any cache to claim. A
+    /// page whose loss evicts no commit comes first, and a pristine huge
+    /// block before evicting a prefix. Eviction takes the least recently used
+    /// commit, parked or not: the commits beside live pages are the newest.
+    fn alloc_source(&self, cache: usize) -> Option<AllocSource> {
+        let lists = [
+            (AllocSource::Claimed, &self.free_little_blocks[cache]),
+            (AllocSource::Parked, &self.parked_little_blocks[cache]),
+        ];
+        for (source, list) in lists {
+            if list
+                .peek_front(&self.huge_blocks)
+                .is_some_and(|bid| self.little_blocks[cache][bid].block_hash.is_none())
+            {
+                return Some(source);
+            }
         }
-
-        let little_eviction_candidate =
-            &self.little_blocks[cache][free_little_blocks.peek_front().unwrap()];
-        let huge_eviction_candidate = &self.huge_blocks[free_huge_blocks.peek_front().unwrap()];
-
-        little_eviction_candidate.block_hash.is_some()
-            && huge_eviction_candidate.little_block_type.is_none()
+        if self
+            .free_huge_blocks
+            .peek_front()
+            .is_some_and(|huge_bid| self.huge_blocks[huge_bid].little_block_type.is_none())
+        {
+            return Some(AllocSource::Huge);
+        }
+        // Both queues share one set of stamps, so the smaller front stamp is
+        // the cache's least recently used commit.
+        lists
+            .into_iter()
+            .filter_map(|(source, list)| {
+                list.peek_front(&self.huge_blocks)
+                    .map(|bid| (source, self.little_blocks[cache][bid].free))
+            })
+            .min_by_key(|&(_, stamp)| stamp)
+            .map(|(source, _)| source)
+            .or_else(|| (self.free_huge_blocks.len > 0).then_some(AllocSource::Huge))
     }
 
     /// Returns a fresh block of `cache`, claiming huge blocks as needed. It is
@@ -277,64 +346,60 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
     /// # Panics
     /// If the pool does not serve `cache`.
     pub fn alloc_block(&mut self, cache: usize) -> Result<usize, JengaError> {
-        // If no free little blocks are available, we need to allocate a huge block
-        // and split it into little blocks. We also prefer to claim a huge block
-        // even when there are little blocks available to avoid evicting entries
-        // from the prefix cache.
-        if self.free_little_blocks[cache].len == 0 || self.prefer_claim_huge(cache) {
-            let Some(huge_bid) = self.free_huge_blocks.pop_front(&mut self.huge_blocks) else {
-                return Err(JengaError::InsufficientBlocks(cache));
-            };
+        self.alloc_block_with_retype(cache).map(|(bid, _)| bid)
+    }
 
-            // If the huge block is already typed to a different cache, it is
-            // parked, so all of that cache's little blocks in it are
-            // unreferenced and still sitting on that cache's free list. Remove
-            // them there before handing the bytes over.
-            if let Some(old_cache) = self.huge_blocks[huge_bid].little_block_type {
-                // A huge block parked under `cache` keeps its little blocks on
-                // `cache`'s own free list, so we would have popped one of those
-                // rather than reaching for a huge block at all.
-                assert!(old_cache != cache);
-                // The huge block just left free_huge_blocks, so it stops
-                // counting toward old_cache's parked-and-typed total.
-                self.parked_and_typed[old_cache] -= 1;
-                let ratio = self.cache_ratios[old_cache];
-                let free = &mut self.free_little_blocks[old_cache];
-                let blocks = &mut self.little_blocks[old_cache];
-                for sibling in huge_bid * ratio..(huge_bid + 1) * ratio {
-                    free.remove(blocks, sibling);
-                }
-            }
-
-            self.claim_huge_block(huge_bid, cache);
-        }
-
-        let bid = self.free_little_blocks[cache]
-            .pop_front(&mut self.little_blocks[cache])
-            .expect("a claimed huge block puts its little blocks in circulation");
-
+    /// Allocates a block and reports whether its huge block changed cache type.
+    ///
+    /// The device owner can clear reinterpreted bytes before exposing the block.
+    ///
+    /// # Panics
+    /// If the pool does not serve `cache`.
+    pub fn alloc_block_with_retype(&mut self, cache: usize) -> Result<(usize, bool), JengaError> {
+        let mut retyped = false;
         let ratio = self.cache_ratios[cache];
-
-        // A block handed out directly from `free_little_blocks[cache]` (not
-        // via `claim_huge_block`) can belong to a huge block that's still
-        // parked -- one of its siblings was never asked to fill, so the huge
-        // block went idle without this cache running dry. Un-park it now that
-        // one of its blocks is live again.
-        self.little_blocks[cache][bid].ref_cnt += 1;
-        self.huge_blocks[bid / ratio].num_referenced += 1;
-        if self
-            .free_huge_blocks
-            .contains(&self.huge_blocks, bid / ratio)
-        {
-            self.free_huge_blocks
-                .remove(&mut self.huge_blocks, bid / ratio);
-            self.parked_and_typed[cache] -= 1;
-        }
+        let bid = match self.alloc_source(cache) {
+            None => return Err(JengaError::InsufficientBlocks(cache)),
+            Some(AllocSource::Claimed) => self.free_little_blocks[cache]
+                .pop_front(&mut self.huge_blocks, &mut self.little_blocks[cache], ratio)
+                .expect("alloc_source checked the list"),
+            Some(AllocSource::Parked) => {
+                let bid = self.parked_little_blocks[cache]
+                    .peek_front(&self.huge_blocks)
+                    .expect("alloc_source checked the list");
+                self.claim_huge_block(bid / ratio, cache);
+                self.free_little_blocks[cache].remove(
+                    &mut self.huge_blocks,
+                    &mut self.little_blocks[cache],
+                    ratio,
+                    bid,
+                );
+                bid
+            }
+            Some(AllocSource::Huge) => {
+                let huge_bid = self
+                    .free_huge_blocks
+                    .peek_front()
+                    .expect("alloc_source checked the list");
+                // A huge block parked under `cache` keeps its little blocks on
+                // `cache`'s parked list, so we would have taken one of those
+                // rather than reaching for a huge block at all.
+                assert_ne!(self.huge_blocks[huge_bid].little_block_type, Some(cache));
+                retyped = self.huge_blocks[huge_bid].little_block_type.is_some();
+                self.claim_huge_block(huge_bid, cache);
+                self.free_little_blocks[cache]
+                    .pop_front(&mut self.huge_blocks, &mut self.little_blocks[cache], ratio)
+                    .expect("a claimed huge block puts its little blocks in circulation")
+            }
+        };
 
         // Handing out a committed block evicts it: its bytes are about to be
         // overwritten, so it can no longer serve its hash.
         self.uncommit_block(cache, bid);
-        Ok(bid)
+
+        self.little_blocks[cache][bid].ref_cnt += 1;
+        self.huge_blocks[bid / ratio].num_referenced += 1;
+        Ok((bid, retyped))
     }
 
     /// Drops a block from its cache's prefix cache, if it is committed.
@@ -345,6 +410,9 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         let blocks = &mut self.little_blocks[cache];
         if let Some(hash) = blocks[bid].block_hash.take() {
             self.prefix_caches[cache].remove(&hash);
+            if blocks[bid].ref_cnt == 0 {
+                self.num_cached[cache] -= 1;
+            }
         }
     }
 
@@ -366,6 +434,9 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
             "block {bid} of {cache} is already committed"
         );
         blocks[bid].block_hash = Some(hash);
+        if blocks[bid].ref_cnt == 0 {
+            self.num_cached[cache] += 1;
+        }
 
         let prefix_cache = self.prefix_caches.get_mut(cache).unwrap();
         let previous = prefix_cache.insert(hash, bid);
@@ -391,6 +462,8 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
             free_little_blocks,
             free_huge_blocks,
             parked_and_typed,
+            num_cached,
+            stamps,
             ..
         } = self;
         let blocks = &mut little_blocks[cache];
@@ -410,9 +483,10 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         let huge_bid = bid / ratio;
         huge_blocks[huge_bid].num_referenced -= 1;
         if blocks[bid].block_hash.is_none() {
-            free.append_front(blocks, bid);
+            free.append_front(stamps, huge_blocks, blocks, ratio, bid);
         } else {
-            free.append_back(blocks, bid);
+            free.append_back(stamps, huge_blocks, blocks, ratio, bid);
+            num_cached[cache] += 1;
         }
 
         if huge_blocks[huge_bid].num_referenced > 0 {
@@ -420,15 +494,34 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         }
 
         // The whole huge block went idle, so park it where any cache can claim
-        // it. Its little blocks stay in `free_little_blocks[cache]` (still
+        // it. Its little blocks move to `parked_little_blocks[cache]` (still
         // committed, still directly allocable by `cache` without a reclaim) and
         // the block stays typed: whoever claims it next needs to know whose
         // commits its bytes still back, to evict them only if the bytes change
         // hands. `parked_and_typed` tracks that those little blocks are already
-        // counted here, so `num_free_blocks` doesn't double-count them.
+        // counted, so `num_free_blocks` doesn't double-count them.
         assert_eq!(huge_blocks[huge_bid].little_block_type, Some(cache));
         parked_and_typed[cache] += 1;
         free_huge_blocks.append_back(huge_blocks, huge_bid);
+        self.move_free_pages(cache, huge_bid, true);
+    }
+
+    /// Moves every page of `huge_bid` between `cache`'s claimed and parked
+    /// free lists, which holds them all while no request references any. Each
+    /// keeps its turn, so eviction order survives the move.
+    fn move_free_pages(&mut self, cache: usize, huge_bid: usize, park: bool) {
+        let (from, to) = if park {
+            (
+                &mut self.free_little_blocks[cache],
+                &mut self.parked_little_blocks[cache],
+            )
+        } else {
+            (
+                &mut self.parked_little_blocks[cache],
+                &mut self.free_little_blocks[cache],
+            )
+        };
+        from.move_huge_to(to, &self.huge_blocks[huge_bid], huge_bid);
     }
 
     /// Commits a block, or returns the twin already holding its bytes.
@@ -496,13 +589,44 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
             }
             let free = self.free_little_blocks.get_mut(cache).unwrap();
             let blocks = self.little_blocks.get_mut(cache).unwrap();
-            free.remove(blocks, bid);
+            free.remove(&mut self.huge_blocks, blocks, ratio, bid);
+            if blocks[bid].block_hash.is_some() {
+                self.num_cached[cache] -= 1;
+            }
             // Only a 0 -> 1 transition adds a newly-referenced little block to
             // the huge block's count; a second reference to one already held
             // must not double-count it.
             self.huge_blocks[huge_bid].num_referenced += 1;
         }
         self.little_blocks[cache][bid].ref_cnt += 1;
+    }
+
+    /// Moves an unreferenced block to the most-recently-used end of its free
+    /// queue, and a parked huge block holding it to the end of the huge free
+    /// list: what [`Self::touch`] then [`Self::free_block`] do, without
+    /// claiming and re-parking every page of the huge block. A referenced
+    /// block is left alone.
+    ///
+    /// # Panics
+    /// If the pool does not serve `cache`.
+    pub fn refresh(&mut self, cache: usize, bid: usize) {
+        if self.is_null(bid) || self.little_blocks[cache][bid].ref_cnt > 0 {
+            return;
+        }
+        let ratio = self.cache_ratios[cache];
+        let huge_bid = bid / ratio;
+        let queue = if self.huge_blocks[huge_bid].is_free() {
+            self.free_huge_blocks
+                .remove(&mut self.huge_blocks, huge_bid);
+            self.free_huge_blocks
+                .append_back(&mut self.huge_blocks, huge_bid);
+            &mut self.parked_little_blocks[cache]
+        } else {
+            &mut self.free_little_blocks[cache]
+        };
+        let blocks = &mut self.little_blocks[cache];
+        queue.remove(&mut self.huge_blocks, blocks, ratio, bid);
+        queue.append_back(&mut self.stamps, &mut self.huge_blocks, blocks, ratio, bid);
     }
 
     /// Returns how many more blocks of `cache` the pool can still serve.
@@ -513,10 +637,12 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
     pub fn num_free_blocks(&self, cache: usize) -> usize {
         // Parked huge blocks already typed to `cache` contribute nothing extra
         // here: their little blocks are already counted in
-        // `free_little_blocks[cache]`, so only the other parked huge blocks
+        // `parked_little_blocks[cache]`, so only the other parked huge blocks
         // (pristine, or typed to a different cache) would yield new ones if claimed.
         let claimable_huge_blocks = self.free_huge_blocks.len - self.parked_and_typed[cache];
-        claimable_huge_blocks * self.cache_ratios[cache] + self.free_little_blocks[cache].len
+        claimable_huge_blocks * self.cache_ratios[cache]
+            + self.free_little_blocks[cache].len()
+            + self.parked_little_blocks[cache].len()
     }
 
     /// Returns how many blocks of `cache` the pool is currently serving. The
@@ -527,6 +653,39 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
     #[must_use]
     pub fn num_used_blocks(&self, cache: usize) -> usize {
         self.cache_ratios[cache] * self.allocatable_huge_bids().len() - self.num_free_blocks(cache)
+    }
+
+    /// Returns what `cache` holds, scanning every huge block.
+    ///
+    /// # Panics
+    /// If the pool does not serve `cache`.
+    #[must_use]
+    pub fn occupancy(&self, cache: usize) -> CacheOccupancy {
+        let mut referenced = 0;
+        let mut claimed_huge_blocks = 0;
+        for huge in &self.huge_blocks {
+            if huge.little_block_type == Some(cache) && !huge.is_free() {
+                claimed_huge_blocks += 1;
+                referenced += huge.num_referenced;
+            }
+        }
+        // Retyping evicts the outgoing cache's commits, so every commit sits
+        // in a huge block typed to `cache`, and an unreferenced one is on its
+        // free list.
+        let cached = self.num_cached[cache];
+        CacheOccupancy {
+            referenced,
+            cached,
+            free: self.num_free_blocks(cache) - cached,
+            claimed_huge_blocks,
+            parked_huge_blocks: self.parked_and_typed[cache],
+        }
+    }
+
+    /// Returns how many parked huge blocks no cache has ever claimed.
+    #[must_use]
+    pub fn num_pristine_huge_blocks(&self) -> usize {
+        self.free_huge_blocks.len - self.parked_and_typed.iter().sum::<usize>()
     }
 
     /// Returns whether the pool can allocate `demand[cache]` more little
@@ -562,17 +721,45 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         let mut shortfall = Vec::with_capacity(demand.len());
         for (cache, &num_blocks) in demand.iter().enumerate() {
             let ratio = self.cache_ratios[cache];
-            let carved = self.free_little_blocks[cache].len;
+            let fixed_free_blocks = self.free_little_blocks[cache].len();
+            let carved = fixed_free_blocks + self.parked_little_blocks[cache].len();
             let parked = self.parked_and_typed[cache];
-            // A parked huge block's little blocks are all on its cache's free
-            // list, so `carved` covers them and this cannot underflow.
-            let fixed_free_blocks = carved - parked * ratio;
             let parked_to_keep =
                 parked.min(num_blocks.saturating_sub(fixed_free_blocks).div_ceil(ratio));
             claimable -= parked_to_keep;
             shortfall.push(num_blocks.saturating_sub(carved));
         }
         pristine_pool_can_satisfy(claimable, &self.cache_ratios, &shortfall)
+    }
+
+    /// Returns the largest `m` for which [`Self::can_satisfy_demand`] accepts
+    /// `m` times `unit`, or 0 if `unit` asks for nothing.
+    ///
+    /// # Panics
+    /// If `unit` does not name every cache the pool serves, by index.
+    #[must_use]
+    pub fn max_satisfiable_multiple(&self, unit: &[usize], at_capacity: bool) -> usize {
+        let num_huge_blocks = self.allocatable_huge_bids().len();
+        let Some(mut hi) = unit
+            .iter()
+            .zip(&self.cache_ratios)
+            .filter(|&(&blocks, _)| blocks > 0)
+            .map(|(&blocks, &ratio)| num_huge_blocks * ratio / blocks)
+            .min()
+        else {
+            return 0;
+        };
+        let mut lo = 0;
+        while lo < hi {
+            let mid = lo + (hi - lo).div_ceil(2);
+            let demand: Vec<usize> = unit.iter().map(|&blocks| blocks * mid).collect();
+            if self.can_satisfy_demand(&demand, at_capacity) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        lo
     }
 
     /// Drops every commit no request is holding, in every cache.
@@ -585,6 +772,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         let JengaBlockPool {
             little_blocks,
             prefix_caches,
+            num_cached,
             ..
         } = self;
         let mut purged = Vec::with_capacity(prefix_caches.len());
@@ -598,7 +786,10 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
                 }
                 referenced
             });
-            purged.push(before - prefix_cache.len());
+            // Every purged commit was unreferenced, so all of them were cached.
+            let num_purged = before - prefix_cache.len();
+            num_cached[cache] -= num_purged;
+            purged.push(num_purged);
         }
         purged
     }
@@ -615,8 +806,6 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
             "huge block {huge_bid} is still referenced"
         );
         let previous = self.huge_blocks[huge_bid].little_block_type;
-        // `alloc_block` pops the block off the parked list before claiming it;
-        // `touch` claims one that is still on it.
         if self.huge_blocks[huge_bid].is_free() {
             self.free_huge_blocks
                 .remove(&mut self.huge_blocks, huge_bid);
@@ -626,15 +815,23 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         }
 
         if previous == Some(cache) {
-            // Reclaiming our own parked huge block: its little blocks never
-            // left `free_little_blocks[cache]` (see `free_block`), so there is
-            // nothing left to put back in circulation.
+            // Reclaiming our own parked huge block: its little blocks are
+            // still free-listed (see `free_block`), on the parked list.
+            self.move_free_pages(cache, huge_bid, false);
             return;
         }
 
+        // The outgoing cache's little blocks are all unreferenced, waiting on
+        // its parked list.
         if let Some(previous) = previous {
             let ratio = self.cache_ratios[previous];
             for bid in huge_bid * ratio..(huge_bid + 1) * ratio {
+                self.parked_little_blocks[previous].remove(
+                    &mut self.huge_blocks,
+                    &mut self.little_blocks[previous],
+                    ratio,
+                    bid,
+                );
                 self.uncommit_block(previous, bid);
             }
         }
@@ -647,9 +844,9 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         // ascending bid order, not descending.
         for bid in (huge_bid * ratio..(huge_bid + 1) * ratio).rev() {
             if blocks[bid].block_hash.is_none() {
-                free.append_front(blocks, bid);
+                free.append_front(&mut self.stamps, &mut self.huge_blocks, blocks, ratio, bid);
             } else {
-                free.append_back(blocks, bid);
+                free.append_back(&mut self.stamps, &mut self.huge_blocks, blocks, ratio, bid);
             }
         }
     }
@@ -679,6 +876,7 @@ mod tests {
     const WITH_NULL: PoolOptions = PoolOptions {
         null_block: true,
         skip_prefix_cache: false,
+        min_huge_bid: 0,
     };
 
     /// Builds a pool with `allocatable` huge blocks to hand out, plus huge
@@ -729,13 +927,14 @@ mod tests {
     /// it is never parked or typed, so the walk below also checks that none of
     /// its little blocks -- the null blocks included -- is ever referenced,
     /// free-listed or committed.
-    fn check_invariants(p: &Pool) {
+    fn check_invariants<H: Copy + Eq + Hash + fmt::Debug>(p: &JengaBlockPool<H>) {
         if p.null_bid().is_some() {
             let null_huge = &p.huge_blocks[0];
             assert!(!null_huge.is_free(), "the null huge block is parked");
             assert_eq!(null_huge.little_block_type, None);
         }
 
+        let mut num_free = vec![0; p.cache_ratios.len()];
         for huge_bid in 0..p.huge_blocks.len() {
             let huge = &p.huge_blocks[huge_bid];
             let parked = huge.is_free();
@@ -758,12 +957,59 @@ mod tests {
                             block.is_free(),
                             "{cache}/{bid} is both or neither referenced and free"
                         );
+                        if block.is_free() {
+                            num_free[cache] += 1;
+                            let queue = if parked {
+                                &p.parked_little_blocks[cache]
+                            } else {
+                                &p.free_little_blocks[cache]
+                            };
+                            assert!(
+                                queue.contains(
+                                    &p.huge_blocks,
+                                    &p.little_blocks[cache],
+                                    *ratio,
+                                    bid
+                                ),
+                                "{cache}/{bid} is free on the wrong queue"
+                            );
+                        }
                     } else {
                         assert_eq!(block.ref_cnt, 0, "{cache}/{bid} is referenced");
                         assert!(!block.is_free(), "{cache}/{bid} is in circulation");
                     }
                 }
             }
+        }
+
+        for (cache, &ratio) in p.cache_ratios.iter().enumerate() {
+            // Each queue's front is its least recently used page, by stamp.
+            let oldest = |parked: bool| {
+                (0..p.little_blocks[cache].len())
+                    .filter(|&bid| {
+                        p.little_blocks[cache][bid].is_free()
+                            && p.huge_blocks[bid / ratio].is_free() == parked
+                    })
+                    .min_by_key(|&bid| p.little_blocks[cache][bid].free)
+            };
+            assert_eq!(
+                p.free_little_blocks[cache].peek_front(&p.huge_blocks),
+                oldest(false)
+            );
+            assert_eq!(
+                p.parked_little_blocks[cache].peek_front(&p.huge_blocks),
+                oldest(true)
+            );
+            assert_eq!(
+                p.parked_little_blocks[cache].len(),
+                p.parked_and_typed[cache] * ratio,
+                "{cache}'s parked list holds pages of claimed huge blocks"
+            );
+            assert_eq!(
+                p.free_little_blocks[cache].len() + p.parked_little_blocks[cache].len(),
+                num_free[cache],
+                "{cache}'s free queues hold blocks that are not free"
+            );
         }
 
         for (cache, prefix_cache) in p.prefix_caches.iter().enumerate() {
@@ -775,6 +1021,14 @@ mod tests {
                     Some(cache)
                 );
             }
+            let cached = prefix_cache
+                .values()
+                .filter(|&&bid| p.little_blocks[cache][bid].ref_cnt == 0)
+                .count();
+            assert_eq!(
+                p.num_cached[cache], cached,
+                "cache {cache}'s cached count drifted"
+            );
         }
 
         // The running per-huge-block counts must match a fresh walk, and must be
@@ -797,6 +1051,63 @@ mod tests {
             );
             assert_eq!(huge.num_referenced == 0, summed == 0);
         }
+    }
+
+    #[test]
+    fn min_huge_bid_allocates_only_high_ids() {
+        const HASHES: [&str; 12] = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
+        let ratios = [2, 3];
+        let options = PoolOptions {
+            null_block: true,
+            min_huge_bid: 8,
+            ..PoolOptions::default()
+        };
+        let mut p = Pool::new(11, ratios.to_vec(), options).expect("a pool");
+        assert_eq!(p.allocatable_huge_bids(), 8..11);
+        check_invariants(&p);
+
+        // Commits and eviction cycle every cache through the allowed huge
+        // blocks many times over, so a low id would surface if one leaked.
+        for round in 0..300 {
+            let mut held = Vec::new();
+            for (cache, ratio) in ratios.iter().enumerate() {
+                for _ in 0..1 + (round + cache) % 4 {
+                    let Ok(bid) = p.alloc_block(cache) else { break };
+                    assert!(bid >= 8 * ratio, "round {round}: {cache}/{bid}");
+                    let hash = HASHES[(round * 5 + held.len()) % HASHES.len()];
+                    if p.lookup_hash(cache, hash).is_none() {
+                        p.commit_into_prefix_cache(cache, hash, bid);
+                    }
+                    held.push((cache, bid));
+                }
+            }
+            check_invariants(&p);
+            for (cache, bid) in held {
+                p.free_block(cache, bid);
+            }
+            check_invariants(&p);
+        }
+
+        let all_but_one = PoolOptions {
+            min_huge_bid: 10,
+            ..options
+        };
+        let mut p = Pool::new(11, ratios.to_vec(), all_but_one).expect("a pool");
+        let mut bids = alloc_n(&mut p, 0, 2);
+        bids.sort_unstable();
+        assert_eq!(bids, [20, 21]);
+        expect_exhausted(&mut p, 0);
+
+        let err = Pool::new(
+            11,
+            ratios.to_vec(),
+            PoolOptions {
+                min_huge_bid: 11,
+                ..options
+            },
+        )
+        .expect_err("no huge block left");
+        assert!(err.to_string().contains("min_huge_bid"), "{err}");
     }
 
     #[test]
@@ -823,7 +1134,7 @@ mod tests {
                 assert_eq!(p.cache_ratios[cache], ratio);
                 // Nothing is in circulation yet, but every parked huge block is
                 // still available to whichever cache asks first.
-                assert_eq!(p.free_little_blocks[cache].len, 0);
+                assert_eq!(p.free_little_blocks[cache].len(), 0);
                 assert_eq!(p.num_free_blocks(cache), 42 * ratio);
                 assert_eq!(p.num_used_blocks(cache), 0);
                 assert!(p.prefix_caches[cache].is_empty());
@@ -959,17 +1270,17 @@ mod tests {
             // One live reference keeps the bytes typed, so the other cache
             // cannot have them however much it wants them.
             assert_eq!(p.free_huge_blocks.len, 1);
-            assert_eq!(p.free_little_blocks[0].len, 1);
+            assert_eq!(p.free_little_blocks[0].len(), 1);
             assert_eq!(p.num_free_blocks(1), 2);
             check_invariants(&p);
 
             p.free_block(0, bids[1]);
             assert_eq!(p.free_huge_blocks.len, 2);
             // The huge block went idle, but its little blocks stay on cache
-            // 0's own free list -- still directly allocable by cache 0 without
+            // 0's parked list -- still directly allocable by cache 0 without
             // a reclaim -- even though the huge block itself is now also up
             // for grabs.
-            assert_eq!(p.free_little_blocks[0].len, 2);
+            assert_eq!(p.parked_little_blocks[0].len(), 2);
             assert_eq!(p.num_free_blocks(1), 4);
             check_invariants(&p);
         }
@@ -993,6 +1304,107 @@ mod tests {
             assert_eq!(p.little_blocks[0][bids[0]].block_hash, Some("prefix"));
             check_invariants(&p);
         }
+    }
+
+    #[test]
+    fn refresh_reorders_eviction_as_touch_then_free_does() {
+        // Huge block 0 parks, 1 stays claimed by a held page, 2 parks. Refresh
+        // a parked page, a claimed free page and the held page, then record
+        // which huge block another cache retypes and what cache 0 evicts.
+        let run = |null_block: bool, op: &dyn Fn(&mut Pool, usize)| {
+            let mut p = pool(3, &[2, 1], null_block);
+            let bids = alloc_n(&mut p, 0, 6);
+            for (bid, hash) in bids.iter().zip(["a", "b", "c", "d", "e", "f"]) {
+                p.commit_into_prefix_cache(0, hash, *bid);
+            }
+            for i in [0, 1, 2, 4, 5] {
+                p.free_block(0, bids[i]);
+            }
+            for i in [3, 2, 0] {
+                op(&mut p, bids[i]);
+            }
+            check_invariants(&p);
+            let mut order = vec![p.alloc_block(1).expect("a parked huge block")];
+            while let Ok(bid) = p.alloc_block(0) {
+                order.push(bid);
+            }
+            order
+        };
+        for null_block in [false, true] {
+            let refreshed = run(null_block, &|p, bid| p.refresh(0, bid));
+            let touched = run(null_block, &|p, bid| {
+                p.touch(0, bid);
+                p.free_block(0, bid);
+            });
+            assert_eq!(refreshed, touched);
+            assert_ne!(refreshed, run(null_block, &|_, _| {}));
+        }
+    }
+
+    /// Random churn over three caches whose huge blocks park, are claimed
+    /// back, retyped, touched and refreshed. The fingerprint folds in every
+    /// allocation's result, so it pins the eviction and retype order the
+    /// per-page queues produced before parking moved huge blocks whole.
+    #[test]
+    fn churn_keeps_the_eviction_order() {
+        let fingerprint = |null_block: bool| {
+            let mut p = pool(12, &[3, 5, 2], null_block);
+            let mut rng = 0x2545_f491_4f6c_dd1du64;
+            let mut next = |n: u64| {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                (rng % n) as usize
+            };
+            let hashes = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
+            let mut held: Vec<(usize, usize)> = Vec::new();
+            let mut fold = 0xcbf2_9ce4_8422_2325u64;
+            for step in 0..4000 {
+                // Alternate pressure with slack, which parks, and move demand
+                // between caches, which retypes.
+                let allocs = if step % 1000 < 500 { 4 } else { 2 };
+                let cache = if next(2) == 0 {
+                    step / 250 % 3
+                } else {
+                    next(3)
+                };
+                let hash = hashes[next(12)];
+                match next(8) {
+                    op if op < allocs => {
+                        let outcome = p.alloc_block_with_retype(cache).ok();
+                        if let Some((bid, _)) = outcome {
+                            held.push((cache, bid));
+                            if next(2) == 0 && p.lookup_hash(cache, hash).is_none() {
+                                p.commit_into_prefix_cache(cache, hash, bid);
+                            }
+                        }
+                        let value = outcome.map_or(u64::MAX, |(bid, retyped)| {
+                            (cache as u64) << 32 | (bid as u64) << 1 | u64::from(retyped)
+                        });
+                        fold = (fold ^ value).wrapping_mul(0x100_0000_01b3);
+                    }
+                    op if op < 6 && !held.is_empty() => {
+                        let (cache, bid) = held.swap_remove(next(held.len() as u64));
+                        p.free_block(cache, bid);
+                    }
+                    6 => {
+                        if let Some(bid) = p.lookup_hash(cache, hash) {
+                            p.touch(cache, bid);
+                            held.push((cache, bid));
+                        }
+                    }
+                    _ => {
+                        if let Some(bid) = p.lookup_hash(cache, hash) {
+                            p.refresh(cache, bid);
+                        }
+                    }
+                }
+                check_invariants(&p);
+            }
+            fold
+        };
+        assert_eq!(fingerprint(false), 7_631_814_408_683_305_336);
+        assert_eq!(fingerprint(true), 9_593_804_921_475_115_732);
     }
 
     #[test]
@@ -1040,6 +1452,130 @@ mod tests {
             );
             check_invariants(&p);
         }
+    }
+
+    #[test]
+    fn parking_keeps_the_head_of_a_prefix_evicted_last() {
+        for null_block in [false, true] {
+            let mut p = pool(1, &[3], null_block);
+            let bids = alloc_n(&mut p, 0, 3);
+            // Reuse hands the prefix its blocks out of bid order.
+            p.free_block(0, bids[0]);
+            p.free_block(0, bids[1]);
+            let head = p.alloc_block(0).expect("a free block");
+            let tail = p.alloc_block(0).expect("a free block");
+            assert!(head > tail);
+            p.commit_into_prefix_cache(0, "head", head);
+            p.commit_into_prefix_cache(0, "tail", tail);
+            p.free_block(0, tail);
+            p.free_block(0, head);
+
+            // Park the huge block, then claim it back.
+            p.free_block(0, bids[2]);
+            assert_eq!(p.free_huge_blocks.len, 1);
+            assert_eq!(p.alloc_block(0).expect("a free block"), bids[2]);
+
+            assert_eq!(p.alloc_block(0).expect("a free block"), tail);
+            assert_eq!(p.prefix_caches[0], HashMap::from([("head", head)]));
+            check_invariants(&p);
+        }
+    }
+
+    #[test]
+    fn alloc_fills_claimed_huge_blocks_before_parked_ones() {
+        for null_block in [false, true] {
+            let mut p = pool(2, &[2], null_block);
+            let bids = alloc_n(&mut p, 0, 4);
+            // The first huge block frees a page while a request still holds
+            // its other one, then the second huge block parks.
+            p.free_block(0, bids[0]);
+            p.free_block(0, bids[2]);
+            p.free_block(0, bids[3]);
+
+            // Taking a parked page would unpark bytes any cache could claim.
+            assert_eq!(p.alloc_block(0).expect("a free block"), bids[0]);
+            assert_eq!(p.free_huge_blocks.len, 1);
+            check_invariants(&p);
+        }
+    }
+
+    #[test]
+    fn alloc_evicts_the_least_recently_used_commit_even_when_parked() {
+        for null_block in [false, true] {
+            let mut p = pool(2, &[2], null_block);
+            let bids = alloc_n(&mut p, 0, 4);
+            for (bid, hash) in bids.iter().zip(["a", "b", "c", "d"]) {
+                p.commit_into_prefix_cache(0, hash, *bid);
+            }
+            // The second huge block parks, then the first frees a page while a
+            // request still holds its other one.
+            p.free_block(0, bids[2]);
+            p.free_block(0, bids[3]);
+            p.free_block(0, bids[0]);
+
+            // The page beside a live one is the newest commit, so it stays.
+            assert_eq!(p.alloc_block(0).expect("a free block"), bids[2]);
+            assert_eq!(
+                p.prefix_caches[0],
+                HashMap::from([("a", bids[0]), ("b", bids[1]), ("d", bids[3])])
+            );
+            check_invariants(&p);
+        }
+    }
+
+    /// Ports the design simulation's churn: requests grow a full cache and
+    /// slide a two-page window. A window cache spread over many huge blocks
+    /// pins each with a page or two. Nothing is committed, as with prefix
+    /// caching off: commits are evicted in LRU order, not packed.
+    #[test]
+    fn sliding_windows_pin_few_huge_blocks() {
+        const FULL: usize = 0;
+        const WINDOW: usize = 1;
+        let mut p =
+            JengaBlockPool::<u64>::new(257, vec![16, 8], WITH_NULL).expect("valid geometry");
+        let mut rng = 0x9e37_79b9_7f4a_7c15u64;
+        let mut requests: Vec<(Vec<usize>, Vec<usize>, u64)> = Vec::new();
+        for step in 0..2000 {
+            while requests.len() < 48 {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                requests.push((Vec::new(), Vec::new(), 20 + rng % 40));
+            }
+            for (full, window, steps_left) in &mut requests {
+                if *steps_left % 4 == 0 {
+                    full.push(p.alloc_block(FULL).expect("a free block"));
+                }
+                window.push(p.alloc_block(WINDOW).expect("a free block"));
+                if window.len() > 2 {
+                    p.free_block(WINDOW, window.remove(0));
+                }
+                *steps_left -= 1;
+            }
+            for (full, window, _) in requests.extract_if(.., |request| request.2 == 0) {
+                for bid in full.into_iter().rev() {
+                    p.free_block(FULL, bid);
+                }
+                for bid in window.into_iter().rev() {
+                    p.free_block(WINDOW, bid);
+                }
+            }
+            if step >= 100 {
+                let live: usize = requests.iter().map(|request| request.1.len()).sum();
+                let pinned = p
+                    .huge_blocks
+                    .iter()
+                    .filter(|huge| {
+                        huge.little_block_type == Some(WINDOW) && huge.num_referenced > 0
+                    })
+                    .count();
+                assert!(
+                    pinned <= 2 * live.div_ceil(8),
+                    "step {step}: {pinned} huge blocks pinned by {live} window pages"
+                );
+            }
+        }
+        check_invariants(&p);
     }
 
     #[test]
@@ -1323,6 +1859,32 @@ mod tests {
             // A commit a request still references survives.
             assert_eq!(p.prefix_caches[0], HashMap::from([("apple", bids[0])]));
             assert_eq!(p.prefix_caches[1], HashMap::from([("apple", sliding_bid)]));
+            check_invariants(&p);
+        }
+    }
+
+    #[test]
+    fn occupancy_counts_unreferenced_commits_as_cached() {
+        for null_block in [false, true] {
+            let mut p = pool(2, &[2], null_block);
+            let cached = |p: &Pool| p.occupancy(0).cached;
+
+            let bids = alloc_n(&mut p, 0, 2);
+            p.commit_into_prefix_cache(0, "apple", bids[0]);
+            assert_eq!(cached(&p), 0);
+            p.free_block(0, bids[0]);
+            assert_eq!(cached(&p), 1);
+            p.touch(0, bids[0]);
+            assert_eq!(cached(&p), 0);
+            p.free_block(0, bids[0]);
+            p.free_block(0, bids[1]);
+            // Nothing stops a caller committing a block no request holds.
+            p.commit_into_prefix_cache(0, "banana", bids[1]);
+            assert_eq!(cached(&p), 2);
+            check_invariants(&p);
+
+            p.reset_prefix_cache();
+            assert_eq!(cached(&p), 0);
             check_invariants(&p);
         }
     }

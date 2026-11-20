@@ -20,16 +20,16 @@ from collections.abc import Sequence
 import numpy as np
 import pytest
 import torch
-from max._core.dialects import builtin, kgen, mo, rmo
+from max._core.dialects import builtin, kgen, mo
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph.ops import CoordinateTransformMode
 from numpy.typing import NDArray
 
 # bfloat16 has no numpy dtype, so 16-bit graph inputs go through torch.
 _DTYPE_TO_TORCH = {
-    DType.float32: torch.float32,
     DType.float16: torch.float16,
     DType.bfloat16: torch.bfloat16,
 }
@@ -39,16 +39,18 @@ INPUT_SHAPE = [1, 3, 5, 7]
 OUTPUT_SHAPE = [1, 3, 9, 3]
 
 
-def _source_coord(out: int, in_size: int, out_size: int, mode: int) -> float:
-    """Maps one output coordinate to an input coordinate (mode 0-3)."""
+def _source_coord(
+    out: int, in_size: int, out_size: int, mode: CoordinateTransformMode
+) -> float:
+    """Maps one output coordinate to an input coordinate."""
     scale = in_size / out_size
-    if mode == 1:  # align_corners
+    if mode == CoordinateTransformMode.ALIGN_CORNERS:
         return out * (in_size - 1) / (out_size - 1) if out_size > 1 else 0.0
-    if mode == 2:  # asymmetric
+    if mode == CoordinateTransformMode.ASYMMETRIC:
         return out * scale
-    if mode == 3 and out_size == 1:  # half_pixel_1D
+    if mode == CoordinateTransformMode.HALF_PIXEL_1D and out_size == 1:
         return 0.0
-    # half_pixel (0), and half_pixel_1D (3) on every other axis.
+    # HALF_PIXEL, and HALF_PIXEL_1D on every other axis.
     return (out + 0.5) * scale - 0.5
 
 
@@ -56,7 +58,7 @@ def _resize_axis(
     arr: NDArray[np.float64],
     out_size: int,
     dim: int,
-    coord_mode: int,
+    coord_mode: CoordinateTransformMode,
     antialias: bool,
 ) -> NDArray[np.float64]:
     """Resizes ``arr`` along ``dim`` with the kernel's linear interpolation."""
@@ -94,7 +96,7 @@ def _resize_axis(
 def _reference(
     data: NDArray[np.float32],
     out_shape: Sequence[int],
-    coord_mode: int = 0,
+    coord_mode: CoordinateTransformMode = CoordinateTransformMode.HALF_PIXEL,
     antialias: bool = False,
 ) -> NDArray[np.float32]:
     """Separable float64 linear resize, matching the kernel's definition."""
@@ -104,16 +106,14 @@ def _reference(
     return out.astype(np.float32)
 
 
-def _execute(
+def _load(
     session: InferenceSession,
-    device: DeviceRef,
     input_type: TensorType,
     out_shape: Sequence[int | str],
-    data: NDArray[np.float32],
-    coord_mode: int = 0,
+    coord_mode: CoordinateTransformMode = CoordinateTransformMode.HALF_PIXEL,
     antialias: bool = False,
-) -> NDArray[np.float32]:
-    """Executes resize_linear on one graph and returns the host result."""
+) -> Model:
+    """Compiles resize_linear on one graph."""
     with Graph("test_resize_linear", input_types=[input_type]) as graph:
         graph.output(
             ops.resize_linear(
@@ -123,7 +123,11 @@ def _execute(
                 antialias=antialias,
             )
         )
-    model = session.load(graph)
+    return session.load(graph)
+
+
+def _fetch(model: Model, data: NDArray[np.float32]) -> NDArray[np.float32]:
+    """Executes a compiled resize_linear and returns the host result."""
     result = model.execute(Buffer.from_numpy(data).to(model.input_devices[0]))[
         0
     ]
@@ -132,11 +136,25 @@ def _execute(
     return result.to_numpy()
 
 
+def _execute(
+    session: InferenceSession,
+    device: DeviceRef,
+    input_type: TensorType,
+    out_shape: Sequence[int | str],
+    data: NDArray[np.float32],
+    coord_mode: CoordinateTransformMode = CoordinateTransformMode.HALF_PIXEL,
+    antialias: bool = False,
+) -> NDArray[np.float32]:
+    """Executes resize_linear on one graph and returns the host result."""
+    model = _load(session, input_type, out_shape, coord_mode, antialias)
+    return _fetch(model, data)
+
+
 def _run(
     session: InferenceSession,
     device: DeviceRef,
     data: NDArray[np.float32],
-    coord_mode: int,
+    coord_mode: CoordinateTransformMode,
     antialias: bool,
 ) -> NDArray[np.float32]:
     input_type = TensorType(DType.float32, INPUT_SHAPE, device=device)
@@ -146,16 +164,28 @@ def _run(
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
-@pytest.mark.parametrize("coord_mode", range(4))
+@pytest.mark.parametrize("coord_mode", list(CoordinateTransformMode))
 @pytest.mark.parametrize("antialias", [False, True])
 def test_resize_linear_gpu_matches_cpu(
-    session: InferenceSession, coord_mode: int, antialias: bool
+    session: InferenceSession,
+    coord_mode: CoordinateTransformMode,
+    antialias: bool,
 ) -> None:
     rng = np.random.default_rng(0)
     data = rng.standard_normal(INPUT_SHAPE).astype(np.float32)
 
-    cpu = _run(session, DeviceRef.CPU(), data, coord_mode, antialias)
-    gpu = _run(session, DeviceRef.GPU(), data, coord_mode, antialias)
+    cpu_model, gpu_model = [
+        _load(
+            session,
+            TensorType(DType.float32, INPUT_SHAPE, device=device),
+            OUTPUT_SHAPE,
+            coord_mode,
+            antialias,
+        )
+        for device in (DeviceRef.CPU(), DeviceRef.GPU())
+    ]
+    cpu = _fetch(cpu_model, data)
+    gpu = _fetch(gpu_model, data)
 
     assert gpu.shape == tuple(OUTPUT_SHAPE)
     np.testing.assert_allclose(gpu, cpu, rtol=1e-5, atol=1e-5)
@@ -180,10 +210,12 @@ def test_resize_linear_gpu_same_shape_copies(
     np.testing.assert_array_equal(result.to_numpy(), data)
 
 
-@pytest.mark.parametrize("coord_mode", range(4))
+@pytest.mark.parametrize("coord_mode", list(CoordinateTransformMode))
 @pytest.mark.parametrize("antialias", [False, True])
 def test_resize_linear_cpu_matches_reference(
-    session: InferenceSession, coord_mode: int, antialias: bool
+    session: InferenceSession,
+    coord_mode: CoordinateTransformMode,
+    antialias: bool,
 ) -> None:
     """The CPU kernel matches a float64 separable reference."""
     rng = np.random.default_rng(2)
@@ -281,7 +313,7 @@ def test_resize_linear_gpu_dynamic_sizes(session: InferenceSession) -> None:
         x, size = (value.tensor for value in graph.inputs)
         graph.output(
             Graph.current._add_op_generated(
-                rmo.MoResizeLinearOp,
+                mo.ResizeLinearOp,
                 result=TensorType(
                     DType.float32,
                     ["batch", 3, "out_h", "out_w"],
@@ -314,18 +346,18 @@ def test_resize_linear_gpu_dynamic_sizes(session: InferenceSession) -> None:
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
-@pytest.mark.parametrize(
-    "dtype", [DType.float32, DType.float16, DType.bfloat16]
-)
-@pytest.mark.parametrize("coord_mode", range(4))
+@pytest.mark.parametrize("dtype", [DType.float16, DType.bfloat16])
 @pytest.mark.parametrize("antialias", [False, True])
 def test_resize_linear_gpu_dtypes(
     session: InferenceSession,
     dtype: DType,
-    coord_mode: int,
     antialias: bool,
 ) -> None:
-    """GPU float dtypes match the float64 reference.
+    """16-bit GPU inputs match the float64 reference.
+
+    `test_resize_linear_gpu_matches_cpu` covers every coordinate mode.
+    The mode does not depend on the dtype, so this test does not repeat
+    them: each mode would only add a graph compile.
 
     float64 is excluded: it is not a GPU float dtype (MSTDL-2711). The
     kernel accumulates in float32 for every 16-bit input, so the
@@ -340,7 +372,6 @@ def test_resize_linear_gpu_dtypes(
             ops.resize_linear(
                 graph.inputs[0].tensor,
                 OUTPUT_SHAPE,
-                coordinate_transform_mode=coord_mode,
                 antialias=antialias,
             )
         )
@@ -352,19 +383,13 @@ def test_resize_linear_gpu_dtypes(
     ]
     assert isinstance(result, Buffer)
 
-    expected = _reference(data, OUTPUT_SHAPE, coord_mode, antialias)
-    if dtype == DType.float32:
-        np.testing.assert_allclose(
-            result.to_numpy(), expected, rtol=1e-5, atol=1e-5
-        )
-    else:
-        # The kernel accumulates in float32 and rounds once on store.
-        np.testing.assert_allclose(
-            torch.from_dlpack(result).float().cpu().numpy(),
-            expected,
-            rtol=2e-2,
-            atol=2e-2,
-        )
+    # The kernel accumulates in float32 and rounds once on store.
+    np.testing.assert_allclose(
+        torch.from_dlpack(result).float().cpu().numpy(),
+        _reference(data, OUTPUT_SHAPE, antialias=antialias),
+        rtol=2e-2,
+        atol=2e-2,
+    )
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")

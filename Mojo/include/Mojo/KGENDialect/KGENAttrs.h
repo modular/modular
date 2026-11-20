@@ -26,6 +26,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -59,7 +60,7 @@ namespace M::KGEN {
 /// This class stores a value of a particular dtype. It supports containing
 /// integer, index, float, and bool dtype values only. Index values are treated
 /// as signed.
-class DTypeValue {
+class MODULAR_CXX_EXPORT DTypeValue {
 public:
   /// Get an integer value. Signedness is taken from `dtype`, not `value`.
   DTypeValue(APSInt value, KGENDType dtype);
@@ -130,7 +131,9 @@ void printDTypeValues(llvm::raw_ostream &os, llvm::ArrayRef<DTypeValue> values,
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENAttrs.h.inc"
+#pragma GCC visibility pop
 
 //===----------------------------------------------------------------------===//
 // EmitAsAttr
@@ -159,8 +162,8 @@ public:
 /// Given an attribute or type, return the "canonical" version of the attribute
 /// with all type sugar removed.
 Attribute getCanonicalAttr(Attribute src);
-TypedAttr getCanonicalAttr(TypedAttr src);
-Type getCanonicalType(Type type);
+MODULAR_CXX_EXPORT TypedAttr getCanonicalAttr(TypedAttr src);
+MODULAR_CXX_EXPORT Type getCanonicalType(Type type);
 
 /// Return true if the specified types are canonically equal.
 bool isEqualCanon(Type t1, Type t2);
@@ -220,6 +223,65 @@ template <typename To, typename From>
 /// upcast, downcast, and extension.
 TypedAttr stripIdentityWrappers(TypedAttr attr);
 
+//===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+/// A view of a `GeneratorAttr` whose body is a `FuncSymbolAttr`.
+class MODULAR_CXX_EXPORT FuncSymbolGenerator {
+public:
+  FuncSymbolGenerator() = default;
+  /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a
+  /// `FuncSymbolAttr`.
+  /*implicit*/ FuncSymbolGenerator(TypedAttr attr);
+
+  /// Returns a generator over `inputParamTypes` whose body is `funcSymbol`.
+  static FuncSymbolGenerator get(ArrayRef<Type> inputParamTypes,
+                                 FuncSymbolAttr funcSymbol,
+                                 Attribute metadata = {});
+
+  /// Returns a fully bound generator referencing `func`.
+  static FuncSymbolGenerator get(FuncOp func);
+
+  /// Returns a generator of `type` referencing `symbol` with an empty
+  /// parameter list.
+  static FuncSymbolGenerator getParamLess(SymbolRefAttr symbol, FuncType type,
+                                          Attribute metadata = {});
+
+  /// Returns a generator of `type` referencing `symbol`, with each of the
+  /// callee's parameters bound to a depth-0 index reference for that position.
+  static FuncSymbolGenerator getUnbound(SymbolRefAttr symbol,
+                                        FuncTypeGeneratorType type);
+  static FuncSymbolGenerator getUnbound(StringAttr name,
+                                        FuncTypeGeneratorType type);
+
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`.
+  static FuncSymbolGenerator dynCast(Attribute attr);
+
+  /*implicit*/ operator Attribute() const { return storage; }
+  /*implicit*/ operator TypedAttr() const { return storage; }
+  /*implicit*/ operator GeneratorAttr() const { return storage; }
+  explicit operator bool() const { return static_cast<bool>(storage); }
+
+  FuncTypeGeneratorType getType() const;
+  ArrayRef<Type> getInputParamTypes() const;
+  bool isFullyBound();
+
+  /// Returns the wrapped `FuncSymbolAttr`. Its parameter values are inside the
+  /// generator, one scope deeper than the generator itself.
+  FuncSymbolAttr getFuncSymbol() const;
+  SymbolRefAttr getSymbol() const;
+
+  /// Returns the wrapped `FuncSymbolAttr` as seen from the scope enclosing the
+  /// generator. The generator must be fully bound.
+  FuncType getInstantiatedType();
+  FuncSymbolAttr getInstantiatedFuncSymbol();
+  ArrayRef<TypedAttr> getParamValues();
+
+private:
+  GeneratorAttr storage;
+};
+
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
@@ -242,7 +304,7 @@ struct PointerLikeTypeTraits<M::KGEN::ParamDeclRefAttr>
 
 namespace M::KGEN {
 /// Emit an MLIR operation call in a parameter context.
-TypedAttr emitMLIROperationCall(
+MODULAR_CXX_EXPORT TypedAttr emitMLIROperationCall(
     StringRef opName,
     ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
     ArrayRef<TypedAttr> operands, Type resultType);

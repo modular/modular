@@ -83,7 +83,8 @@ ASTType LIT::specializeStruct(const ParamBindings &bindings,
   TypeSignatureType sig = structOp.getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, declIfKnown,
-                     /*discardError=*/false);
+                     /*discardError=*/false,
+                     bindings.declScope.getShared().noAssumptions);
   VerifiedParamBindings verified = inference.inferForStruct();
   if (!verified)
     return {};
@@ -106,8 +107,7 @@ ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, PValue(resultType));
   paramBinds.add(expr, origin);
 
-  return specializeStruct(paramBinds,
-                          cast<StructDeclOp>(decl->getIfOperation()), decl);
+  return specializeStruct(paramBinds, cast<StructASTDecl>(decl)->getOp(), decl);
 }
 
 CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,
@@ -173,7 +173,7 @@ public:
         // preserve sugar.
         return ParamDeclRefAttr::get(
             explicitParamDecls[indexRef.getIndex()].getName(),
-            replace(indexRef.getType()));
+            replaceImpl(indexRef.getType(), depth));
       }
       return {};
     }

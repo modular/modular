@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only FP8 (W8A16) GEMV: `out = x @ dequant(W)^T` at M=1.
 
-Apple silicon GPU (Metal 4, `compute_capability == 5`). The batch-1 decode
+Apple silicon GPU (Metal 4, `compute_capability >= 5`). The batch-1 decode
 regime (`M == 1`) is a matrix-vector product, NOT a matrix-matrix product: there
 is exactly one activation row, so there is no MMA to feed. This kernel is the
 GEMV -- register-resident, no SMEM, no `barrier()`, no `_mma_apple`.
@@ -70,12 +70,12 @@ load is an inline TileTensor access (no special decode to own), matching
 """
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv
 import max.gpu.primitives.warp as warp
 
 from layout import Coord, TensorEngine, TileTensor, TensorLayout
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.matmul.gpu.apple.matmul_8x8 import gemm_kernel_apple_8x8
 from linalg.matmul.gpu.apple.matmul_kernel import enqueue_apple_matmul
@@ -161,8 +161,8 @@ struct Fp8WeightLoader[
         # evidence (only `t[r, c]` subscripting does), matching `fp4_gemv`. The
         # `[N, K]` contract lives in the docstring; a `self.weight.flat_rank`
         # comptime assert is illegal anyway (dynamic-value read through `self`).
-        return self.weight.load[width=width, alignment=1](Coord(n, k0)).cast[
-            DType.float32
+        return self.weight.load[width=width, alignment=1]((n, k0)).cast[
+            .float32
         ]()
 
 
@@ -203,7 +203,7 @@ def fp8_gemv_kernel[
     # subscripts), so no N-D-index evidence is required, matching `fp4_gemv`.
     comptime TILE_K = _FP8_GEMV_TILE_K
 
-    var n_idx = Int(global_idx.x) // WARP_SIZE
+    var n_idx = global_idx.x // WARP_SIZE
     if n_idx >= n:
         return
     var lid = Int(lane_id())
@@ -219,7 +219,7 @@ def fp8_gemv_kernel[
     while chunk < nchunk:
         var k0 = chunk * TILE_K
         var wv = loader.load_col_chunk[TILE_K](n_idx, k0)
-        var xv = a.load[width=TILE_K](Coord(0, k0)).cast[.float32]()
+        var xv = a.load[width=TILE_K]((0, k0)).cast[.float32]()
         acc[0] += (xv * wv).reduce_add()
         chunk += WARP_SIZE
 
@@ -230,7 +230,7 @@ def fp8_gemv_kernel[
     var kt = ktail0 + lid
     while kt < k:
         var wv = loader.load_col_chunk[1](n_idx, kt)
-        var xv = a.load[width=1](Coord(0, kt)).cast[.float32]()
+        var xv = a.load((0, kt)).cast[.float32]()
         acc[0] += (xv * wv).reduce_add()
         kt += WARP_SIZE
 
@@ -241,7 +241,7 @@ def fp8_gemv_kernel[
         comptime if has_epilogue_fn:
             epilogue_fn[c_type, 1, alignment=1]((0, n_idx), y)
         else:
-            c.store(Coord(0, n_idx), y)
+            c.store((0, n_idx), y)
 
 
 @inline(.always)
@@ -292,9 +292,11 @@ def enqueue_apple_fp8_gemv[
         weight,
         Int32(n),
         Int32(k),
-        host_arg=epilogue_fn,
-        grid_dim=grid,
-        block_dim=BLK,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid,
+            block_dim=BLK,
+        ),
+        host_args=(epilogue_fn,),
     )
 
 
@@ -327,8 +329,8 @@ def fp8_materialize_kernel[
     var N = Int(out_w.dim[0]())
     var K = Int(out_w.dim[1]())
 
-    var n = Int(global_idx.y)
-    var k = Int(global_idx.x)
+    var n = global_idx.y
+    var k = global_idx.x
     if n >= N or k >= K:
         return
 
@@ -368,8 +370,10 @@ def enqueue_fp8_materialize[
     ctx.enqueue_function[kernel](
         out_w,
         weight.as_imm(),
-        grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
-        block_dim=(BLK, BLK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
+            block_dim=(BLK, BLK),
+        ),
     )
 
 
@@ -408,7 +412,7 @@ def _enqueue_apple_fp8_materialize_dense[
 
     enqueue_fp8_materialize[.bfloat16](wdense_tt, weight, ctx)
 
-    if ctx.compute_capability() == 5:
+    if ctx.compute_capability() >= 5:
         enqueue_apple_matmul[
             in_type=DType.bfloat16,
             c_type=c_type,
@@ -438,10 +442,11 @@ def _enqueue_apple_fp8_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=no_epilogue_fn,
-            host_arg2=no_compute_fn,
-            grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
-            block_dim=(4 * WARP_SIZE,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
+                block_dim=(4 * WARP_SIZE,),
+            ),
+            host_args=(no_epilogue_fn, no_compute_fn),
         )
 
     # Keep the transient weight alive through the async materialize + GEMM
@@ -509,7 +514,7 @@ def enqueue_apple_fp8_matmul[
     # Pre-M5 (M1-M4): materialize -> dense (hardware-neutral); the M5 GEMV's
     # `float8_e4m3fn` width load / widen is unvalidated pre-M5, and the design
     # targets M5. This keeps pre-M5 correct.
-    if cc != 5:
+    if cc < 5:
         comptime if has_epilogue_fn:
             raise Error("enqueue_apple_fp8_matmul: epilogue_fn needs Apple M5")
         _enqueue_apple_fp8_materialize_dense[c_type](c, a, weight, m, n, k, ctx)

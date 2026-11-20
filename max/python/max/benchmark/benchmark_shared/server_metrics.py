@@ -17,22 +17,44 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from prometheus_client.parser import text_string_to_metric_families
 
+from .backend_metric_names import (
+    BATCH_METRIC_NAMES,
+    BATCH_TYPE_LABELS,
+    BatchPhase,
+    EngineFamily,
+    MetricAvailability,
+    engine_family,
+    metric_name_candidates,
+    resolve_batch_metric,
+    resolve_spec_decode_metric,
+)
 from .config import Backend
-from .metrics import SpecDecodeMetrics
+from .metrics import HistogramMetric, SpecDecodeMetrics
 from .prometheus_fetch import fetch_metrics
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric
 
 logger = logging.getLogger(__name__)
+
+
+class MissingEngineMetricsError(RuntimeError):
+    """A successful scrape lacked a metric the backend always emits.
+
+    Raised by :func:`collect_benchmark_metrics` (and surfaced by the
+    benchmark run) instead of silently nulling every engine-side
+    ``BenchmarkResult`` field. A failed scrape keeps the warning behavior.
+    """
+
 
 # Import MAX metrics port from SDK config, with fallback
 try:
@@ -41,6 +63,9 @@ try:
     _MAX_METRICS_PORT = Settings().metrics_port
 except Exception:
     _MAX_METRICS_PORT = 8001  # Fallback if SDK not available
+
+# The Mach engine's ``--metrics-address`` default port.
+_MACH_METRICS_PORT = 9090
 
 
 @dataclass
@@ -94,6 +119,15 @@ class ParsedMetrics:
     """Dictionary of histogram metrics with bucket distributions."""
     raw_text: str
     """Raw Prometheus text format for debugging."""
+    backend: Backend | None = None
+    """Backend these metrics were scraped from.
+
+    Set by the collection helpers (:func:`collect_benchmark_metrics` /
+    :func:`fetch_and_parse_metrics`) so consumers can resolve metric names
+    and ``batch_type`` label values per engine through
+    ``backend_metric_names``. ``None`` (metrics built directly) keeps the
+    MAX Serve names.
+    """
 
     def get_histogram(
         self, metric_name: str, labels: dict[str, str] | None = None
@@ -101,30 +135,75 @@ class ParsedMetrics:
         """Get a histogram by name and optional labels.
 
         Args:
-            metric_name: Base metric name (such as "maxserve_batch_execution_time_milliseconds")
+            metric_name: Base metric name (such as "max_batch_execution_time_milliseconds")
             labels: Optional dictionary of labels (such as {"batch_type": "CE"})
 
         Returns:
-            HistogramData if found, None otherwise
+            HistogramData if found, None otherwise. A series whose labels
+            match exactly is preferred. Otherwise a series that carries the
+            requested labels plus others, such as the ``otel_scope_name``
+            Mach adds, is used. If more than one such series matches, the
+            lookup logs a warning and returns None, and it does not try the
+            remaining metric name spellings.
 
         Examples:
             >>> # Get histogram without labels
-            >>> hist = metrics.get_histogram("maxserve_batch_size")
+            >>> hist = metrics.get_histogram("max_batch_size")
             >>>
             >>> # Get prefill batch execution time
             >>> prefill = metrics.get_histogram(
-            ...     "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+            ...     "max_batch_execution_time_milliseconds", {"batch_type": "CE"}
             ... )
             >>> if prefill:
             ...     print(f"Prefill avg: {prefill.mean:.2f} ms")
             >>>
             >>> # Get decode batch execution time
             >>> decode = metrics.get_histogram(
-            ...     "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+            ...     "max_batch_execution_time_milliseconds", {"batch_type": "TG"}
             ... )
         """
-        key = _format_metric_key(metric_name, labels or {})
-        return self.histograms.get(key)
+        for candidate in metric_name_candidates(metric_name):
+            key = _format_metric_key(candidate, labels or {})
+            if key in self.histograms:
+                return self.histograms[key]
+            # Mach's OpenTelemetry exporter adds labels such as
+            # ``otel_scope_name`` to every series, so a series carrying
+            # the requested labels plus others is still the one asked for.
+            if labels:
+                wanted = {f'{k}="{v}"' for k, v in labels.items()}
+                matches = [
+                    series
+                    for series in sorted(self.histograms)
+                    if series.startswith(f"{candidate}{{")
+                    and wanted <= set(_LABEL_PAIR.findall(series))
+                ]
+                if len(matches) > 1:
+                    # Picking one would report a single replica's figure as
+                    # the deployment's.
+                    logger.warning(
+                        "%s with labels %s matches %d series (%s); not"
+                        " reporting any of them",
+                        candidate,
+                        labels,
+                        len(matches),
+                        ", ".join(matches),
+                    )
+                    return None
+                if matches:
+                    return self.histograms[matches[0]]
+        return None
+
+    def histogram_family(self, metric_name: str) -> dict[str, HistogramData]:
+        """Returns one spelling's histograms, without counting aliases twice."""
+        for candidate in metric_name_candidates(metric_name):
+            family = {
+                key: hist
+                for key, hist in self.histograms.items()
+                if key == candidate or key.startswith(f"{candidate}{{")
+            }
+            if family:
+                return family
+        return {}
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-ready dict."""
@@ -162,14 +241,21 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
     if ":" in host:
         host = f"[{host}]"
 
-    # For MAX backends, use dedicated metrics port from SDK config
-    # For other backends, use the same port as the base URL
+    # MAX engines expose Prometheus metrics on a dedicated port rather than
+    # the base URL's, which for mach is the orchestrator's: MAX Serve on its
+    # SDK config port, the Mach engine on its ``--metrics-address`` default.
+    # Other backends are scraped on the same port as the base URL.
     if backend in ("modular", "modular-chat"):
         metrics_port = _MAX_METRICS_PORT
+    elif backend == "mach":
+        metrics_port = _MACH_METRICS_PORT
     else:
         metrics_port = parsed_url.port or 8000
 
     return f"http://{host}:{metrics_port}/metrics"
+
+
+_LABEL_PAIR = re.compile(r'\w+="(?:[^"\\]|\\.)*"')
 
 
 def _format_metric_key(metric_name: str, labels: dict[str, str]) -> str:
@@ -296,8 +382,9 @@ def fetch_and_parse_metrics(backend: Backend, base_url: str) -> ParsedMetrics:
     """
     metrics_url = get_metrics_url(backend, base_url)
     raw_text = fetch_metrics(metrics_url)
-    # TODO: Add backend-specific metric name normalization here if needed
-    return parse_metrics(raw_text)
+    parsed = parse_metrics(raw_text)
+    parsed.backend = backend
+    return parsed
 
 
 def compute_metrics_delta(
@@ -351,6 +438,7 @@ def compute_metrics_delta(
         gauges=delta_gauges,
         histograms=delta_histograms,
         raw_text="",  # Delta doesn't have raw text
+        backend=final.backend,
     )
 
 
@@ -359,16 +447,39 @@ def collect_benchmark_metrics(
     backend: Backend,
     base_url: str,
     baseline: Mapping[str, ParsedMetrics] | None = None,
+    verify_required_metrics: bool = False,
 ) -> dict[str, ParsedMetrics]:
     """Scrape Prometheus metrics from the given endpoints.
 
     When *urls* is empty, a single endpoint is synthesised from *backend* and
     *base_url* via :func:`get_metrics_url` and stored under the ``"server"``
-    label — preserving the auto-derive behaviour that existed before explicit
+    label, preserving the auto-derive behaviour that existed before explicit
     URLs were supported.
 
     When *baseline* is provided and contains a matching label, the returned
     metrics for that label are the delta from baseline.
+
+    Args:
+        urls: Explicit metrics endpoint URLs, keyed by label.
+        backend: Backend the endpoints belong to.
+        base_url: Base API URL, used to derive the metrics URL when *urls* is
+            empty.
+        baseline: Optional earlier snapshot to compute deltas against.
+        verify_required_metrics: Verify each successful scrape contains the
+            metrics this backend always emits (only for the final collection,
+            see below).
+
+    Raises:
+        MissingEngineMetricsError: When a scrape succeeds but lacks a metric
+            the backend always emits (see
+            :func:`verify_always_emitted_metrics`). A scrape that itself
+            fails stays a logged warning with the endpoint dropped.
+
+    Verification runs only when the caller asks for it, never on a baseline
+    collection. Mach exports through the OpenTelemetry Prometheus exporter,
+    which omits a histogram until its first data point, so a fresh idle
+    engine legitimately has no batch families yet at baseline time; the final
+    scrape runs after the benchmark and must have them.
     """
     if not urls:
         urls = {"server": get_metrics_url(backend, base_url)}
@@ -378,16 +489,153 @@ def collect_benchmark_metrics(
         try:
             raw_text = fetch_metrics(url)
             final = parse_metrics(raw_text)
+            final.backend = backend
+            if verify_required_metrics:
+                verify_always_emitted_metrics(backend, final, url)
             if baseline and label in baseline:
                 final = compute_metrics_delta(
                     baseline=baseline[label], final=final
                 )
             results[label] = final
+        except MissingEngineMetricsError:
+            # A reachable endpoint without the metrics this backend always
+            # emits nulls every engine-side field; fail the run loudly rather
+            # than warn (the classic cause is scraping the wrong server).
+            raise
         except Exception as exc:
             logger.warning(
                 "Failed to collect metrics from %s (%s): %s", label, url, exc
             )
     return results
+
+
+# Only Mach's pipeline driver sets this gauge.
+_MACH_PIPELINE_ENGINE_GAUGE = "max_pipeline_held_seats"
+
+
+# Mach publishes its histograms in steps, about two seconds apart on the build
+# this was measured on, so a scrape right after a run can miss the last step
+# and one right before a run can still carry the previous run's tail.
+MACH_METRICS_QUIET_S = 3.0
+METRICS_SETTLE_POLL_S = 0.5
+METRICS_SETTLE_TIMEOUT_S = 15.0
+
+
+def _observation_count(metrics: Mapping[str, ParsedMetrics]) -> float:
+    return sum(
+        hist.count for pm in metrics.values() for hist in pm.histograms.values()
+    )
+
+
+def wait_for_metrics_to_settle(
+    scrape: Callable[[], Mapping[str, ParsedMetrics]],
+    *,
+    quiet_s: float,
+    poll_s: float = METRICS_SETTLE_POLL_S,
+    timeout_s: float = METRICS_SETTLE_TIMEOUT_S,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Waits until scraped histograms stop gaining observations.
+
+    Args:
+        scrape: Returns the current metrics by endpoint, empty when the
+            scrape failed.
+        quiet_s: How long the observation count must stay unchanged.
+        poll_s: Time between scrapes.
+        timeout_s: When to give up, so traffic from elsewhere cannot hold the
+            caller up forever.
+        sleep: Sleeps for the given seconds.
+        now: Returns a monotonic time in seconds.
+
+    Returns:
+        True once the count was quiet for ``quiet_s``; False when the scrape
+        failed or the timeout passed first.
+    """
+    deadline = now() + timeout_s
+    last_count: float | None = None
+    last_change = now()
+    while True:
+        metrics = scrape()
+        if not metrics:
+            return False
+        count = _observation_count(metrics)
+        t = now()
+        if count != last_count:
+            last_count, last_change = count, t
+        elif t - last_change >= quiet_s:
+            return True
+        if t >= deadline:
+            logger.warning(
+                "Server metrics were still changing after %.0f s; using them"
+                " as they are",
+                timeout_s,
+            )
+            return False
+        sleep(poll_s)
+
+
+def _is_mach_pipeline_engine(parsed: ParsedMetrics) -> bool:
+    """Returns whether the scrape came from a Mach pipeline-parallel engine."""
+    return any(
+        key == _MACH_PIPELINE_ENGINE_GAUGE
+        or key.startswith(f"{_MACH_PIPELINE_ENGINE_GAUGE}{{")
+        for key in parsed.gauges
+    )
+
+
+def verify_always_emitted_metrics(
+    backend: Backend, parsed: ParsedMetrics, metrics_url: str
+) -> None:
+    """Check a successful scrape contains the metrics it always should.
+
+    Only the always-emitted batch metrics count (see
+    ``backend_metric_names``): for mach, every constructed batch records
+    ``max_batch_size`` and every executed batch records
+    ``max_batch_execution_time_milliseconds``. Optional families (the
+    spec-decode histograms when speculative decoding is off) and metrics
+    declared unavailable never fail a run. A Mach pipeline-parallel engine
+    (a PP prefill in disaggregated serving) runs its own loop that records
+    neither batch histogram, so its scrape is accepted without them.
+
+    Args:
+        backend: Backend the metrics were scraped from.
+        parsed: Metrics parsed from a successful scrape of *metrics_url*.
+        metrics_url: The endpoint that was scraped, named in the error.
+
+    Raises:
+        MissingEngineMetricsError: When an always-emitted metric is absent
+            from a successful scrape (usually a wrong-endpoint problem).
+    """
+    family = engine_family(backend)
+    if family is EngineFamily.MACH and _is_mach_pipeline_engine(parsed):
+        return
+    missing: list[str] = []
+    for per_family in BATCH_METRIC_NAMES.values():
+        spec = per_family[family]
+        if (
+            spec.availability is not MetricAvailability.ALWAYS_EMITTED
+            or spec.name is None
+        ):
+            continue
+        histograms = parsed.histogram_family(spec.name)
+        allowed_types = set(BATCH_TYPE_LABELS[family].values())
+        if not any(
+            match is not None and match.group(1) in allowed_types
+            for key in histograms
+            for match in [re.search(r'(?:\{|,)batch_type="([^"]*)"', key)]
+        ):
+            missing.append(spec.name)
+    if missing:
+        names = ", ".join(f"'{name}'" for name in missing)
+        raise MissingEngineMetricsError(
+            f"Scrape of {metrics_url} succeeded, but required engine "
+            f"metric(s) {names} on backend '{backend}' are missing from "
+            f"the payload. Backend '{backend}' always emits them while "
+            f"serving, so this is usually a wrong-endpoint problem: check "
+            f"that {metrics_url} is the engine's /metrics endpoint and not "
+            f"another server's."
+        )
 
 
 _POSITION_LABEL_RE = re.compile(r'position="([^"]*)"')
@@ -404,24 +652,38 @@ def _extract_position(metric_key: str) -> int | None:
         return None
 
 
-def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
+def parse_spec_decode_metrics(
+    raw_text: str, backend: Backend | None = None
+) -> SpecDecodeMetrics | None:
     """Parse speculative decoding metrics from Prometheus text output.
 
-    Recognizes backend shapes:
+    Metric names are resolved per backend through ``backend_metric_names``:
 
-    - vLLM-style counters under ``vllm:spec_decode_*``.
-    - MAX-style histogram ``maxserve_spec_decode_acceptance_rate_per_position``
-      (per-position acceptance-rate observations, 0--100).
-    - MAX-style histogram ``maxserve_spec_decode_avg_acceptance_length`` (batch
-      mean acceptance length in tokens).
+    - vLLM-style counters under ``vllm:spec_decode_*`` (not emitted by mach;
+      declared unavailable there).
+    - Histogram ``max_spec_decode_acceptance_rate_per_position`` on both
+      engines (per-position acceptance-rate observations, 0--100).
+    - Histogram ``max_spec_decode_avg_acceptance_length`` on both engines
+      (batch mean accepted drafts per verification, without the bonus
+      token).
 
     Args:
         raw_text: Raw Prometheus text-format payload.
+        backend: Backend the payload was scraped from. ``None`` keeps the
+            MAX Serve names.
 
     Returns:
         Parsed metrics, or ``None`` when no spec-decode families are present.
     """
     parsed = parse_metrics(raw_text)
+
+    draft_counters = resolve_spec_decode_metric(backend, "draft_counters")
+    acceptance_rate = resolve_spec_decode_metric(
+        backend, "acceptance_rate_per_position"
+    )
+    avg_acceptance_length = resolve_spec_decode_metric(
+        backend, "avg_acceptance_length"
+    )
 
     num_drafts = 0
     num_draft_tokens = 0
@@ -433,39 +695,42 @@ def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
     avg_acceptance_length_sum = 0.0
     avg_acceptance_length_count = 0.0
 
-    for key, value in parsed.counters.items():
-        if not key.startswith("vllm:spec_decode"):
-            continue
-        found = True
-        if "num_accepted_tokens_per_pos" in key:
+    if (
+        draft_counters.availability is not MetricAvailability.UNAVAILABLE
+        and draft_counters.name is not None
+    ):
+        for key, value in parsed.counters.items():
+            if not key.startswith(draft_counters.name):
+                continue
+            found = True
+            if "num_accepted_tokens_per_pos" in key:
+                pos = _extract_position(key)
+                if pos is not None:
+                    accepted_per_pos[pos] = accepted_per_pos.get(pos, 0) + int(
+                        value
+                    )
+            elif "num_drafts" in key:
+                num_drafts += int(value)
+            elif "num_draft_tokens" in key:
+                num_draft_tokens += int(value)
+            elif "num_accepted_tokens" in key:
+                num_accepted_tokens += int(value)
+
+    if acceptance_rate.name is not None:
+        for key, hist in parsed.histogram_family(acceptance_rate.name).items():
             pos = _extract_position(key)
-            if pos is not None:
-                accepted_per_pos[pos] = accepted_per_pos.get(pos, 0) + int(
-                    value
-                )
-        elif "num_drafts" in key:
-            num_drafts += int(value)
-        elif "num_draft_tokens" in key:
-            num_draft_tokens += int(value)
-        elif "num_accepted_tokens" in key:
-            num_accepted_tokens += int(value)
+            if pos is None:
+                continue
+            found = True
+            per_pos_rate_sum[pos] = per_pos_rate_sum.get(pos, 0.0) + hist.sum
+            per_pos_rate_count[pos] = per_pos_rate_count.get(pos, 0) + int(
+                hist.count
+            )
 
-    for key, hist in parsed.histograms.items():
-        if not key.startswith(
-            "maxserve_spec_decode_acceptance_rate_per_position"
-        ):
-            continue
-        pos = _extract_position(key)
-        if pos is None:
-            continue
-        found = True
-        per_pos_rate_sum[pos] = per_pos_rate_sum.get(pos, 0.0) + hist.sum
-        per_pos_rate_count[pos] = per_pos_rate_count.get(pos, 0) + int(
-            hist.count
-        )
-
-    al_hist = parsed.histograms.get(
-        "maxserve_spec_decode_avg_acceptance_length"
+    al_hist = (
+        parsed.get_histogram(avg_acceptance_length.name)
+        if avg_acceptance_length.name is not None
+        else None
     )
     if al_hist is not None and al_hist.count > 0:
         found = True
@@ -515,7 +780,7 @@ def fetch_spec_decode_metrics(
                 "Failed to fetch spec-decode metrics from %s (%s)", label, url
             )
             continue
-        parsed = parse_spec_decode_metrics(metrics_text)
+        parsed = parse_spec_decode_metrics(metrics_text, backend)
         if parsed is None:
             continue
         if merged is None:
@@ -558,24 +823,46 @@ def print_server_metrics(metrics: ParsedMetrics) -> None:
                 print(f"    Sum: {hist.sum:.2f}")
                 print(f"    Mean: {hist.mean:.2f}")
 
-        # Special handling for batch_execution_time - show prefill/decode breakdown
-        prefill = metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+        # Special handling for batch_execution_time - show prefill/decode
+        # breakdown, resolving the metric name and batch_type labels for the
+        # scraped backend (MAX Serve CE/TG, mach prefill/decode).
+        prefill_resolved = resolve_batch_metric(
+            metrics.backend,
+            HistogramMetric.MAXSERVE_BATCH_EXECUTION_TIME_MILLISECONDS.value,
+            BatchPhase.PREFILL,
         )
-        decode = metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+        decode_resolved = resolve_batch_metric(
+            metrics.backend,
+            HistogramMetric.MAXSERVE_BATCH_EXECUTION_TIME_MILLISECONDS.value,
+            BatchPhase.DECODE,
+        )
+        prefill = (
+            metrics.get_histogram(
+                prefill_resolved.name, dict(prefill_resolved.labels)
+            )
+            if prefill_resolved
+            else None
+        )
+        decode = (
+            metrics.get_histogram(
+                decode_resolved.name, dict(decode_resolved.labels)
+            )
+            if decode_resolved
+            else None
         )
 
         if prefill or decode:
             print("\n  Batch Execution Time Breakdown:")
-            if prefill:
+            if prefill and prefill_resolved:
                 print(
-                    f"    Mean Prefill (CE) Time: {prefill.mean:.2f} ms "
+                    f"    Mean Prefill ({prefill_resolved.labels['batch_type']})"
+                    f" Time: {prefill.mean:.2f} ms "
                     f"(count={int(prefill.count)}, sum={prefill.sum:.2f} ms)"
                 )
-            if decode:
+            if decode and decode_resolved:
                 print(
-                    f"    Mean Decode (TG) Time:  {decode.mean:.2f} ms "
+                    f"    Mean Decode ({decode_resolved.labels['batch_type']})"
+                    f" Time:  {decode.mean:.2f} ms "
                     f"(count={int(decode.count)}, sum={decode.sum:.2f} ms)"
                 )
 

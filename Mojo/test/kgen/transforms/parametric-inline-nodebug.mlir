@@ -80,9 +80,6 @@ kgen.generator @test_wrap_source_loc_param() -> !kgen.none always_inline_no_debu
 
 kgen.generator @nodebug_inline_me() always_inline_no_debug {
   kgen.param.constant = <1>
-  kgen.param.declare.region A = () -> () {
-    hlcf.return loc(#loc1)
-  } loc(#loc1)
   hlcf.return
 }
 
@@ -102,16 +99,12 @@ kgen.generator @always_inline() always_inline {
 // CHECK-LABEL: kgen.generator @main
 kgen.generator @main() {
   // CHECK-NEXT: kgen.param.constant = <1> loc(#[[LOC_INLINED:.*]])
-  // CHECK-NEXT: kgen.param.declare.region A = () {
-  // CHECK-NEXT:   hlcf.return loc(#[[LOC_CALLEE:.*]])
-  // CHECK-NEXT: } {isolated} loc(#[[LOC_CALLEE]])
   kgen.call @nodebug_inline_me() : () -> () loc(#locInlined)
   // CHECK-NEXT: call @always_inline
   kgen.call @always_inline() : () -> ()
   hlcf.return
 }
 
-// CHECK-DAG: #[[LOC_CALLEE]] = loc("foo.mlir":10:5)
 // CHECK-DAG: #[[LOC_INLINED]] = loc("{{.*}}":
 
 // -----

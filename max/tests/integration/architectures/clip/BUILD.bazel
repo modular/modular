@@ -21,8 +21,8 @@ modular_py_library(
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/dtype",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         requirement("pydantic"),
     ],
@@ -40,12 +40,13 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",

@@ -20,17 +20,14 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, MixedLayout, TensorLayout
+from layout import MixedLayout, TensorLayout
+from linalg.arch.sm100.mma import mma_desc_sbo_lbo
 from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_to_descriptor,
-    tile_sf_layout_k_major,
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
     tile_sf_layout_k_major_typed,
@@ -41,6 +38,7 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.math import align_up, ceildiv, inf
@@ -49,8 +47,6 @@ from std.math.uutils import udivmod
 from layout import CoordLike, Coord, Idx, TileTensor, coord, row_major
 from internal_utils import assert_almost_equal
 from std.random import rand
-from std.collections import Optional
-from linalg.utils import elementwise_epilogue_type
 from max.gpu.sync import syncwarp
 from std.random import random_ui64
 from linalg.fp4_utils import (
@@ -90,8 +86,8 @@ def block_scaled_mxfp8_kernel[
     b_scales_tile_shape: Coord,
     b_scales_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    umma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    umma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -129,29 +125,33 @@ def block_scaled_mxfp8_kernel[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        a_type, BM, BK, a_swizzle
+    ]
+    comptime BSmemLayout = type_of(
+        tile_layout_k_major_typed[b_type, BN, BK, b_swizzle]
+    ) if transpose_b else type_of(
+        tile_layout_mn_major_typed[b_type, BN, BK, b_swizzle]
+    )
+    comptime b_smem_layout = MixedLayout[
+        shape_types=BSmemLayout._shape_types,
+        stride_types=BSmemLayout._stride_types,
     ]()
 
     var smem = external_memory[UInt8, address_space=.SHARED, alignment=128]()
-    var a_smem = smem.bitcast[Scalar[a_type]]()
+    var a_smem = smem.unsafe_bitcast[Scalar[a_type]]()
 
     comptime assert BM == BK == 128 and BN in (
         128,
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
 
-    comptime a_scales_smem_layout = tile_sf_layout_k_major[
+    comptime a_scales_smem_layout = tile_sf_layout_k_major_typed[
         BM, BK, MXFP8_SF_VECTOR_SIZE
-    ]()
-    comptime b_scales_smem_layout = tile_sf_layout_k_major[
+    ]
+    comptime b_scales_smem_layout = tile_sf_layout_k_major_typed[
         BN, BK, MXFP8_SF_VECTOR_SIZE
-    ]()
+    ]
 
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
@@ -171,36 +171,29 @@ def block_scaled_mxfp8_kernel[
         (b_scales_size * size_of[b_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-    var a_scales_smem = (b_smem + b_size).bitcast[Scalar[a_scales_type]]()
-    var b_scales_smem = (a_scales_smem + a_scales_size).bitcast[
-        Scalar[b_scales_type]
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
+    var a_scales_smem = b_smem.unsafe_offset(b_size).unsafe_bitcast[
+        Scalar[a_scales_type]
     ]()
+    var b_scales_smem = a_scales_smem.unsafe_offset(
+        a_scales_size
+    ).unsafe_bitcast[Scalar[b_scales_type]]()
 
-    var a_smem_tile = TileTensor(
-        a_smem, tile_layout_k_major_typed[a_type, BM, BK, a_swizzle]
-    )
-    comptime BSmemLayout = type_of(
-        tile_layout_k_major_typed[b_type, BN, BK, b_swizzle]
-    ) if transpose_b else type_of(
-        tile_layout_mn_major_typed[b_type, BN, BK, b_swizzle]
-    )
-    comptime b_typed_smem_layout = MixedLayout[
-        shape_types=BSmemLayout._shape_types,
-        stride_types=BSmemLayout._stride_types,
-    ]()
-    var b_smem_tile = TileTensor(b_smem, b_typed_smem_layout)
+    var a_smem_tile = TileTensor(a_smem, a_smem_layout)
+    var b_smem_tile = TileTensor(b_smem, b_smem_layout)
     var a_scales_smem_tile = TileTensor(
         a_scales_smem,
-        tile_sf_layout_k_major_typed[BM, BK, MXFP8_SF_VECTOR_SIZE],
+        a_scales_smem_layout,
     )
     var b_scales_smem_tile = TileTensor(
         b_scales_smem,
-        tile_sf_layout_k_major_typed[BN, BK, MXFP8_SF_VECTOR_SIZE],
+        b_scales_smem_layout,
     )
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (b_scales_smem + b_scales_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_scales_smem.unsafe_offset(
+        b_scales_size
+    ).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -213,8 +206,10 @@ def block_scaled_mxfp8_kernel[
     comptime b_scales_expected_bytes = b_scales_size * size_of[b_scales_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes + b_scales_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -228,7 +223,7 @@ def block_scaled_mxfp8_kernel[
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
 
-    var tmem_addr_ptr = (mma_mbar + 1).bitcast[UInt32]()
+    var tmem_addr_ptr = mma_mbar.unsafe_offset(1).unsafe_bitcast[UInt32]()
     if elect_one_warp:
         tcgen05_alloc[1](tmem_addr_ptr, max_tmem_cols)
 
@@ -248,20 +243,20 @@ def block_scaled_mxfp8_kernel[
     if thread_idx.x >= 128:
         tmem_addr += 16 << 16  # offset for lane 16
 
-    comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    comptime b_canonical_layout = tile_to_descriptor[
-        b_type, b_smem_layout, is_k_major=transpose_b
+    comptime a_sbo_lbo = mma_desc_sbo_lbo[
+        a_type, BMN=BM, BK=BK, swizzle_mode=a_swizzle, is_k_major=True
     ]()
-    comptime aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
-    comptime aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
-    comptime b_stride01 = b_canonical_layout[0].stride[1].value()
-    comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-    comptime bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
-        b_type
+    comptime b_sbo_lbo = mma_desc_sbo_lbo[
+        b_type,
+        BMN=BN,
+        BK=BK,
+        swizzle_mode=b_swizzle,
+        is_k_major=transpose_b,
     ]()
-    comptime bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
-        b_type
-    ]()
+    comptime aSBO = a_sbo_lbo[0]
+    comptime aLBO = a_sbo_lbo[1]
+    comptime bSBO = b_sbo_lbo[0]
+    comptime bLBO = b_sbo_lbo[1]
 
     var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.unsafe_ptr()
@@ -275,7 +270,7 @@ def block_scaled_mxfp8_kernel[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype=.uint32](umma_shape[0], umma_shape[1]),
+        (UInt32(umma_shape[0]), UInt32(umma_shape[1])),
         transpose_b=transpose_b,
     ]()
 
@@ -325,31 +320,39 @@ def block_scaled_mxfp8_kernel[
 
         if elect_one_thread:
             comptime for i in range(BM // SF_MN_GROUP_SIZE):
-                comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
-                comptime a_scales_offset = a_scales_smem_layout(idx) * size_of[
-                    a_scales_type
-                ]()
+                comptime idx = Coord(Idx[i * SF_ATOM_M[0]], Idx[0])
+                comptime a_scales_offset = Int(
+                    a_scales_smem_layout(idx)
+                ) * size_of[a_scales_type]()
                 var a_scales_tmem_addr = a_scales_tmem_addr_start + UInt32(
                     i * (SF_MN_GROUP_SIZE // 32)
                 )
                 var a_scales_desc = MMASmemDescriptor.create[
                     8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-                ](a_scales_smem_tile.unsafe_ptr() + a_scales_offset)
+                ](
+                    a_scales_smem_tile.unsafe_ptr().unsafe_offset(
+                        a_scales_offset
+                    )
+                )
                 tcgen05_cp[
                     cta_group=1, datapaths=32, bits=128, multicast="warpx4"
                 ](a_scales_tmem_addr, a_scales_desc)
 
             comptime for i in range(BN // SF_MN_GROUP_SIZE):
-                comptime idx = IntTuple(i * SF_ATOM_M[0], 0)
-                comptime b_scales_offset = b_scales_smem_layout(idx) * size_of[
-                    b_scales_type
-                ]()
+                comptime idx = Coord(Idx[i * SF_ATOM_M[0]], Idx[0])
+                comptime b_scales_offset = Int(
+                    b_scales_smem_layout(idx)
+                ) * size_of[b_scales_type]()
                 var b_scales_tmem_addr = b_scales_tmem_addr_start + UInt32(
                     i * (SF_MN_GROUP_SIZE // 32)
                 )
                 var b_scales_desc = MMASmemDescriptor.create[
                     8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
-                ](b_scales_smem_tile.unsafe_ptr() + b_scales_offset)
+                ](
+                    b_scales_smem_tile.unsafe_ptr().unsafe_offset(
+                        b_scales_offset
+                    )
+                )
                 tcgen05_cp[
                     cta_group=1, datapaths=32, bits=128, multicast="warpx4"
                 ](b_scales_tmem_addr, b_scales_desc)
@@ -381,9 +384,13 @@ def block_scaled_mxfp8_kernel[
                     ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
-                    comptime idx = IntTuple(0, MMA_K * j)
-                    comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
-                    comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
+                    comptime idx = Coord(Idx[0], Idx[MMA_K * j])
+                    comptime a_offset = Int(a_smem_layout(idx)) * size_of[
+                        a_type
+                    ]()
+                    comptime b_offset = Int(b_smem_layout(idx)) * size_of[
+                        b_type
+                    ]()
                     mma(
                         adesc + a_offset,
                         bdesc + b_offset,
@@ -400,9 +407,13 @@ def block_scaled_mxfp8_kernel[
                     ].update_desc_with_sf_id[UInt32(j)](
                         idesc,
                     )
-                    comptime idx = IntTuple(0, MMA_K * j)
-                    comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
-                    comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
+                    comptime idx = Coord(Idx[0], Idx[MMA_K * j])
+                    comptime a_offset = Int(a_smem_layout(idx)) * size_of[
+                        a_type
+                    ]()
+                    comptime b_offset = Int(b_smem_layout(idx)) * size_of[
+                        b_type
+                    ]()
                     mma(
                         adesc + a_offset,
                         bdesc + b_offset,
@@ -490,12 +501,11 @@ def sm100_block_scaled_mxfp8[
     b_scales_layout: TensorLayout,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: DynamicCoord[.int, 3],
+    block_tile_shape: Coord[Int, Int, Int],
     SF_VECTOR_SIZE: Int,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
     c: TileTensor[mut=True, c_type, c_layout, _],
@@ -629,9 +639,6 @@ def sm100_block_scaled_mxfp8[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -642,16 +649,16 @@ def test_block_scaled_mxfp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    umma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    umma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool,
     *,
     k: Int,
 ](ctx: DeviceContext, m: MType, n: NType) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = Int(m.value())
-    var N = Int(n.value())
+    var M = Int(m)
+    var N = Int(n)
     var K = k
 
     comptime BM = block_tile_shape[0]
@@ -717,7 +724,7 @@ def test_block_scaled_mxfp8[
 
     for i in range(ceildiv(N, REF_BLOCK_SCALE)):
         for j in range(ceildiv(K, REF_BLOCK_SCALE)):
-            b_scales_host_ref[Coord(i, j)] = (1 << random_ui64(0, 3)).cast[
+            b_scales_host_ref[i, j] = (1 << random_ui64(0, 3)).cast[
                 ref_scales_type
             ]()
 
@@ -903,8 +910,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 256, BK),
-            Index(MMA_M, 256, MMA_K),
+            (MMA_M, 256, BK),
+            (MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[256], Idx[256])
@@ -912,8 +919,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 256, BK),
-            Index(MMA_M, 256, MMA_K),
+            (MMA_M, 256, BK),
+            (MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[256], Idx[256 * 2])
@@ -921,8 +928,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 256, BK),
-            Index(MMA_M, 256, MMA_K),
+            (MMA_M, 256, BK),
+            (MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[1000], Idx[256 * 4])
@@ -931,8 +938,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 128, BK),
-            Index(MMA_M, 128, MMA_K),
+            (MMA_M, 128, BK),
+            (MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[256], Idx[2 * 128])
@@ -940,8 +947,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 128, BK),
-            Index(MMA_M, 128, MMA_K),
+            (MMA_M, 128, BK),
+            (MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 2,
         ](ctx, Idx[256], Idx[3 * 128])
@@ -949,8 +956,8 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(MMA_M, 128, BK),
-            Index(MMA_M, 128, MMA_K),
+            (MMA_M, 128, BK),
+            (MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
         ](ctx, Idx[1000], Idx[3 * 128])

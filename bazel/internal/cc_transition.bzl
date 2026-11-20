@@ -73,3 +73,33 @@ cc_transition = transition(
         "//:modular_config",
     ],
 )
+
+def _tsan_transition_impl(_settings, _attr):
+    return {"//:modular_config": "tsan"}
+
+_tsan_transition = transition(
+    implementation = _tsan_transition_impl,
+    inputs = [],
+    outputs = ["//:modular_config"],
+)
+
+def _tsan_variant_impl(ctx):
+    outputs = []
+    for src in ctx.attr.src[0][DefaultInfo].files.to_list():
+        output = ctx.actions.declare_file(ctx.label.name + "/" + src.basename)
+        ctx.actions.symlink(output = output, target_file = src)
+        outputs.append(output)
+    return [DefaultInfo(files = depset(outputs), runfiles = ctx.runfiles(files = outputs))]
+
+# Builds `src` and everything beneath it in the `tsan` config. Use it only for
+# files that ship beside the default build, never for a dependency of a
+# default-config binary: that binary would then link the same library in two
+# configurations, which rules_cc rejects. The outputs go under `<name>/`
+# because a runfiles path does not include the configuration, so the default
+# build's file would otherwise take the same path.
+tsan_variant = rule(
+    implementation = _tsan_variant_impl,
+    attrs = {
+        "src": attr.label(mandatory = True, cfg = _tsan_transition),
+    },
+)

@@ -19,7 +19,6 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu import thread_idx
 from layout import (
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,
@@ -28,10 +27,9 @@ from layout import (
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout._utils import load_to_simd
-from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
-from std.utils.index import IndexList
+from std.utils.coord import DynamicCoord
 
 
 def mma_load_and_multiply[
@@ -39,11 +37,13 @@ def mma_load_and_multiply[
     dtype: DType,
     lhs_layout: TensorLayout,
     rhs_layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
+    lhs_origin: MutOrigin,
+    rhs_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    lhs: TileTensor[dtype, lhs_layout, MutAnyOrigin],
-    rhs: TileTensor[dtype, rhs_layout, MutAnyOrigin],
+    lhs: TileTensor[dtype, lhs_layout, lhs_origin],
+    rhs: TileTensor[dtype, rhs_layout, rhs_origin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_reg_tile = mma.load_a(lhs)
@@ -149,8 +149,9 @@ def mma_write_operand_kernel[
     dst_dtype: DType,
     dtype: DType,
     layout: TensorLayout,
-    inst_shape: IndexList[3],
-](output: TileTensor[dst_dtype, layout, MutAnyOrigin]):
+    inst_shape: DynamicCoord[.int, 3],
+    output_origin: MutOrigin,
+](output: TileTensor[dst_dtype, layout, output_origin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = stack_allocation[dst_dtype, address_space=.LOCAL](
         mma.c_fragment_layout
@@ -168,7 +169,7 @@ def mma_write_operand_kernel[
 def test_load_and_mma_and_multiply_operands[
     dst_dtype: DType,
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext) raises:
     comptime M = shape[0]
@@ -189,22 +190,24 @@ def test_load_and_mma_and_multiply_operands[
         type_of(lhs_layout),
         type_of(rhs_layout),
         shape,
-        transpose_b,
+        lhs_origin=origin_of(lhs),
+        rhs_origin=origin_of(rhs),
+        transpose_b=transpose_b,
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(ctx.default_device_info.warp_size),
     )
     ctx.synchronize()
 
 
 def test_write_res_operand[
-    dst_dtype: DType, dtype: DType, shape: IndexList[3]
+    dst_dtype: DType, dtype: DType, shape: DynamicCoord[.int, 3]
 ](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
@@ -215,12 +218,12 @@ def test_write_res_operand[
     _ = dst.host_tensor().fill(0)
     dst.to_device()
     comptime mma_load_and_print_kernel_fn = mma_write_operand_kernel[
-        dst_dtype, dtype, type_of(layout), shape
+        dst_dtype, dtype, type_of(layout), shape, output_origin=origin_of(dst)
     ]
     ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        dst.device_tensor().as_unsafe_any_origin(),
+        dst.device_tensor(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(ctx.default_device_info.warp_size),
     )
     dst.to_host()
     var result = dst.host_tensor()
@@ -230,30 +233,45 @@ def test_write_res_operand[
         print()
 
 
+@inline(.always)
+def _copy_tile_to_smem[
+    dtype: DType
+](
+    dst: TileTensor[mut=True, dtype, address_space=.SHARED, ...],
+    src: TileTensor[dtype, ...],
+):
+    """Copies a tile into shared memory one scalar per warp lane per step.
+
+    The tiles here can be narrower than the warp in either dimension, so a
+    thread-layout copier would divide to an empty per-lane view.
+    """
+    comptime assert src.rank == src.flat_rank == 2
+    comptime rows = src.static_shape[0]
+    comptime cols = src.static_shape[1]
+    for i in range(Int(thread_idx.x), rows * cols, WARP_SIZE):
+        dst.store((i // cols, i % cols), src[i // cols, i % cols])
+
+
 def mma_load_and_print_operands_kernel_ldmatrix[
     dst_dtype: DType,
     dtype: DType,
     lhs_layout: TensorLayout,
     rhs_layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
+    lhs_origin: MutOrigin,
+    rhs_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    lhs: TileTensor[dtype, lhs_layout, MutAnyOrigin],
-    rhs: TileTensor[dtype, rhs_layout, MutAnyOrigin],
+    lhs: TileTensor[dtype, lhs_layout, lhs_origin],
+    rhs: TileTensor[dtype, rhs_layout, rhs_origin],
 ) where (lhs_layout.all_dims_known and rhs_layout.all_dims_known):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_smem = stack_allocation[dtype, address_space=.SHARED](lhs.layout)
 
     var b_smem = stack_allocation[dtype, address_space=.SHARED](rhs.layout)
 
-    comptime thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
-    # Preserve the legacy copier's narrow AMD tile coverage.
-    copy_dram_to_sram[thread_layout=thread_layout](
-        a_smem.to_layout_tensor(), lhs.to_layout_tensor()
-    )
-    copy_dram_to_sram[thread_layout=thread_layout](
-        b_smem.to_layout_tensor(), rhs.to_layout_tensor()
-    )
+    _copy_tile_to_smem(a_smem, lhs)
+    _copy_tile_to_smem(b_smem, rhs)
     barrier()
 
     comptime a_simd_width = mma.a_reg_type.length
@@ -330,7 +348,7 @@ def mma_load_and_print_operands_kernel_ldmatrix[
 def test_load_operands_ldmatrix[
     dst_dtype: DType,
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext) raises:
     comptime M = shape[0]
@@ -350,14 +368,16 @@ def test_load_operands_ldmatrix[
         type_of(lhs_layout),
         type_of(rhs_layout),
         shape,
-        transpose_b,
+        lhs_origin=origin_of(lhs),
+        rhs_origin=origin_of(rhs),
+        transpose_b=transpose_b,
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(ctx.default_device_info.warp_size),
     )
     ctx.synchronize()

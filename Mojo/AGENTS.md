@@ -117,7 +117,6 @@ MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/Mojo/stdlib/std mojo main.mojo
 
 - Follow value semantics and ownership conventions
 - Use `Origin` parameters (`ImmOrigin`/`MutOrigin`) with `Pointer` in APIs
-- Prefer `Pointer` to the deprecated `UnsafePointer` alias
 - Prefer `AnyType` over `__TypeOfAllTypes` (except for MLIR interactions)
 
 ## Development Workflow
@@ -193,5 +192,7 @@ For complete Mojo docstring style guidelines, see
 - Bug fixes should include reproducing tests
 - New features should align with the roadmap
 - All code must have corresponding tests
-- Follow the coding style guide strictly
+- Follow the
+  [coding style guide](docs/contributing/stdlib/stdlib-code-style.md)
+  strictly
 - Use pre-commit hooks for automatic formatting

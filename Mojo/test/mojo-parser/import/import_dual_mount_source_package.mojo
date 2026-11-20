@@ -16,8 +16,8 @@
 # `lib/mylib` both name the same `utils`.
 
 # RUN: %parse-mojo-isolated -verify-diagnostics \
-# RUN:   -I=%S/inputs/dual_mount_pkg/lib \
-# RUN:   -I=%S/inputs/dual_mount_pkg/lib/mylib %s
+# RUN:   -I%S/inputs/dual_mount_pkg/lib \
+# RUN:   -I%S/inputs/dual_mount_pkg/lib/mylib %s
 
 # expected-note @below {{'mylib.utils' is the name used in error messages and debug info}}
 from mylib.utils.a import Thing, make

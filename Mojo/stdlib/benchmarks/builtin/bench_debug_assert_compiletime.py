@@ -107,7 +107,7 @@ def generate_source(shape: str, count: int, target: str) -> str:
     if shape.startswith("abort_"):
         imports.append("from std.os import abort")
     if target != "host":
-        imports.insert(0, "from std._gpu.host import get_gpu_target")
+        imports.insert(0, "from max.gpu.host import get_gpu_target")
 
     sites = "\n".join(
         _SITES[shape].format(i=i, tag=f"{i:03d}") for i in range(count)

@@ -25,6 +25,7 @@ Model inference
    CompileOnlyModel
    InferenceSession
    Model
+   ModelExecutionError
 
 Configuration
 -------------

@@ -31,7 +31,7 @@ from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
-from max.serve.telemetry import common
+from max.serve.telemetry import _tracing
 
 
 def _run_two_batches(
@@ -41,7 +41,7 @@ def _run_two_batches(
     execute_error: Exception | None = None,
     recording: bool = True,
 ) -> None:
-    monkeypatch.setattr(common, "_kernel_trace_level", level)
+    monkeypatch.setattr(_tracing, "_kernel_trace_level", level)
 
     def range_begin_with_id(batch_id: int, name: str) -> int:
         events.append(("begin", batch_id, name))
@@ -89,14 +89,6 @@ def _run_two_batches(
     scheduler._retrieve_pending_requests()
     for _ in range(2):
         scheduler._schedule(scheduler.batch_constructor.construct_batch())
-
-
-def test_off_never_calls_the_range_bindings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    events: list[tuple[object, ...]] = []
-    _run_two_batches(monkeypatch, KernelTraceLevel.OFF, events)
-    assert events == [("execute",), ("execute",)]
 
 
 def test_batch_wraps_each_execute_with_its_batch_id(

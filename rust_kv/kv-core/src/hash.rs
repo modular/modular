@@ -314,10 +314,8 @@ fn ahash_pair(seed: &[u64; 4], a: u64, b: u64) -> u64 {
 
 fn seed_lanes(seed: &[u8; SEED_LEN]) -> [u64; 4] {
     let mut lanes = [0u64; 4];
-    for (lane, chunk) in lanes.iter_mut().zip(seed.chunks_exact(8)) {
-        let mut b = [0u8; 8];
-        b.copy_from_slice(chunk);
-        *lane = u64::from_le_bytes(b);
+    for (lane, chunk) in lanes.iter_mut().zip(seed.as_chunks::<8>().0) {
+        *lane = u64::from_le_bytes(*chunk);
     }
     lanes
 }

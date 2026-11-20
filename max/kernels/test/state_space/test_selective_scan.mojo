@@ -169,14 +169,14 @@ def run_selective_scan_fwd[
         random(delta_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(dim * dstate))
     for i in range(dim * dstate):
-        var val = A_h.unsafe_ptr().load(i)
-        A_h.unsafe_ptr().store(i, Scalar[dtype](Float32(val) * -0.5))
+        A_flat[i] = Scalar[dtype](Float32(A_flat[i]) * -0.5)
 
     # Scale delta to be positive
+    var delta_flat = delta_h.reshape(row_major(batch * dim * seqlen))
     for i in range(batch * dim * seqlen):
-        var val = delta_h.unsafe_ptr().load(i)
-        delta_h.unsafe_ptr().store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
+        delta_flat[i] = Scalar[dtype](abs(Float32(delta_flat[i])) * 0.5)
 
     var x_tt = TileTensor(
         x_heap,
@@ -214,8 +214,9 @@ def run_selective_scan_fwd[
 
     # Basic sanity check: output should not be all zeros
     var has_nonzero = False
+    var output_flat = output_h.reshape(row_major(batch * dim * seqlen))
     for i in range(batch * dim * seqlen):
-        if abs(Float32(output_h.unsafe_ptr()[i])) > 1e-6:
+        if abs(Float32(output_flat[i])) > 1e-6:
             has_nonzero = True
             break
 
@@ -331,13 +332,17 @@ def run_selective_scan_update[
         random(dt_bias_h)
 
     # Scale A to be negative for stability
+    var A_flat = A_h.reshape(row_major(dim * dstate))
     for i in range(dim * dstate):
-        var val = A_h.unsafe_ptr()[i]
-        A_h.unsafe_ptr()[i] = Scalar[dtype](Float32(val) * -0.5)
+        A_flat[i] = Scalar[dtype](Float32(A_flat[i]) * -0.5)
 
     # Copy state_in for reference
+    var state_in_flat = state_in_h.reshape(row_major(batch * dim * dstate))
+    var state_out_ref_flat = state_out_ref_h.reshape(
+        row_major(batch * dim * dstate)
+    )
     for i in range(batch * dim * dstate):
-        state_out_ref_h.unsafe_ptr()[i] = state_in_h.unsafe_ptr()[i]
+        state_out_ref_flat[i] = state_in_flat[i]
 
     var x_buf = x_h
     var dt_buf = dt_h
@@ -376,12 +381,11 @@ def run_selective_scan_update[
             var group_id = d // group_size
 
             # Load dt value
-            var dt_offset = b * dim + d
-            var dt_val = Float32(dt_buf.unsafe_ptr()[dt_offset])
+            var dt_val = Float32(dt_buf[b, d])
 
             # Apply dt_bias if present
             if has_delta_bias:
-                var bias_val = Float32(dt_bias_buf.unsafe_ptr()[d])
+                var bias_val = Float32(dt_bias_buf[d])
                 dt_val += bias_val
 
             # Apply softplus if requested
@@ -389,79 +393,70 @@ def run_selective_scan_update[
                 dt_val = softplus_ref(dt_val)
 
             # Load x value
-            var x_offset = b * dim + d
-            var x_val = Float32(x_buf.unsafe_ptr()[x_offset])
+            var x_val = Float32(x_buf[b, d])
 
             # Load A values and compute dA
             var dA_vals = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
-                var A_offset = d * dstate + n
-                var A_val = Float32(A_buf.unsafe_ptr()[A_offset]) * LOG2E
+                var A_val = Float32(A_buf[d, n]) * LOG2E
                 dA_vals[n] = exp2(A_val * dt_val)
 
             # Load B values and compute dB
             var dB_vals = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
-                var B_offset = b * n_groups * dstate + group_id * dstate + n
-                var B_val = Float32(B_buf.unsafe_ptr()[B_offset])
+                var B_val = Float32(B_buf[b, group_id, n])
                 dB_vals[n] = B_val * dt_val
 
             # Load current state
             var state_vals = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
-                var state_offset = b * dim * dstate + d * dstate + n
-                state_vals[n] = Float32(
-                    state_out_ref_h.unsafe_ptr()[state_offset]
-                )
+                state_vals[n] = Float32(state_out_ref_h[b, d, n])
 
             # Update state
             state_vals = state_vals * dA_vals + dB_vals * x_val
 
             # Store updated state
             for n in range(dstate):
-                var state_offset = b * dim * dstate + d * dstate + n
-                state_out_ref_h.unsafe_ptr()[state_offset] = Scalar[dtype](
-                    state_vals[n]
-                )
+                state_out_ref_h[b, d, n] = Scalar[dtype](state_vals[n])
 
             # Load C values
             var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
-                var C_offset = b * n_groups * dstate + group_id * dstate + n
-                C_vals[n] = Float32(C_buf.unsafe_ptr()[C_offset])
+                C_vals[n] = Float32(C_buf[b, group_id, n])
 
             # Compute output
             var out_val = (state_vals * C_vals).reduce_add()
 
             # Add skip connection
             if has_D:
-                var D_val = Float32(D_buf.unsafe_ptr()[d])
+                var D_val = Float32(D_buf[d])
                 out_val += x_val * D_val
 
             # Apply gating
             if has_z:
-                var z_offset = b * dim + d
-                var z_val = Float32(z_buf.unsafe_ptr()[z_offset])
+                var z_val = Float32(z_buf[b, d])
                 out_val *= z_val * sigmoid_ref(z_val)
 
             # Store output
-            var out_offset = b * dim + d
-            output_ref_h.unsafe_ptr()[out_offset] = Scalar[dtype](out_val)
+            output_ref_h[b, d] = Scalar[dtype](out_val)
 
     # Compare results
     var state_size = batch * dim * dstate
+    var state_out_flat = state_out_h.reshape(row_major(state_size))
     for i in range(state_size):
         assert_almost_equal(
-            state_out_h.unsafe_ptr()[i],
-            state_out_ref_h.unsafe_ptr()[i],
+            state_out_flat[i],
+            state_out_ref_flat[i],
             rtol=rtol,
         )
 
     var output_size = batch * dim
+    var output_flat = output_h.reshape(row_major(output_size))
+    var output_ref_flat = output_ref_h.reshape(row_major(output_size))
     for i in range(output_size):
         assert_almost_equal(
-            output_h.unsafe_ptr()[i],
-            output_ref_h.unsafe_ptr()[i],
+            output_flat[i],
+            output_ref_flat[i],
             rtol=rtol,
         )
 
@@ -474,7 +469,7 @@ def run_selective_scan_update[
 def test_selective_scan_fwd_basic() raises:
     """Test basic selective scan forward."""
     run_selective_scan_fwd[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=True,
         has_z=True,
@@ -486,7 +481,7 @@ def test_selective_scan_fwd_basic() raises:
 def test_selective_scan_fwd_without_D() raises:
     """Test selective scan forward without D tensor."""
     run_selective_scan_fwd[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=False,
         has_z=True,
@@ -498,7 +493,7 @@ def test_selective_scan_fwd_without_D() raises:
 def test_selective_scan_fwd_without_z() raises:
     """Test selective scan forward without z tensor."""
     run_selective_scan_fwd[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=True,
         has_z=False,
@@ -510,7 +505,7 @@ def test_selective_scan_fwd_without_z() raises:
 def test_selective_scan_fwd_with_delta_softplus() raises:
     """Test selective scan forward with delta softplus activation."""
     run_selective_scan_fwd[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=True,
         has_z=True,
@@ -522,7 +517,7 @@ def test_selective_scan_fwd_with_delta_softplus() raises:
 def test_selective_scan_fwd_longer_sequence() raises:
     """Test selective scan forward with longer sequence."""
     run_selective_scan_fwd[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
@@ -539,7 +534,7 @@ def test_selective_scan_fwd_longer_sequence() raises:
 def test_selective_scan_update_basic() raises:
     """Test basic selective scan update."""
     run_selective_scan_update[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=True,
         has_z=True,
@@ -551,7 +546,7 @@ def test_selective_scan_update_basic() raises:
 def test_selective_scan_update_without_D() raises:
     """Test selective scan update without D tensor."""
     run_selective_scan_update[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=False,
         has_z=True,
@@ -563,7 +558,7 @@ def test_selective_scan_update_without_D() raises:
 def test_selective_scan_update_without_z() raises:
     """Test selective scan update without z tensor."""
     run_selective_scan_update[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=True,
         has_z=False,
@@ -575,7 +570,7 @@ def test_selective_scan_update_without_z() raises:
 def test_selective_scan_update_with_delta_softplus() raises:
     """Test selective scan update with delta softplus activation."""
     run_selective_scan_update[
-        DType.float32,
+        .float32,
         2,  # DSTATE
         has_D=True,
         has_z=True,
@@ -587,13 +582,25 @@ def test_selective_scan_update_with_delta_softplus() raises:
 def test_selective_scan_update_larger_dimensions() raises:
     """Test selective scan update with larger dimensions."""
     run_selective_scan_update[
-        DType.float32,
+        .float32,
         4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, n_groups=1)
+
+
+def test_selective_scan_update_full_dstate() raises:
+    """Test selective scan update at DSTATE == MAX_DSTATE (vector loads)."""
+    run_selective_scan_update[
+        .float32,
+        16,  # DSTATE
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=2, dim=4, n_groups=2)
 
 
 def main() raises:

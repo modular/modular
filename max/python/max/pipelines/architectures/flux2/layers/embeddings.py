@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Timestep and rotary-position embeddings for Flux2."""
 
 import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.activation import activation_function_from_name
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.activation import activation_function_from_name
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 
 def get_timestep_embedding(
@@ -118,6 +119,8 @@ def get_1d_rotary_pos_embed(
 
 
 class Timesteps(Module):
+    """Turns a timestep scalar into sinusoidal embeddings."""
+
     def __init__(
         self,
         num_channels: int,
@@ -159,6 +162,8 @@ class Timesteps(Module):
 
 
 class TimestepEmbedding(Module):
+    """Projects sinusoidal timestep embeddings through an MLP."""
+
     def __init__(
         self,
         in_channels: int,

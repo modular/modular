@@ -36,10 +36,9 @@ from max.engine import (
     MefStore,
     MissingArtifactError,
 )
-from max.experimental import support
-from max.experimental.nn import Module, module_dataclass
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
+from max.nn import Module, module_dataclass
+from max.tensor import Tensor, support
 
 
 def _graph(name: str = "add_one", *, width: int = 4) -> Graph:
@@ -230,6 +229,31 @@ def test_setting_mef_dirs_is_undone_on_scope_exit(tmp_path: Path) -> None:
     assert after == recorded
 
 
+def test_module_compiles_in_the_given_session(tmp_path: Path) -> None:
+    # A pipeline configures its own session's MEF directories, not the
+    # process-wide ones, so the store must come from the session passed in.
+    exporting = InferenceSession(devices=[CPU()], export_mefs=tmp_path)
+    exported = _linear().compile(
+        _module_input_type(), session=exporting, name="linear"
+    )
+    expected = exported(_module_input()).to_numpy()
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert [entry["name"] for entry in manifest["graphs"]] == ["linear"]
+
+    reusing = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    reused = _linear().compile(
+        _module_input_type(), session=reusing, name="linear"
+    )
+    np.testing.assert_allclose(reused(_module_input()).to_numpy(), expected)
+
+
+def test_module_trace_takes_a_name() -> None:
+    assert _linear().trace(_module_input_type(), name="linear").graph.name == (
+        "linear"
+    )
+
+
 def _graph_adding(name: str, addend: float, *, width: int = 4) -> Graph:
     """A graph whose name and signature say nothing about what it computes."""
     dtype = TensorType(DType.float32, [width], device=DeviceRef.CPU())
@@ -303,7 +327,7 @@ def test_reusing_colliding_artifacts_from_two_directories_raises(
         _graph_adding("collide", 2.0)
     )
 
-    with pytest.raises(RuntimeError, match="describe different graphs"):
+    with pytest.raises(RuntimeError, match="disagree on their"):
         InferenceSession(devices=[CPU()], precompiled_mefs=[first, second])
 
 
@@ -326,11 +350,12 @@ def test_one_graph_exported_to_two_directories_is_allowed(
     )
 
 
-def test_a_manifest_without_fingerprints_still_imports(
-    tmp_path: Path,
+def test_a_manifest_from_before_the_identity_was_recorded_raises(
+    tmp_path: Path, _no_default_store: None
 ) -> None:
     # Artifacts outlive the run that wrote them: a manifest from before the
-    # recorded body was kept still has to name its graphs.
+    # compiler recorded what an artifact holds cannot be checked, so a
+    # verifying store reports rather than trusting it.
     InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
@@ -340,7 +365,7 @@ def test_a_manifest_without_fingerprints_still_imports(
                     {
                         key: value
                         for key, value in entry.items()
-                        if key != "fingerprint"
+                        if key != "digest"
                     }
                     for entry in json.loads(manifest.read_text())["graphs"]
                 ]
@@ -348,8 +373,18 @@ def test_a_manifest_without_fingerprints_still_imports(
         )
     )
 
-    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
-    np.testing.assert_allclose(_execute(session.load(_graph())), np.ones(4))
+    with pytest.raises(RuntimeError, match="predates recorded digests"):
+        InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path).load(
+            _graph()
+        )
+
+    # A caller that accepts what the record does not say can still reuse it.
+    InferenceSession.default_mef_store = MefStore.for_import(
+        tmp_path, verify_body=False
+    )
+    np.testing.assert_allclose(
+        _execute(InferenceSession(devices=[CPU()]).load(_graph())), np.ones(4)
+    )
 
 
 def _numbered_key() -> Callable[[Graph], str]:
@@ -445,26 +480,102 @@ def test_verify_body_reports_a_diverging_graph(
     InferenceSession.default_mef_store = MefStore.for_import(
         tmp_path, key=_numbered_key(), verify_body=True
     )
-    with pytest.raises(ArtifactBodyMismatch, match="a different graph"):
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
         InferenceSession(devices=[CPU()]).load(_graph_adding("g", 2.0))
 
 
-def test_the_body_is_not_verified_by_default(
+def test_the_body_is_verified_through_the_public_constructor(
+    tmp_path: Path,
+) -> None:
+    # The repro this guard exists for: export, edit the graph so its name and
+    # signature still match, reuse. The artifact answers for the old program
+    # unless it is checked, so it is checked by default.
+    InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(
+        _graph_adding("g", 1.0)
+    )
+
+    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
+        session.load(_graph_adding("g", 2.0))
+
+
+def test_a_caller_may_choose_not_to_verify(
     tmp_path: Path, _no_default_store: None
 ) -> None:
-    # Why it is off by default: a whole-pipeline caller knowingly builds
-    # different graphs under virtual devices than the ones it runs. The cost
-    # is this -- the artifact answers, and it is the recorded graph's answer.
+    # The escape hatch for a caller that knowingly builds different graphs than
+    # it recorded -- a harness compiling under virtual devices, say. The cost
+    # is the old behaviour: the artifact answers, and it is its own answer.
     InferenceSession.default_mef_store = MefStore.for_export(
         tmp_path, key=_numbered_key()
     )
     InferenceSession(devices=[CPU()]).load(_graph_adding("g", 1.0))
 
     InferenceSession.default_mef_store = MefStore.for_import(
-        tmp_path, key=_numbered_key()
+        tmp_path, key=_numbered_key(), verify_body=False
     )
     reused = InferenceSession(devices=[CPU()]).load(_graph_adding("g", 2.0))
     np.testing.assert_allclose(_execute(reused), np.ones(4))
+
+
+def test_the_public_constructor_can_skip_the_check(tmp_path: Path) -> None:
+    # The pipeline's `--no-precompiled-mefs-verify-body` reaches this. It is
+    # for a split whose two sides knowingly build different graphs.
+    InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(
+        _graph_adding("g", 1.0)
+    )
+
+    session = InferenceSession(
+        devices=[CPU()], precompiled_mefs=tmp_path, verify_body=False
+    )
+    reused = session.load(_graph_adding("g", 2.0))
+    np.testing.assert_allclose(_execute(reused), np.ones(4))
+
+
+def test_editing_a_kernel_library_changes_the_digest(tmp_path: Path) -> None:
+    # A custom op's source is not part of the graph text, and the artifact
+    # embeds the kernels compiled from it. Recording only the library's path
+    # would let an edit run the old kernels; the store digests its contents.
+    #
+    # A digest, not a load: the bytes below are not a package a compile could
+    # read, so this asks the digest the question the load would ask it.
+    library = tmp_path / "ops.mojoc"
+    library.write_bytes(b"the first kernels")
+    session = InferenceSession(devices=[CPU()], custom_extensions=[library])
+    graph = _graph()
+    before = session._mef_digest(graph, [library], False)
+
+    library.write_bytes(b"the edited kernels")
+    after = session._mef_digest(graph, [library], False)
+
+    assert before != after
+
+
+def test_reusing_an_artifact_built_with_other_options_raises(
+    tmp_path: Path,
+) -> None:
+    # Tile-based fusion selects different kernels, and an artifact cannot be
+    # recompiled under it: the program it holds is the one it was built with.
+    InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
+
+    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
+        session.load(_graph(), tile_based_fusion=True)
+
+
+def test_an_artifact_recorded_under_another_digest_raises(
+    tmp_path: Path,
+) -> None:
+    # What a different MAX build, a different device or a different option
+    # looks like from here: the name and signature match, the digest does not.
+    InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
+    manifest = tmp_path / "manifest.json"
+    recorded = json.loads(manifest.read_text())
+    recorded["graphs"][0]["digest"] = "not-this-program"
+    manifest.write_text(json.dumps(recorded))
+
+    session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
+        session.load(_graph())
 
 
 def test_a_key_that_declines_compiles_in_process(
@@ -550,7 +661,7 @@ def test_one_name_in_two_directories_raises(tmp_path: Path) -> None:
 
 def test_a_name_cannot_also_be_a_graphs_artifact(tmp_path: Path) -> None:
     store = MefStore.for_export(tmp_path)
-    taken = store.claim_export(_graph()).name
+    taken = store.claim_export(_graph(), digest="0" * 43).name
 
     with pytest.raises(ValueError, match="already a graph's artifact"):
         store.claim_export_artifact(taken)

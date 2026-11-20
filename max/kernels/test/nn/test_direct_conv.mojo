@@ -92,10 +92,10 @@ def test[
     )
     var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
-        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
+        length=packed_filter_shape.product(), fill=Scalar[dtype](0)
     )
     var packed_filter = TileTensor(
-        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
+        Span(packed_filter_ptr), row_major(packed_filter_shape)
     )
     var output = TileTensor(
         Span(output_ptr), row_major(Coord(Index(N, HO, WO, F)))
@@ -116,14 +116,14 @@ def test[
         output_ref_ptr.unsafe_ptr(),
         input_ptr.unsafe_ptr(),
         filter_ptr.unsafe_ptr(),
-        Index(N, 1, HO, WO, F),
-        Index(N, 1, H, W, C),
-        Index(1, R, S, C // num_groups, F),
-        Index(0, 0),  #  pad_d
-        pad_h,
-        pad_w,
-        IndexList[3](1, stride[0], stride[1]),
-        IndexList[3](1, dilation[0], dilation[1]),
+        Coord(N, 1, HO, WO, F),
+        Coord(N, 1, H, W, C),
+        Coord(1, R, S, C // num_groups, F),
+        Coord(0, 0),  #  pad_d
+        Coord(pad_h),
+        Coord(pad_w),
+        Coord(1, stride[0], stride[1]),
+        Coord(1, dilation[0], dilation[1]),
         num_groups,
     )
 
@@ -153,7 +153,7 @@ def test[
             conv_attr,
         ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
-    # Check results, return on the first failed comparison.
+    # Check results, raise on the first failed comparison.
     for n in range(N):
         for ho in range(HO):
             for wo in range(WO):
@@ -171,7 +171,7 @@ def test[
                         print("Test failed at index: ", Index(n, ho, wo, f))
                         print("Golden value: ", output_ref[n, ho, wo, f])
                         print("Actual value: ", output[n, ho, wo, f])
-                        return
+                        raise Error("test_direct_conv: output mismatch")
 
     # CHECK: Succeed
     print("Succeed")
@@ -285,6 +285,22 @@ def main() raises:
         3,  # S
         256,  # F
         Index(3, 3),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+        1,  # num_groups
+    )
+
+    # Few output rows and filters but many input channels: partition in C.
+    test[.float32, False](
+        1,  # N
+        9,  # H
+        9,  # W
+        2048,  # C
+        3,  # R
+        3,  # S
+        16,  # F
+        Index(1, 1),  # stride
         Index(1, 1),  # dilation
         Index(0, 0),  # pad_h
         Index(0, 0),  # pad_w

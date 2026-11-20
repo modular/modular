@@ -19,6 +19,7 @@ This package provides GPU synchronization operations including:
 - **mbarrier**: Memory barrier operations (arrive/wait)
 - **named_barrier**: Named barriers for flexible synchronization
 - **schedule_barrier**: AMD instruction scheduling barriers
+- **s_wait_*cnt**: CDNA5 per-counter waits, split barriers and wave priority
 - **Semaphore**: Device-wide semaphore implementation
 - **cp_async_bulk**: Bulk async copy synchronization
 
@@ -49,6 +50,16 @@ from .sync import (
     syncwarp,
     umma_arrive_leader_cta,
     umma_arrive_peer_cta,
+    s_barrier_signal,
+    s_barrier_wait,
+    s_setprio,
+    s_setprio_inc_wg,
+    s_wait_asynccnt,
+    s_wait_dscnt,
+    s_wait_kmcnt,
+    s_wait_loadcnt,
+    s_wait_storecnt,
+    s_wait_tensorcnt,
     s_waitcnt,
     s_waitcnt_barrier,
 )

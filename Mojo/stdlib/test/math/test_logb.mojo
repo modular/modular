@@ -18,14 +18,9 @@ from std.sys import bit_width_of
 from std.testing import assert_equal, assert_true, TestSuite
 from std.utils.numerics import FPUtils
 
+from test_utils.math import xorshift64
+
 comptime length = 16384
-
-
-def _xorshift64(mut state: UInt64) -> UInt64:
-    state ^= state << 13
-    state ^= state >> 7
-    state ^= state << 17
-    return state
 
 
 def _same[
@@ -67,7 +62,7 @@ def _logb_inputs[
     comptime golden_ratio_u64: UInt64 = 0x9E37_79B9_7F4A_7C15
     var state = golden_ratio_u64
     while len(v) < length:
-        v.append(bitcast[dtype](_xorshift64(state).cast[I]()))
+        v.append(bitcast[dtype](xorshift64(state).cast[I]()))
     return v^
 
 

@@ -1,0 +1,284 @@
+---
+title: Interop safety
+sidebar_label: Interop safety
+description: >
+  Understand what Mojo checks, what the FFI leaves unchecked, and how to
+  avoid unsafe calls across language boundaries.
+---
+
+Mojo checks types, mutability, and lifetimes, but it can't inspect what
+happens inside functions written in other languages. At the foreign
+function interface (FFI), Mojo trusts the interface you declare. A wrong
+declaration can compile successfully and still produce incorrect results or
+crash.
+
+That makes you the type checker. Treat the library's headers and API docs
+as the contract. Three rules matter most:
+
+- **Match the library's types.** Use the `std.ffi` aliases to match the
+  target platform's C ABI. Incorrect types can produce wrong results
+  without a compiler error.
+- **Free memory where it was allocated.** Use the allocating library's
+  deallocator, such as `free()`. Keep Mojo memory alive for as long as
+  foreign code needs it, even after the call returns.
+- **Don't expect exceptions.** Incorrect FFI declarations can cause
+  undefined behavior, including results that appear correct. Passing
+  tests don't prove a declaration is safe.
+
+:::note Python-specific interoperability
+
+Python objects carry type information at runtime, so Python
+interoperability provides checks that raw C ABI calls don't. Conversions
+between Python and Mojo values, and pointers into Python-managed data,
+still require care.
+
+:::
+
+## What Mojo checks for you
+
+Mojo still checks the operations and lifetimes it can see. Operations
+that bypass some of those checks use the `unsafe_` prefix. For example:
+
+- **`unsafe_ptr()`** to hand foreign code a raw pointer.
+- **`unsafe_bitcast()`** to reinterpret one.
+- **`unsafe_offset=`** to index past the first element.
+- **`String(unsafe_from_utf8_ptr=)`** to trust bytes foreign code gave you.
+
+With each `unsafe_` operation, you take responsibility for a guarantee
+the compiler can't verify.
+
+Mojo tracks pointer lifetimes through *origins*. For example,
+`line.as_c_string_span()` ties the pointer's lifetime to `line`.
+But Mojo can't track a pointer that foreign code stores for later use.
+
+A callable returned by `OwnedDLHandle.get_function()` borrows the library
+handle, keeping the library open while the callable is in use.
+
+An origin stops you from moving the owner while a pointer or callable
+depends on it, but not from reassigning it. Assigning a new value to
+`line` or `lib` destroys the old value, and a span or callable from it
+then refers to freed memory or a closed library. Don't reassign the
+owner while you use anything that borrows from it.
+
+For Python objects, checked downcasts raise on type mismatches, and Python
+exceptions reach Mojo as catchable `Error` values.
+
+**Neither `external_call()` nor `OwnedDLHandle` validates a C function's
+signature.** The sections below distinguish errors Mojo catches from
+mistakes you must prevent. Entries name the relevant API where needed.
+
+## Caught at build time
+
+Mojo rejects some invalid FFI uses before the program runs. These checks
+are useful, but they don't verify a function against its C declaration.
+
+- **Conflicting C ABI signatures for one symbol** (`external_call()`):
+  Declaring `strchr` twice in the same module with incompatible lowered C
+  ABI signatures won't build. Different Mojo types that lower to the same
+  signature don't trigger this check. The diagnostic points into `std.ffi`
+  rather than at either of your call sites. This is easy to hit when a
+  wrapper and an inline call disagree. `get_function()` casts a runtime
+  pointer instead, so it has no module-level declaration to collide.
+- **String arguments** (`external_call()`): Passing a Mojo `String` is
+  rejected at compile time, and the error names `as_c_string_span()`
+  (null-terminated characters) as the fix. Of argument types, `String` is
+  the only one the API checks. A `StaticString` or other string slice
+  compiles, so call `as_c_string_span()` on any Mojo string you pass to C.
+  `OwnedDLHandle` doesn't repeat the check.
+- **Return types must be `RegisterPassable`**: `return_type` is bound to
+  `RegisterPassable`, so the compiler rejects a return type that doesn't
+  conform.
+- **`raises` on `abi("C")` functions** (`@export`): An `abi("C")`
+  function can't be marked `raises`, and the compiler rejects it. Foreign
+  callers have no way to receive a Mojo error, so return failures as
+  values. An `@export` without `abi("C")` only gets a warning, and a
+  raising function builds, so always write `abi("C")` on exports.
+
+## Availability checks
+
+Loading a missing library with `OwnedDLHandle`, or looking up a missing
+symbol with `get_function[]()`, raises an error you can catch. This lets
+you check for optional features and provide fallbacks.
+`OwnedDLHandle.call[]()` and `borrow()` abort on a missing symbol instead.
+
+For example, loading an unavailable library raises an error:
+
+```mojo
+from std.ffi import OwnedDLHandle
+from std.sys.info import platform_map
+
+comptime LIBCURL = platform_map[
+    "libcurl", linux="libcurl.so.4", macos="libcurl.dylib"
+]()
+
+def main():
+    try:
+        var lib = OwnedDLHandle(LIBCURL)
+        # use the optional feature
+    except:
+        # fall back
+```
+
+Use `check_symbol()` to test whether a library exports a function or
+global, especially for optional or platform-specific features. Linux's
+libm exports `exp10` and macOS's libm doesn't, so this example prints
+`100.0` on Linux and takes the fallback on macOS:
+
+```mojo
+from std.ffi import OwnedDLHandle, c_double
+from std.sys.info import platform_map
+
+comptime LIBM = platform_map[
+    "libm", linux="libm.so.6", macos="libm.dylib"
+]()
+
+def main() raises:
+    var lib = OwnedDLHandle(LIBM)
+    if lib.check_symbol("exp10"):
+        var exp10 = lib.get_function[c_double]("exp10")
+        print(exp10(c_double(2.0)))  # 100.0 on Linux
+    else:
+        print("exp10 not found in libm")
+```
+
+:::note Python failures
+
+Python operations also raise catchable errors. `Python.import_module()`
+raises a Mojo `Error` when a module is unavailable.
+`PythonObject(alloc=...)` raises if the type hasn't been registered with
+`add_type()`.
+
+:::
+
+## Failures the compiler can't catch
+
+The compiler can't compare your FFI declarations with the foreign
+library's actual interfaces. The following mistakes may compile but
+produce incorrect results, corrupt memory, or crash. Some appear only
+on another platform.
+
+### Function signatures and calling conventions
+
+- **Return type width:** Declaring a narrower return than C returns keeps
+  only the low bits. Declare `strchr`'s `char*` return as `c_int` and the
+  `Pointer` comes back truncated. That's truncation rather than noise, so a
+  wrong value can still look plausible.
+- **Argument types:** Mojo uses the widths and signedness you declare;
+  it doesn't compare them with the C function's actual signature.
+- **Undeclared argument types** (`OwnedDLHandle`): `get_function()` takes
+  the return type only, so nothing connects the arguments to the C
+  function's real signature. Calling `get_function[c_double]("sqrt")` with
+  a `c_int` has undefined behavior rather than raising a type error. It
+  may return a meaningless value instead of failing.
+- **Raw `String` arguments** (`OwnedDLHandle`): `external_call()` rejects
+  a `String` at compile time, but a callable from `get_function()`
+  accepts one and reads whatever the struct's bytes happen to be.
+  Always pass `as_c_string_span()`.
+- **Variadic callees without `num_fixed_args`:** Pass `num_fixed_args` for
+  every C variadic function. Without it, each argument defaults to a fixed
+  argument of a non-variadic callee, which gets the ABI wrong for `open()`
+  or `snprintf()`. Apple's arm64 ABI passes variadic arguments differently
+  from fixed ones, so the mistake can work on x86-64 Linux and break on
+  Apple silicon. Functions from `OwnedDLHandle` take no `num_fixed_args`,
+  so call variadic functions with `external_call()`.
+- **Platform-varying C types:** `c_long` and `c_ulong` resolve per
+  target rather than to one fixed width. Every platform Mojo supports
+  is LP64, so writing `Int64` for a C `long` happens to work, but the
+  alias says what you mean. `c_char` does differ: it's signed on x86-64 and
+  macOS but unsigned on Linux arm64, so a comparison against a
+  negative value changes meaning between targets.
+
+### Pointers and memory
+
+- **Pointers returned into a library** (`OwnedDLHandle`): When a C
+  function returns a `Pointer` into its own library, the return type
+  must borrow from the handle. For a C string, declare it as
+  `CStringSpan[lib_origin]` where
+  `comptime lib_origin = ImmOrigin(origin_of(lib))`. Declaring
+  `ImmStaticOrigin` compiles, then reads freed memory once the handle
+  closes the library.
+- **Mixed allocators:** Free memory with the allocator that created
+  it. Mojo's `unsafe_free()` doesn't release `malloc()` memory, and
+  `free()` doesn't release Mojo allocations. Both mistakes compile,
+  and can crash or corrupt the heap.
+- **Pointers foreign code keeps after the call:** An origin protects a
+  pointer for as long as Mojo can see it. Mojo can't see foreign code
+  storing your pointer for later, so a call returning doesn't mean
+  the callee is finished with what you passed. Check the library's
+  documentation for whether a function retains the pointer.
+- **Non-nul-terminated buffers:** A bare `Pointer[c_char]` into a
+  buffer with no terminator sends a C string function reading off
+  the end. `CStringSpan` is the guardrail for this, ensuring a null
+  terminator is present.
+
+### Callbacks and exports
+
+- **Callbacks without `abi("C")`:** A Mojo function passed to foreign
+  code as a callback needs `abi("C")`.
+- **Capturing lambdas as callbacks:** Use thin lambdas, not closures that
+  capture values.
+- **Exported signatures** (`@export`): An `abi("C")` export accepts Mojo
+  types such as `String` and `List`, and symbol names C can't spell,
+  such as `not-a-c-name`. Foreign callers can't construct those types
+  or name those symbols. Use only C-compatible types and valid C
+  identifiers.
+- **Runtime initialization** (`@export`): Call `initialize_runtime()` at the
+  start of an exported function that uses the Mojo runtime's worker threads,
+  such as code that runs work in parallel or calls `parallelism_level()`. A
+  foreign host never runs Mojo's startup code, so those threads don't exist
+  until you initialize the runtime, and code that needs them crashes. Exported
+  functions that don't use worker threads don't need it.
+
+  If you export a separate initialization function, every host, whether it's
+  written in C, C++, Rust, etc, has to call it first, and a host that forgets
+  crashes the same way. `initialize_runtime()` is idempotent, so calling it
+  multiple times is safe:
+
+  ```mojo
+  from std.runtime import initialize_runtime
+
+  initialize_runtime()  # call first in affected exported functions
+  ```
+
+  {/* markdownlint-disable MD013 */}
+
+  For more details,
+  [see](https://github.com/modular/modular/blob/main/Mojo/stdlib/std/runtime/__init__.mojo).
+
+  {/* markdownlint-enable MD013 */}
+
+## Python
+
+### Python-specific interoperability
+
+- **Python version support.** Mojo supports CPython 3.10 and later,
+  but not free-threaded Python builds.
+- **Mojo errors become generic Python exceptions.** A Mojo `Error`
+  raised from a function registered with `def_function()` reaches
+  Python as `Exception`. Use `raise_python_exception()` with an
+  `ExceptionType` to raise a specific type, such as `ValueError`
+  or `TypeError`.
+
+### Python-specific memory and pointers
+
+- **NumPy views:** `from_numpy_array()` gives Mojo a view of the
+  array's buffer, not a copy. Resizing or reallocating the array
+  while you use the view leaves the view pointing at freed memory.
+- **Downcast pointers:** `downcast_value_ptr[T]()` returns a pointer
+  with a wildcard origin, so Mojo doesn't track aliasing through
+  it. Don't mutate an object through two downcast pointers at the
+  same time. `unchecked_downcast_value_ptr[T]()` also skips the
+  type check.
+
+### Python-specific conversions
+
+- **Narrow integer conversions:** Integer `py=` initializers can wrap
+  silently. `UInt8(py=300)` produces `44`, `Int8(py=200)` produces
+  `-56`, and `Int32(py=2**40)` produces `0`. Some out-of-range values
+  raise instead, such as `UInt8(py=-1)` and `Int64(py=2**63)`, so
+  don't rely on a conversion to either wrap or raise.
+- **Permissive conversions:** `String(py=)` calls `str()`, so any
+  object converts and `None` becomes `"None"`. `Int(py=)` calls
+  `int()`, so `3.9` becomes `3` and `"12"` becomes `12`.
+  `Bool(py=)` uses truthiness. Check the Python type first when
+  the input could be the wrong kind.

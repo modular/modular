@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/types-and-literals.mdx
 # test_types_and_literals.mojo
 # Tests for the Mojo "Types & Literals" cheat-sheet card.
 #
@@ -207,9 +208,12 @@ def test_optionals() raises:
     var bar: Optional[Int] = 42
     assert_equal(foo.or_else(0), 0)  # default fallback
     assert_equal(bar.or_else(0), 42)
-    assert_false(Bool(foo))  # check then access
-    assert_true(Bool(bar))
-    assert_equal(bar.value(), 42)
+    if case .Some(_) = foo:  # check then access
+        raise Error("foo should be empty")
+    if case .Some(value) = bar:
+        assert_equal(value, 42)
+    else:
+        raise Error("bar should hold a value")
 
 
 def test_empty_collections() raises:

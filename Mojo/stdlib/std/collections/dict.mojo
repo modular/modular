@@ -14,7 +14,7 @@
 
 Dict provides an efficient, O(1) amortized
 average-time complexity for insert, lookup, and removal of dictionary elements.
-It uses a Swiss Table implementation with SIMD group probing for fast lookups:
+It uses a SwissTable implementation with SIMD group probing for fast lookups:
 
 - Performance and size are heavily optimized for small dictionaries, but can
   scale to large dictionaries.
@@ -41,7 +41,7 @@ See the `Dict` docs for more details.
 """
 
 from std.builtin.rebind import downcast
-from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
+from std.hash import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 
 from std.memory import alloc, dealloc, unsafe_memset
@@ -143,7 +143,7 @@ struct _DictEntryIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -219,7 +219,7 @@ struct _DictEntryIter[
 struct _TakeDictEntryIter[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: MutOrigin,
 ](Copyable, Iterable, Iterator):
     """Iterator over mutable DictEntry references that moves entries out of the dictionary.
@@ -276,7 +276,7 @@ struct _TakeDictEntryIter[
 struct _DictEntryIterOwned[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over DictEntry values that consumes the dictionary.
 
@@ -330,7 +330,7 @@ struct _DictEntryIterOwned[
 struct _DictKeyIterOwned[
     K: KeyElement & Deinitable,
     V: Movable & Deinitable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over Dict keys that consumes the dictionary.
 
@@ -364,7 +364,7 @@ struct _DictKeyIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -410,7 +410,7 @@ struct _DictValueIter[
     //,
     K: KeyElement & Copyable,
     V: Copyable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -463,19 +463,20 @@ struct _DictValueIter[
 # ===-----------------------------------------------------------------------===#
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `Dict` with"
-    " non-`Deinitable` keys or values"
-)
 struct Dict[
     K: KeyElement,
     V: Movable,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Boolable,
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
     Defaultable,
-    Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
+    Deinitable where (
+        conforms_to(K, Deinitable) and conforms_to(V, Deinitable)
+    ) else (
+        "Use `deinit_with()` to explicitly destroy a `Dict` with"
+        " non-`Deinitable` keys or values"
+    ),
     Equatable where conforms_to(K, Copyable) and conforms_to(V, Equatable),
     Hashable where conforms_to(K, Copyable) and conforms_to(V, Hashable),
     Iterable,
@@ -664,8 +665,8 @@ struct Dict[
 
     # Implementation:
     #
-    # This Dict uses a Swiss Table design with flat layout + insertion-order
-    # side array. The core Swiss Table logic (control bytes, SIMD probing,
+    # This Dict uses a SwissTable design with flat layout + insertion-order
+    # side array. The core SwissTable logic (control bytes, SIMD probing,
     # slot management) lives in _swisstable.SwissTable. Dict adds:
     #
     # - Insertion-order array: A separate List[Int32] tracks the order of
@@ -707,7 +708,7 @@ struct Dict[
     # ===-------------------------------------------------------------------===#
 
     var _table: SwissTable[Self.K, Self.V, Self.H]
-    """The underlying Swiss Table managing ctrl bytes, slots, and probing."""
+    """The underlying SwissTable managing ctrl bytes, slots, and probing."""
 
     var _order: List[Int32]
     """Insertion-order array of slot indices. Stale entries (from deleted slots)
@@ -906,6 +907,7 @@ struct Dict[
         """
         return self._find_ref(key)
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __setitem__(
         mut self, var key: Self.K, var value: Self.V
@@ -922,6 +924,7 @@ struct Dict[
         """
         self._insert(key^, value^)
 
+    @__unsafe_nested_origins_read_only
     def insert(
         mut self, var key: Self.K, var value: Self.V
     ) -> Optional[DictEntry[Self.K, Self.V, Self.H]]:
@@ -1137,10 +1140,10 @@ struct Dict[
         # entries with similar hashes don't cancel under XOR.
         var combined = UInt64(0)
         for entry in self.items():
-            var entry_hasher = H2()
+            var entry_hasher = Self.H()
             entry.key.__hash__(entry_hasher)
             entry.value.__hash__(entry_hasher)
-            var h = entry_hasher^.finish()
+            var h = entry_hasher.finish()
             h = ((h ^ 89869747) ^ (h << 16)) * 3644798167
             combined ^= h
         hasher._update_with_simd(combined)
@@ -1214,16 +1217,6 @@ struct Dict[
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    def _minimum_size_of_string_representation(self) -> Int:
-        # we do a rough estimation of the minimum number of chars that we'll see
-        # in the string representation, we assume that String(key) and String(value)
-        # will be both at least one char.
-        return (
-            2  # '{' and '}'
-            + len(self) * 6  # String(key), String(value) ": " and ", "
-            - 2  # remove the last ", "
-        )
 
     def find(
         self, key: Self.K
@@ -1766,6 +1759,7 @@ struct Dict[
         self._table.clear_with(destroy_func)
         self._order.clear()
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def setdefault(
         mut self, var key: Self.K, var default: Self.V
@@ -1953,9 +1947,9 @@ struct Dict[
         # Build old_slot -> new_slot mapping and a set of relocated old slots
         # so we can filter stale _order entries (DELETED slots won't appear
         # in relocations since resize only moves occupied entries).
-        var slot_map_alloc = alloc(Layout[Int32](count=old_capacity))
+        var slot_map_alloc = alloc(Layout[Int32](length=old_capacity))
         var slot_map = slot_map_alloc.unsafe_ptr()
-        var relocated_set_alloc = alloc(Layout[UInt8](count=old_capacity))
+        var relocated_set_alloc = alloc(Layout[UInt8](length=old_capacity))
         var relocated_set = relocated_set_alloc.unsafe_ptr()
         unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
@@ -2127,6 +2121,7 @@ struct StringDict[V: Movable](
             ),
         )
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __setitem__(
         mut self, key: Self.key_type, var value: Self.V
@@ -2222,6 +2217,7 @@ struct StringDict[V: Movable](
         """
         return self._dict.find(key)
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def insert(
         mut self, var key: Self.key_type, var value: Self.V

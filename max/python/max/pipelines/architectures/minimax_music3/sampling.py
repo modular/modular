@@ -36,10 +36,10 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import ops
+from max.tensor import Tensor
 
 Logits = npt.NDArray[np.float32]
 

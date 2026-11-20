@@ -12,6 +12,10 @@
 ##===----------------------------------------------------------------------===##
 model:
   model_path: nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4
+  kv_cache:
+    # Unscaled FP8 cache: the checkpoint's k_scale/v_scale are not
+    # applied yet (vLLM does the same).
+    kv_cache_format: float8_e4m3fn
 
 runtime:
   prefer_module_v3: true

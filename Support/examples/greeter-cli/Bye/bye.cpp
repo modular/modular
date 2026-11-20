@@ -29,28 +29,18 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "Bye/ByeOptions.inc"
+#include "Bye/ByeOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
 
-namespace {
-struct ByeOptTable : public llvm::opt::OptTable {
-  ByeOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
+static int bye(const State &subcommandState) {
+  State state = subcommandState;
+  options::Table optTable;
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), args))
+    return *exitCode;
 
-static int bye(const State &state) {
-  ByeOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
-
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "Bye/ByeOptionsHelpText.inc"
-    );
-  }
-
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
+  if (int result = state.rejectInvalidArguments(args))
     return result;
 
   std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);

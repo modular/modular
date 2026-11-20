@@ -22,42 +22,18 @@ def test_cluster_dims_attribute_kernel_with_param[
     cluster_dims: StaticTuple[Int32, 3]
 ]():
     print(
-        "CLUSTER DIMS(",
-        cluster_dim.x,
-        cluster_dim.y,
-        cluster_dim.z,
-        ")",
-        "BLOCK(",
-        block_idx.x,
-        block_idx.y,
-        block_idx.z,
-        ")",
-        "CLUSTER(",
-        cluster_idx.x,
-        cluster_idx.y,
-        cluster_idx.z,
-        ")",
+        t"CLUSTER DIMS( {cluster_dim.x} {cluster_dim.y} {cluster_dim.z} )"
+        t" BLOCK( {block_idx.x} {block_idx.y} {block_idx.z} ) CLUSTER("
+        t" {cluster_idx.x} {cluster_idx.y} {cluster_idx.z} )"
     )
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
 def test_cluster_dims_attribute_kernel():
     print(
-        "CLUSTER DIMS(",
-        cluster_dim.x,
-        cluster_dim.y,
-        cluster_dim.z,
-        ")",
-        "BLOCK(",
-        block_idx.x,
-        block_idx.y,
-        block_idx.z,
-        ")",
-        "CLUSTER(",
-        cluster_idx.x,
-        cluster_idx.y,
-        cluster_idx.z,
-        ")",
+        t"CLUSTER DIMS( {cluster_dim.x} {cluster_dim.y} {cluster_dim.z} )"
+        t" BLOCK( {block_idx.x} {block_idx.y} {block_idx.z} ) CLUSTER("
+        t" {cluster_idx.x} {cluster_idx.y} {cluster_idx.z} )"
     )
 
 

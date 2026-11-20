@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
@@ -556,6 +557,19 @@ class TextContext:
     under ``sha256`` (64-bit key separation on the dKV external tier),
     best-effort under ``ahash64``. Capped at 512 chars at the OpenAI
     schema layer.
+    """
+
+    kv_cache_write_ranges: dict[str, tuple[int, int]] = field(
+        default_factory=dict
+    )
+    """Absolute half-open ranges written by the latest forward, per SWA leaf.
+
+    A range certifies the intersection of writes by every layer sharing the
+    leaf, including draft layers. The batch producer must report it after
+    execution and before the cache manager steps. The manager consumes it.
+    Once a leaf reports partial writes, every subsequent forward must report
+    its writes, including ordinary decode; missing reports cannot extend its
+    known coverage. Unreported leaves retain ordinary full-write behavior.
     """
 
     cached_prefix_length: int | None = field(default=None)
@@ -1213,11 +1227,17 @@ class TextAndVisionContext(TextContext):
 
     @property
     def image_idx(self) -> int:
-        """Index of the next unencoded image in the prompt."""
-        for i, img in enumerate(self.images):
-            if self.tokens.processed_length < img.end_idx:
-                return i
-        return len(self.images)
+        """Index of the next unencoded image in the prompt.
+
+        A bisection, as every scheduler step asks this of every context, and
+        a video can be a thousand entries. The images are sorted and
+        non-overlapping, so their end indices ascend.
+        """
+        return bisect_right(
+            self.images,
+            self.tokens.processed_length,
+            key=lambda img: img.end_idx,
+        )
 
     @property
     def next_images(self) -> list[ImageMetadata]:
@@ -1278,10 +1298,13 @@ class TextAndVisionContext(TextContext):
         This means that there are image tokens in both [0:idx) and [idx:end).
 
         As such, this does NOT include the start or end indices.
+
+        Bisects for the first image ending after ``idx``, as
+        :attr:`image_idx` does: every generated token validates this.
         """
-        for img in self.images:
-            if img.start_idx < idx < img.end_idx:
-                return img
+        i = bisect_right(self.images, idx, key=lambda img: img.end_idx)
+        if i < len(self.images) and self.images[i].start_idx < idx:
+            return self.images[i]
         return None
 
     def _validate_state(self) -> None:

@@ -34,11 +34,11 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.compilation import CompiledCallable
-from max.experimental.functional import full, matmul
-from max.experimental.nn.module import Module, module_dataclass
-from max.experimental.tensor import Tensor, TensorType
+from max.functional import full, matmul
 from max.graph import DeviceRef
+from max.nn.module import Module, module_dataclass
+from max.tensor.compilation import CompiledCallable
+from max.tensor.tensor import Tensor, TensorType
 
 D = 4
 F32 = DType.float32

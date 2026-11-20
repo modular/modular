@@ -19,6 +19,7 @@
 #ifndef SUPPORT_IPINT_H
 #define SUPPORT_IPINT_H
 
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Support/raw_ostream.h"
@@ -35,7 +36,7 @@ namespace M {
 /// The underlying APInt can be extracted from an IPInt, and IPInt ensures that
 /// the APInt always contains exactly the minimum bit width to represent the
 /// number as a signed 2's compliment integer.
-class IPInt {
+class MODULAR_CXX_EXPORT IPInt {
 public:
   /// The wrapped APInt is normalized to use the minimum number of bits so that
   /// equality testing works.
@@ -79,8 +80,8 @@ public:
     return llvm::hash_value(arg.val);
   }
 
-  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
-                                       const IPInt &arg) {
+  friend MODULAR_CXX_EXPORT llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
+                                                          const IPInt &arg) {
     return os << arg.getAPInt();
   }
 

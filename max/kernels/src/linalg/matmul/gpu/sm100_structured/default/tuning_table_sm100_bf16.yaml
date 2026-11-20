@@ -570,3 +570,487 @@ params:
   K_GROUP_SIZE: 2
   NUM_ACCUM_PIPELINE_STAGES: 1
   NUM_CLC_PIPELINE_STAGES: 0
+# DeepSeek-V3 fused q_a/kv_a projection at decode M. The heuristic picks the
+# same 2-SM 128x32 tile from M=32 but groups 2 k-tiles (its k_group 4 bound
+# is 64x16 blocks), and a 1-SM swapped tile below M=32. B200, M=17 to 128
+# tokens: 10.8-11.3 vs 11.4-12.2 us per call.
+- <<: *defaults
+  M: 17
+  M_END: 129
+  N: 2112
+  K: 7168
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  K_GROUP_SIZE: 4
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+# Logits GEMM with fp32 output at decode M. Sixteen K splits put 144 CTAs on
+# the weight stream, and the split-K reduction replaces the vendor kernel's
+# separate reduce launch.
+- <<: *defaults
+  M: 1
+  M_END: 193
+  N: 384
+  K: 5120
+  MMA_M: 128
+  MMA_N: 64
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 16
+  NUM_PIPELINE_STAGES: 5
+# Compressor projections with fp32 output at decode M of 17-128. Vendor BLAS
+# breaks the programmatic dependent launch chain on both sides here; the
+# split-K row keeps the chain. Measured in a norm, two-GEMM and concat chain
+# it is 1.2-3.7 us faster per iteration at every M from 17 up except 32,
+# where it ties, but most of those gains are inside the measurement tie band
+# (max(2.5%, 2.05 us)), so treat the gain as small. Below 17 it ties too.
+- <<: *defaults
+  M: 17
+  M_END: 129
+  N: 512
+  K: 5120
+  MMA_M: 128
+  MMA_N: 64
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 16
+  NUM_PIPELINE_STAGES: 5
+# The served vocab-weight GEMM has K 5120. These rows hold the measured
+# winners for the M ranges where the wave heuristic's tile loses: a 2-SM
+# 128x256 tile for the small-M range and a 2-SM 256x192 tile with a 2-wide
+# block swizzle for the large-M range. Outside them the heuristic's pick is
+# faster, so the rows stay banded.
+- <<: *defaults
+  M: 264
+  M_END: 385
+  N: 129280
+  K: 5120
+  MMA_M: 128
+  MMA_N: 256
+  CTA_GROUP: 2
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 1
+  RASTERIZE_ORDER: 1
+  SWAP_AB: false
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 2
+  NUM_CLC_PIPELINE_STAGES: 2
+- <<: *defaults
+  M: 513
+  M_END: 577
+  N: 129280
+  K: 5120
+  MMA_M: 256
+  MMA_N: 192
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 2
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 2
+  NUM_CLC_PIPELINE_STAGES: 2
+
+# Muse Spark attention QKV+gate projection at TP8, decode M. The heuristic's
+# 36 1-SM 64x8 tiles (and 144 2-SM tiles from M=32, each re-reading the whole
+# activation) leave the weight stream short of SMs; 18 swap-AB tiles split
+# over K put 72-144 CTAs on it (parallel split-K). B200, graph replay vs
+# production: M=8 10.3 vs 11.4 us, M=32 10.5 vs 13.2, M=64 11.1 vs 13.3.
+- <<: *defaults
+  M: 1
+  M_END: 9
+  N: 2304
+  K: 8192
+  MMA_M: 128
+  MMA_N: 8
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 4
+- <<: *defaults
+  M: 9
+  M_END: 17
+  N: 2304
+  K: 8192
+  MMA_M: 128
+  MMA_N: 16
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 4
+- <<: *defaults
+  M: 17
+  M_END: 33
+  N: 2304
+  K: 8192
+  MMA_M: 128
+  MMA_N: 32
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 8
+- <<: *defaults
+  M: 33
+  M_END: 65
+  N: 2304
+  K: 8192
+  MMA_M: 128
+  MMA_N: 64
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 8
+# Muse Spark LM head at TP8 (vocab 202048 / 8), decode M. The heuristic
+# picks 128-row tiles for the fewest waves (198 CTAs, 2 waves) and leaves the
+# second wave three-quarters empty; 64-row persistent tiles (395) balance it,
+# and from M=33 2-SM tiles share the activation. B200, graph replay vs
+# production: M=8 61.4 vs 67.9 us, M=32 63.7 vs 68.5, M=64 66.1 vs 73.
+- <<: *defaults
+  M: 1
+  M_END: 9
+  N: 25256
+  K: 8192
+  MMA_M: 64
+  MMA_N: 8
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 4
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 2
+- <<: *defaults
+  M: 9
+  M_END: 17
+  N: 25256
+  K: 8192
+  MMA_M: 64
+  MMA_N: 16
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 4
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 2
+- <<: *defaults
+  M: 17
+  M_END: 33
+  N: 25256
+  K: 8192
+  MMA_M: 64
+  MMA_N: 32
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 2
+- <<: *defaults
+  M: 33
+  M_END: 49
+  N: 25256
+  K: 8192
+  MMA_M: 128
+  MMA_N: 48
+  CTA_GROUP: 2
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 2
+  NUM_CLC_PIPELINE_STAGES: 2
+- <<: *defaults
+  M: 49
+  M_END: 65
+  N: 25256
+  K: 8192
+  MMA_M: 128
+  MMA_N: 64
+  CTA_GROUP: 2
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 2
+  NUM_CLC_PIPELINE_STAGES: 2
+
+# Large-M DiT linears, one packed-row band
+# (M = 33152..111680; the band below covers it with headroom). Measured on
+# B200 against the heuristic config these shapes used to take
+# (256x256, cl 2x1, swizzle 8, rst 1, auto 6 stages, no swapAB) over eight M
+# points of the band; each row wins at every M in its band:
+#   qkv     N21504 K5376  swapAB         -2.6% sum, -1.3..-3.2% per M
+#   gate_up N28672 K5376  swapAB         -1.7% sum, -0.4..-2.7% per M
+#   out     N5376  K7168  256x224        -6.9% sum, -4.7..-7.8% per M
+#   down    N5376  K14336 256x224        -4.9% sum, -4.2..-5.5% per M
+# Together -1.91 ms per block at M=109632 (-95 ms per 50-block forward) and
+# -0.40 ms per block at M=33152.
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 21504
+  K: 5376
+  MMA_M: 256
+  MMA_N: 256
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 28672
+  K: 5376
+  MMA_M: 256
+  MMA_N: 256
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 5376
+  K: 7168
+  MMA_M: 256
+  MMA_N: 224
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 5376
+  K: 14336
+  MMA_M: 256
+  MMA_N: 224
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
+# GLM-5.3 decode at DP8: o_proj (16384 -> 6144) and the shared expert's down
+# projection (2048 -> 6144) at MTP5 verify rows: one token tile covers every
+# row, so each weight tile streams once.
+- <<: *defaults
+  M: 17
+  M_END: 32
+  N: 6144
+  K: 16384
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 65
+  M_END: 81
+  N: 6144
+  K: 16384
+  MMA_M: 128
+  MMA_N: 80
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 81
+  M_END: 97
+  N: 6144
+  K: 16384
+  MMA_M: 128
+  MMA_N: 96
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 17
+  M_END: 32
+  N: 6144
+  K: 2048
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 65
+  M_END: 81
+  N: 6144
+  K: 2048
+  MMA_M: 128
+  MMA_N: 80
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 81
+  M_END: 97
+  N: 6144
+  K: 2048
+  MMA_M: 128
+  MMA_N: 96
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+# GLM-5.3's q_b (2048 -> 16384) and fused q_a + kv_a (6144 -> 2624)
+# projections at 25-31 rows: the heuristic's choice there is not among the
+# configs `build_sm100_matmul_configs` instantiates, so these rows replace
+# the dispatch's default config.
+# TODO(KERN-4044): drop both rows once the builder covers M 25-31.
+- <<: *defaults
+  M: 25
+  M_END: 32
+  N: 16384
+  K: 2048
+  MMA_M: 256
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 25
+  M_END: 32
+  N: 2624
+  K: 6144
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+# GLM-5.3's MoE router gate (6144 -> 256 experts) at decode: the heuristic
+# streams K = 6144 through 8 CTAs; a swap-AB split-K tile covers every decode M.
+# It beat the small-MN table's split-K GEMV and cp.async kernels, where other
+# router gates sit, at every decode M (7.0 vs 7.5-14 us at M 24-192).
+- <<: *defaults
+  M: 1
+  M_END: 193
+  N: 256
+  K: 6144
+  MMA_M: 128
+  MMA_N: 32
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 8
+# GLM-5.3's DSA indexer key projection (6144 -> 128) at decode: the same
+# swap-AB split-K tile as the router gate, 6.8-7.1 vs 9.1-11.1 us at M 2-256.
+- <<: *defaults
+  M: 1
+  M_END: 257
+  N: 128
+  K: 6144
+  MMA_M: 128
+  MMA_N: 32
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 8

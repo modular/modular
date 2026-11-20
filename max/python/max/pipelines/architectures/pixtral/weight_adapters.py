@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Pixtral checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ MISTRAL_SAFETENSOR_MAP = {
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
+    """Renames the checkpoint's tensors to the module tree's."""
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
     for weight_name, value in state_dict.items():

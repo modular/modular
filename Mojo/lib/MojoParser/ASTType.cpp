@@ -16,6 +16,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "IREmitter.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/LITDialect/LITAttrs.h"
 #include "ParserEvaluationContext.h"
 
 #include "Mojo/MojoParser/ASTDecl.h"
@@ -67,15 +69,20 @@ void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
   if (!shared)
     return; // Ignore discarded diagnostics.
 
-  // Format it of course.
-  diag << '\'' << ASTType::getParamAsString(paramValue, /*forDiag=*/shared)
-       << '\'';
-
   // Remember the context decl for when this type was emitted - it could change
   // before the diagnostic is emitted.  This happens (e.g.) in overload
   // resolution where lots of diagnostics are producted (with different callees)
   // and then are emitted in a deferred way.
   ASTDecl *ctxDecl = shared->declResolver->getDiagnosticDeclContext();
+
+  // Format it only if the diagnostic is emitted,
+  // since overload resolution drops the diagnostic of each failed candidate
+  // when another one matches.
+  diag.addLazyText([shared, paramValue, ctxDecl] {
+    DeclResolver::DiagnosticDeclContextChanger x(ctxDecl);
+    return "'" + ASTType::getParamAsString(paramValue, /*forDiag=*/shared) +
+           "'";
+  });
 
   // Remember we emitted this parameter so we can post-process the diagnostic.
   auto &mdiag = static_cast<MojoInflightDiag &>(diag);
@@ -323,12 +330,12 @@ struct ParamDiffer {
         if (isEqualCanon(lhsParam, rhsParam))
           continue;
 
-        // Ok, we found a difference, recursively diff the two parameters.
-        auto structDecl = cast<LIT::StructDeclOp>(lhsDecl->getIfOperation());
-
         // Don't dig into the raw _mlir_origin inside the Origin type.
         if (isa<OriginType>(lhsParam.getType()))
           continue;
+
+        // Ok, we found a difference, recursively diff the two parameters.
+        StructDeclOp structDecl = cast<StructASTDecl>(lhsDecl)->getOp();
 
         accessPath += "." + structDecl.getParams()[idx].getName().str();
         return diff(lhsParam, rhsParam);
@@ -430,8 +437,15 @@ MojoInflightDiag::~MojoInflightDiag() {
   for (auto [loc, attrValue, ctxDecl] : emitted) {
     // See if anything has alias sugar on it, and if so, unpack it so the user
     // has a better chance of understanding what is going on.  We don't want to
-    // look into opaque sugar kinds (AlwaysInlineBuiltin, Preserved) though!
-    TypedAttr desugared = SugarAttr::strip(attrValue, /*keepOpaque=*/true);
+    // look into opaque sugar kinds (AlwaysInlineBuiltin, Preserved) though,
+    // except for preserved type aliases. If we looked into all preserved kinds,
+    // we'd get unhelpful notes like "'not a' is aka '(xor a, True)'".
+    TypedAttr desugared = attrValue;
+    while (auto sugar = dyn_cast<SugarAttr>(desugared)) {
+      if (sugar.getKind() <= SugarKind::Preserved && !sugar.getAliasDeclRef())
+        break;
+      desugared = sugar.getExpanded();
+    }
     if (desugared == attrValue || !unpackedAttr.insert(attrValue).second)
       continue;
 
@@ -561,53 +575,15 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
     return metaType.getParamValues();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getParamValues();
+
+  // FIXME: this is wrong, remove the following branch: We should not peek into
+  // the generator, pulling out bindings from a parameter scope need special
+  // handling.
   if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
       genAttr && LIT::isTypeExpr(genAttr.getBody()))
     return ASTType(genAttr.getBody()).getParamBindings();
 
   return {};
-}
-
-TypeSignatureType ASTType::getSignature() const {
-  Type metatype = SugarAttr::strip(extractMetaType());
-  if (auto metaType = dyn_cast_or_null<StructMetaType>(metatype))
-    return metaType.getSignature();
-  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
-    return mmType.getSignature();
-  if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
-      genAttr && LIT::isTypeExpr(genAttr.getBody()))
-    return ASTType(genAttr.getBody()).getSignature();
-
-  return {};
-}
-
-/// Return this type with any parameter bindings removed.
-ASTType ASTType::getWithoutParameters(SharedState &shared) const {
-  if (!mlirType)
-    return {};
-
-  ASTType firstLevelType = getDeclDefineType(*this);
-  if (!firstLevelType)
-    return {};
-
-  if (auto declRef = dyn_cast<StructType>(firstLevelType)) {
-    auto unboundType =
-        cast<StructDeclOp>(getDecl(shared)->getIfOperation()).bindReference();
-    // Wrap it back to the original meta type.
-    if (isa<StructMetaType>(*this))
-      return StructMetaType::get(unboundType);
-    if (isa<StructMetaMetaType>(*this))
-      return StructMetaMetaType::get(StructMetaType::get(unboundType));
-    return unboundType;
-  }
-
-  // Not parameterized.
-  return *this;
-}
-
-bool ASTType::hasUnboundParameters() const {
-  return llvm::any_of(getParamBindings(),
-                      [](TypedAttr param) { return isa<UnboundAttr>(param); });
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
@@ -621,30 +597,6 @@ bool ASTType::isEqualCanon(ASTType other) const {
       return true;
 
   return getCanonicalType(*this) == getCanonicalType(other);
-}
-
-/// Return true if this is the same as another ASTType are the same, or if they
-/// match when unbound parameters in the 'this' type are treated as
-/// the same as the corresponding parameter in the second type.
-///    Foo[1] != Foo[2]   but  Bar[?, 1] == Bar[7, 1]
-bool ASTType::isEqualAllowingUnbound(ASTType other, SharedState &shared) const {
-  if (isEqualCanon(other))
-    return true;
-
-  // Must have the same struct declarations.
-  if (getDecl(shared) != other.getDecl(shared))
-    return false;
-
-  ArrayRef<TypedAttr> lhsParams = getParamBindings();
-  ArrayRef<TypedAttr> rhsParams = other.getParamBindings();
-  assert(lhsParams.size() == rhsParams.size() &&
-         "Type with the same decl should have consistent number of params");
-  for (auto [lhsParam, rhsParam] : llvm::zip(lhsParams, rhsParams)) {
-    if (!isa<UnboundAttr>(lhsParam) &&
-        getCanonicalAttr(lhsParam) != getCanonicalAttr(rhsParam))
-      return false;
-  }
-  return true;
 }
 
 /// Return true if this is a None type.
@@ -700,14 +652,14 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
     if (isa<StructMetaMetaType>(extractMetaType()))
       return {};
 
-    if (auto structOp =
-            dyn_cast_or_null<StructDeclOp>(structDecl->getIfOperation()))
-      if (TypeAttr targetMlirType = structOp.getNonmaterializableTargetAttr())
+    if (auto *structASTDecl = dyn_cast<StructASTDecl>(structDecl))
+      if (TypeAttr targetMlirType =
+              structASTDecl->getOp().getNonmaterializableTargetAttr())
         return ASTType(targetMlirType.getValue());
   } else if (auto f = sugarDynCast<FnLiteralTypeGeneratorType>(mlirType)) {
     // A function literal is non-materializable, the nonmaterializable target is
     // the function pointer type.
-    return f.getSymbolConstantAttr().getType();
+    return f.getNonLiteralGeneratorType();
   }
 
   return {};
@@ -773,8 +725,7 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   // when we do, it will not be register-passable. A module reference is an
   // ImportOp; the raw FileModuleOp/PackageOp cases are kept for the underlying
   // decls.
-  if (decl && isa_and_nonnull<FileModuleOp, PackageOp, ImportOp>(
-                  decl->getIfOperation()))
+  if (isa_and_nonnull<FileModuleASTDecl, PackageASTDecl, ImportASTDecl>(decl))
     return TypeConvention::MemoryOnly;
 
   if (checkPR(type, decl, "TrivialRegisterPassable"))
@@ -793,13 +744,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   // pessimistically MemoryOnly (the constraint hasn't been evaluated yet).
   // However, it *might* be register-passable once the constraint is resolved,
   // so return the caller's generic default to keep that possibility open.
-  if (decl) {
-    if (auto structOp =
-            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
-      if (structOp.getRegisterPassableConstraintAttr())
-        return genericDefault;
-    }
-  }
+  if (auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl))
+    if (structDecl->getOp().getRegisterPassableConstraintAttr())
+      return genericDefault;
 
   return TypeConvention::MemoryOnly;
 }
@@ -853,7 +800,7 @@ TriBool ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
   // If it doesn't conform to the corresponding trait. Only return `no`
   // (provably non-trivial) when we can definitively prove non-conformance.
   auto [conformanceResult, traitDecl] =
-      conformsToBuiltinTrait(traitName, loc, shared, {});
+      conformsToBuiltinTrait(traitName, loc, shared, shared.noAssumptions);
   if (conformanceResult.isFalse())
     return TriBool::no();
 
@@ -894,18 +841,6 @@ bool ASTType::isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                   shared) == TriBool::yes();
 }
 
-bool ASTType::isProvablyTriviallyMoveable(llvm::SMLoc loc,
-                                          SharedState &shared) const {
-  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kMoveCtor,
-                                  shared) == TriBool::yes();
-}
-
-bool ASTType::isProvablyTriviallyDeletable(llvm::SMLoc loc,
-                                           SharedState &shared) const {
-  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kDeinit, shared) ==
-         TriBool::yes();
-}
-
 /// Return true if this type is a register-passable type that can be passed
 /// around and copied in SSA values instead of having to live in memory.
 ///
@@ -943,7 +878,7 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
   // depends on unresolved constraints (`unknown`), return false and let
   // the constraint system prove it in the appropriate context.
   return provenConformsToBuiltinTrait(traitName, typeDecl->getLoc(), shared,
-                                      ASTDecl::getAssumptionsFromScope(&scope));
+                                      scope.getScopeAssumptions());
 }
 
 /// Return true if this type is implicitly copyable, either because it is
@@ -980,7 +915,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
   // concrete parameter bindings are available to evaluate conditional
   // conformance constraints — matching isCopyable's behavior.
   return provenConformsToBuiltinTrait("Movable", typeDecl->getLoc(), shared,
-                                      ASTDecl::getAssumptionsFromScope(&scope));
+                                      scope.getScopeAssumptions());
 }
 
 TraitType ASTType::getProvidedTrait(SharedState &shared) {
@@ -992,8 +927,8 @@ TraitType ASTType::getProvidedTrait(SharedState &shared) {
     return trait;
 
   auto structType = cast<StructType>(declDefType);
-  auto structOp = cast<StructDeclOp>(getDecl(shared)->getIfOperation());
-  auto trait = cast<StructDeclOp>(structOp).getCanonicalTrait();
+  StructDeclOp structOp = cast<StructASTDecl>(getDecl(shared))->getOp();
+  auto trait = structOp.getCanonicalTrait();
   if (structType.getParamValues().empty())
     return trait;
 
@@ -1003,9 +938,8 @@ TraitType ASTType::getProvidedTrait(SharedState &shared) {
   return evaluator.replace(trait);
 }
 
-TriBool
-ASTType::doesConformTo(TraitType trait, SharedState &shared,
-                       ArrayRef<ConstraintAttr> callerAssumptions) const {
+TriBool ASTType::doesConformTo(TraitType trait, SharedState &shared,
+                               TypedAttr callerAssumptions) const {
   // FIXME: this seems pretty wrong, `getDecl` is type depth insensitive,
   // meaning that it is true for `meta<meta<!struct>> conforms_to AnyType`...
   ASTDecl *typeDecl = getDecl(shared);
@@ -1014,9 +948,9 @@ ASTType::doesConformTo(TraitType trait, SharedState &shared,
   return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions);
 }
 
-ConstraintResult ASTType::doesConformToWithDetails(
-    TraitType trait, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) const {
+ConstraintResult
+ASTType::doesConformToWithDetails(TraitType trait, SharedState &shared,
+                                  TypedAttr callerAssumptions) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return ConstraintResult::no({});
@@ -1027,16 +961,15 @@ ConstraintResult ASTType::doesConformToWithDetails(
 /// Given a standard trait like Copyable, look up the conformance.  On
 /// success, the ASTDecl of the trait itself is returned, it is otherwise
 /// null.
-std::pair<TriBool, ASTDecl *> ASTType::conformsToBuiltinTrait(
-    StringRef traitName, llvm::SMLoc loc, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) const {
-  ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, loc);
+std::pair<TriBool, ASTDecl *>
+ASTType::conformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                                SharedState &shared,
+                                TypedAttr callerAssumptions) const {
+  TraitASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, loc);
   if (!traitDecl)
     return {TriBool::no(), {}};
 
-  auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
-  if (!trait)
-    return {TriBool::no(), {}};
+  TraitDeclOp trait = traitDecl->getOp();
 
   // Micro optimization to avoid creating a canonical trait type for for
   // checking conformance, we only care the root symbol.
@@ -1047,18 +980,12 @@ std::pair<TriBool, ASTDecl *> ASTType::conformsToBuiltinTrait(
 
 /// This returns true if the current type unconditionally conforms to the
 /// specified builtin trait, e.g. "Movable".
-bool ASTType::provenConformsToBuiltinTrait(
-    StringRef traitName, llvm::SMLoc loc, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) const {
+bool ASTType::provenConformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                                           SharedState &shared,
+                                           TypedAttr callerAssumptions) const {
   auto [conformanceResult, traitDecl] =
       conformsToBuiltinTrait(traitName, loc, shared, callerAssumptions);
   return conformanceResult.isTrue();
-}
-
-bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {
-  TypeConvention convention = getRegisterPassability(loc, shared);
-  return convention == TypeConvention::RegisterPassable ||
-         convention == TypeConvention::RegisterPassableTrivial;
 }
 
 bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,
@@ -1183,52 +1110,98 @@ RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
   return RefType::get(mlirType, selfOrigin, /*addressSpace=*/0);
 }
 
-/// If this type is parameterized, and if any of the parameters refer to a
-/// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
-/// will infer it.
-///
-/// This makes parameter inference sensitive to what to propagate vs infer. For
-/// example, if expectedType is known to be 'SIMD[uint8, 1]', then we can infer
-/// which constructor to use when the input is an IntLiteral.
-///
-/// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-/// argument is an Int8, then we need the implicit conversion to infer the
-/// base element.  Our solution to this is to rip and replace parameters that
-/// contain unbound parameters, replacing them with UnboundAttr so inference
-/// can find them.
-ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
-  // If this is a struct type, try unbinding just the parameters that have
-  // parameter references in it.
-  if (auto drt = sugarDynCast<StructType>(mlirType)) {
-    ParamIndexRefAttrFinder finder;
+namespace {
+/// Collects the indices of same-scope parameter references
+struct ParamIndexRefRelinker
+    : public IndexParameterReplacer<ParamIndexRefRelinker> {
 
-    // Otherwise, check each bound parameter to see if it is unknown.  If so,
-    // replace it.
-    SmallVector<TypedAttr> newParams;
-    bool anyBound = false;
-    for (auto curValue : getParamBindings()) {
-      if (!finder.hasReferences(curValue)) {
-        // Keep this value if it has no references.
-        anyBound = true;
-      } else {
-        // Keep the argument type if it has no references.
-        Type paramType = curValue.getType();
-        if (finder.hasReferences(paramType))
-          paramType =
-              ASTType(UnboundAttr::get(TypeType::get(paramType.getContext())));
-        curValue = UnboundAttr::get(paramType);
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (auto ref = dyn_cast<ParamIndexRefAttr>(attr);
+        ref && ref.getDepth() == depth) {
+      auto it = seenRefs.find(ref.getIndex());
+      if (it != seenRefs.end()) {
+        // the declared type is at depth 0, but we are now at `depth`. Adjust
+        // the depth.
+        Type t = depth == 0 ? it->second
+                            : IndexDepthAdjuster(depth).replace(it->second);
+        return ParamIndexRefAttr::get(ref.getDepth(),
+                                      std::distance(seenRefs.begin(), it), t);
       }
-      newParams.push_back(curValue);
-    }
 
-    if (anyBound)
-      return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
-          .bindReference(newParams);
+      // Relink the type first s.t. we captures dependent parameters first.
+      Type relinkedType = replaceImpl(ref.getType(), depth);
+      // Declare a placeholder at depth 0.
+      seenRefs[ref.getIndex()] =
+          depth == 0
+              ? relinkedType
+              : IndexDepthAdjuster(-depth).replaceAtDepth(relinkedType, depth);
+      return ParamIndexRefAttr::get(ref.getDepth(), seenRefs.size() - 1,
+                                    relinkedType);
+    }
+    return nullptr;
   }
 
-  // Otherwise return it with all parameters replaced.
-  if (Type nonParam = getWithoutParameters(shared))
-    return nonParam;
+  Type tryReplace(Type, size_t) { return {}; }
+  llvm::MapVector<unsigned, Type> seenRefs;
+};
+} // namespace
+
+ASTType ASTType::extractAndRelinkParamRef(SharedState &shared) const {
+  // If this is a struct type, try relinking the parameter references in it.
+  auto canonType = getCanonicalType(mlirType);
+
+  // Already wrapped by a generator.
+  if (StructTypeGenerator::dynCast(canonType))
+    return *this;
+
+  if (auto drt = dyn_cast<StructType>(canonType)) {
+    ParamIndexRefRelinker relinker;
+    auto relinkedST = relinker.replace(drt);
+    // Fully bound, simply return.
+    if (relinker.seenRefs.empty())
+      return drt;
+
+    auto body = TypeParamAttr::get(relinkedST, StructMetaType::get(relinkedST));
+    auto types = llvm::to_vector(llvm::make_second_range(relinker.seenRefs));
+
+    // Reusing the pog list on the struct decl to build the generator.
+    PogListAttr structPogs = cast<StructASTDecl>(getDecl(shared))
+                                 ->getOp()
+                                 .getSignature()
+                                 .getParamListAttrs();
+
+    ParameterEvaluator defaultRelinker(relinkedST.getParamValues());
+    SmallVector<PogMetadataAttr> newPogs(relinker.seenRefs.size(), nullptr);
+    bool hasVA = false;
+    for (auto [idx, binding] : llvm::enumerate(relinkedST.getParamValues())) {
+      if (auto ref = dyn_cast<ParamIndexRefAttr>(binding);
+          ref && ref.getDepth() == 0 && newPogs[ref.getIndex()] == nullptr) {
+        // If this is a direct reference, inherits pogs from the original decl.
+        PogMetadataAttr origPog = structPogs.getPogs()[idx];
+        newPogs[ref.getIndex()] = PogMetadataAttr::get(
+            origPog.getName(), PassingKind::Inferred, origPog.getVariadic(),
+            defaultRelinker.replace(origPog.getDefaultValue()));
+        hasVA |= origPog.isAnyVarArg();
+      }
+    }
+    // Any unset pog at the moment, is not directly forwarding the decl
+    // parameter, create a placeholder.
+    for (auto [idx, pog] : llvm::enumerate(newPogs))
+      if (pog == nullptr)
+        pog = PogMetadataAttr::get(
+            StringAttr::get(shared.getContext(), "relinked$" + Twine(idx)),
+            PassingKind::Inferred);
+
+    return ASTType(GeneratorAttr::get(
+        types, body,
+        PogListAttr::get(shared.getContext(), newPogs, /*bodyConstraints=*/{},
+                         hasVA ? structPogs.getOrigVariadicConvention()
+                               : ArgConvention::ByRefError)));
+  }
+
+  // TODO: should we extend this? There seems to be no meaningful existing use
+  // of this other than struct type. It is almost a misuse of the API if we
+  // reach here.
   return *this;
 }
 
@@ -1253,7 +1226,7 @@ bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
     // Actually global memory /can/ be materialized, so that it totally fine. We
     // allow AnyOriginAttr because it is the general "disable checking" origin.
     // Banning it prevents many important patterns from working, e.g. default
-    // arguments of null UnsafePointer.
+    // arguments of null Pointer.
     if (sugarIsa<StaticOriginAttr, AnyOriginAttr>(o))
       continue;
 
@@ -1285,7 +1258,7 @@ bool ASTType::isSingleton(SharedState &shared) const {
     assert(decl && "struct decl not found");
     if (failed(shared.declResolver->resolveBody(*decl, decl->getLoc())))
       return false;
-    auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
+    StructDeclOp structDecl = cast<StructASTDecl>(decl)->getOp();
     return structDecl.field_begin() == structDecl.field_end();
   }
 

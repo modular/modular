@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.Module."""
+"""Tests for max.nn.legacy.Module."""
 
 from __future__ import annotations
 
@@ -19,24 +19,24 @@ import weakref
 
 import pytest
 from max import driver
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.compilation import CompiledCallable
-from max.experimental.nn.module import (
+from max.functional import random
+from max.nn.module import (
     Module,
     module_dataclass,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor, defaults
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
     TensorLayout,
 )
-from max.experimental.tensor import Tensor, defaults
-from max.experimental.testing import assert_all_close
+from max.tensor.testing import assert_all_close
 
 
 @module_dataclass
@@ -296,7 +296,7 @@ def test_load_state_dict_valid_types() -> None:
     assert module.weight[0, 0].item() == 1.0
 
 
-_AUTO_CAST_LOGGER = "max.experimental.nn._weight_utils"
+_AUTO_CAST_LOGGER = "max.nn._weight_utils"
 
 
 def _auto_cast_logs(
@@ -359,6 +359,31 @@ def test_load_state_dict_safe_cast_bfloat16_to_float32(
     logs = _auto_cast_logs(caplog)
     assert len(logs) == 1
     assert "precision loss" not in logs[0].getMessage()
+
+
+def test_load_state_dict_safe_cast_bfloat16_to_float16(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """bfloat16 -> float16 auto-casts with a summary log flagged range loss."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.bfloat16)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
+
+    assert module.weight.dtype == DType.float16
+    assert module.weight[0, 0].item() == 1.0
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "range loss" in logs[0].getMessage()
 
 
 def test_load_state_dict_no_warning_when_dtypes_match(

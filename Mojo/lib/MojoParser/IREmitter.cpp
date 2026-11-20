@@ -44,6 +44,97 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Emit the control flow for a call's status result and non-returning success
+/// path.
+///
+/// The callee writes an error to its by-reference error argument and returns
+/// true when it throws. Consume the initialized value on either path so
+/// CheckLifetimes sees that it is conditionally initialized. Semantic control
+/// flow lowering turns the `lit.raise` into the terminator for the enclosing
+/// raising function or try region.
+void IREmitter::emitCallControlFlow(Operation &call, FuncType signature,
+                                    const ExprNode *callExpr) {
+  assert(builder && "runtime call emission requires a builder");
+  OpBuilder &builder = *this->builder;
+  Location loc = call.getLoc();
+
+  // If the call is not throwing or returning, then we don't need to emit any
+  // special control flow.
+  bool neverReturns = sugarIsa<NeverType>(signature.getUserResultType());
+  if (!signature.isThrows() ||
+      sugarIsa<NeverType>(signature.getUserThrownType())) {
+    if (!neverReturns)
+      return;
+
+    // Model the non-returning call as a conditionally terminated region. This
+    // leaves a well-formed parent block for code the parser emits later; the
+    // semantic control-flow pass diagnoses and removes that unreachable code.
+    Value trueValue = ParamConstantOp::create(
+        builder, loc, SIMDAttr::getScalarBool(builder.getContext(), true));
+    auto ifOp = HLCF::IfOp::create(builder, loc, TypeRange{}, trueValue);
+    builder.createBlock(&ifOp.getThenRegion());
+    HLCF::UnreachableOp::create(builder, loc,
+                                /*isAfterUnreachableCall=*/true);
+    builder.createBlock(&ifOp.getElseRegion());
+    HLCF::YieldOp::create(builder, loc);
+    builder.setInsertionPointAfter(ifOp);
+    return;
+  }
+
+  // Create the if/else block, branching on the boolean "did throw" result.
+  //    if (callee(...)) {
+  //       lit.raise  // Exit to the enclosing scope.
+  //    } else {
+  //       lit.yield
+  //    }
+  auto ifOp = HLCF::IfOp::create(builder, loc, TypeRange{}, call.getResult(0));
+  // We support both direct and indirect calls - indirect calls have an extra
+  // operand for the callee, but we index from the end.
+  ValueRange operands = call.getOperands();
+  builder.createBlock(&ifOp.getThenRegion());
+  LIT::OwnershipMarkConsumedOp::create(builder, loc, operands.back());
+  RaiseContext *raiseContext = getRaiseContext();
+  assert(raiseContext && operands.size() >= 2 &&
+         "throwing calls require an error context and result slot");
+  Value callErrorSlot = operands[operands.size() - 2];
+  MLValue contextualErrorSlot = raiseContext->getErrorSlot();
+  assert(contextualErrorSlot && callErrorSlot &&
+         "throwing calls require error slots");
+
+  // If we're emitting a call to "iter.__next__()" in a foreach block, we want
+  // the error to stop the iteration, not to actually raise.
+  if (raiseContext->shouldBreakLoopElseOnRaise()) {
+    LIT::LoopBreakElseOp::create(builder, loc);
+    builder.createBlock(&ifOp.getElseRegion());
+    HLCF::YieldOp::create(builder, loc);
+    builder.setInsertionPointAfter(ifOp);
+    return;
+  }
+
+  // If we are throwing out of the function, then move the error value into the
+  // __error__ slot, performing implicit conversions if needed.
+  if (raiseContext->isEagerlyEmitted() &&
+      callErrorSlot != contextualErrorSlot) {
+    ExprDest moveDest(contextualErrorSlot, EC_RaiseValue);
+    (void)emitResult(MRValue(callErrorSlot), callExpr, moveDest);
+  }
+  auto raiseOp = LIT::RaiseOp::create(builder, loc);
+  raiseContext->recordRaiseSite(MLValue(callErrorSlot), raiseOp, &call,
+                                callExpr ? callExpr->getLoc() : SMLoc());
+  HLCF::YieldOp::create(builder, loc);
+
+  builder.createBlock(&ifOp.getElseRegion());
+  LIT::OwnershipMarkConsumedOp::create(builder, loc,
+                                       operands[operands.size() - 2]);
+  if (neverReturns)
+    HLCF::UnreachableOp::create(builder, loc,
+                                /*isAfterUnreachableCall=*/true);
+  else
+    HLCF::YieldOp::create(builder, loc);
+
+  builder.setInsertionPointAfter(ifOp);
+}
+
 //===----------------------------------------------------------------------===//
 // Store-Time Type Refinement
 //===----------------------------------------------------------------------===//
@@ -82,10 +173,11 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
   // 3. Look up the ASTDecl registered for this VarDeclOp. With variable
   // shadowing, multiple decls can share a name in the same scope, so
   // disambiguate by matching on the defining Operation*.
-  ASTDecl *varASTDecl = nullptr;
+  VarASTDecl *varASTDecl = nullptr;
   for (ASTDecl *decl : declScope.lookupInCurrentScope(varOp.getNameAttr())) {
-    if (decl->getIfOperation() == varOp.getOperation()) {
-      varASTDecl = decl;
+    auto *candidate = dyn_cast<VarASTDecl>(decl);
+    if (candidate && candidate->getOp() == varOp) {
+      varASTDecl = candidate;
       break;
     }
   }
@@ -109,7 +201,8 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
     Value loaded = RefLoadOp::create(builder, mlirLoc, varOp.getResult());
     Value reboundValue =
         RebindOp::create(builder, mlirLoc, refinedInner, loaded);
-    varASTDecl->setIRValue(MBValue(reboundValue));
+    varASTDecl->getShared().getDeclResolver().replaceDecl(
+        *varASTDecl, MBValue(reboundValue));
   } else {
     // Single-ref case (var patterns, function args):
     // !lit.ref<T> -> !lit.ref<T(Trait)>
@@ -123,7 +216,8 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
     CValue refinedCValue = CValue::getMValueForRef(reboundValue);
     if (varOp.getKind() == VarDeclKind::Bound)
       refinedCValue = MBValue(reboundValue);
-    varASTDecl->setIRValue(refinedCValue);
+    varASTDecl->getShared().getDeclResolver().replaceDecl(*varASTDecl,
+                                                          refinedCValue);
   }
 }
 
@@ -132,16 +226,32 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
 //===----------------------------------------------------------------------===//
 
 /// Create an IREmitter for a dynamic context with a builder.
-IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder)
+IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
+                     RaiseContext *raiseContext)
     : SharedStateUser(declScope.getShared()), builder(builder),
-      paramContext(EC_InvalidContext), declScope(declScope) {}
+      paramContext(EC_InvalidContext), declScope(declScope),
+      raiseContext(raiseContext) {
+
+  // If the raise context is not associated with an operation, then it is not
+  // valid.  We allow this so callers can construct one from a function without
+  // having to worry about its throwability.
+  if (raiseContext && raiseContext->isInvalid())
+    raiseContext = nullptr;
+}
 
 /// Create an IREmitter for a parameter context.
 IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,
-                     DeferredTypingContext *deferredTypingContext)
+                     DeferredTypingContext *deferredTypingContext,
+                     RaiseContext *raiseContext)
     : SharedStateUser(declScope.getShared()), builder({}),
       paramContext(paramContext), declScope(declScope),
-      deferredTypingContext(deferredTypingContext) {}
+      deferredTypingContext(deferredTypingContext), raiseContext(raiseContext) {
+  // If the raise context is not associated with an operation, then it is not
+  // valid.  We allow this so callers can construct one from a function without
+  // having to worry about its throwability.
+  if (raiseContext && raiseContext->isInvalid())
+    raiseContext = nullptr;
+}
 
 /// Emit an error about use of a dynamic value (the expression) in a context
 /// that only allows parameter expressions.  This always returns a null
@@ -396,7 +506,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   }
 
   // We cannot emit a value that contains an origin in its type (e.g. a
-  // StringSpan or UnsafePointer) because the origin will be incorrect -
+  // StringSpan or Pointer) because the origin will be incorrect -
   // referring to immortal compile-time memory.
   if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
     const ExprNode *expr = value.expr;
@@ -457,15 +567,8 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       return {};
     }
 
-    // Materialize signatures as closures.
-    if (signature.isCapturing()) {
-      emitError(
-          expr->getLoc(),
-          "TODO: capturing closures cannot be materialized as runtime values");
-      return {};
-    }
-    return SRValue(CreateClosureOp::create(*builder, location, signature, attr,
-                                           ValueRange()));
+    return SRValue(
+        CreateFuncPtrOp::create(*builder, location, signature, attr));
   }
 
   ASTType valueType = value.ir.getRValueType();
@@ -791,6 +894,27 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   // of value types we have.
   auto rvType = cValue.getRValueType();
 
+  // An owned pattern binding can reuse the input storage directly. Unlike an
+  // assignment, a pattern declaration has no existing destination to update.
+  // Bind the name to this reference before resolving the destination, which
+  // would otherwise create a VarDeclOp and require a move into it.
+  if (MRValue ownedValue = cValue.getIfMRValue();
+      ownedValue && dest.getPatternDeclKind() == PatternDeclKind::kVar) {
+    if (auto *name = dyn_cast_or_null<DeclRefNode>(dest.getLValueExprNode())) {
+      CValue refinedValue =
+          maybeEmitRefinementRebind({ownedValue, expr}, *this);
+      auto refinedOwnedValue = refinedValue.getIfMRValue();
+      assert(refinedOwnedValue && "Refinement must preserve an MRValue");
+
+      StringAttr nameAttr = StringAttr::get(getContext(), name->spelling);
+      ASTDecl &decl = getDeclResolver().addFullyResolvedDecl(
+          MLValue(refinedOwnedValue), nameAttr, name->getLoc(), &declScope);
+      shared.notifyListenerOnVariableDecl(decl, name->getLoc());
+      dest.representation = NullRepresentation();
+      return MBValue(refinedOwnedValue);
+    }
+  }
+
   // If there is a known type for the destination but the value disagrees, emit
   // an implicit conversion directly into the destination.  This keeps values in
   // registers and avoids a "convert + clone" pair for memory->memory
@@ -798,7 +922,8 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvType, *this)) {
     if (!requiredType.isEqualCanon(rvType)) {
-      if (requiredType.hasUnboundParameters()) {
+      if (auto requiredGen = StructTypeGenerator::dynCast(requiredType);
+          requiredGen && !requiredGen.isFullyBound()) {
         dest.representation =
             cast<LValueContextualType>(dest.representation).expr;
         cValue = emitConstructorCall(
@@ -807,8 +932,8 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
         // The constructor call must have resolved the dest.
         assert(!dest.isSpecified());
       } else {
-        cValue =
-            emitImplicitConversionToType({cValue, expr}, requiredType, dest);
+        cValue = emitImplicitConversionToType({cValue, expr}, requiredType,
+                                              dest, shared.noAssumptions);
       }
       // If this resolved the value dest, then we're done.   This handles the
       // null result case as well.
@@ -1077,7 +1202,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
     // Suggest transfer if the type is movable, or if it is a transferable
     // MValue.
-    if ((valueType.isMovable(exprLoc, shared, declScope) ||
+    if (dest.context != EC_VarInitMatchBinding &&
+        (valueType.isMovable(exprLoc, shared, declScope) ||
          canTransferFrom())) {
       diag.attachNote(exprLoc)
           << "consider transferring the value with '^'"
@@ -1320,12 +1446,11 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
 
   // Go further and add a 'try' op to it, ensuring that throwing functions are
   // allowed in this expression.
-  VarDeclOp errDecl =
-      tmpEmitter.emitVarDecl("__try_error__", UnresolvedType::get(getContext()),
-                             location, VarDeclKind::Synthesized);
-  auto tryOp = TryOp::create(*tmpEmitter.builder, location, errDecl);
+  auto tryOp = TryOp::create(*tmpEmitter.builder, location);
 
   // Parse the expression into the try block.
+  RaiseContext temporaryRaiseContext(tryOp);
+  tmpEmitter.raiseContext = &temporaryRaiseContext;
   tmpEmitter.builder->createBlock(&tryOp.getTryRegion());
 
   // Emit the expression and invoke the callback on success.
@@ -1340,19 +1465,15 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
 //===----------------------------------------------------------------------===//
 // Emission helpers for specific value types.
 
-ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
-  // We have two ambiguous expressions that can either be types or dynamic
-  // values: an empty tuple () and None.  In a type context, we want to treat
-  // these as types, and not dynamic values.  Sniff these out to see if we have
-  // them.
+ASTType IREmitter::emitExprType(const ExprNode *expr,
+                                TypeStrictness strictness) {
+  // `None` can be either a type or a dynamic value.  In a type context, we
+  // want to treat it as a type.
   const ExprNode *innerExpr = expr->getWithoutParens();
   if (innerExpr->kind == ExprNode::kNoneLiteral)
     return shared.getNoneType();
-  if (innerExpr->isEmptyTuple())
-    return getBuiltinTupleInstantiation(expr->getLoc(), {});
 
-  // A non-empty tuple literal is never ambiguous: unlike () and None, it has
-  // no valid reading as a type.  Diagnose this directly instead of falling
+  // A tuple literal is never a type. Diagnose this directly instead of falling
   // through to the generic constructor-call machinery below.
   if (isa<TupleNode>(innerExpr)) {
     emitError(
@@ -1364,12 +1485,13 @@ ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   }
 
   auto value = emitExprPValue(expr, EC_Type);
-  return emitType({value, expr}, allowUnbound);
+  return emitType({value, expr}, strictness);
 }
 
 /// This emits the specified PValue as a type, binding defaulted parameters
 /// etc if needed.
-ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
+ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
+                            TypeStrictness strictness) {
   if (!value.ir)
     return {};
 
@@ -1380,15 +1502,14 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     return {};
   }
 
-  // If the caller accepts a fully unbound type and the type is unbound, return
-  // it now without verifying the bindings.
-  if (allowUnbound)
+  // A partially bound type is returned without verifying the bindings.
+  if (strictness == TypeStrictness::kIncomplete)
     return type;
 
   // Check for a function type.
   if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
     // For a fully bound type, require that the origin set is concrete.
-    if (isa<UnboundAttr>(sig.getCaptureOrigins())) {
+    if (isa<GeneratorAttr>(sig.getCaptureOrigins())) {
       emitError(value.expr->getLoc(),
                 "function type missing required origin set parameter")
           << value.expr->getRange();
@@ -1396,28 +1517,38 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     }
 
     // Function types with non-singleton parameters can only be used at
-    // comptime.
-    for (auto [paramType, pog] : llvm::zip(sig.getInputParamTypes(),
-                                           sig.getParamListAttrs().getPogs())) {
-      // Singleton values like origins are fine. They will be removed by
-      // lowerlit before code generation.
-      if (ASTType(paramType).isSingleton(shared))
-        continue;
+    // comptime. This is only a runtime-ness restriction: it applies when the
+    // type describes runtime storage, not to comptime type values (which are
+    // only checked for concreteness below).
+    if (strictness == TypeStrictness::kConcrete) {
+      for (auto [paramType, pog] : llvm::zip(
+               sig.getInputParamTypes(), sig.getParamListAttrs().getPogs())) {
+        // Singleton values like origins are fine. They will be removed by
+        // lowerlit before code generation.
+        if (ASTType(paramType).isSingleton(shared))
+          continue;
 
-      auto diag =
-          emitError(value.expr->getLoc(),
-                    "cannot use parametric function as a runtime closure")
-          << value.expr->getRange();
-      diag.attachNote(value.expr->getLoc())
-          << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
-          << " of type " << ASTType(paramType) << " is not bound";
-      return {};
+        auto diag =
+            emitError(value.expr->getLoc(),
+                      "cannot use parametric function as a runtime closure")
+            << value.expr->getRange();
+        diag.attachNote(value.expr->getLoc())
+            << "parameter " << ParamDeclRefAttr::get(pog.getName(), paramType)
+            << " of type " << ASTType(paramType) << " is not bound";
+        return {};
+      }
     }
   }
-  if (llvm::any_of(type.getParamBindings(),
-                   [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
-    emitError(value.expr->getLoc())
-        << type << " is not concrete, use '[]' to bind missing parameters";
+
+  // This should be the only representation of a partially bound struct type
+  if (auto gen = StructTypeGenerator::dynCast(type);
+      gen && !gen.getInputParamTypes().empty()) {
+    auto diag = emitError(value.expr->getLoc())
+                << type
+                << " is not concrete, use '[]' to bind missing parameters";
+    for (PogMetadataAttr pog : gen.getMetadata().getPogs())
+      diag.attachNote(value.expr->getLoc())
+          << "missing parameter '" << pog.getName().getValue() << "'";
     return {};
   }
 
@@ -1845,12 +1976,13 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   for (ASTType elt : elements)
     bindings.add(&tmpExpr, PValue(elt));
 
-  // Check the bindings.
-  auto metaType = cast<StructMetaType>(tupleType.extractMetaType());
-  TypeSignatureType sig = metaType.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+  // Check the bindings. `Tuple` is parametric, so the lookup gives a generator
+  // over its parameters.
+  GeneratorType tupleGenType = StructTypeGenerator::cast(tupleType).getType();
+  ParamInf inference(bindings, tupleGenType.getInputParamTypes(),
+                     tupleGenType.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
-                     /*discardError=*/false,
+                     /*discardError=*/false, shared.noAssumptions,
                      /*deferredTypingContext=*/deferredTypingContext);
   VerifiedParamBindings verifiedBindings = inference.inferForStruct();
   if (!verifiedBindings)
@@ -1863,23 +1995,118 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 //===----------------------------------------------------------------------===//
 // Error handling helpers.
 
-MLValue IREmitter::findNearestErrorSlot() {
-  assert(builder && "cannot raise in a context without a builder");
-  Operation *opForRaise = findOpProcessingRaise(builder->getInsertionBlock());
-  // Return null to indicate that the current context cannot raise.
-  if (!opForRaise)
-    return {};
+RaiseContext::RaiseContext(FnOp fn) : opForRaise(fn) {
+  // We accept non-throwing functions as a convenience, but make their context
+  // invalid so callers cannot emit a raise through it.
+  if (!fn || !fn.isThrows()) {
+    opForRaise = nullptr;
+    return;
+  }
 
-  // In a raising function, the error slot is always the second last argument.
-  if (auto func = dyn_cast<FnOp>(opForRaise))
-    return func.getArgument(func.getNumArguments() - 2);
+  // Notice the prepopulated function error slot.
+  size_t errorArgIndex = fn.getNumArguments() - 2;
+  assert(fn.getFuncTypeGenerator().getArgConvention(errorArgIndex) ==
+         ArgConvention::ByRefError);
+  MLValue errorSlot(fn.getArgument(errorArgIndex));
+  assert(!isa<UnresolvedType>(errorSlot.getRValueType()) &&
+         "function error slots must have a resolved type");
+  errorSlots.push_back(errorSlot);
+  eagerlyEmitted = true;
+}
 
-  // Otherwise, the error slot is carried by the surrounding try op.
-  return cast<LIT::TryOp>(opForRaise).getErr();
+RaiseContext::RaiseContext(TryOp tryOp, VarDeclOp errorDecl)
+    : opForRaise(tryOp) {
+
+  // If there is a prescribed error slot to use, the raises will be eagerly
+  // resolved.
+  if (errorDecl) {
+    eagerlyEmitted = true;
+    assert(!isa<UnresolvedType>(errorDecl.getType().getElementType()) &&
+           "fixed error slots must have a resolved type");
+    errorSlots.push_back(MLValue(errorDecl.getResult()));
+  }
+}
+
+RaiseContext RaiseContext::getForLoopIteratorContext() {
+  auto result = RaiseContext(TryOp());
+  result.breakLoopElseOnRaise = true;
+  return result;
+}
+
+/// Gets the primary error slot of a raising function or try.
+MLValue RaiseContext::getErrorSlot() const {
+  return errorSlots.empty() ? MLValue() : errorSlots.front();
+}
+
+/// Returns a slot for an error type, creating it before a try when needed.
+MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
+                                           ASTType errorType, Location loc) {
+  // Eager contexts always have a fixed error slot with a concrete type.
+  if (isEagerlyEmitted()) {
+    MLValue errorSlot = getErrorSlot();
+    assert(errorSlot && !isa<UnresolvedType>(errorSlot.getRValueType()) &&
+           "fixed error slots must have a resolved type");
+    return errorSlot;
+  }
+
+  // An unresolved slot is inferred independently by the expression stored
+  // into it. Concrete types reuse storage for previous raises of that type.
+  if (!isa<UnresolvedType>(errorType)) {
+    for (MLValue errorSlot : errorSlots) {
+      if (!isa<UnresolvedType>(errorSlot.getRValueType()) &&
+          errorType.isEqualCanon(errorSlot.getRValueType()))
+        return errorSlot;
+    }
+  }
+
+  // Emit error slots ahead of their owner so they dominate the owner and every
+  // region that can use them. A for-loop iterator error is local to the loop
+  // body, so it can use the current insertion point directly.
+  OpBuilder errorDeclBuilder = *emitter.builder;
+  if (opForRaise)
+    errorDeclBuilder.setInsertionPoint(opForRaise);
+  OpBuilder savedBuilder = *emitter.builder;
+  emitter.builder = errorDeclBuilder;
+  auto errDecl = emitter.emitVarDecl(errorSlots.empty() ? "__try_error__"
+                                                        : "__try_error_tmp__",
+                                     errorType, loc, VarDeclKind::Synthesized);
+  errorSlots.push_back(MLValue(errDecl.getResult()));
+  emitter.builder = savedBuilder;
+  return MLValue(errDecl.getResult());
+}
+
+/// Coalesces an inferred slot with earlier storage of the same concrete type.
+MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
+                                        const ExprNode *sourceExpr) {
+  if (isEagerlyEmitted() || isa<UnresolvedType>(errorSlot.getRValueType()))
+    return errorSlot;
+
+  auto slotIter = llvm::find(errorSlots, errorSlot);
+  assert(slotIter != errorSlots.end() && "unknown error slot");
+  for (auto iter = errorSlots.begin(); iter != slotIter; ++iter) {
+    if (!isa<UnresolvedType>(iter->getRValueType()) &&
+        errorSlot.getRValueType().isEqualCanon(iter->getRValueType())) {
+      ExprDest destination(*iter, EC_RaiseValue);
+      (void)emitter.emitResult(MRValue(errorSlot), sourceExpr, destination);
+      errorSlots.erase(slotIter);
+      return *iter;
+    }
+  }
+  return errorSlot;
+}
+
+/// Records where a typed error leaves a source-level try body.
+void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
+                                   Operation *sourceOperation,
+                                   SMLoc sourceLoc) {
+  if (isEagerlyEmitted())
+    return;
+  assert(errorSlot && terminator && "raise site must be fully specified");
+  raiseSites.push_back({errorSlot, terminator, sourceOperation, sourceLoc});
 }
 
 /// The declaration `origin` is ultimately rooted at, null when it is rooted at
-/// no declaration at all.  A field, interior or subtree origin refines a base
+/// no declaration at all. A field, interior or subtree origin refines a base
 /// whose invalidation governs it, so the base is what has to outlive a use of
 /// the refinement.
 static ParamDeclRefAttr getRootOrigin(TypedAttr origin) {
@@ -1895,41 +2122,39 @@ static ParamDeclRefAttr getRootOrigin(TypedAttr origin) {
   return root;
 }
 
-/// When a try block gets its error type inferred, this function makes sure the
-/// inferred type doesn't capture an origin from within a try body.  Such a
-/// thing would be an out of scope reference, e.g.:
-///
-///    try:
-///      var x = 42
-///      raise Pointer(to=x)
-///    except e: # x is not in scope here.
-void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
-  SmallVector<TypedAttr> origins =
-      shared.cachedOriginFinder.findOriginsIn({rvalueType});
-  // Typically we have something like Error or TypeCheckError which will have no
-  // origins, so we can avoid doing work.
-  if (origins.empty())
+/// Diagnoses an except type that captures an origin declared in a try body.
+void RaiseContext::verifyExceptTypeLifetimeValidity(
+    IREmitter &emitter, MLValue exceptErrorSlot) const {
+  auto tryOp = dyn_cast<LIT::TryOp>(opForRaise);
+  if (!tryOp)
     return;
 
-  // Ok, find the try block that we're inferring for.  We must be in a 'try'
-  // because that is the only thing that can infer an error type.
-  assert(builder && "cannot raise in a context without a builder");
-  auto tryOp =
-      dyn_cast<LIT::TryOp>(findOpProcessingRaise(builder->getInsertionBlock()));
-  if (!tryOp)
-    return; // Functions don't infer their error type.
+  SharedState &shared = emitter.getDeclScope().getShared();
+  ASTType exceptType = exceptErrorSlot.getRValueType();
+  SmallVector<ParamDeclRefAttr> roots;
+  for (TypedAttr origin :
+       shared.cachedOriginFinder.findOriginsIn({exceptType})) {
+    if (ParamDeclRefAttr root = getRootOrigin(origin))
+      roots.push_back(root);
+  }
+  if (roots.empty())
+    return;
 
-  // Unfortunately, we don't have a good way to do a lookup given an origin
-  // attribute, so we scan the body of the try block for any vardecls. Is this
-  // the only thing that can declare an origin?
-  SmallPtrSet<Attribute, 8> roots;
-  for (auto o : origins)
-    if (ParamDeclRefAttr root = getRootOrigin(o))
-      roots.insert(root);
+  // Error slots are declared before the try to dominate all its regions. Walk
+  // the try once to check whether the final except type names local storage.
   tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
-    if (roots.contains(varDecl.getType().getOrigin())) {
-      auto diag = emitError(loc);
-      diag << "inferred error type " << rvalueType << " captures origin ";
+    for (ParamDeclRefAttr root : roots) {
+      if (root != varDecl.getType().getOrigin())
+        continue;
+
+      auto site = llvm::find_if(raiseSites, [&](const RaiseSite &site) {
+        return site.errorSlot == exceptErrorSlot;
+      });
+      if (site == raiseSites.end())
+        continue;
+
+      auto diag = emitter.emitError(site->sourceLoc);
+      diag << "inferred error type " << exceptType << " captures origin ";
       if (varDecl.isSynthetic()) {
         diag << "of temporary";
       } else {
@@ -1942,6 +2167,116 @@ void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
       diag.attachNote(varDecl.getLoc()) << "origin declared here";
     }
   });
+}
+
+/// When a 'try' block is emitted, we collect error slots for each raised type.
+/// This method then finds a common type and converts them all to that type.
+///
+/// Some clients will know which type they need, and some clients will require
+/// a slot (defaulting to Error if there is no raise).
+MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
+                                         ASTType requiredErrorType,
+                                         bool isSlotRequired) {
+  // Eager contexts have a fixed error slot with a concrete type and all users
+  // of it will have already emitted into it.
+  if (isEagerlyEmitted())
+    return getErrorSlot();
+
+  // If nothing raised in the try block, then we won't have any error slots.
+  if (errorSlots.empty()) {
+    if (!isSlotRequired)
+      return {};
+
+    // An error-taking `with` exit needs storage even if its body did not
+    // raise. A generic exit defaults that storage to Error.
+    if (!requiredErrorType)
+      requiredErrorType = emitter.getDeclScope().getShared().lookupBuiltinType(
+          "Error", emitter.getDeclScope(), {});
+    assert(requiredErrorType && "expected builtin Error type");
+    return getOrCreateErrorSlot(emitter, requiredErrorType,
+                                opForRaise->getLoc());
+  }
+
+  // Otherwise we have one or more raises, and they may have different types.
+  // A context with a required error type (for example, a with block whose exit
+  // handler prescribes a type) takes precedence over inferred merging. If we
+  // don't have one, then take a look at all the raised errors and try to find
+  // a common type.
+  if (!requiredErrorType) {
+    ASTType mergedErrorType = errorSlots.front().getRValueType();
+    CValue mergedErrorValue(errorSlots.front());
+    for (MLValue errorSlot : llvm::drop_begin(errorSlots)) {
+      mergedErrorType =
+          emitter.getCommonType(mergedErrorValue, CValue(errorSlot));
+      if (!mergedErrorType)
+        break;
+
+      if (mergedErrorType.isEqualCanon(errorSlot.getRValueType()))
+        mergedErrorValue = CValue(errorSlot);
+      else if (!mergedErrorType.isEqualCanon(mergedErrorValue.getRValueType()))
+        mergedErrorValue = CValue(PValue(mergedErrorType));
+    }
+    requiredErrorType = mergedErrorType;
+  }
+
+  // When the raised types do not merge directly, they must all be convertible
+  // to Error to use it as the unified exception type.
+  if (!requiredErrorType) {
+    requiredErrorType = emitter.getDeclScope().getShared().lookupBuiltinType(
+        "Error", emitter.getDeclScope(), {});
+    assert(requiredErrorType && "expected builtin Error type");
+    SyntheticNode source(
+        emitter.getDeclScope().getShared().diags.convertLocToSMLoc(
+            opForRaise->getLoc()));
+    for (MLValue errorSlot : errorSlots) {
+      if (IREmitter::canImplicitlyConvertToType(
+              {CValue(errorSlot), &source}, requiredErrorType,
+              emitter.getDeclScope(), emitter.shared.noAssumptions))
+        continue;
+
+      std::string errorTypes;
+      llvm::raw_string_ostream os(errorTypes);
+      llvm::interleaveComma(errorSlots, os, [&](MLValue errorSlot) {
+        os << errorSlot.getRValueType();
+      });
+      emitter.emitError(opForRaise->getLoc())
+          << "cannot find a unified error type for the try body: " << os.str();
+      return errorSlots.front();
+    }
+  }
+
+  // Reuse a slot of the selected type when one was raised. Otherwise, create
+  // the slot after verifying that every raised error can convert to its type.
+  auto primaryIter = llvm::find_if(errorSlots, [&](MLValue errorSlot) {
+    return requiredErrorType.isEqualCanon(errorSlot.getRValueType());
+  });
+  MLValue primaryErrorSlot;
+  if (primaryIter != errorSlots.end()) {
+    primaryErrorSlot = *primaryIter;
+  } else {
+    primaryErrorSlot =
+        getOrCreateErrorSlot(emitter, requiredErrorType, opForRaise->getLoc());
+  }
+
+  // Move all the other error slots into the primary slot, performing implicit
+  // conversions as needed to get to that unified type.
+  for (const RaiseSite &site : raiseSites) {
+    if (site.errorSlot == primaryErrorSlot)
+      continue;
+
+    OpBuilder savedBuilder = *emitter.builder;
+    emitter.builder->setInsertionPoint(site.terminator);
+    ExprDest destination(primaryErrorSlot, EC_RaiseValue);
+    SyntheticNode source(site.sourceLoc);
+    (void)emitter.emitResult(MRValue(site.errorSlot), &source, destination);
+    emitter.builder = savedBuilder;
+  }
+
+  verifyExceptTypeLifetimeValidity(emitter, primaryErrorSlot);
+  primaryIter = llvm::find(errorSlots, primaryErrorSlot);
+  assert(primaryIter != errorSlots.end() && "unknown primary error slot");
+  std::swap(errorSlots.front(), *primaryIter);
+  return primaryErrorSlot;
 }
 
 /// Check that the declarations `origin` is rooted at outlive `block`, emitting
@@ -2050,7 +2385,7 @@ void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
     if (auto func = getBlockParentOfType<FnOp>(builder->getInsertionBlock());
         func && func.getNamedResultAttr() &&
         !func.getFuncTypeGenerator().hasMemoryOnlyResult()) {
-      auto *funcDecl = declScope.getNearestDeclOfType<FnOp>();
+      auto *funcDecl = declScope.getNearestDeclOfType<DefASTDecl>();
       assert(funcDecl && "must be in a function");
       ArrayRef<ASTDecl *> declList =
           funcDecl->lookupInCurrentScope(func.getNamedResultAttr());
@@ -2074,18 +2409,19 @@ void IREmitter::emitNormalReturn(Location loc, Value value, bool emitEndFunc) {
 //===--------------------------------------------------------------------===//
 
 VarDeclOp IREmitter::emitVarDecl(const Twine &name, Type type, Location loc,
-                                 VarDeclKind kind) {
+                                 VarDeclKind kind, TypedAttr addressSpace) {
   if (!builder) {
     emitErrorForDynamicValueInParameter(loc);
     return {};
   }
   StringAttr originAttr = declScope.mangleParamName(name);
-  return VarDeclOp::create(*builder, loc, type, name.str(), originAttr, kind);
+  return VarDeclOp::create(*builder, loc, type, name.str(), originAttr, kind,
+                           addressSpace);
 }
 
 VarDeclOp IREmitter::emitVarDecl(StringAttr name, Type type, Location loc,
-                                 VarDeclKind kind) {
-  return emitVarDecl(name.strref(), type, loc, kind);
+                                 VarDeclKind kind, TypedAttr addressSpace) {
+  return emitVarDecl(name.strref(), type, loc, kind, addressSpace);
 }
 
 //===--------------------------------------------------------------------===//
@@ -2102,19 +2438,19 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   ASTType originType = shared.lookupBuiltinType("Origin", declScope, loc);
   if (sugarIsa<TypeCheckErrorType>(originType))
     return {}; // Sanity check the returned declaration.
-  auto originStructType = sugarCast<LIT::StructType>(originType);
 
   // Get the mutability as a Bool.
   auto resultMutability =
       sugarCast<OriginType>(litOrigin.getType()).getIsMutable();
   std::tuple<StringAttr, TypedAttr> field = {
       StringAttr::get(getContext(), "_mlir_value"), resultMutability};
-  auto boolStructType =
-      cast<LIT::StructType>(originStructType.getSignature().getParamTypes()[0]);
+  auto boolStructType = cast<LIT::StructType>(
+      StructTypeGenerator::cast(originType).getInputParamTypes()[0]);
   PValue mutBool = LITStructAttr::get({field}, boolStructType);
 
   ASTDecl *decl = originType.getDecl(shared);
-  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl);
+  StructDeclOp litStruct = structDecl ? structDecl->getOp() : nullptr;
   if (!litStruct || litStruct.getParams().size() != 2 ||
       !sugarIsa<OriginType>(litStruct.getParams()[1].getType())) {
     emitError(loc, "malformed Origin type");
@@ -2122,7 +2458,8 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
   }
 
   // Bind the Origin parameters.
-  originType = litStruct.bindReference({mutBool, litOrigin});
+  originType = litStruct.bindAllReferences(&shared.getEvaluationContext(),
+                                           {mutBool, litOrigin});
 
   // If we are referencing an origin parameter, we need to find the
   // Origin it corresponds to and use that. Consider:
@@ -2157,34 +2494,37 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
 //===--------------------------------------------------------------------===//
 
 ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
-  OpBuilder b(shared.getTopLevelDecl().getIfOperation());
-  b.setInsertionPointToStart(
-      &cast<ModuleOp>(shared.getTopLevelDecl().getIfOperation())
-           .getBodyRegion()
-           .front());
-  MLIRContext *ctx = b.getContext();
-
+  auto &topLevelDecl = shared.getTopLevelDecl();
+  MLIRContext *ctx = shared.getContext();
   // A illegal name to avoid collisions.
   StringRef name = UNI_CLOSURE_TRAIT_NAME;
+
+  SmallVector<TraitSymbolAttr> parents;
+  DenseSet<TraitSymbolAttr> immediateParents;
+  for (auto traitName : {"AnyType", "Movable", "Deinitable"}) {
+    TraitASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, SMLoc());
+    if (traitDecl) { // builtin might be disabled.
+      if (failed(shared.declResolver->resolveSignature(*traitDecl, SMLoc())))
+        return nullptr; // should this be an assertion?
+      parents.push_back(traitDecl->getOp().bindReference({}));
+    }
+  }
+
+  // Looking up the parents can import a precompiled stdlib, which creates the
+  // trait through a re-entrant call.
+  if (ArrayRef<ASTDecl *> existing =
+          topLevelDecl.lookupInCurrentScope(StringAttr::get(ctx, name));
+      !existing.empty())
+    return existing.front();
+
+  OpBuilder b(topLevelDecl.getOp());
+  b.setInsertionPointToStart(&topLevelDecl.getOp().getBodyRegion().front());
   auto closureTrait =
       TraitDeclOp::create(b, mlir::UnknownLoc::get(ctx), // synthetic trait
                           StringAttr::get(ctx, name));
   auto &traitDecl =
       cast<TraitASTDecl>(shared.declResolver->addFullyResolvedDecl(
-          &*closureTrait, name, SMLoc(), &shared.getTopLevelDecl()));
-
-  // Populate the trait with parent and self methods.
-  SmallVector<TraitSymbolAttr> parents;
-  DenseSet<TraitSymbolAttr> immediateParents;
-  for (auto traitName : {"AnyType", "Movable", "Deinitable"}) {
-    ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, SMLoc());
-    if (traitDecl) { // builtin might be disabled.
-      if (failed(shared.declResolver->resolveSignature(*traitDecl, SMLoc())))
-        return nullptr; // should this be an assertion?
-      parents.push_back(
-          cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference({}));
-    }
-  }
+          &*closureTrait, StringAttr::get(ctx, name), SMLoc(), &topLevelDecl));
 
   SmallVector<ParamDeclAttr> decls = {
       // The parameter decl list, passed in as a param_list of param decls.
@@ -2247,8 +2587,8 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
                                       ctx, params, args, retTy, metadata,
                                       paramListPog, argListPog)));
 
-  (void)shared.declResolver->addFullyResolvedDecl(aliasOp, "__call__", SMLoc(),
-                                                  &traitDecl);
+  (void)shared.declResolver->addFullyResolvedDecl(
+      aliasOp, StringAttr::get(ctx, "__call__"), SMLoc(), &traitDecl);
   return &traitDecl;
 }
 
@@ -2292,7 +2632,7 @@ private:
 TraitSymbolAttr
 IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   MLIRContext *ctx = shared.getContext();
-  ASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
+  TraitASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
 
   // The universal closure trait prepends a `_Self` parameter and a `mut self`
   // argument/origin, so shift the closure's own parameter and implicit-origin
@@ -2346,10 +2686,8 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
   argConventions.push_back(ArgConvention::ImmMem);
   llvm::append_range(argConventions, sig.getFnMetadata().getArgConventions());
-  // TODO: remove capturing when legacy closures are removed.
   auto metadata = FnMetadataAttr::get(
-      ctx, argConventions,
-      sig.getFnMetadata().getFnEffects().setCapturing(true), originData);
+      ctx, argConventions, sig.getFnMetadata().getFnEffects(), originData);
 
   // Account for `_Self`/`self` inserted when constructing the closure trait.
   // We have to do it here since we can not parametrize a pog_list. (So we can
@@ -2366,7 +2704,7 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
       PogMetadataAttr::get(StringAttr::get(ctx, ""), PassingKind::PosOnly));
   llvm::append_range(pogArgs, sig.getArgListAttrs().getPogs());
 
-  auto traitDeclOp = cast<TraitDeclOp>(closureTraitDecl->getIfOperation());
+  TraitDeclOp traitDeclOp = closureTraitDecl->getOp();
   return traitDeclOp.bindReference(
       {paramDeclList, argTypeList, resultType, metadata,
        shiftAndQuote(PogListAttr::get(

@@ -27,7 +27,7 @@ kgen.generator @use_Itf3two() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant: index = <get_sizeof(!opaque<"type">, #target)>
+  %0 = kgen.param.constant: scalar<index> = <get_sizeof(!opaque<"type">, #target)>
   hlcf.return
 }
 
@@ -80,24 +80,6 @@ kgen.generator @brokenVLenAssert() {
 
   // expected-note @+1 {{constraint failed: foo}}
   kgen.param.assert <eq(2, 3)>, B
-  hlcf.return
-}
-
-// -----
-
-// COM: Unused `kgen.param.declare` should not be ignored.
-
-// expected-note @below {{function instantiation failed}}
-kgen.generator @fail_if_zero<value>() -> index {
-  %0 = index.constant 0
-  // expected-note @below {{constraint failed: must not be zero!}}
-  kgen.param.assert <ne(value, 0)>, "must not be zero!"
-  hlcf.return %0 : index
-}
-
-// expected-error @below {{function instantiation failed}}
-kgen.generator @unused_param_declare() {
-  kgen.param.declare unused = <apply(:() -> index bind_params(:<index>() -> index @fail_if_zero, 0))>
   hlcf.return
 }
 
@@ -216,7 +198,7 @@ kgen.generator @will_pass<a, b>() -> (index, index) {
   hlcf.return %0, %1 : index, index
 }
 
-!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
+!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) -> !kgen.none)>
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @main() {
@@ -259,9 +241,9 @@ kgen.generator export @gen_structs() {
 
 // expected-note @below {{function instantiation failed}}
 // expected-note @below {{cannot concretize name in 'llvm_metadata'}}
-kgen.generator export @metadata<x>() attributes {fnAttrs = [
+kgen.generator export @metadata<x>() <fnAttrs = [
   #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
-]}{
+]> {
   hlcf.return
 }
 
@@ -326,7 +308,7 @@ kgen.generator export @main() {
 
 // -----
 // COM: MOCO-2892 unbound parameter causing interpret crash fix.
-// expected-note @below {{struct not a writeable type, got #kgen.unbound}}
+// expected-note @below {{struct not a writeable type, got #kgen.unknown}}
 kgen.generator @fn(%arg0: !kgen.pointer<struct<(index) memoryOnly>> imm_mem, %arg1: index) -> index {
   %0 = kgen.struct.gep %arg0[0]: <struct<(index) memoryOnly>>
   %1 = pop.load %0: !kgen.pointer<index>
@@ -337,7 +319,7 @@ kgen.generator @fn(%arg0: !kgen.pointer<struct<(index) memoryOnly>> imm_mem, %ar
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @main() -> index {
   // expected-note @below {{failed to compile-time evaluate function call}}
-  kgen.param.apply x = [(!kgen.pointer<struct<(index) memoryOnly>>, index) -> index: @fn](store_to_mem(?), 1)
+  kgen.param.apply x = [(!kgen.pointer<struct<(index) memoryOnly>>, index) -> index: @fn](store_to_mem(*?), 1)
   %0 = kgen.param.constant = <x>
   hlcf.return %0: index
 }
@@ -463,14 +445,14 @@ kgen.generator @count_to_zero_has_next(%arg0: index) -> !kgen.scalar<bool> {
 // Two generators with the same linkage name should report a clash error.
 
 // expected-remark @below {{existing function here}}
-kgen.generator @"clash::a"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
+kgen.generator @"clash::a"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>>
 
 // expected-error @below {{duplicate functions named "foo"}}
-kgen.generator @"clash::b"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
+kgen.generator @"clash::b"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>>
 
 // -----
 
@@ -478,8 +460,8 @@ kgen.generator @"clash::b"() attributes {linkageName = #kgen.linkage_name<"foo" 
 
 // expected-note @below {{failed to interpret function @negative_alloc_size}}
 kgen.generator @negative_alloc_size() -> !kgen.pointer<index> {
-  %idx8 = index.constant 8
-  %idx_neg = index.constant -1
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx_neg = kgen.param.constant: scalar<index> = <-1>
   // expected-note @below {{failed to interpret operation pop.aligned_alloc}}
   // expected-note @below {{alloc has negative size}}
   %0 = pop.aligned_alloc %idx8, %idx_neg : <index>
@@ -571,5 +553,35 @@ kgen.generator export @nary_identical_unknown_with_target() -> !kgen.scalar<bool
   kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen.unknown : !kgen.scalar<index>, #kgen<simd 4294967296> : !kgen.scalar<index>, #kgen<simd 8589934592> : !kgen.scalar<index>>>
   %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
   hlcf.return %0 : !kgen.scalar<bool>
+}
+}
+
+// -----
+
+// Test that a constant shift-right amount outside the operand's bit width gets
+// a clear diagnostic instead of the generic "could not simplify operator" note.
+//
+// `shl` with matching types folds to zero before reaching evaluateWithContext,
+// so it cannot produce this diagnostic and is not tested here.
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @shift_out_of_range_shr() {
+  // expected-note @below {{shift amount 9 is outside the valid range 0..7 for scalar<ui8>}}
+  %0 = kgen.param.constant: !kgen.scalar<ui8> = <shr(1, 9)>
+  hlcf.return
+}
+
+// -----
+
+// Test that the shift diagnostic uses the target's index bit width for
+// scalar<index> operands. With a 32-bit index target, shifting by 32 is out of
+// range.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// expected-error @below {{function instantiation failed}}
+kgen.generator @shift_out_of_range_shr_index_32bit() {
+  // expected-note @below {{shift amount 32 is outside the valid range 0..31 for scalar<index>}}
+  %0 = kgen.param.constant: !kgen.scalar<index> = <shr(1, 32)>
+  hlcf.return
 }
 }

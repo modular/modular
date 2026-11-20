@@ -10,7 +10,7 @@ ops](../custom_ops/) that run on both CPUs and GPUs.
 
 > [!IMPORTANT]
 > These examples require a [compatible
-> GPU](https://max.modular.com/packages/#gpu-compatibility).
+> GPU](https://max.modular.com/gpu/hardware-compatibility/).
 
 The examples include the following:
 
@@ -36,7 +36,7 @@ The examples include the following:
 ## Setup
 
 1. Make sure your system includes a [compatible
-   GPU](https://max.modular.com/packages/#gpu-compatibility).
+   GPU](https://max.modular.com/gpu/hardware-compatibility/).
 
 2. If you don't have [`pixi`](https://pixi.sh/latest/), install it:
 

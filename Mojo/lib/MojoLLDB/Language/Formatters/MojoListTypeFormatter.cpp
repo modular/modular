@@ -94,7 +94,7 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
     return {};
 
   // The REPL sees a struct around a pointer, but DWARF shows directly the
-  // pointer. Unwrap through the known UnsafePointer wrapper field names
+  // pointer. Unwrap through the known Pointer wrapper field names
   // (`_mlir_value`, `address`, etc.) rather than hardcoding one.
   ValueObjectSP dataPointer = unwrapToScalarOrPointer(dataVal);
 
@@ -114,16 +114,12 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
 
 bool MojoListSyntheticFrontEnd::MightHaveChildren() { return true; }
 
-llvm::Expected<size_t> MojoListSyntheticFrontEnd::GetIndexOfChildWithName(
-    lldb_private::ConstString name) {
+llvm::Expected<size_t>
+MojoListSyntheticFrontEnd::GetIndexOfChildWithName(llvm::StringRef name) {
   if (size == 0)
     return llvm::createStringError("List is empty");
 
-  const char *nameStr = name.GetCString();
-  if (!nameStr)
-    return llvm::createStringError("Invalid name");
-
-  std::optional<size_t> index = ExtractIndexFromString(nameStr);
+  std::optional<size_t> index = ExtractIndexFromString(name);
   if (!index)
     return llvm::createStringError("Invalid index format");
 

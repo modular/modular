@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Idefics3 checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -49,8 +50,7 @@ def convert_idefics3_language_model_state_dict(
 
     Args:
         state_dict: The raw Idefics3 checkpoint weights.
-        huggingface_config: The Idefics3 HuggingFace configuration.
-        pipeline_config: The pipeline configuration.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The filtered and mapped weights for DistributedLlama3.
@@ -80,8 +80,7 @@ def convert_idefics3_vision_model_state_dict(
 
     Args:
         state_dict: The raw Idefics3 checkpoint weights.
-        huggingface_config: The Idefics3 HuggingFace configuration.
-        pipeline_config: The pipeline configuration.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The filtered and mapped weights for Idefics3VisionModel.

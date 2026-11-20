@@ -209,6 +209,50 @@ def _check_cubic_uint8_matches_float32(
             assert_equal(got[i], as_f32[i])
 
 
+def _resize_cubic_u8(
+    src: List[UInt8], in_shape: IndexList[4], out_shape: IndexList[4]
+) -> List[UInt8]:
+    var output = List[UInt8](length=out_shape.flattened_length(), fill=0)
+    resize_cubic(
+        TileTensor(src.unsafe_ptr(), row_major(Coord(in_shape))),
+        TileTensor(output.unsafe_ptr(), row_major(Coord(out_shape))),
+    )
+    return output^
+
+
+def _check_cubic_uint8_passes(
+    in_shape: IndexList[4], out_shape: IndexList[4]
+) raises:
+    """Checks that a uint8 resize of both axes is a resize of W, then one of
+    H, each rounded to uint8, and that an NHWC batch resizes as its channel
+    planes do."""
+    var values = _pattern(in_shape.flattened_length())
+    var src = List[UInt8](capacity=len(values))
+    for v in values:
+        src.append(v.cast[.uint8]())
+    var got = _resize_cubic_u8(src, in_shape, out_shape)
+    var mid_shape = in_shape
+    mid_shape[2] = out_shape[2]
+    var want = _resize_cubic_u8(
+        _resize_cubic_u8(src, in_shape, mid_shape), mid_shape, out_shape
+    )
+    for i in range(len(want)):
+        assert_equal(got[i], want[i])
+    var c = in_shape[3]
+    var in_plane = IndexList[4](1, in_shape[1], in_shape[2], 1)
+    var out_plane = IndexList[4](1, out_shape[1], out_shape[2], 1)
+    for n in range(in_shape[0]):
+        for ch in range(c):
+            var plane = List[UInt8]()
+            for p in range(in_plane.flattened_length()):
+                plane.append(
+                    src[(n * in_plane.flattened_length() + p) * c + ch]
+                )
+            var resized = _resize_cubic_u8(plane, in_plane, out_plane)
+            for p in range(len(resized)):
+                assert_equal(got[(n * len(resized) + p) * c + ch], resized[p])
+
+
 def _naive_cubic(
     src: List[Float32], in_shape: IndexList[4], out_shape: IndexList[4]
 ) -> List[Float32]:
@@ -255,9 +299,9 @@ def _check_cubic_matches_naive(
 
 
 def main() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
 
-    def test_upsample_sizes_nearest_1(ctx: DeviceContext) raises:
+    def test_upsample_sizes_nearest_1(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_nearest_1")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -300,7 +344,7 @@ def main() raises:
 
     test_upsample_sizes_nearest_1(ctx)
 
-    def test_downsample_sizes_nearest(ctx: DeviceContext) raises:
+    def test_downsample_sizes_nearest(ctx: DeviceContext.CPU) raises:
         print("== test_downsample_sizes_nearest")
         var input_stack: Array[Float32, 8] = [
             Float32(1),
@@ -328,7 +372,7 @@ def main() raises:
     test_downsample_sizes_nearest(ctx)
 
     def test_upsample_2x_nearest_asymmetric_floor_fastpath(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_upsample_2x_nearest_asymmetric_floor_fastpath")
         # The mode combination the model 2x upsample helpers migrated to:
@@ -383,7 +427,7 @@ def main() raises:
     test_upsample_2x_nearest_asymmetric_floor_fastpath(ctx)
 
     def test_downsample_sizes_nearest_half_pixel_1D(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
         var input_stack: Array[Float32, 16] = [
@@ -419,7 +463,7 @@ def main() raises:
 
     test_downsample_sizes_nearest_half_pixel_1D(ctx)
 
-    def test_upsample_sizes_nearest_2(ctx: DeviceContext) raises:
+    def test_upsample_sizes_nearest_2(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_nearest_2")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -497,7 +541,7 @@ def main() raises:
     test_upsample_sizes_nearest_2(ctx)
 
     def test_upsample_sizes_nearest_floor_align_corners(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
         var input_stack: Array[Float32, 16] = [
@@ -601,7 +645,7 @@ def main() raises:
     test_upsample_sizes_nearest_floor_align_corners(ctx)
 
     def test_upsample_sizes_nearest_round_half_up_asymmetric(
-        ctx: DeviceContext,
+        ctx: DeviceContext.CPU,
     ) raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         var input_stack: Array[Float32, 16] = [
@@ -702,7 +746,9 @@ def main() raises:
 
     test_upsample_sizes_nearest_round_half_up_asymmetric(ctx)
 
-    def test_upsample_sizes_nearest_ceil_half_pixel(ctx: DeviceContext) raises:
+    def test_upsample_sizes_nearest_ceil_half_pixel(
+        ctx: DeviceContext.CPU,
+    ) raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         var input_stack: Array[Float32, 16] = [
             Float32(1),
@@ -802,7 +848,7 @@ def main() raises:
 
     test_upsample_sizes_nearest_ceil_half_pixel(ctx)
 
-    def test_upsample_sizes_linear(ctx: DeviceContext) raises:
+    def test_upsample_sizes_linear(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_linear")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -845,7 +891,7 @@ def main() raises:
 
     test_upsample_sizes_linear(ctx)
 
-    def test_upsample_sizes_linear_align_corners(ctx: DeviceContext) raises:
+    def test_upsample_sizes_linear_align_corners(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_linear_align_corners")
         var input_stack: Array[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -888,7 +934,7 @@ def main() raises:
 
     test_upsample_sizes_linear_align_corners(ctx)
 
-    def test_downsample_sizes_linear(ctx: DeviceContext) raises:
+    def test_downsample_sizes_linear(ctx: DeviceContext.CPU) raises:
         print("== test_downsample_sizes_linear")
         var input_stack: Array[Float32, 8] = [
             Float32(1),
@@ -924,7 +970,9 @@ def main() raises:
 
     test_downsample_sizes_linear(ctx)
 
-    def test_downsample_sizes_linear_align_corners(ctx: DeviceContext) raises:
+    def test_downsample_sizes_linear_align_corners(
+        ctx: DeviceContext.CPU,
+    ) raises:
         print("== test_downsample_sizes_linear_align_corners")
         var input_stack: Array[Float32, 8] = [
             Float32(1),
@@ -959,7 +1007,7 @@ def main() raises:
 
     test_downsample_sizes_linear_align_corners(ctx)
 
-    def test_upsample_sizes_trilinear(ctx: DeviceContext) raises:
+    def test_upsample_sizes_trilinear(ctx: DeviceContext.CPU) raises:
         print("== test_upsample_sizes_trilinear")
         var input_stack: Array[Float32, 16] = [
             Float32(0),
@@ -1020,7 +1068,7 @@ def main() raises:
 
     test_upsample_sizes_trilinear(ctx)
 
-    def test_downsample_sizes_linear_antialias(ctx: DeviceContext) raises:
+    def test_downsample_sizes_linear_antialias(ctx: DeviceContext.CPU) raises:
         print("== test_downsample_sizes_linear_antialias")
         var input_stack: Array[Float32, 16] = [
             Float32(0),
@@ -1069,7 +1117,7 @@ def main() raises:
 
     test_downsample_sizes_linear_antialias(ctx)
 
-    def test_no_resize(ctx: DeviceContext) raises:
+    def test_no_resize(ctx: DeviceContext.CPU) raises:
         print("== test_no_resize")
         var input_stack: Array[Float32, 4] = [Float32(1), 1, 1, 1]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -1233,6 +1281,75 @@ def main() raises:
         )
 
     test_cubic_uint8_matches_float32()
+
+    def test_cubic_uint8_matches_pillow() raises:
+        print("== test_cubic_uint8_matches_pillow")
+        # Pillow's `Image.resize(size, Image.Resampling.BICUBIC)` of these
+        # grayscale images. The hard-edged upscale overshoots [0, 255]
+        # between the passes, so a resize that rounds once instead misses
+        # Pillow on 45 of its 99 pixels, by up to 18 levels.
+        # fmt: off
+        var up_src: List[UInt8] = [
+            0, 255, 0, 255, 128,
+            255, 0, 255, 0, 64,
+            0, 0, 255, 255, 200,
+            30, 255, 255, 0, 0,
+        ]
+        var up_want: List[UInt8] = [
+            0, 19, 191, 255, 107, 0, 98, 255, 248, 156, 120,
+            32, 59, 170, 221, 114, 29, 108, 215, 199, 135, 109,
+            173, 163, 121, 100, 132, 155, 128, 86, 76, 79, 79,
+            253, 216, 69, 0, 146, 255, 161, 15, 7, 56, 73,
+            143, 117, 19, 0, 139, 255, 216, 135, 121, 137, 142,
+            8, 6, 0, 8, 139, 255, 255, 253, 233, 207, 196,
+            0, 8, 63, 109, 186, 255, 218, 178, 159, 137, 128,
+            5, 50, 153, 228, 242, 255, 156, 45, 29, 25, 24,
+            10, 65, 190, 255, 255, 255, 131, 0, 0, 0, 0,
+        ]
+        var down_want: List[UInt8] = [
+            92, 136, 113, 91,
+            122, 111, 135, 124,
+            155, 133, 110, 154,
+        ]
+        # fmt: on
+        var up = _resize_cubic_u8(
+            up_src, IndexList[4](1, 4, 5, 1), IndexList[4](1, 9, 11, 1)
+        )
+        for i in range(len(up_want)):
+            assert_equal(up[i], up_want[i])
+        var down_src = List[UInt8]()
+        for v in _pattern(7 * 9):
+            down_src.append(v.cast[.uint8]())
+        var down = _resize_cubic_u8(
+            down_src, IndexList[4](1, 7, 9, 1), IndexList[4](1, 3, 4, 1)
+        )
+        for i in range(len(down_want)):
+            assert_equal(down[i], down_want[i])
+
+    test_cubic_uint8_matches_pillow()
+
+    def test_cubic_uint8_rounds_each_pass() raises:
+        print("== test_cubic_uint8_rounds_each_pass")
+        # Upscales and downscales of both axes, more rows than a W pass
+        # transposes at a time, and a size that does not change.
+        var shapes: List[Tuple[IndexList[4], IndexList[4]]] = [
+            (IndexList[4](2, 21, 37, 3), IndexList[4](2, 9, 16, 3)),
+            (IndexList[4](2, 13, 11, 3), IndexList[4](2, 40, 29, 3)),
+            (IndexList[4](1, 70, 9, 4), IndexList[4](1, 33, 30, 4)),
+            (IndexList[4](3, 40, 61, 1), IndexList[4](3, 17, 29, 1)),
+            (IndexList[4](1, 5, 7, 3), IndexList[4](1, 5, 7, 3)),
+        ]
+        for shape in shapes:
+            _check_cubic_uint8_passes(shape[0], shape[1])
+        var same = IndexList[4](1, 5, 7, 3)
+        var src = List[UInt8]()
+        for v in _pattern(same.flattened_length()):
+            src.append(v.cast[.uint8]())
+        var copied = _resize_cubic_u8(src, same, same)
+        for i in range(len(src)):
+            assert_equal(copied[i], src[i])
+
+    test_cubic_uint8_rounds_each_pass()
 
     def test_cubic_fast_paths_match_naive() raises:
         print("== test_cubic_fast_paths_match_naive")

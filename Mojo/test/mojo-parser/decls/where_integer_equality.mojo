@@ -131,3 +131,24 @@ struct Keyed[K: KeyElement]:
 def infer_parent_through_conjunction():
     # CHECK: lit.call @{{.*}}from_holder
     Keyed.from_holder(IntHolder())
+
+
+# // -----
+
+
+struct Boxed[n: Int]:
+    pass
+    
+
+def needs_boxed_one[n: Int]() where Boxed[n] == Boxed[1]:
+    pass
+
+
+# COM: A parameter nested in a struct type's bindings keeps the type value
+# COM: symbolic, so `Boxed[n] == Boxed[1]` must not fold to False at the
+# COM: declaration; it holds once `n` is bound to 1.
+# CHECK-LABEL: lit.fn @"nested_param_type_identity
+def nested_param_type_identity():
+    # CHECK: lit.call tail @{{.*}}needs_boxed_one
+    needs_boxed_one[1]()
+    

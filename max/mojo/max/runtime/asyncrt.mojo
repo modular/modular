@@ -35,7 +35,7 @@ def parallelism_level(ctx: Optional[DeviceContext.CPU]) -> Int:
 
     if case .Some(ctx) = ctx:
         try:
-            return ctx.get_attribute(DeviceAttribute.PARALLELISM_LEVEL)
+            return ctx.device().get_attribute(DeviceAttribute.PARALLELISM_LEVEL)
         except:
             pass
     return std_parallelism_level()

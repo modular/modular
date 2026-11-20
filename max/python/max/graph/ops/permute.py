@@ -13,7 +13,7 @@
 """Op implementation for permute."""
 
 import numpy as np
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from ..graph import Graph
@@ -86,7 +86,7 @@ def permute(x: TensorValueLike, dims: list[int]) -> TensorValue:
     new_shape = [shape[d] for d in dims]
 
     return Graph.current._add_op_generated(
-        rmo.MoTransposeOp,
+        mo.TransposeOp,
         TensorType(dtype=x.dtype, shape=new_shape, device=x.device),
         x,
         constant(np.array(dims), DType.int64, DeviceRef.CPU()),

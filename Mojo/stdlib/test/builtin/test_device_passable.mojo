@@ -13,11 +13,18 @@
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import OptionalReg
+from std.sys import CompilationTarget, align_of, size_of
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from std.utils import StaticTuple
 from std.utils.coord import ComptimeInt, Coord, Idx
 
-from max.gpu.host.device_context import DefaultDeviceTypeEncoder
+from max.gpu.host import DefaultDeviceTypeEncoder
+from max.gpu.host._launch_args import (
+    DeviceArgAcceptor,
+    SlotLayout,
+    _acceptor_slot,
+    _declared_slot,
+)
 
 
 # A DevicePassable type whose `_to_device_type` scales the encoded value, so a
@@ -117,7 +124,7 @@ struct DevicePassableCoordBox(
 # read back through the host struct type.
 def test_encode_fields_dispatches_device_passable_field() raises:
     var box = ScaledIntBox(scaled=ScaledInt(raw=7), tag=99)
-    var allocation = alloc[ScaledIntBox]({count = 1}).into_managed()
+    var allocation = alloc[ScaledIntBox]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(box, buf.unsafe_bitcast[NoneType]())
@@ -131,7 +138,7 @@ def test_encode_fields_recurses_into_nested_composite() raises:
     var boxbox = ScaledIntBoxBox(
         box=ScaledIntBox(scaled=ScaledInt(raw=3), tag=10), tag2=200
     )
-    var allocation = alloc[ScaledIntBoxBox]({count = 1}).into_managed()
+    var allocation = alloc[ScaledIntBoxBox]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(boxbox, buf.unsafe_bitcast[NoneType]())
@@ -145,7 +152,7 @@ def test_encode_fields_recurses_into_nested_composite() raises:
 
 def test_encode_fields_bit_copies_plain_fields() raises:
     var pair = PlainPair(a=11, b=22)
-    var allocation = alloc[PlainPair]({count = 1}).into_managed()
+    var allocation = alloc[PlainPair]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(pair, buf.unsafe_bitcast[NoneType]())
@@ -158,7 +165,7 @@ def test_encode_fields_bit_copies_plain_fields() raises:
 # encoded buffer is read back through that device type.
 def test_encode_static_tuple_dispatches_device_passable_element() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5))
-    var allocation = alloc[StaticTuple[Int32, 2]]({count = 1}).into_managed()
+    var allocation = alloc[StaticTuple[Int32, 2]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_static_tuple(tup, buf.unsafe_bitcast[NoneType]())
@@ -170,7 +177,7 @@ def test_encode_static_tuple_dispatches_device_passable_element() raises:
 
 def test_static_tuple_to_device_type_dispatches_elements() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=6), ScaledInt(raw=7))
-    var allocation = alloc[StaticTuple[Int32, 2]]({count = 1}).into_managed()
+    var allocation = alloc[StaticTuple[Int32, 2]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `_to_device_type` now encodes element-wise instead of bit-copying.
@@ -181,7 +188,7 @@ def test_static_tuple_to_device_type_dispatches_elements() raises:
 
 def test_encode_static_tuple_identity_scalar() raises:
     var tup = StaticTuple[Int32, 3](10, 20, 30)
-    var allocation = alloc[StaticTuple[Int32, 3]]({count = 1}).into_managed()
+    var allocation = alloc[StaticTuple[Int32, 3]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `Int32` is `DevicePassable` with an identity `device_type`, so
@@ -197,7 +204,7 @@ def test_encode_static_tuple_bit_copies_plain_element() raises:
         PlainPair(a=1, b=2), PlainPair(a=3, b=4)
     )
     var allocation = alloc[StaticTuple[PlainPair, 2]](
-        {count = 1}
+        {length = 1}
     ).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
@@ -216,7 +223,7 @@ def test_encode_static_tuple_recurses_into_composite_element() raises:
         ScaledIntBox(scaled=ScaledInt(raw=5), tag=2),
     )
     var allocation = alloc[StaticTuple[ScaledIntBox, 2]](
-        {count = 1}
+        {length = 1}
     ).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
@@ -232,7 +239,7 @@ def test_encode_static_tuple_recurses_into_composite_element() raises:
 
 def test_encode_fields_delegates_static_tuple() raises:
     var tup = StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5))
-    var allocation = alloc[StaticTuple[Int32, 2]]({count = 1}).into_managed()
+    var allocation = alloc[StaticTuple[Int32, 2]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `encode_fields` used to `abort` on `StaticTuple`; it now delegates to
@@ -247,7 +254,7 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
         tup=StaticTuple[ScaledInt, 2](ScaledInt(raw=4), ScaledInt(raw=5)),
         tag=42,
     )
-    var allocation = alloc[TupleBox]({count = 1}).into_managed()
+    var allocation = alloc[TupleBox]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_fields(box, buf.unsafe_bitcast[NoneType]())
@@ -263,7 +270,7 @@ def test_encode_fields_dispatches_static_tuple_field() raises:
 # encoded buffer is read back through that device type.
 def test_encode_array_dispatches_device_passable_element() raises:
     var arr: Array[ScaledInt, 2] = [ScaledInt(raw=4), ScaledInt(raw=5)]
-    var allocation = alloc[Array[Int32, 2]]({count = 1}).into_managed()
+    var allocation = alloc[Array[Int32, 2]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     encoder.encode_array(arr, buf.unsafe_bitcast[NoneType]())
@@ -275,7 +282,7 @@ def test_encode_array_dispatches_device_passable_element() raises:
 
 def test_inline_array_to_device_type_dispatches_elements() raises:
     var arr: Array[ScaledInt, 2] = [ScaledInt(raw=6), ScaledInt(raw=7)]
-    var allocation = alloc[Array[Int32, 2]]({count = 1}).into_managed()
+    var allocation = alloc[Array[Int32, 2]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `_to_device_type` now encodes element-wise instead of bit-copying.
@@ -286,7 +293,7 @@ def test_inline_array_to_device_type_dispatches_elements() raises:
 
 def test_encode_array_identity_scalar() raises:
     var arr: Array[Int32, 3] = [10, 20, 30]
-    var allocation = alloc[Array[Int32, 3]]({count = 1}).into_managed()
+    var allocation = alloc[Array[Int32, 3]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # `Int32` is `DevicePassable` with an identity `device_type`, so
@@ -301,7 +308,7 @@ def test_encode_fields_bit_copies_coord_field() raises:
     var box = ScaledIntCoordBox(
         scaled=ScaledInt(raw=7), dims=Coord[Int, Int](Int(3), Int(4))
     )
-    var allocation = alloc[ScaledIntCoordBox]({count = 1}).into_managed()
+    var allocation = alloc[ScaledIntCoordBox]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # Without the `_RegTuple` guard in `_contains_device_passable_field`,
@@ -312,13 +319,13 @@ def test_encode_fields_bit_copies_coord_field() raises:
     assert_equal(buf[].scaled.raw, 14)
     # `dims` is a `Coord` (opaque `_RegTuple` storage); it is bit-copied, so its
     # values are preserved.
-    assert_equal(Int(buf[].dims[0].value()), 3)
-    assert_equal(Int(buf[].dims[1].value()), 4)
+    assert_equal(Int(buf[].dims[0]), 3)
+    assert_equal(Int(buf[].dims[1]), 4)
 
 
 def test_encode_fields_bit_copies_bool_field() raises:
     var box = ScaledIntBoolBox(scaled=ScaledInt(raw=9), flag=True)
-    var allocation = alloc[ScaledIntBoolBox]({count = 1}).into_managed()
+    var allocation = alloc[ScaledIntBoolBox]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # Without the `Bool` guard in `_contains_device_passable_field`,
@@ -335,15 +342,15 @@ def test_to_device_type_encodes_fields_with_coord() raises:
     var box = DevicePassableCoordBox(
         scaled=ScaledInt(raw=8), dims=Coord[Int, Int](Int(5), Int(6))
     )
-    var allocation = alloc[DevicePassableCoordBox]({count = 1}).into_managed()
+    var allocation = alloc[DevicePassableCoordBox]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     # Drives the same path through `_to_device_type` -> `encode_fields`, the way
     # a real composite would encode itself to the device.
     box._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_equal(buf[].scaled.raw, 16)
-    assert_equal(Int(buf[].dims[0].value()), 5)
-    assert_equal(Int(buf[].dims[1].value()), 6)
+    assert_equal(Int(buf[].dims[0]), 5)
+    assert_equal(Int(buf[].dims[1]), 6)
 
 
 def test_coord_is_device_passable() raises:
@@ -355,24 +362,24 @@ def test_coord_is_device_passable() raises:
 
 def test_coord_to_device_type_bit_copies() raises:
     var c = Coord[Int, Int](Int(3), Int(4))
-    var allocation = alloc[Coord[Int, Int]]({count = 1}).into_managed()
+    var allocation = alloc[Coord[Int, Int]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_equal(Int(buf[][0].value()), 3)
-    assert_equal(Int(buf[][1].value()), 4)
+    assert_equal(Int(buf[][0]), 3)
+    assert_equal(Int(buf[][1]), 4)
 
 
 # The static (zero-sized) dim lives entirely in the type, so the bit-copy
 # carries only the runtime leaf yet reads back with both dims intact.
 def test_coord_to_device_type_mixed_static_dynamic() raises:
     var c = Coord[ComptimeInt[7], Int64](Idx[7], Int64(9))
-    var allocation = alloc[type_of(c)]({count = 1}).into_managed()
+    var allocation = alloc[type_of(c)]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     c._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_equal(Int(buf[][0].value()), 7)
-    assert_equal(Int(buf[][1].value()), 9)
+    assert_equal(Int(buf[][0]), 7)
+    assert_equal(Int(buf[][1]), 9)
 
 
 def test_unsafe_device_type_converts_to_safe_pointer_param() raises:
@@ -405,17 +412,17 @@ def test_optional_device_type_is_parametric() raises:
 
 def test_optional_encodes_engaged_payload() raises:
     var opt = Optional[ScaledInt](ScaledInt(21))
-    var allocation = alloc[Optional[Int32]]({count = 1}).into_managed()
+    var allocation = alloc[Optional[Int32]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_true(Bool(buf[]))
-    assert_equal(buf[], Optional[Int32](42))
+    assert_equal(buf[], 42)
 
 
 def test_optional_encodes_none() raises:
     var opt = Optional[ScaledInt]()
-    var allocation = alloc[Optional[Int32]]({count = 1}).into_managed()
+    var allocation = alloc[Optional[Int32]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     buf.unsafe_write(Optional[Int32](Int32(7)))
     var encoder = DefaultDeviceTypeEncoder()
@@ -425,17 +432,18 @@ def test_optional_encodes_none() raises:
 
 def test_optional_reg_encodes_engaged_payload() raises:
     var opt = OptionalReg[ScaledInt](ScaledInt(21))
-    var allocation = alloc[OptionalReg[Int32]]({count = 1}).into_managed()
+    var allocation = alloc[OptionalReg[Int32]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[]))
-    assert_equal(buf[].value(), 42)
+    __guard case .Some(value) = buf[] else:
+        raise Error("expected an engaged OptionalReg")
+    assert_equal(value, 42)
 
 
 def test_optional_reg_encodes_none() raises:
     var opt = OptionalReg[ScaledInt]()
-    var allocation = alloc[OptionalReg[Int32]]({count = 1}).into_managed()
+    var allocation = alloc[OptionalReg[Int32]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     buf.unsafe_write(OptionalReg[Int32](Int32(7)))
     var encoder = DefaultDeviceTypeEncoder()
@@ -446,12 +454,13 @@ def test_optional_reg_encodes_none() raises:
 # An identity payload collapses to `Self` and reads back unchanged.
 def test_optional_reg_identity_payload_round_trips() raises:
     var opt = OptionalReg[Int32](Int32(7))
-    var allocation = alloc[OptionalReg[Int32]]({count = 1}).into_managed()
+    var allocation = alloc[OptionalReg[Int32]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[]))
-    assert_equal(buf[].value(), 7)
+    __guard case .Some(value) = buf[] else:
+        raise Error("expected an engaged OptionalReg")
+    assert_equal(value, 7)
 
 
 # A niche-optimized optional (a pointer payload) keeps its layout on both
@@ -461,12 +470,11 @@ def test_optional_niche_payload_round_trips() raises:
     var ptr = Pointer(to=backing).as_unsafe_any_origin()
     comptime P = Pointer[Int32, MutAnyOrigin]
     comptime assert Optional[P].device_type == Optional[P]
-    var allocation = alloc[Optional[P]]({count = 1}).into_managed()
+    var allocation = alloc[Optional[P]]({length = 1}).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     Optional[P](ptr)._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[]))
-    assert_equal(buf[].value()[], 3)
+    assert_equal(buf[].copied(), 3)
     Optional[P]()._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_false(Bool(buf[]))
 
@@ -522,14 +530,116 @@ struct OptionalScaledIntBox(
 def test_optional_reg_field_encodes_payload() raises:
     var box = OptionalScaledIntBox(OptionalReg[ScaledInt](ScaledInt(5)), 9)
     var allocation = alloc[OptionalScaledIntBoxDevice](
-        {count = 1}
+        {length = 1}
     ).into_managed()
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     box._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    assert_true(Bool(buf[].maybe))
-    assert_equal(buf[].maybe.value(), 10)
+    __guard case .Some(value) = buf[].maybe else:
+        raise Error("expected an engaged OptionalReg")
+    assert_equal(value, 10)
     assert_equal(buf[].tag, 9)
+
+
+struct _AcceptsInt32(DeviceArgAcceptor, TrivialRegisterPassable):
+    """Stands in for a device-only argument type the host can't build, which
+    takes an `Int32` host value."""
+
+    @staticmethod
+    def _accepts_device_arg[ActualT: DevicePassable]() -> Bool:
+        return TypeList.of[Int32]().contains[ActualT]()
+
+    @staticmethod
+    def _device_arg_slot[
+        ActualT: DevicePassable, target: CompilationTarget
+    ]() -> SlotLayout:
+        return SlotLayout.of[Int32, target]()
+
+
+# A register-passable aggregate that is not `DevicePassable`; the validator
+# reaches its fields through the `RegisterPassable` walk.
+@fieldwise_init
+struct _Holder[T: TrivialRegisterPassable](TrivialRegisterPassable):
+    var pad: Int8
+    var held: Self.T
+
+
+# A `DevicePassable` aggregate that encodes field by field; the validator
+# walks its `device_type`.
+@fieldwise_init
+struct _Wrapper[T: TrivialRegisterPassable](
+    DevicePassable, TrivialRegisterPassable
+):
+    comptime device_type: AnyType = Self
+    var inner: Self.T
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "_Wrapper"
+
+
+comptime _target = CompilationTarget.current()
+
+
+def _assert_slot_matches[Host: AnyType, Declared: AnyType]():
+    """Asserts `Host` may fill `Declared` and the slot is `Host`'s own layout.
+    """
+    comptime slot = _declared_slot[Host, Declared, _target]()
+    comptime __guard case .Some(layout) = slot else:
+        comptime assert False, "expected a declared slot"
+    comptime assert layout.size == size_of[Host]()
+    comptime assert layout.align == align_of[Host]()
+
+
+def test_acceptor_slot_asks_the_declared_type() raises:
+    comptime assert _acceptor_slot[_AcceptsInt32, Int32, _target]()
+    comptime assert not _acceptor_slot[_AcceptsInt32, Float32, _target]()
+    # A declared type that is not a `DeviceArgAcceptor` accepts nothing extra.
+    comptime assert not _acceptor_slot[Int32, Int32, _target]()
+
+
+def test_declared_slot_of_same_or_encodable_type() raises:
+    _assert_slot_matches[Int32, Int32]()
+    # `ScaledInt` encodes to `Int32`, so the slot is the declared type's.
+    comptime slot = _declared_slot[ScaledInt, Int32, _target]()
+    comptime __guard case .Some(layout) = slot else:
+        comptime assert False, "expected a declared slot"
+    comptime assert layout.size == size_of[Int32]()
+    comptime assert not _declared_slot[Int32, Float32, _target]()
+
+
+def test_declared_slot_of_accepted_argument() raises:
+    comptime assert not Int32._is_implicitly_encodable_to[_AcceptsInt32]()
+    _assert_slot_matches[Int32, _AcceptsInt32]()
+    comptime assert not _declared_slot[Float32, _AcceptsInt32, _target]()
+
+
+def test_declared_slot_walks_register_passable_fields() raises:
+    # `_Holder[Int32]` neither encodes to nor is accepted by
+    # `_Holder[_AcceptsInt32]`; its fields pair up under the acceptor rule, and
+    # the slot carries the padding between them.
+    _assert_slot_matches[_Holder[Int32], _Holder[_AcceptsInt32]]()
+    comptime assert not _declared_slot[
+        _Holder[Float32], _Holder[_AcceptsInt32], _target
+    ]()
+
+
+def test_declared_slot_walks_device_passable_fields() raises:
+    comptime assert not _Wrapper[Int32]._is_implicitly_encodable_to[
+        _Wrapper[_AcceptsInt32]
+    ]()
+    _assert_slot_matches[_Wrapper[Int32], _Wrapper[_AcceptsInt32]]()
+    _assert_slot_matches[
+        _Wrapper[_Wrapper[Int32]], _Wrapper[_Wrapper[_AcceptsInt32]]
+    ]()
+    comptime assert not _declared_slot[
+        _Wrapper[Float32], _Wrapper[_AcceptsInt32], _target
+    ]()
 
 
 def main() raises:

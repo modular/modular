@@ -87,7 +87,7 @@ kgen.generator @dtype_params() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{get_sizeof should return index}}
+// expected-error @below {{get_sizeof should return !kgen.scalar<index>}}
 "someop"() {a = #kgen.param.expr<get_sizeof, #kgen.type<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
@@ -104,7 +104,7 @@ kgen.generator @dtype_params() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{get_alignof should return index}}
+// expected-error @below {{get_alignof should return !kgen.scalar<index>}}
 "someop"() {a = #kgen.param.expr<get_alignof, #kgen.type<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
@@ -135,32 +135,6 @@ kgen.generator @mutually_recursive() {
   // expected-note @below {{parameter "r2" is defined here, which references the expression:}}
   kgen.param.declare r2 = <r1>
 
-  hlcf.return
-}
-
-// -----
-
-// expected-error @below {{cyclic reference between expressions defining and using parameters}}
-kgen.generator @use_itself() {
-  // expected-note @below {{parameter "F" is defined here, which references itself}}
-  kgen.param.declare.region F = (){
-    kgen.call_param[() -> (): F]()
-    hlcf.return
-  }
-  hlcf.return
-}
-
-// -----
-
-// expected-error @below {{cyclic reference between expressions defining and using parameters}}
-kgen.generator @region_cycle() {
-  // expected-note @below {{parameter "F" is defined here, which references the first expression}}
-  kgen.param.declare.region F = () -> index {
-    %0 = kgen.param.constant = <N>
-    hlcf.return %0 : index
-  }
-  // expected-note @below {{parameter "N" is defined here, which references the expression:}}
-  kgen.param.declare N = <apply(:() -> index F)>
   hlcf.return
 }
 
@@ -225,30 +199,6 @@ kgen.func @call_param_in_func(%arg0: si32) -> si32 {
 
 // -----
 
-kgen.generator @bar<F>() {
-  kgen.param.declare.region fn = () {
-    // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "Q"}}
-    %0 = kgen.param.constant = <Q>
-    hlcf.return
-  }
-  hlcf.return
-}
-
-// -----
-
-kgen.generator @doIt<SomeParam>() {
-  kgen.param.declare.region fn = () {
-    // expected-error @below {{'kgen.param.constant' op reference to parameter "SomeOtherParam" with incorrect type 'index'}}
-    %0 = kgen.param.constant = <SomeOtherParam>
-    // expected-note @below {{parameter defined with type '!kgen.dtype'}}
-    kgen.param.declare SomeOtherParam : dtype = <f32>
-    hlcf.return
-  }
-  hlcf.return
-}
-
-// -----
-
 kgen.generator @apply_error() {
   // expected-error @below {{custom op 'kgen.param.declare' expected a func type generator type for 'apply'}}
   kgen.param.declare fn = <apply(5, 5)>
@@ -308,23 +258,6 @@ kgen.func @no_return() {
 
 // -----
 
-// expected-error @below {{cyclic reference between expressions}}
-kgen.generator @cyclicIf() {
-  kgen.param.declare cond_var: i1 = <1>
-  // expected-note @below {{parameter "M2" is defined here}}
-  kgen.param.declare.region M2 = () -> index {
-    kgen.param.constant = <N>
-    hlcf.unreachable
-  }
-  // This forwards the output parameter of the if statement back around to N,
-  // creating a cycle.
-  // expected-note @below {{parameter "N" is defined here}}
-  kgen.param.declare N = <apply(:() -> index M2)>
-  hlcf.return
-}
-
-// -----
-
 kgen.generator @declareWrongType() {
   // expected-error @below {{'kgen.param.declare' op declares a parameter with type 'index' but parameter expression has type 'i32'}}
   "kgen.param.declare"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
@@ -341,37 +274,6 @@ kgen.generator @duplicate_decl() {
   hlcf.return
 }
 
-// -----
-
-// expected-note @below {{previous declaration here}}
-kgen.generator @name_shadowing_1<a>() {
-  // expected-error @below {{redeclaration of parameter "a"}}
-  kgen.param.declare.region fn = <a>() {
-    hlcf.unreachable
-  }
-  hlcf.return
-}
-
-// -----
-
-kgen.generator @name_shadowing_2<a>() {
-  // expected-note @below {{previous declaration here}}
-  kgen.param.declare b = <a>
-  kgen.param.declare.region fn = () {
-    // expected-error @below {{redeclaration of parameter "b"}}
-    kgen.param.declare b = <a>
-    hlcf.unreachable
-  }
-  hlcf.return
-}
-
-// -----
-
-kgen.func @stage_closure() {
-  // expected-error @below {{staged closures cannot have parameters}}
-  %0 = kgen.stage_closure = <n : ui32>() capturing -> index {
-  } { name = "k" }
-}
 
 // -----
 
@@ -408,6 +310,34 @@ kgen.generator @variant_constant<value: i32>() {
 
 // expected-error @below {{'byref_result' argument must be the last argument}}
 kgen.func @invalid(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !kgen.none {
+  hlcf.unreachable
+}
+
+// -----
+
+// expected-error @below {{element #1 of pack argument #0 should be a `!kgen.pointer` but got: 'index'}}
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>, index) isParamPack>> pack_mut) {
+  hlcf.unreachable
+}
+
+// -----
+
+// expected-error @below {{element #0 of pack argument #0 should be a `!kgen.pointer` but got: '!kgen.struct<(pointer<none>)>'}}
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(struct<(pointer<none>)>) isParamPack>> pack_imm_mem) {
+  hlcf.unreachable
+}
+
+// -----
+
+// expected-error @below {{argument #0 with convention 'pack_imm_mem' in func type should be a `!kgen.pointer`}}
+kgen.func @invalid(%arg0: !kgen.struct<(pointer<index>) isParamPack> pack_imm_mem) {
+  hlcf.unreachable
+}
+
+// -----
+
+// expected-error @below {{func type cannot have more than one pack argument}}
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_imm_mem, %arg1: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) {
   hlcf.unreachable
 }
 
@@ -524,7 +454,7 @@ kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.struct_inst<"Bar"[el
 kgen.generator @bind_params_discharged_mask_size() {
   // expected-error @+2 {{bind_params discharged mask has size 1 but the generator has 2 body constraints}}
   kgen.param.declare bad: index =
-    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>}>index> ?, 1 | "1">>
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>}>index> *?, 1 | "1">>
   hlcf.return
 }
 
@@ -572,5 +502,29 @@ kgen.generator @get_target_plugin_type_mismatch() {
       opaque_plugin = #kgen.param_list<1, 2> : !kgen.param_list<index>>
       : !kgen.target, :!kgen.param_list<!kgen.type> #kgen.param_list<f16>>
       : !kgen.param_list<!kgen.type>>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_wrong_count(%a: !kgen.struct<(index)>, %b: !kgen.struct<(f32, f64)>) {
+  // expected-error @below {{'kgen.struct.concat' op operands have 3 elements but the result has 2}}
+  %0 = kgen.struct.concat(%a, %b) : !kgen.struct<(index)>, !kgen.struct<(f32, f64)> -> !kgen.struct<(index, f32)>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_wrong_type(%a: !kgen.struct<(index)>, %b: !kgen.struct<(f32, f64)>) {
+  // expected-error @below {{'kgen.struct.concat' op element #2 has type 'f64' but the result has 'f32'}}
+  %0 = kgen.struct.concat(%a, %b) : !kgen.struct<(index)>, !kgen.struct<(f32, f64)> -> !kgen.struct<(index, f32, f32)>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_no_operands() {
+  // expected-error @below {{'kgen.struct.concat' op expected at least one operand}}
+  %0 = "kgen.struct.concat"() : () -> !kgen.struct<()>
   hlcf.return
 }

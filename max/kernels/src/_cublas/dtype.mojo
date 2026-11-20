@@ -14,29 +14,6 @@
 from std.os import abort
 
 
-struct Property(Equatable, TrivialRegisterPassable, Writable):
-    var _value: Int32
-    comptime MAJOR_VERSION = Self(0)
-    comptime MINOR_VERSION = Self(1)
-    comptime PATCH_LEVEL = Self(2)
-
-    def __init__(out self, value: Int):
-        self._value = Int32(value)
-
-    @inline(.never)
-    def write_to(self, mut writer: Some[Writer]):
-        if self == Self.MAJOR_VERSION:
-            return writer.write_string("MAJOR_VERSION")
-        if self == Self.MINOR_VERSION:
-            return writer.write_string("MINOR_VERSION")
-        if self == Self.PATCH_LEVEL:
-            return writer.write_string("PATCH_LEVEL")
-        abort("invalid Property entry")
-
-    def __int__(self) -> Int:
-        return Int(self._value)
-
-
 struct DataType(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime R_16F = Self(2)

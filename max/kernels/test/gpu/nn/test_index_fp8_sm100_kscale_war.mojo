@@ -51,7 +51,6 @@ from nn.attention.gpu.sparse_index_fp8_sm100 import (
     fp8_index_score_sm100,
 )
 from nn.attention.mha_operand import MHAOperand, RaggedMHAOperand
-from std.sys.info import _has_blackwell_tcgen05
 from std.testing import assert_equal
 
 comptime NUM_HEADS = 32
@@ -122,14 +121,8 @@ def test_kscale_war(
     var total_k = batch_size * num_keys
     var n_out = total_q * num_keys
     print(
-        "test_kscale_war batch",
-        batch_size,
-        "seq_len",
-        seq_len,
-        "cache_len",
-        cache_len,
-        "runs",
-        runs,
+        t"test_kscale_war batch {batch_size} seq_len {seq_len} cache_len"
+        t" {cache_len} runs {runs}"
     )
 
     var q_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
@@ -288,20 +281,8 @@ def test_kscale_war(
                     if shown < 4:
                         shown += 1
                         print(
-                            "    b",
-                            b,
-                            "tok",
-                            t,
-                            "key",
-                            k,
-                            "got",
-                            g,
-                            "want",
-                            want,
-                            "| scale used",
-                            used,
-                            "own",
-                            own,
+                            t"    b {b} tok {t} key {k} got {g} want {want} |"
+                            t" scale used {used} own {own}"
                         )
         var hist = String()
         for i in range(17):
@@ -310,14 +291,8 @@ def test_kscale_war(
         if by_offset[17] > 0:
             hist += String(" unmatched:", by_offset[17])
         print(
-            "  run",
-            run,
-            "live slots off",
-            bad_live,
-            "dead slots written",
-            bad_dead,
-            "| scale taken from" if bad_live > 0 else "",
-            hist,
+            t"  run {run} live slots off {bad_live} dead slots written"
+            t""" {bad_dead} {"| scale taken from" if bad_live > 0 else ""} {hist}"""
         )
         bad_total += bad_live + bad_dead
     assert_equal(bad_total, 0, "slots scored with another tile's k-scales")
@@ -333,9 +308,9 @@ def test_kscale_war(
 
 
 def main() raises:
-    comptime if not _has_blackwell_tcgen05():
-        return
     seed(7)
     with DeviceContext() as ctx:
+        if not ctx.target._has_blackwell_tcgen05():
+            return
         test_kscale_war(4, 1024, 4096, 4, ctx)
         test_kscale_war(1, 8192, 0, 4, ctx)

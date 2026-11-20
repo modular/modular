@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 from max.driver import Accelerator, Buffer, SymmetricPool
 from max.dtype import DType
-from max.nn.comm import MulticastPool
+from max.nn.legacy.comm import MulticastPool
 
 # Deliberately unaligned so the driver's rounding is exercised.
 POOL_BYTES = (1 << 20) + 4096

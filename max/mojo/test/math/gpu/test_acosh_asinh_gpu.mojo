@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import acosh, asinh, exp, inf, isinf, isnan, nan
+from std.math import acosh, align_up, asinh, exp, inf, isinf, isnan, nan
 from std.math.math import _call_libm, _log_accurate
 from std.memory import bitcast
-from std.sys import bit_width_of, default_accelerator, simd_width_of
+from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer, default_accelerator
 from std.testing import assert_true, TestSuite
 
 from std.utils.coord import Coord
@@ -209,7 +209,7 @@ def _run[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var result: type_of(val)
         comptime if is_acosh:
@@ -218,7 +218,7 @@ def _run[
             result = asinh(val)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, result)
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var worst = 0
     var worst_x = Scalar[dtype](0)
@@ -316,7 +316,7 @@ def _check_hard_cases[
     correctly rounded results (mpmath), to within 1 ulp on GPU and host."""
     comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     var n = len(inputs)
-    var padded = (n + pack_size - 1) // pack_size * pack_size
+    var padded = align_up(n, pack_size)
     var in_device = ctx.enqueue_create_buffer[dtype](padded)
     var out_device = ctx.enqueue_create_buffer[dtype](padded)
     with in_device.map_to_host() as in_host:
@@ -330,7 +330,7 @@ def _check_hard_cases[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var result: type_of(val)
         comptime if is_acosh:
@@ -339,7 +339,7 @@ def _check_hard_cases[
             result = asinh(val)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, result)
 
-    elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+    elementwise[pack_size](func, Coord(padded), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(n):
@@ -385,7 +385,7 @@ def _check_log_subnormals[
 ) raises where dtype.is_floating_point():
     comptime pack_size = 4
     var n = len(inputs)
-    var padded = (n + pack_size - 1) // pack_size * pack_size
+    var padded = align_up(n, pack_size)
     var in_device = ctx.enqueue_create_buffer[dtype](padded)
     var out_device = ctx.enqueue_create_buffer[dtype](padded)
     with in_device.map_to_host() as in_host:
@@ -399,13 +399,13 @@ def _check_log_subnormals[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, _log_accurate(val)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+    elementwise[pack_size](func, Coord(padded), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(n):

@@ -11,7 +11,7 @@ kgen.func @zero_starting_range() {
   // CHECK-NEXT:   [[V:%.*]] = index.sub %idx2, %arg0
   // CHECK-NEXT:   kgen.call @foo([[V]]) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
@@ -25,7 +25,7 @@ kgen.func @zero_starting_range() {
     %2 = index.sub %idx2, %arg0
     kgen.call @foo(%2) : (index) -> ()
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -38,7 +38,7 @@ kgen.func @sequential_range() {
   // CHECK:        [[IDX:%.*]] = index.add %arg0, %idx1
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx1 : index) {
     %0 = index.cmp slt(%arg0, %idx4)
@@ -51,7 +51,7 @@ kgen.func @sequential_range() {
     %1 = index.add %arg0, %idx1
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -65,7 +65,7 @@ kgen.func @strided_range() {
   // CHECK:        [[IDX:%.*]] = index.add %arg0, %idx2
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx1 : index) {
     %0 = index.cmp slt(%arg0, %idx6)
@@ -78,7 +78,7 @@ kgen.func @strided_range() {
     %1 = index.add %arg0, %idx2
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -99,9 +99,9 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT:     [[V1:%.*]] = index.add [[V0]], %arg1
   // CHECK-NEXT:     kgen.call @foo([[V1]]) : (index) -> ()
   // CHECK-NEXT:     hlcf.for.yield [induction_var ([[IDX1]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT:   } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT:   } <unrollLevel = full>
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX0]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
@@ -126,9 +126,9 @@ kgen.func @nested_unroll_loops() {
       %6 = index.add %2, %arg1
       kgen.call @foo(%6) : (index) -> ()
       hlcf.continue %5 : index
-    } {unrollLevel = #hlcf<unroll_level full>}
+    } <unrollLevel = #hlcf<unroll_level full>>
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -178,9 +178,9 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT:     kgen.call @foo([[V2]]) : (index) -> ()
   // CHECK-NEXT:     [[V3:%.*]] = index.add %arg4, %arg3
   // CHECK-NEXT:     hlcf.for.yield [induction_var ([[V4]] : index)] [retvals ([[V3]] : index)] [iterargs ()]
-  // CHECK-NEXT:   } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT:   } <unrollLevel = full>
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX0]] : index)] [retvals ([[V0]], [[V1]] : index, index)] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   %0:2 = hlcf.loop (%arg0 = %idx0 : index, %arg1 = %idx0 : index, %arg2 = %idx1 : index) -> (index, index) {
     %3 = index.cmp slt(%arg2, %idx9)
@@ -206,9 +206,9 @@ kgen.func @loop_carried_dependency() {
       kgen.call @foo(%10) : (index) -> ()
       %12 = index.add %arg3, %arg4
       hlcf.continue %12, %9 : index, index
-    } {unrollLevel = #hlcf<unroll_level full>}
+    } <unrollLevel = #hlcf<unroll_level full>>
     hlcf.continue %6, %7, %4 : index, index, index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
   hlcf.return
@@ -228,9 +228,10 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
   // CHECK-NEXT:   [[V4:%.*]] = pop.cast [[V3]] : !kgen.scalar<f32> to !kgen.scalar<index>
   // CHECK-NEXT:   [[V5:%.*]] = pop.cast_to_builtin [[V4]] : !kgen.scalar<index> to index
   // CHECK-NEXT:   [[V6:%.*]] = index.add %arg2, [[V5]]
-  // CHECK-NEXT:   [[V7:%.*]] = pop.offset %arg3[%idx1] : !kgen.pointer<scalar<f32>>
+  // CHECK-NEXT:   [[C1:%.*]] = kgen.param.constant: scalar<index> = <1>
+  // CHECK-NEXT:   [[V7:%.*]] = pop.offset %arg3[[[C1]]] : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V2]] : index)] [retvals ([[V6]] : index)] [iterargs ([[V7]] : !kgen.pointer<scalar<f32>>)]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   %1 = hlcf.loop (%arg3 = %idx10 : index, %arg1 = %0 : !kgen.pointer<scalar<f32>>, %arg2 = %idx0 : index) -> index {
     %2 = index.cmp sgt(%arg3, %idx0)
@@ -245,9 +246,10 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
     %5 = pop.cast %4 : !kgen.scalar<f32> to !kgen.scalar<index>
     %6 = pop.cast_to_builtin %5 : !kgen.scalar<index> to index
     %7 = index.add %arg2, %6
-    %8 = pop.offset %arg1[%idx1] : !kgen.pointer<scalar<f32>>
+    %offidx1 = kgen.param.constant: scalar<index> = <1>
+    %8 = pop.offset %arg1[%offidx1] : !kgen.pointer<scalar<f32>>
     hlcf.continue %3, %8, %7 : index, !kgen.pointer<scalar<f32>>, index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return %1 : index
 }
 
@@ -284,7 +286,7 @@ kgen.func @negative_step() {
   // CHECK:        [[V:%.*]] = index.add %arg0, %idx-1
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx5 : index) {
     %3 = index.cmp sgt(%arg0, %idx1)
@@ -297,7 +299,7 @@ kgen.func @negative_step() {
     %4 = index.add %arg0, %index-1
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %4 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -840,4 +842,584 @@ kgen.func @break_carries_except_payload(%end: !kgen.scalar<index>) -> !kgen.scal
     hlcf.continue "_loop_0" %4, %3#0 : !kgen.scalar<index>, !kgen.scalar<index>
   }
   hlcf.return %r : !kgen.scalar<index>
+}
+
+// -----
+
+// CHECK-LABEL: @range_loop_preserves_else
+// CHECK: hlcf.loop
+// CHECK: lit.try
+// CHECK: } except
+// CHECK: kgen.call @else_body() : () -> ()
+// CHECK: hlcf.break
+// CHECK: hlcf.return
+kgen.func @range_loop_preserves_else(%end: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  hlcf.loop "_loop_0" (%counter = %c0 : !kgen.scalar<index>) {
+    %next = pop.add %counter, %c1 : !kgen.scalar<index>
+    %done = pop.cmp eq(%counter, %end) : <1, index>
+    %current = pop.select %done, %counter, %next : !kgen.scalar<index>
+    %iter:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %done {
+        lit.try.raise "try0" %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %current, %counter : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      kgen.call @else_body() : () -> ()
+      hlcf.break "_loop_0"
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    hlcf.continue "_loop_0" %iter#0 : !kgen.scalar<index>
+  }
+  hlcf.return
+}
+
+// -----
+
+// The `eq` exit check only fires when the induction variable lands exactly
+// on the bound, which a stride wider than one can skip over, so the loop
+// stays a loop.
+// CHECK-LABEL: @eq_exit_wide_stride
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @eq_exit_wide_stride() {
+  %idx0 = index.constant 0
+  %idx4 = index.constant 4
+  %idx2 = index.constant 2
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %0 = index.cmp eq(%arg0, %idx4)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.add %arg0, %idx2
+    kgen.call @foo(%arg0) : (index) -> ()
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The same shape with a unit stride raises to a half-open loop.
+// CHECK-LABEL: @eq_exit_unit_stride
+// CHECK: hlcf.for [%idx0 to %idx4 step %idx1 slt add] (%arg0 = %idx0 : index) {
+// CHECK:        [[IDX:%.*]] = index.add %arg0, %idx1
+// CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
+// CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
+kgen.func @eq_exit_unit_stride() {
+  %idx0 = index.constant 0
+  %idx4 = index.constant 4
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %0 = index.cmp eq(%arg0, %idx4)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.add %arg0, %idx1
+    kgen.call @foo(%arg0) : (index) -> ()
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The select's condition is not the `hlcf.if` condition here, so the stride
+// matcher must pick the next-iter arm out of the select's arms.
+// CHECK-LABEL: @select_arms_lookthrough
+// CHECK: hlcf.for [{{.*}} to {{.*}} step {{.*}} slt add]
+kgen.func @select_arms_lookthrough(%ub: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+
+  hlcf.loop (%arg0 = %c0 : !kgen.scalar<index>) {
+    %lt = pop.cmp lt(%arg0, %ub) : <1, index>
+    hlcf.if %lt {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.add %arg0, %c1 : !kgen.scalar<index>
+    %eq = pop.cmp eq(%arg0, %ub) : <1, index>
+    %sel = pop.select %eq, %arg0, %next : !kgen.scalar<index>
+    hlcf.continue %sel : !kgen.scalar<index>
+  }
+  hlcf.return
+}
+
+// -----
+
+// The no-progress arm must be the induction variable, or it is not the idiom.
+// CHECK-LABEL: @select_arms_no_progress_arm_not_ind_var
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @select_arms_no_progress_arm_not_ind_var(%ub: !kgen.scalar<index>) {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+
+  hlcf.loop (%arg0 = %c0 : !kgen.scalar<index>) {
+    %lt = pop.cmp lt(%arg0, %ub) : <1, index>
+    hlcf.if %lt {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %next = pop.add %arg0, %c1 : !kgen.scalar<index>
+    %eq = pop.cmp eq(%arg0, %ub) : <1, index>
+    %sel = pop.select %eq, %ub, %next : !kgen.scalar<index>
+    hlcf.continue %sel : !kgen.scalar<index>
+  }
+  hlcf.return
+}
+
+// -----
+
+// A break-branch op whose region uses a loop-internal value can't be moved
+// after the loop.
+// CHECK-LABEL: @nested_dependent_ops_in_break_branch
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @nested_dependent_ops_in_break_branch(%cond: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx10 = index.constant 10
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %1 = index.cmp sgt(%arg0, %idx10)
+    %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c1 {
+      hlcf.yield
+    } else {
+      hlcf.if %cond {
+        kgen.call @foo(%arg0) : (index) -> ()
+        hlcf.yield
+      } else {
+        hlcf.yield
+      }
+      hlcf.break
+    }
+    %2 = index.add %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// A region may use values from outside the loop or from earlier in the break
+// branch; the op still moves after the loop.
+// CHECK-LABEL: @nested_independent_ops_in_break_branch
+// CHECK: hlcf.for [%idx0 to %idx10 step %idx1 sgt add]
+// CHECK:        hlcf.for.yield
+// CHECK-NEXT: }
+// CHECK-NEXT: [[V0:%.*]] = kgen.call @foo(%idx10)
+// CHECK-NEXT: hlcf.if %arg0 {
+// CHECK-NEXT:   kgen.call @bar([[V0]], %idx10)
+kgen.func @nested_independent_ops_in_break_branch(%cond: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx10 = index.constant 10
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %1 = index.cmp sgt(%arg0, %idx10)
+    %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c1 {
+      hlcf.yield
+    } else {
+      %v0 = kgen.call @foo(%idx10) : (index) -> (index)
+      hlcf.if %cond {
+        kgen.call @bar(%v0, %idx10) : (index, index) -> ()
+        hlcf.yield
+      } else {
+        hlcf.yield
+      }
+      hlcf.break
+    }
+    %2 = index.add %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// A exiting test: the store also runs on the iteration that breaks. Rotation
+// peels a copy ahead of the loop and keeps one at the end of the body, so the
+// test leads and the half-open bound is right.
+// CHECK-LABEL: @store_before_exiting_test
+// CHECK: pop.store %arg1, %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index) {
+// CHECK: pop.store
+kgen.func @store_before_exiting_test(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %n : index) {
+    pop.store %arg0, %p : !kgen.pointer<index>
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// Rotation moves what precedes the test without changing how often it runs, so
+// effects on both sides of the test raise just as well.
+// CHECK-LABEL: @effects_both_sides_of_test
+// CHECK: pop.store %arg1, %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub]
+// CHECK: pop.store %idx1, %arg0
+// CHECK: pop.store %2, %arg0
+kgen.func @effects_both_sides_of_test(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %n : index) {
+    pop.store %arg0, %p : !kgen.pointer<index>
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    pop.store %idx1, %p : !kgen.pointer<index>
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The break carries the induction variable out. Rotation leaves the test on
+// the value the break took, so the result still comes from the right
+// iteration.
+// CHECK-LABEL: @break_carries_value_past_exiting_test
+// CHECK: pop.store %arg1, %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index, %arg3 = %arg1 : index) -> index {
+// CHECK: hlcf.for.yield [induction_var (%3 : index)] [retvals (%3 : index)]
+kgen.func @break_carries_value_past_exiting_test(%p: !kgen.pointer<index>,
+                                                %n: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  %r = hlcf.loop (%arg0 = %n : index) -> index {
+    pop.store %arg0, %p : !kgen.pointer<index>
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break %arg0 : index
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue %1 : index
+  }
+  hlcf.return %r : index
+}
+
+// -----
+
+// A loop that `rotate-loops` declines still runs part of its body before its
+// test, so it must not raise: a convergent function is one such loop, since
+// two static copies of a convergent op no longer bring the same threads
+// together.
+// CHECK-LABEL: @convergent_not_rotated
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @convergent_not_rotated(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %n : index) {
+    pop.store %arg0, %p : !kgen.pointer<index>
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+} <{convergent}>
+
+// -----
+
+// An `eq` test fires only when the induction variable lands exactly on the
+// bound, which a stride wider than one steps over.
+// CHECK-LABEL: @exiting_test_wide_stride
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @exiting_test_wide_stride(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx2 = index.constant 2
+
+  hlcf.loop (%arg0 = %n : index) {
+    pop.store %arg0, %p : !kgen.pointer<index>
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx2
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// A pure op is dead on the iteration that breaks, so it needs no rotating.
+// CHECK-LABEL: @pure_op_before_exiting_test
+// CHECK: hlcf.for [%idx0 to %idx4 step %idx1 slt add] (%arg0 = %idx0 : index) {
+kgen.func @pure_op_before_exiting_test() {
+  %idx0 = index.constant 0
+  %idx4 = index.constant 4
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %0 = index.mul %arg0, %idx4
+    %1 = index.cmp eq(%arg0, %idx4)
+    %c0 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %2 = index.add %arg0, %idx1
+    kgen.call @foo(%0) : (index) -> ()
+    hlcf.continue %2 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// A `-g` build puts debug records, and an `hlcf.if` holding nothing else,
+// ahead of the iterator's test; neither needs rotating.
+#subprogram = #debuginfo.subprogram<sourceName = <"sp">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#var_i = #debuginfo.local_variable<scope = #subprogram, name = "i"> : !debuginfo.unresolved<index>
+
+// CHECK-LABEL: @debug_records_before_exiting_test
+// CHECK: hlcf.for [%idx0 to %idx4 step %idx1 slt add] (%arg0 = %idx0 : index) {
+kgen.func @debug_records_before_exiting_test() {
+  %idx0 = index.constant 0
+  %idx4 = index.constant 4
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    debuginfo.value #var_i = %arg0 : index
+    %0 = index.cmp eq(%arg0, %idx4)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      debuginfo.kill #var_i
+      hlcf.yield
+    } else {
+      debuginfo.value #var_i = %arg0 : index
+      hlcf.yield
+    }
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %1 = index.add %arg0, %idx1
+    kgen.call @foo(%arg0) : (index) -> ()
+    hlcf.continue %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The test compares the updated value rather than the induction variable at
+// entry to the iteration, which counts one iteration differently.
+// `inferLoopCount` matches only a block argument, so this shape does not raise.
+// CHECK-LABEL: @pre_increment_exiting_test
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @pre_increment_exiting_test(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %n : index) {
+    pop.store %arg0, %p : !kgen.pointer<index>
+    %0 = index.sub %arg0, %idx1
+    %1 = index.cmp eq(%0, %idx0)
+    %c0 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    hlcf.continue %0 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// Rotation gives the loop a carried value for the load, which the raise then
+// reorders along with the rest of the loop's state.
+// CHECK-LABEL: @rotation_adds_a_carried_value
+// CHECK: [[INIT:%.*]] = pop.load %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index, %arg3 = [[INIT]] : index) {
+// CHECK: pop.store %arg3, %arg0
+// CHECK: [[NEXT:%.*]] = pop.load %arg0
+// CHECK-NEXT: hlcf.for.yield [induction_var ({{.*}})] [retvals ()] [iterargs ([[NEXT]] : index)]
+kgen.func @rotation_adds_a_carried_value(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %n : index) {
+    %0 = pop.load %p : !kgen.pointer<index>
+    %1 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    pop.store %0, %p : !kgen.pointer<index>
+    %2 = index.sub %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// Rotation applies to a loop around another loop, and both raise: the inner
+// loop's jumps are its own, so the outer one still has a single exit.
+// CHECK-LABEL: @nested_loops_both_raise
+// CHECK: pop.store %arg1, %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index) {
+// CHECK: hlcf.for [%arg2 to %idx0 step %idx1 sgt sub] (%arg3 = %arg2 : index) {
+// CHECK: pop.store {{%.*}}, %arg0
+kgen.func @nested_loops_both_raise(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop "outer" (%arg0 = %n : index) {
+    pop.store %arg0, %p : !kgen.pointer<index>
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break "outer"
+    } else {
+      hlcf.yield
+    }
+    hlcf.loop "inner" (%arg1 = %arg0 : index) {
+      %2 = index.cmp eq(%arg1, %idx0)
+      %c1 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
+      hlcf.if %c1 {
+        hlcf.break "inner"
+      } else {
+        hlcf.yield
+      }
+      %3 = index.sub %arg1, %idx1
+      hlcf.continue "inner" %3 : index
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue "outer" %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// Rotating a loop nest leaves every loop raisable: the copy of the inner loop
+// ahead of the outer one, the outer loop itself, and the copy left in its
+// body.
+// CHECK-LABEL: @rotated_loop_nest_raises
+// CHECK: pop.store %arg1, %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index) {
+// CHECK: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index) {
+// CHECK: hlcf.for [{{%.*}} to %idx0 step %idx1 sgt sub] (%arg3 = {{%.*}} : index) {
+// CHECK-NOT: hlcf.loop
+kgen.func @rotated_loop_nest_raises(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop "outer" (%arg0 = %n : index) {
+    hlcf.loop "inner" (%arg1 = %arg0 : index) {
+      pop.store %arg1, %p : !kgen.pointer<index>
+      %2 = index.cmp eq(%arg1, %idx0)
+      %c1 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
+      hlcf.if %c1 {
+        hlcf.break "inner"
+      } else {
+        hlcf.yield
+      }
+      %3 = index.sub %arg1, %idx1
+      hlcf.continue "inner" %3 : index
+    }
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break "outer"
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue "outer" %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The break carries a value rotation moved, so it takes the carried copy and
+// the raise yields the next iteration's, which is what the iteration that
+// exits would have held.
+// CHECK-LABEL: @break_carries_a_rotated_value
+// CHECK: [[INIT:%.*]] = pop.load %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index, %arg3 = [[INIT]] : index) -> index {
+// CHECK: [[NEXT:%.*]] = pop.load %arg0
+// CHECK-NEXT: hlcf.for.yield [induction_var ({{.*}})] [retvals ([[NEXT]] : index)] [iterargs ()]
+kgen.func @break_carries_a_rotated_value(%p: !kgen.pointer<index>,
+                                         %n: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  %r = hlcf.loop (%arg0 = %n : index) -> index {
+    %0 = pop.load %p : !kgen.pointer<index>
+    %1 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break %0 : index
+    } else {
+      hlcf.yield
+    }
+    pop.store %0, %p : !kgen.pointer<index>
+    %2 = index.sub %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return %r : index
 }

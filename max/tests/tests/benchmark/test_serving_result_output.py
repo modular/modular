@@ -34,10 +34,12 @@ from max.benchmark.benchmark_shared.datasets.types import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
+    InteractivityMetrics,
     PercentileMetrics,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
+    build_result_groups,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     BenchmarkRunResultLabels,
@@ -195,6 +197,10 @@ def _gpu_benchmark_result(
     image_request_rate: float | None = None,
     lora_request_rate: float | None = None,
     gpu_utilization_by_group: dict[str, list[float]] | None = None,
+    request_goodput: float | None = None,
+    goodput_attainment: float | None = None,
+    goodput_ttft_ms: float | None = None,
+    goodput_tpot_ms: float | None = None,
 ) -> BenchmarkResult:
     return BenchmarkResult(
         task_type="text",
@@ -219,6 +225,10 @@ def _gpu_benchmark_result(
             tool_call_response_rate=tool_call_response_rate,
             image_request_rate=image_request_rate,
             lora_request_rate=lora_request_rate,
+            request_goodput=request_goodput,
+            goodput_attainment=goodput_attainment,
+            goodput_ttft_ms=goodput_ttft_ms,
+            goodput_tpot_ms=goodput_tpot_ms,
         ),
     )
 
@@ -258,6 +268,35 @@ def test_print_benchmark_summary_omits_request_mix_when_unused(
 ) -> None:
     _print_summary(_gpu_benchmark_result(tool_request_rate=0.0))
     assert "Request Mix" not in capsys.readouterr().out
+
+
+def test_print_benchmark_summary_prints_goodput_after_throughput(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(
+        _gpu_benchmark_result(
+            request_goodput=1.245,
+            goodput_attainment=0.75,
+            goodput_ttft_ms=500.0,
+            goodput_tpot_ms=37.5,
+        )
+    )
+    out = capsys.readouterr().out
+    assert re.search(r"Request goodput \(req/s\):\s+1\.24500", out)
+    assert re.search(r"Goodput attainment:\s+75\.00%", out)
+    assert re.search(r"Goodput targets \(ms\):\s+ttft:500 tpot:37\.5\n", out)
+    assert (
+        out.index("Request throughput")
+        < out.index("Request goodput")
+        < out.index("Max Concurrency")
+    )
+
+
+def test_print_benchmark_summary_omits_goodput_when_unset(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result())
+    assert "oodput" not in capsys.readouterr().out
 
 
 def test_print_benchmark_summary_tabulates_gpu_stats(
@@ -471,3 +510,129 @@ def test_save_result_json_writes_labels_in_base_layout(
     assert data["client_args"]["model"] == "myorg/model"
     assert data["client_args"]["request_rate"] == "2.5"
     assert data["client_args"]["max_concurrency"] == 4
+
+
+def test_save_result_json_writes_non_finite_values_as_null(
+    tmp_path: Path,
+) -> None:
+    """A zero-duration run's NaN metrics serialize as null, not bare NaN."""
+    config = ServingBenchmarkConfig(model="myorg/model")
+    result = BenchmarkResult(
+        task_type="text",
+        max_concurrency=1,
+        text_data=TextGenAggregates(
+            duration=0.0,
+            completed=0,
+            failures=1,
+            request_throughput=0.0,
+            total_input=0,
+            total_output=0,
+            nonempty_response_chunks=0,
+            max_input=0,
+            max_output=0,
+            max_total=0,
+            global_cached_token_rate=float("nan"),
+            ttfts=[float("nan"), 12.5],
+        ),
+    )
+    path = tmp_path / "result.json"
+
+    save_result_json(
+        str(path),
+        BenchmarkRunResultLabels.from_config(
+            config,
+            benchmark_task="text-generation",
+            model_id="myorg/model",
+            tokenizer_id="myorg/model",
+        ),
+        result,
+        request_rate=float("inf"),
+        record_max_concurrency=None,
+    )
+
+    text = path.read_text()
+    assert "NaN" not in text
+
+    def reject(token: str) -> None:
+        raise ValueError(f"non-standard JSON constant {token}")
+
+    data = json.loads(text, parse_constant=reject)
+    assert data["aggregate_tokens_per_minute"] is None
+    assert data["global_cached_token_rate"] is None
+    assert data["ttfts"] == [None, 12.5]
+
+
+def test_print_benchmark_summary_prints_interactivity_and_per_gpu_throughput(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Interactivity rows render in the Throughput Stats section and the
+    per-GPU total token throughput renders in the headline block."""
+    result = _gpu_benchmark_result()
+    assert result.text_data is not None
+    result.text_data.interactivity_tok_s = InteractivityMetrics(
+        mean=120.0,
+        p50=120.0,
+        p75=115.0,
+        p90=110.0,
+        p95=105.0,
+        p99=100.0,
+    )
+    result.text_data.full_response_interactivity_tok_s = InteractivityMetrics(
+        mean=110.0,
+        p50=110.0,
+        p75=106.0,
+        p90=102.0,
+        p95=98.0,
+        p99=94.0,
+    )
+    result.text_data.e2e_normalized_interactivity_tok_s = InteractivityMetrics(
+        mean=100.0,
+        p50=100.0,
+        p75=96.0,
+        p90=92.0,
+        p95=88.0,
+        p99=84.0,
+    )
+    result.text_data.total_tokens_per_second_per_gpu = 2500.0
+    # result_groups was auto-filled at construction; rebuild it so the
+    # fields assigned above reach the groups the console prints.
+    result.result_groups = build_result_groups(result)
+
+    _print_summary(result)
+    out = capsys.readouterr().out
+
+    assert re.search(r"Total throughput per GPU \(tok/s\):\s+2500\.00", out)
+    assert out.index("Total TPM") < out.index("Total throughput per GPU")
+    assert "Interactivity (tok/s)" in out
+    assert "Full-response interactivity (tok/s)" in out
+    assert "E2E normalized interactivity (tok/s)" in out
+    # One row per interactivity metric, in the Mean/P50/P75/P90/P95/P99
+    # layout.
+    assert re.search(
+        r"120\.00.*?120\.00.*?115\.00.*?110\.00.*?105\.00.*?100\.00", out
+    )
+    assert re.search(
+        r"110\.00.*?110\.00.*?106\.00.*?102\.00.*?98\.00.*?94\.00", out
+    )
+    assert re.search(
+        r"100\.00.*?100\.00.*?96\.00.*?92\.00.*?88\.00.*?84\.00", out
+    )
+    # The footnote states the bases, not the inversion arithmetic.
+    assert "content-bounded" in out
+    assert "1 /" not in out
+    # The interactivity table carries its own P75 column.
+    assert "P75" in out
+    assert (
+        out.index("Throughput Stats")
+        < out.index("Interactivity (tok/s)")
+        < out.index("Token Stats")
+    )
+
+
+def test_print_benchmark_summary_omits_interactivity_when_unset(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result())
+    out = capsys.readouterr().out
+    assert "Interactivity" not in out
+    assert "Total throughput per GPU" not in out

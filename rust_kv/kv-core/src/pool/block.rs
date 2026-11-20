@@ -19,6 +19,8 @@
 //! objects are now handles on a `(cache, bid)` pair
 //! (`max._kv_core.LittleKVCacheBlock`).
 
+use std::collections::BTreeMap;
+
 use crate::pool::free_list::{FreeLinks, Linked};
 
 /// One cache's page. Its `bid` is the page index into that cache's view of the
@@ -30,7 +32,8 @@ pub struct LittleBlock<H> {
     pub ref_cnt: i64,
     /// The hash this block is committed under, once it is full.
     pub block_hash: Option<H>,
-    pub free: FreeLinks,
+    /// Its place in a [`crate::pool::free_list::FreeQueue`], while on one.
+    pub free: Option<u64>,
 }
 
 // Derived, this would demand `H: Default`, which a hash need not be.
@@ -39,17 +42,15 @@ impl<H> Default for LittleBlock<H> {
         LittleBlock {
             ref_cnt: 0,
             block_hash: None,
-            free: FreeLinks::default(),
+            free: None,
         }
     }
 }
 
-impl<H> Linked for LittleBlock<H> {
-    fn links(&self) -> &FreeLinks {
-        &self.free
-    }
-    fn links_mut(&mut self) -> &mut FreeLinks {
-        &mut self.free
+impl<H> LittleBlock<H> {
+    /// Whether the block is on a free queue.
+    pub fn is_free(&self) -> bool {
+        self.free.is_some()
     }
 }
 
@@ -65,6 +66,9 @@ pub struct HugeBlock {
     /// Zero is what parks the block, so the bytes are up for grabs.
     pub num_referenced: usize,
     pub free: FreeLinks,
+    /// `little_block_type`'s free pages in here, by the stamp that orders
+    /// them on a [`crate::pool::free_list::FreeQueue`].
+    pub pages: BTreeMap<u64, usize>,
 }
 
 impl Linked for HugeBlock {

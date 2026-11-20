@@ -43,6 +43,7 @@ using llvm::raw_ostream;
 class ASTDecl;
 class ExprNode;
 class IREmitter;
+struct RaiseContext;
 class SharedState;
 
 /// Uniqued access path from the match subject (keyed by pointer address).
@@ -139,6 +140,10 @@ struct PatternCommand {
             .bindData = {bindName, declKind}};
   }
 
+  /// Return true if this pattern command is binding a "var" pattern, or is an
+  /// "or" pattern that recursively has them.
+  bool hasVarBinding() const;
+
   void print(raw_ostream &os, unsigned indent = 0) const;
   LLVM_DUMP_METHOD void dump() const;
 };
@@ -148,6 +153,9 @@ struct PatternBoundName {
   StringRef name;
   CValue value;
   PatternDeclKind bindingKind;
+  /// The source path can be re-emitted after a case has committed.
+  const PatternPath *path = nullptr;
+  const ExprNode *expr = nullptr;
   /// Shared declaration already emitted for an Or-pattern binding.
   VarDeclOp declaration{};
 };
@@ -203,13 +211,21 @@ struct MatchCaseEntry {
 /// takes an `IREmitter` (dynamic with a builder, or param-only for comptime).
 struct PatternEmitState {
   ASTDecl &curDeclScope;
+  RaiseContext *raiseContext;
   CValue rootSubject;
   const PatternPath *rootPath;
   Location matchLocation;
   DenseMap<const PatternPath *, CValue> pathValues;
 
   CValue getPathValue(IREmitter &emitter, const PatternPath *path,
-                      const ExprNode *expr);
+                      const ExprNode *expr, bool consume = false);
+
+  /// Transfer the direct children of an rvalue aggregate before materializing
+  /// its bindings.  Unbound children are retained in synthesized temporaries
+  /// so normal lifetime lowering destroys them.
+  LogicalResult getConsumedBindingValues(IREmitter &emitter,
+                                         ArrayRef<PatternBoundName> bindings,
+                                         SmallVectorImpl<CValue> &values);
 
   LogicalResult emitCommands(OpBuilder &builder,
                              ArrayRef<const PatternCommand *> commands,
@@ -419,6 +435,14 @@ private:
   DenseMap<PathKey, const PatternPath *, PathKeyInfo> pathUniques;
   PatternDeclKind patternKind = PatternDeclKind::kBind;
 };
+
+/// Check that an EnumLike subject's `_enum_case_names` can be read before
+/// matching it, so a construct that cannot match reports the reading's error
+/// once and abandons before any case lookup or exhaustiveness check. Returns
+/// failure when the reading fails (the error was already reported).
+LogicalResult checkEnumCaseNamesReadable(PatternMatchBuilder &builder,
+                                         const PatternPath *rootPath,
+                                         SMLoc loc);
 
 } // namespace M::KGEN::LIT
 

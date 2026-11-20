@@ -169,7 +169,7 @@ findRecursiveGenerators(const DenseMap<StringAttr, FunctionTrait> &traits) {
       if (op.getOpcode() != POC::Apply &&
           op.getOpcode() != POC::ApplyResultSlot)
         return;
-      auto cst = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+      auto cst = FuncSymbolGenerator::dynCast(op.getOperand(0));
       // Skip non-constant symbols; we don't follow those during inlining
       if (!cst)
         return;
@@ -256,12 +256,12 @@ void ApplyInlinerPass::runOnOperation() {
   replacer.addReplacement([&](SugarAttr sugar) -> TypedAttr {
     llvm_unreachable("sugar should be replaced by now");
   });
-  replacer.addReplacement([&funcTraits,
-                           &context](ParamOperatorAttr apply) -> TypedAttr {
+  replacer.addReplacement([&funcTraits, &context,
+                           &replacer](ParamOperatorAttr apply) -> TypedAttr {
     if (apply.getOpcode() != POC::Apply &&
         apply.getOpcode() != POC::ApplyResultSlot)
       return apply;
-    auto cst = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+    auto cst = FuncSymbolGenerator::dynCast(apply.getOperand(0));
     if (!cst)
       return apply;
     auto it =
@@ -291,7 +291,11 @@ void ApplyInlinerPass::runOnOperation() {
     // Handle RegConstant.
     assert(func.getFunctionType().getNumInputs() == 0);
     auto regCst = cast<FunctionTrait::RegConstant>(trait.impl);
-    func.setInlinedFormAttr(cast<TypedAttr>(regCst.value));
+
+    // We might be able to further "inline" the inlined form, since the visit
+    // on ops is not topo-sorted, conservatively replace the inlined form again.
+    TypedAttr inlined = cast<TypedAttr>(replacer.replace(regCst.value));
+    func.setInlinedFormAttr(cast<TypedAttr>(inlined));
 
     if (!canExpandInlinedForm(func, cst.getParamValues()))
       return apply;
@@ -299,7 +303,7 @@ void ApplyInlinerPass::runOnOperation() {
     ParameterEvaluator evaluator(func.getInputParams(), cst.getParamValues());
     evaluator.setEvaluationContext(&context);
 
-    return cast<TypedAttr>(evaluator.getReboundAttribute(regCst.value));
+    return cast<TypedAttr>(evaluator.getReboundAttribute(inlined));
   });
 
   // The replacers have an internal cache, so make sure to share them correctly.

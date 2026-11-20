@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for FP8 matmul kernels in max.nn.kernels."""
+"""Tests for FP8 matmul kernels in max.nn._graph_ops."""
 
 from __future__ import annotations
 
@@ -20,16 +20,10 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn import (
-    InputScaleSpec,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     _fused_qkv_ragged_matmul_scaled_float8 as fused_qkv_ragged_matmul_scaled_float8,
 )
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     batched_dynamic_scaled_fp8_matmul,
     dynamic_scaled_matmul,
     grouped_dynamic_scaled_fp8_matmul,
@@ -40,6 +34,12 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,
+)
+from max.nn.quant_config import (
+    InputScaleSpec,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 
 

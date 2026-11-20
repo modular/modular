@@ -28,7 +28,6 @@ from std.memory import Pointer
 from std.sys import (
     align_of,
     bit_width_of,
-    is_apple_gpu,
     is_gpu,
     is_nvidia_gpu,
     size_of,
@@ -42,6 +41,7 @@ from std.sys.intrinsics import (
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.format_int import _write_int
+from std.collections import OptionalReg
 from std.simd import _simd_construction_checks
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
@@ -160,6 +160,8 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[Pointer[T, origin]]` instead.")
 comptime OptionalPointer[
     mut: Bool,
     //,
@@ -168,7 +170,9 @@ comptime OptionalPointer[
     *,
     address_space: AddressSpace = .GENERIC,
 ] = Optional[Pointer[T, origin, address_space=address_space]]
-"""An optional (nullable) `Pointer`.
+"""Deprecated: An optional (nullable) `Pointer`.
+
+Use `Optional[Pointer[T, origin]]` instead.
 
 Parameters:
     mut: The mutability of the pointer.
@@ -177,13 +181,17 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[MutPointer[T, origin]]` instead.")
 comptime OptionalMutPointer[
     T: AnyType,
     origin: MutOrigin,
     *,
     address_space: AddressSpace = .GENERIC,
-] = OptionalPointer[T, origin, address_space=address_space]
-"""An optional (nullable) mutable `Pointer`.
+] = Optional[MutPointer[T, origin, address_space=address_space]]
+"""Deprecated: An optional (nullable) mutable `Pointer`.
+
+Use `Optional[MutPointer[T, origin]]` instead.
 
 Parameters:
     T: The pointee type.
@@ -191,13 +199,17 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated("Use `Optional[ImmPointer[T, origin]]` instead.")
 comptime OptionalImmPointer[
     T: AnyType,
     origin: ImmOrigin,
     *,
     address_space: AddressSpace = .GENERIC,
-] = OptionalPointer[T, origin, address_space=address_space]
-"""An optional (nullable) immutable `Pointer`.
+] = Optional[ImmPointer[T, origin, address_space=address_space]]
+"""Deprecated: An optional (nullable) immutable `Pointer`.
+
+Use `Optional[ImmPointer[T, origin]]` instead.
 
 Parameters:
     T: The pointee type.
@@ -243,6 +255,65 @@ Parameters:
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
+
+
+# ===-----------------------------------------------------------------------===#
+# unsafe_cast
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
+@doc_hidden
+def unsafe_cast[
+    from_mut: Bool,
+    from_type: AnyType,
+    from_origin: Origin[mut=from_mut],
+    from_address_space: AddressSpace,
+    mut: Bool = from_mut,
+    //,
+    *,
+    Type: AnyType = from_type,
+    origin: Origin[mut=mut] = from_origin,
+    address_space: AddressSpace = from_address_space,
+](
+    pointer: Optional[
+        Pointer[from_type, from_origin, address_space=from_address_space]
+    ],
+    out result: Optional[Pointer[Type, origin, address_space=address_space]],
+):
+    result = Pointer(to=pointer).unsafe_bitcast[type_of(result)]()[]
+
+
+@inline(.always)
+@doc_hidden
+def unsafe_cast[
+    from_mut: Bool,
+    from_type: AnyType,
+    from_origin: Origin[mut=from_mut],
+    from_address_space: AddressSpace,
+    mut: Bool = from_mut,
+    //,
+    *,
+    Type: AnyType = from_type,
+    origin: Origin[mut=mut] = from_origin,
+    address_space: AddressSpace = from_address_space,
+](
+    pointer: OptionalReg[
+        Pointer[from_type, from_origin, address_space=from_address_space]
+    ],
+    out result: OptionalReg[Pointer[Type, origin, address_space=address_space]],
+):
+    result = Pointer(to=pointer).unsafe_bitcast[type_of(result)]()[]
+
+
+@inline(.nodebug)
+@doc_hidden
+def pointer_to_int(pointer: Optional[Pointer[...]]) -> Int:
+    return Pointer(to=pointer).unsafe_bitcast[Int]()[]
+
+
+comptime _UnsafeDanglingPluginHookFnType = def[alignment: Int]() thin -> Int
+"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `Pointer.unsafe_dangling`."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -327,7 +398,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Float32](count=4))
+    var allocation = alloc(Layout[Float32](length=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
         ptr.unsafe_store(i, Float32(i))
@@ -341,7 +412,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=8))
+    var allocation = alloc(Layout[Int32](length=8))
     var ptr = allocation.unsafe_ptr()
     var vec = SIMD[.int32, 4](1, 2, 3, 4)
     ptr.unsafe_store(0, vec)
@@ -355,7 +426,7 @@ struct Pointer[
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout
 
-    var allocation = alloc(Layout[Int32](count=3))
+    var allocation = alloc(Layout[Int32](length=3))
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_offset(0)[] = 10  # offset by 0, then dereference to write
     ptr.unsafe_offset(1)[] = 20  # offset by 1, then dereference to write
@@ -525,10 +596,11 @@ struct Pointer[
         self = Self(unsafe_from_address=Int(unsafe_from_address))
 
     @inline(.nodebug)
+    @stable(since="1.3")
     def __init__(
         out self,
         *,
-        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.T,
+        ref[Self.origin, Self.address_space] to: Self.T,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -617,9 +689,9 @@ struct Pointer[
             A reference to the value.
         """
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=Self._mlir_lit_ref](
-                self._mlir_value
-            )
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=Self._mlir_lit_ref, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @__unsafe_nested_origins_read_only
@@ -701,7 +773,9 @@ struct Pointer[
             `>`,
         ]
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ref_type, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @inline(.always)
@@ -738,7 +812,9 @@ struct Pointer[
             `>`,
         ]
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ref_type](self._mlir_value)
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ref_type, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @doc_hidden
@@ -757,51 +833,6 @@ struct Pointer[
             An offset pointer.
         """
         return self.unsafe_offset(offset)
-
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_offset)
-    def __sub__[I: Indexer, //](self, offset: I) -> Self:
-        """Return a pointer at an offset from the current one.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            offset: The offset index.
-
-        Returns:
-            An offset pointer.
-        """
-        return self.unsafe_offset(-1 * index(offset))
-
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_offset)
-    def __iadd__[I: Indexer, //](mut self, offset: I):
-        """Add an offset to this pointer.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            offset: The offset index.
-        """
-        self = self.unsafe_offset(offset)
-
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_offset)
-    def __isub__[I: Indexer, //](mut self, offset: I):
-        """Subtract an offset from this pointer.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            offset: The offset index.
-        """
-        self = self.unsafe_offset(-1 * index(offset))
 
     @doc_hidden
     @__unsafe_nested_origins_read_only
@@ -841,7 +872,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=4))
+        var allocation = alloc(Layout[Int32](length=4))
         var ptr = allocation.unsafe_ptr()
         var end = ptr.unsafe_offset(3)
         print(end - ptr)  # => 3
@@ -853,22 +884,24 @@ struct Pointer[
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __eq__(
         self,
         rhs: Pointer[Self.T, _, address_space=Self.address_space],
     ) -> Bool:
-        """Returns True if the two pointers are equal.
+        """Returns True if the two pointer addresses are equal.
 
         Args:
-            rhs: The value of the other pointer.
+            rhs: The other pointer.
 
         Returns:
-            True if the two pointers are equal and False otherwise.
+            True if the two pointer addresses are equal and False otherwise.
         """
         return Int(self) == Int(rhs)
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __eq__(self, rhs: Self) -> Bool:
         """Returns True if the two pointers are equal.
 
@@ -882,6 +915,7 @@ struct Pointer[
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __ne__(
         self,
         rhs: Pointer[Self.T, _, address_space=Self.address_space],
@@ -898,6 +932,7 @@ struct Pointer[
 
     @__unsafe_nested_origins_read_only
     @inline(.nodebug)
+    @stable(since="1.3")
     def __ne__(self, rhs: Self) -> Bool:
         """Returns True if the two pointers are not equal.
 
@@ -1182,7 +1217,7 @@ struct Pointer[
         """
         return {
             _mlir_value = __mlir_op.`pop.offset`(
-                self._mlir_value, index(offset).__mlir_index__()
+                self._mlir_value, index(offset)._mlir_value
             )
         }
 
@@ -1222,7 +1257,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=4))
+        var allocation = alloc(Layout[Int32](length=4))
         var ptr = allocation.unsafe_ptr()
         var end = ptr.unsafe_offset(3)
         print(end.offset_from(ptr))  # => 3
@@ -1363,6 +1398,29 @@ struct Pointer[
             _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
         }
 
+    # TODO(MSTDL-3326): Promote to a safe implicit conversion, once the compiler
+    #   can prove `Self.origin` is not `UntrackedOrigin`.
+    @inline(.always)
+    def _as_origin_superset[
+        O: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[O] where O.contains[Self.origin]:
+        """Widens this pointer's origin to a superset origin `O`.
+
+        Parameters:
+            O: The destination origin. Must contain `Self.origin`.
+
+        Returns:
+            A pointer to the same address with origin `O`.
+
+        Safety:
+
+        The `contains` constraint does not reject `UntrackedOrigin`, because the
+        empty origin is contained by every origin. Do not call this on a pointer
+        whose origin is `UntrackedOrigin` (or `UnsafeAnyOrigin`); doing so
+        silently attaches an arbitrary tracked origin to untracked memory.
+        """
+        return self.unsafe_origin_cast[O]()
+
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_load[
@@ -1387,7 +1445,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Int32](count=8))
+        var allocation = alloc(Layout[Int32](length=8))
         var p = allocation.unsafe_ptr()
         p.unsafe_store(0, SIMD[.int32, 4](1, 2, 3, 4))
         var v = p.unsafe_load[width=4]()
@@ -1476,28 +1534,6 @@ struct Pointer[
         return result
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_load)
-    def load[
-        dtype: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        invariant: Bool = _default_invariant[Self.mut](),
-        non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
-        return self.unsafe_load[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ]()
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_load[
         dtype: DType,
@@ -1547,28 +1583,6 @@ struct Pointer[
         ]()
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_load)
-    def load[
-        dtype: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        invariant: Bool = _default_invariant[Self.mut](),
-        non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...], offset: Scalar,) -> SIMD[dtype, width]:
-        return self.unsafe_load[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_load[
         I: Indexer,
@@ -1616,29 +1630,6 @@ struct Pointer[
             invariant=invariant,
             non_temporal=non_temporal,
         ]()
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_load)
-    def load[
-        I: Indexer,
-        dtype: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        invariant: Bool = _default_invariant[Self.mut](),
-        non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...], offset: I,) -> SIMD[dtype, width]:
-        return self.unsafe_load[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
@@ -1754,7 +1745,7 @@ struct Pointer[
         ```mojo
         from std.memory.alloc import alloc, dealloc, Layout
 
-        var allocation = alloc(Layout[Float32](count=4))
+        var allocation = alloc(Layout[Float32](length=4))
         var p = allocation.unsafe_ptr()
         var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.unsafe_store(vec)
@@ -1786,76 +1777,6 @@ struct Pointer[
         """
         self._store[
             alignment=alignment, volatile=volatile, non_temporal=non_temporal
-        ](val)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_store)
-    def store[
-        I: Indexer,
-        dtype: DType,
-        //,
-        width: SIMDLength = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        offset: I,
-        val: SIMD[dtype, width],
-    ):
-        self.unsafe_store[
-            width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
-        ](offset, val)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_store)
-    def store[
-        dtype: DType,
-        offset_type: DType,
-        //,
-        width: Int = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        offset: Scalar[offset_type],
-        val: SIMD[dtype, width],
-    ):
-        self.unsafe_store[
-            width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
-        ](offset, val)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_store)
-    def store[
-        dtype: DType,
-        //,
-        width: SIMDLength = 1,
-        *,
-        alignment: Int = align_of[dtype](),
-        volatile: Bool = False,
-        non_temporal: Bool = False,
-    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
-        self.unsafe_store[
-            width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
         ](val)
 
     @__allow_legacy_custom_self_type
@@ -1917,15 +1838,6 @@ struct Pointer[
         return strided_load(self, Int(stride), SIMD[.bool, width](fill=True))
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_strided_load)
-    def strided_load[
-        dtype: DType, S: Intable, //, width: Int
-    ](self: Pointer[Scalar[dtype], ...], stride: S,) -> SIMD[dtype, width]:
-        return self.unsafe_strided_load[width=width](stride)
-
-    @__allow_legacy_custom_self_type
     @inline(.nodebug)
     def unsafe_strided_store[
         dtype: DType,
@@ -1956,22 +1868,6 @@ struct Pointer[
           `width` is undefined behavior.
         """
         strided_store(val, self, Int(stride), SIMD[.bool, width](fill=True))
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_strided_store)
-    def strided_store[
-        dtype: DType,
-        S: Intable,
-        //,
-        width: SIMDLength = 1,
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        val: SIMD[dtype, width],
-        stride: S,
-    ):
-        self.unsafe_strided_store[width=width](val, stride)
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
@@ -2036,9 +1932,11 @@ struct Pointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        comptime if is_apple_gpu():
-            # `Int(self)` would erase the address space; on Apple AIR the
-            # resulting GENERIC load silently reads zero (MOCO-3762).
+        comptime if not CurrentPlugin.has_generic_address_space or (
+            Self.address_space != .GENERIC and Self.address_space != .GLOBAL
+        ):
+            # The vector path below rebuilds lane pointers from `Int(self)`,
+            # which loses the address space, so load through `self` instead.
             var result = default
             comptime for i in range(width):
                 if mask[i]:
@@ -2052,24 +1950,6 @@ struct Pointer[
             SIMD[.int, width](Int(self)),
         )
         return gather[alignment=alignment](base, mask, default)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_gather)
-    def gather[
-        dtype: DType,
-        //,
-        *,
-        width: SIMDLength = 1,
-        alignment: Int = align_of[dtype](),
-    ](
-        self: Pointer[Scalar[dtype], ...],
-        offset: SIMD[_, width],
-        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
-        default: SIMD[dtype, width] = 0,
-    ) -> SIMD[dtype, width]:
-        return self.unsafe_gather[alignment=alignment](offset, mask, default)
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
@@ -2133,8 +2013,11 @@ struct Pointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        comptime if is_apple_gpu():
-            # See `gather` for the address-space rationale (MOCO-3762).
+        comptime if not CurrentPlugin.has_generic_address_space or (
+            Self.address_space != .GENERIC and Self.address_space != .GLOBAL
+        ):
+            # `Int(self)` on a shared or local pointer is an offset into its
+            # window, not a generic address; see `unsafe_gather`.
             comptime for i in range(width):
                 if mask[i]:
                     self.unsafe_store[alignment=alignment](
@@ -2149,40 +2032,15 @@ struct Pointer[
         scatter[alignment=alignment](val, base, mask)
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.nodebug)
-    @deprecated(use=unsafe_scatter)
-    def scatter[
-        dtype: DType,
-        //,
-        *,
-        width: SIMDLength = 1,
-        alignment: Int = align_of[dtype](),
-    ](
-        self: MutPointer[Scalar[dtype], ...],
-        offset: SIMD[_, width],
-        val: SIMD[dtype, width],
-        mask: SIMD[.bool, width] = SIMD[.bool, width](fill=True),
-    ):
-        self.unsafe_scatter[alignment=alignment](offset, val, mask)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_free)
-    def free(self: MutPointer[Self.T, ...]):
-        """Free the memory referenced by the pointer."""
-        _free(self)
-
-    @__allow_legacy_custom_self_type
     @inline(.always)
     def unsafe_free(self: MutPointer[Self.T, ...]):
         """Frees the memory referenced by the pointer."""
         _free(self)
 
     @always_inline("builtin")
+    @stable(since="1.3")
     def unsafe_bitcast[
-        U: AnyType
+        U: AnyType, /
     ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
         """Bitcasts a Pointer to a different type.
 
@@ -2208,49 +2066,13 @@ struct Pointer[
             ](self._mlir_value)
         }
 
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=unsafe_bitcast)
-    def bitcast[
-        U: AnyType
-    ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
-        return self.unsafe_bitcast[U]()
-
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
     ] = Pointer[Self.T, target_origin, address_space=Self.address_space]
 
-    @inline(.nodebug)
-    @deprecated(
-        "`mut_cast` is deprecated in favor of explicitly specifying a"
-        " mutability on the pointer type (`ImmPointer` or `MutPointer`). If"
-        " a mutability cast is truly needed (this should almost always be"
-        " avoided), use `unsafe_mut_cast` instead."
-    )
-    def mut_cast[
-        target_mut: Bool
-    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
-        """Changes the mutability of a pointer.
-
-        This is a safe way to change the mutability of a pointer with an
-        unbounded mutability. This function will emit a compile time error if
-        you try to cast an immutable pointer to mutable.
-
-        Parameters:
-            target_mut: Mutability of the destination pointer.
-
-        Returns:
-            A pointer with the same type, origin and address space as the
-            original pointer, but with the newly specified mutability.
-        """
-        comptime assert (
-            target_mut == False or target_mut == Self.mut
-        ), "Cannot safely cast an immutable pointer to mutable"
-        return self.unsafe_mut_cast[target_mut]()
-
     @always_inline("builtin")
     def unsafe_mut_cast[
-        target_mut: Bool
+        target_mut: Bool, /
     ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 
@@ -2377,14 +2199,6 @@ struct Pointer[
             ](self._mlir_value)
         }
 
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=unsafe_address_space_cast)
-    def address_space_cast[
-        target_address_space: AddressSpace = Self.address_space,
-    ](self) -> Pointer[Self.T, Self.origin, address_space=target_address_space]:
-        return self.unsafe_address_space_cast[target_address_space]()
-
     @inline(.always)
     def unsafe_deinit_pointee(
         self,
@@ -2470,18 +2284,6 @@ struct Pointer[
         return __get_address_as_owned_value(
             self.unsafe_address_space_cast[.GENERIC]()._mlir_value
         )
-
-    @doc_hidden
-    @inline(.always)
-    @deprecated(use=unsafe_take_pointee)
-    def take_pointee(
-        self,
-    ) -> Self.T where (
-        Self.mut
-        and Self.address_space == .GENERIC
-        and conforms_to(Self.T, Movable)
-    ):
-        return self.unsafe_take_pointee()
 
     @inline(.always)
     def unsafe_write(
@@ -2703,6 +2505,4 @@ struct Pointer[
         """
         __get_address_as_uninit_lvalue(
             self.unsafe_address_space_cast[.GENERIC]()._mlir_value
-        ) = __get_address_as_owned_value(
-            src.unsafe_address_space_cast[.GENERIC]()._mlir_value
-        )
+        ) = __get_address_as_owned_value(src._mlir_value)

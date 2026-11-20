@@ -28,8 +28,8 @@ def _mock_weight(data: WeightData | None = None) -> NonCallableMock:
 
     When ``data`` is None the returned value is an opaque mock, which is fine
     for keys whose tensor contents the adapter never inspects (structural
-    renames). Scale keys need real ``WeightData`` so the reciprocation /
-    dtype-reinterpretation paths can run.
+    renames). Scale keys need real ``WeightData`` so the
+    dtype-reinterpretation path can run.
     """
     weight = NonCallableMock()
     weight.data.return_value = data if data is not None else NonCallableMock()
@@ -37,8 +37,8 @@ def _mock_weight(data: WeightData | None = None) -> NonCallableMock:
 
 
 def test_convert_safetensor_state_dict() -> None:
-    # Global scales are stored large by compressed-tensors (~5504); the adapter
-    # must reciprocate them to MAX's multiplicative dequant convention.
+    # Global scales are stored large by compressed-tensors (~5504); the layers
+    # invert them in the graph, so the adapter passes them through.
     weight_global_scale = WeightData.from_numpy(
         np.array(5504.0, dtype=np.float32), "wgs"
     )
@@ -67,6 +67,20 @@ def test_convert_safetensor_state_dict() -> None:
         # dropped rather than loaded.
         "model.layers.0.self_attn.k_scale": _mock_weight(),
         "model.layers.0.self_attn.v_scale": _mock_weight(),
+        # A layer the checkpoint left unquantized: a routed expert that ships a
+        # plain ``.weight`` and must survive with its name intact.
+        "model.layers.40.mlp.experts.3.down_proj.weight": _mock_weight(),
+        # The dense MLP of layer 0, also unquantized.
+        "model.layers.0.mlp.gate_proj.weight": _mock_weight(),
+        # Per-head attention gate: one output per query head, not per channel.
+        "model.layers.1.self_attn.g_proj.weight": _mock_weight(
+            WeightData.from_numpy(
+                np.zeros((72, 3072), dtype=np.float32), "g_proj"
+            )
+        ),
+        # Nothing but the leading ``model.`` is a prefix; a substring replace
+        # would corrupt a name that mentions it again.
+        "model.layers.2.mlp.model.weight": _mock_weight(),
     }
 
     out = convert_safetensor_state_dict(
@@ -86,12 +100,25 @@ def test_convert_safetensor_state_dict() -> None:
     assert not any(k.endswith(".k_scale") for k in out)
     assert not any(k.endswith(".v_scale") for k in out)
 
-    # Global scales renamed AND reciprocated to the multiplicative convention.
-    wgs = out["layers.0.mlp.experts.gate_proj.weight_scale_2"]
-    igs = out["layers.0.mlp.experts.gate_proj.input_scale"]
-    np.testing.assert_allclose(np.from_dlpack(wgs), 1.0 / 5504.0, rtol=1e-6)
-    np.testing.assert_allclose(np.from_dlpack(igs), 1.0 / 1184.0, rtol=1e-6)
+    # Global scales keep their names and their values.
+    wgs = out["layers.0.mlp.experts.gate_proj.weight_global_scale"]
+    igs = out["layers.0.mlp.experts.gate_proj.input_global_scale"]
+    assert wgs is weight_global_scale
+    assert igs is input_global_scale
 
     # Per-group uint8 weight_scale reinterpreted as float8_e4m3fn (not rescaled).
     ws = out["layers.0.mlp.experts.gate_proj.weight_scale"]
     assert ws.dtype == DType.float8_e4m3fn
+
+    # Unquantized tensors keep their names: no NVFP4 suffix matches them, so
+    # the packed-weight rename must not fire and nothing may still be packed.
+    assert "layers.40.mlp.experts.3.down_proj.weight" in out
+    assert "layers.0.mlp.gate_proj.weight" in out
+    assert not any(k.endswith("weight_packed") for k in out)
+
+    # Per-head gate: ``[heads, hidden]``, not ``[heads * head_dim, hidden]``.
+    g_proj = out["layers.1.self_attn.g_proj.weight"]
+    assert list(g_proj.shape) == [72, 3072]
+
+    # Only the leading ``model.`` is stripped.
+    assert "layers.2.mlp.model.weight" in out

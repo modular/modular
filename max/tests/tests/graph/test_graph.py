@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+from collections import OrderedDict
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest import mock
@@ -161,6 +162,53 @@ def test_add_op_closure() -> None:
 
     assert "rmo.add" in str(add_graph._mlir_op)
     assert "mo.output" in str(add_graph._mlir_op)
+
+
+def test_forward_tree_names_the_outputs() -> None:
+    """A forward that returns a named tree flattens to its leaves, in order."""
+    cpu = DeviceRef.CPU()
+    x_type = TensorType(DType.float32, ["batch"], device=cpu)
+
+    def forward(x: TensorValue) -> OrderedDict[str, object]:
+        doubled = ops.add(x, x)
+        return OrderedDict(logits=x, extra=[doubled, ops.cast(x, DType.int32)])
+
+    graph = Graph("named", forward, (x_type,))
+    int_type = TensorType(DType.int32, ["batch"], device=cpu)
+    assert graph.output_types == [x_type, x_type, int_type]
+    assert graph.output_tree == OrderedDict(
+        logits=x_type, extra=[x_type, int_type]
+    )
+
+
+def test_forward_single_tuple_and_none_outputs_keep_their_shape() -> None:
+    x_type = TensorType(DType.float32, ["batch"], device=DeviceRef.CPU())
+    assert Graph("one", lambda x: x, (x_type,)).output_tree == (x_type,)
+    assert Graph("two", lambda x: (x, x), (x_type,)).output_tree == (
+        x_type,
+        x_type,
+    )
+    assert Graph("none", lambda x: None, (x_type,)).output_tree == ()
+
+
+def test_output_called_directly_takes_values_or_a_tree() -> None:
+    x_type = TensorType(DType.float32, ["batch"], device=DeviceRef.CPU())
+    with Graph("direct", input_types=(x_type,)) as graph:
+        graph.output(graph.inputs[0], graph.inputs[0])
+    assert graph.output_tree == (x_type, x_type)
+
+    with Graph("named", input_types=(x_type,)) as graph:
+        graph.output(OrderedDict(logits=graph.inputs[0]))
+    assert graph.output_tree == OrderedDict(logits=x_type)
+
+
+def test_output_rejects_the_keys_of_an_unpacked_tree() -> None:
+    """``graph.output(*outputs)`` on a named tree passes its keys."""
+    x_type = TensorType(DType.float32, ["batch"], device=DeviceRef.CPU())
+    with Graph("unpacked", input_types=(x_type,)) as graph:
+        outputs = OrderedDict(logits=graph.inputs[0])
+        with pytest.raises(TypeError, match=r"graph\.output\(outputs\)"):
+            graph.output(*outputs)
 
 
 def test_profile_scope_nests() -> None:

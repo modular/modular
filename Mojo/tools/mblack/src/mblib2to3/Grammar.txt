@@ -137,14 +137,15 @@ alias_stmt_body: alias_target_list [metaparams] (
     (where_clause)* '=' (yield_expr|testlist_star_expr)
 )
 comptime_assert_stmt_body: 'assert' test [',' test]
-comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt | match_stmt)
+comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt | match_stmt | guard_stmt)
 
 
-compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt | comptime_stmt
+compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt | guard_stmt | comptime_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' if_condition ':' suite ('elif' if_condition ':' suite)* ['else' ':' suite]
 if_condition: namedexpr_test | "case" patterns '=' namedexpr_test
 while_stmt: 'while' if_condition ':' suite ['else' ':' suite]
+guard_stmt: '__guard' if_condition 'else' ':' suite
 for_stmt: 'for' exprlist 'in' testlist_star_expr ':' suite ['else' ':' suite]
 try_stmt: ('try' ':' suite
            ((except_clause ':' suite)+
@@ -246,10 +247,10 @@ type_factor: ('+'|'-'|'~'|'==') type_factor | type_power
 type_power: [AWAIT] type_atom trailer* ['**' factor]
 type_atom: functype | generatortype | atom
 
-classdef: (STRUCT | ENUM) NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
+classdef: (STRUCT | ENUM | UNION) NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype | generatortype
-typeconv: (['*'|VAR|IMM|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
+typeconv: (['*'|convention] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
 # A `thin` function type may carry trailing `where` clauses constraining its own
 # parameters. The clauses bind to the innermost function type, so a declaration
 # whose result type is a function type must parenthesize it to keep a trailing
@@ -342,7 +343,9 @@ guard: 'if' namedexpr_test
 patterns: pattern (',' pattern)* [',']
 pattern: (expr|star_expr) ['as' expr]
 
-# An `__enum` case. As a small_stmt it takes a doc string and `;` as a field
-# does; the compiler rejects it outside an `__enum`. "case" stays a soft
-# keyword: no expression statement starts with two names.
-enum_case_stmt: "case" NAME ['(' [arglist] ')']
+# An `__enum` or `__union` case. As a small_stmt it takes a doc string and `;`
+# as a field does; the compiler rejects it outside those declarations. "case"
+# stays a soft keyword: no expression statement starts with two names.
+enum_case_stmt: "case" NAME ['(' [enum_case_payload] ')']
+# Positional types only, as the compiler takes them: not `x: T`, `x=T` or `*T`.
+enum_case_payload: test (',' test)* [',']

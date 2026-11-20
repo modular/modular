@@ -123,21 +123,7 @@ def execute_sink_test[
         total_length += valid_lengths[i]
 
     print(
-        "  cell=",
-        cell_name,
-        " dtype=",
-        dtype,
-        " sink=",
-        use_sink,
-        " valid=",
-        valid_lengths[0],
-        " cache=",
-        cache_lengths[0],
-        " max_prompt_len=",
-        max_prompt_length,
-        " num_keys=",
-        max_full_context_length,
-        sep="",
+        t"  cell={cell_name} dtype={dtype} sink={use_sink} valid={valid_lengths[0]} cache={cache_lengths[0]} max_prompt_len={max_prompt_length} num_keys={max_full_context_length}"
     )
 
     comptime Collection = PagedKVCacheCollection[
@@ -666,15 +652,8 @@ def main() raises:
             var diff = result_diffs[i]
             var atol = result_atols[i]
             print(
-                "  ",
-                result_names[i],
-                ": ",
-                diff,
-                " (atol=",
-                atol,
-                ") -> ",
-                "PASS" if diff <= atol else "FAIL",
-                sep="",
+                t"  {result_names[i]}: {diff} (atol={atol}) ->"
+                t""" {"PASS" if diff <= atol else "FAIL"}"""
             )
 
         if n_fail > 0:

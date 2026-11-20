@@ -42,7 +42,7 @@ from std.math import ceildiv
 from std.random import rand
 from std.testing import assert_almost_equal
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.matmul.gpu.amd import (
     InputRowMode,
@@ -136,7 +136,7 @@ def cpu_routed_reference(
     # Zero-fill output (inactive pairs / out-of-range t,s leave zeros here).
     for c_row in range(num_tokens * topk):
         for n in range(N):
-            c_out[Coord(c_row, n)] = Float32(0.0)
+            c_out[c_row, n] = Float32(0.0)
 
     for t in range(num_tokens):
         for s in range(topk):
@@ -150,18 +150,18 @@ def cpu_routed_reference(
             for n in range(N):
                 var acc: Float32 = 0.0
                 for kg in range(k_groups):
-                    var a_scale = _e8m0_to_fp32(sfa[Coord(a_row, kg)][0])
-                    var b_scale = _e8m0_to_fp32(sfb[Coord(expert, n, kg)][0])
+                    var a_scale = _e8m0_to_fp32(sfa[a_row, kg][0])
+                    var b_scale = _e8m0_to_fp32(sfb[expert, n, kg][0])
                     for ki in range(_MXFP4_GROUP // 2):
                         var k_byte_idx = kg * (_MXFP4_GROUP // 2) + ki
-                        var a_byte = a[Coord(a_row, k_byte_idx)][0]
-                        var b_byte = b[Coord(expert, n, k_byte_idx)][0]
+                        var a_byte = a[a_row, k_byte_idx][0]
+                        var b_byte = b[expert, n, k_byte_idx][0]
                         var a_pair = _fp4_byte_to_fp32_pair(a_byte)
                         var b_pair = _fp4_byte_to_fp32_pair(b_byte)
                         acc += a_pair[0] * a_scale * b_pair[0] * b_scale
                         acc += a_pair[1] * a_scale * b_pair[1] * b_scale
 
-                c_out[Coord(c_row, n)] = Float32(acc)
+                c_out[c_row, n] = Float32(acc)
 
 
 # ===----------------------------------------------------------------------=== #

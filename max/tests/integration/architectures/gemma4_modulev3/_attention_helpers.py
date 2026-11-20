@@ -42,9 +42,8 @@ from conftest import (
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
@@ -56,6 +55,7 @@ from max.pipelines.architectures.gemma4_modulev3.layers.rotary_embedding import 
     ProportionalRotaryEmbedding,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.tensor import default_dtype
 from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 TORCH_DTYPE = torch.bfloat16
@@ -249,14 +249,19 @@ def generate_torch_outputs(
 
 
 def make_attention_module(
-    text_config: Gemma4TextConfig, device: Device, layer_idx: int
+    text_config: Gemma4TextConfig,
+    device: Device,
+    layer_idx: int,
+    *,
+    cache_dtype: DType = MAX_DTYPE,
 ) -> tuple[Gemma4Attention, KVCacheParams]:
     """Builds the ModuleV3 Gemma4 attention layer and its KV-cache params.
 
     ``layer_idx`` selects the layer geometry: ``layer_idx % 6 == 5`` is a
     global (full-attention, k==v, head_dim 512) layer, anything else a
-    sliding (head_dim 256) layer. The caller picks the construction context
-    (``F.lazy()`` for compilation, eager otherwise).
+    sliding (head_dim 256) layer. ``cache_dtype`` is the KV cache storage
+    dtype. The caller picks the construction context (``F.lazy()`` for
+    compilation, eager otherwise).
     """
     assert text_config.layer_types is not None
     is_sliding = text_config.layer_types[layer_idx] == "sliding_attention"
@@ -265,7 +270,7 @@ def make_attention_module(
         for layer_type in ("sliding_attention", "full_attention")
     }
     kv_params = MHAKVCacheParams(
-        dtype=MAX_DTYPE,
+        dtype=cache_dtype,
         devices=[DeviceRef.GPU()],
         n_kv_heads=(
             text_config.num_key_value_heads

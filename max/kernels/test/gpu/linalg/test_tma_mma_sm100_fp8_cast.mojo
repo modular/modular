@@ -24,7 +24,7 @@ from std.math.uutils import udivmod
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import block_rank_in_cluster
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
 from max.gpu.memory import external_memory, fence_async_view_proxy
@@ -51,11 +51,13 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
+from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def cpu_matmul_naive[
@@ -64,33 +66,25 @@ def cpu_matmul_naive[
     var M = Int(C.dim[0]())
     var N = Int(C.dim[1]())
     var K = Int(A.dim[0]()) if transpose_a else Int(A.dim[1]())
-    var a_ptr = A.unsafe_ptr()
-    var b_ptr = B.unsafe_ptr()
-    var c_ptr = C.unsafe_ptr()
     for n in range(N):
         for m in range(M):
             var acc: Float32 = 0.0
             for k in range(K):
-                var a_idx: Int
-
-                comptime if transpose_a:
-                    a_idx = k * M + m
-                else:
-                    a_idx = m * K + k
-                var b_idx: Int
-
-                comptime if transpose_b:
-                    b_idx = n * K + k
-                else:
-                    b_idx = k * N + n
-                acc += (
-                    a_ptr[a_idx].cast[.float32]()
-                    * b_ptr[b_idx].cast[.float32]()
-                )
-            c_ptr[m * N + n] = acc.cast[C.dtype]()
+                var a_coord = Coord(k, m) if transpose_a else Coord(m, k)
+                var b_coord = Coord(n, k) if transpose_b else Coord(k, n)
+                acc += rebind[Float32](
+                    A.load(a_coord).cast[.float32]()
+                ) * rebind[Float32](B.load(b_coord).cast[.float32]())
+            C.store((m, n), acc.cast[C.dtype]())
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 def tma_umma_kernel_sgs[
     a_type: DType,  # A type in gmem and smem (bfloat16)
@@ -100,10 +94,10 @@ def tma_umma_kernel_sgs[
     a_desc_shape: Coord,
     b_layout: TensorLayout,  # B's gmem layout (FP8)
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
@@ -176,13 +170,15 @@ def tma_umma_kernel_sgs[
     comptime assert (
         (b_size * size_of[b_smem_type]()) % 16
     ) == 0, "preserve alignment"
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_smem_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[
+        Scalar[b_smem_type]
+    ]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -192,8 +188,10 @@ def tma_umma_kernel_sgs[
     comptime a_expected_bytes = a_size * size_of[a_type]()
     # B is loaded manually, not via TMA
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -253,7 +251,7 @@ def tma_umma_kernel_sgs[
         accum_type,
         a_type,
         b_smem_type,  # bfloat16
-        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
+        (UInt32(mma_shape[0]), UInt32(mma_shape[1])),
         transpose_a=False,  # A is not transposed
         transpose_b=transpose_b,
     ]()
@@ -286,8 +284,9 @@ def tma_umma_kernel_sgs[
         comptime simd_size = 8
         comptime assert elems_per_thread % simd_size == 0
 
-        var tid = Int(thread_idx.x)
+        var tid = thread_idx.x
         comptime swizzle = make_swizzle[b_smem_type, b_swizzle]()
+        var b_smem_flat = b_smem_tile.reshape(row_major[b_size]())
 
         comptime for elem in range(elems_per_thread // simd_size):
             var local_idx = simd_size * (elem * num_threads + tid)
@@ -303,15 +302,15 @@ def tma_umma_kernel_sgs[
                 k_local, n_local = divmod(local_idx, BN)
 
             # Global coordinates
-            var gmem_n = Int(block_idx.x) * BN + n_local
+            var gmem_n = block_idx.x * BN + n_local
             var gmem_k = i * BK + k_local
 
             var fp8_val: SIMD[b_gmem_type, simd_size]
             # Load from gmem - layout is NxK when transpose_b, KxN otherwise
             comptime if transpose_b:
-                fp8_val = b.load[width=simd_size](Coord(gmem_n, gmem_k))
+                fp8_val = b.load[width=simd_size]((gmem_n, gmem_k))
             else:
-                fp8_val = b.load[width=simd_size](Coord(gmem_k, gmem_n))
+                fp8_val = b.load[width=simd_size]((gmem_k, gmem_n))
 
             # Cast and store to smem using local coordinates
             var bf16_val = fp8_val.cast[b_smem_type]()
@@ -320,9 +319,7 @@ def tma_umma_kernel_sgs[
             var k_q, k_r = divmod(k_local, b_shape10)
             var k_offset = k_q * b_stride11 + k_r * b_stride10
             var offset = swizzle(n_offset + k_offset)
-            b_smem_tile.raw_store[width=simd_size, alignment=2 * simd_size](
-                offset, bf16_val
-            )
+            b_smem_flat.store[alignment=2 * simd_size]((offset,), bf16_val)
 
         # Sync: wait for TMA to complete and all threads to finish storing to smem
         tma_mbar[0].wait(tma_phase)
@@ -379,7 +376,7 @@ def tma_umma_kernel_sgs[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -412,10 +409,10 @@ def test_tma_umma_fp8_b[
     b_gmem_type: DType,  # float8_e4m3fn
     c_type: DType,  # bfloat16
     prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext) raises:
@@ -536,9 +533,6 @@ def test_tma_umma_fp8_b[
         grid_dim=(N // BN, M // BM),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
     # Reference computation using CPU to avoid any device sync issues
@@ -588,9 +582,9 @@ def main() raises:
                         .bfloat16,  # A type
                         .float8_e4m3fn,  # B gmem type
                         .bfloat16,  # C type
-                        Index(MMA_M, 128, BK),  # prob_shape matching block_tile
-                        Index(MMA_M, 128, BK),  # block_tile
-                        Index(MMA_M, 128, MMA_K),  # mma_shape
+                        (MMA_M, 128, BK),  # prob_shape matching block_tile
+                        (MMA_M, 128, BK),  # block_tile
+                        (MMA_M, 128, MMA_K),  # mma_shape
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,  # No swizzle for B
                         transpose_b=transpose_b,
@@ -601,9 +595,9 @@ def main() raises:
                         .bfloat16,
                         .float8_e4m3fn,
                         .bfloat16,
-                        Index(MMA_M, 128, BK * 2),  # 2 K iterations
-                        Index(MMA_M, 128, BK),
-                        Index(MMA_M, 128, MMA_K),
+                        (MMA_M, 128, BK * 2),  # 2 K iterations
+                        (MMA_M, 128, BK),
+                        (MMA_M, 128, MMA_K),
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,
                         transpose_b=transpose_b,
@@ -614,9 +608,9 @@ def main() raises:
                         .bfloat16,
                         .float8_e4m3fn,
                         .bfloat16,
-                        Index(MMA_M * 2, 128, BK),  # 2 M blocks
-                        Index(MMA_M, 128, BK),
-                        Index(MMA_M, 128, MMA_K),
+                        (MMA_M * 2, 128, BK),  # 2 M blocks
+                        (MMA_M, 128, BK),
+                        (MMA_M, 128, MMA_K),
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,
                         transpose_b=transpose_b,
@@ -627,9 +621,9 @@ def main() raises:
                         .bfloat16,
                         .float8_e4m3fn,
                         .bfloat16,
-                        Index(MMA_M, 128 * 2, BK),  # 2 N blocks
-                        Index(MMA_M, 128, BK),
-                        Index(MMA_M, 128, MMA_K),
+                        (MMA_M, 128 * 2, BK),  # 2 N blocks
+                        (MMA_M, 128, BK),
+                        (MMA_M, 128, MMA_K),
                         a_swizzle=a_swizzle,
                         b_swizzle=b_swizzle,
                         transpose_b=transpose_b,

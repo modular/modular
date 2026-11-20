@@ -20,32 +20,75 @@ from std.format._utils import (
     TypeNames,
     FormatStruct,
 )
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
+from std.builtin.rebind import downcast
+from std.builtin.variadics import TypeList, _MLIR
+from std.memory import MaybeUninit
+from std.utils._nicheable import (
+    NicheIndex,
+    NicheStorageTraits,
+    UnsafeCustomNicheStorage,
+    UnsafeNicheable,
+)
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
 # Tuple
 # ===-----------------------------------------------------------------------===#
 
+comptime _IsNicheable[T: AnyType]: Bool = conforms_to(T, UnsafeNicheable)
+"""True if `T` conforms to `UnsafeNicheable`."""
+
+
+trait __TupleLike:
+    """A fixed sequence of elements, each reached by a compile-time index."""
+
+    comptime __element_types: _MLIR.KGENParamListType[AnyType]
+    """The element types, in order."""
+
+    def __getitem_param__[
+        idx: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self.__element_types]()[
+        idx
+    ]:
+        """Returns a reference to an element.
+
+        Parameters:
+            idx: The element to return.
+
+        Returns:
+            A reference to the specified element.
+        """
+        ...
+
 
 @lldb_formatter_wrapping_type
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `Tuple` with"
-    " non-`Deinitable` elements"
-)
-struct Tuple[*Ts: Movable](
+struct Tuple[*Ts: AnyType](
     Comparable where Ts.all_conforms_to[Comparable](),
     Copyable where Ts.all_conforms_to[Copyable](),
     Defaultable where Ts.all_conforms_to[Defaultable](),
-    Deinitable where Ts.all_conforms_to[Deinitable](),
+    Deinitable where Ts.all_conforms_to[Deinitable]() else (
+        "Use `deinit_with()` to explicitly destroy a `Tuple` with"
+        " non-`Deinitable` elements"
+    ),
     Equatable where Ts.all_conforms_to[Equatable](),
     Hashable where Ts.all_conforms_to[Hashable](),
     ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
-    Movable,
+    Movable where Ts.all_conforms_to[Movable](),
     RegisterPassable where Ts.all_conforms_to[RegisterPassable](),
     Sized,
+    UnsafeCustomNicheStorage where Ts.length == 1 and conforms_to(
+        Ts[0], UnsafeCustomNicheStorage
+    ),
+    UnsafeNicheable where Ts.any[_IsNicheable](),
     Writable where Ts.all_conforms_to[Writable](),
+    __TupleLike,
 ):
     """The type of a literal tuple expression.
 
@@ -55,9 +98,13 @@ struct Tuple[*Ts: Movable](
         Ts: The elements type.
     """
 
-    @deprecated(use=Ts)
-    comptime element_types = Self.Ts
-    """The elements type. Deprecated alias for `Ts`."""
+    comptime __del__is_trivial = Self.Ts.all[IsTriviallyDeinitable]()
+    comptime __copy_ctor_is_trivial = Self.Ts.all[IsTriviallyCopyable]()
+    comptime __move_ctor_is_trivial = Self.Ts.all[IsTriviallyMovable]()
+
+    @doc_hidden
+    comptime __element_types = Self.Ts.values
+    """The element types, in order."""
 
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
@@ -75,28 +122,27 @@ struct Tuple[*Ts: Movable](
     ) where Self.Ts.all_conforms_to[Defaultable]():
         """Construct a tuple with default-initialized elements.
 
-        Constraints:
-            All `Ts` must conform to `Defaultable`. The constraint
-            is enforced via a per-element `comptime assert` in the body
-            instead of an explicit `where` clause so that callers whose
-            element types come from a comptime reducer (which the solver
-            can't reduce through when checking
-            `all_conforms_to[Defaultable]()`) can
-            still default-construct.
-        """
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self._mlir_value)
-        )
+        Each element is constructed directly into the tuple's storage, so
+        the element types do not need to be `Movable`.
 
-        comptime for i in range(Self.__len__()):
-            Pointer(to=self[i]).unsafe_write({})
+        Constraints:
+            All `Ts` must conform to `Defaultable`.
+        """
+        self = Self(init_with=lambda [i: Int]() -> Self.Ts[i]: Self.Ts[i]())
 
     @inline(.nodebug)
-    def __init__(out self, var *args: *Self.Ts):
+    def __init__(
+        out self, var *args: *Self.Ts
+    ) where Self.Ts.all_conforms_to[Movable]():
         """Construct the tuple.
 
         Args:
             args: Initial values.
+
+        Constraints:
+            All `Ts` must be `Movable`, since each argument is moved into the
+            tuple's storage. To construct a tuple of non-`Movable` elements,
+            use the `init_with` initializer instead.
         """
         # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -108,6 +154,49 @@ struct Tuple[*Ts: Movable](
             Pointer(to=self[idx]).unsafe_write(elt^)
 
         args^.consume_elements(init_elt)
+
+    @inline(.nodebug)
+    def __init__[F: def[idx: Int]() -> Self.Ts[idx]](out self, *, init_with: F):
+        """Construct the tuple by initializing each element in place.
+
+        The value returned by `init_with[i]()` is constructed directly into
+        the tuple's storage for element `i`, rather than being constructed
+        elsewhere and then moved, so the element types do not need to be
+        `Movable`. Elements are initialized in index order.
+
+        Parameters:
+            F: The type of the initializer closure.
+
+        Args:
+            init_with: A function parameterized on each index in
+                `[0, len(Ts))`, whose result initializes the element at that
+                index.
+
+        Example:
+
+        ```mojo
+        struct Pinned(not Movable):
+            var value: Int
+
+            def __init__(out self, value: Int):
+                self.value = value
+
+        comptime T = Tuple[Pinned, Pinned]
+        var t = T(init_with=lambda [i: Int]() -> T.Ts[i]: Pinned(i * 10))
+        print(t[0].value, t[1].value)  # 0 10
+        ```
+        """
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(self._mlir_value)
+        )
+
+        comptime for i in range(Self.__len__()):
+            # TODO: We should be able to write this as such once the compile
+            # supports these closure conversions:
+            # Pointer(to=self[i]).unsafe_write(init_with=Self.Ts[i].__init__)
+            __get_address_as_uninit_lvalue(
+                Pointer(to=self[i])._mlir_value
+            ) = init_with[i]()
 
     def __deinit__(
         deinit self,
@@ -150,33 +239,155 @@ struct Tuple[*Ts: Movable](
         Args:
             copy: The value to copy from.
         """
-        # Mark '_mlir_value' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self._mlir_value)
-        )
-
-        comptime for i in range(Self.__len__()):
-            # TODO: We should not use self[i] as this returns a reference to
-            # uninitialized memory.
-            Pointer(to=self[i]).unsafe_write(copy=copy[i])
+        comptime if Self.__copy_ctor_is_trivial:
+            self._mlir_value = copy._mlir_value
+        else:
+            self = Self(
+                init_with=lambda [i: Int]() -> Self.Ts[i]: copy[i].copy()
+            )
 
     @inline(.nodebug)
-    def __init__(out self, *, deinit move: Self):
+    def __init__(
+        out self, *, deinit move: Self
+    ) where Self.Ts.all_conforms_to[Movable]():
         """Move construct the tuple.
 
         Args:
             move: The value to move from.
         """
-        # Mark '_mlir_value' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self._mlir_value)
+        comptime if Self.__move_ctor_is_trivial:
+            self._mlir_value = move._mlir_value
+        else:
+            # Mark '_mlir_value' as being initialized so we can work on it.
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(self._mlir_value)
+            )
+
+            comptime for i in range(Self.__len__()):
+                # TODO: We should not use self[i] as this returns a reference
+                # to uninitialized memory.
+                Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
+        # Note: The destructor on `move` is auto-disabled in a moveinit.
+
+    # ===-------------------------------------------------------------------===#
+    # UnsafeNicheable
+    # ===-------------------------------------------------------------------===#
+
+    @doc_hidden
+    comptime NicheStorage: NicheStorageTraits where (
+        Self.Ts.length == 1
+        and conforms_to(Self.Ts[0], UnsafeCustomNicheStorage)
+    ) = downcast[
+        Self.Ts[0], UnsafeCustomNicheStorage
+    ].NicheStorage
+    """The custom niche storage of the tuple's only element.
+
+    A one-element tuple has its element's size and alignment, so a
+    niche-optimized container can store it the way it stores the element.
+
+    Constraints:
+        The tuple has exactly one element, and that element conforms to
+        `UnsafeCustomNicheStorage`.
+    """
+
+    @staticmethod
+    def _niche_element() -> Int:
+        """Returns the index of the element whose niches the tuple uses: the
+        element with the most niches, the first one on a tie, or -1 when no
+        element is `UnsafeNicheable`."""
+        var best = -1
+        var best_count = -1
+        comptime for i in range(Self.__len__()):
+            comptime if conforms_to(Self.Ts[i], UnsafeNicheable):
+                var count = downcast[Self.Ts[i], UnsafeNicheable].niche_count()
+                if count > best_count:
+                    best = i
+                    best_count = count
+        return best
+
+    @staticmethod
+    @inline(.always)
+    def _element_memory[
+        mut: Bool, origin: Origin[mut=mut], //, idx: Int
+    ](memory: Pointer[MaybeUninit[Self], origin]) -> Pointer[
+        MaybeUninit[downcast[Self.Ts[idx], UnsafeNicheable]], origin
+    ]:
+        var storage_kgen_ptr = Pointer(
+            to=memory[].unsafe_ptr()[]._mlir_value
+        )._get_kgen_pointer()
+        var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
+            index=idx.__mlir_index__(),
+            _type=Pointer[Self.Ts[idx]]._mlir_type,
+        ](storage_kgen_ptr)
+        return Pointer[Self.Ts[idx], origin](
+            _mlir_value=elt_kgen_ptr
+        ).unsafe_bitcast[MaybeUninit[downcast[Self.Ts[idx], UnsafeNicheable]]]()
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int where Self.Ts.any[_IsNicheable]():
+        """Returns the number of niches of the element with the most niches.
+
+        A tuple uses the niches of one element: the one with the most niches,
+        the first one on a tie. The other elements' bytes are left as they
+        are.
+
+        Returns:
+            The niche count of that element.
+
+        Constraints:
+            At least one element conforms to `UnsafeNicheable`.
+        """
+        comptime idx = Self._niche_element()
+        return downcast[Self.Ts[idx], UnsafeNicheable].niche_count()
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[
+        index: Int
+    ](memory: MutPointer[MaybeUninit[Self], _]) where Self.Ts.any[
+        _IsNicheable
+    ]():
+        """Writes niche `index` of the element with the most niches.
+
+        Parameters:
+            index: The niche to write, in `[0, niche_count())`.
+
+        Args:
+            memory: Uninitialized storage for a tuple.
+
+        Constraints:
+            At least one element conforms to `UnsafeNicheable`.
+        """
+        comptime idx = Self._niche_element()
+        downcast[Self.Ts[idx], UnsafeNicheable].write_niche[index](
+            Self._element_memory[idx](memory)
         )
 
-        comptime for i in range(Self.__len__()):
-            # TODO: We should not use self[i] as this returns a reference to
-            # uninitialized memory.
-            Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
-        # Note: The destructor on `move` is auto-disabled in a moveinit.
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(
+        memory: ImmPointer[MaybeUninit[Self], _]
+    ) -> NicheIndex where Self.Ts.any[_IsNicheable]():
+        """Classifies the bytes of the element with the most niches.
+
+        Args:
+            memory: Storage holding a tuple or one of its niches.
+
+        Returns:
+            The niche the element holds, or `NicheIndex.NotANiche` when the
+            storage holds a tuple.
+
+        Constraints:
+            At least one element conforms to `UnsafeNicheable`.
+        """
+        comptime idx = Self._niche_element()
+        return downcast[Self.Ts[idx], UnsafeNicheable].classify_niche(
+            Self._element_memory[idx](memory)
+        )
 
     @always_inline("builtin")
     @staticmethod
@@ -207,6 +418,10 @@ struct Tuple[*Ts: Movable](
         Returns:
             A reference to the specified element.
         """
+        comptime assert (
+            idx >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        comptime assert idx < Self.__len__(), "index is out of bounds"
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
         var storage_kgen_ptr = Pointer(to=self._mlir_value)._get_kgen_pointer()
@@ -255,14 +470,14 @@ struct Tuple[*Ts: Movable](
         return False
 
     @staticmethod
-    def _first_index_of[T: Movable]() -> Int:
+    def _first_index_of[T: AnyType]() -> Int:
         comptime for i in range(Self.Ts.length):
             comptime if Self.Ts[i] == T:
                 return i
         return -1
 
     @inline(.nodebug)
-    def first_of[T: Movable](ref self) -> ref[self] T:
+    def first_of[T: AnyType](ref self) -> ref[self] T:
         """Get a reference to the first element whose type is `T`.
 
         The lookup is resolved at compile time, and it is a compile-time error
@@ -455,7 +670,9 @@ struct Tuple[*Ts: Movable](
         return self._compare(other) >= 0
 
     @inline(.nodebug)
-    def reverse(deinit self, out result: Tuple[*Self.Ts.reverse()]):
+    def reverse(
+        deinit self, out result: Tuple[*Self.Ts.reverse()]
+    ) where Self.Ts.all_conforms_to[Movable]():
         """Return a new tuple with the elements in reverse order.
 
         Returns:
@@ -475,19 +692,23 @@ struct Tuple[*Ts: Movable](
         )
 
         comptime for i in range(type_of(result).__len__()):
-            Pointer(to=result[i]).unsafe_write_move_from(
-                rebind[Pointer[type_of(result[i]), origin_of(self)]](
-                    Pointer(to=self[Self.Ts.length - 1 - i])
-                )
-            )
+            comptime src_idx = Self.Ts.length - 1 - i
+            # Rebind the pointer since the compiler cannot prove the
+            # type_of(result[i]) == type_of(self[src_idx])
+            rebind[Pointer[type_of(self[src_idx]), origin_of(result)]](
+                Pointer(to=result[i])
+            ).unsafe_write_move_from(Pointer(to=self[src_idx]))
 
     @inline(.nodebug)
     def concat[
-        *OtherTs: Movable
+        *OtherTs: AnyType
     ](
         deinit self,
         deinit other: Tuple[*OtherTs],
         out result: Tuple[*TypeList._concat[Self.Ts.values, OtherTs.values]()],
+    ) where (
+        Self.Ts.all_conforms_to[Movable]()
+        and OtherTs.all_conforms_to[Movable]()
     ):
         """Return a new tuple that concatenates this tuple with another.
 
@@ -515,19 +736,16 @@ struct Tuple[*Ts: Movable](
 
         comptime self_len = Self.__len__()
 
+        # Destination pointers are rebound for the same reason as in `reverse()`.
         comptime for i in range(self_len):
-            Pointer(to=result[i]).unsafe_write_move_from(
-                rebind[Pointer[type_of(result[i]), origin_of(self)]](
-                    Pointer(to=self[i])
-                )
-            )
+            rebind[Pointer[type_of(self[i]), origin_of(result)]](
+                Pointer(to=result[i])
+            ).unsafe_write_move_from(Pointer(to=self[i]))
 
         comptime for i in range(type_of(other).__len__()):
-            Pointer(to=result[self_len + i]).unsafe_write_move_from(
-                rebind[
-                    Pointer[type_of(result[self_len + i]), origin_of(other)]
-                ](Pointer(to=other[i]))
-            )
+            rebind[Pointer[type_of(other[i]), origin_of(result)]](
+                Pointer(to=result[self_len + i])
+            ).unsafe_write_move_from(Pointer(to=other[i]))
 
     @inline(.nodebug)
     def consume_elements[

@@ -22,7 +22,7 @@ Prometheus hop histograms have no request_id, so leftover (server
 TTFT minus named hops) cannot be proven on one request. When the
 env is set, the decode model worker stamps hop ms onto the first
 :class:`~max.pipelines.context.TextGenerationOutput` and the API
-process prints at the same instant as ``maxserve.time_to_first_token``.
+process prints at the same instant as ``max.time_to_first_token``.
 
 Stderr print is intentional: Mammoth structured logging already
 captures API INFO at startup, but the per-request join line did

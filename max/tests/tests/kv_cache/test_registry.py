@@ -16,19 +16,18 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from types import SimpleNamespace
-from typing import cast
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import CompileOnlyExecutionError, InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
-    KVCacheGroupId,
     KVCacheParams,
+    KVCacheQuantizationConfig,
     KVConnectorType,
     MHAKVCacheParams,
+    MLAKVCacheParams,
     MultiKVCacheParams,
     NullKVConnectorConfig,
     RecurrentStateParams,
@@ -44,8 +43,8 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.kv_cache.config import KVConnectorConfig
-from max.pipelines.kv_cache.connectors import create_connector
 from max.pipelines.kv_cache.registry import (
+    CompileOnlyKVCacheManager,
     _use_jenga_kv_cache,
     jenga_supports_di,
 )
@@ -94,7 +93,8 @@ class TestUseJengaKvCache:
     """Default and opt-out behavior for the Jenga manager."""
 
     @pytest.mark.parametrize(
-        "model_name", ["openai/gpt-oss-20b", "Qwen/Qwen3-8B"]
+        "model_name",
+        ["openai/gpt-oss-20b", "Qwen/Qwen3-8B", "poolside/Laguna-S-2.1-NVFP4"],
     )
     def test_legacy_env_disables_jenga(
         self, model_name: str, monkeypatch: pytest.MonkeyPatch
@@ -220,6 +220,55 @@ class TestUseJengaKvCache:
             _use_jenga_kv_cache(
                 with_state, is_di_enabled=True, model_name="FAKE"
             )
+
+    def test_legacy_env_rejects_scratch_leaf(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_USE_LEGACY_KV_CACHE", "1")
+        params = MultiKVCacheParams.from_params(
+            {
+                "attn": create_kv_params(),
+                "scratch": replace(
+                    create_kv_params(num_layers=2), scratch=True
+                ),
+            }
+        )
+        with pytest.raises(
+            ValueError,
+            match=r"scratch KV cache leaf.*Unset MODULAR_USE_LEGACY_KV_CACHE",
+        ):
+            _use_jenga_kv_cache(params, is_di_enabled=False, model_name="FAKE")
+
+    def test_nvfp4_mla_cache_selects_jenga(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An NVFP4 MLA cache pages its scales as their own Jenga leaf. The
+        sparse MLA kernels read them through the scales lookup table, so it
+        needs no legacy cache, which has no KV connectors or disaggregated
+        inference."""
+        monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
+        nvfp4 = MLAKVCacheParams(
+            dtype=DType.uint8,
+            head_dim=576,
+            num_layers=2,
+            devices=[DeviceRef.GPU()],
+            page_size=128,
+            num_q_heads=8,
+            kvcache_quant_config=KVCacheQuantizationConfig(
+                scale_dtype=DType.float8_e4m3fn,
+                quantization_granularity=16,
+                fp8_tail_dim=64,
+            ),
+        )
+        assert nvfp4.is_nvfp4_kv_cache
+        multi = MultiKVCacheParams.from_params(
+            {"mla": nvfp4, "indexer": create_kv_params(num_layers=2)}
+        )
+        for params in (nvfp4, multi):
+            for is_di_enabled in (False, True):
+                assert _use_jenga_kv_cache(
+                    params, is_di_enabled=is_di_enabled, model_name="FAKE"
+                )
 
 
 @pytest.mark.parametrize(
@@ -439,10 +488,10 @@ class TestLoadKvManagerVirtualDevice:
         "max.pipelines.kv_cache.registry.is_virtual_device_mode",
         return_value=True,
     )
-    def test_load_kv_manager_returns_mock_in_virtual_mode(
+    def test_load_kv_manager_returns_compile_only_stand_in(
         self, mock_is_virtual: MagicMock
     ) -> None:
-        """In virtual device mode, load_kv_manager should return a Mock."""
+        """Checks a virtual-device pipeline gets a stand-in carrying its params."""
         params = create_kv_params()
         mock_session = MagicMock()
 
@@ -454,7 +503,32 @@ class TestLoadKvManagerVirtualDevice:
             available_cache_memory=1024 * 1024 * 1024,
         )
 
-        assert isinstance(result, Mock)
+        assert isinstance(result, CompileOnlyKVCacheManager)
+        assert result.params is params
+
+
+class TestCompileOnlyKVCacheManager:
+    """A virtual-device pipeline's KV manager refuses what needs the cache."""
+
+    def test_carries_params_and_shuts_down(self) -> None:
+        params = create_kv_params()
+        manager = CompileOnlyKVCacheManager(params)
+        assert manager.params is params
+        manager.shutdown()
+
+    @pytest.mark.parametrize(
+        "member",
+        ["claim", "alloc", "runtime_inputs", "effective_max_seq_length"],
+    )
+    def test_refuses_what_needs_the_cache(self, member: str) -> None:
+        manager = CompileOnlyKVCacheManager(create_kv_params())
+        with pytest.raises(CompileOnlyExecutionError, match=member):
+            getattr(manager, member)
+
+    def test_unknown_member_is_an_attribute_error(self) -> None:
+        manager = CompileOnlyKVCacheManager(create_kv_params())
+        with pytest.raises(AttributeError):
+            manager.not_a_manager_member  # noqa: B018
 
 
 class TestKvCacheMemorySize:
@@ -563,15 +637,22 @@ def test_legacy_manager_rejects_kv_connector(
         )
 
 
+def test_legacy_manager_rejects_scratch_leaf() -> None:
+    params = replace(create_kv_params(), scratch=True)
+    with pytest.raises(ValueError, match="cannot hold a scratch leaf"):
+        PagedKVCacheManager(
+            params=params,
+            session=MagicMock(),
+            total_num_pages=8,
+            max_batch_size=1,
+        )
+
+
 def test_tiered_connector_types() -> None:
     assert TIERED_CONNECTOR_TYPES == {
         KVConnectorType.tiered,
         KVConnectorType.rust_tiered,
     }
-    # Plain strings, as left by structural configs and `model_construct`.
-    assert "rust_tiered" in TIERED_CONNECTOR_TYPES
-    assert "tiered" in TIERED_CONNECTOR_TYPES
-    assert "null" not in TIERED_CONNECTOR_TYPES
 
 
 def test_kv_connector_type_rejects_removed_mojo_tiered() -> None:
@@ -597,18 +678,13 @@ def test_kv_connector_config_typo_error_lists_the_choices() -> None:
         KVConnectorConfig.model_validate({"type": "rust_tierd"})
 
 
-def test_create_connector_rejects_plain_string_mojo_tiered() -> None:
-    """A plain string in ``type`` must not fall through to a NullConnector."""
-    params = SimpleNamespace(
-        kv_connector_config=SimpleNamespace(type="mojo_tiered")
+def test_kv_connector_config_stores_the_enum() -> None:
+    """Plain strings from a config file or the CLI are stored as the enum."""
+    assert (
+        KVConnectorConfig.model_validate({"type": "rust_tiered"}).type
+        is KVConnectorType.rust_tiered
     )
-    with pytest.raises(
-        ValueError, match="'mojo_tiered' KV connector was removed"
-    ):
-        create_connector(
-            leaves={"full": KVCacheGroupId.full()},
-            replica_kv_memory=[],
-            params=cast("KVCacheParams", params),
-            devices=[],
-            device_memory_bytes=0,
-        )
+    assert (
+        KVConnectorConfig.model_validate_json('{"type": "dkv"}').type
+        is KVConnectorType.dkv
+    )

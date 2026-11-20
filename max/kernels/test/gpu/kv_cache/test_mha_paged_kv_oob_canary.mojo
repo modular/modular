@@ -172,13 +172,16 @@ def execute_oob_canary[
         2 * page_size * kv_params.num_heads * kv_params.head_size
     )
     var block_size_elements = num_layers * block_size_elements_const
+    var kv_block_paged_flat = kv_block_paged_host.reshape(
+        row_major(kv_block_paged_host.num_elements())
+    )
     for i in range(page_pos, len(block_perm)):
         var offset = block_perm[i] * block_size_elements
         for j in range(block_size_elements):
-            kv_block_paged_host.unsafe_ptr()[offset + j] = inf_val
+            kv_block_paged_flat[offset + j] = inf_val
     var sentinel_offset = sentinel_block_idx * block_size_elements
     for j in range(block_size_elements):
-        kv_block_paged_host.unsafe_ptr()[sentinel_offset + j] = inf_val
+        kv_block_paged_flat[sentinel_offset + j] = inf_val
     kv_block_paged.to_device()
     paged_lut.to_device()
 

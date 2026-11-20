@@ -32,7 +32,7 @@ def _carries_media(request: OpenResponsesRequest) -> bool:
 
     Tokenization runs for every request, so the preprocess-cache seam needs
     the same text-only gate the chat path applies -- otherwise a text-only
-    request publishes the whole ``maxserve.media.*`` family.
+    request publishes the whole ``max.media.*`` family.
     """
     messages = request.body.input
     if isinstance(messages, str):

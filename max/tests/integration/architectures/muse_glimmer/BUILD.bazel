@@ -29,14 +29,32 @@ modular_py_test(
     srcs = ["test_weight_adapters.py"],
     data = [":testdata"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/muse_glimmer",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_preprocess_graph",
+    srcs = ["test_preprocess_graph.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:vision_preprocess_parity",
+        requirement("pillow"),
     ],
 )

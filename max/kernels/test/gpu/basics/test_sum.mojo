@@ -16,7 +16,6 @@ from std.math import ceildiv, iota
 from max.gpu import global_idx
 from max.gpu.primitives import warp
 from max.gpu.primitives import block
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -25,9 +24,11 @@ comptime dtype = DType.uint64
 
 def warp_sum_kernel[
     dtype: DType,
+    output_origin: MutOrigin,
+    input_origin: ImmOrigin,
 ](
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
-    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], output_origin],
+    input: ImmPointer[Scalar[dtype], input_origin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -38,8 +39,8 @@ def warp_sum_kernel[
 
 
 def test_warp_sum(ctx: DeviceContext) raises:
-    comptime size = WARP_SIZE
-    comptime BLOCK_SIZE = WARP_SIZE
+    comptime size = ctx.default_device_info.warp_size
+    comptime BLOCK_SIZE = size
 
     # Allocate and initialize host memory
     var in_host = ctx.enqueue_create_host_buffer[dtype](size)
@@ -53,7 +54,11 @@ def test_warp_sum(ctx: DeviceContext) raises:
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    comptime kernel = warp_sum_kernel[dtype=dtype]
+    comptime kernel = warp_sum_kernel[
+        dtype=dtype,
+        output_origin=origin_of(out_device),
+        input_origin=ImmOrigin(origin_of(in_device)),
+    ]
     ctx.enqueue_function[kernel](
         out_device,
         in_device,
@@ -80,9 +85,11 @@ def test_warp_sum(ctx: DeviceContext) raises:
 def block_sum_kernel[
     dtype: DType,
     block_size: Int,
+    output_origin: MutOrigin,
+    input_origin: ImmOrigin,
 ](
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
-    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], output_origin],
+    input: ImmPointer[Scalar[dtype], input_origin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -95,7 +102,7 @@ def block_sum_kernel[
 def test_block_sum(ctx: DeviceContext) raises:
     # Initialize a block with several warps. The sum for each warp is tested
     # above.
-    comptime BLOCK_SIZE = WARP_SIZE * 2
+    comptime BLOCK_SIZE = ctx.default_device_info.warp_size * 2
     comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
@@ -110,7 +117,12 @@ def test_block_sum(ctx: DeviceContext) raises:
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    comptime kernel = block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]
+    comptime kernel = block_sum_kernel[
+        dtype=dtype,
+        block_size=BLOCK_SIZE,
+        output_origin=origin_of(out_device),
+        input_origin=ImmOrigin(origin_of(in_device)),
+    ]
     ctx.enqueue_function[kernel](
         out_device,
         in_device,

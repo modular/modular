@@ -1,18 +1,19 @@
 # Code examples and tests for the cheat-sheet cards
 
 This directory holds companion tests for the Mojo cheat-sheet cards linked from
-the [Cheat sheets](../../../reference/cheat-sheets.mdx) page. The cards ship as
-downloadable images (PDF/PNG/SVG), so their code never appears inline in the
-docs and is invisible to the usual doc-example testing. These tests assert each
-card's runtime-checkable claims directly, so a card can't silently drift as Mojo
-evolves.
+the [Cheat sheets](../../../reference/cheat-sheets/index.mdx) page. The cards
+ship as downloadable images (PDF/PNG/SVG), so their code never appears inline in
+the docs and is invisible to the usual doc-example testing. These tests assert
+each card's runtime-checkable claims directly, so a card can't silently drift as
+Mojo evolves.
 
 Test names must use underscores, not hyphens.
 
 Contents:
 
 - Each `test_<card>.mojo` file is a standalone Mojo application that asserts one
-  card's examples (one file per sheet; the page hosts many sheets).
+  card's examples. Its `# DOC:` comment names the card's page, so the docs-sync
+  check asks for that page when the test changes.
 - The `BUILD.bazel` file globs every `.mojo` file and defines:
   - A `mojo_binary` target for each (using the file name without extension).
   - A `modular_run_binary_test` target for each binary (with a `_test` suffix).

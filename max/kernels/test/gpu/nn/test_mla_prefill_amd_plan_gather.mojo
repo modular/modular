@@ -74,6 +74,7 @@ rather than assuming the over-read is harmless.
 
 from std.math import align_up, ceildiv
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed
 from std.sys import get_defined_int
 from std.testing import assert_almost_equal
@@ -121,13 +122,8 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     var num_keys = cache_length + seq_len  # not page-aligned
 
     print(
-        "=== E2E plan+gather+decompress: cache_length=",
-        cache_length,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
-        " ===",
+        t"=== E2E plan+gather+decompress: cache_length= {cache_length} "
+        t" seq_len= {seq_len}  num_keys= {num_keys}  ==="
     )
     seed(0)
 
@@ -143,9 +139,9 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     var lut_size = batch_size * max_pages_per_batch
     var block_elems = paged_block_elems(total_pages, PAGE_SIZE, CACHE_DEPTH)
 
-    var blocks_host = alloc[Scalar[.bfloat16]](block_elems)
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var blocks_host = unsafe_alloc[Scalar[.bfloat16]](block_elems)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
 
     fill_paged_blocks_uniform[.bfloat16](
         blocks_host, batch_size, num_keys, PAGE_SIZE
@@ -166,7 +162,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -214,7 +210,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     # size sized to the page-aligned total so nothing spills to a second
     # chunk).
     # ------------------------------------------------------------------
-    var input_row_offsets_host = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
     input_row_offsets_host[0] = UInt32(0)
     input_row_offsets_host[1] = UInt32(seq_len)
     var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
@@ -249,7 +245,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
         buffer_lengths_device, row_major(Idx[MAX_CHUNKS])
     )
 
-    generic_flare_mla_prefill_ragged_paged_plan[target="gpu"](
+    generic_flare_mla_prefill_ragged_paged_plan(
         input_row_offsets_tt,
         kv_collection,
         UInt32(0),  # layer_idx
@@ -263,9 +259,11 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
 
     # Read the plan's own outputs back -- also a direct correctness check
     # on stage 1 itself, not just plumbing to feed stage 2.
-    var buffer_row_offsets_host = alloc[UInt32](MAX_CHUNKS * (batch_size + 1))
-    var cache_offsets_host = alloc[UInt32](MAX_CHUNKS * batch_size)
-    var buffer_lengths_host = alloc[Int32](MAX_CHUNKS)
+    var buffer_row_offsets_host = unsafe_alloc[UInt32](
+        MAX_CHUNKS * (batch_size + 1)
+    )
+    var cache_offsets_host = unsafe_alloc[UInt32](MAX_CHUNKS * batch_size)
+    var buffer_lengths_host = unsafe_alloc[Int32](MAX_CHUNKS)
     ctx.enqueue_copy(buffer_row_offsets_host, buffer_row_offsets_device)
     ctx.enqueue_copy(cache_offsets_host, cache_offsets_device)
     ctx.enqueue_copy(buffer_lengths_host, buffer_lengths_device)
@@ -273,17 +271,11 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
 
     var expect_buffer_length = align_up(num_keys, PAGE_SIZE)
     print(
-        "  plan: buffer_row_offsets=[",
-        buffer_row_offsets_host[0],
-        ",",
-        buffer_row_offsets_host[1],
-        "] cache_offsets=[",
-        cache_offsets_host[0],
-        "] buffer_lengths=[",
-        buffer_lengths_host[0],
-        "] (expect buffer_length=",
-        expect_buffer_length,
-        ")",
+        t"  plan: buffer_row_offsets=[ {buffer_row_offsets_host[0]} ,"
+        t" {buffer_row_offsets_host[1]} ] cache_offsets=["
+        t" {cache_offsets_host[0]} ] buffer_lengths=["
+        t" {buffer_lengths_host[0]} ] (expect buffer_length="
+        t" {expect_buffer_length} )"
     )
     if Int(buffer_row_offsets_host[0]) != 0:
         raise Error(
@@ -317,7 +309,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     var buffer_row_offsets_1d_tt = buffer_row_offsets_tt[0, :]
     var cache_offsets_1d_tt = cache_offsets_tt[0, :]
 
-    var weight_host = alloc[Scalar[.bfloat16]](OUT_DIM * LATENT_DIM)
+    var weight_host = unsafe_alloc[Scalar[.bfloat16]](OUT_DIM * LATENT_DIM)
     randn[.bfloat16](weight_host, OUT_DIM * LATENT_DIM)
     var weight_device = ctx.enqueue_create_buffer[.bfloat16](
         OUT_DIM * LATENT_DIM
@@ -342,9 +334,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
         k_buffer_device, row_major(Int64(buffer_length), Idx[OUT_DIM])
     )
 
-    generic_flare_mla_decompress_k_cache_ragged_paged[
-        target="gpu", dtype=DType.bfloat16
-    ](
+    generic_flare_mla_decompress_k_cache_ragged_paged[dtype=DType.bfloat16,](
         buffer_row_offsets_1d_tt,
         cache_offsets_1d_tt,
         Int32(buffer_length),
@@ -357,7 +347,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     )
     ctx.synchronize()
 
-    var k_buffer_host = alloc[Scalar[.bfloat16]](buffer_length * OUT_DIM)
+    var k_buffer_host = unsafe_alloc[Scalar[.bfloat16]](buffer_length * OUT_DIM)
     ctx.enqueue_copy(k_buffer_host, k_buffer_device)
     ctx.synchronize()
 
@@ -376,7 +366,7 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     var n_mismatch = 0
 
     for r in range(buffer_length):
-        var expect_row = alloc[Float64](OUT_DIM)
+        var expect_row = unsafe_alloc[Float64](OUT_DIM)
         for o in range(OUT_DIM):
             expect_row[o] = 0.0
 
@@ -407,27 +397,15 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
                 n_mismatch += 1
                 if n_mismatch <= 8:
                     print(
-                        "    mismatch r=",
-                        r,
-                        " o=",
-                        o,
-                        " actual=",
-                        actual,
-                        " expect=",
-                        expect,
+                        t"    mismatch r= {r}  o= {o}  actual= {actual} "
+                        t" expect= {expect}"
                     )
-        expect_row.free()
+        expect_row.unsafe_free()
 
     print(
-        "  max_abs_err:",
-        max_abs_err,
-        " n_mismatch(>atol):",
-        n_mismatch,
-        " (",
-        num_keys,
-        " valid rows, ",
-        buffer_length - num_keys,
-        " zero-padding rows)",
+        t"  max_abs_err: {max_abs_err}  n_mismatch(>atol): {n_mismatch}  ("
+        t" {num_keys}  valid rows,  {buffer_length - num_keys}  zero-padding"
+        t" rows)"
     )
 
     for r in range(buffer_length):
@@ -450,15 +428,15 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
 
     print("  RESULT: PASS")
 
-    blocks_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    input_row_offsets_host.free()
-    buffer_row_offsets_host.free()
-    cache_offsets_host.free()
-    buffer_lengths_host.free()
-    weight_host.free()
-    k_buffer_host.free()
+    blocks_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    input_row_offsets_host.unsafe_free()
+    buffer_row_offsets_host.unsafe_free()
+    cache_offsets_host.unsafe_free()
+    buffer_lengths_host.unsafe_free()
+    weight_host.unsafe_free()
+    k_buffer_host.unsafe_free()
 
     _ = blocks_device
     _ = cache_lengths_device

@@ -27,10 +27,16 @@ from std.random import random_float64, random_ui64
 from std.sys.info import _accelerator_arch
 from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from layout import Idx, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    Idx,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
 from linalg.fp4_utils import E2M1_TO_FLOAT32
 from linalg.mxfp4_dequant import dequant_mxfp4
-from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
+from linalg.mxfp4_dequant import _cast_bf16_to_fp8
 
 
 def _e8m0_to_float32(bits: UInt8) -> Float32:
@@ -53,7 +59,7 @@ def test_mxfp4_matmul[
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
 
-    print("  M=", M, " N=", N, " K=", K)
+    print(t"  M= {M}  N= {N}  K= {K}")
 
     # Device buffers for MXFP4 inputs
     var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
@@ -148,16 +154,8 @@ def test_mxfp4_matmul[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {expected}  rel_err= {rel_err}"
                 )
             num_mismatches += 1
 
@@ -179,14 +177,15 @@ def test_mxfp4_matmul_e2e[
     """End-to-end test of mxfp4_dequant_matmul_amd against vendor BLAS reference.
 
     Dequants once into shared FP8 buffers, then runs vendor BLAS as reference.
-    Separately calls mxfp4_dequant_matmul_amd on the original MXFP4 inputs.
+    Separately calls mxfp4_dequant_matmul_amd on the original MXFP4 inputs,
+    which runs the native block-scaled MMA on the still-packed weights.
     The dequant is deterministic so both paths operate on identical FP8 data.
     """
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
 
-    print("  E2E M=", M, " N=", N, " K=", K)
+    print(t"  E2E M= {M}  N= {N}  K= {K}")
 
     var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
     var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * packed_K)
@@ -201,8 +200,15 @@ def test_mxfp4_matmul_e2e[
         for i in range(N * packed_K):
             hbp[i] = UInt8(random_ui64(0, 255))
     var bs_hbuf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](N * scale_K)
+    # The weight metadata the dispatcher gates on: the exponent range of the
+    # block scales, computed here because this is where the scales are made.
+    var min_scale_exp = 255
+    var max_scale_exp = 0
     for i in range(N * scale_K):
-        bs_hbuf[i] = bitcast[.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
+        var scale_exp = UInt8(random_ui64(125, 129))
+        bs_hbuf[i] = bitcast[.float8_e8m0fnu](scale_exp)
+        min_scale_exp = min(min_scale_exp, Int(scale_exp))
+        max_scale_exp = max(max_scale_exp, Int(scale_exp))
 
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
@@ -243,7 +249,7 @@ def test_mxfp4_matmul_e2e[
     )
     ctx.synchronize()
 
-    # Kernel under test: mxfp4_dequant_matmul_amd (dequants internally)
+    # Kernel under test: mxfp4_dequant_matmul_amd (native block-scaled MMA)
     var c_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
     var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
 
@@ -252,7 +258,15 @@ def test_mxfp4_matmul_e2e[
             mxfp4_dequant_matmul_amd,
         )
 
-        mxfp4_dequant_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
+        mxfp4_dequant_matmul_amd(
+            c_tt,
+            a_tt,
+            b_packed_tt,
+            b_scales_tt,
+            ctx,
+            min_block_scale_exp=min_scale_exp,
+            max_block_scale_exp=max_scale_exp,
+        )
     elif "sm_90" in _accelerator_arch():
         from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 
@@ -285,16 +299,8 @@ def test_mxfp4_matmul_e2e[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    E2E MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    E2E MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {expected}  rel_err= {rel_err}"
                 )
             num_mismatches += 1
 
@@ -369,14 +375,8 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
             if abs(got - expected) > 0.01:
                 if mismatches < 5:
                     print(
-                        "    DEQUANT MISMATCH [",
-                        row,
-                        ",",
-                        col,
-                        "]: got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"    DEQUANT MISMATCH [ {row} , {col} ]: got= {got} "
+                        t" expected= {expected}"
                     )
                 mismatches += 1
 
@@ -393,7 +393,7 @@ def test_fp8_kernel_vs_blas[
     comptime fp8_type = DType.float8_e4m3fn
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
-    print("  FP8 kernel-vs-BLAS: M=", M, " N=", N, " K=", K)
+    print(t"  FP8 kernel-vs-BLAS: M= {M}  N= {N}  K= {K}")
 
     # A: random BF16 activations cast to FP8
     var a_bf16 = ctx.enqueue_create_buffer[.bfloat16](M * K)
@@ -475,16 +475,8 @@ def test_fp8_kernel_vs_blas[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    [",
-                    row,
-                    ",",
-                    col,
-                    "]: kernel=",
-                    got,
-                    " blas=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    [ {row} , {col} ]: kernel= {got}  blas= {expected} "
+                    t" rel_err= {rel_err}"
                 )
             num_mismatches += 1
 
@@ -498,6 +490,417 @@ def test_fp8_kernel_vs_blas[
         raise Error("FP8 kernel vs BLAS test failed")
 
     print("    PASS max_rel_err=", max_rel_err)
+
+
+def test_n_alignment_gates_route[
+    M: Int, N: Int, K: Int
+](ctx: DeviceContext) raises:
+    """Proves the native route refuses an N that leaves a partial last block.
+
+    The dense block-scaled kernel writes N in 128-wide blocks and its non-fused
+    store clamps only at the buffer end, so a partial last block would spill
+    into the following row. A gate that tested only `N % 4 == 0` admitted those
+    shapes and silently corrupted the output; this pins the routing predicate
+    on both sides of the boundary.
+
+    Parameters:
+        M: Output rows; must be inside the native route's decode range.
+        N: Output columns under test; the caller picks one aligned and one not.
+        K: Reduction extent, a multiple of 128.
+    """
+    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
+        mxfp4_native_route_enabled,
+    )
+
+    comptime in_range_exp = 127  # 2^0, so only the shape can refuse the route
+    print(t"  N-alignment gate: N=", N, " K=", K, " M=", M)
+
+    var routed = mxfp4_native_route_enabled(in_range_exp, in_range_exp, M, N, K)
+    comptime whole_blocks = N % 128 == 0
+    if routed != whole_blocks:
+        print("    FAIL: N=", N, " expected whole_blocks=", whole_blocks)
+        raise Error("the native route gate does not require whole N blocks")
+    print("    PASS: N=", N, " native=", routed)
+
+
+def test_runtime_weight_shape_takes_dequant_route[
+    M: Int, N: Int, K: Int
+](ctx: DeviceContext) raises:
+    """Proves a weight view with a runtime dimension takes the dequant route.
+
+    The native branch reads `static_shape` off the weight view and the
+    block-scaled kernel states it as a `comptime` assert, so a weight whose row
+    count is only known at runtime cannot instantiate it at all: before the
+    gate, this call failed to compile instead of falling back. Every runtime
+    conjunct of the route predicate passes here, so only the view shape can
+    divert the call, and the output must be the dequant route's exact value.
+
+    Parameters:
+        M: Output rows; inside the native route's decode range.
+        N: Output columns, a multiple of 128.
+        K: Reduction extent, a multiple of 128.
+    """
+    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
+        mxfp4_dequant_matmul_amd,
+        mxfp4_native_route_enabled,
+        mxfp4_native_views_supported,
+    )
+
+    comptime packed_K = K // 2
+    comptime scale_K = K // 32
+    comptime IN_RANGE_EXP = 127  # 2^0, so only the view can refuse the route
+    comptime EXPECTED = Float32(K) * Float32(0.5)
+
+    print(t"  Runtime-weight-shape gate: N=", N, " K=", K, " M=", M)
+
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * packed_K)
+    var b_scales_device = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+        N * scale_K
+    )
+    with a_device.map_to_host() as ha:
+        for i in range(M * K):
+            ha[i] = 1.0
+    with b_packed_device.map_to_host() as hbp:
+        # 0x1 is E2M1's 0.5 in both nibbles.
+        for i in range(N * packed_K):
+            hbp[i] = UInt8(0x11)
+    var bs_hbuf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](N * scale_K)
+    for i in range(N * scale_K):
+        bs_hbuf[i] = bitcast[.float8_e8m0fnu](UInt8(IN_RANGE_EXP))
+    ctx.enqueue_copy(b_scales_device, bs_hbuf)
+    ctx.synchronize()
+
+    var a_tt = TileTensor(a_device, row_major((M, Idx[K])))
+    var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
+    # Same buffer and element type, but the row extent is a runtime value.
+    var n_rows = Int(N)
+    var b_packed_runtime = TileTensor(
+        b_packed_device, row_major((n_rows, Idx[packed_K]))
+    )
+
+    if not mxfp4_native_views_supported[
+        RowMajorLayout[ComptimeInt[N], ComptimeInt[packed_K]],
+        type_of(b_scales_tt).LayoutType,
+        scale_K,
+    ]():
+        print("    FAIL: a static weight and dense scales must be supported")
+        raise Error("the view gate refuses the native route's own views")
+    if mxfp4_native_views_supported[
+        type_of(b_packed_runtime).LayoutType,
+        type_of(b_scales_tt).LayoutType,
+        scale_K,
+    ]():
+        print("    FAIL: a runtime weight dimension must not be supported")
+        raise Error("the view gate admits a runtime-shaped weight view")
+    if not mxfp4_native_route_enabled(IN_RANGE_EXP, IN_RANGE_EXP, M, N, K):
+        print("    FAIL: the runtime conjuncts should admit the native route")
+        raise Error("the route predicate refuses an in-range decode shape")
+
+    var c_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
+    var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
+    mxfp4_dequant_matmul_amd(
+        c_tt,
+        a_tt,
+        b_packed_runtime,
+        b_scales_tt,
+        ctx,
+        min_block_scale_exp=IN_RANGE_EXP,
+        max_block_scale_exp=IN_RANGE_EXP,
+    )
+    ctx.synchronize()
+
+    var c_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
+    ctx.enqueue_copy(c_host, c_device)
+    ctx.synchronize()
+
+    var max_err = Float32(0.0)
+    for i in range(M * N):
+        max_err = max(max_err, abs(c_host[i].cast[.float32]() - EXPECTED))
+    if max_err > Float32(1e-4):
+        print(
+            "    FAIL: expected",
+            EXPECTED,
+            "from the dequant route, max_err=",
+            max_err,
+        )
+        raise Error("a runtime-shaped weight view did not take dequant route")
+    print("    PASS: dequant route, max_err=", max_err)
+
+
+def test_strided_scale_view_takes_dequant_route[
+    M: Int, N: Int, K: Int
+](ctx: DeviceContext) raises:
+    """Proves a strided scale view takes the dequant route.
+
+    The native scale loader reshapes `b_scales` into a flat row-major buffer,
+    so it would read a transposed view as if it were dense and apply another
+    block's scale to each column. The gate must refuse that view, and the
+    dequant route, which indexes the view through its strides, must reproduce
+    the value the scales actually encode.
+
+    The first half of the K blocks carries 2^0 and the second half 2^-1, so a
+    contiguous misread changes the row sum from `16 * half + 8 * (K//32 - half)`
+    to `16 * K//32`.
+
+    Parameters:
+        M: Output rows; inside the native route's decode range.
+        N: Output columns, a multiple of 128.
+        K: Reduction extent, a multiple of 128 with an even block count.
+    """
+    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
+        mxfp4_dequant_matmul_amd,
+        mxfp4_native_route_enabled,
+        mxfp4_native_views_supported,
+    )
+
+    comptime packed_K = K // 2
+    comptime scale_K = K // 32
+    comptime half_blocks = scale_K // 2
+    comptime UNIT_EXP = 127  # 2^0
+    comptime HALF_EXP = 126  # 2^-1
+    # Weights are 0.5, so a 2^0 block adds 32 * 0.5 and a 2^-1 block 32 * 0.25.
+    comptime EXPECTED = (
+        Float32(32.0 * 0.5) * Float32(half_blocks)
+        + Float32(32.0 * 0.25) * Float32(scale_K - half_blocks)
+    )
+
+    print(t"  Strided-scale gate: N=", N, " K=", K, " M=", M)
+
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * packed_K)
+    # Scales stored column-major, i.e. as a [scale_K, N] row-major buffer, so
+    # the [N, scale_K] view of it is transposed: stride (1, N).
+    var b_scales_device = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+        scale_K * N
+    )
+    with a_device.map_to_host() as ha:
+        for i in range(M * K):
+            ha[i] = 1.0
+    with b_packed_device.map_to_host() as hbp:
+        for i in range(N * packed_K):
+            hbp[i] = UInt8(0x11)
+
+    var bs_hbuf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](scale_K * N)
+    for k in range(scale_K):
+        var exp_byte = UNIT_EXP
+        if k >= half_blocks:
+            exp_byte = HALF_EXP
+        for n in range(N):
+            bs_hbuf[k * N + n] = bitcast[.float8_e8m0fnu](UInt8(exp_byte))
+    ctx.enqueue_copy(b_scales_device, bs_hbuf)
+    ctx.synchronize()
+
+    var a_tt = TileTensor(a_device, row_major((M, Idx[K])))
+    var b_packed_tt = TileTensor(b_packed_device, row_major[N, packed_K]())
+    var b_scales_col_major = TileTensor(
+        b_scales_device, row_major[scale_K, N]()
+    )
+    var b_scales_strided = b_scales_col_major.transpose()
+
+    if not mxfp4_native_views_supported[
+        type_of(b_packed_tt).LayoutType,
+        RowMajorLayout[ComptimeInt[N], ComptimeInt[scale_K]],
+        scale_K,
+    ]():
+        print("    FAIL: a dense scale view must be supported")
+        raise Error("the view gate refuses the native route's own scale view")
+    if mxfp4_native_views_supported[
+        type_of(b_packed_tt).LayoutType,
+        type_of(b_scales_strided).LayoutType,
+        scale_K,
+    ]():
+        print("    FAIL: a transposed scale view must not be supported")
+        raise Error("the view gate admits a strided scale view")
+    if not mxfp4_native_route_enabled(UNIT_EXP, UNIT_EXP, M, N, K):
+        print("    FAIL: the runtime conjuncts should admit the native route")
+        raise Error("the route predicate refuses an in-range decode shape")
+
+    var c_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
+    var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
+    mxfp4_dequant_matmul_amd(
+        c_tt,
+        a_tt,
+        b_packed_tt,
+        b_scales_strided,
+        ctx,
+        min_block_scale_exp=UNIT_EXP,
+        max_block_scale_exp=UNIT_EXP,
+    )
+    ctx.synchronize()
+
+    var c_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
+    ctx.enqueue_copy(c_host, c_device)
+    ctx.synchronize()
+
+    var max_err = Float32(0.0)
+    for i in range(M * N):
+        max_err = max(max_err, abs(c_host[i].cast[.float32]() - EXPECTED))
+    if max_err > Float32(1e-4):
+        print(
+            "    FAIL: expected",
+            EXPECTED,
+            "from the strided scales, max_err=",
+            max_err,
+        )
+        raise Error("a strided scale view did not take the dequant route")
+    print("    PASS: dequant route, max_err=", max_err)
+
+
+def test_scale_range_gates_route[
+    M: Int, N: Int, K: Int
+](ctx: DeviceContext) raises:
+    """Proves the scale bound gates the native route instead of being advised.
+
+    Weights are 0.5 (E2M1) and activations are 1.0, so the output of a
+    K-wide dot product is exactly `K * 0.5 * 2^(exp - 127)` whatever route
+    runs, and the two routes are told apart by that value alone:
+
+      * block scale 2^-10 puts each product at 2^-11, below E4M3's smallest
+        subnormal 2^-9. The dequant route rounds it to zero; the MMA would
+        form it. The dispatcher must refuse the native route here, and the
+        output must be 0.0.
+      * block scale 2^0 puts each product at 0.5, inside E4M3. The
+        dispatcher must take the native route, and the output must be
+        `K * 0.5`.
+
+    Both the routing predicate and the output are asserted, so neither a
+    loosened gate nor a changed rounding can pass silently.
+
+    Parameters:
+        M: Output rows; must be inside the native route's decode range.
+        N: Output columns.
+        K: Reduction extent in logical elements.
+    """
+    from linalg.matmul.gpu import _matmul_gpu
+    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
+        mxfp4_dequant_matmul_amd,
+        mxfp4_native_route_enabled,
+    )
+
+    comptime scale_K = ceildiv(K, 32)
+    comptime fp8_type = DType.float8_e4m3fn
+    comptime IN_RANGE_EXPECTED = Float32(K) * Float32(0.5)
+    comptime OUT_OF_RANGE_EXPECTED = Float32(0.0)
+    comptime OUT_OF_RANGE_EXP = 117  # 2^-10
+    comptime IN_RANGE_EXP = 127  # 2^0
+
+    print(t"  Scale-range gate: N=", N, " K=", K, " M=", M)
+
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * (K // 2))
+    with a_device.map_to_host() as ha:
+        for i in range(M * K):
+            ha[i] = 1.0
+    with b_packed_device.map_to_host() as hbp:
+        # 0x1 is E2M1's 0.5 in both nibbles.
+        for i in range(N * (K // 2)):
+            hbp[i] = UInt8(0x11)
+
+    var a_tt = TileTensor(a_device, row_major((M, Idx[K])))
+    var b_packed_tt = TileTensor(b_packed_device, row_major[N, K // 2]())
+
+    # The gate itself, for both scale ranges, before any data is launched.
+    if mxfp4_native_route_enabled(OUT_OF_RANGE_EXP, OUT_OF_RANGE_EXP, M, N, K):
+        print("    FAIL: out-of-range scales must not take the native route")
+        raise Error("scale-range gate admitted an out-of-range weight")
+    if not mxfp4_native_route_enabled(IN_RANGE_EXP, IN_RANGE_EXP, M, N, K):
+        print("    FAIL: in-range scales should take the native route")
+        raise Error("scale-range gate refused an in-range weight")
+
+    # Same weights and activations through both dispatcher states.
+    for which in range(2):
+        var scale_exp = IN_RANGE_EXP
+        if which == 0:
+            scale_exp = OUT_OF_RANGE_EXP
+        var b_scales_device = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+            N * scale_K
+        )
+        var bs_hbuf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+            N * scale_K
+        )
+        for i in range(N * scale_K):
+            bs_hbuf[i] = bitcast[.float8_e8m0fnu](UInt8(scale_exp))
+        ctx.enqueue_copy(b_scales_device, bs_hbuf)
+        ctx.synchronize()
+        var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
+
+        var c_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
+        var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
+        mxfp4_dequant_matmul_amd(
+            c_tt,
+            a_tt,
+            b_packed_tt,
+            b_scales_tt,
+            ctx,
+            min_block_scale_exp=scale_exp,
+            max_block_scale_exp=scale_exp,
+        )
+
+        # The dequant route to compare against, built by hand.
+        var b_fp8 = ctx.enqueue_create_buffer[fp8_type](N * K)
+        var a_fp8 = ctx.enqueue_create_buffer[fp8_type](M * K)
+        var b_fp8_tt = TileTensor(b_fp8, row_major((Idx[N], Idx[K])))
+        var a_fp8_tt = TileTensor(a_fp8, row_major((M, Idx[K])))
+        dequant_mxfp4(
+            ctx,
+            b_fp8_tt,
+            b_packed_tt,
+            b_scales_tt,
+            num_rows=N,
+            num_cols=K,
+        )
+        _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, M, K)
+        var c_ref_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
+        var c_ref_tt = TileTensor(c_ref_device, row_major((M, Idx[N])))
+        _matmul_gpu[use_tensor_core=True, transpose_b=True](
+            c_ref_tt, a_fp8_tt, b_fp8_tt, ctx
+        )
+        ctx.synchronize()
+
+        var c_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
+        var c_ref_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
+        ctx.enqueue_copy(c_host, c_device)
+        ctx.enqueue_copy(c_ref_host, c_ref_device)
+        ctx.synchronize()
+
+        var expected = OUT_OF_RANGE_EXPECTED
+        if scale_exp == IN_RANGE_EXP:
+            expected = IN_RANGE_EXPECTED
+        var max_err = Float32(0.0)
+        var max_ref_err = Float32(0.0)
+        for i in range(M * N):
+            max_err = max(max_err, abs(c_host[i].cast[.float32]() - expected))
+            max_ref_err = max(
+                max_ref_err, abs(c_ref_host[i].cast[.float32]() - expected)
+            )
+
+        if max_err > Float32(1e-4) or max_ref_err > Float32(1e-4):
+            print(
+                "    FAIL: scale_exp=",
+                scale_exp,
+                "expected",
+                expected,
+                "got max_err=",
+                max_err,
+                "dequant max_err=",
+                max_ref_err,
+            )
+            raise Error("routed value disagrees with its expected route")
+
+        var route = String("dequant, E4M3 flush")
+        if scale_exp == IN_RANGE_EXP:
+            route = String("native")
+        print(
+            "    PASS scale_exp=",
+            scale_exp,
+            "routed=",
+            expected,
+            " route=",
+            route,
+            " dequant_ref_err=",
+            max_ref_err,
+        )
 
 
 def main() raises:
@@ -523,10 +926,31 @@ def main() raises:
         test_mxfp4_matmul[512, 256, 512](ctx)
         test_mxfp4_matmul[256, 2048, 2048](ctx)
 
-        # End-to-end: calls mxfp4_dequant_matmul_amd with independent dequant
+        # End-to-end: calls mxfp4_dequant_matmul_amd (native block-scaled MMA)
         print("-- MXFP4 matmul E2E (full pipeline) --")
         test_mxfp4_matmul_e2e[256, 256, 256](ctx)
         test_mxfp4_matmul_e2e[256, 2048, 2048](ctx)
+        # M-band coverage: the dispatcher picks a different tile per M regime,
+        # so each band needs an end-to-end check, not just the dense one.
+        test_mxfp4_matmul_e2e[1, 2048, 2048](ctx)  # decode, split-K
+        test_mxfp4_matmul_e2e[64, 2048, 2048](ctx)  # mid-M, split-K band
+        test_mxfp4_matmul_e2e[512, 2304, 4096](ctx)  # wide-N split-K band
+
+        # gfx950 only: the native route exists on no other part, so the
+        # divergence it pins cannot be observed elsewhere.
+        comptime if "gfx950" in _accelerator_arch():
+            print("-- Native route precondition (out-of-range scale) --")
+            test_scale_range_gates_route[128, 128, 128](ctx)
+            # 192 = 128 + 64: a multiple of 4 but not of the 128-wide store
+            # block, the shape class the gate used to admit.
+            test_n_alignment_gates_route[128, 192, 256](ctx)
+            test_n_alignment_gates_route[128, 256, 256](ctx)
+
+            # The view half of the gate: neither case can instantiate the
+            # native branch, so both must fall back to the dequant route.
+            print("-- Native route view gate --")
+            test_runtime_weight_shape_takes_dequant_route[128, 128, 256](ctx)
+            test_strided_scale_view_takes_dequant_route[128, 128, 256](ctx)
 
         print("========================")
         print("ALL TESTS PASSED")

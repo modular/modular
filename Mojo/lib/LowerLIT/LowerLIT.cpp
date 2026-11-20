@@ -29,6 +29,7 @@
 #include "Mojo/POPDialect/POPTypes.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
@@ -44,6 +45,7 @@
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <atomic>
 #include <deque>
 
 #include "Config/Version.h"
@@ -138,9 +140,6 @@ struct LITLowerer {
         typeType(TypeType::get(
             symbolTables.getTopLevelSymbolTable().getOp()->getContext())) {}
 
-  /// Given a function, check to see if it is a top-level function.  If not,
-  /// lower it to a ParamDeclareRegionOp.
-  void lowerNestedFunction(FnOp func);
   /// Lower LIT dialect operations in a function body.
   void lowerLITOps(FnOp func, bool &hadErrors);
 
@@ -219,9 +218,10 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
       b.replaceOpWithNewOp<RefLoadOp>(loadConsume, loadConsume.getRef());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
-      if (auto symbolCst = dyn_cast<SymbolConstantAttr>(call.getCallee())) {
-        b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(),
-                                           symbolCst, call.getOperands(),
+      auto callee = FuncSymbolGenerator::dynCast(call.getCallee());
+      if (callee && callee.isFullyBound()) {
+        b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(), callee,
+                                           call.getOperands(),
                                            call.getTailKindAttr());
       } else {
         b.replaceOpWithNewOp<KGEN::CallParamOp>(
@@ -240,8 +240,6 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
                                          call.getOperands());
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       b.replaceOpWithNewOp<HLCF::ReturnOp>(returnOp, returnOp.getResult());
-    } else if (auto funcOp = dyn_cast<FnOp>(op)) {
-      lowerNestedFunction(funcOp);
     }
   });
 }
@@ -381,35 +379,6 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   getTopLevelSymbolTable().insert(newFunc, mainSymbolTablePosIter);
   func.erase();
   return success();
-}
-
-void LITLowerer::lowerNestedFunction(FnOp func) {
-  // Process a nested function by lowering it straight to a
-  // `kgen.param.declare.region`. Nested functions are denoted with an
-  // parameter declaration on the function declaration.
-  ParamDeclAttr decl = func.getParamDeclAttr();
-  assert(decl && "expected nested function to declare a parameter");
-
-  ImplicitLocOpBuilder b(func.getLoc(), func);
-
-  // The new param.declare.region will drop implicit lifetimes.
-  SmallVector<ParamDeclAttr> inputParams;
-  llvm::append_range(inputParams, extractImplicitOriginParams(func));
-  removeSingletonParamDecls(singletonTypeHelper, inputParams);
-
-  StringAttr sourceName = func.getSourceNameAttr();
-  if (!sourceName)
-    sourceName = decl.getName();
-  auto region = ParamDeclareRegionOp::create(
-      b, /*sym_name=*/nullptr, /*sym_visibility=*/nullptr, decl, sourceName,
-      func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
-      func.getInlineLevelAttr(), func.getLinkageNameAttr(), func.getFnAttrs(),
-      func.getFnArgAttrs());
-  // The convenience builder only takes a level, so an unfolded
-  // `@inline(expr)` has to be carried over separately.
-  region.setInlineLevelAttr(func.getInlineLevelAttr());
-  region.getBodyRegion().takeBody(func.getBodyRegion());
-  func.erase();
 }
 
 LogicalResult
@@ -767,23 +736,24 @@ template <typename GenKind>
 static std::conditional_t<std::is_base_of_v<Type, GenKind>, Type, Attribute>
 removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
                       GenKind generator) {
+  // Bind singleton parameters to their canonical value, and leave the others
+  // unbound.
   SmallVector<TypedAttr> paramsToBind;
   bool hasRemovals = false;
-
   for (Type paramType : generator.getInputParamTypes()) {
+    TypedAttr value;
     if (singletonTypeHelper.isSingletonType(paramType)) {
-      // Bind singleton parameters to their canonical value.
-      paramsToBind.push_back(singletonTypeHelper.getSingletonValue(paramType));
+      value = singletonTypeHelper.getSingletonValue(paramType);
       hasRemovals = true;
-    } else {
-      // Keep non-singleton parameters unbound.
-      paramsToBind.push_back(UnboundAttr::get(paramType));
     }
+    paramsToBind.push_back(value);
   }
 
   // Update the generator if we dropped anything.
   if (hasRemovals) {
-    generator = getSpecializedWithConcreteBindings(generator, paramsToBind);
+    generator = getSpecializedWithConcreteBindings(
+        generator,
+        ParamsBindingArrayAttr::get(generator.getContext(), paramsToBind));
     assert(generator && "didn't replace singletons correctly");
     if (generator.isFullyBound()) {
       // By back-compat, we never eliminate the empty generator type wrapper on
@@ -824,229 +794,258 @@ static LogicalResult lowerAttributesAndTypes(
     DenseMap<StringAttr, ParamDeclDropMask> &symbolDroppedParamDecls,
     StructDecls &structDecls) {
 
-  bool hadErrors = false;
-  // This is the location of the current op that we're working on, updated as
-  // we traverse the Module hierarchy.
-  Location curOpLoc = op->getLoc();
-
-  mlir::AttrTypeReplacer replacer;
-
-  // OriginEqAttr may not survive to lowering.
-  replacer.addReplacement(
-      [&](OriginEqAttr attr)
-          -> std::optional<std::pair<TypedAttr, WalkResult>> {
-        mlir::emitError(curOpLoc)
-            << "origin equality may only be tested in 'where' clauses";
-        hadErrors = true;
-        return std::make_pair(
-            IntegerAttr::get(IntegerType::get(op->getContext(), 1), 0),
-            WalkResult::skip());
-      });
-
-  // Member functions are reference with nested symbol references. After
-  // lowering, the symbol tree will be flat. Concatenate all nested symbol
-  // references in symbol constants. If something was renamed, perform the
-  // renaming.
-  replacer.addReplacement([&renamedSymbols](SymbolRefAttr ref) {
-    auto flat = flattenSymbolRefAttr(ref);
-    if (StringAttr renamed = renamedSymbols.lookup(flat.getAttr()))
-      return SymbolRefAttr::get(renamed);
-    return flat;
-  });
-
-  // Remove signature metadata.
-  replacer.addReplacement([&](FuncType sig) {
-    return std::make_pair(
-        FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
-                      sig.getArgConventions(), sig.getFnEffects()),
-        WalkResult::skip());
-  });
-
-  replacer.addReplacement([&](GeneratorType gen) {
-    // Remove uses of any singleton attributes.
-    SmallVector<Type> paramTypes;
-    for (auto ty : gen.getInputParamTypes())
-      paramTypes.push_back(replacer.replace(ty));
-
-    // Remove metadata & remove singleton input param decls.
-    gen = GeneratorType::get(paramTypes, replacer.replace(gen.getBody()));
-    auto result = removeSingletonParams(singletonTypeHelper, gen);
-    return std::make_pair(result, WalkResult::skip());
-  });
-
-  replacer.addReplacement([&](GeneratorAttr gen) {
-    return replaceGeneratorAttrType(singletonTypeHelper, replacer, gen);
-  });
-
-  replacer.addReplacement(
-      [&](BindParamsAttr attr)
-          -> std::optional<std::pair<TypedAttr, WalkResult>> {
-        DenseBoolArrayAttr discharged = attr.getDischarged();
-        if (!discharged || discharged.empty())
-          return std::nullopt;
-
-        // Remove discharge mask since it goes together with the generator
-        // metadata's body constraints.
-        TypedAttr generator =
-            cast<TypedAttr>(replacer.replace(attr.getGenerator()));
-        SmallVector<TypedAttr> paramValues;
-        for (TypedAttr value : attr.getParamValues())
-          paramValues.push_back(cast<TypedAttr>(replacer.replace(value)));
-        return std::make_pair(
-            BindParamsAttr::get(generator.getContext(), generator, paramValues,
-                                /*evaluationContext=*/nullptr),
-            WalkResult::skip());
-      });
-
-  replacer.addReplacement([&](StructInstanceType structInstType) {
-    auto it = symbolDroppedParamDecls.find(structInstType.getName());
-    if (it == symbolDroppedParamDecls.end() ||
-        it->second.size() != structInstType.getParamValues().size())
-      return std::make_pair(Type(structInstType), WalkResult::advance());
-
-    SmallVector<StringAttr> remainingParamNames;
-    SmallVector<TypedAttr> remainingParamValues;
-    for (auto [idx, nameAndValue] :
-         llvm::enumerate(llvm::zip(structInstType.getParamNames(),
-                                   structInstType.getParamValues()))) {
-      if (it->second[idx])
-        continue;
-      auto [name, value] = nameAndValue;
-      remainingParamNames.push_back(name);
-      remainingParamValues.push_back(cast<TypedAttr>(replacer.replace(value)));
-    }
-
-    SmallVector<StructDefFieldAttr> fields;
-    fields.reserve(structInstType.getFields().size());
-    for (StructDefFieldAttr field : structInstType.getFields()) {
-      ArrayAttr replacedAnnotations;
-      if (ArrayAttr annotations = field.getAnnotations()) {
-        SmallVector<Attribute> replaced;
-        for (AnnotationAttr annotation :
-             annotations.getAsRange<AnnotationAttr>()) {
-          replaced.push_back(AnnotationAttr::get(
-              cast<TypedAttr>(replacer.replace(annotation.getValue())),
-              cast<TypedAttr>(replacer.replace(annotation.getTypeValue()))));
-        }
-        replacedAnnotations =
-            ArrayAttr::get(annotations.getContext(), replaced);
-      }
-
-      fields.push_back(StructDefFieldAttr::get(
-          field.getName(),
-          cast<TypedAttr>(replacer.replace(field.getTypeValue())),
-          replacedAnnotations));
-    }
-
-    return std::make_pair(
-        Type(StructInstanceType::get(structInstType.getName(),
-                                     remainingParamNames, remainingParamValues,
-                                     fields, structInstType.getIsMemoryOnly())),
-        WalkResult::skip());
-  });
-
-  // Sugar attr is turned into canonical form.
-  replacer.addReplacement(
-      [&](SugarAttr sugar) { return replacer.replace(sugar.getCanonical()); });
-
+  std::atomic<bool> hadErrors{false};
   auto *debugInfoDialect =
       op->getContext()->getLoadedDialect<DebugInfo::DebugInfoDialect>();
 
-  auto removeSingletonParams = [&](auto attr) -> decltype(attr) {
-    SymbolRefAttr flatRef =
-        cast<SymbolRefAttr>(replacer.replace(attr.getSymbol()));
-    // Check the name & the number of params to ensure we don't operate on
-    // SymbolConstantAttrs/FuncSymbolAttr that have already been processed.
-    if (auto it = symbolDroppedParamDecls.find(flatRef.getLeafReference());
-        it != symbolDroppedParamDecls.end() &&
-        it->second.size() == attr.getParamValues().size()) {
-      SmallVector<TypedAttr> remainingParams;
-      for (auto [idx, value] : llvm::enumerate(attr.getParamValues()))
-        if (!it->second[idx])
-          remainingParams.push_back(cast<TypedAttr>(replacer.replace(value)));
-      return decltype(attr)::get(
-          flatRef,
-          cast<decltype(attr.getType())>(replacer.replace(attr.getType())),
-          remainingParams);
-    }
-    return nullptr;
+  // Each worker gets its own replacer, and `curOpLoc` tracks that worker's
+  // current op for diagnostics.
+  auto configure = [&](mlir::AttrTypeReplacer &replacer, Location &curOpLoc) {
+    // OriginEqAttr may not survive to lowering.
+    replacer.addReplacement(
+        [&](OriginEqAttr attr)
+            -> std::optional<std::pair<TypedAttr, WalkResult>> {
+          mlir::emitError(curOpLoc)
+              << "origin equality may only be tested in 'where' clauses";
+          hadErrors = true;
+          return std::make_pair(
+              IntegerAttr::get(IntegerType::get(op->getContext(), 1), 0),
+              WalkResult::skip());
+        });
+
+    // Member functions are reference with nested symbol references. After
+    // lowering, the symbol tree will be flat. Concatenate all nested symbol
+    // references in symbol constants. If something was renamed, perform the
+    // renaming.
+    replacer.addReplacement([&renamedSymbols](SymbolRefAttr ref) {
+      auto flat = flattenSymbolRefAttr(ref);
+      if (StringAttr renamed = renamedSymbols.lookup(flat.getAttr()))
+        return SymbolRefAttr::get(renamed);
+      return flat;
+    });
+
+    // Remove signature metadata.
+    replacer.addReplacement([&](FuncType sig) {
+      return std::make_pair(
+          FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
+                        sig.getArgConventions(), sig.getFnEffects()),
+          WalkResult::skip());
+    });
+
+    replacer.addReplacement([&](GeneratorType gen) {
+      // Remove uses of any singleton attributes.
+      SmallVector<Type> paramTypes;
+      for (auto ty : gen.getInputParamTypes())
+        paramTypes.push_back(replacer.replace(ty));
+
+      // Remove metadata & remove singleton input param decls.
+      gen = GeneratorType::get(paramTypes, replacer.replace(gen.getBody()));
+      auto result = removeSingletonParams(singletonTypeHelper, gen);
+      return std::make_pair(result, WalkResult::skip());
+    });
+
+    replacer.addReplacement([&](GeneratorAttr gen) {
+      return replaceGeneratorAttrType(singletonTypeHelper, replacer, gen);
+    });
+
+    replacer.addReplacement(
+        [&](BindParamsAttr attr)
+            -> std::optional<std::pair<TypedAttr, WalkResult>> {
+          DenseBoolArrayAttr discharged = attr.getDischarged();
+          if (!discharged || discharged.empty())
+            return std::nullopt;
+
+          // Remove discharge mask since it goes together with the generator
+          // metadata's body constraints.
+          TypedAttr generator =
+              cast<TypedAttr>(replacer.replace(attr.getGenerator()));
+          SmallVector<TypedAttr> boundValues;
+          ParamsBindingArrayAttr params = attr.getParams();
+          for (TypedAttr value : params.getBoundValues())
+            boundValues.push_back(cast<TypedAttr>(replacer.replace(value)));
+          return std::make_pair(
+              BindParamsAttr::get(generator.getContext(), generator,
+                                  ParamsBindingArrayAttr::get(
+                                      generator.getContext(),
+                                      params.getBoundMask(), boundValues),
+                                  /*discharged=*/{},
+                                  /*evaluationContext=*/nullptr),
+              WalkResult::skip());
+        });
+
+    replacer.addReplacement([&](StructInstanceType structInstType) {
+      auto it = symbolDroppedParamDecls.find(structInstType.getName());
+      if (it == symbolDroppedParamDecls.end() ||
+          it->second.size() != structInstType.getParamValues().size())
+        return std::make_pair(Type(structInstType), WalkResult::advance());
+
+      SmallVector<StringAttr> remainingParamNames;
+      SmallVector<TypedAttr> remainingParamValues;
+      for (auto [idx, nameAndValue] :
+           llvm::enumerate(llvm::zip(structInstType.getParamNames(),
+                                     structInstType.getParamValues()))) {
+        if (it->second[idx])
+          continue;
+        auto [name, value] = nameAndValue;
+        remainingParamNames.push_back(name);
+        remainingParamValues.push_back(
+            cast<TypedAttr>(replacer.replace(value)));
+      }
+
+      SmallVector<StructDefFieldAttr> fields;
+      fields.reserve(structInstType.getFields().size());
+      for (StructDefFieldAttr field : structInstType.getFields()) {
+        ArrayAttr replacedAnnotations;
+        if (ArrayAttr annotations = field.getAnnotations()) {
+          SmallVector<Attribute> replaced;
+          for (AnnotationAttr annotation :
+               annotations.getAsRange<AnnotationAttr>()) {
+            replaced.push_back(AnnotationAttr::get(
+                cast<TypedAttr>(replacer.replace(annotation.getValue())),
+                cast<TypedAttr>(replacer.replace(annotation.getTypeValue()))));
+          }
+          replacedAnnotations =
+              ArrayAttr::get(annotations.getContext(), replaced);
+        }
+
+        fields.push_back(StructDefFieldAttr::get(
+            field.getName(),
+            cast<TypedAttr>(replacer.replace(field.getTypeValue())),
+            replacedAnnotations));
+      }
+
+      return std::make_pair(
+          Type(StructInstanceType::get(
+              structInstType.getName(), remainingParamNames,
+              remainingParamValues, fields, structInstType.getIsMemoryOnly())),
+          WalkResult::skip());
+    });
+
+    // Sugar attr is turned into canonical form.
+    replacer.addReplacement([&](SugarAttr sugar) {
+      return replacer.replace(sugar.getCanonical());
+    });
+
+    auto removeSingletonParams = [&](FuncSymbolAttr attr) -> FuncSymbolAttr {
+      SymbolRefAttr flatRef =
+          cast<SymbolRefAttr>(replacer.replace(attr.getSymbol()));
+      // Check the name & the number of params to ensure we don't operate on
+      // FuncSymbolAttrs that have already been processed.
+      if (auto it = symbolDroppedParamDecls.find(flatRef.getLeafReference());
+          it != symbolDroppedParamDecls.end() &&
+          it->second.size() == attr.getParamValues().size()) {
+        SmallVector<TypedAttr> remainingParams;
+        for (auto [idx, value] : llvm::enumerate(attr.getParamValues()))
+          if (!it->second[idx])
+            remainingParams.push_back(cast<TypedAttr>(replacer.replace(value)));
+        return FuncSymbolAttr::get(
+            flatRef, cast<FuncType>(replacer.replace(attr.getType())),
+            remainingParams);
+      }
+      return nullptr;
+    };
+
+    replacer.addReplacement(
+        [&, removeSingletonParams](
+            TypedAttr attr) -> std::optional<std::pair<TypedAttr, WalkResult>> {
+          if (&attr.getDialect() == debugInfoDialect)
+            return std::nullopt;
+
+          // Canonicalize all values of singleton types.
+          if (TypedAttr value =
+                  singletonTypeHelper.getSingletonValue(attr.getType()))
+            return std::make_pair(value, WalkResult::advance());
+
+          // Remove singleton parameter values from FuncSymbolAttr.
+          if (auto funcSym = dyn_cast<FuncSymbolAttr>(attr))
+            if (auto newFuncSym = removeSingletonParams(funcSym))
+              return std::make_pair(newFuncSym, WalkResult::skip());
+
+          // Remove singleton parameter values from TypeGeneratorRefAttr.
+          if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(attr)) {
+            SymbolRefAttr flatRef =
+                cast<SymbolRefAttr>(replacer.replace(genRef.getSymbol()));
+            if (auto it =
+                    symbolDroppedParamDecls.find(flatRef.getLeafReference());
+                it != symbolDroppedParamDecls.end() &&
+                it->second.size() == genRef.getParamValues().size()) {
+              SmallVector<TypedAttr> remainingParams;
+              for (auto [idx, value] : llvm::enumerate(genRef.getParamValues()))
+                if (!it->second[idx])
+                  remainingParams.push_back(
+                      cast<TypedAttr>(replacer.replace(value)));
+              return std::make_pair(
+                  TypeGeneratorRefAttr::get(attr.getContext(), flatRef,
+                                            remainingParams, genRef.getType()),
+                  WalkResult::skip());
+            }
+          }
+
+          // Remove singleton parameter values from BindParamsAttr.
+          if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
+            SmallVector<TypedAttr> paramValues =
+                bindParams.getDenseBindingArray();
+            SmallVector<TypedAttr> newOperands;
+            for (auto [declType, param] :
+                 llvm::zip_equal(sugarCast<GeneratorType>(
+                                     bindParams.getGenerator().getType())
+                                     .getInputParamTypes(),
+                                 paramValues)) {
+              // Check for singleton type using the declared type on the
+              // signature, instead of the concrete type of the param. This
+              // prevents parametrically-singleton types from getting erased
+              // (only always singleton params can be removed in general).
+              if (singletonTypeHelper.isSingletonType(
+                      replacer.replace(declType)))
+                continue;
+              newOperands.push_back(
+                  param ? cast<TypedAttr>(replacer.replace(param))
+                        : TypedAttr());
+            }
+            if (newOperands.size() != paramValues.size()) {
+              TypedAttr generator =
+                  cast<TypedAttr>(replacer.replace(bindParams.getGenerator()));
+              return std::make_pair(
+                  BindParamsAttr::get(generator.getContext(), generator,
+                                      newOperands,
+                                      /*evaluationContext=*/nullptr),
+                  WalkResult::skip());
+            }
+          }
+
+          return std::nullopt;
+        });
   };
 
-  replacer.addReplacement(
-      [&](TypedAttr attr) -> std::optional<std::pair<TypedAttr, WalkResult>> {
-        if (&attr.getDialect() == debugInfoDialect)
-          return std::nullopt;
-
-        // Canonicalize all values of singleton types.
-        if (TypedAttr value =
-                singletonTypeHelper.getSingletonValue(attr.getType()))
-          return std::make_pair(value, WalkResult::advance());
-
-        // Remove singleton parameter values from SymbolConstantAttr.
-        if (auto symCst = dyn_cast<SymbolConstantAttr>(attr))
-          if (auto newSymCst = removeSingletonParams(symCst))
-            return std::make_pair(newSymCst, WalkResult::skip());
-
-        // Remove singleton parameter values from FuncSymbolAttr.
-        if (auto funcSym = dyn_cast<FuncSymbolAttr>(attr))
-          if (auto newFuncSym = removeSingletonParams(funcSym))
-            return std::make_pair(newFuncSym, WalkResult::skip());
-
-        // Remove singleton parameter values from TypeGeneratorRefAttr.
-        if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(attr)) {
-          SymbolRefAttr flatRef =
-              cast<SymbolRefAttr>(replacer.replace(genRef.getSymbol()));
-          if (auto it =
-                  symbolDroppedParamDecls.find(flatRef.getLeafReference());
-              it != symbolDroppedParamDecls.end() &&
-              it->second.size() == genRef.getParamValues().size()) {
-            SmallVector<TypedAttr> remainingParams;
-            for (auto [idx, value] : llvm::enumerate(genRef.getParamValues()))
-              if (!it->second[idx])
-                remainingParams.push_back(
-                    cast<TypedAttr>(replacer.replace(value)));
-            return std::make_pair(
-                TypeGeneratorRefAttr::get(attr.getContext(), flatRef,
-                                          remainingParams, genRef.getType()),
-                WalkResult::skip());
-          }
-        }
-
-        // Remove singleton parameter values from BindParamsAttr.
-        if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
-          SmallVector<TypedAttr> newOperands;
-          for (auto [declType, param] : llvm::zip(
-                   sugarCast<GeneratorType>(bindParams.getGenerator().getType())
-                       .getInputParamTypes(),
-                   bindParams.getParamValues())) {
-            // Check for singleton type using the declared type on the
-            // signature, instead of the concrete type of the param. This
-            // prevents parametrically-singleton types from getting erased (only
-            // always singleton params can be removed in general).
-            if (!singletonTypeHelper.isSingletonType(
-                    replacer.replace(declType)))
-              newOperands.push_back(cast<TypedAttr>(replacer.replace(param)));
-          }
-          if (newOperands.size() != bindParams.getParamValues().size()) {
-            TypedAttr generator =
-                cast<TypedAttr>(replacer.replace(bindParams.getGenerator()));
-            return std::make_pair(
-                BindParamsAttr::get(generator.getContext(), generator,
-                                    newOperands,
-                                    /*evaluationContext=*/nullptr),
-                WalkResult::skip());
-          }
-        }
-
-        return std::nullopt;
+  // Replacement reads no other op, so the top-level ops are rewritten in
+  // parallel. The singleton caches must not grow while workers read them.
+  singletonTypeHelper.populateAll();
+  singletonTypeHelper.setFrozen(true);
+  SmallVector<Operation *> topLevelOps;
+  for (Region &region : op->getRegions()) {
+    for (Operation &child : region.getOps())
+      topLevelOps.push_back(&child);
+  }
+  MLIRContext *ctx = op->getContext();
+  parallelForEachChunk(ctx, topLevelOps, [&](ArrayRef<Operation *> ops) {
+    mlir::AttrTypeReplacer replacer;
+    Location curOpLoc = op->getLoc();
+    configure(replacer, curOpLoc);
+    for (Operation *topLevelOp : ops) {
+      topLevelOp->walk([&](Operation *nestedOp) {
+        curOpLoc = nestedOp->getLoc();
+        replacer.replaceElementsIn(nestedOp, /*replaceAttrs=*/true,
+                                   /*replaceLocs=*/true, /*replaceTypes=*/true);
       });
-
-  // Walk the entire Module updating everything.
-  op->walk([&](Operation *nestedOp) {
-    curOpLoc = nestedOp->getLoc();
-    replacer.replaceElementsIn(nestedOp, /*replaceAttrs=*/true,
-                               /*replaceLocs=*/true, /*replaceTypes=*/true);
+    }
   });
+  singletonTypeHelper.setFrozen(false);
+
+  mlir::AttrTypeReplacer replacer;
+  Location curOpLoc = op->getLoc();
+  configure(replacer, curOpLoc);
+  replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
+                             /*replaceTypes=*/true);
 
   // Update saved types in struct decls.
   for (auto &decl : structDecls.structDecls) {
@@ -1061,7 +1060,7 @@ static LogicalResult lowerAttributesAndTypes(
         cast<TypedAttr>(replacer.replace(decl.second.isMemoryOnlyAttr));
   }
 
-  return failure(hadErrors);
+  return failure(hadErrors.load());
 }
 
 // What follows lowers the remaining high-level `lit` types to KGEN. Notably,
@@ -1620,7 +1619,8 @@ static void populateTypeDomainRules(StructDecls &decls,
           BindParamsAttr bindParams) -> FailureOr<Attribute> {
         // We always simplify BindParamsAttr against a evaluation context.
         SmallVector<TypedAttr> loweredParams;
-        for (TypedAttr param : bindParams.getParamValues()) {
+        ParamsBindingArrayAttr params = bindParams.getParams();
+        for (TypedAttr param : params.getBoundValues()) {
           auto replaced = replacer.asType.replace(param);
           if (failed(replaced))
             return failure();
@@ -1634,7 +1634,9 @@ static void populateTypeDomainRules(StructDecls &decls,
         // fold properly.
         TypedAttr evaluated = BindParamsAttr::get(
             bindParams.getContext(), cast<TypedAttr>(*generatorOr),
-            loweredParams, bindParams.getDischarged(), evalCtxPtr);
+            ParamsBindingArrayAttr::get(bindParams.getContext(),
+                                        params.getBoundMask(), loweredParams),
+            bindParams.getDischarged(), evalCtxPtr);
         return evaluated;
       });
 
@@ -1656,6 +1658,27 @@ static void populateTypeDomainRules(StructDecls &decls,
 
         return TypeParamAttr::get(*typeValueOr, *mlirTypeOr, *typeOr);
       });
+
+  // A KGEN struct with no domain yet is in a type-domain position. One the
+  // value domain already claimed keeps its domain.
+  // FIXME(MOCO-5118): See `StructDomain::Unset`.
+  replacer.asType.addRule([&replacer](
+                              KGEN::StructType type) -> FailureOr<Type> {
+    auto variadicOr =
+        replacer.asType.replaceParameter(type.getElementTypesVariadic());
+    auto isMemoryOnlyOr =
+        replacer.asType.replaceParameter(type.getIsMemoryOnly());
+    auto minAlignmentOr =
+        replacer.asType.replaceParameter(type.getMinAlignment());
+    if (failed(variadicOr) || failed(isMemoryOnlyOr) || failed(minAlignmentOr))
+      return failure();
+    StructDomain domain = type.getDomain() == StructDomain::Unset
+                              ? StructDomain::Layout
+                              : type.getDomain();
+    return KGEN::StructType::get(type.getContext(), *variadicOr,
+                                 *isMemoryOnlyOr, *minAlignmentOr,
+                                 type.getIsParamPack(), domain);
+  });
 
   // NOTE: Downcast becomes an no-op after lower-lit. However, we should
   // probably keep the attr till elaboration time after we preserve traits
@@ -1718,9 +1741,10 @@ static void populateTypeDomainRules(StructDecls &decls,
       return failure();
     auto mapped =
         ParamOperatorAttr::get(POC::VariadicPtrMap, *variadicOr, *addrSpaceOr);
-    return KGEN::StructType::get(ref.getContext(), mapped,
-                                 /*memOnly=*/false, /*minAlign*/ {},
-                                 /*isParamPack=*/true);
+    return KGEN::StructType::getLayoutDomain(ref.getContext(), mapped,
+                                             /*isMemoryOnly=*/{},
+                                             /*minAlignment=*/{},
+                                             /*isParamPack=*/true);
   });
 
   // !lit.ref -> !kgen.pointer
@@ -1898,6 +1922,17 @@ static void populateValueDomainRules(StructDecls &decls,
   replacer.asValue.addRule([=](TraitType traitType) -> FailureOr<Type> {
     return TypeValueType::get(
         TraitInstanceRefAttr::get(ctx, traitType.getSymbols(), typeType));
+  });
+
+  // A KGEN struct with no domain yet is in a value-domain position. Its
+  // elements are lowered when the type domain descends into this result.
+  // FIXME(MOCO-5118): See `StructDomain::Unset`.
+  replacer.asValue.addRule([](KGEN::StructType type) -> FailureOr<Type> {
+    if (type.getDomain() != StructDomain::Unset)
+      return type;
+    return KGEN::StructType::getValueDomain(
+        type.getContext(), type.getElementTypesVariadic(),
+        type.getIsMemoryOnly(), type.getMinAlignment(), type.getIsParamPack());
   });
 
   // A struct reference becomes a generator reference over the same parameter
@@ -2080,6 +2115,14 @@ static TypedAttr getAlignmentFromType(Type type, LITTypeLowerer &b) {
 
 static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
                      LITTypeLowerer &b) {
+  // TODO: Storage outside the default address space needs a target-specific
+  // allocation rather than a stack slot; reject it until that lowering exists.
+  if (!op.getType().isDefaultAddrSpace()) {
+    op.emitError("variables outside the default address space are not yet "
+                 "supported");
+    return {};
+  }
+
   // Lower a lit.var.decl to pop.stack_allocation.
   // Check if the element type is a struct with explicit alignment.
   TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);
@@ -2115,6 +2158,15 @@ static Value lowerOp(RefUpcastOp op, RefUpcastOpAdaptor adaptor,
 static Value lowerOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   return adaptor.getRef();
+}
+
+static Value lowerOp(RefUnionCastOp op, RefUnionCastOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  auto resultType = b.asType.replace(op.getType());
+  if (failed(resultType))
+    return {};
+  return POP::PointerBitcastOp::create(b, op.getLoc(), *resultType,
+                                       adaptor.getContainer());
 }
 
 static Value lowerOp(RefFromPointerOp op, RefFromPointerOpAdaptor adaptor,
@@ -2269,6 +2321,15 @@ static Value lowerOp(RefPackFromPointerPackOp op,
   return adaptor.getPack();
 }
 
+// lit.ref.pack.concat => kgen.struct.concat
+static Value lowerOp(RefPackConcatOp op, RefPackConcatOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  auto typeOr = b.asType.replace(op.getType());
+  if (failed(typeOr))
+    return nullptr;
+  return StructConcatOp::create(b, op.getLoc(), *typeOr, adaptor.getPacks());
+}
+
 static Value lowerVersionOp(Operation *op, int64_t number, LITTypeLowerer &b) {
   return ParamConstantOp::create(
       b, op->getLoc(),
@@ -2368,10 +2429,11 @@ static LogicalResult lowerLITTypes(ModuleOp module, StructDecls &state,
         .Case<MaterializeIntoOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefUpcastOp, RefToPointerOp, RefFromPointerOp,
               RefFromPointerREPLOp, RefToKgenPtrOp, RefFromKgenPtrOp,
-              RefStructGEROp, RefLoadOp, RefStoreOp, MemcpyOp, RebindOp,
-              RefPackCreateOp, RefPackExtractOp, RefPackFromPointerPackOp,
-              VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
-              MojoVersionMajorOp, MojoVersionMinorOp, MojoVersionPatchOp>(
+              RefStructGEROp, RefUnionCastOp, RefLoadOp, RefStoreOp, MemcpyOp,
+              RebindOp, RefPackCreateOp, RefPackExtractOp,
+              RefPackFromPointerPackOp, RefPackConcatOp, VarDeclOp,
+              VarLifetimeStartOp, VarLifetimeEndOp, MojoVersionMajorOp,
+              MojoVersionMinorOp, MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });

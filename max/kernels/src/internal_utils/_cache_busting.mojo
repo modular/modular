@@ -88,7 +88,7 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
         # `DeviceBuffer.unsafe_ptr()` ties the returned pointer's mutability
         # and origin to the borrow of the buffer.
         return (
-            (self._buf.unsafe_ptr() + self.offset(iteration))
+            (self._buf.unsafe_ptr().unsafe_offset(self.offset(iteration)))
             .unsafe_mut_cast[True]()
             .unsafe_origin_cast[MutUntrackedOrigin]()
         )

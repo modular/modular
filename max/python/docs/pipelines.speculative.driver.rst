@@ -11,8 +11,43 @@ max.pipelines.speculative.driver
 
 .. currentmodule:: max.pipelines.speculative.driver
 
-Sequential driver
------------------
+Driver
+------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   SequentialDriver
+   SequentialProposer
+
+Graph inputs
+------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   DistributedInputs
+   SequentialBatch
+
+Draft state
+-----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   CarryDimNames
+   DraftStepInput
+   Proposed
+   ReuseSpec
+
+Draft cache
+-----------
 
 .. autosummary::
    :nosignatures:
@@ -20,8 +55,25 @@ Sequential driver
    :template: autosummary/class.rst
 
    DecodeKVSwap
-   DraftStepInput
-   Proposed
-   SequentialBatch
-   SequentialDriver
-   SequentialProposer
+   DraftCache
+
+Experimental tensor adapters
+----------------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   TensorAdapter
+
+Functions
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   gather_variable_rows
+   tensor_compat_verify

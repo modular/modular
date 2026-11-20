@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/compile-time.mdx
 # test_compile_time.mojo
 # Tests for the Mojo "compile-time" cheat-sheet card.
 #
 # Exercises the card's claims so one that drifts stops compiling or fails an
 # assert: parameters, where clauses (with messages and on thin function
 # types), trait bounds, running a function at compile time, literal
-# precision, comptime if/for, sys.info queries with a
+# precision, comptime if/for/match, sys.info queries with a
 # CompilationTarget, comptime members, and the inlining decorators, including
 # inlining chosen by a parameter.
 #
@@ -26,8 +27,8 @@
 #     as incomplete; the wider field API may still shift.
 #   - 2**200: overflows a 64-bit Int, so it can't be materialized to compare.
 #   - comptime if on hardware facts (is_nvidia_gpu, ...): machine-dependent.
-#   - CompilationTarget.default_accelerator(): fails to instantiate on a host
-#     with no accelerator configured.
+#   - default_accelerator(): fails to instantiate on a host with no accelerator
+#     configured.
 #   - where messages: they appear only in compile errors.
 #   - the compile-time boundary (no file I/O, no raising, runs on CPU): these
 #     are compile errors, which a runtime test can't assert.
@@ -219,7 +220,9 @@ def tile_count[m: Int]() -> Int:
     comptime match m:
         case 16:
             hits += 1
-    # no case _: an unmatched subject compiles to nothing
+        case _:
+            pass
+    # The catch-all preserves the unmatched case's zero count.
     return hits
 
 
@@ -290,6 +293,7 @@ def main() raises:
     test_comptime_for()
     test_comptime_if()
     test_inlining()
+    test_comptime_match()
     test_conditional_availability()
     test_type_of()
     test_conditional_construction()

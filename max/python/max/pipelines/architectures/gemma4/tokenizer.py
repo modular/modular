@@ -40,8 +40,10 @@ from max.pipelines.lib import (
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
+    checked_token_ids,
     encode_dkv_cache_hint,
     open_image,
+    resolve_token_id_bound,
     run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
@@ -57,6 +59,7 @@ from transformers import AutoTokenizer
 
 from .context import Gemma4Context
 from .image_processor import Gemma4ImageProcessor
+from .model_config import MAX_IMAGES_PER_REQUEST, max_images_per_request
 from .processing_utils import load_processor_config
 from .video_processor import Gemma4VideoProcessor, VideoMetadata
 
@@ -135,6 +138,9 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
         )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
+        )
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
@@ -142,6 +148,18 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         self.enable_vision_caching = (
             pipeline_config.runtime.vision_cache_utilization != 0
         )
+        # The router reads these to reject requests over the cap. Videos run
+        # through the vision tower too, so a text-only cap of 0 covers them.
+        self.max_images_per_request = max_images_per_request(pipeline_config)
+        self.max_videos_per_request = (
+            0 if self.max_images_per_request == 0 else None
+        )
+        if self.max_images_per_request == 0 and self.enable_vision_caching:
+            raise ValueError(
+                f"{MAX_IMAGES_PER_REQUEST} 0 serves text only; also pass "
+                "--vision-cache-utilization 0 so no KV memory is reserved "
+                "for a vision encoder cache that is never filled."
+            )
         # Image token IDs — try both naming conventions
         self.image_token_id: int = _require_attr(
             config, "image_token_id", "image_token_index"
@@ -276,6 +294,7 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         tools: list[TextGenerationRequestTool] | None = None,
         **chat_template_options: Any,
     ) -> str:
+        """Renders the messages through the tokenizer's chat template."""
         chat_template_options = {
             "add_generation_prompt": True,
             **chat_template_options,
@@ -593,7 +612,8 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
                     tokenizer_out["input_ids"][0], dtype=np.int64
                 )
         else:
-            encoded_prompt = np.array(list(prompt), dtype=np.int64)
+            assert not isinstance(prompt, str)
+            encoded_prompt = checked_token_ids(prompt, self._token_id_bound)
 
         # Compute token type IDs (0=text, 1=image, 2=video)
         mm_token_type_ids = np.zeros_like(encoded_prompt, dtype=np.int64)

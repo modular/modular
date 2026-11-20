@@ -18,13 +18,12 @@ import logging
 
 import numpy as np
 import numpy.typing as npt
+from max import functional
+from max import functional as F
 from max.driver import CPU, Buffer, Device, load_devices
 from max.dtype import DType
-from max.experimental import functional
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
 from max.pipelines.architectures.flux2.flux2_executor import (
     Flux2ExecutorOutputs,
 )
@@ -38,6 +37,7 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.weight_loader import WeightLoader, swap_prefix
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import traced
+from max.tensor import Tensor
 
 from .components import Denoiser, TextEncoder
 from .flux2_inputs import Flux2ModuleV3Inputs
@@ -50,7 +50,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
 
     Expresses the entire FLUX.2 forward pass -- text encode, optional
     image encode, denoising loop, and VAE decode -- inside a single
-    :class:`~max.experimental.nn.Module` tree, with sub-Modules placed
+    :class:`~max.nn.Module` tree, with sub-Modules placed
     on the device specified by their corresponding manifest entry (for
     example, ``text_encoder`` on
     ``manifest["text_encoder"].device_specs[0]``).
@@ -60,13 +60,13 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
     :class:`~max.pipelines.diffusion.pipeline.PixelGenerationPipeline`)
     is responsible for:
 
-    1. Wrapping construction in :func:`max.experimental.functional.lazy`.
+    1. Wrapping construction in :func:`max.functional.lazy`.
     2. Composing ``manifest.loader()`` through
        :func:`~max.pipelines.lib.weight_loader.adapt_module_loader` and
        materialising the Module's declared parameters into a
        compile-ready ``weights`` mapping (the walker descends into every
        ``HasLoaderAdapter`` sub-Module automatically).
-    3. Calling :meth:`~max.experimental.nn.Module.compile` with
+    3. Calling :meth:`~max.nn.Module.compile` with
        :meth:`input_types` and the materialised weights.
     4. Driving the resulting ``CompiledCallable`` against
        :meth:`prepare_inputs` and :meth:`from_outputs` for each batch.
@@ -198,19 +198,17 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         text_embeddings = self.text_encoder(tokens)
         image_latents = self.vae.encode(input_image)
 
-        # Use ``guidance``'s symbolic ``"batch"`` dim as the canonical
-        # batch dim for the whole pipeline.  The text encoder and VAE
-        # encoder both produce hardcoded ``batch=1`` outputs (their
-        # ``unsqueeze(0)`` adds a literal batch dim), so rebind both
-        # onto the symbolic ``"batch"`` here -- this matches the
-        # broadcast that happens inside :class:`Flux2TimestepGuidanceEmbeddings`
+        # Use ``guidance``'s symbolic ``"batch"`` dim, which resolves to
+        # ``num_images_per_prompt`` at runtime, as the canonical batch dim
+        # for the whole pipeline.  The text encoder and VAE encoder both
+        # produce one row per prompt (their ``unsqueeze(0)`` adds a literal
+        # batch dim), so broadcast both to one row per image here.  This
+        # matches the broadcast inside :class:`Flux2TimestepGuidanceEmbeddings`
         # (timestep emb is ``[1, embed_dim]``, guidance emb is
         # ``[batch, embed_dim]``; their sum is ``[batch, embed_dim]``),
         # so every downstream tensor that touches modulation params plus
         # the concat with ``image_latents`` inside the denoiser sees a
-        # consistent batch dim.  Single-context-only today; the symbolic
-        # dim resolves to ``num_images_per_prompt`` at runtime, which
-        # :meth:`prepare_inputs` enforces to be 1.
+        # consistent batch dim.
         #
         # The VAE encoder runs unconditionally even for text-to-image
         # requests: the pipeline feeds a ``(0, 0, 3)`` placeholder image
@@ -220,18 +218,17 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         # ``(1, 0, num_channels)`` packed-latent output that the
         # denoiser concats onto its noise latents as a no-op.
         batch = guidance.shape[0]
-        text_embeddings = F.rebind(
-            text_embeddings,
-            [batch, text_embeddings.shape[1], text_embeddings.shape[2]],
-        )
-        image_latents = F.rebind(
-            image_latents,
-            [batch, image_latents.shape[1], image_latents.shape[2]],
+        text_embeddings = text_embeddings.broadcast_to(
+            [batch, text_embeddings.shape[1], text_embeddings.shape[2]]
         )
         # The encoder lives on ``self._vae_device``; the denoiser's
         # ``F.concat([latents, image_latents], axis=1)`` runs on
-        # ``self._transformer_device``.  Move latents across.
+        # ``self._transformer_device``.  Move the one row across, then
+        # broadcast it.
         image_latents = image_latents.to(self._transformer_device)
+        image_latents = image_latents.broadcast_to(
+            [batch, image_latents.shape[1], image_latents.shape[2]]
+        )
 
         # Use the caller-supplied initial latents.  Pre-generated on
         # CPU by :meth:`prepare_inputs` using
@@ -389,6 +386,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
     def prepare_inputs(
         self, contexts: list[PixelContext]
     ) -> Flux2ModuleV3Inputs:
+        """Build the device buffers the graph consumes from one pixel context."""
         if len(contexts) != 1:
             raise ValueError(
                 "FLUXModule currently supports batch_size=1. "
@@ -504,7 +502,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
     def from_outputs(self, buffers: list[Buffer]) -> Flux2ExecutorOutputs:
         """Translate compiled-call output buffers into pipeline-facing outputs.
 
-        The compiled :class:`~max.experimental.nn.Module` returns
+        The compiled :class:`~max.nn.Module` returns
         ``(text_embeddings, image_latents, image)`` where ``image`` is
         a decoded ``(B, H, W, 3)`` uint8 buffer on CPU.  Only the last
         output is surfaced; the intermediates exist for diagnostic

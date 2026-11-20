@@ -21,10 +21,12 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import ml_dtypes
 import numpy as np
 import pytest
 from max import _core, _eager_policy, engine
-from max._core.dialects import mo, rmo
+from max import functional as F
+from max._core.dialects import mo
 from max._interpreter_ops import (
     data_movement_gc,
     elementwise_binary_gc,
@@ -44,6 +46,8 @@ from max._interpreter_ops import (
 from max._interpreter_ops.handlers import (
     _handle_buffer_create,
     _handle_buffer_transfer,
+    _handle_debug_tensor_print,
+    _handle_distributed_allreduce_sum,
     _handle_gather_sum,
     _handle_index_to_tensor,
     _handle_shape_from_tensor,
@@ -53,31 +57,34 @@ from max._interpreter_ops.handlers import (
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import MissingArtifactError
-from max.experimental import functional as F
-from max.experimental import random as max_random
-from max.experimental import realization_context as rc
-from max.experimental.executor import (
+from max.functional import random as max_random
+from max.functional import (
+    reduce_scatter,
+)
+from max.functional import (
+    transfer_to as df_shard,
+)
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import ops as graph_ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.nn import Linear as ExperimentalLinear
+from max.tensor import realization_context as rc
+from max.tensor.executor import (
     CompilingExecutor,
     InterpreterExecutor,
     UnsupportedGraphError,
     set_default_executor,
 )
-from max.experimental.functional import (
-    reduce_scatter,
-)
-from max.experimental.functional import (
-    transfer_to as df_shard,
-)
-from max.experimental.realization_context import set_seed
-from max.experimental.sharding import (
+from max.tensor.realization_context import set_seed
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, realization_context
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.tensor.tensor import Tensor, realization_context
+from PIL import Image
 
 
 @pytest.fixture(autouse=True)
@@ -1123,7 +1130,7 @@ class TestNonMaximumSuppressionOp:
     """Tests for NMS interpreter op (mo.non_maximum_suppression).
 
     Routes through F.non_maximum_suppression -> ops.non_maximum_suppression ->
-    rmo.MoNonMaximumSuppressionOp -> mo.NonMaximumSuppressionOp ->
+    mo.NonMaximumSuppressionOp ->
     _handle_non_maximum_suppression -> nms_gc.nms_model. CPU-only (MO_HostOnly).
 
     The reference is a pure-NumPy greedy NMS implementation applied
@@ -1938,6 +1945,63 @@ class TestTransposeOp:
 
 class TestMatmulOp:
     """Tests for matmul Mojo op."""
+
+    @pytest.mark.parametrize(
+        "matmul", [lambda a, b: a @ b, F.matmul], ids=["operator", "functional"]
+    )
+    def test_matmul_rejects_mixed_dtypes(
+        self, matmul: Callable[[Tensor, Tensor], Tensor]
+    ) -> None:
+        """``@`` and ``F.matmul`` need one dtype; they never promote."""
+        a = Tensor.from_dlpack(np.ones((2, 3), dtype=np.float32))
+        b = Tensor.from_dlpack(np.ones((3, 2), dtype=np.float64))
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+            pytest.raises(ValueError, match="different dtypes"),
+        ):
+            matmul(a, b)
+
+    def test_linear_casts_input_to_weight_dtype(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A float64 input to a float32 ``Linear`` computes in float32."""
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+        layer = ExperimentalLinear(3, 2, bias=False)
+        x_np = np.arange(6, dtype=np.float64).reshape(2, 3)
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = layer(x)
+
+        assert y.dtype == layer.weight.dtype
+        weight_np = np.from_dlpack(layer.weight)
+        expected = x_np.astype(weight_np.dtype) @ weight_np.T
+        np.testing.assert_allclose(np.from_dlpack(y), expected, rtol=1e-6)
+
+    def test_matmul_out_dtype(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An eager matmul writes ``out_dtype``, not the inputs' dtype.
+
+        The sweep covers one-dtype matmuls only, so this one compiles lazily.
+        """
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+        a_np = np.arange(12, dtype=np.float32).reshape(3, 4) % 10
+        b_np = np.arange(20, dtype=np.float32).reshape(4, 5) % 10
+        matmul = F.functional(graph_ops.matmul)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            c = matmul(a, b, out_dtype=DType.float64)
+
+        assert c.dtype == DType.float64
+        expected = np.matmul(a_np.astype(np.float64), b_np.astype(np.float64))
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
 
     @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
     def test_matmul_basic(self, dtype: DType) -> None:
@@ -3840,7 +3904,7 @@ class TestLayerNormOps:
 class TestRmsNormOp:
     """Tests for rms_norm interpreter op via F.rms_norm.
 
-    Routes through F.rms_norm -> ops.rms_norm -> mo.ReduceRmsNormOp ->
+    Routes through F.rms_norm -> ops.rms_norm -> mo.CompositeReduceRmsNormOp ->
     _handle_rms_norm -> rms_norm_gc.rms_norm_model.
     """
 
@@ -4656,6 +4720,28 @@ class TestGatherNdFusedModel:
         np.testing.assert_array_equal(out.to_numpy(), expected)
 
 
+class TestDebugTensorPrintOp:
+    """Tests for the debug.tensor.print interpreter handler."""
+
+    def test_debug_tensor_print_bfloat16(self, capsys: Any) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it."""
+        values_f32 = np.array([1.5, -2.0, 0.25], dtype=np.float32)
+        buf = Buffer.from_numpy(
+            values_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+
+        mock_op = MagicMock()
+        mock_op.label = "x"
+
+        result = _handle_debug_tensor_print(mock_op, [None, buf])
+
+        assert result == [None]
+        printed = capsys.readouterr().out
+        assert "1.5" in printed
+        assert "-2" in printed
+        assert "0.25" in printed
+
+
 class TestGatherSumOp:
     """Tests for the gather_sum interpreter handler.
 
@@ -4734,6 +4820,68 @@ class TestGatherSumOp:
         expected = gathered.sum(axis=1, keepdims=True)
         assert isinstance(result[0], Buffer)
         np.testing.assert_array_equal(result[0].to_numpy(), expected)
+
+    def test_gather_sum_bfloat16(self) -> None:
+        """NumPy can't hold bfloat16, so the handler must not crash on it.
+
+        No user-facing graph API produces ``mo.gather_sum`` (see the class
+        docstring), so this exercises the handler directly rather than
+        covering a path real callers can reach today.
+        """
+        input_f32 = np.arange(12, dtype=np.float32).reshape(4, 3)
+        input_bf16 = Buffer.from_numpy(
+            input_f32.astype(ml_dtypes.bfloat16).view(np.uint16)
+        ).view(DType.bfloat16)
+        indices_np = np.array([[0, 2], [1, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op, [input_bf16, Buffer.from_numpy(indices_np)]
+        )
+
+        assert isinstance(result[0], Buffer)
+        assert result[0].dtype == DType.bfloat16
+        gathered = np.take(input_f32, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        out_f32 = (
+            result[0]
+            .view(DType.uint16)
+            .to_numpy()
+            .view(ml_dtypes.bfloat16)
+            .astype(np.float32)
+        )
+        np.testing.assert_array_almost_equal(out_f32, expected)
+
+
+class TestDistributedAllreduceSumOp:
+    """Tests for the distributed.allreduce.sum interpreter handler on host."""
+
+    def test_allreduce_sum_leaves_host_inputs_unmodified(self) -> None:
+        """The sum must not accumulate into an input that's already on CPU."""
+        a = np.arange(4, dtype=np.float32)
+        b = 10 * np.arange(4, dtype=np.float32)
+        bufs = [Buffer.from_numpy(a.copy()), Buffer.from_numpy(b.copy())]
+
+        mock_op = MagicMock()
+        mock_op.inputs = [MagicMock(), MagicMock()]
+        mock_op.group_size = 0
+        mock_result = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result, mock_result, MagicMock()]
+
+        result = _handle_distributed_allreduce_sum(mock_op, bufs)
+
+        np.testing.assert_array_equal(bufs[0].to_numpy(), a)
+        np.testing.assert_array_equal(bufs[1].to_numpy(), b)
+        for out in result[:2]:
+            assert isinstance(out, Buffer)
+            np.testing.assert_array_equal(out.to_numpy(), a + b)
+        assert result[2] is None
 
 
 def _mock_op_on(device: DeviceRef) -> MagicMock:
@@ -5232,7 +5380,7 @@ class TestScatterAddOp:
     """Tests for scatter_add op via MO interpreter on CPU.
 
     Uses ``F.scatter_add`` which routes through ``ops.scatter_add`` ->
-    ``rmo.MoScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
+    ``mo.ScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
     The reference is ``numpy.add.at``, which accumulates duplicate indices.
     """
 
@@ -5393,7 +5541,7 @@ class TestScatterMaxOp:
     """Tests for scatter_max op via MO interpreter on CPU.
 
     Uses ``F.scatter_max`` which routes through ``ops.scatter_max`` ->
-    ``rmo.MoScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
+    ``mo.ScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
     The reference keeps ``max(existing, update)`` at duplicate indices.
     """
 
@@ -5504,7 +5652,7 @@ class TestScatterMinOp:
     """Tests for scatter_min op via MO interpreter on CPU.
 
     Uses ``F.scatter_min`` which routes through ``ops.scatter_min`` ->
-    ``rmo.MoScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
+    ``mo.ScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
     The reference keeps ``min(existing, update)`` at duplicate indices.
     """
 
@@ -5617,7 +5765,7 @@ class TestScatterMulOp:
     """Tests for scatter_mul op via MO interpreter on CPU.
 
     Uses ``F.scatter_mul`` which routes through ``ops.scatter_mul`` ->
-    ``rmo.MoScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
+    ``mo.ScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
     The reference multiplies ``output[...][idx] *= update`` at each index.
     """
 
@@ -5819,7 +5967,7 @@ class TestScatterNdOp:
     """Tests for scatter_nd op via the MO interpreter (CPU + GPU capable).
 
     Uses ``F.scatter_nd`` which routes through ``ops.scatter_nd`` ->
-    ``rmo.MoScatterNdOp`` -> ``mo.scatter_nd`` -> interpreter handler.
+    ``mo.ScatterNdOp`` -> ``mo.scatter_nd`` -> interpreter handler.
     The NumPy reference iterates over update positions via ``np.ndindex``
     to mirror the kernel's exact flat-index semantics.
     """
@@ -5967,7 +6115,7 @@ class TestScatterNdAddOp:
     """Tests for scatter_nd_add op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_add`` which routes through ``ops.scatter_nd_add`` ->
-    ``rmo.MoScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
+    ``mo.ScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
     Duplicate index vectors are accumulated (summed).
     """
 
@@ -6115,7 +6263,7 @@ class TestScatterNdMaxOp:
     """Tests for scatter_nd_max op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_max`` which routes through ``ops.scatter_nd_max`` ->
-    ``rmo.MoScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
+    ``mo.ScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
     Duplicate index vectors keep the maximum.
     """
 
@@ -6241,7 +6389,7 @@ class TestScatterNdMinOp:
     """Tests for scatter_nd_min op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_min`` which routes through ``ops.scatter_nd_min`` ->
-    ``rmo.MoScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
+    ``mo.ScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
     Duplicate index vectors keep the minimum.
     """
 
@@ -6367,7 +6515,7 @@ class TestScatterNdMulOp:
     """Tests for scatter_nd_mul op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_mul`` which routes through ``ops.scatter_nd_mul`` ->
-    ``rmo.MoScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
+    ``mo.ScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
     Duplicate index vectors multiply.
     """
 
@@ -7400,7 +7548,7 @@ class TestAvgPool2dOp:
 class TestRoiAlignOp:
     """Tests for roi_align interpreter op via F.roi_align.
 
-    Routes through F.roi_align -> ops.roi_align -> rmo.MoRoiAlignOp ->
+    Routes through F.roi_align -> ops.roi_align -> mo.RoiAlignOp ->
     mo.RoiAlignOp -> _handle_roi_align -> roi_align_gc.roi_align_model.
     The op is MO_SingleDeviceWithHostOperands: input/rois/output live on the
     input device, the four numeric scalars stay host-side. These tests run on
@@ -7907,7 +8055,7 @@ class TestTopKOp:
 class TestBottomKOp:
     """Tests for BottomK interpreter op (mo.bottom_k).
 
-    Uses F.bottom_k which routes through ops.bottom_k -> rmo.MoBottomKOp ->
+    Uses F.bottom_k which routes through ops.bottom_k -> mo.BottomKOp ->
     mo.bottom_k -> interpreter handler.  The reference implementation uses
     numpy stable argsort (ascending) to match the kernel's selection-sort
     ordering.
@@ -8013,7 +8161,7 @@ class TestBottomKOp:
 class TestArgNonzeroOp:
     """Tests for ArgNonzero interpreter op (mo.arg_nonzero).
 
-    Uses F.nonzero which routes through ops.nonzero -> rmo.MoArgNonzeroOp ->
+    Uses F.nonzero which routes through ops.nonzero -> mo.ArgNonzeroOp ->
     mo.ArgNonzeroOp -> interpreter handler. The reference is
     ``np.argwhere(x != 0).astype(np.int64)``, which returns row-major
     coordinates in the same order as the kernel.
@@ -8844,7 +8992,7 @@ class TestResizeLinearOp:
     """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
 
     Routes through F.resize_linear -> ops.resize_linear ->
-    rmo.MoResizeLinearOp -> mo.ResizeLinearOp -> _handle_resize_linear ->
+    mo.ResizeLinearOp -> _handle_resize_linear ->
     resize_gc.resize_model.  The CPU path is covered here; the GPU path is
     covered by TestResizeLinearGPU in test_interpreter_ops_gpu.py.
 
@@ -8993,7 +9141,11 @@ class TestResizeLinearOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -9013,7 +9165,11 @@ class TestResizeLinearOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -9033,7 +9189,11 @@ class TestResizeLinearOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_linear(x, out_shape, coordinate_transform_mode=1)
+            out = F.resize_linear(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ALIGN_CORNERS,
+            )
 
         ref = self._resize_linear_ref(
             x_np, out_shape, coordinate_transform_mode=1
@@ -9054,7 +9214,10 @@ class TestResizeLinearOp:
             realization_context(ctx),
         ):
             out = F.resize_linear(
-                x, out_shape, coordinate_transform_mode=0, antialias=True
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+                antialias=True,
             )
 
         out_np = np.from_dlpack(out)
@@ -9135,7 +9298,7 @@ class TestResizeNearestOp:
     """Tests for nearest-neighbor resize interpreter op (mo.resize.nearest).
 
     Routes through F.resize_nearest -> ops.resize_nearest ->
-    rmo.MoResizeNearestOp -> mo.ResizeNearestOp -> _handle_resize_nearest ->
+    mo.ResizeNearestOp -> _handle_resize_nearest ->
     resize_gc.resize_model.  The CPU path is covered here; the GPU path is
     covered by TestResizeNearestGPU in test_interpreter_ops_gpu.py.
 
@@ -9247,7 +9410,11 @@ class TestResizeNearestOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_nearest_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -9265,7 +9432,11 @@ class TestResizeNearestOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=0)
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+            )
 
         ref = self._resize_nearest_ref(
             x_np, out_shape, coordinate_transform_mode=0
@@ -9288,7 +9459,10 @@ class TestResizeNearestOp:
             realization_context(ctx),
         ):
             out = F.resize_nearest(
-                x, out_shape, coordinate_transform_mode=2, round_mode=2
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ASYMMETRIC,
+                round_mode=RoundMode.FLOOR,
             )
 
         ref = self._resize_nearest_ref(
@@ -9307,7 +9481,11 @@ class TestResizeNearestOp:
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
         ):
-            out = F.resize_nearest(x, out_shape, coordinate_transform_mode=1)
+            out = F.resize_nearest(
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.ALIGN_CORNERS,
+            )
 
         ref = self._resize_nearest_ref(
             x_np, out_shape, coordinate_transform_mode=1
@@ -9391,7 +9569,10 @@ class TestResizeNearestOp:
             realization_context(ctx),
         ):
             out = F.resize_nearest(
-                x, out_shape, coordinate_transform_mode=0, round_mode=0
+                x,
+                out_shape,
+                coordinate_transform_mode=CoordinateTransformMode.HALF_PIXEL,
+                round_mode=RoundMode.HALF_DOWN,
             )
 
         assert out.storage is not None
@@ -9490,6 +9671,100 @@ class TestResizeBicubicOp:
 
         with pytest.raises(ValueError, match="rank-4"):
             F.resize_bicubic(x, out_shape)
+
+    @staticmethod
+    def _antialiased_ref(x_np: np.ndarray, out_shape: list[int]) -> np.ndarray:
+        """NumPy reference: torch's CPU antialiased bicubic (a=-0.5).
+
+        The cubic is stretched by the downscale factor, taps outside the
+        input are dropped, and the remaining weights are normalized.
+        """
+
+        def cubic(t: np.ndarray) -> np.ndarray:
+            a = -0.5
+            t = np.abs(t)
+            return np.where(
+                t < 1.0,
+                ((a + 2.0) * t - (a + 3.0)) * t * t + 1.0,
+                np.where(t < 2.0, (((t - 5.0) * t + 8.0) * t - 4.0) * a, 0.0),
+            )
+
+        def axis_pass(a: np.ndarray, axis: int, size_out: int) -> np.ndarray:
+            size_in = a.shape[axis]
+            scale = size_in / size_out
+            stretch = max(scale, 1.0)
+            moved = np.moveaxis(a, axis, -1).astype(np.float64)
+            out = np.empty((*moved.shape[:-1], size_out))
+            for j in range(size_out):
+                center = (j + 0.5) * scale
+                lo = max(int(center - 2.0 * stretch + 0.5), 0)
+                hi = min(int(center + 2.0 * stretch + 0.5), size_in)
+                taps = np.arange(lo, hi)
+                weights = cubic((taps - center + 0.5) / stretch)
+                out[..., j] = moved[..., lo:hi] @ (weights / weights.sum())
+            return np.moveaxis(out, -1, axis)
+
+        y = axis_pass(x_np, 3, out_shape[3])
+        return axis_pass(y, 2, out_shape[2]).astype(np.float32)
+
+    @pytest.mark.parametrize(
+        "in_shape,out_shape",
+        [([1, 2, 17, 23], [1, 2, 5, 7]), ([1, 1, 4, 6], [1, 1, 9, 13])],
+    )
+    def test_antialias(self, in_shape: list[int], out_shape: list[int]) -> None:
+        """Down- and upsamples through the eager antialiased path."""
+        rng = np.random.default_rng(201)
+        x_np = rng.standard_normal(in_shape).astype(np.float32)
+        x = Tensor.from_dlpack(x_np)
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(x, out_shape, antialias=True)
+
+        ref = self._antialiased_ref(x_np, out_shape)
+        np.testing.assert_allclose(
+            np.from_dlpack(out), ref, rtol=1e-5, atol=1e-5
+        )
+
+    def test_antialias_uint8(self) -> None:
+        """A uint8 input resizes eagerly to uint8 as Pillow's BICUBIC does."""
+        rng = np.random.default_rng(202)
+        x_np = rng.integers(0, 256, (1, 3, 9, 23), dtype=np.uint8)
+        out_shape = [1, 3, 20, 7]
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            out = F.resize_bicubic(
+                Tensor.from_dlpack(x_np), out_shape, antialias=True
+            )
+
+        got = np.from_dlpack(out)
+        assert got.dtype == np.uint8
+        want = np.asarray(
+            Image.fromarray(
+                np.ascontiguousarray(x_np[0].transpose(1, 2, 0))
+            ).resize(out_shape[:1:-1], Image.Resampling.BICUBIC)
+        ).transpose(2, 0, 1)
+        np.testing.assert_array_equal(got[0], want)
+
+    @pytest.mark.parametrize("antialias", [False, True])
+    def test_rejects_an_empty_input_to_a_non_empty_size(
+        self, antialias: bool
+    ) -> None:
+        """No output pixel has input pixels to read."""
+        x = Tensor.from_dlpack(np.zeros((1, 1, 0, 4), dtype=np.float32))
+
+        with pytest.raises(Exception, match="empty input"):
+            with (
+                rc.EagerRealizationContext() as ctx,
+                realization_context(ctx),
+            ):
+                out = F.resize_bicubic(x, [1, 1, 4, 4], antialias=antialias)
+            np.from_dlpack(out)
 
 
 class TestDistributedScatterSimulated:
@@ -9660,8 +9935,12 @@ class TestLazyGCModelCompilation:
     def test_matmul_model_compiles_once_and_reuses(self) -> None:
         """A second call for the same (device, dtype) returns the cached model."""
         cpu = CPU()
-        first = matmul_gc.matmul_model(cpu, DType.float32)
-        second = matmul_gc.matmul_model(cpu, DType.float32)
+        first = matmul_gc.matmul_model(
+            cpu, DType.float32, DType.float32, DType.float32
+        )
+        second = matmul_gc.matmul_model(
+            cpu, DType.float32, DType.float32, DType.float32
+        )
         assert first is second
 
     def test_unary_model_compiles_once_and_reuses(self) -> None:
@@ -9678,32 +9957,15 @@ class TestLazyGCModelCompilation:
         with pytest.raises(KeyError, match="Unsupported unary op/device/dtype"):
             unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.int32)
 
-    def test_unary_model_canonicalizes_rmo_alias(self) -> None:
-        """An rmo (Mo-prefixed) unary op resolves like its mo form.
-
-        Canonicalizing the op name keys ``rmo.MoExpOp`` to the same cache
-        entry as ``mo.ExpOp``; without it a supported op misses and raises
-        KeyError (see gc_compile.canonical_op_name).
-        """
-        rmo_exp = rmo.MoExpOp
-        cpu = CPU()
-        u = unary_elementwise_gc
-        assert u._graph_name(rmo_exp, cpu, DType.float32) == u._graph_name(
-            mo.ExpOp, cpu, DType.float32
-        )
-        assert u._is_supported(rmo_exp, cpu, DType.float32)
-        # Resolves to the same cached model rather than raising KeyError.
-        assert u.unary_model(rmo_exp, cpu, DType.float32) is u.unary_model(
-            mo.ExpOp, cpu, DType.float32
-        )
-
     # MXF-510: a residual precompile-mode cache miss used to raise KeyError.
     @pytest.mark.parametrize(
         ("family", "call_model"),
         [
             (
                 matmul_gc._FAMILY,
-                lambda: matmul_gc.matmul_model(CPU(), DType.float32),
+                lambda: matmul_gc.matmul_model(
+                    CPU(), DType.float32, DType.float32, DType.float32
+                ),
             ),
             (
                 select_gc._FAMILY,
@@ -9764,7 +10026,9 @@ class TestLazyGCModelCompilation:
             gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
         )
         monkeypatch.setattr(matmul_gc._FAMILY, "cache", {})
-        model = matmul_gc.matmul_model(CPU(), DType.float32)
+        model = matmul_gc.matmul_model(
+            CPU(), DType.float32, DType.float32, DType.float32
+        )
         assert model is not None
 
     def test_select_model_compiles_once_and_reuses(self) -> None:

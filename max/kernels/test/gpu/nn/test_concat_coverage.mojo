@@ -24,6 +24,7 @@ This file tests various code paths in nn/concat.mojo:
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
+from layout.coord import DynamicCoord
 from nn.concat import (
     _concat_gpu,
     _no_epilogue,
@@ -494,8 +495,8 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     comptime rank = 3
     comptime axis = 1
 
-    comptime input_shape_0 = IndexList[rank](2, 3, 4)
-    comptime input_shape_1 = IndexList[rank](2, 5, 4)
+    comptime input_shape_0 = Coord(2, 3, 4)
+    comptime input_shape_1 = Coord(2, 5, 4)
     comptime output_shape = IndexList[rank](2, 8, 4)
 
     var output_device_buffer = ctx.enqueue_create_buffer[dtype](
@@ -522,27 +523,18 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
             return SIMD[dtype, width](2.0)
 
     # Output epilogue: add 10 to every value
-    @__parameter
     @inline(.always)
-    @__copy_capture(output_dyn)
     def output_fn[
         c_type: DType, width: SIMDLength, *, alignment: Int
-    ](coords: Coord, val: SIMD[c_type, width]):
+    ](coords: Coord, val: SIMD[c_type, width]) {var output_dyn}:
         comptime assert output_dyn.flat_rank >= coords.flat_rank
-        output_dyn.store[width=width](
-            coords, rebind[SIMD[dtype, width]](val + 10)
-        )
+        output_dyn.store(coords, rebind[SIMD[dtype, width]](val + 10))
 
-    fused_concat[
-        dtype,
-        rank,
+    fused_concat[dtype, rank, axis=axis](
+        StaticTuple[DynamicCoord[.int, rank], 2](input_shape_0, input_shape_1),
+        output_dyn.layout,
         input_fn,
         output_fn,
-        axis=axis,
-        target="gpu",
-    ](
-        StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
-        output_dyn.layout,
         ctx,
     )
 
@@ -636,9 +628,7 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) {var output_dyn}:
         comptime assert output_dyn.flat_rank >= coords.flat_rank
-        output_dyn.store[width=width](
-            coords, rebind[SIMD[dtype, width]](val * 2)
-        )
+        output_dyn.store(coords, rebind[SIMD[dtype, width]](val * 2))
 
     _concat_gpu[has_epilogue=True](
         output_dyn.as_unsafe_any_origin(),

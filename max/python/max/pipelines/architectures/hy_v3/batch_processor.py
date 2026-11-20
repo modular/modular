@@ -42,6 +42,7 @@ class HyV3BatchProcessor(Llama3EpBatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> HYV3Inputs:
+        """Packs the first step's inputs for each replica."""
         from .model import HYV3Inputs
 
         (

@@ -264,8 +264,12 @@ def execute_fused_qk_rope_ragged(
                 )
 
                 unsafe_memcpy(
-                    dest=mixed_ce_q_ragged_tensor.ptr + mixed_ce_dest_offset,
-                    src=true_ce_q_ragged_tensor.ptr + true_ce_src_offset,
+                    dest=mixed_ce_q_ragged_tensor.ptr.unsafe_offset(
+                        mixed_ce_dest_offset
+                    ),
+                    src=true_ce_q_ragged_tensor.ptr.unsafe_offset(
+                        true_ce_src_offset
+                    ),
                     count=mixed_ce_prompt_len
                     * num_q_heads
                     * kv_params.head_size,
@@ -421,7 +425,8 @@ def execute_fused_qk_rope_ragged(
     # "true CE" execution
     print("true")
     fused_qk_rope_ragged[
-        mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
+        mixed_ce_k_cache_collection.CacheType,
+        interleaved=False,
     ](
         q_proj=true_ce_q_ragged_tensor,
         input_row_offsets=true_ce_row_offsets_tensor,
@@ -436,7 +441,8 @@ def execute_fused_qk_rope_ragged(
     # "mixed CE" execution
     print("mixed")
     fused_qk_rope_ragged[
-        mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
+        mixed_ce_k_cache_collection.CacheType,
+        interleaved=False,
     ](
         q_proj=mixed_ce_q_ragged_tensor,
         input_row_offsets=mixed_ce_row_offsets_tensor,
@@ -525,8 +531,7 @@ def execute_fused_qk_rope_ragged(
         .reshape(Coord(Int64(true_ce_cache_lengths_shape[0])))
         .as_imm()
         .as_unsafe_any_origin(),
-        TileTensor(
-            paged_lut_host_tensor.ptr,
+        paged_lut_host_tensor.reshape(
             row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         )
         .as_imm()
@@ -549,8 +554,7 @@ def execute_fused_qk_rope_ragged(
         .reshape(Coord(Int64(mixed_ce_cache_lengths_shape[0])))
         .as_imm()
         .as_unsafe_any_origin(),
-        TileTensor(
-            paged_lut_host_tensor.ptr,
+        paged_lut_host_tensor.reshape(
             row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         )
         .as_imm()
@@ -742,8 +746,10 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                     seq_idx * num_q_heads * rope_dim + head_idx * rope_dim
                 )
                 unsafe_memcpy(
-                    dest=q_ragged_64_tensor.ptr + dest_offset,
-                    src=q_ragged_host_ptr.unsafe_ptr() + src_offset,
+                    dest=q_ragged_64_tensor.ptr.unsafe_offset(dest_offset),
+                    src=q_ragged_host_ptr.unsafe_ptr().unsafe_offset(
+                        src_offset
+                    ),
                     count=rope_dim,
                 )
 
@@ -810,8 +816,12 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                 + head_idx * rope_dim
                             )
                             unsafe_memcpy(
-                                dest=kv_block_64_tensor.ptr + dest_offset,
-                                src=kv_block_host_ptr.unsafe_ptr() + src_offset,
+                                dest=kv_block_64_tensor.ptr.unsafe_offset(
+                                    dest_offset
+                                ),
+                                src=kv_block_host_ptr.unsafe_ptr().unsafe_offset(
+                                    src_offset
+                                ),
                                 count=rope_dim,
                             )
 
@@ -912,7 +922,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     )
 
     fused_qk_rope_ragged[
-        k_cache_collection.CacheType, interleaved=True, target="gpu"
+        k_cache_collection.CacheType,
+        interleaved=True,
     ](
         q_proj=q_ragged_tensor,
         input_row_offsets=row_offsets_tensor,
@@ -926,7 +937,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
 
     # Execute the kernel for 64
     fused_qk_rope_ragged[
-        k_cache_collection_64.CacheType, interleaved=True, target="gpu"
+        k_cache_collection_64.CacheType,
+        interleaved=True,
     ](
         q_proj=q_ragged_64_tensor,
         input_row_offsets=row_offsets_tensor,

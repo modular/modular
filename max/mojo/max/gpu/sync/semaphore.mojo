@@ -88,9 +88,7 @@ struct Semaphore[origin: MutOrigin, //](TrivialRegisterPassable):
         using an acquire memory ordering to ensure proper synchronization.
         """
         if self._wait_thread:
-            self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
-                self._lock
-            )
+            self._state = _device_atomic.load[ordering=.acquire](self._lock)
 
     @inline(.always)
     def state(self) -> Int32:
@@ -127,7 +125,7 @@ struct Semaphore[origin: MutOrigin, //](TrivialRegisterPassable):
         """
         barrier()
         if self._wait_thread:
-            _device_atomic.store[ordering=Ordering.RELEASE](self._lock, status)
+            _device_atomic.store[ordering=.release](self._lock, status)
 
 
 struct NamedBarrierSemaphore[
@@ -172,7 +170,7 @@ struct NamedBarrierSemaphore[
         comptime assert is_nvidia_gpu(), "target must be cuda"
         comptime assert (
             Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers
-        ), "max number of barriers is " + String(MaxHardwareBarriers)
+        ), String(t"max number of barriers is {MaxHardwareBarriers}")
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1
@@ -196,9 +194,7 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state != status:
-                self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
-                    self._lock
-                )
+                self._state = _device_atomic.load[ordering=.acquire](self._lock)
 
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
@@ -212,9 +208,7 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state < count:
-                self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
-                    self._lock
-                )
+                self._state = _device_atomic.load[ordering=.acquire](self._lock)
 
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
@@ -229,4 +223,4 @@ struct NamedBarrierSemaphore[
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
         if self._wait_thread:
-            _device_atomic.store[ordering=Ordering.RELEASE](self._lock, status)
+            _device_atomic.store[ordering=.release](self._lock, status)

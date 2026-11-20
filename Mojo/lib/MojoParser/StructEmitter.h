@@ -25,6 +25,7 @@
 
 namespace M::KGEN::LIT {
 
+class AliasASTDecl;
 class DefASTDecl;
 class StructASTDecl;
 
@@ -68,17 +69,6 @@ public:
 
   StructEmitter(StructASTDecl &structDecl);
 
-  /// Generate empty stubs for the destructor, copy constructor, and move
-  /// constructor on the declOp if they are eligible and do not already exist.
-  ///
-  /// A struct is eligible for a destructor if one of its fields has a
-  /// destructor. It is possible that none of the fields of a struct have a
-  /// destructor but that struct has an init that allocates heap memory. In this
-  /// case set the forceGenerateDestructor flag to true to force destructor
-  /// generation.
-  std::optional<ValueInfo>
-  addMissingValueMemberStubsToStruct(bool forceGenerateDestructor = false);
-
   /// Given a struct that has no explicitly defined `__del__` member, define a
   /// new one with an empty body. This allows the CheckLifetimes pass to insert
   /// field dels as needed, and makes sure that anything that refers to this
@@ -87,6 +77,12 @@ public:
   /// where-clause so that overload resolution rejects calls when the
   /// conditional conformance cannot be proven.
   FnOp synthesizeEmptyDtor(ConstraintAttr conformanceConstraint = {});
+  /// The two halves of synthesizeEmptyDtor, for a caller that must create the
+  /// destructor before the struct's field types are resolved.
+  DefASTDecl *
+  synthesizeEmptyDtorStub(ConstraintAttr conformanceConstraint = {});
+  void diagnoseNonDeinitableFields(DefASTDecl &dtorDecl,
+                                   ConstraintAttr conformanceConstraint = {});
   /// Add an empty move/copy ctor stub for this struct, to be filled in later.
   /// When \p conformanceConstraint is non-null, it is attached as a
   /// where-clause so that overload resolution rejects calls when the
@@ -119,7 +115,7 @@ public:
 
   /// Create a FnOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.
-  std::pair<FnOp, ASTDecl *> synthesizeMethodInStruct(
+  std::pair<FnOp, DefASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
@@ -127,7 +123,7 @@ public:
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
-  std::pair<FnOp, ASTDecl *> synthesizeMethodInStruct(
+  std::pair<FnOp, DefASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
       Type resultType,
@@ -136,7 +132,7 @@ public:
       bool synthetic = true);
 
   /// Synthesize an unresolved alias into the struct with the specified name .
-  ASTDecl *synthesizeUnresolvedAlias(StringRef name);
+  AliasASTDecl *synthesizeUnresolvedAlias(StringRef name);
 
   /// Synthesize the members of an `__enum` from the `lit.enum.case` ops in its
   /// body: the `EnumLike` case lists, the storage field, a `comptime` member
@@ -150,16 +146,17 @@ public:
                                          ParamListAttr caseNames,
                                          ParamListAttr caseTypes);
   /// Synthesize the static method that constructs case `caseName` of an
-  /// `__enum` from its `payload` types.
+  /// `__enum` from its `payload` types, documented by the case's `docString`.
   LogicalResult synthesizeEnumCaseConstructor(StringRef caseName,
                                               ArrayRef<Type> payload,
-                                              SMLoc caseLoc);
+                                              SMLoc caseLoc,
+                                              DocStringAttr docString);
   /// Populate the body of a case constructor synthesized by
   /// `synthesizeEnumCaseConstructor`.
-  LogicalResult populateEnumCaseConstructor(ASTDecl &fnDecl);
+  LogicalResult populateEnumCaseConstructor(DefASTDecl &fnDecl);
   /// Compute the value of `aliasDecl`, the `comptime` member that
   /// `synthesizeEnumMembers` declared for a case without a payload.
-  LogicalResult resolveEnumCaseAlias(ASTDecl &aliasDecl);
+  LogicalResult resolveEnumCaseAlias(AliasASTDecl &aliasDecl);
   TypedAttr populateSpecialFnIsTrivial(SpecialFunctionKind kind);
 
   /// Like synthesizeMethodInStruct but accepts higher-level signature
@@ -179,6 +176,12 @@ public:
 /// Look up `name` in the standard library module that implements enums,
 /// emitting an error if it is missing.
 ASTDecl *lookupEnumSupportDecl(SharedState &shared, StringRef name, SMLoc loc);
+
+/// Report a clash between the member that the case `caseName` of `enumDecl`
+/// generates and a member that every enum gets or one written in `enumDecl`;
+/// failure if there is one.
+LogicalResult checkEnumCaseName(ASTDecl &enumDecl, StringRef caseName,
+                                SMLoc caseLoc);
 
 } // namespace M::KGEN::LIT
 

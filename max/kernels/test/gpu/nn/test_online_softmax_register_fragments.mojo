@@ -23,7 +23,8 @@ from std.testing import assert_almost_equal, assert_equal
 from max.gpu import WARP_SIZE, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
-from layout import Layout, TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, row_major, stack_allocation
+from layout.coord import coord
 from nn.softmax import _online_softmax_iter_for_mma_output
 
 comptime NUM_THREADS = 64
@@ -69,13 +70,13 @@ def _kernel[
         scratch_storage[i] = SENTINEL
     barrier()
     var scores = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        score_storage.ptr + LOCAL_GUARD, row_major[4, 2]()
+        score_storage.ptr.unsafe_offset(LOCAL_GUARD), row_major[4, 2]()
     )
     var accum = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-        accum_storage.ptr + LOCAL_GUARD, row_major[4, 2]()
+        accum_storage.ptr.unsafe_offset(LOCAL_GUARD), row_major[4, 2]()
     )
     var scratch = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
-        scratch_storage.ptr + LOCAL_GUARD, row_major[4, 16]()
+        scratch_storage.ptr.unsafe_offset(LOCAL_GUARD), row_major[4, 16]()
     )
     var rowmax = stack_allocation[dtype=.float32](row_major[2, 1]())
     var rowsum = stack_allocation[dtype=.float32](row_major[2, 1]())
@@ -96,11 +97,12 @@ def _kernel[
                     )
         _online_softmax_iter_for_mma_output[
             .float32,
-            Layout.row_major(2, 2),
-            Layout.row_major(1, 2),
-            Layout.row_major(8, 4),
+            coord[2, 2],
+            coord[1, 2],
+            coord[8, 4],
             use_exp2=True,
-            fragment_layout=Layout.row_major(1, 2),
+            frag_rows=1,
+            frag_cols=2,
         ](accum_fragment, scores_fragment, scratch, rowmax.ptr, rowsum.ptr)
     comptime for m in range(2):
         output[thread_idx.x, m] = rowmax[m, 0]
@@ -135,7 +137,7 @@ def main() raises:
             host[i] = SENTINEL
         ctx.enqueue_copy(device, host)
         var output = TileTensor(
-            device.unsafe_ptr() + DRAM_GUARD,
+            device.unsafe_ptr().unsafe_offset(DRAM_GUARD),
             row_major[NUM_THREADS, NUM_FIELDS](),
         ).as_unsafe_any_origin()
         ctx.enqueue_function[_kernel[type_of(output).LayoutType]](
@@ -187,7 +189,7 @@ def main() raises:
                                 1,
                                 m,
                                 n,
-                                thread // WARP_SIZE,
+                                thread // ctx.default_device_info.warp_size,
                                 thread % 4,
                                 element,
                             )

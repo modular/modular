@@ -19,15 +19,10 @@ from std.time import perf_counter_ns
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.math import ceil, floor
 from std.ffi import external_call
-from std.sys import (
-    CompilationTarget,
-    is_amd_gpu,
-    is_gpu,
-    is_nvidia_gpu,
-    llvm_intrinsic,
-)
+from std.sys import CompilationTarget, is_gpu
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -42,7 +37,6 @@ comptime _CLOCK_MONOTONIC_RAW = 4
 
 # Constants
 comptime _NSEC_PER_USEC = 1000
-comptime _NSEC_PER_MSEC = 1_000_000
 comptime _USEC_PER_MSEC = 1000
 comptime _MSEC_PER_SEC = 1000
 comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
@@ -84,33 +78,6 @@ def _gettime_as_nsec_unix(clockid: Int) -> Int:
 
 
 @inline(.always)
-def _amd_gpu_realtime() -> UInt64:
-    """Returns the AMD GPU real-time counter (constant-speed clock).
-
-    This reads the realtime register which provides a constant-speed 64-bit
-    clock counter, independent of GPU core clock frequency scaling. This is
-    suitable for wall-clock timing measurements.
-
-    The counter frequency is 100 MHz (10ns per tick) on MI355 (gfx950) and
-    likely other modern AMD GPUs, though this may vary by architecture.
-    Use _AMD_GPU_REALTIME_FREQ_HZ for conversions.
-    """
-    return llvm_intrinsic["llvm.readsteadycounter", UInt64]()
-
-
-# AMD GPU real-time counter frequency in Hz.
-# MI355 (gfx950) and likely other modern AMD GPUs use 100 MHz.
-# This can be queried at runtime via hipDeviceAttributeWallClockRate if needed.
-comptime _AMD_GPU_REALTIME_FREQ_HZ: UInt64 = 100_000_000
-
-
-@inline(.always)
-def _realtime_nanoseconds() -> Int:
-    """Returns the current realtime time in nanoseconds"""
-    return _gettime_as_nsec_unix(_CLOCK_REALTIME)
-
-
-@inline(.always)
 def _monotonic_nanoseconds() -> Int:
     """Returns the current monotonic time in nanoseconds"""
 
@@ -118,26 +85,6 @@ def _monotonic_nanoseconds() -> Int:
         return Int(global_perf_counter_ns())
     else:
         return _gettime_as_nsec_unix(_CLOCK_MONOTONIC)
-
-
-@inline(.always)
-def _monotonic_raw_nanoseconds() -> Int:
-    """Returns the current monotonic time in nanoseconds"""
-    return _gettime_as_nsec_unix(_CLOCK_MONOTONIC_RAW)
-
-
-@inline(.always)
-def _process_cputime_nanoseconds() -> Int:
-    """Returns the high-resolution per-process timer from the CPU"""
-
-    return _gettime_as_nsec_unix(_CLOCK_PROCESS_CPUTIME_ID)
-
-
-@inline(.always)
-def _thread_cputime_nanoseconds() -> Int:
-    """Returns the thread-specific CPU-time clock"""
-
-    return _gettime_as_nsec_unix(_CLOCK_THREAD_CPUTIME_ID)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -183,33 +130,32 @@ def perf_counter_ns() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
+comptime _GlobalPerfCounterNsPluginHookFnType = def() thin -> UInt64
+"""Plugin-hook signature for `PluginHooks.global_perf_counter_ns_fn`."""
+
+
 @inline(.always)
 def global_perf_counter_ns() -> UInt64:
     """Returns the current value in the global nanosecond resolution timer. This value
     is common across all SM's.
 
-    On NVIDIA GPUs, this uses the globaltimer register which provides nanosecond
-    resolution. On AMD GPUs, this uses the realtime counter (constant-speed clock)
-    converted to nanoseconds. On other platforms, this falls back to
-    perf_counter_ns().
+    On GPUs, this reads the timer that the target's stdlib plugin provides,
+    such as the globaltimer register on NVIDIA GPUs or the realtime counter
+    (a constant-speed clock) on AMD GPUs. On other platforms, this falls back
+    to perf_counter_ns().
 
     Returns:
         The current time in ns.
     """
 
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.read.ptx.sreg.globaltimer",
-            UInt64,
-            has_side_effect=True,
+    comptime if case .Some(_read) = CurrentPlugin.global_perf_counter_ns_fn:
+        return _read()
+    elif is_gpu():
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
-    elif is_amd_gpu():
-        # Convert realtime ticks to nanoseconds.
-        # At 100 MHz, each tick is 10ns (1e9 / 100e6 = 10).
-        var ticks = _amd_gpu_realtime()
-        return (ticks * 1_000_000_000) // _AMD_GPU_REALTIME_FREQ_HZ
-
-    return UInt64(perf_counter_ns())
+    else:
+        return UInt64(perf_counter_ns())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -282,6 +228,10 @@ def time_function[FuncType: def() -> None](func: FuncType) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
+comptime _SleepPluginHookFnType = def(sec: Float64) thin -> None
+"""Plugin-hook signature for `PluginHooks.sleep_fn`."""
+
+
 def sleep(sec: Float64):
     """Suspends the current thread for the seconds specified.
 
@@ -292,56 +242,11 @@ def sleep(sec: Float64):
     if sec <= 0.0:
         return
 
-    comptime if is_gpu():
-        comptime if is_nvidia_gpu():
-            # NVIDIA's nanosleep has a max duration of 1ms (1,000,000 ns).
-            # Loop to handle longer sleep durations.
-            comptime MAX_SLEEP_NS = 1_000_000  # 1ms in nanoseconds
-            var total_ns = UInt64(sec * 1.0e9)
-            var start = global_perf_counter_ns()
-            var elapsed = global_perf_counter_ns() - start
-            while elapsed < total_ns:
-                var remaining = total_ns - elapsed
-                var sleep_ns = Int32(min(remaining, UInt64(MAX_SLEEP_NS)))
-                llvm_intrinsic["llvm.nvvm.nanosleep", NoneType](sleep_ns)
-                elapsed = global_perf_counter_ns() - start
-            return
-        elif is_amd_gpu():
-            # AMD GPU sleep using the realtime counter for timing feedback.
-            # This approach is based on ROCm's ockl rtcwait implementation.
-            #
-            # We use the constant-speed realtime counter to track actual
-            # elapsed time and loop with progressive s_sleep calls until the
-            # target duration is reached. The s_sleep instruction accepts
-            # values 0-127 and sleeps for approximately that many cycles.
-            #
-            # The tiered approach (127 -> 15 -> 1) balances power efficiency
-            # (longer sleeps when far from target) with timing accuracy
-            # (shorter sleeps as we approach the target).
-            var total_ticks = UInt64(sec * Float64(_AMD_GPU_REALTIME_FREQ_HZ))
-            var start = _amd_gpu_realtime()
-            var end = start + total_ticks
-            var now = start
-
-            # Use tiered sleep intervals for efficiency.
-            # Thresholds are approximate tick counts where each sleep level
-            # is appropriate (based on 10ns per tick at 100 MHz).
-            while now < end:
-                var remaining = end - now
-                if remaining > 3000:  # > ~30us remaining
-                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(127))
-                elif remaining > 400:  # > ~4us remaining
-                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(15))
-                else:
-                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
-                now = _amd_gpu_realtime()
-            return
-        else:
-            # Other GPUs are not supported.
-            CompilationTarget.unsupported_target_error[
-                operation="time.sleep()",
-                note="time.sleep() is only supported on NVIDIA and AMD GPUs",
-            ]()
+    comptime if case .Some(_sleep) = CurrentPlugin.sleep_fn:
+        _sleep(sec)
+        return
+    elif is_gpu():
+        CompilationTarget.unsupported_target_error[operation="time.sleep()"]()
 
     comptime NANOSECONDS_IN_SECOND = 1_000_000_000
     var total_secs = floor(sec)
@@ -356,7 +261,7 @@ def sleep(sec: Float64):
         nsecs,
     )
     var req = Pointer(to=tv_spec)
-    var rem = OptionalPointer[_CTimeSpec, MutUntrackedOrigin]()
+    var rem = Optional[Pointer[_CTimeSpec, MutUntrackedOrigin]]()
     _ = external_call["nanosleep", Int32](req, rem)
 
 

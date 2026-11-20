@@ -18,7 +18,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu import block_idx, lane_id, thread_idx, warp_id
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -35,6 +35,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -47,7 +48,13 @@ def is_benchmark() -> Bool:
     return False
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def kernel_3[
@@ -59,10 +66,10 @@ def kernel_3[
     c_layout: TensorLayout,
     a_desc_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -121,7 +128,7 @@ def kernel_3[
     comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
@@ -137,10 +144,12 @@ def kernel_3[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (b_smem + b_size).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = b_smem.unsafe_offset(b_size).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
-    var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
+    var ptr_tmem_addr = mma_mbar.unsafe_offset(1).unsafe_bitcast[UInt32]()
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -184,7 +193,7 @@ def kernel_3[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
+        (UInt32(mma_shape[0]), UInt32(mma_shape[1])),
         transpose_b=transpose_b,
     ]()
 
@@ -204,7 +213,7 @@ def kernel_3[
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
                 var sub_a_smem_tile = TileTensor(
-                    a_smem + a_offset, sub_a_smem_layout
+                    a_smem.unsafe_offset(a_offset), sub_a_smem_layout
                 )
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -216,7 +225,7 @@ def kernel_3[
                     (i * BK + k, block_idx.y * BM),
                 )
                 var sub_b_smem_tile = TileTensor(
-                    b_smem + b_offset, sub_b_smem_layout
+                    b_smem.unsafe_offset(b_offset), sub_b_smem_layout
                 )
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
@@ -277,7 +286,7 @@ def kernel_3[
 
     comptime num_warps = num_threads // WARP_SIZE
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -313,15 +322,15 @@ def blackwell_kernel_3[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
@@ -375,9 +384,6 @@ def blackwell_kernel_3[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -401,11 +407,11 @@ def make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
     return dic^
 
 
-def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext[]) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16
-    comptime umma_shape = Index(64, 256, 16)
+    comptime umma_shape = (64, 256, 16)
     comptime transpose_b = True
     comptime BK = 64
 
@@ -414,8 +420,8 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("Benchmarking kernel_3")
     print("============================================")
     print("Shapes: [M, N, K]")
-    print("Data types: a=", a_type, ", b=", b_type, ", c=", c_type)
-    print("UMMA shape:", umma_shape[0], "x", umma_shape[1], "x", umma_shape[2])
+    print(t"Data types: a= {a_type} , b= {b_type} , c= {c_type}")
+    print(t"UMMA shape: {umma_shape[0]} x {umma_shape[1]} x {umma_shape[2]}")
     print("BK:", BK)
     print("transpose_b:", transpose_b)
     print()
@@ -424,13 +430,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         comptime shape = get_dict_of_shapes(i, dict_of_shapes)
         try:
             print(
-                "Benchmarking shape: [",
-                shape[0],
-                ",",
-                shape[1],
-                ",",
-                shape[2],
-                "]",
+                t"Benchmarking shape: [ {shape[0]} , {shape[1]} , {shape[2]} ]"
             )
             test_blackwell_kernel_3[
                 a_type,
@@ -452,14 +452,14 @@ def test_blackwell_kernel_3[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     BK: Int = 64,
     benchmark: Bool = False,
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     print(M, "x", N, "x", K)
 
     var a = HostDeviceTileTensor[a_type](row_major[M, K](), ctx)
@@ -490,7 +490,7 @@ def test_blackwell_kernel_3[
     c.to_device()
     c_ref.to_device()
 
-    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+    comptime block_tile_shape = (umma_shape[0], umma_shape[1], BK)
 
     blackwell_kernel_3[
         transpose_b=transpose_b,
@@ -509,7 +509,7 @@ def test_blackwell_kernel_3[
         comptime num_warmup = 10
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut c, imm}:
             blackwell_kernel_3[
                 transpose_b=transpose_b,
                 umma_shape=umma_shape,  # 64, 128, 16
@@ -552,9 +552,8 @@ def test_blackwell_kernel_3[
         c_ref.to_host()
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host.unsafe_ptr(),
-            c_host_ref.unsafe_ptr(),
-            M * N,
+            c_host.as_span(),
+            c_host_ref.as_span(),
             atol=0.0001,
             rtol=rtol,
         )
@@ -571,7 +570,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            umma_shape=Index(64, 256, 16),
+            umma_shape=(Int(64), Int(256), Int(16)),
             transpose_b=True,
             BK=64,
             M=4096,

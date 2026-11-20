@@ -20,8 +20,7 @@ these ops, not a compile-time attribute (see ``MO_SelectKLikeOp`` in
 ``ops.top_k``/``ops.bottom_k`` graph-builder API can't express that -- it
 bakes ``k`` in as a compile-time constant -- so both ops are built directly
 via ``_add_op_generated`` instead, the same pattern ``ops.split`` uses for
-``mo.SplitOp`` (there's also no ``rmo`` MO-analogue for top-k to go through,
-unlike ``rmo.MoBottomKOp`` for bottom-k).
+``mo.SplitOp``.
 
 ``axis`` is canonicalized to the shared rank-3 view (see
 ``gc_compile.canonical_rank3``) and applied directly at axis=1 on CPU. GPU
@@ -83,10 +82,11 @@ def _int_dtypes(device: Device) -> list[DType]:
 
 
 def _supported_dtypes(device: Device) -> list[DType]:
-    """The dtype set top_k/bottom_k sweep on *device*: floats + supported
-    int/uint widths (see ``_int_dtypes``), no bool (top-k's ordering
-    comparison has no bool kernel -- the deleted Mojo kernel rejected it the
-    same way via ``DType.is_numeric()``).
+    """The dtype set top_k/bottom_k sweep on *device*.
+
+    Floats plus the supported int/uint widths (see ``_int_dtypes``), and no
+    bool: top-k's ordering comparison has no bool kernel. The deleted Mojo
+    kernel rejected it the same way via ``DType.is_numeric()``.
     """
     return gc_compile.float_dtypes(device) + _int_dtypes(device)
 
@@ -187,8 +187,9 @@ gc_compile.register_family(_FAMILY)
 def topk_model(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> engine.Model:
-    """Returns the top-k/bottom-k :class:`~max.engine.Model` for the target
-    (lazy by default; see the module docstring).
+    """Returns the top-k/bottom-k :class:`~max.engine.Model` for the target.
+
+    Lazy by default; see the module docstring.
 
     Args:
         op_type: The concrete ``mo.TopKOp``/``mo.BottomKOp`` type being

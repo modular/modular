@@ -26,5 +26,6 @@ sampling:
   enable_structured_output: true
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 4096

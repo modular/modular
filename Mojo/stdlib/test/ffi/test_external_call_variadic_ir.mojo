@@ -49,7 +49,7 @@ def all_variadic(value: c_int):
 
 
 def main():
-    var allocation = alloc[c_char]({count = 16}).into_managed()
+    var allocation = alloc[c_char]({length = 16}).into_managed()
     var buf = allocation.unsafe_ptr()
     print(Int(format_into(buf, 16)), length_of(buf))
     # This test stops at LLVM IR, so `mojo_test_all_variadic` needs no

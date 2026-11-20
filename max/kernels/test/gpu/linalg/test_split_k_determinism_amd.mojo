@@ -68,11 +68,7 @@ def _report_divergence[
 
     if total_diverged != 0:
         print(
-            "  ",
-            total_diverged,
-            " of ",
-            num_gpus * (reps - 1),
-            " runs diverged",
+            t"  {total_diverged} of {num_gpus * (reps - 1)} runs diverged",
             sep="",
         )
     assert_equal(total_diverged, 0)
@@ -85,7 +81,7 @@ def test_4wave_split_k_determinism[
     num_splits: Int,
     reps: Int,
     enable_swizzle: Bool,
-](ctxs: List[DeviceContext]) raises:
+](ctxs: List[DeviceContext[]]) raises:
     """Re-run one input set reps times on each GPU; assert it never changes."""
     comptime in_dtype = DType.float8_e4m3fn
     comptime out_dtype = DType.float32
@@ -138,7 +134,7 @@ def test_4wave_split_k_determinism[
 
 def test_mxfp4_split_k_determinism[
     M: Int, N: Int, K: Int, num_splits: Int, reps: Int
-](ctxs: List[DeviceContext]) raises:
+](ctxs: List[DeviceContext[]]) raises:
     """Re-run one input set reps times on each GPU; assert it never changes.
 
     The launcher allocates its own split-K workspace per call.
@@ -211,7 +207,7 @@ def main() raises:
     var num_gpus = min(4, DeviceContext.number_of_devices())
     print("===> AMD split-K determinism (KERN-3129) on", num_gpus, "GPU(s)")
 
-    var ctxs = List[DeviceContext](capacity=num_gpus)
+    var ctxs = List[DeviceContext[]](capacity=num_gpus)
     for i in range(num_gpus):
         ctxs.append(DeviceContext(device_id=i))
 
@@ -223,16 +219,10 @@ def main() raises:
     comptime w_splits = 4
     comptime w_reps = 32
     print(
-        "  4-wave FP8: M=",
-        w_m,
-        " N=",
-        w_n,
-        " K=",
-        w_k,
-        " num_splits=",
-        w_splits,
-        " reps=",
-        w_reps,
+        (
+            t"  4-wave FP8:"
+            t" M={w_m} N={w_n} K={w_k} num_splits={w_splits} reps={w_reps}"
+        ),
         sep="",
     )
     print("  4-wave / no swizzle...")
@@ -254,16 +244,7 @@ def main() raises:
     comptime x_splits = 14
     comptime x_reps = 32
     print(
-        "  MXFP4: M=",
-        x_m,
-        " N=",
-        x_n,
-        " K=",
-        x_k,
-        " num_splits=",
-        x_splits,
-        " reps=",
-        x_reps,
+        t"  MXFP4: M={x_m} N={x_n} K={x_k} num_splits={x_splits} reps={x_reps}",
         sep="",
     )
     test_mxfp4_split_k_determinism[x_m, x_n, x_k, x_splits, x_reps](ctxs)

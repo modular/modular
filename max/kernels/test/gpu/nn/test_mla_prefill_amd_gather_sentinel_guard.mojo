@@ -59,6 +59,7 @@ sentinel LUT column.
 
 from std.math import align_up, ceildiv
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed
 from std.sys import get_defined_int
 from std.testing import assert_almost_equal
@@ -110,13 +111,8 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     var max_pages_per_batch = align_up(num_pages, 8)  # 8: spare LUT columns
 
     print(
-        "=== gather sentinel guard: cache_length=",
-        cache_length,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
-        " ===",
+        t"=== gather sentinel guard: cache_length= {cache_length}  seq_len="
+        t" {seq_len}  num_keys= {num_keys}  ==="
     )
     seed(0)
 
@@ -130,9 +126,9 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     var block_elems = paged_block_elems(total_pages, PAGE_SIZE, CACHE_DEPTH)
     var lut_size = batch_size * max_pages_per_batch
 
-    var blocks_host = alloc[Scalar[.bfloat16]](block_elems)
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var blocks_host = unsafe_alloc[Scalar[.bfloat16]](block_elems)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
 
     # Real pages [0, num_pages): random content + zero-filled page-alignment
     # tail, exactly as the sibling plan+gather test uses. This helper only
@@ -166,7 +162,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -213,7 +209,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     # Step 2: plan. Gives the real total (`buffer_row_offsets`'s last
     # entry / `buffer_lengths[0]`) that the guard must key on.
     # ------------------------------------------------------------------
-    var input_row_offsets_host = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
     input_row_offsets_host[0] = UInt32(0)
     input_row_offsets_host[1] = UInt32(seq_len)
     var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
@@ -248,7 +244,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
         buffer_lengths_device, row_major(Idx[MAX_CHUNKS])
     )
 
-    generic_flare_mla_prefill_ragged_paged_plan[target="gpu"](
+    generic_flare_mla_prefill_ragged_paged_plan(
         input_row_offsets_tt,
         kv_collection,
         UInt32(0),  # layer_idx
@@ -260,7 +256,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     )
     ctx.synchronize()
 
-    var buffer_lengths_host = alloc[Int32](MAX_CHUNKS)
+    var buffer_lengths_host = unsafe_alloc[Int32](MAX_CHUNKS)
     ctx.enqueue_copy(buffer_lengths_host, buffer_lengths_device)
     ctx.synchronize()
 
@@ -292,7 +288,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     var buffer_row_offsets_1d_tt = buffer_row_offsets_tt[0, :]
     var cache_offsets_1d_tt = cache_offsets_tt[0, :]
 
-    var weight_host = alloc[Scalar[.bfloat16]](OUT_DIM * LATENT_DIM)
+    var weight_host = unsafe_alloc[Scalar[.bfloat16]](OUT_DIM * LATENT_DIM)
     randn[.bfloat16](weight_host, OUT_DIM * LATENT_DIM)
     var weight_device = ctx.enqueue_create_buffer[.bfloat16](
         OUT_DIM * LATENT_DIM
@@ -307,7 +303,9 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     )
     # Sentinel distinct from zero and the null page's value: proves the
     # zero asserted below came from an active write, not luck.
-    var sentinel_host = alloc[Scalar[.bfloat16]](inflated_length * LATENT_DIM)
+    var sentinel_host = unsafe_alloc[Scalar[.bfloat16]](
+        inflated_length * LATENT_DIM
+    )
     for i in range(inflated_length * LATENT_DIM):
         sentinel_host[i] = PRE_FILL_SENTINEL
     ctx.enqueue_copy(k_latent_device, sentinel_host)
@@ -324,9 +322,7 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
         k_buffer_device, row_major(Int64(inflated_length), Idx[OUT_DIM])
     )
 
-    generic_flare_mla_decompress_k_cache_ragged_paged[
-        target="gpu", dtype=DType.bfloat16
-    ](
+    generic_flare_mla_decompress_k_cache_ragged_paged[dtype=DType.bfloat16,](
         buffer_row_offsets_1d_tt,
         cache_offsets_1d_tt,
         Int32(inflated_length),
@@ -339,7 +335,9 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     )
     ctx.synchronize()
 
-    var k_latent_host = alloc[Scalar[.bfloat16]](inflated_length * LATENT_DIM)
+    var k_latent_host = unsafe_alloc[Scalar[.bfloat16]](
+        inflated_length * LATENT_DIM
+    )
     ctx.enqueue_copy(k_latent_host, k_latent_device)
     ctx.synchronize()
 
@@ -381,14 +379,14 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
 
     print("  RESULT: PASS")
 
-    blocks_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    input_row_offsets_host.free()
-    buffer_lengths_host.free()
-    weight_host.free()
-    sentinel_host.free()
-    k_latent_host.free()
+    blocks_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    input_row_offsets_host.unsafe_free()
+    buffer_lengths_host.unsafe_free()
+    weight_host.unsafe_free()
+    sentinel_host.unsafe_free()
+    k_latent_host.unsafe_free()
 
     _ = blocks_device
     _ = cache_lengths_device

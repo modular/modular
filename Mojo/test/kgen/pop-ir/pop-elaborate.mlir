@@ -65,7 +65,8 @@ kgen.generator @array_gep_load<I>(%arg0: !pop.array<3, i24>) -> i24 {
   %0 = kgen.param.constant = <I>
   %1 = pop.stack_allocation 1 x !pop.array<3, i24>
   pop.store %arg0, %1 : !kgen.pointer<array<3, i24>>
-  %2 = pop.array.gep %1[%0] : <array<3, i24>>
+  %gepidx1 = pop.cast_from_builtin %0 : index to !kgen.scalar<index>
+  %2 = pop.array.gep %1[%gepidx1] : <array<3, i24>>
   %3 = pop.load %2 : !kgen.pointer<i24>
   hlcf.return %3 : i24
 }
@@ -84,20 +85,20 @@ kgen.generator @bitcast_offset() -> !kgen.struct<(scalar<ui8>, scalar<ui8>)>{
   pop.store %0, %x : !kgen.pointer<scalar<si64>>
   %1 = pop.pointer.bitcast %x : !kgen.pointer<scalar<si64>> to !kgen.pointer<scalar<ui8>>
   %2 = pop.load %1 : !kgen.pointer<scalar<ui8>>
-  %idx1 = index.constant 1
-  %3 = pop.offset %1[%idx1] : !kgen.pointer<scalar<ui8>>
+  %offidx1 = kgen.param.constant: scalar<index> = <1>
+  %3 = pop.offset %1[%offidx1] : !kgen.pointer<scalar<ui8>>
   %4 = pop.load %3 : !kgen.pointer<scalar<ui8>>
   %5 = kgen.struct.create(%2, %4) : !kgen.struct<(scalar<ui8>, scalar<ui8>)>
   hlcf.return %5 : !kgen.struct<(scalar<ui8>, scalar<ui8>)>
 }
 
 kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<(pointer<i16>, pointer<i16>)> {
-  %idx4 = index.constant 4
-  %idx1 = index.constant 1
-  %idx32 = index.constant 0x2000
+  %idx4 = kgen.param.constant: scalar<index> = <4>
+  %idx32 = kgen.param.constant: scalar<index> = <8192>
   %0 = pop.aligned_alloc %idx32, %idx4 : <i16>
   pop.store %arg0, %0 : !kgen.pointer<i16>
-  %1 = pop.offset %0[%idx1] : !kgen.pointer<i16>
+  %offidx2 = kgen.param.constant: scalar<index> = <1>
+  %1 = pop.offset %0[%offidx2] : !kgen.pointer<i16>
   pop.store %arg1, %1 : !kgen.pointer<i16>
   %2 = kgen.struct.create(%0, %1) : !kgen.struct<(pointer<i16>, pointer<i16>)>
   hlcf.return %2 : !kgen.struct<(pointer<i16>, pointer<i16>)>
@@ -106,8 +107,8 @@ kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<(pointer<i16
 // COM: Check that the pointers alias.
 kgen.generator @copy_load(%arg0: !kgen.pointer<i16>, %arg1: !kgen.pointer<i16>) -> i16 {
   %0 = pop.load %arg1: !kgen.pointer<i16>
-  %idx1 = index.constant 1
-  %1 = pop.offset %arg1[%idx1] : !kgen.pointer<i16>
+  %offidx3 = kgen.param.constant: scalar<index> = <1>
+  %1 = pop.offset %arg1[%offidx3] : !kgen.pointer<i16>
   pop.store %0, %1 : !kgen.pointer<i16>
   %2 = pop.load %arg0 : !kgen.pointer<i16>
   hlcf.return %2 : i16
@@ -120,18 +121,18 @@ kgen.generator @modify_stack_mem(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<i16
 }
 
 kgen.generator @return_pointer_to_pointer(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<pointer<i16>> {
-  %idx-1 = index.constant -1
-  %idx16 = index.constant 16
+  %idx-1 = kgen.param.constant: scalar<index> = <-1>
+  %idx16 = kgen.param.constant: scalar<index> = <16>
   %0 = pop.aligned_alloc %idx-1, %idx16 : <pointer<i16>>
-  %idx1 = index.constant 1
-  %1 = pop.offset %0[%idx1] : !kgen.pointer<pointer<i16>>
+  %offidx4 = kgen.param.constant: scalar<index> = <1>
+  %1 = pop.offset %0[%offidx4] : !kgen.pointer<pointer<i16>>
   pop.store %arg0, %1 : !kgen.pointer<pointer<i16>>
   hlcf.return %1 : !kgen.pointer<pointer<i16>>
 }
 
 kgen.generator @load_pointer_to_pointer(%arg0: !kgen.pointer<pointer<i16>>) -> i16 {
-  %idx1 = index.constant 1
-  %0 = pop.offset %arg0[%idx1] : !kgen.pointer<pointer<i16>>
+  %offidx5 = kgen.param.constant: scalar<index> = <1>
+  %0 = pop.offset %arg0[%offidx5] : !kgen.pointer<pointer<i16>>
   %1 = pop.load %0 : !kgen.pointer<pointer<i16>>
   %2 = pop.load %1 : !kgen.pointer<i16>
   hlcf.return %2 : i16
@@ -144,8 +145,8 @@ kgen.generator @free_null(%arg0: !kgen.pointer<i16>) -> index {
 }
 
 kgen.generator @freed_memory() -> !kgen.pointer<i16> {
-  %idx-1 = index.constant -1
-  %idx4 = index.constant 4
+  %idx-1 = kgen.param.constant: scalar<index> = <-1>
+  %idx4 = kgen.param.constant: scalar<index> = <4>
   %0 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   %1 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   pop.aligned_free %0 : <i16>
@@ -154,21 +155,10 @@ kgen.generator @freed_memory() -> !kgen.pointer<i16> {
 
 kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !kgen.struct<(i8, pointer<i8>)> {
   %0 = pop.load %arg0 : !kgen.pointer<i8>
-  %idx2 = index.constant 2
-  %1 = pop.offset %arg0[%idx2] : !kgen.pointer<i8>
+  %offidx6 = kgen.param.constant: scalar<index> = <2>
+  %1 = pop.offset %arg0[%offidx6] : !kgen.pointer<i8>
   %2 = kgen.struct.create(%0, %1) : !kgen.struct<(i8, pointer<i8>)>
   hlcf.return %2 : !kgen.struct<(i8, pointer<i8>)>
-}
-
-kgen.generator @parameter_closure() -> index {
-  %0 = pop.compiler.global_load "named_global" : index
-  hlcf.return %0 : index
-}
-
-kgen.generator @region_parameter(%arg0: index) -> index {
-  pop.compiler.global_store "named_global", %arg0 : index
-  %0 = kgen.call @parameter_closure() : () -> index
-  hlcf.return %0 : index
 }
 
 kgen.generator @store_undef() -> index {
@@ -271,12 +261,12 @@ kgen.generator @pop_cmp() -> !kgen.scalar<bool> {
 kgen.generator @npot_simd_stride(%arg0: !kgen.simd<3, f32>, %arg1: !kgen.simd<3, f32>) -> f32 {
   %buf = pop.stack_allocation 2 x simd<3, f32>
   pop.store %arg0, %buf : !kgen.pointer<simd<3, f32>>
-  %idx1 = index.constant 1
-  %elt1 = pop.offset %buf[%idx1] : !kgen.pointer<simd<3, f32>>
+  %offidx7 = kgen.param.constant: scalar<index> = <1>
+  %elt1 = pop.offset %buf[%offidx7] : !kgen.pointer<simd<3, f32>>
   pop.store %arg1, %elt1 : !kgen.pointer<simd<3, f32>>
   %f32s = pop.pointer.bitcast %buf : !kgen.pointer<simd<3, f32>> to !kgen.pointer<f32>
-  %idx4 = index.constant 4
-  %lane = pop.offset %f32s[%idx4] : !kgen.pointer<f32>
+  %offidx8 = kgen.param.constant: scalar<index> = <4>
+  %lane = pop.offset %f32s[%offidx8] : !kgen.pointer<f32>
   %0 = pop.load %lane : !kgen.pointer<f32>
   hlcf.return %0 : f32
 }
@@ -400,9 +390,6 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<(i8, pointer<i8>)> = <apply(
     :(!kgen.pointer<i8>) -> !kgen.struct<(i8, pointer<i8>)> @const_string,
     #interp.memref<{[(#string, const_global, [], [])], []}, 0, 2>)>
-
-  // CHECK-NEXT: <1>
-  kgen.param.constant = <apply(:(index) -> index @region_parameter, 1)>
 
   // COM: The value is garbage. Just make sure the function interprets.
   // CHECK-NEXT: <{{.*}}>

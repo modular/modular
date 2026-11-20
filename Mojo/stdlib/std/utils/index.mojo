@@ -20,7 +20,7 @@ from std.utils import IndexList
 ```
 """
 
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.sys import bit_width_of
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -151,13 +151,6 @@ def _bool_tuple_reduce[
 # ===-----------------------------------------------------------------------===#
 # IndexList:
 # ===-----------------------------------------------------------------------===#
-
-
-def _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
-    comptime if unsigned:
-        return _uint_type_of_width[bitwidth]()
-    else:
-        return _int_type_of_width[bitwidth]()
 
 
 struct IndexList[size: Int, *, element_type: DType = .int64](

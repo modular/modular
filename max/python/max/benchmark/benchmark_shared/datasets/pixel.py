@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Base class for pixel generation datasets."""
+
 from __future__ import annotations
 
 import dataclasses

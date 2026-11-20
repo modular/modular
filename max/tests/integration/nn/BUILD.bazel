@@ -16,7 +16,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
         requirement("numpy"),
     ],
@@ -32,10 +32,42 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:graph_utils",
         requirement("torch"),
         requirement("pytest"),
+    ],
+)
+
+modular_py_library(
+    name = "shared_nvfp4_dequant_impl",
+    testonly = True,
+    srcs = ["shared_nvfp4_dequant_impl.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "shared_mx_dequant_impl",
+    testonly = True,
+    srcs = ["shared_mx_dequant_impl.py"],
+    imports = ["."],
+    deps = [
+        ":shared_nvfp4_dequant_impl",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        requirement("numpy"),
     ],
 )
 
@@ -48,6 +80,8 @@ modular_py_test(
             "*_gpu.py",
             "shared_conv_impl.py",
             "shared_mlp_impl.py",
+            "shared_mx_dequant_impl.py",
+            "shared_nvfp4_dequant_impl.py",
         ],
     ),
     imports = ["."],
@@ -67,12 +101,15 @@ modular_py_test(
     deps = [
         ":shared_conv_impl",
         ":shared_mlp_impl",
+        ":shared_mx_dequant_impl",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/nn/hooks:print_hook",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/legacy/hooks:print_hook",
         "//max/tests/integration/test_common:modular_graph_test",
         requirement("numpy"),
         requirement("torch"),
@@ -111,11 +148,12 @@ modular_py_test(
             "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_fused_qkv_mxfp8_matmul_gpu.py",
+            "test_grouped_matmul_row_invariance_gpu.py",
             "test_grouped_matmul_swiglu_nvfp4_gpu.py",
             "test_int8_w8a8_apple_gpu.py",
-            "test_linear_fp8_amd_gpu.py",
             "test_linear_nvfp4_apple_gpu.py",
             "test_lora_kernels_gpu.py",
+            "test_mhc_pre_gpu.py",
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
             "test_mxfp4_fused_silu_scale_fusion_gpu.py",
@@ -123,6 +161,7 @@ modular_py_test(
             "test_sgmv_kernels_gpu.py",
             "test_smallm_streaming_matmul_gpu.py",
             "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
+            "test_swiglu_quantize_mxfp8_amd_gpu.py",
             "test_w4a8_grouped_matmul_amd_gpu.py",
         ],
     ) + ["conftest.py"],
@@ -134,19 +173,27 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    per_test_shard_count = {
+        "test_conv_gpu.py": 2,
+        "test_mx_dequant_gpu.py": 4,
+    },
     precompile_mefs = True,
     tags = [
         "gpu",
     ],
     deps = [
         ":shared_conv_impl",
+        ":shared_mx_dequant_impl",
+        ":shared_nvfp4_dequant_impl",
         "//max/python/max:tensor",
         "//max/python/max/_xgrammar",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:hyper_connection_reference",
@@ -181,7 +228,9 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
@@ -211,7 +260,9 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
         requirement("hypothesis"),
@@ -230,6 +281,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -238,7 +290,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
         requirement("hypothesis"),
@@ -267,7 +320,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
         requirement("torch"),
     ],
 )
@@ -279,6 +332,7 @@ modular_py_test(
     ],
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -287,7 +341,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:numerics",
         requirement("numpy"),
         requirement("torch"),
@@ -320,7 +374,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("hypothesis"),
     ],
@@ -356,34 +410,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "amd_tests",
-    size = "large",
-    srcs = [
-        "conftest.py",
-        "test_linear_fp8_amd_gpu.py",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    tags = [
-        "gpu",
-        # TODO: GEX-2676
-        "manual",
-    ],
-    target_compatible_with = ["//:amd_gpu"],
-    deps = [
-        "//max/python/max:tensor",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("hypothesis"),
-        requirement("torch"),
-    ],
-)
-
-modular_py_test(
     name = "apple_tests",
     size = "large",
     srcs = [
@@ -403,9 +429,42 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mhc_pre_gpu",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_mhc_pre_gpu.py",
+    ],
+    # T = 8192 holds the op chain's fp32 copies of the streams beside the
+    # torch fp64 reference.
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+    ],
+    # The op issues CDNA4-only MFMA. Its two-device case skips on one GPU.
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        requirement("hypothesis"),
+        requirement("torch"),
     ],
 )
 
@@ -427,7 +486,34 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "swiglu_quantize_mxfp8_amd_tests",
+    size = "large",
+    srcs = [
+        "test_swiglu_quantize_mxfp8_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -451,7 +537,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -477,15 +563,12 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/pipelines/weights",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("torch"),
     ],
 )
 
-# Split out of :amd_tests, which is tagged "manual" for an unrelated timeout
-# (GEX-2676) and so never ran this in CI.
 modular_py_test(
     name = "router_gate_mixed_gemv_tests",
     size = "large",
@@ -496,16 +579,22 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:amd_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    precompile_shards = 4,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:amd_gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("torch"),
     ],
@@ -531,7 +620,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -558,7 +647,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -575,16 +664,18 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:graph_utils",
         requirement("hypothesis"),
         requirement("torch"),
@@ -611,7 +702,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("torch"),
     ],
@@ -628,6 +720,32 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "grouped_matmul_row_invariance_tests",
+    size = "large",
+    srcs = ["test_grouped_matmul_row_invariance_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
     tags = [
         "gpu",
     ],
@@ -637,8 +755,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("hypothesis"),
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -669,7 +787,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:graph_utils",
         requirement("hypothesis"),
         requirement("torch"),

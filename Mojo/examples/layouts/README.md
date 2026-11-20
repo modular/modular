@@ -1,2 +1,2 @@
 The layout examples
-[have moved here](../../../max/examples/layouts/).
+[have moved here](../../../max/docs/site/code/tile-tensor/layouts/).

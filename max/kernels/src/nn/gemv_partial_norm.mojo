@@ -39,6 +39,7 @@ expresses this.
 
 from std.math import ceildiv, rsqrt
 from std.atomic import Atomic, Ordering, fence
+from std.sys import align_of
 from std.sys.info import _is_sm_100x_or_newer, simd_width_of, size_of
 from std.time import global_perf_counter_ns
 
@@ -279,7 +280,7 @@ def gemv_partial_norm_kernel[
         comptime for i in range(tile_n):
             var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
             var b_vec = vec_weight_tile[i, thread_idx.x]
-            tile_w.store(Coord(i, Idx[0]), b_vec)
+            tile_w.store((i, Idx[0]), b_vec)
 
         var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
         var act_native = act_vec
@@ -362,7 +363,7 @@ def gemv_partial_norm_kernel[
             # global-last arriver's fetch_add makes every peer's
             # writes visible when it reads normed_output back below.
             var prev_global = Atomic[Int32, scope=DEVICE_SCOPE].fetch_add[
-                ordering=Ordering.ACQUIRE_RELEASE
+                ordering=.acquire_release
             ](finish_counter, Int32(1))
             comptime if enable_trace:
                 trace_buf.store(
@@ -389,7 +390,7 @@ def gemv_partial_norm_kernel[
     # later `normed_output` load happens-after peer writes.
     if tid == 0:
         if is_last_block:
-            fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
+            fence[ordering=.acquire, scope=DEVICE_SCOPE]()
         shmem[0, 0] = Scalar[accum_type](1) if is_last_block else Scalar[
             accum_type
         ](0)
@@ -415,10 +416,10 @@ def gemv_partial_norm_kernel[
             var vec_data = SIMD[accum_type, simd_width](0)
             var gamma_val = SIMD[a_type, simd_width](0)
             if idx < _n_normed:
-                vec_data = normed_output.load[simd_width](
-                    Coord(Idx[0], idx)
-                ).cast[accum_type]()
-                gamma_val = gamma.load[simd_width](Coord(idx))
+                vec_data = normed_output.load[simd_width]((Idx[0], idx)).cast[
+                    accum_type
+                ]()
+                gamma_val = gamma.load[simd_width]((idx,))
 
             comptime if enable_trace:
                 if tid == 0:
@@ -444,7 +445,7 @@ def gemv_partial_norm_kernel[
             if idx < _n_normed:
                 var gamma_accum = gamma_val.cast[accum_type]()
                 var out = (vec_data * norm_factor * gamma_accum).cast[c_type]()
-                normed_output.store[simd_width](Coord(Idx[0], idx), out)
+                normed_output.store((Idx[0], idx), out)
 
             comptime if enable_trace:
                 if tid == 0:
@@ -515,10 +516,9 @@ def _gemv_partial_norm_fused[
     comptime assert gamma.element_size == 1
 
     var m = Int(act.dim[0]())
-    assert m == 1, (
-        "gemv_and_partial_norm fused path is GEMV-only (M=1); got M="
-        + String(m)
-        + ". Use matmul + rms_norm_gpu for M>1."
+    assert m == 1, String(
+        t"gemv_and_partial_norm fused path is GEMV-only (M=1); got M={m}. Use"
+        t" matmul + rms_norm_gpu for M>1."
     )
 
     var k = Int(act.dim[1]())
@@ -557,7 +557,7 @@ def _gemv_partial_norm_fused[
         tile_n=tile_n,
         num_threads=num_threads,
         enable_trace=enable_trace,
-        pdl_level=pdl_level,
+        pdl_level=PDLLevel.ON,
     ]
     ctx.enqueue_function[kernel](
         normed_output,
@@ -574,7 +574,7 @@ def _gemv_partial_norm_fused[
         Int32(num_normed_blocks),
         grid_dim=(1, num_blocks),
         block_dim=num_threads,
-        attributes=pdl_launch_attributes(pdl_level),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -583,13 +583,13 @@ def _gemv_partial_norm_unfused_with_scratch[
     a_type: DType,
     //,
     transpose_b: Bool,
+    eps: Float32,
     pdl_level: PDLLevel,
 ](
     normed_output: TileTensor[mut=True, c_type, ...],
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Float32,
     y_scratch: MutPointer[Scalar[c_type], _],
     ctx: DeviceContext,
 ) raises:
@@ -625,35 +625,31 @@ def _gemv_partial_norm_unfused_with_scratch[
     _matmul_gpu[transpose_b=transpose_b](y, act, weight, ctx)
 
     @inline(.always)
-    @__copy_capture(y)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[c_type, width]:
-        var idx = y.layout(coords)
-        return y.ptr.unsafe_load[width=width](idx)
+    def input_fn[width: Int](coords: Coord) {var y} -> SIMD[c_type, width]:
+        return y.load[width=width, alignment=align_of[c_type]()](coords)
 
     @inline(.always)
-    @__copy_capture(normed_output)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[c_type, width]) -> None:
-        var idx = normed_output.layout(coords)
-        normed_output.ptr.unsafe_store[width=width, alignment=alignment](
-            idx, val
-        )
+    ](coords: Coord, val: SIMD[c_type, width]) {var normed_output} -> None:
+        normed_output.store[alignment=alignment](coords, val)
 
-    var gamma_c = rebind[TileTensor[c_type, gamma.LayoutType, gamma.origin]](
-        gamma
-    )
+    var gamma_c = rebind[
+        TileTensor[c_type, gamma.LayoutType, gamma.origin, Engine=gamma.Engine]
+    ](gamma)
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203);
     # `[M, N_normed]` is built at runtime so an all-dynamic `Coord` is passed.
     rms_norm_gpu[
-        2, input_fn, output_fn, multiply_before_cast=True, pdl_level=pdl_level
+        2,
+        epsilon=eps,
+        weight_offset=Float32(0.0),
+        multiply_before_cast=True,
+        pdl_level=pdl_level,
     ](
+        input_fn,
+        output_fn,
         Coord(m, n_normed),
         gamma_c,
-        eps,
-        Scalar[c_type](0.0),
         ctx,
     )
 
@@ -668,6 +664,7 @@ def gemv_and_partial_norm[
     a_type: DType,
     //,
     *,
+    eps: Float32,
     transpose_b: Bool = True,
     fused: Bool = True,
     tile_n: Int = 4,
@@ -679,7 +676,6 @@ def gemv_and_partial_norm[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Float32,
     ctx: DeviceContext,
 ) raises:
     """Computes `y = act @ weight.T`, then partitions `y` into a normed
@@ -688,6 +684,7 @@ def gemv_and_partial_norm[
     Parameters:
         c_type: Output dtype.
         a_type: Activation / weight / gamma dtype.
+        eps: RMS norm epsilon.
         transpose_b: If `True`, `weight` is row-major `[N, K]` used as
             `weight.T`.
         fused: Compile-time flag. `True` (default) selects the single-
@@ -709,7 +706,6 @@ def gemv_and_partial_norm[
         act: `[M, K]` activations.
         weight: `[N, K]` weights (when `transpose_b=True`).
         gamma: `[N_normed]` RMS norm scale.
-        eps: RMS norm epsilon.
         ctx: Device context.
 
     Raises:
@@ -745,13 +741,13 @@ def gemv_and_partial_norm[
         var y_buf = ctx.enqueue_create_buffer[c_type](m * n)
         _gemv_partial_norm_unfused_with_scratch[
             transpose_b=transpose_b,
+            eps=eps,
             pdl_level=pdl_level,
         ](
             normed_output,
             act,
             weight,
             gamma,
-            eps,
             y_buf.unsafe_ptr(),
             ctx,
         )
@@ -763,6 +759,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
     a_type: DType,
     //,
     *,
+    eps: Float32,
     transpose_b: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -770,7 +767,6 @@ def gemv_and_partial_norm_unfused_with_scratch[
     act: TileTensor[mut=False, a_type, ...],
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
-    eps: Float32,
     y_scratch: MutPointer[Scalar[c_type], MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
@@ -792,6 +788,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
         a_type: Activation / weight / gamma dtype. Must equal
             `c_type`; `rms_norm_gpu` uses a single dtype for input
             and gamma.
+        eps: RMS norm epsilon.
         transpose_b: If `True`, `weight` is row-major `[N, K]` used
             as `weight.T`.
         pdl_level: Programmatic Dependent Launch level, forwarded to
@@ -803,7 +800,6 @@ def gemv_and_partial_norm_unfused_with_scratch[
         act: `[M, K]` activations.
         weight: `[N, K]` weights (when `transpose_b=True`).
         gamma: `[N_normed]` RMS norm scale.
-        eps: RMS norm epsilon.
         y_scratch: Caller-provided `[M, N]` device buffer (at least
             `M * N` elements of `c_type`). Holds the full matmul
             output `y = act @ weight.T` on return.
@@ -813,13 +809,12 @@ def gemv_and_partial_norm_unfused_with_scratch[
         Error: If either kernel launch fails.
     """
     _gemv_partial_norm_unfused_with_scratch[
-        transpose_b=transpose_b, pdl_level=pdl_level
+        transpose_b=transpose_b, eps=eps, pdl_level=pdl_level
     ](
         normed_output,
         act,
         weight,
         gamma,
-        eps,
         y_scratch,
         ctx,
     )

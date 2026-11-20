@@ -22,6 +22,6 @@
 # RUN: touch %t.dir/two/foo/__init__.mojo
 # RUN: echo "def package_hello():" > %t.dir/two/foo/test.mojo
 # RUN: echo "    pass" >> %t.dir/two/foo/test.mojo
-# RUN: %parse-mojo-isolated -I=%t.dir/one -I=%t.dir/two %s
+# RUN: %parse-mojo-isolated -I%t.dir/one -I%t.dir/two %s
 
 from foo.test import package_hello

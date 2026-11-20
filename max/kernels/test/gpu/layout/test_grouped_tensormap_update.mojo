@@ -41,7 +41,7 @@ from max.gpu.host.nvidia.tma import TMADescriptor
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import syncwarp
 from layout import Coord, TileTensor, coord, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -69,37 +69,39 @@ def test_grouped_tensormap_update_kernel[
     num_blocks: Int,
     tile_shape: Coord,
     desc_shape: Coord,
-    thread_layout: TileLayout,
+    thread_layout: Layout,
+    dst_a_origin: MutOrigin,
+    dst_b_origin: MutOrigin,
+    group_a_ptrs_origin: MutOrigin,
+    group_b_ptrs_origin: MutOrigin,
 ](
     # Output: concatenated results from all groups
     dst_a: TileTensor[
         dtype,
         type_of(
             row_major[
-                num_groups
-                * Int(tile_shape.element_types[0].static_value.value()),
-                Int(tile_shape.element_types[1].static_value.value()),
+                num_groups * Int(tile_shape.element_types[0].static_value),
+                Int(tile_shape.element_types[1].static_value),
             ]()
         ),
-        MutAnyOrigin,
+        dst_a_origin,
     ],
     dst_b: TileTensor[
         dtype,
         type_of(
             row_major[
-                num_groups
-                * Int(tile_shape.element_types[0].static_value.value()),
-                Int(tile_shape.element_types[1].static_value.value()),
+                num_groups * Int(tile_shape.element_types[0].static_value),
+                Int(tile_shape.element_types[1].static_value),
             ]()
         ),
-        MutAnyOrigin,
+        dst_b_origin,
     ],
     # Per-group source tensors (stored as pointers as integers)
     group_a_ptrs: TileTensor[
-        .uint64, type_of(row_major[num_groups, 1]()), MutAnyOrigin
+        .uint64, type_of(row_major[num_groups, 1]()), group_a_ptrs_origin
     ],
     group_b_ptrs: TileTensor[
-        .uint64, type_of(row_major[num_groups, 1]()), MutAnyOrigin
+        .uint64, type_of(row_major[num_groups, 1]()), group_b_ptrs_origin
     ],
     # Template TMA descriptor (grid constant, for SMEM init)
     template_tma_a: TMATensorTile[dtype, tile_shape, desc_shape],
@@ -116,8 +118,8 @@ def test_grouped_tensormap_update_kernel[
     3. Load A and B tiles using block's GMEM tensormaps
     4. Store results to output for verification
     """
-    comptime M = Int(tile_shape.element_types[0].static_value.value())
-    comptime N = Int(tile_shape.element_types[1].static_value.value())
+    comptime M = Int(tile_shape.element_types[0].static_value)
+    comptime N = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     # Allocate SMEM for tiles
@@ -165,10 +167,10 @@ def test_grouped_tensormap_update_kernel[
             var a_addr = Int(group_a_ptrs[group_idx, 0])
             var b_addr = Int(group_b_ptrs[group_idx, 0])
 
-            var a_ptr = MutPointer[Scalar[dtype], MutAnyOrigin](
+            var a_ptr = MutPointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=a_addr
             )
-            var b_ptr = MutPointer[Scalar[dtype], MutAnyOrigin](
+            var b_ptr = MutPointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=b_addr
             )
 
@@ -228,8 +230,8 @@ def test_grouped_tensormap_update[
     """
     print("  Testing", num_groups, "groups with tile shape", tile_shape)
 
-    comptime M = Int(tile_shape.element_types[0].static_value.value())
-    comptime N = Int(tile_shape.element_types[1].static_value.value())
+    comptime M = Int(tile_shape.element_types[0].static_value)
+    comptime N = Int(tile_shape.element_types[1].static_value)
     comptime tile_layout = row_major[M, N]()
     comptime num_blocks = 1  # Single block for this test
 
@@ -350,7 +352,7 @@ def test_grouped_tensormap_update[
         row_major[128 * num_blocks]()
     )
 
-    comptime for blk in range(num_blocks):
+    for blk in range(num_blocks):
         for j in range(128):
             tensormaps_host_a[blk * 128 + j] = template_tma_a.descriptor.data[j]
             tensormaps_host_b[blk * 128 + j] = template_tma_b.descriptor.data[j]
@@ -366,13 +368,17 @@ def test_grouped_tensormap_update[
         type_of(template_tma_a).tile_shape,
         type_of(template_tma_a).desc_shape,
         tile_layout,  # thread_layout for copy
+        dst_a_origin=origin_of(dst_a),
+        dst_b_origin=origin_of(dst_b),
+        group_a_ptrs_origin=origin_of(a_ptrs),
+        group_b_ptrs_origin=origin_of(b_ptrs),
     ]
 
     ctx.enqueue_function[kernel](
-        dst_a.device_tensor().as_unsafe_any_origin(),
-        dst_b.device_tensor().as_unsafe_any_origin(),
-        a_ptrs.device_tensor().as_unsafe_any_origin(),
-        b_ptrs.device_tensor().as_unsafe_any_origin(),
+        dst_a.device_tensor(),
+        dst_b.device_tensor(),
+        a_ptrs.device_tensor(),
+        b_ptrs.device_tensor(),
         template_tma_a,
         template_tma_b,
         tma_array_a,
@@ -405,16 +411,8 @@ def test_grouped_tensormap_update[
                 if actual_a != expected_a:
                     if errors < 5:
                         print(
-                            "Group",
-                            g,
-                            "A mismatch at (",
-                            m,
-                            ",",
-                            n,
-                            "): expected",
-                            expected_a,
-                            "got",
-                            actual_a,
+                            t"Group {g} A mismatch at ( {m} , {n} ): expected"
+                            t" {expected_a} got {actual_a}"
                         )
                     errors += 1
 
@@ -423,16 +421,8 @@ def test_grouped_tensormap_update[
                 if actual_b != expected_b:
                     if errors < 5:
                         print(
-                            "Group",
-                            g,
-                            "B mismatch at (",
-                            m,
-                            ",",
-                            n,
-                            "): expected",
-                            expected_b,
-                            "got",
-                            actual_b,
+                            t"Group {g} B mismatch at ( {m} , {n} ): expected"
+                            t" {expected_b} got {actual_b}"
                         )
                     errors += 1
 
@@ -444,6 +434,18 @@ def test_grouped_tensormap_update[
     assert_equal(errors, 0)
 
     # Cleanup
+    _ = src_a0^
+    _ = src_b0^
+    _ = src_a1^
+    _ = src_b1^
+    _ = src_a2^
+    _ = src_b2^
+    _ = src_a3^
+    _ = src_b3^
+    _ = a_ptrs^
+    _ = b_ptrs^
+    _ = device_tensormaps_a^
+    _ = device_tensormaps_b^
 
 
 def main() raises:

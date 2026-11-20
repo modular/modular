@@ -7,6 +7,10 @@ description: >-
   operators in Mojo, with precedence and examples.
 ---
 
+<!-- Compiler verified: 2026-10-15, repo build at 8dd6016c251
+       (walrus loop example only)
+     Last updated: 2026-10-15 (fixes walrus loop example) -->
+
 <!--
 Removed:
 
@@ -41,8 +45,7 @@ print(7 - 3)    # 4, subtract
 print(7 * 3)    # 21, multiply
 ```
 
-Exponentiation uses two stars (`**`) and not a caret (`^`). If you prefer
-a function form, call `pow(base, exponent)`:
+Exponentiation uses two stars (`**`) and not a caret (`^`):
 
 ```mojo
 print(2 ** 8)   # 256 (exponentiation)
@@ -395,7 +398,8 @@ Press Return without entering text to terminate the loop. Non-empty strings are
 truthy:
 
 ```mojo
-while (var name := input("Name or return: ")):
+var name: String
+while (name := input("Name or return: ")):
     print("Hello,", name)
 ```
 
@@ -405,11 +409,25 @@ handle its errors with `try`.
 ## Precedence
 
 When an expression mixes operators, precedence determines what runs first.
-From tightest to loosest, they are: calls and attribute access,
-exponentiation, unary prefix operators, arithmetic (multiply and divide
-before add and subtract), shifts, bitwise operators (AND before XOR before
-OR), comparisons, boolean logic (`not` before `and` before `or`),
-conditional expression, and the walrus operator.
+From tightest to loosest, they are:
+
+| Operators                                               | Description                             |
+|---------------------------------------------------------|-----------------------------------------|
+| `()` `[]` `.`                                           | Calls, subscripts, and attribute access |
+| `**`                                                    | Exponentiation                          |
+| `+x` `-x` `~x`                                          | Unary prefix operators                  |
+| `*` `@` `/` `//` `%`                                    | Multiplication and division             |
+| `+` `-`                                                 | Addition and subtraction                |
+| `<<` `>>`                                               | Shifts                                  |
+| `&`                                                     | Bitwise AND                             |
+| `^`                                                     | Bitwise XOR                             |
+| `\|`                                                    | Bitwise OR                              |
+| `==` `!=` `<` `<=` `>` `>=` `in` `not in` `is` `is not` | Comparisons, membership, and identity   |
+| `not`                                                   | Boolean NOT                             |
+| `and`                                                   | Boolean AND                             |
+| `or`                                                    | Boolean OR                              |
+| `if`-`else`                                             | Conditional expression                  |
+| `:=`                                                    | Walrus operator                         |
 
 When in doubt, use parentheses. They cost nothing at runtime and make
 your intent clear both when you write the code and when it is later read

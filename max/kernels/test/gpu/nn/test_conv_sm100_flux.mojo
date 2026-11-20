@@ -27,7 +27,7 @@ FLUX VAE decoder uses block_out_channels=[128, 256, 512, 512] with:
 from std.random import rand
 from std.testing import assert_false
 
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from nn.conv.conv import conv_gpu, conv_cudnn
 
@@ -62,26 +62,7 @@ def test_flux_conv_layer[
     comptime filter_size = R * S * C_in * C_out
     comptime out_size = N * Hout * Wout * C_out
 
-    print(
-        "  ",
-        name,
-        ": ",
-        H,
-        "x",
-        W,
-        "x",
-        C_in,
-        " -> ",
-        C_out,
-        "ch (",
-        R,
-        "x",
-        S,
-        " pad=",
-        pad,
-        ")",
-        sep="",
-    )
+    print(t"  {name}: {H}x{W}x{C_in} -> {C_out}ch ({R}x{S} pad={pad})")
 
     # Host memory
     var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](in_size)
@@ -137,9 +118,9 @@ def test_flux_conv_layer[
         input_tt,
         filter_rscf_tt,
         out_sm100_tt,
-        IndexList[2](1, 1),  # stride
-        IndexList[2](1, 1),  # dilation
-        IndexList[4](pad, pad, pad, pad),  # symmetric padding
+        Coord(1, 1),  # stride
+        Coord(1, 1),  # dilation
+        Coord(pad, pad, pad, pad),  # symmetric padding
         1,  # groups
         ctx,
     )
@@ -156,9 +137,9 @@ def test_flux_conv_layer[
         input_tt_ref,
         filter_fcrs_tt,
         out_cudnn_tt,
-        IndexList[2](1, 1),  # stride
-        IndexList[2](1, 1),  # dilation
-        IndexList[2](pad, pad),  # padding
+        Coord(1, 1),  # stride
+        Coord(1, 1),  # dilation
+        Coord(pad, pad),  # padding
         1,  # groups
         ctx,
     )

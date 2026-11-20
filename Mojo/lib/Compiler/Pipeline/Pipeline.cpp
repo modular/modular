@@ -29,9 +29,8 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   // Lower semantic control flow operations like lit.return to terminators and
   // diagnose unreachable code.
   pm.addPass(createLowerSemanticCF());
-#ifndef MODULAR_PRODUCTION
-  pm.addPass(createVerifyParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addPass(createVerifyParameters());
 
   // These passes doesn't touch parameters, no need to re-verify them after it.
   // Insert calls to destructors, reject use before free, and borrow check.
@@ -47,9 +46,8 @@ static void buildLowerLITPipeline(mlir::PassManager &pm,
 
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
-#ifndef MODULAR_PRODUCTION
-  pm.addPass(createVerifyParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addPass(createVerifyParameters());
 }
 
 void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
@@ -124,17 +122,10 @@ void KGEN::buildElaborateModulePipeline(
   if (options.debugLevel == CompilationOptions::kNoDebug)
     pm.addPass(DebugInfo::createDebugInfoStrip());
 
-  // Only outline closures just before elaboration - they aren't really
-  // necessary until elaboration happens.
-  pm.addPass(createOutlineClosures(OutlineClosuresOptions{
-      options.debugLevel != CompilationOptions::kNoDebug}));
-  if (options.optimizationLevel >= 1) {
-    // TODO(#20717): CSE cannot run before `OutlineClosures`.
+  if (options.optimizationLevel >= 1)
     pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
-  }
-#ifndef MODULAR_PRODUCTION
-  pm.addPass(createVerifyParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addPass(createVerifyParameters());
   pm.addPass(createLiftAndFoldApply());
 
   pm.addPass(createReorderParamOps(true));
@@ -153,6 +144,7 @@ void KGEN::buildElaborateModulePipeline(
   elaboratorOptions.maxDepth = options.elaborationMaxDepth;
   elaboratorOptions.loopUnrollingWarnThreshold =
       options.loopUnrollingWarnThreshold;
+  elaboratorOptions.printStats = options.elaborationStats;
   pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
                                        compileAsmFn, compileOffloadFn));
 }
@@ -187,18 +179,14 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
 
-  // Then immediately resolve compiler promises.
-  pm.addPass(createResolveCompilerPromises());
-
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
   pm.addPass(createLowerCallingConventions());
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
-#ifndef MODULAR_PRODUCTION
   // Ensure no illegal parameters remain.
-  pm.addNestedPass<FuncOp>(createEnsureNoParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addNestedPass<FuncOp>(createEnsureNoParameters());
 
   pm.addPass(createInferFunctionAttrs());
 

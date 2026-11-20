@@ -85,7 +85,7 @@ def broadcast_test[
     rank: Int,
     ngpus: Int,
     root_self_copy: Bool,
-](list_of_ctxs: List[DeviceContext], length: Int, root: Int) raises:
+](list_of_ctxs: List[DeviceContext[]], length: Int, root: Int) raises:
     var root_ctx = list_of_ctxs[root]
 
     # Create input buffer on root GPU
@@ -112,7 +112,10 @@ def broadcast_test[
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_tiles[i] = OutputTileType(input_dev, row_major(length))
+            out_tiles[i] = OutputTileType(
+                input_dev.unsafe_ptr().as_unsafe_any_origin(),
+                row_major(length),
+            )
             continue
 
         var ctx = list_of_ctxs[i]
@@ -195,7 +198,7 @@ def run_broadcast_sweep[]() raises:
             continue
 
         # Create GPU context.
-        var list_of_ctxs = List[DeviceContext]()
+        var list_of_ctxs = List[DeviceContext[]]()
         for i in range(num_gpus):
             list_of_ctxs.append(DeviceContext(device_id=i))
 

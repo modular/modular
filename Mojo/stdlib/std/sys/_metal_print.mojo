@@ -48,7 +48,7 @@ def _metal_os_log_chunk(data: Pointer[UInt8, MutUntrackedOrigin]):
 
 
 @inline(.always)
-def _metal_print_write(text: StringSlice[_]):
+def _metal_print_write(text: StringSpan[_]):
     """Write bytes to Metal GPU output via os_log chunking.
 
     Splits the input into 64-byte chunks, zero-pads each chunk,

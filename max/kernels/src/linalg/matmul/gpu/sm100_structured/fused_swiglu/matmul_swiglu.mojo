@@ -19,9 +19,9 @@ to half SMEM, TMA store to GMEM.
 
 from std.math import align_up, ceildiv
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     coord,
@@ -103,8 +103,6 @@ def _blackwell_matmul_swiglu[
     var K = Int(a_device.dim[1]())
     var N = Int(b_device.dim[0]())
 
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
     # Compile-time constants: TMA layouts, smem sizes, thread count.
     comptime KernelType = SwiGLUKernelConstants[
         a_type,
@@ -184,11 +182,7 @@ def _blackwell_matmul_swiglu[
     else:
         bias_1d_tile = None
 
-    comptime cluster_tuple = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_tuple = config.cluster_shape
 
     # Fully specialize the kernel, extracting TMA type parameters from the
     # concrete TMA op objects via type_of().  This matches the pattern in
@@ -207,11 +201,15 @@ def _blackwell_matmul_swiglu[
         transpose_b,
         config=config,
         BiasEngine=BiasEngine,
-        cluster_shape=cluster_tuple,
+        cluster_shape=(
+            Int(cluster_tuple[0]),
+            Int(cluster_tuple[1]),
+            Int(cluster_tuple[2]),
+        ),
         pdl_level=pdl_level,
     ]
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -221,11 +219,10 @@ def _blackwell_matmul_swiglu[
         cluster_dim,
         mnk,
         workspace,
-        grid_dim=grid_dim,
-        block_dim=KernelType.NUM_THREADS,
-        shared_mem_bytes=KernelType.total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=KernelType.NUM_THREADS,
+            shared_mem_bytes=KernelType.total_smem_bytes,
+            attributes=pdl_launch_attributes(pdl_level),
         ),
-        attributes=pdl_launch_attributes(pdl_level),
     )

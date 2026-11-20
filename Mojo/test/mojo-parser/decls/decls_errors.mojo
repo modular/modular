@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
+# RUN: %parse-mojo-isolated -verify-diagnostics %s -I%S/inputs
 
 struct HasIntParam[x: Int](Movable where False):
   def __init__(out self): pass
@@ -258,7 +258,7 @@ def badCalls(arg: Int):
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
-  TestTuple[Int, FloatLiteral]().test[1]()
+  TestTuple[Int, Bool]().test[1]()
 
 def badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]'}}
@@ -326,7 +326,7 @@ def badPackCalls(value: Int):
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType](Movable where False):
-    # expected-error @+3 {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[False, Ts]'}}
+    # expected-error @+3 {{'self' argument must have type 'TestPackErrorMessage[*Ts]', but actually has type 'VariadicPack[False, *Ts]'}}
     # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
     @__allow_legacy_custom_self_type
     def __init__(*args: *Self.Ts):
@@ -435,6 +435,27 @@ def unprovable_param_constraints[x: Int]()
 def test_param_constraints():
   # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
   unprovable_param_constraints[0]()
+
+# Printing the violated constraint remaps the reducer's bound argument, whose
+# type depends on the argument pack's origin, inside the reducer's scope. This
+# used to crash with "Failed to specialize generator".
+trait HasOriginElement:
+  comptime Element[origin: Origin]: AnyType
+
+struct BoolElement(HasOriginElement):
+  comptime Element[origin: Origin] = Bool
+
+comptime _element_is_int[T0: AnyType, Prev: Bool, T: HasOriginElement] = T0 == Int
+
+# expected-note @below {{function declared here}}
+def origin_dependent_reduce_constraint[*Ts: HasOriginElement](*xs: *Ts)
+  # expected-note @below {{constraint declared here evaluated to False, expected '#kgen.param_list.reduce(values, base=True, reducer=[PrevV: Bool, VA: KGENParamList[HasOriginElement], idx: __mlir_type.index] Bool(identical(values[0].Element[origin], Int)))'}}
+  where Ts.reduce[True, _element_is_int[Ts[0].Element[xs.origin], _, _]]:
+  pass
+
+def test_origin_dependent_reduce_constraint(b: BoolElement):
+  # expected-error @below {{invalid call to 'origin_dependent_reduce_constraint': violated constraint}}
+  origin_dependent_reduce_constraint(b)
 
 # expected-error @below {{'where' clauses inside parameter lists are no longer supported}}
 # expected-note @below {{use a trailing 'where' clause after the signature instead}}
@@ -1020,10 +1041,11 @@ struct OnlyCopyableField[T: Copyable & Deinitable](ImplicitlyCopyable where conf
 
 # MOCO-2186: Initializer syntax should reject incorrect result type
 struct StructWithSpecificInit[X: Int](Movable where False):
+    # expected-note @+1 {{constraint declared here evaluated to False, expected 'identical(X, Int(4))': Self type 'StructWithSpecificInit[X]' is not identical to the declared type 'StructWithSpecificInit[Int(4)]'}}
     def __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
 def testStructWithSpecificInit() raises:
-    # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[Int(4)]' parameter 'X' value 'Int(4)' doesn't match expected value 'Int(1)'}}
+    # expected-error @+1 {{invalid initialization: violated constraint}}
     var a = StructWithSpecificInit[1]()  # Infers to A[4]
 
     # This is ok.
@@ -1073,26 +1095,26 @@ struct SwallowAnyOrigin(Movable where False):
     # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'Pointer[Int, MutAnyOrigin]'}}
     # expected-note @below {{consider parameterizing enclosing struct with an Origin}}
     # expected-note @below {{alternatively, use UntrackedOrigin if lifetime is managed explicitly}}
-    var foo: UnsafePointer[Int, MutAnyOrigin]
+    var foo: Pointer[Int, MutAnyOrigin]
 
 # A field that opts into the legacy behavior with the
 # @__allow_legacy_any_origin_fields decorator is accepted without error.
 struct AllowedLegacyAnyOrigin(Movable where False):
     @__allow_legacy_any_origin_fields
-    var foo: UnsafePointer[Int, MutAnyOrigin]
+    var foo: Pointer[Int, MutAnyOrigin]
 
 # A function-pointer field whose signature mentions AnyOrigin in an argument or
 # result position does not expose AnyOrigin in the struct's own storage (the
 # struct holds a function, not a reference into that memory), so it is accepted
 # without the decorator.
 struct FnPtrAnyOriginArg(Movable where False):
-    var cb_arg: def(UnsafePointer[Int, MutAnyOrigin]) thin -> None
-    var cb_ret: def() thin -> UnsafePointer[Int, MutAnyOrigin]
+    var cb_arg: def(Pointer[Int, MutAnyOrigin]) thin -> None
+    var cb_ret: def() thin -> Pointer[Int, MutAnyOrigin]
 
 # A struct parameter bound by a function type that mentions AnyOrigin, with a
 # field of that parameter type, is likewise accepted: the AnyOrigin lives in the
 # parameter's bound, not in the field's own storage type.
-struct FnTypeParamBound[T: def(UnsafePointer[Int, MutAnyOrigin])](Movable where False):
+struct FnTypeParamBound[T: def(Pointer[Int, MutAnyOrigin])](Movable where False):
     var t: Self.T
 
 ##===----------------------------------------------------------------------===##
@@ -1343,16 +1365,14 @@ def raises_int() raises Int:
   raise Error()
 
 def bad_raises_fn2() raises:
-  # expected-error @+1 {{cannot call function that may raise 'Int' in context that supports an error type of 'Error'}}
+  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'Error'}}
   raises_int()
 
   # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Error'}}
   raise 4.0
 
-  try:
+  try: # expected-error {{cannot find a unified error type for the try body: ::SIMD[DType.int, 1], ::Error}}
     raises_int()
-
-    # expected-error @+1 {{cannot implicitly convert 'Error' value to 'Int'}}
     raise Error()
   except e: # 'e' inferred to Int.
     var x: Int = e
@@ -1388,7 +1408,9 @@ def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
     pass
 
 
-# expected-error @+1 {{cannot construct a value with parametric type: 'Origin[mut=_]'}}
+# expected-note @below {{missing parameter 'mut'}}
+# expected-note @below {{missing parameter '_mlir_origin'}}
+# expected-error @+1 {{'Origin[mut=_]' is not concrete, use '[]' to bind missing parameters}}
 comptime A: Origin = AnyOrigin
 
 
@@ -1403,5 +1425,6 @@ def overload_on_arg_conv(mut x: Int):
 def overload_on_arg_conv(imm x: Int):
     pass
 
+# expected-note @below {{missing parameter 'T'}}
 # expected-error @+1 {{'List[_]' is not concrete, use '[]' to bind missing parameters}}
 comptime _list_eq_int = List == Int

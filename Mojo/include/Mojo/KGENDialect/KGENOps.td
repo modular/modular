@@ -70,11 +70,9 @@ def KGEN_FuncOp : KGENOp<"func", [
     `precompiledBodyRef` attribute, like so:
 
     ```mlir
-    kgen.func @someFn(%arg0: index) -> index attributes {
-      precompiledBodyRef = @importedLib
-    } {
+    kgen.func @someFn(%arg0: index) -> index {
       ...
-    }
+    } attributes {precompiledBodyRef = @importedLib}
     ```
 
     The presence of this attribute means that the function was already compiled
@@ -94,7 +92,6 @@ def KGEN_FuncOp : KGENOp<"func", [
     UnitAttr:$external, UnitAttr:$convergent,
     DefaultValuedAttr<DictionaryAttr, "{}">:$fnAttrs,
     DefaultValuedAttr<DictArrayAttr, "{}">:$fnArgAttrs,
-    DefaultValuedAttr<StringArrayAttr, "ArrayRef<StringAttr>{}">:$crossDeviceCaptures,
     OptionalAttr<TypeAttr>:$coroutineType,
     OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
   );
@@ -102,7 +99,8 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let assemblyFormat = [{
     `` custom<FuncOp>($exportKind, $sym_name, $funcTypeGenerator, $inlineLevel,
-                     $decorators, attr-dict, $bodyRegion)
+                     $decorators, $fnAttrs, $fnArgAttrs, $bodyRegion)
+    prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -145,7 +143,7 @@ def KGEN_FuncOp : KGENOp<"func", [
       build($_builder, $_state, name, /*sym_visibility=*/nullptr, sigGen,
             decorators, KGEN::getInlineLevelAttr($_builder.getContext(), inlineLevel),
             exportKind, external, convergent, fnAttrs, fnArgAttrs,
-            /*crossDeviceCaptures=*/{}, /*coroutineType=*/{}, linkageName);
+            /*coroutineType=*/{}, linkageName);
     }]>,
   ];
 
@@ -243,7 +241,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let assemblyFormat = [{
     `` custom<GeneratorOp>($exportKind, $sym_name, $funcTypeGenerator,
                            $functionType, $inputParams, $inlineLevel,
-                           $decorators, attr-dict, $bodyRegion)
+                           $decorators, $fnAttrs, $fnArgAttrs, $bodyRegion)
+    prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -341,7 +340,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name ``
     custom<ExternGenerator>($funcTypeGenerator, $functionType, $inputParams)
-    attr-dict-with-keyword ($body^)?
+    ($body^)? prop-dict attr-dict-with-keyword
   }];
 }
 
@@ -382,7 +381,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [SymbolName, SymbolVisib
     $sym_name ``
     custom<StructGeneratorSpec>(
       $inputParams, $valueDomainType, $metaType, $body)
-    attr-dict-with-keyword
+    prop-dict attr-dict-with-keyword
   }];
 }
 
@@ -418,7 +417,7 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
 
   let assemblyFormat = [{
     $sym_name `` custom<StructInstanceSpec>($valueDomainType, $metaType, $body)
-    attr-dict-with-keyword
+    prop-dict attr-dict-with-keyword
   }];
 }
 
@@ -552,6 +551,7 @@ def KGEN_WitnessOp : KGENOp<"witness", [
                        TypedAttrInterface:$value);
 
   let assemblyFormat = [{
+    custom<SymVisibility>($sym_visibility) ``
     custom<WitnessEntry>($sym_name, $value) attr-dict-with-keyword
   }];
 }
@@ -606,7 +606,10 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let arguments = (ins
-    KGEN_SymbolConstantAttr:$callee,
+    // TODO: This should take a FuncSymbolAttr directly: it will tighten up the
+    // call-like ops such that they can only take a FuncType (which is
+    // guaranteed to be fully bound) as the callee.
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
     Variadic<AnyType>:$operands,
     DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
@@ -619,7 +622,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let builders = [
-    OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
+    OpBuilder<(ins "FuncSymbolGenerator":$callee, "ValueRange":$operands), [{
       auto tailKind = TailKindAttr::get($_builder.getContext(), TailKind::None);
       return build($_builder, $_state,
         callee.getType().getBody().getValues().getResults(), callee,
@@ -628,11 +631,15 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   ];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee);
+
+    FuncSymbolGenerator getCalleeGenerator() {
+      return FuncSymbolGenerator(getCallee());
+    }
 
     /// Return the symbol reference to the callee.
     FlatSymbolRefAttr getCalleeSymbol() {
-      return cast<FlatSymbolRefAttr>(getCallee().getSymbol());
+      return cast<FlatSymbolRefAttr>(getCalleeGenerator().getSymbol());
     }
 
     FuncTypeGeneratorType getCalleeType() {
@@ -641,7 +648,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
     /// Return the bound input parameter values.
     ArrayRef<TypedAttr> getParamValues() {
-      return getCallee().getParamValues();
+      return getCalleeGenerator().getParamValues();
     }
   }];
 
@@ -686,7 +693,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee);
     bool isAllowedInFunc() { return false; }
 
     FuncTypeGeneratorType getCalleeType() {
@@ -704,9 +711,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 
 def KGEN_ParamConstantOp : KGENOp<"param.constant", [ConstantLike,
     BytecodeOpInterface,
-    // TODO(MOCO-1101): Replace two lines below with Pure
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-    AlwaysSpeculatable,
+    Pure,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]>,
     NoParamDecls {
@@ -836,98 +841,6 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare",
   let extraClassDeclaration = [{
     StringAttr getName() { return getParamDecl().getName(); }
     Type getType() { return getParamDecl().getType(); }
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ParamDeclareRegionOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
-    DeclInterface, FuncInterface, FunctionOpInterface, FunctionLike,
-    SymbolName, SymbolVisibility,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
-    SingleBlock
-  ]>, OneParamDecl {
-  let summary = "declare a region parameter";
-  let description = [{
-    The `kgen.param.declare.region` operation declares a signature-type
-    parameter whose value is an MLIR region (a closure). The region can be
-    isolated from above, in which case it is treated by the elaborator as a
-    stateless closure and inlined at wherever it ends up being called. The
-    region can also capture values from above, in which case the elaborator
-    treats it as a stateful closure and processes it by inlining every call that
-    forwards this parameter down to all callsites.
-
-    Parameters defined by a `kgen.param.declare.region` that are not isolated
-    from above can only be used by function calls. They cannot be used, for
-    example, by `kgen.addressof`.
-
-    Example:
-
-    ```mlir
-    kgen.param.declare.region AddIt[my_add] = <N>(%arg0: index) -> index {
-      %0 = kgen.param.constant = <N>
-      %1 = index.add %0, %arg0
-      hlcf.return %1 : index
-    }
-
-    kgen.param.declare.region SubtractIt = <N>(%arg0: index) -> index {
-      %0 = kgen.param.constant = <N>
-      %1 = index.sub %0, %arg0
-      hlcf.return %1 : index
-    }
-    ```
-
-    The operation carries an extra bit `isolated` to indicate that they are
-    parametrically isolated from above.
-  }];
-
-  let arguments = (ins
-    // `kgen.param.declare.region` is anonymous: it satisfies SymbolOpInterface
-    // through FunctionOpInterface but never carries a name of its own.
-    OptionalAttr<SymbolNameAttr>:$sym_name,
-    OptionalAttr<StrAttr>:$sym_visibility,
-    KGEN_ParamDeclAttr:$paramDecl,
-    StrAttr:$sourceName,
-    TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
-    TypeAttrOf<FunctionType>:$functionType,
-    KGEN_ParamDeclArrayAttr:$inputParams,
-    TypedAttrInterface:$inlineLevel,
-    OptionalAttr<KGEN_LinkageNameAttr>:$linkageName,
-    // To be able to store pre-elaborated names of the `llvm_metadata`,
-    // decompose LLVM metadata into array of attributes of even size.
-    // Each even attribute corresponds to the name of in `llvm_metadata`,
-    // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
-    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
-    UnitAttr:$isolated
-  );
-  let regions = (region SizedRegion<1>:$bodyRegion);
-
-  let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecl, $sourceName, $inputParams,
-                              $functionType, $funcTypeGenerator, $inlineLevel,
-                              $bodyRegion)
-    attr-dict
-  }];
-
-  let extraClassDeclaration = [{
-    bool isIsolatedFromAbove(unsigned regionNum);
-    void notifyKnownIsolatedFromAbove(unsigned regionNum);
-    Region *getCallableRegion() { return &getBodyRegion(); }
-
-    /// Region body op doesn't form a symbol.
-    bool isOptionalSymbol() { return true; }
-
-    ArrayAttr getArgAttrsAttr() { return nullptr; }
-    ArrayAttr getResAttrsAttr() { return nullptr; }
-    void setArgAttrsAttr(ArrayAttr attrs) {}
-    void setResAttrsAttr(ArrayAttr attrs) {}
-    Attribute removeArgAttrsAttr() { return nullptr; }
-    Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let hasVerifier = 1;
@@ -1117,82 +1030,35 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
 }
 
 //===----------------------------------------------------------------------===//
-// StageClosureOp
+// CreateFuncPtrOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StageClosureOp : KGENOp<"stage_closure",
-  [Pure, FunctionLike, DebugInfo_InlinedSubprogramScoped]
->{
-  let summary = "Stage a closure declaring a concrete region";
-  let description = [{
-    The `kgen.stage_closure` operation declares a named concrete region. The
-    region can capture values from its parent region. This operation models
-    nested callable functions within their original scope before lifting them
-    into functions so that we may perform transformations that depend on the
-    original structure of the scopes.
-
-    ```mlir
-    %0 = kgen.stage_closure = () capturing -> index {
-      hlcf.return %arg0 : index
-    }
-    ```
-  }];
-
-  let results = (outs KGEN_FuncTypeGeneratorType:$result);
-  let regions = (region SizedRegion<1>:$bodyRegion);
-
-  let assemblyFormat = [{
-    custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
-  }];
-
-  let extraClassDeclaration = [{
-    ArrayRef<Type> getResultTypes() {
-       return getResult().getType().getBody().getValues().getResults();
-    }
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// CreateClosureOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
+def KGEN_CreateFuncPtrOp : KGEN_CallOpBase<"create_func_ptr", [Pure,
     InferTypeOpAdaptor,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "Create a closure from variables and a function.";
+  let summary = "Materialize a function as a runtime value.";
   let description = [{
-    The `kgen.create_closure` operation represents the instantiation of
-    a closure. This operation models closure creation in terms of a function
-    and local captured variables.
+    The `kgen.create_func_ptr` operation materializes a reference to a function
+    as a runtime function pointer value.
 
     ```mlir
-    %idx0 = index.constant 0
-    %0 = kgen.create_closure[(index) -> index: @h](%idx0)
+    %0 = kgen.create_func_ptr[(index) -> index: @h]()
     ```
   }];
 
-  let arguments = (ins AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
-                       Variadic<AnyType>:$captures);
+  let arguments = (ins AttrOfType<KGEN_FuncTypeGeneratorType>:$callee);
   let results = (outs KGEN_FuncTypeGeneratorType:$result);
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee) `(` $captures `)`
-    custom<ClosureCaptureTypes>(ref($callee), ref($captures), type($captures))
-    attr-dict
+    `` custom<ParametricCallee>($callee) `(` `)` attr-dict
   }];
-
-  let builders = [
-    OpBuilder<(ins "TypedAttr":$callee), [{
-      build($_builder, $_state, callee, {});
-    }]>,
-  ];
 
   let extraClassDeclaration = [{
     FuncTypeGeneratorType getCalleeType() {
       return cast<FuncTypeGeneratorType>(getCallee().getType());
     }
-  }];
 
-  let hasVerifier = 1;
+    ValueRange getArguments() { return {}; }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1204,10 +1070,10 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
   let summary = "Create a stub to enforce by-memory arguments for `callee`.";
   let description = [{
 
-    This op is similar to CreateClosureOp (without captures).
+    This op is similar to CreateFuncPtrOp.
     But during LowerArgConvention, some arguments are promoted from by-memory
     to by-value.
-    This would also affect the signature type of CreateClosureOp.
+    This would also affect the signature type of CreateFuncPtrOp.
 
     With CreateRegStubOp, during LowerArgConvention, the signature of `callee`
     might change, but the result signature always remains the same.
@@ -1341,6 +1207,43 @@ def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
     `(` operands `)` attr-dict `:` qualified(type($result))
   }];
 
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// StructConcatOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructConcatOp : KGENOp<"struct.concat", [Pure,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "concatenate the elements of structs";
+  let description = [{
+    The `kgen.struct.concat` operation makes a struct from the elements of its
+    operands, in sequence. The operation must have one or more operands. The
+    element lists of the operands can be parametric. Thus, the result type is
+    explicit.
+
+    The same list can have multiple forms, for example
+    `variadic_ptr_map(concat(A, B))` and `concat(variadic_ptr_map(A),
+    variadic_ptr_map(B))`. These two forms are equal only when the lists are
+    resolved.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.struct.concat(%a, %b)
+      : !kgen.struct<(index)>, !kgen.struct<(f32, f64)>
+     -> !kgen.struct<(index, f32, f64)>
+    ```
+  }];
+
+  let arguments = (ins Variadic<KGEN_StructType>:$structs);
+  let results = (outs KGEN_StructType:$result);
+  let assemblyFormat = [{
+    `(` $structs `)` attr-dict `:` type($structs) `->` qualified(type($result))
+  }];
+
+  let hasVerifier = 1;
   let hasFolder = 1;
 }
 
@@ -1510,6 +1413,24 @@ def KGEN_StructLoadIndirectOp : KGENOp<"struct.load_indirect", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionInitOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_UntaggedUnionInitOp : KGENOp<"untagged_union.init", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "Zero the complete store extent of an untagged union";
+  let description = [{
+    Initializes storage before constructing a new active member. Clears all
+    bytes within the store extent, including padding and inactive members,
+    without touching allocation tail padding or a following struct field.
+    The caller owns
+    the storage and must destroy any previous active member first.
+  }];
+  let arguments = (ins Arg<PointerOf<KGEN_UntaggedUnionType>, "", [MemWrite]>:$storage);
+  let assemblyFormat = "$storage attr-dict `:` type($storage)";
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
@@ -1662,7 +1583,8 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
                                  $emission_kind,
                                  $emission_option,
                                  $emission_link_option,
-                                 $func) attr-dict `>` `:` type($result)
+                                 $func) `>` `:` type($result)
+    prop-dict attr-dict
    }];
 
    let extraClassDeclaration = [{

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V3 Transformer block (ModuleV3)."""
 
 from __future__ import annotations
@@ -19,29 +18,33 @@ import enum
 import functools
 from typing import Any
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.multi_latent_attention import (
+from max import functional as F
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import DeviceMapping, Partial
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-
-from ..model_config import DeepseekV3Config
-from .moe_gate import DeepseekV3TopKRouter
-from .quant_linear import QuantizedMLP, tensor_parallel_mlp
-from .quant_mla import (
+from max.nn.common_layers.quant_linear import (
+    QuantizedMLP,
+    tensor_parallel_mlp,
+)
+from max.nn.common_layers.quant_mla import (
     QuantizedLatentAttentionWithRope,
     tensor_parallel_latent_attention_with_rope,
 )
-from .quant_moe import (
+from max.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
     QuantizedMoE,
     TensorParallelMoE,
 )
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Partial
+
+from ..model_config import DeepseekV3Config
+from .moe_gate import DeepseekV3TopKRouter
 
 
 def _get_mlp(
@@ -193,6 +196,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         comm_buffers: EPCommBuffers | None = None,
     ) -> Tensor:
+        """Runs one decoder block over ``x``."""
         residual = x
         norm_x = self.input_layernorm(x)
         attn_out = self.self_attn(
@@ -231,42 +235,79 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         return post_mlp(self.mode, self.config, h, mlp_out)
 
 
+def attention_tp_axis(mesh: DeviceMesh) -> int:
+    """Returns the mesh axis attention is tensor-parallel over.
+
+    It is the ``tp`` axis of a ``(dp, tp)`` mesh of data-parallel replicas,
+    whose residual collectives run within each replica, or the only axis of
+    a one-axis mesh.
+    """
+    if TP in mesh.axis_names:
+        return mesh.axis_names.index(TP)
+    if mesh.ndim != 1:
+        raise ValueError(f"expected a {TP!r} axis on {mesh}")
+    return 0
+
+
+def residual_partial_sum(x: Tensor, attn_out: Tensor) -> Tensor:
+    """Returns ``x + attn_out`` as a Partial sum of the per-device partials.
+
+    Each device holds its partial sum of ``attn_out`` (the allreduce was
+    skipped). The residual ``x`` is added on the first device of each
+    tensor-parallel group only, so that it isn't counted once per device
+    after the reduction. Other mesh axes (data-parallel replicas) keep
+    ``x``'s placements.
+    """
+
+    def add_residual_once(
+        partial_sums: list[Tensor], residuals: list[Tensor]
+    ) -> list[Tensor]:
+        return [
+            residuals[0] + partial_sums[0],
+            *partial_sums[1:],
+        ]
+
+    mesh = x.mesh
+    axis = attention_tp_axis(mesh)
+    placements = list(x.placements)
+    placements[axis] = Partial()
+    return F.call_on_mesh(
+        add_residual_once,
+        mesh,
+        (axis,),
+        out_specs=DeviceMapping(mesh, tuple(placements)),
+    )(attn_out, x)
+
+
 def post_attention(
     mode: ParallelismMode,
     config: DeepseekV3Config,
     x: Tensor,
     attn_out: Tensor,
 ) -> Tensor:
-    """Residual connection and collective after attention."""
+    """Residual connection and collective after attention.
+
+    The collectives run over the attention TP axis (:func:`attention_tp_axis`),
+    so on a ``(dp, tp)`` mesh each replica reduces only its own devices.
+    """
     match mode:
         case ParallelismMode.TP_EP:
             assert config.ep_config is not None
+            axis = attention_tp_axis(x.mesh)
             if config.ep_config.use_allreduce:
-                attn_out = F.allreduce_sum(attn_out)
+                attn_out = F.allreduce_sum(attn_out, mesh_axis=axis)
                 return x + attn_out
             else:
-                # Each device holds its partial sum (allreduce was
-                # skipped). Add the residual only on the first device so
-                # it isn't counted P times after the reduce-scatter.
-                def add_residual_once(
-                    partial_sums: list[Tensor], residuals: list[Tensor]
-                ) -> list[Tensor]:
-                    return [
-                        residuals[0] + partial_sums[0],
-                        *partial_sums[1:],
-                    ]
-
-                partial = F.call_on_mesh(
-                    add_residual_once,
-                    x.mesh,
-                    x.mesh.axis_names,
-                    out_specs=DeviceMapping(x.mesh, (Partial(),)),
-                )(attn_out, x)
-
                 # Partial -> Sharded(0): real reduce-scatter collective.
-                return F.reduce_scatter(partial, scatter_axis=0)
+                return F.reduce_scatter(
+                    residual_partial_sum(x, attn_out),
+                    scatter_axis=0,
+                    mesh_axis=axis,
+                )
         case ParallelismMode.TP_TP:
-            attn_out = F.allreduce_sum(attn_out)
+            attn_out = F.allreduce_sum(
+                attn_out, mesh_axis=attention_tp_axis(x.mesh)
+            )
             return x + attn_out
         case ParallelismMode.DP_EP:
             return x + attn_out
@@ -280,23 +321,29 @@ def post_mlp(
     h: Tensor,
     mlp_out: Tensor,
 ) -> Tensor:
-    """Collective after MoE/MLP to restore the expected hidden-state layout."""
+    """Collective after MoE/MLP to restore the expected hidden-state layout.
+
+    Like :func:`post_attention`, it runs over the attention TP axis.
+    """
     match mode:
         case ParallelismMode.TP_EP:
             assert config.ep_config is not None
+            axis = attention_tp_axis(h.mesh)
             if config.ep_config.use_allreduce:
-                mlp_out = F.allreduce_sum(mlp_out)
+                mlp_out = F.allreduce_sum(mlp_out, mesh_axis=axis)
                 return h + mlp_out
             else:
                 h = h + mlp_out
-                return F.allgather(h, tensor_axis=0)
+                return F.allgather(h, tensor_axis=0, mesh_axis=axis)
         case ParallelismMode.TP_TP:
             # Both the TP MoE (routed + shared) and the plain TP MLP return
             # each device's partial sum; one all-reduce after the layer
             # resolves it (matches the V2 ``nn.moe`` single-all-reduce
             # layout, where the shared expert is summed before this
             # collective).
-            mlp_out = F.allreduce_sum(mlp_out)
+            mlp_out = F.allreduce_sum(
+                mlp_out, mesh_axis=attention_tp_axis(h.mesh)
+            )
             return h + mlp_out
         case ParallelismMode.DP_EP:
             return h + mlp_out

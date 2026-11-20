@@ -10,22 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4's RMSNorm."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
-    TensorType,
     TensorValue,
     Weight,
     ops,
 )
-from max.graph.graph import Graph
-from max.nn.layer import Module, Shardable
+from max.nn.legacy.layer import Module, Shardable
 
 
 class Gemma4RMSNorm(Module, Shardable):
@@ -56,6 +55,7 @@ class Gemma4RMSNorm(Module, Shardable):
             self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x``, scaling by the weight when there is one."""
         if self.with_weight:
             w = self.weight.cast(x.dtype).to(x.device)
         else:
@@ -68,30 +68,17 @@ class Gemma4RMSNorm(Module, Shardable):
                 ),
                 (self.dim,),
             ).to(x.device)
-        return Graph.current._add_op_generated(
-            mo.ReduceRmsNormOp,
-            result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
-            input=x,
-            weight=w,
-            # epsilon is a float32 host-scalar operand of the generated
-            # `mo.reduce.rms_norm` op: the kernel (and `ops.rms_norm`) carry it
-            # in float32. Constructing it at `x.dtype` (e.g. bf16) makes KGEN
-            # reject the operand against the Float32 `ReduceRMSNorm.execute`
-            # signature at graph-compile time.
-            epsilon=ops.constant(
-                self.eps, dtype=DType.float32, device=DeviceRef.CPU()
-            ),
-            weight_offset=ops.constant(
-                0.0,
-                dtype=x.dtype,
-                device=DeviceRef.CPU(),
-            ),
-            multiply_before_cast=builtin.BoolAttr(True),
-            output_param_decls=kgen.ParamDeclArrayAttr([]),
-        )[0].tensor
+        return ops.rms_norm(
+            x,
+            w,
+            epsilon=self.eps,
+            weight_offset=0.0,
+            multiply_before_cast=True,
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the weight is split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

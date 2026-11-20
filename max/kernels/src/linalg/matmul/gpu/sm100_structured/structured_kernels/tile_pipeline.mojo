@@ -32,7 +32,7 @@ Input pipeline access uses a two-type design that separates
 
     ┌─────────────────────────────┐   ┌─────────────────────────────┐
     │   InputProducerStage        │   │   InputConsumerStage        │
-    │   @explicit_destroy,Movable │   │   @explicit_destroy,Movable │
+    │   not Deinitable, Movable   │   │   not Deinitable, Movable   │
     │   release(deinit self)      │   │   release(deinit self)      │
     │   Compiler enforces release │   │   Compiler enforces release │
     └─────────────────────────────┘   └─────────────────────────────┘
@@ -48,7 +48,7 @@ Both type pairs share the same accessor interface (payload, stage,
 barrier/mbar, expect_bytes). They differ in ownership semantics:
 
 - **Stage types** (`InputProducerStage`, `InputConsumerStage`):
-  `@explicit_destroy` linear types. The compiler errors if you forget
+  `not Deinitable` linear types. The compiler errors if you forget
   to call `release()`. Use for flat code with explicit resource management.
 
 - **Context types** (`ProducerTiles`, `ConsumerTiles`):
@@ -137,7 +137,6 @@ Example: Epilogue Warp (context manager)
 """
 
 from layout.tma_async import SharedMemBarrier
-from std.utils.index import IndexList
 from .config import OutputPipelineConfig
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
@@ -168,8 +167,8 @@ comptime MbarPtr = SMemPtr[SharedMemBarrier]
 struct StandardTilePayload[
     a_type: DType,
     b_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload):
@@ -264,10 +263,10 @@ struct BlockScaledTilePayload[
     b_type: DType,
     sfa_type: DType,
     sfb_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
-    sfa_shape: IndexList[2],  # Scale factor A dims
-    sfb_shape: IndexList[2],  # Scale factor B dims
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
+    sfa_shape: Tuple[Int, Int],  # Scale factor A dims
+    sfb_shape: Tuple[Int, Int],  # Scale factor B dims
     # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload):
@@ -398,9 +397,9 @@ struct BlockwiseFP8TilePayload[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
-    a_scales_shape: IndexList[2],  # (1, BM)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
+    a_scales_shape: Tuple[Int, Int],  # (1, BM)
     # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload, TrivialRegisterPassable):
@@ -791,7 +790,7 @@ struct InputTilePipeline[
 # InputProducerStage/InputConsumerStage - Linear types for tile access
 # ============================================================================
 #
-# These are @explicit_destroy linear types: the compiler enforces that every
+# These are `not Deinitable` linear types: the compiler enforces that every
 # instance is consumed by calling release(). Two usage patterns:
 #
 # 1. Linear Type API (flat, explicit):
@@ -807,13 +806,12 @@ struct InputTilePipeline[
 # ============================================================================
 
 
-@explicit_destroy("Must call release()")
 struct InputProducerStage[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](not Deinitable, Movable):
+](not Deinitable else "Must call release()", Movable):
     """Linear type handle for producer tile access.
 
     Compiler-enforced: must call release() to advance the producer stage.
@@ -966,13 +964,12 @@ struct ProducerTiles[
         self.pipeline_ptr[]._release_producer()
 
 
-@explicit_destroy("Must call release()")
 struct InputConsumerStage[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](not Deinitable, Movable):
+](not Deinitable else "Must call release()", Movable):
     """Linear type handle for consumer tile access.
 
     Compiler-enforced: must call release() to signal consumption and
@@ -1181,6 +1178,31 @@ struct InputProducer[
             pipeline_ptr=self.pipeline_ptr,
             stage=stage_idx,
             barrier=barrier,
+        )
+
+    @inline(.always)
+    def tiles_at(
+        self, stage: UInt32
+    ) -> ProducerTiles[
+        Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Get a handle to a stage this producer already acquired.
+
+        The handle does not advance or release the producer, so a load
+        split around a wait can finish a stage it has stepped past. Use it
+        without `with`, since leaving the scope would release the stage
+        again.
+
+        Args:
+            stage: Index of the acquired stage.
+
+        Returns:
+            The stage's payload and full-barrier handle.
+        """
+        return ProducerTiles(
+            pipeline_ptr=self.pipeline_ptr,
+            stage=stage,
+            barrier=self.pipeline_ptr[].producer_mbar(stage),
         )
 
     @inline(.always)
@@ -1716,11 +1738,12 @@ struct OutputConsumer[
 #
 
 
-@explicit_destroy("Must call release() to signal MMA completion and advance")
 struct MmaStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-](not Deinitable):
+](
+    not Deinitable else "Must call release() to signal MMA completion and advance"
+):
     """Unified linear type handle for MMA stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.
@@ -1780,11 +1803,10 @@ struct MmaStage[
         self.pipeline_ptr[].release_from_mma(self._stage)
 
 
-@explicit_destroy("Must call release() to free stage for MMA reuse")
 struct EpilogueStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-](not Deinitable):
+](not Deinitable else "Must call release() to free stage for MMA reuse"):
     """Unified linear type handle for epilogue stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.

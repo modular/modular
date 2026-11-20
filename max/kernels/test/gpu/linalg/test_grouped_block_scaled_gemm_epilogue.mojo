@@ -19,7 +19,6 @@ GEMM kernel output. Verifies that:
 3. Both register-based and SMEM-based epilogues work correctly
 """
 
-from std.collections import Optional
 from std.math import ceildiv
 from std.random import rand, random_float64, seed
 from std.sys import align_of
@@ -45,7 +44,6 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     MXFP8_SF_VECTOR_SIZE,
 )
-from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
     GEMMKind,
@@ -53,6 +51,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
+from std.utils.coord import Coord
 
 
 def test_grouped_gemm_epilogue[
@@ -66,8 +65,8 @@ def test_grouped_gemm_epilogue[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     register_based_epilogue: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped block-scaled GEMM with epilogue lambda.
@@ -82,16 +81,8 @@ def test_grouped_gemm_epilogue[
     """
     print("\n--- Testing grouped GEMM with epilogue ---")
     print(
-        "  M=",
-        Int(m.value()),
-        " N=",
-        Int(n.value()),
-        " K=",
-        Int(k.value()),
-        " cta_group=",
-        cta_group,
-        " register_based_epilogue=",
-        register_based_epilogue,
+        t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group} "
+        t" register_based_epilogue= {register_based_epilogue}"
     )
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
@@ -105,9 +96,9 @@ def test_grouped_gemm_epilogue[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = Int(n.value()) * Int(k.value())
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k)
+    var c_size = Int(m) * Int(n)
 
     # Host allocations
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
@@ -127,7 +118,6 @@ def test_grouped_gemm_epilogue[
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
@@ -164,18 +154,19 @@ def test_grouped_gemm_epilogue[
         sfb_host_ptr[i] = scale_one
 
     # Define epilogue lambda that adds original C value to matmul result
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor)
     def epilogue_add_c[
         _dtype: DType,
         width: SIMDLength,
         *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[_dtype, width]:
+        alignment: Int,
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_host_original} -> SIMD[
+        _dtype, width
+    ]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        # C' = matmul(A, B) + C_original
-        return val + c_tensor.load[width=width](idx).cast[_dtype]()
+        # C' = matmul(A, B) + C_original. Reads the pinned host copy because
+        # the kernel writes `c_device`.
+        return val + c_host_original.load[width=width](idx).cast[_dtype]()
 
     # Initialize random data
     seed(42)
@@ -183,11 +174,11 @@ def test_grouped_gemm_epilogue[
     rand(b_host.as_span())
 
     # Initialize C with random values for epilogue test
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             comptime assert c_host.flat_rank >= 2
-            c_host[Coord(i, j)] = Scalar[c_type](random_float64(-1, 1))
-            c_host_original[Coord(i, j)] = c_host[i, j]
+            c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
+            c_host_original[i, j] = c_host[i, j]
 
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -212,9 +203,9 @@ def test_grouped_gemm_epilogue[
     var problem_sizes_host = ctx.enqueue_create_host_buffer[.int32](
         max_groups * 4
     )
-    problem_sizes_host[0] = Int32(Int(m.value()))  # M
-    problem_sizes_host[1] = Int32(Int(n.value()))  # N
-    problem_sizes_host[2] = Int32(Int(k.value()))  # K
+    problem_sizes_host[0] = Int32(Int(m))  # M
+    problem_sizes_host[1] = Int32(Int(n))  # N
+    problem_sizes_host[2] = Int32(Int(k))  # K
     problem_sizes_host[3] = Int32(1)  # L (batch)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
@@ -262,12 +253,7 @@ def test_grouped_gemm_epilogue[
     # Compute total tiles
     comptime BM = config.block_tile_shape[0]
     comptime BN = mma_shape[1]
-    var total_tiles = ceildiv(Int(m.value()), BM) * ceildiv(Int(n.value()), BN)
-
-    # Create epilogue lambda optional
-    comptime optional_lambda = Optional[elementwise_compute_lambda_type](
-        epilogue_add_c
-    )
+    var total_tiles = ceildiv(Int(m), BM) * ceildiv(Int(n), BN)
 
     # Template tensors - 3D TileTensors with batch=1
     var a_3d_shape = row_major(Idx[1], m, k)
@@ -303,7 +289,6 @@ def test_grouped_gemm_epilogue[
     grouped_block_scaled_matmul[
         config=config,
         max_groups=max_groups,
-        elementwise_compute_lambda_fn=optional_lambda,
     ](
         a_ptrs_tensor,
         b_ptrs_tensor,
@@ -318,6 +303,7 @@ def test_grouped_gemm_epilogue[
         c_template,
         a_scales_5d,
         b_scales_5d,
+        epilogue_add_c,
         ctx,
     )
 
@@ -352,10 +338,10 @@ def test_grouped_gemm_epilogue[
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val + c_host_original.load[width=width](idx).cast[_dtype]()
 
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             comptime assert c_host_ref.flat_rank >= 2
-            c_host_ref[Coord(i, j)] = epilogue_add_c_host(
+            c_host_ref[i, j] = epilogue_add_c_host(
                 Coord(i, j),
                 c_host_ref[i, j],
             )
@@ -393,8 +379,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=1,
-            mma_shape=Index(128, 128, 32),
-            cluster_shape=Index(1, 1, 1),
+            mma_shape=(Int(128), Int(128), Int(32)),
+            cluster_shape=(Int(1), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -406,8 +392,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=2,
-            mma_shape=Index(256, 128, 32),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(Int(256), Int(128), Int(32)),
+            cluster_shape=(Int(2), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -419,8 +405,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=1,
-            mma_shape=Index(128, 128, 32),
-            cluster_shape=Index(1, 1, 1),
+            mma_shape=(Int(128), Int(128), Int(32)),
+            cluster_shape=(Int(1), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[512], Idx[512], Idx[256])
 
@@ -432,8 +418,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=2,
-            mma_shape=Index(256, 128, 32),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(Int(256), Int(128), Int(32)),
+            cluster_shape=(Int(2), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[512], Idx[512], Idx[256])
 

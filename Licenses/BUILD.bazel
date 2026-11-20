@@ -5,7 +5,7 @@ load("//bazel:api.bzl", "pkg_files")
 package(default_visibility = ["//visibility:public"])
 
 EXPORTS = [
-    "LICENSE",
+    "MAX_LICENSE",
     "Third-Party-Notices",
 ]
 

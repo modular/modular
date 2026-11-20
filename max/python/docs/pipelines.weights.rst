@@ -28,6 +28,7 @@ HuggingFace integration
 
    download_weight_files
    generate_local_model_path
+   ~max.pipelines.weights.hf_utils.header_only_weight_files
    is_diffusion_pipeline
    try_to_load_from_cache
    validate_hf_repo_access
@@ -40,6 +41,7 @@ Weight loading
    :toctree: generated
    :template: autosummary/class.rst
 
+   ModelOptModuleQuant
    WeightPathParser
 
 .. autosummary::
@@ -52,6 +54,7 @@ Weight loading
    build_modelopt_nvfp4_config
    gptq_quant_config
    parse_quant_config
+   read_modelopt_quantized_layers
    resolve_hf_quant_config
 
 .. autosummary::

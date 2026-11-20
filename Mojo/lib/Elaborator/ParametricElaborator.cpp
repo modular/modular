@@ -72,33 +72,7 @@ PImplNode::PImplNode(PParamNode *parent)
   return mutex;
 }
 
-void PImplNode::setToError(ErrorTree &&err) {
-  if (error) {
-#ifndef MODULAR_PRODUCTION
-    std::lock_guard<std::mutex> guard(getGlobalMutex());
-    llvm::errs() << "INTERNAL ELABORATOR ERROR PROCESSING: ";
-    if (parent && parent->gen)
-      llvm::errs() << parent->getMangledName().strref();
-    else if (inst)
-      llvm::errs() << inst.getName();
-    else
-      llvm::errs() << "[ROOT NODE]";
-    llvm::errs() << "\n";
-    ErrorLimit errorLimit{this->getEvaluator().getErrorLimit(), 0};
-
-    emitLimitedError(
-        [&] {
-          return std::move(*error).emit(
-              [](Location loc) { return mlir::emitError(loc); }, "HERE",
-              this->getEvaluator().getElabErrorIncludePrelude());
-        },
-        errorLimit);
-#endif // MODULAR_PRODUCTION
-    llvm_unreachable("impl node already has an error");
-  }
-  hasError.store(true);
-  error = std::move(err);
-}
+void PImplNode::setToError(ErrorTree &&err) { setFirstError(std::move(err)); }
 
 void PParamNode::emplace() {
   if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
@@ -138,10 +112,10 @@ void ParametricExpansionGraph::didCompleteTask() {
 void ParametricExpansionGraph::didAddTask() { ++numOutstandingResources; }
 
 ErrorTreeOr<PImplNode *> PParamNode::getFirstConcreteNode() {
-  if (!impl.error)
-    return &impl;
-  return ErrorTree(gen.getLoc(), "function instantiation failed 2",
-                   impl.error->copy());
+  if (auto err = impl.copyError())
+    return ErrorTree(gen.getLoc(), "function instantiation failed 2",
+                     std::move(*err));
+  return &impl;
 }
 
 ErrorTreeOr<FuncOp> PParamNode::getFirstConcreteFunc() {
@@ -154,10 +128,10 @@ ErrorTreeOr<FuncOp> PParamNode::getFirstConcreteFunc() {
 }
 
 ErrorTreeOrSuccess PParamNode::collectErrorsOrSuccess() {
-  if (!impl.error)
-    return success();
-  return ErrorTree(gen.getLoc(), "function instantiation failed 1",
-                   impl.error->copy());
+  if (auto err = impl.copyError())
+    return ErrorTree(gen.getLoc(), "function instantiation failed 1",
+                     std::move(*err));
+  return success();
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
@@ -256,9 +230,17 @@ static ElaborationState processParamAssertOp(PImplNode *inode,
 
 /// Convert llvm metadata array attrs into dicts by treating every pair of
 /// attributes in the array as (key, value) pairs, where the key is always a
-/// StringAttr.
+/// StringAttr. The Mojo parser wraps non-`TypedAttr` values (e.g. `ArrayAttr`)
+/// in `#kgen.deferred` to satisfy PValue's typed-attribute contract; strip
+/// those wrappers so the assembled dict exposes concrete attributes.
 static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
                                                               ArrayAttr array) {
+  mlir::AttrTypeReplacer stripDeferred;
+  stripDeferred.addReplacement(
+      [](DeferredAttr attr) -> std::pair<Attribute, WalkResult> {
+        return {attr.getAttr(), WalkResult::advance()};
+      });
+
   NamedAttrList llvmMetadata;
   DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
@@ -274,7 +256,7 @@ static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
       continue;
     }
     seenMetadataNames.insert(name);
-    llvmMetadata.append(name, array[i + 1]);
+    llvmMetadata.append(name, stripDeferred.replace(array[i + 1]));
   }
   return llvmMetadata.getDictionary(array.getContext());
 }
@@ -448,18 +430,23 @@ void ParametricElaborator::finalizeInstance(PImplNode *node) {
 
 ErrorTreeOr<FuncOp>
 ParametricElaborator::getConcreteFunction(PImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol) {
+                                          FuncSymbolGenerator symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
   if (!gen) {
-    return concreteNodes.read([name](auto &insts) {
+    FuncOp func = concreteNodes.read([name](auto &insts) {
       auto iter = insts.find(name);
       if (iter == insts.end())
         return FuncOp();
       return cast<FuncOp>(iter->second->inst);
     });
+    if (!func) {
+      return ErrorTree(loc, "no concrete function for symbol '@" +
+                                name.getValue().str() + "'");
+    }
+    return func;
   }
 
   auto vals =
@@ -503,27 +490,26 @@ ParametricElaborator::concretizeSymbolsWithin(Attribute value,
   mlir::AttrTypeReplacer replacer;
   std::optional<ErrorTree> error;
   replacer.addReplacement(
-      [&](SymbolConstantAttr cst) -> std::pair<Attribute, WalkResult> {
-        // Ignore parametric constants.
-        if (!cst.getType().getInputParamTypes().empty())
-          return {cst, WalkResult::advance()};
-
-        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, cst);
+      [&](GeneratorAttr gen)
+          -> std::optional<std::pair<Attribute, WalkResult>> {
+        // Ignore parametric references and non-function generators.
+        auto symbol = FuncSymbolGenerator::dynCast(gen);
+        if (!symbol || !symbol.isFullyBound())
+          return std::nullopt;
+        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, symbol);
         if (func.isError()) {
           error = func.takeError();
-          return {cst, WalkResult::interrupt()};
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
         }
-        if (!*func) {
-          return {cst, WalkResult::interrupt()};
-        }
-        auto funcSym = SymbolConstantAttr::get(func.takeValue());
+        if (!*func)
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
         auto result = parent->getEvaluator().concretizeParameterExpr(
-            parent, loc, funcSym);
+            parent, loc, FuncSymbolGenerator::get(func.takeValue()));
         if (result.isError()) {
-          error = func.takeError();
-          return {cst, WalkResult::interrupt()};
+          error = result.takeError();
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
         }
-        return {*result, WalkResult::skip()};
+        return std::make_pair(Attribute(*result), WalkResult::skip());
       });
 
   if (Attribute result = replacer.replace(value)) {
@@ -589,7 +575,7 @@ ElaborationState ParametricElaborator::processParamConstantOp(PImplNode *parent,
 
 std::pair<ElaborationState, PImplNode *>
 ParametricElaborator::instantiateGeneratorReference(
-    PImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+    PImplNode *parent, Operation *user, FuncSymbolGenerator calleeSymbol,
     ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
     function_ref<bool(PParamNode *)> shouldWait) {
   // Lookup the callee.
@@ -662,11 +648,11 @@ FailureOr<PImplNode *> ParametricElaborator::collectConcreteImplementations(
 
 ElaborationState
 ParametricElaborator::processGeneratorUser(GeneratorUserOpInterface user,
-                                           SymbolConstantAttr calleeSymbol,
+                                           FuncSymbolGenerator calleeSymbol,
                                            PImplNode *parent) {
   // Not all operations can verify their callee type, if for instance, it is a
   // generic type. Verify here as a fallback.
-  if (!calleeSymbol.getType().getInputParamTypes().empty()) {
+  if (!calleeSymbol || !calleeSymbol.isFullyBound()) {
     parent->setToError(
         ErrorTree(user.getLoc(), "cannot reference parametric function"));
     return ElaborationState::error();
@@ -709,7 +695,8 @@ ParametricElaborator::processGeneratorUser(GeneratorUserOpInterface user,
   // symbol reference immediately.
   IRRewriter b{OpBuilder(user)};
   auto newCallee =
-      SymbolConstantAttr::get(concreteSymName, calleeSymbol.getType());
+      FuncSymbolGenerator::getParamLess(FlatSymbolRefAttr::get(concreteSymName),
+                                        calleeSymbol.getInstantiatedType());
   user.concretizeCallee(b, newCallee);
   return ElaborationState::advance();
 }
@@ -727,7 +714,7 @@ ElaborationState ParametricElaborator::processParamApplyOp(PImplNode *inode,
 
   StringAttr name =
       cast<FlatSymbolRefAttr>(
-          extractSymbolConstantAttr(cast<TypedAttr>(calleeSymbol)).getSymbol())
+          extractFuncSymbolGenerator(cast<TypedAttr>(calleeSymbol)).getSymbol())
           .getAttr();
   auto genItf = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
@@ -753,7 +740,7 @@ ElaborationState ParametricElaborator::processParamApplyOp(PImplNode *inode,
 
   // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = cast<ParameterExprArrayAttr>(value);
-  auto calleeAttr = extractSymbolConstantAttr(cast<TypedAttr>(callee));
+  auto calleeAttr = extractFuncSymbolGenerator(cast<TypedAttr>(callee));
 
   TypedAttr cached = lookupCachedInterpretation(((!gen) ? func : gen),
                                                 operandsAttr, calleeAttr);
@@ -801,7 +788,7 @@ ParametricElaborator::processCallOp(PImplNode *parent,
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
   return processGeneratorUser(
-      call, extractSymbolConstantAttr(cast<TypedAttr>(symbol)), parent);
+      call, extractFuncSymbolGenerator(cast<TypedAttr>(symbol)), parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -881,7 +868,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, PImplNode *inode) {
     });
   }
   inode->blocker.reset();
-  return success(!inode->error);
+  return success(!inode->recordedError());
 }
 
 /// Concretizes the locations of all operations within scope bound by the
@@ -964,6 +951,7 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
 
     Operation *terminator = block.getTerminator();
     op->getBlock()->getOperations().splice(iter, block.getOperations());
+    Block *deadBlock = nullptr;
 
     // Update the values for the result parameters and do other processing
     // necessary for comptime.yield.
@@ -976,7 +964,7 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
     } else if (auto hlcfTerm =
                    dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
       // If it's an hlcf.return op, we have to split the block after the return.
-      hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
+      deadBlock = hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
       // Drop all uses of the if op because any of its uses will be null and
       // void at this point.
       op->dropAllDefinedValueUses();
@@ -992,6 +980,14 @@ ParametricElaborator::processComptimeIfOp(PImplNode *parent,
     recursivelyEraseFromNestedScopes(node, op);
     op->erase();
     parentFrame.ops.pop_back();
+
+    // Manually remove the ops in the dead block. Cannot drop everything
+    // afterwards since it may contain ops from outer scopes.
+    if (deadBlock) {
+      llvm::erase_if(parentFrame.ops, [&](Operation *o) {
+        return deadBlock->findAncestorOpInBlock(*o) != nullptr;
+      });
+    }
     return success();
   };
 
@@ -1094,7 +1090,7 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
                           type);
 
   //// Concretize the paramfor_has_next generator function.
-  auto hasNextSymbol = extractSymbolConstantAttr(cast<TypedAttr>(hasNext));
+  auto hasNextSymbol = extractFuncSymbolGenerator(cast<TypedAttr>(hasNext));
   StringAttr hasNextName =
       cast<FlatSymbolRefAttr>(hasNextSymbol.getSymbol()).getAttr();
   auto hasNextGen = oldSymTab.lookup<GeneratorOp>(hasNextName);
@@ -1134,7 +1130,7 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
   }
 
   auto getNextIterSymbol =
-      extractSymbolConstantAttr(cast<TypedAttr>(getNextIter));
+      extractFuncSymbolGenerator(cast<TypedAttr>(getNextIter));
   StringAttr getNextIterName =
       cast<FlatSymbolRefAttr>(getNextIterSymbol.getSymbol()).getAttr();
   auto getNextIterGen = oldSymTab.lookup<GeneratorOp>(getNextIterName);
@@ -1258,6 +1254,16 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
                           "threshold or set to `0` to disable this warning)");
   }
 
+  // Measured here because unrolling clones the body before the completion
+  // runs.
+  std::optional<ComptimeForRecord> record;
+  if (config.printStats) {
+    record = ComptimeForRecord{
+        op.getLoc(),
+        StringAttr::get(op.getContext(), parent->parent->gen.getName()),
+        loopUnrollCount, countOps(op.getBody()), /*resultOps=*/0};
+  }
+
   // The else body should be unreachable after LowerSemanticCF.
   assert(isa<HLCF::UnreachableOp>(op.getElseRegion().front().front()) &&
          "LowerSemanticCF didn't lower the else block of comptime.for?");
@@ -1280,8 +1286,8 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
   // Add a worklist item to delete the comptime.for op when all the iterations
   // are processed and done and cleanup the result IR.
   PImplNode::WorkItem finalItem{{}, nullptr, parent->getEvaluator()};
-  finalItem.onComplete = [op, parent,
-                          outerLoop](PImplNode *node) mutable -> LogicalResult {
+  finalItem.onComplete = [this, op, parent, outerLoop,
+                          record](PImplNode *node) mutable -> LogicalResult {
     // Remove the original hlcf.comptime.for now that it has been lowered.
     recursivelyEraseFromNestedScopes(parent, op);
     op.erase();
@@ -1291,6 +1297,14 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
              outerLoop.getBody().getOps<HLCF::LoopOp>())) {
       if (simplifyParamForLoop(loop, outerLoop))
         break;
+    }
+
+    // Count before the outer loop is simplified, which may splice its body
+    // into the parent and erase it.
+    if (record) {
+      record->resultOps = countOps(outerLoop.getBody());
+      comptimeForStats.modify(
+          [&](auto &records) { records.push_back(*record); });
     }
 
     // Check to see if we can simplify the final outer loop.
@@ -1422,7 +1436,7 @@ void ParametricElaborator::completeImplNodeProcessing(PImplNode *inode) {
   // NOTE: This is one of the two spots where an ImplNode may be accessed in
   // parallel. Synchronize the error state check using an atomic. Any data race
   // here is benign but this makes TSAN happy.
-  bool hasError = inode->hasError.load();
+  bool hasError = inode->recordedError();
   if ((!hasError && (--inode->numDependencies != 0)) ||
       inode->done.exchange(true)) {
     signalWorklist();
@@ -1457,14 +1471,14 @@ void ParametricElaborator::completeImplNodeProcessing(PImplNode *inode) {
     // Check intra-SCC edges that were removed to break the cycle. Any callee
     // that errored during the first pass needs to propagate its error here.
     for (auto [loc, genNode] : inode->sccRemovedDeps) {
-      if (inode->error)
+      if (inode->recordedError())
         break;
       if (failed(collectConcreteImplementations(loc, inode, genNode)))
         break;
     }
     inode->sccRemovedDeps.clear();
 
-    if (!inode->error)
+    if (!inode->recordedError())
       finalizeInstance(inode);
   }
 
@@ -1510,7 +1524,8 @@ LogicalResult ParametricElaborator::processImplNode(PImplNode *inode) {
     ElaborationState result = processScope(inode, item);
     if (result.isError()) {
       // Interrupt indicates a fatal error.
-      assert(inode->error && "node processing interrupted but no error set");
+      assert(inode->recordedError() &&
+             "node processing interrupted but no error set");
       return success();
     }
     if (result.shouldSkipFrame()) {
@@ -1527,12 +1542,12 @@ LogicalResult ParametricElaborator::processImplNode(PImplNode *inode) {
     assert(inode->stack.size() == size && "new frame with no skip");
     assert(item.ops.empty() && "advance did not exhaust worklist");
     if (item.onComplete && failed(item.onComplete(inode))) {
-      assert(inode->error && "callback failed but no error set");
+      assert(inode->recordedError() && "callback failed but no error set");
       return success();
     }
     inode->stack.pop_back();
   }
-  assert(!inode->error && "unexpected error");
+  assert(!inode->recordedError() && "unexpected error");
   return success();
 }
 
@@ -1557,10 +1572,6 @@ ElaborationState ParametricElaborator::processScope(PImplNode *node,
 
 ElaborationState ParametricElaborator::processOp(PImplNode *node,
                                                  Operation *op) {
-  if (Block *block = op->getBlock())
-    if (!block->isEntryBlock())
-      return ElaborationState::advance();
-
   // ParamDeclareOp declaring a new parameter, in param space
   // ParamConstantOp cpuDevice constant value
   // ParamMaterializeOp same as ParamConstantOp, cpuDevice constant? value
@@ -1892,13 +1903,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     return offloadFuncOr.takeError();
   auto [symbol, func] = offloadFuncOr.takeValue();
 
-  // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
-  Builder b(ctx);
-  auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = FuncTypeGeneratorType::get(
-      {}, b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
@@ -1931,10 +1936,6 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       // the symbol has nothing else to keep it alive -- but it does mean the
       // same callee linked differently depending on how it is referenced.
       mlir::AttrTypeWalker attrWalker;
-      attrWalker.addWalk([&](SymbolConstantAttr ref) {
-        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
-                                         ExportKind::Exported);
-      });
       attrWalker.addWalk([&](FuncSymbolAttr ref) {
         exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
                                          ExportKind::Exported);
@@ -1947,9 +1948,9 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     // instantiated with the new target.
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
-        [&](SymbolConstantAttr ref)
+        [&](FuncSymbolAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref != symbol)
+          if (ref.getSymbol() != symbol.getSymbol())
             exportedSymbols.insert(
                 {ref.getSymbol().getRootReference(), ExportKind::NotExported});
           return std::nullopt;
@@ -1975,7 +1976,15 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
           Attribute newGenRef = replacer.replace(genRef);
           return std::make_pair(newGenRef, WalkResult::skip());
         });
-    symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
+    symbol = cast<TypedAttr>(replacer.replace(TypedAttr(symbol)));
+
+    // The replacer above reaches the offload function's parameters only, so a
+    // struct referenced solely by `opaque_plugin` would never be exported.
+    // `compileOffloads` stamps the rewritten target on the slice.
+    if (target.getOpaquePlugin()) {
+      offloadInfo.slicedTarget =
+          dyn_cast_or_null<TargetInfoAttr>(replacer.replace(Attribute(target)));
+    }
 
     auto iter =
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
@@ -1986,9 +1995,9 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(
-        {symbol,
+        {symbol.getInstantiatedFuncSymbol(),
          OffloadInfo::KernelInfo{
-             name, offloadInfo.numKernels, populateFnType, {}, sourceName}});
+             name, offloadInfo.numKernels, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;
@@ -2036,11 +2045,10 @@ ParametricElaborator::processCompileOffload(PImplNode *parent,
       parent->setToError(thunkCallee->takeError());
       return ElaborationState::error();
     }
-    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    FuncSymbolGenerator calleeSym = thunkCallee->takeValue();
     if (!calleeSym)
       return ElaborationState::skipNode();
-    symbol = calleeSym;
-    op.setFuncAttr(symbol);
+    op.setFuncAttr(calleeSym);
   }
 
   compileOffloadOps.modify([&](auto &set) { set.insert(op); });
@@ -2508,40 +2516,12 @@ static WalkResult rewriteCompileOffloadOp(
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
   StringAttr content = iter->second.contents[emissionKind];
   StringAttr moduleName = iter->second.moduleNames[emissionKind];
-  IntegerAttr numCaptures = iter->second.numCaptures;
-  mlir::DenseI64ArrayAttr captureSizes = iter->second.captureSizes;
-  PointerType nonePtr = PointerType::get(KGEN::NoneType::get(op->getContext()));
-  auto structType = StructType::get(op->getContext(), {
-                                                          content.getType(),
-                                                          moduleName.getType(),
-                                                          numCaptures.getType(),
-                                                          nonePtr,
-                                                      });
+  auto structType = StructType::get(op->getContext(),
+                                    {content.getType(), moduleName.getType()});
 
   SmallVector<Value> values;
-  auto constantV = ParamConstantOp::create(b, content);
-  auto moduleNameV = ParamConstantOp::create(b, moduleName);
-  auto numCapturesV = ParamConstantOp::create(b, numCaptures);
-  // Allocate an array numCaptures elements of int64 integers to store capture
-  // sizes
-  auto captureSizesV = POP::StackAllocationOp::create(
-      b, PointerType::get(captureSizes.getElementType()), numCaptures.getInt());
-  for (auto [i, typeSize] : llvm::enumerate(captureSizes.asArrayRef())) {
-    Value gep = POP::OffsetOp::create(
-        b, captureSizesV, ParamConstantOp::create(b, b.getIndexAttr(i)));
-    POP::StoreOp::create(
-        b, ParamConstantOp::create(b, b.getI64IntegerAttr(typeSize)), gep);
-  }
-  auto opaqueCaptureSizesV =
-      POP::PointerBitcastOp::create(b, nonePtr, captureSizesV);
-
-  assert(numCaptures.getInt() == captureSizes.size() &&
-         "Num captures and number of their sizes mismatch");
-
-  values.push_back(constantV);
-  values.push_back(moduleNameV);
-  values.push_back(numCapturesV);
-  values.push_back(opaqueCaptureSizesV);
+  values.push_back(ParamConstantOp::create(b, content));
+  values.push_back(ParamConstantOp::create(b, moduleName));
   auto newOp = StructCreateOp::create(b, op->getLoc(), structType, values);
 
   op->replaceUsesOfWith(op.getResult(), newOp);
@@ -2724,12 +2704,8 @@ LogicalResult ParametricElaborator::run(
   // generators - everything else we don't care about.
   // Sort instantiations of each generator to ensure we have a deterministic
   // output in multithreaded execution.
-  struct SuccessfulInstances {
-    std::string paramStr;
-    InstantiatedOpInterface inst;
-  };
   auto *newBlock = new Block;
-  llvm::MapVector<GeneratorOpInterface, std::vector<SuccessfulInstances>>
+  llvm::MapVector<GeneratorOpInterface, std::vector<InstantiatedOpInterface>>
       genInstantiations;
   for (Operation &op : llvm::make_early_inc_range(*theModule.getBody())) {
     if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
@@ -2744,22 +2720,22 @@ LogicalResult ParametricElaborator::run(
     VerboseCompilerTimeTraceScope traceScope(
         "processGen", [name = node.gen.getName()] { return name.str(); });
     // Erase all erroneous instances.
-    if (node.impl.error) {
+    if (node.impl.recordedError()) {
       node.impl.inst.erase();
       continue;
     }
 
-    genInstantiations[node.gen].push_back(SuccessfulInstances{
-        mlir::debugString(node.inputParams), node.impl.inst});
+    genInstantiations[node.gen].push_back(node.impl.inst);
   }
 
   // Now reorder all instantiations of each generator to be deterministic.
   for (auto &[gen, instantiations] : genInstantiations) {
-    llvm::sort(instantiations, [](auto &lhs, auto &rhs) {
-      return lhs.paramStr < rhs.paramStr;
-    });
-    for (auto &[_, func] : instantiations)
-      newBlock->push_back(func);
+    llvm::sort(instantiations,
+               [](InstantiatedOpInterface lhs, InstantiatedOpInterface rhs) {
+                 return lhs.getName() < rhs.getName();
+               });
+    for (InstantiatedOpInterface inst : instantiations)
+      newBlock->push_back(inst);
   }
 
   // Sort and then push on all the deferred functions.
@@ -2774,44 +2750,6 @@ LogicalResult ParametricElaborator::run(
   theModule.getBodyRegion().push_back(newBlock);
 
   renameFunctions(theModule, target.isGPU(), failed);
-
-  // Fill populate_captures stubs with the body generated during offload
-  // compilation.
-  //
-  // @__name kernels are renamed by renameFunctions above, so this fill step
-  // runs after renaming. Both sides of the name lookup are deliberately
-  // anchored to the pre-rename auto-mangled sym to survive that rename:
-  //
-  //   - The host stub was created in evaluateCompileOffloadClosureAttr using
-  //     the pre-rename sym (mangleParameterValues of the generator).
-  //   - writeCaptureArgs (in KGENCompiler) names the offload-side populate
-  //     function using the same mangled kernel.name.
-  //
-  // So populate.getSymName() here is the pre-rename sym, and lookupSymbolIn
-  // finds the host stub by that same name.
-  for (auto &[fillTarget, fillResult] : compiledOffload) {
-    for (auto &[_, fillGroup] : fillResult) {
-      for (auto &[_, kernel] : fillGroup) {
-        auto populate = cast<FuncOp>(kernel.func.get());
-        StringRef populateName = populate.getSymName();
-        StringAttr lookupName =
-            StringAttr::get(theModule.getContext(), populateName);
-        // A host stub only exists for kernels that had a
-        // compile_offload_closure declared on the host side. Kernels compiled
-        // only for their info (e.g. via compile_offload without a matching
-        // closure) have no stub; skip.
-        Operation *stubOp =
-            mlir::SymbolTable::lookupSymbolIn(theModule, lookupName);
-        if (!stubOp)
-          continue;
-        auto stubFunc = cast<FuncOp>(stubOp);
-        // Fill in the actual body of the populate closure which is
-        // generated while compiling all the offload functions.
-        stubFunc.getBodyRegion().takeBody(
-            cast<FuncOp>(*kernel.func).getBodyRegion());
-      }
-    }
-  }
 
   theModule.walk([&](Operation *op) {
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
@@ -2828,6 +2766,11 @@ LogicalResult ParametricElaborator::run(
       op->erase();
     }
   });
+
+  if (config.printStats) {
+    reportElaborationStats(target.isGPU(), options,
+                           std::move(comptimeForStats.get()));
+  }
 
   if (failed)
     return failure();

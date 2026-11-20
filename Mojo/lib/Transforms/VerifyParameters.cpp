@@ -81,10 +81,7 @@ static void propagateTrivialParameters(Region *region,
         processOp(op, evaluator);
     } else if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
       // If the value of the declared parameter is "trivial", i.e. a simple
-      // constant, then propagate it. We can only safely refine the attribute
-      // (interpret calls) if its type is not parametric. If the type is
-      // parametric, we risk creating unequal types across function calls if
-      // there are dependent parameters.
+      // constant, then propagate it.
       TypedAttr value = declare.getValue();
       if (!isa<DeferredAttr>(value))
         value = evaluator.getReboundAttribute(value);
@@ -102,10 +99,7 @@ static void propagateTrivialParameters(Region *region,
             decl = cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl));
             evaluator.setDeclBinding(decl, ParamDeclRefAttr::get(decl));
           });
-      // Nested regions can declare parameters, so we cannot fully rebind the
-      // operation now. It will be handled later when this function recurses.
-      if (!isa<ParamDeclareRegionOp>(op))
-        processOp(op, evaluator);
+      processOp(op, evaluator);
     }
   }
 
@@ -123,10 +117,10 @@ static void propagateTrivialParameters(Region *region,
     // GeneratorUser ops need concretize callee to be called when the callee
     // attr is updated.
     if (auto generatorUser = dyn_cast<GeneratorUserOpInterface>(op)) {
-      if (auto symCst =
-              dyn_cast<SymbolConstantAttr>(generatorUser.getCallee())) {
+      auto callee = FuncSymbolGenerator::dynCast(generatorUser.getCallee());
+      if (callee && callee.isFullyBound()) {
         IRRewriter b{OpBuilder(op)};
-        generatorUser.concretizeCallee(b, symCst);
+        generatorUser.concretizeCallee(b, callee);
       }
     }
   }
@@ -178,7 +172,6 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     mlir::LockedSymbolTableCollection sharedSymtabs(analysis.getSymbolTables());
     auto &paramCache = getAnalysis<ParamCache>();
-    bool emptyCache = paramCache.parameterLess.empty();
 
     std::vector<std::pair<Region *, size_t>> declRegions;
     ModuleOp module = getOperation();
@@ -188,9 +181,7 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
 
     LIT::LITSymTabEvaluationContext evaluationContext(module, sharedSymtabs);
 
-    // Because parameter simplification invokes the interpreter, we cannot
-    // simplify in parallel: functions may be modified as they are being
-    // interpreted. Save the use-def graphs from the verification pass here.
+    // Save the use-def graphs from the verification pass for simplification.
     std::vector<ParameterUseDefGraph> graphs;
     if (simplifyParameters) {
       graphs.reserve(declRegions.size());
@@ -210,23 +201,8 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
           return mlir::success();
         };
 
-    auto consolidateFn = [emptyCache](ParamCache &original,
-                                      ArrayRef<ParamCache> threadCaches) {
-      // Consolidate the caches, but only when the original cache is empty.
-      // In reality, the cache does not grow much after the first run of
-      // this pass on an input IR, so consolidation is only worthwhile on
-      // the first run of the pass, when the cache is empty.
-      if (emptyCache)
-        return;
-      for (const ParamCache &threadCache : threadCaches) {
-        original.parameterLess.insert(threadCache.parameterLess.begin(),
-                                      threadCache.parameterLess.end());
-      }
-    };
-
-    if (failed(failableParallelForEach(&getContext(), declRegions,
-                                       std::move(workFunc), paramCache,
-                                       consolidateFn)))
+    if (failed(paramCache.failableParallelForEach(&getContext(), declRegions,
+                                                  std::move(workFunc))))
       return signalPassFailure();
 
     // This pass does not modify any IR, so mark all analyses as preserved. In
@@ -238,13 +214,27 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     }
 
     VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
-    for (auto [declRegion, i] : declRegions) {
+    auto propagate = [&](std::pair<Region *, size_t> item) {
+      auto [declRegion, i] = item;
       ParameterUseDefGraph &graph = graphs[i];
       ParameterEvaluator evaluator;
       evaluator.setEvaluationContext(&evaluationContext);
       propagateTrivialParameters(declRegion, graph, graph,
                                  std::move(evaluator));
+    };
+
+    // Evaluation reads a function only through its top-level op, which
+    // simplification never changes, so function bodies run in parallel. Their
+    // nested scopes are comptime regions that no other declaration can name.
+    // Struct and trait bodies are read in full, so they run first, serially.
+    std::vector<std::pair<Region *, size_t>> functionRegions;
+    for (auto item : declRegions) {
+      if (isa<GeneratorOp>(item.first->getParentOp()))
+        functionRegions.push_back(item);
+      else
+        propagate(item);
     }
+    mlir::parallelForEach(&getContext(), functionRegions, propagate);
   }
 };
 } // namespace

@@ -20,6 +20,9 @@
 #include "IREmitter.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "OverloadSet.h"
+#include "ParamBindings.h"
+#include "ParserEvaluationContext.h"
 
 #include "Mojo/LITDialect/LITOps.h"
 
@@ -129,7 +132,8 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // can use that directly.
   if (auto baseRef = loadVal.getIfMLValue()) {
     auto fieldPtr =
-        RefStructGEROp::create(*emitter.builder, loc, baseRef, getField());
+        RefStructGEROp::create(*emitter.builder, loc, baseRef, getField(),
+                               &emitter.shared.getEvaluationContext());
     emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
     // Done: no tmp, no __setitem__, in-place mutation via the ref.
     return MBValue(baseRef);
@@ -151,7 +155,8 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   // Store into the field.
   auto fieldPtr =
-      RefStructGEROp::create(*emitter.builder, loc, loadMR, getField());
+      RefStructGEROp::create(*emitter.builder, loc, loadMR, getField(),
+                             &emitter.shared.getEvaluationContext());
   emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
   // Store the whole result back, transferring ownership as an MRValue.
@@ -283,6 +288,27 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     return BValue();
   }
 
+  // If the value is an MRValue, we can extract the elements directly as
+  // individual RValues to avoid copying them into the ultimate destination.
+  if (value.ir.getIfMRValue()) {
+    SmallVector<CValue, 4> elements;
+    if (failed(TupleNode::getConsumedElements(value.ir, value.expr, emitter,
+                                              elements)))
+      return BValue();
+
+    for (auto [element, lvalue] : llvm::zip(elements, eltLValues)) {
+      LValue lv = lvalue.ir.getIfLValue();
+      assert(lv && "Each dest is known to be an lvalue");
+      ExprDest eltDest(lv, EC_TupleElement);
+      if (!emitter.emitCResult(element, value.expr, eltDest)) {
+        eltDest.resetForError(emitter);
+        return BValue();
+      }
+    }
+
+    return MRValue(value.ir.getMValueReference());
+  }
+
   // Emit the input value to a BValue, loading it if it is an LValue and
   // decaying from an RValue. We need to do this because each of the tuple
   // subscript operations we generate below will operate on this same IR value
@@ -354,9 +380,8 @@ CValue ListPatternDLValue::emitStore(ASTExprAnd<CValue> value,
   ASTType valueType = value.ir.getRValueType();
   auto sizedConformance =
       valueType
-          .conformsToBuiltinTrait(
-              "Sized", value.expr->getLoc(), emitter.shared,
-              ASTDecl::getAssumptionsFromScope(&emitter.getDeclScope()))
+          .conformsToBuiltinTrait("Sized", value.expr->getLoc(), emitter.shared,
+                                  emitter.getDeclScope().getScopeAssumptions())
           .first;
   if (!sizedConformance.isTrue()) {
     auto diag = emitter.emitError(value.expr->getLoc());

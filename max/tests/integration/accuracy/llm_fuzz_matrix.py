@@ -42,13 +42,15 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.1",
         timeout=60,
     ),
+    # Mach only: the NVFP4 target with the DSpark draft, 7 speculative tokens.
     PipelineEntry(
-        pipeline="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        pipeline="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__dspark-tp2",
         model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
+        runner="modrunner-b200-efa-2x",
+        gpu_flag="--devices gpu:0,1",
+        instance_type="bm.gpu.b200.2",
         timeout=90,
+        mach_key="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark",
     ),
     PipelineEntry(
         pipeline="meta-models/Muse-Glimmer-30B",
@@ -56,7 +58,50 @@ PIPELINES: Final[list[PipelineEntry]] = [
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
-        timeout=60,
+        timeout=90,
+        # Mach only.
+        mach_key="meta-models/Muse-Glimmer-30B",
+    ),
+    PipelineEntry(
+        pipeline="XiaomiMiMo/MiMo-V2.6-Flash-RL",
+        model_path="XiaomiMiMo/MiMo-V2.6-Flash-RL",
+        runner="modrunner-b200-2x",
+        gpu_flag="--devices gpu:0,1",
+        instance_type="bm.gpu.b200.2",
+        timeout=90,
+        # Mach only, serving the export artifact at TP2. MAX Serve declares
+        # no reasoning or tool parser for MiMo, so its lane fails on parsing.
+        mach_key="XiaomiMiMo/MiMo-V2.6-Flash-RL",
+    ),
+    PipelineEntry(
+        pipeline="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+        model_path="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=210,
+        # Mach serves the shipped recipe, with the DSpark drafter.
+        mach_key="meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
+    ),
+    PipelineEntry(
+        pipeline="reflection/Beam-1.0-501B-A23B-NVFP4",
+        model_path="reflection/Beam-1.0-501B-A23B-NVFP4",
+        runner="modrunner-b200-4x",
+        gpu_flag="--devices gpu:0,1,2,3",
+        instance_type="bm.gpu.b200.4",
+        timeout=210,
+        # Mach only, with the DFlash2 drafter the model ships with.
+        mach_key="reflection/Beam-1.0-501B-A23B-NVFP4__dflash2",
+    ),
+    PipelineEntry(
+        pipeline="tencent/Hy4-preview-FP8-ep-tp-mtp",
+        model_path="tencent/Hy4-preview-FP8",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=210,
+        # Mach only, serving the MTP artifact.
+        mach_key="tencent/Hy4-preview-FP8__mtp",
     ),
     PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",
@@ -76,6 +121,38 @@ PIPELINES: Final[list[PipelineEntry]] = [
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=90,
+    ),
+    # Mirrors the production MiniMax-M3.1-Flash recipe (kadabra-m31-prod-7):
+    # DP=2 x EP=8, NVFP4 KV, DSpark draft from the target repo's dspark/
+    # folder, with the tiered connector standing in for dKV. The longer
+    # timeout covers the draft model's warm-up on top of the target's.
+    PipelineEntry(
+        pipeline="minimax/MiniMax-M3.1-Flash",
+        model_path="MiniMaxAI/MiniMax-M3.1-Flash",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=120,
+    ),
+    # Laguna S-2.1 on one B200: the gated lane, carrying the mixed NVFP4/bf16
+    # expert split. Mach only.
+    PipelineEntry(
+        pipeline="poolside/Laguna-S-2.1-NVFP4",
+        model_path="poolside/Laguna-S-2.1-NVFP4",
+        runner="modrunner-b200",
+        gpu_flag="--devices gpu:0",
+        instance_type="bm.gpu.b200.1",
+        timeout=120,
+        mach_key="poolside/Laguna-S-2.1-NVFP4",
+    ),
+    # 8x B200: TP8 attention, EP8 MoE.
+    PipelineEntry(
+        pipeline="zai-org/GLM-5.3-Flash-FP8-ep-tp",
+        model_path="zai-org/GLM-5.3-Flash",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=120,
     ),
     PipelineEntry(
         pipeline="amd/MiniMax-M3-MXFP4-ep-tp",
@@ -97,6 +174,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.mi355x.8",
         timeout=90,
+    ),
+    PipelineEntry(
+        pipeline="zai-org/GLM-5.3-Flash-ep-tp",
+        model_path="zai-org/GLM-5.3-Flash",
+        runner="modrunner-mi355-2x",
+        gpu_flag="--devices gpu:0,1",
+        instance_type="bm.gpu.mi355x.2",
+        timeout=120,
     ),
     # Tiny model on CPU: a cheap end-to-end check of the fuzz harness and the
     # serve path without occupying an accelerator at all. 135M params in FP32

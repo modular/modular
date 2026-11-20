@@ -35,6 +35,10 @@ static llvm::Type *convertDTypeToLLVM(KGENDType dtype,
   switch (dtype.getValue()) {
   case DType::kBool:
     return llvm::IntegerType::get(llvmCtx, 1);
+  case DType::f16:
+    return llvm::Type::getHalfTy(llvmCtx);
+  case DType::bf16:
+    return llvm::Type::getBFloatTy(llvmCtx);
   case DType::f32:
     return llvm::Type::getFloatTy(llvmCtx);
   case DType::f64:

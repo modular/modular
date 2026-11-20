@@ -17,6 +17,7 @@ from max.serve.scheduler.batch_constructor.token_budget import (
     ActiveTokenBudget,
     BudgetStatus,
     RequestType,
+    TokenBudgetCollection,
     TotalContextTokenBudget,
 )
 
@@ -556,3 +557,93 @@ def test_token_budget__alignment_off_by_default() -> None:
     status = budget.status_after_context(context, request_type=RequestType.CE)
     assert status == BudgetStatus.BUDGET_AVAILABLE
     assert context.tokens.active_length == 300
+
+
+def _ctx_of(num_tokens: int) -> TextContext:
+    return TextContext(
+        tokens=TokenBuffer(np.ones(num_tokens, dtype=np.int64)),
+        max_length=1000,
+    )
+
+
+def test_token_budget__fits_whole_reads_the_active_budget_without_cutting() -> (
+    None
+):
+    """A context fits whole only when no cut is needed, and none is made."""
+    budget = ActiveTokenBudget(
+        capacity=20,
+        allow_chunking=True,
+        applicable_types=[RequestType.CE],
+        min_chunk_tokens=8,
+        max_context_tokens=16,
+    )
+    budget.add_to_budget(_ctx_of(5), request_type=RequestType.CE)
+    fits, too_long, over_cap = _ctx_of(15), _ctx_of(16), _ctx_of(17)
+
+    assert budget.fits_whole(fits, RequestType.CE)
+    assert not budget.fits_whole(fits, RequestType.CE, reserve=1)
+    assert not budget.fits_whole(too_long, RequestType.CE)
+    budget.used = 0
+    assert budget.fits_whole(too_long, RequestType.CE)
+    assert not budget.fits_whole(over_cap, RequestType.CE)
+    assert fits.tokens.active_length == 15
+    assert over_cap.tokens.active_length == 17
+
+
+def test_token_budget__fits_whole_reads_the_total_context_budget() -> None:
+    """The total-context budget counts the aligned whole context."""
+    budget = TotalContextTokenBudget(
+        capacity=30,
+        allow_chunking=False,
+        applicable_types=[RequestType.CE],
+        cost_alignment=8,
+    )
+
+    assert budget.fits_whole(_ctx_of(17), RequestType.CE, reserve=6)
+    assert not budget.fits_whole(_ctx_of(17), RequestType.CE, reserve=7)
+    assert budget.fits_whole(_ctx_of(100), RequestType.TG)
+
+
+def test_token_budget__fits_whole_reads_the_active_length_it_is_given() -> None:
+    """A window an alloc will grow or shrink is read at the size it will be.
+
+    Only the active-token budget reads the window. The total-context budget
+    charges the whole context however much of it is still to run.
+    """
+    active = ActiveTokenBudget(
+        capacity=10, allow_chunking=False, applicable_types=[RequestType.CE]
+    )
+    total = TotalContextTokenBudget(
+        capacity=40, allow_chunking=False, applicable_types=[RequestType.CE]
+    )
+    collection = TokenBudgetCollection([active, total])
+    long_prompt = _ctx_of(40)
+
+    assert not collection.fits_whole(long_prompt, RequestType.CE)
+    assert collection.fits_whole(long_prompt, RequestType.CE, active_length=1)
+    assert not collection.fits_whole(
+        long_prompt, RequestType.CE, reserve=10, active_length=1
+    )
+    assert not active.fits_whole(_ctx_of(5), RequestType.CE, active_length=11)
+    assert not total.fits_whole(_ctx_of(41), RequestType.CE, active_length=1)
+    assert long_prompt.tokens.active_length == 40
+
+
+def test_token_budget__fits_whole_needs_every_budget_of_a_collection() -> None:
+    collection = TokenBudgetCollection(
+        [
+            ActiveTokenBudget(
+                capacity=20,
+                allow_chunking=True,
+                applicable_types=[RequestType.CE],
+            ),
+            TotalContextTokenBudget(
+                capacity=12,
+                allow_chunking=False,
+                applicable_types=[RequestType.CE],
+            ),
+        ]
+    )
+
+    assert collection.fits_whole(_ctx_of(12), RequestType.CE)
+    assert not collection.fits_whole(_ctx_of(13), RequestType.CE)

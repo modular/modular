@@ -575,7 +575,6 @@ To see that last one, you can run this program through
 `kgen-translate -import-mojo main.mojo`:
 
 ```mojo
-@explicit_destroy("Can't destroy a MyTrait")
 trait MyTrait(TrivialRegisterPassable):
     def bork(self):
         ...
@@ -680,12 +679,10 @@ coming after the parser:
 - InlineParametric
 - SCCP
 - ApplyInliner
-- OutlineClosures
 - CSE
 - LiftAndFoldApply
 - ElaborateGenerators
 - EliminateDuplicateFunctions
-- ResolveCompilerPromises
 - LowerArgConventions
 - LowerCallingConventions
 - EnsureNoParameters

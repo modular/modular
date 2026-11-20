@@ -182,8 +182,8 @@ struct Depth512MBars[
         """MMA warp: acquire waits on S_even consumer (buffer free),
         commit arrives at S_even producer (S written to TMEM)."""
         return {
-            self.mbar_base + Self.S_even_producer_offset,
-            self.mbar_base + Self.S_even_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S_even_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S_even_consumer_offset),
         }
 
     @inline(.always)
@@ -191,8 +191,8 @@ struct Depth512MBars[
         """MMA warp: acquire waits on S_odd consumer (buffer free),
         commit arrives at S_odd producer (S written to TMEM)."""
         return {
-            self.mbar_base + Self.S_odd_producer_offset,
-            self.mbar_base + Self.S_odd_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S_odd_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S_odd_consumer_offset),
         }
 
     @inline(.always)
@@ -200,8 +200,8 @@ struct Depth512MBars[
         """Softmax warp: wait on S_even producer (S ready in TMEM),
         release arrives at S_even consumer (S loaded, buffer free)."""
         return {
-            self.mbar_base + Self.S_even_producer_offset,
-            self.mbar_base + Self.S_even_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S_even_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S_even_consumer_offset),
         }
 
     @inline(.always)
@@ -209,8 +209,8 @@ struct Depth512MBars[
         """Softmax warp: wait on S_odd producer (S ready in TMEM),
         release arrives at S_odd consumer (S loaded, buffer free)."""
         return {
-            self.mbar_base + Self.S_odd_producer_offset,
-            self.mbar_base + Self.S_odd_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.S_odd_producer_offset),
+            self.mbar_base.unsafe_offset(Self.S_odd_consumer_offset),
         }
 
     # ---- C pipeline accessors (correction factor handoff) ---------------------
@@ -220,8 +220,8 @@ struct Depth512MBars[
         """Softmax warp: acquire waits on C consumer (buffer free),
         commit arrives at C producer (correction written to SMEM)."""
         return {
-            self.mbar_base + Self.C_producer_offset,
-            self.mbar_base + Self.C_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.C_producer_offset),
+            self.mbar_base.unsafe_offset(Self.C_consumer_offset),
         }
 
     @inline(.always)
@@ -229,8 +229,8 @@ struct Depth512MBars[
         """Correction warp: wait on C producer (correction ready),
         release arrives at C consumer (correction consumed)."""
         return {
-            self.mbar_base + Self.C_producer_offset,
-            self.mbar_base + Self.C_consumer_offset,
+            self.mbar_base.unsafe_offset(Self.C_producer_offset),
+            self.mbar_base.unsafe_offset(Self.C_consumer_offset),
         }
 
     # ---- O pipeline accessors (split into lo/hi for pipelining) ---------------
@@ -244,8 +244,8 @@ struct Depth512MBars[
         Acquire: wait on PO_lo (P ready + previous O_lo rescaled).
         Commit: mma_arrive at O_mma_lo (V_lo accumulation done)."""
         return {
-            self.mbar_base + Self.O_mma_lo_offset,
-            self.mbar_base + Self.PO_lo_offset,
+            self.mbar_base.unsafe_offset(Self.O_mma_lo_offset),
+            self.mbar_base.unsafe_offset(Self.PO_lo_offset),
         }
 
     @inline(.always)
@@ -254,8 +254,8 @@ struct Depth512MBars[
         Acquire: wait on PO_hi (previous O_hi rescaled).
         Commit: mma_arrive at O_mma_hi (V_hi accumulation done)."""
         return {
-            self.mbar_base + Self.O_mma_hi_offset,
-            self.mbar_base + Self.PO_hi_offset,
+            self.mbar_base.unsafe_offset(Self.O_mma_hi_offset),
+            self.mbar_base.unsafe_offset(Self.PO_hi_offset),
         }
 
     @inline(.always)
@@ -264,8 +264,8 @@ struct Depth512MBars[
         Wait: on O_mma_lo (V_lo accumulation done, O_lo safe to read).
         Release: arrive at PO_lo (O_lo rescaling done, 128 threads)."""
         return {
-            self.mbar_base + Self.O_mma_lo_offset,
-            self.mbar_base + Self.PO_lo_offset,
+            self.mbar_base.unsafe_offset(Self.O_mma_lo_offset),
+            self.mbar_base.unsafe_offset(Self.PO_lo_offset),
         }
 
     @inline(.always)
@@ -274,8 +274,8 @@ struct Depth512MBars[
         Wait: on O_mma_hi (V_hi accumulation done, O_hi safe to read).
         Release: arrive at PO_hi (O_hi rescaling done, 128 threads)."""
         return {
-            self.mbar_base + Self.O_mma_hi_offset,
-            self.mbar_base + Self.PO_hi_offset,
+            self.mbar_base.unsafe_offset(Self.O_mma_hi_offset),
+            self.mbar_base.unsafe_offset(Self.PO_hi_offset),
         }
 
     # ---- PO raw accessors (prologue arrives) ----------------------------------
@@ -288,7 +288,7 @@ struct Depth512MBars[
         Correction also arrives (128 threads) via consumer_o_lo().release().
         MMA waits for all 256 arrives before P@V_lo.
         """
-        return self.mbar_base + Self.PO_lo_offset
+        return self.mbar_base.unsafe_offset(Self.PO_lo_offset)
 
     @inline(.always)
     def po_hi_mbar(self) -> MBarType:
@@ -297,7 +297,7 @@ struct Depth512MBars[
         Correction arrives here (128 threads) via consumer_o_hi().release().
         MMA waits for all 128 arrives before P@V_hi.
         """
-        return self.mbar_base + Self.PO_hi_offset
+        return self.mbar_base.unsafe_offset(Self.PO_hi_offset)
 
     # ---- KV pipeline barriers ------------------------------------------------
 
@@ -308,7 +308,7 @@ struct Depth512MBars[
         Layout: 2 × num_kv_stages barriers in {producer, consumer} pairs.
         Used by load warp (producer) and MMA warp (consumer).
         """
-        return self.mbar_base + Self.KV_offset
+        return self.mbar_base.unsafe_offset(Self.KV_offset)
 
     # ---- utility -------------------------------------------------------------
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import _external_call_const
 from std.math import (
     atan,
     atan2,
@@ -28,15 +27,17 @@ from std.math import (
 )
 from std.math.math import _call_libm
 from std.memory import bitcast
-from std.sys import default_accelerator, simd_width_of
+from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import TestSuite, assert_equal
+from test_utils.math import libm_call_binary
 
 from std.utils.coord import Coord
 
 comptime LOG2_10 = 3.321928094887362
+comptime atan2_libm = libm_call_binary["atan2f", "atan2"]
 
 
 def _int_dtype[dtype: DType]() -> DType:
@@ -77,18 +78,6 @@ def _max_ulp[dtype: DType](name: StaticString) -> Int:
 def _padded(n: Int) -> Int:
     comptime pad_multiple = 1024
     return ceildiv(n, pad_multiple) * pad_multiple
-
-
-def _libm_atan2[
-    dtype: DType
-](y: Scalar[dtype], x: Scalar[dtype]) -> Scalar[
-    dtype
-] where dtype.is_floating_point():
-    comptime if dtype == .float64:
-        return _external_call_const["atan2", Float64](y, x).cast[dtype]()
-    return _external_call_const["atan2f", Float32](
-        y.cast[.float32](), x.cast[.float32]()
-    ).cast[dtype]()
 
 
 def _check[
@@ -202,12 +191,12 @@ def _test_atan[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_span, var in_span}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var v = in_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan(v))
 
     comptime pack = simd_width_of[dtype, target=ctx.target]()
-    elementwise[pack, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack](func, Coord(length), ctx)
 
     var worst = 0
     with in_dev.map_to_host() as ih, out_dev.map_to_host() as oh:
@@ -286,13 +275,13 @@ def _test_atan2[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_span, var y_span, var x_span}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var y = y_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var x = x_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan2(y, x))
 
     comptime pack = simd_width_of[dtype, target=ctx.target]()
-    elementwise[pack, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack](func, Coord(length), ctx)
 
     var worst = 0
     with y_dev.map_to_host() as yh, x_dev.map_to_host() as xh:
@@ -300,17 +289,17 @@ def _test_atan2[
             for i in range(n):
                 var y = yh[i]
                 var x = xh[i]
-                var expected = _libm_atan2(y, x)
+                var expected = atan2_libm(y, x)
                 var yf = y.cast[.float64]()
                 var xf = x.cast[.float64]()
                 _check("atan2", oh[i], expected, yf, xf, worst)
     print("atan2", dtype, "max ulp vs libm:", worst, "over", n, "inputs")
 
 
-def _parse_hex(digits: StringSlice) -> UInt64:
+def _parse_hex(digits: StringSpan) -> UInt64:
     var v: UInt64 = 0
-    for c in digits.codepoint_slices():
-        var d = ord(c)
+    for c in digits.codepoints():
+        var d = Int(c)
         v = v * 16 + UInt64(d - 48 if d <= 57 else d - 55)
     return v
 
@@ -350,13 +339,13 @@ def _test_atan2_reference[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_span, var y_span, var x_span}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var y = y_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var x = x_span.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_span.unsafe_ptr().unsafe_store[width=simd_width](idx, atan2(y, x))
 
     comptime pack = simd_width_of[dtype, target=ctx.target]()
-    elementwise[pack, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack](func, Coord(length), ctx)
 
     var worst = 0
     with out_dev.map_to_host() as oh:
@@ -660,13 +649,13 @@ def test_tiny_result_bits() raises:
         def func[
             width: Int, alignment: Int = 1
         ](idx0: Coord) {var ys, var xs, var a, var b}:
-            var i = Int(idx0[0].value())
+            var i = Int(idx0[0])
             var y = ys.unsafe_ptr().unsafe_load[width=width](i)
             var x = xs.unsafe_ptr().unsafe_load[width=width](i)
             a.unsafe_ptr().unsafe_store[width=width](i, atan(y))
             b.unsafe_ptr().unsafe_store[width=width](i, atan2(y, x))
 
-        elementwise[4, target="gpu"](func, Coord(n), ctx)
+        elementwise[4](func, Coord(n), ctx)
         with ad.map_to_host() as ah, bd.map_to_host() as bh:
             for i in range(n):
                 assert_equal(bitcast[.uint32, 1](ah[i]), y_bits[i])

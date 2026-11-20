@@ -17,11 +17,11 @@
 # also correct on targets that flush subnormals (Apple GPUs). References are
 # correctly rounded (MPFR via mpmath).
 
-from std.math import inf, isfinite, isnan, j0, j1, nan, y0, y1
-from std.sys import bit_width_of, default_accelerator, simd_width_of
+from std.math import align_up, inf, isfinite, isnan, j0, j1, nan, y0, y1
+from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.testing import TestSuite, assert_false, assert_true
 
 from std.utils.coord import Coord
@@ -41,7 +41,7 @@ def _run[
     var length = len(xs)
     comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     # Pad to a whole number of packs so every lane holds a real input.
-    var padded = ((length + pack_size - 1) // pack_size) * pack_size
+    var padded = align_up(length, pack_size)
     var in_device = ctx.enqueue_create_buffer[dtype](padded)
     var out_device = ctx.enqueue_create_buffer[dtype](padded)
     with in_device.map_to_host() as in_host:
@@ -54,13 +54,13 @@ def _run[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_buffer, var in_buffer}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx, math_fn(val)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+    elementwise[pack_size](func, Coord(padded), ctx)
 
     var out = List[Scalar[dtype]]()
     with out_device.map_to_host() as out_host:

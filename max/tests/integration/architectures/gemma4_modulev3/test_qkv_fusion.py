@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the Gemma4 ModuleV3 graph-time QKV weight fusion.
 
-The graph arch pre-fuses Q/K/V in the checkpoint adapter
-(``fuse_gemma4_projection_weights``); the ModuleV3 arch keeps the native
-per-projection weights and fuses at graph-build time via the
-``Gemma4Attention.wqkv`` property. These tests pin the same contract:
+The ModuleV3 arch keeps the native per-projection weights and fuses at
+graph-build time via the ``Gemma4Attention.wqkv`` property. These tests pin
+the contract:
 
 - sliding layers fuse ``[q_proj | k_proj | v_proj]`` by row-concat;
 - global k==v layers register no ``v_proj`` and fuse ``[q_proj | k_proj]``;
@@ -25,12 +24,11 @@ per-projection weights and fuses at graph-build time via the
 from __future__ import annotations
 
 import numpy as np
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
@@ -41,6 +39,7 @@ from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
 from max.pipelines.architectures.gemma4_modulev3.layers.rotary_embedding import (
     ProportionalRotaryEmbedding,
 )
+from max.tensor import Tensor, default_device, default_dtype
 
 # Tiny structural dims (the contract is layout, not scale).
 _HIDDEN = 32

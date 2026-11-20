@@ -90,7 +90,7 @@ def run_one_case[
 ](ctx: DeviceContext, spec: CaseSpec, check: Bool = False) raises:
     var rows = spec.rows
     var cols = spec.cols
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
 
     var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
     var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
@@ -122,19 +122,17 @@ def run_one_case[
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.load[width=width, alignment=alignment](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment](
-            idx, rebind[SIMD[dtype, width]](val)
+        out_buf.store[alignment=alignment](
+            coords, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm[dtype, 2, target="gpu"](
+    layer_norm[dtype, 2](
         input_fn,
         output_fn,
         Coord(shape),
@@ -183,12 +181,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "rows=",
-                specs[i].rows,
-                "cols=",
-                specs[i].cols,
+                t"FUZZ_SPEC idx= {i} rows= {specs[i].rows} cols="
+                t" {specs[i].cols}"
             )
         return
 
@@ -201,7 +195,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print("=== fuzz_layer_norm seed=", the_seed, "budget=", the_budget, "===")
+    print(t"=== fuzz_layer_norm seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

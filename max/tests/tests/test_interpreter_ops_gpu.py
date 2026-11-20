@@ -26,6 +26,7 @@ import numpy as np
 import pytest
 import torch
 from max import _interpreter
+from max import functional as F
 from max._interpreter_ops import GC_FAMILIES, adopted_from_store
 from max._interpreter_ops.handlers import (
     _handle_squeeze_shape,
@@ -34,38 +35,38 @@ from max._interpreter_ops.handlers import (
 )
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random as max_random
-from max.experimental import realization_context as rc
-from max.experimental.executor import (
+from max.functional import (
+    allgather as all_gather,
+)
+from max.functional import (
+    allreduce_sum as all_reduce_sum,
+)
+from max.functional import random as max_random
+from max.functional import (
+    reduce_scatter,
+)
+from max.functional import (
+    transfer_to as df_shard,
+)
+from max.graph import BufferType as GBufferType
+from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Type as GType
+from max.graph import ops as graph_ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.tensor import realization_context as rc
+from max.tensor.executor import (
     InterpreterExecutor,
     set_default_executor,
 )
-from max.experimental.functional import (
-    allgather as all_gather,
-)
-from max.experimental.functional import (
-    allreduce_sum as all_reduce_sum,
-)
-from max.experimental.functional import (
-    reduce_scatter,
-)
-from max.experimental.functional import (
-    transfer_to as df_shard,
-)
-from max.experimental.realization_context import set_seed
-from max.experimental.sharding import (
+from max.tensor.realization_context import set_seed
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, realization_context
-from max.graph import BufferType as GBufferType
-from max.graph import DeviceRef, Graph, TensorType
-from max.graph import Type as GType
-from max.graph import ops as graph_ops
+from max.tensor.tensor import Tensor, realization_context
 
 
 @pytest.fixture(autouse=True)
@@ -3729,7 +3730,7 @@ class TestScatterNdGPU:
     def test_2d_row_scatter(self) -> None:
         """Test scatter_nd on a 2D GPU tensor with 1-D partial indexing."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         x_torch = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
@@ -3764,7 +3765,7 @@ class TestScatterNdGPU:
     def test_2d_element_scatter(self) -> None:
         """Test scatter_nd on a 2D GPU tensor with full 2-D indexing."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         x_torch = torch.zeros(3, 3, dtype=torch.float32, device="cuda")
         updates_torch = torch.tensor(
@@ -3794,7 +3795,7 @@ class TestScatterNdGPU:
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_nd on GPU with float32 and float16 dtypes."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         torch_dtype = {
             DType.float32: torch.float32,
@@ -3872,7 +3873,7 @@ class TestScatterNdReduceGPU:
     def test_reduce_dtypes(self, reduce_op: str, dtype: DType) -> None:
         """scatter_nd reduce on GPU across float and int dtypes."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         torch_dtype = {
             DType.float32: torch.float32,
@@ -3909,7 +3910,7 @@ class TestScatterNdReduceGPU:
     def test_duplicate_indices(self, reduce_op: str) -> None:
         """Two updates hit slot 1; the reducer must fold both, not race."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         # Base + update values chosen so folding both duplicates is observable
         # for each reducer (dropping either changes slot 1).
@@ -4000,7 +4001,7 @@ class TestScatterElementsGPU:
         is no deterministic reference for collisions.
         """
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         device = Accelerator()
         x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
@@ -4052,7 +4053,7 @@ class TestScatterElementsGPU:
         (axis 1), exercising each reducer's atomic accumulate path.
         """
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         device = Accelerator()
         x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
@@ -4172,6 +4173,50 @@ class TestDistributedAllreduceSumHandler:
             assert isinstance(out, Buffer)
             np.testing.assert_allclose(
                 out.to(CPU()).to_numpy(), expected, rtol=1e-5
+            )
+
+    @_NEED_2_GPUS
+    def test_allreduce_sum_low_level_bfloat16(self) -> None:
+        """Same as `test_allreduce_sum_low_level`, but bfloat16."""
+        # Uses torch, not NumPy, to build/check the data: torch's dlpack
+        # supports bfloat16, NumPy's doesn't (the bug this regresses).
+        shape = [4, 4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.bfloat16, shape, gpu0),
+            TensorType(DType.bfloat16, shape, gpu1),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("allreduce_bf16_test", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            results = graph_ops.allreduce.sum(
+                [t0.tensor, t1.tensor], [b0.buffer, b1.buffer]
+            )
+            graph.output(*results)
+
+        a_torch = torch.arange(16, dtype=torch.bfloat16).reshape(shape)
+        b_torch = 10 * torch.arange(16, dtype=torch.bfloat16).reshape(shape)
+        expected = a_torch + b_torch
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_dlpack(a_torch).to(dev0),
+            Buffer.from_dlpack(b_torch).to(dev1),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        for out in outputs:
+            assert isinstance(out, Buffer)
+            torch.testing.assert_close(
+                torch.from_dlpack(out.to(CPU())), expected
             )
 
     @_NEED_2_GPUS
@@ -4618,10 +4663,18 @@ class TestResizeNearestGPU:
     @pytest.mark.parametrize(
         "coordinate_transform_mode, round_mode",
         # half_pixel with floor reads below index 0 without the kernel clamp.
-        [(0, 0), (0, 2), (1, 1), (2, 3)],
+        [
+            (CoordinateTransformMode.HALF_PIXEL, RoundMode.HALF_DOWN),
+            (CoordinateTransformMode.HALF_PIXEL, RoundMode.FLOOR),
+            (CoordinateTransformMode.ALIGN_CORNERS, RoundMode.HALF_UP),
+            (CoordinateTransformMode.ASYMMETRIC, RoundMode.CEIL),
+        ],
     )
     def test_matches_cpu(
-        self, dtype: DType, coordinate_transform_mode: int, round_mode: int
+        self,
+        dtype: DType,
+        coordinate_transform_mode: CoordinateTransformMode,
+        round_mode: RoundMode,
     ) -> None:
         # Distinct small integers are exact in float16 and bfloat16, so a wrong
         # source index changes the output.

@@ -40,7 +40,7 @@ than the column half.
 
 from std.time import perf_counter_ns
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import TileTensor, row_major
 from structured_kernels.trace_buf import GmemTrace
@@ -270,9 +270,6 @@ def _launch[
             grid_dim=rows,
             block_dim=_PTOPK_BLOCK,
             shared_mem_bytes=_HSEL_SMEM_BYTES,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(_HSEL_SMEM_BYTES)
-            ),
         )
         return
 
@@ -297,9 +294,6 @@ def _launch[
         grid_dim=rows,
         block_dim=_PTOPK_BLOCK,
         shared_mem_bytes=_HSEL_SMEM_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(_HSEL_SMEM_BYTES)
-        ),
     )
 
 
@@ -378,16 +372,9 @@ def _run[
     comptime col_rounds = _hsel_half_rounds[_HSEL_TAIL_BITS, 32]()
     var arm = _pick_arm(N, K, unordered, deterministic)
     print(
-        "SCHED arm",
-        arm,
-        "tail_bits",
-        _HSEL_TAIL_BITS,
-        "sig_bits",
-        sched,
-        "VAL_ROUNDS",
-        val_rounds,
-        "COL_ROUNDS",
-        col_rounds if _arm_runs_column_half(arm) else 0,
+        t"SCHED arm {arm} tail_bits {_HSEL_TAIL_BITS} sig_bits"
+        t" {sched} VAL_ROUNDS {val_rounds} COL_ROUNDS"
+        t" {col_rounds if _arm_runs_column_half(arm) else 0}"
     )
 
     print("TRACE", rows, N, K, dist, HSEL_TRACE_EVENTS, unordered, in_dtype)

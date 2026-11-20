@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph 3b: Euler scheduler step component for Flux2Executor.
 
 Used when TaylorSeer is enabled.  Applies the Euler update
@@ -25,7 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph import Module as GraphModule
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import traced
@@ -52,6 +51,7 @@ class EulerStepModule(Module):
         noise_pred: TensorValue,
         dt: TensorValue,
     ) -> TensorValue:
+        """Advances the latents one Euler step."""
         latents_dtype = latents.dtype
         latents_f32 = ops.cast(latents, DType.float32)
         noise_pred_f32 = ops.cast(noise_pred, DType.float32)
@@ -60,6 +60,7 @@ class EulerStepModule(Module):
         return updated
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         return (
             # latents: (B, seq, C) model dtype
             TensorType(

@@ -15,6 +15,7 @@ import os
 
 import numpy as np
 import pytest
+from max._core.driver import _batch_copy_rows
 from max.driver import (
     CPU,
     Accelerator,
@@ -282,6 +283,26 @@ def test_batch_inplace_copy_peer_device_parity() -> None:
             loop_dst.to(CPU()).to_numpy(),
             err_msg=f"peer DtoD batch vs per-copy mismatch at index {i}",
         )
+
+
+def test_batch_copy_rows_peer_device() -> None:
+    """Peer rows (GPU1→GPU0) land where per-row views would put them."""
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+    assert gpu0.can_access(gpu1), "peer access required for peer DtoD batch"
+
+    src_np = np.arange(48, dtype=np.uint8).reshape(6, 8)
+    src = Buffer.from_numpy(src_np).to(gpu1)
+    dst = Buffer.from_numpy(np.zeros((6, 8), dtype=np.uint8)).to(gpu0)
+    dst_rows, src_rows = [4, 0, 2], [1, 5, 3]
+
+    gpu1.synchronize()
+    _batch_copy_rows([dst] * 3, [src] * 3, dst_rows, src_rows)
+    gpu0.synchronize()
+
+    expected = np.zeros((6, 8), dtype=np.uint8)
+    expected[dst_rows] = src_np[src_rows]
+    np.testing.assert_array_equal(dst.to(CPU()).to_numpy(), expected)
 
 
 def test_distinct_accelerator_ids_open_distinct_devices() -> None:

@@ -6,7 +6,7 @@ index c14ff18..d7efb91 100644
      fail("Unable to determine version from " + defs_bzl_file)
  
  def _get_multi_python_versions(rctx, python_toolchain_repo):
-+    return ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
++    return ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
      pip_bzl_file = python_toolchain_repo.relative("//:pip.bzl")
      content = rctx.read(pip_bzl_file)
  

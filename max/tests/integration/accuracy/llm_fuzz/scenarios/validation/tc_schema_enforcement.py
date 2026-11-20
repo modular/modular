@@ -2037,6 +2037,9 @@ class TCSchemaEnforcement(BaseScenario):
                 "'gamma'. The last node's next should be null."
             ),
             validate=validate,
+            # A one-node list is schema-valid, so the depth check measures what
+            # the model volunteers; a sampled draw stops at one node sometimes.
+            temperature=0,
         )
 
     # ------------------------------------------------------------------
@@ -2948,6 +2951,7 @@ class TCSchemaEnforcement(BaseScenario):
                             "name": {"type": "string"},
                             "members": {
                                 "type": "array",
+                                "minItems": 2,
                                 "items": {"$ref": "#/$defs/Person"},
                             },
                         },
@@ -3114,6 +3118,7 @@ class TCSchemaEnforcement(BaseScenario):
                             "order_id": {"type": "string"},
                             "items": {
                                 "type": "array",
+                                "minItems": 2,
                                 "items": {"$ref": "#/$defs/LineItem"},
                             },
                         },
@@ -3266,6 +3271,7 @@ class TCSchemaEnforcement(BaseScenario):
                 "properties": {
                     "assignments": {
                         "type": "array",
+                        "minItems": 2,
                         "items": {"$ref": "#/$defs/RoleAssignment"},
                     },
                 },
@@ -4381,6 +4387,9 @@ class TCSchemaEnforcement(BaseScenario):
                     "pipeline": {"type": "string"},
                     "stages": {
                         "type": "array",
+                        # The check below wants two or more stages; the schema
+                        # says so, so a grammar that enforces it is what passes.
+                        "minItems": 2,
                         "items": {
                             "type": "object",
                             "properties": {
@@ -4493,6 +4502,9 @@ class TCSchemaEnforcement(BaseScenario):
             },
         },
         "required": ["prop3"],
+        # `_validate_shared_defs_args` refuses undeclared top-level keys, so
+        # the schema says so: without it an extra key is valid JSON Schema.
+        "additionalProperties": False,
         "title": "tool_name",
     }
 

@@ -29,6 +29,7 @@ bf16 that's `cols % 8 == 0` and `cols <= 8192`).
 from std.sys import size_of
 from std.random import random_float64
 from std.memory import bitcast
+from std.memory.alloc import unsafe_alloc
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 
@@ -74,46 +75,41 @@ def _neg_zero_bits() -> Scalar[dtype]:
     return bitcast[dtype, 1](UInt16(0x8000))[0]
 
 
-def _run_rms_norm_unfused(
+def _run_rms_norm_unfused[
+    epsilon: Float32
+](
     in_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
-    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     """Per-device RMSNorm reading [M, K] from `in_ptr` and writing [M, K] to
     `out_ptr`. Wraps `rms_norm_gpu` with the minimal input/output lambdas it
     requires. Takes raw pointers (not DeviceBuffer) so callers can pass slice
     offsets into a larger buffer."""
-    var shape = Index(M, K)
+    var shape = (M, K)
     var in_view = TileTensor(in_ptr, row_major(Coord(shape)))
     var out_view = TileTensor(out_ptr, row_major(Coord(shape)))
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(Index(K))))
 
     @inline(.always)
-    @__copy_capture(in_view)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        var idx = in_view.layout(coords)
-        return in_view.raw_load[width=width](idx)
+    def input_fn[width: Int](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+        return in_view.load[width=width](coords)
 
     @inline(.always)
-    @__copy_capture(out_view)
-    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = out_view.layout(coords)
-        out_view.raw_store[width=width, alignment=alignment](idx, val)
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_view} -> None:
+        out_view.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
         2,  # rank
-        input_fn,
-        output_fn,
+        epsilon=epsilon,
+        weight_offset=Float32(0),
         multiply_before_cast=True,
-    ](Coord(shape), gamma_view, epsilon, Scalar[dtype](0), ctx)
+    ](input_fn, output_fn, Coord(shape), gamma_view, ctx)
 
 
 def rmsnorm_test[
@@ -122,7 +118,7 @@ def rmsnorm_test[
     seed_neg_zero: Bool = False,
     interleave_zero_rows: Bool = False,
 ](
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     M: Int,
     K: Int,
     iters: Int = NUM_ITERS,
@@ -144,14 +140,8 @@ def rmsnorm_test[
     not launch, so the generation rotation stays in step and every real call
     still matches the reference."""
     print(
-        "==== fused Lamport AR+RMSNorm  ngpus=",
-        ngpus,
-        " M=",
-        M,
-        " K=",
-        K,
-        " iters=",
-        iters,
+        t"==== fused Lamport AR+RMSNorm  ngpus= {ngpus}  M= {M}  K= {K}  iters="
+        t" {iters}"
     )
 
     var act_size = M * K
@@ -169,7 +159,7 @@ def rmsnorm_test[
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
-    var gamma_host = alloc[Scalar[dtype]](K)
+    var gamma_host = unsafe_alloc[Scalar[dtype]](K)
     for i in range(K):
         gamma_host[i] = random_float64(min=0.5, max=1.5).cast[dtype]()
     var act_host = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
@@ -178,7 +168,7 @@ def rmsnorm_test[
 
     var neg_zero = _neg_zero_bits()
     for g in range(ngpus):
-        var a = alloc[Scalar[dtype]](act_size)
+        var a = unsafe_alloc[Scalar[dtype]](act_size)
         for i in range(act_size):
             if seed_neg_zero and (i % 2 == 0):
                 a[i] = neg_zero
@@ -263,7 +253,7 @@ def rmsnorm_test[
         list_of_ctx[g].synchronize()
 
     for g in range(ngpus):
-        _run_rms_norm_unfused(
+        _run_rms_norm_unfused[EPS](
             rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
@@ -275,7 +265,6 @@ def rmsnorm_test[
             ),
             M,
             K,
-            EPS,
             list_of_ctx[g],
         )
     for g in range(ngpus):
@@ -283,21 +272,21 @@ def rmsnorm_test[
 
     # Copy rank 0's unfused output back to host as the comparison reference
     # (all ranks compute identical AR+RMSNorm outputs).
-    var expected_host = alloc[Scalar[dtype]](act_size)
+    var expected_host = unsafe_alloc[Scalar[dtype]](act_size)
     list_of_ctx[0].enqueue_copy(expected_host, unfused_out[0])
     list_of_ctx[0].synchronize()
-    var expected = alloc[Float32](act_size)
+    var expected = unsafe_alloc[Float32](act_size)
     for i in range(act_size):
         expected[i] = expected_host[i].cast[.float32]()
 
     # ---- Fused kernel: `lamport_allreduce_rmsnorm` on each device. ----
-    var host = alloc[Scalar[dtype]](act_size)
-    var got = alloc[Float32](act_size)
+    var host = unsafe_alloc[Scalar[dtype]](act_size)
+    var got = unsafe_alloc[Float32](act_size)
 
     for it in range(iters):
         comptime if interleave_zero_rows:
             comptime for g in range(ngpus):
-                lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+                lamport_allreduce_rmsnorm[dtype, ngpus](
                     g,
                     rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         act_in[g].unsafe_ptr()
@@ -316,7 +305,7 @@ def rmsnorm_test[
                 )
         group_start()
         comptime for g in range(ngpus):
-            lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+            lamport_allreduce_rmsnorm[dtype, ngpus](
                 g,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_in[g].unsafe_ptr()
@@ -348,18 +337,18 @@ def rmsnorm_test[
         print("  [ok] iter", it, "matches unfused reference")
 
     for g in range(ngpus):
-        act_host[g].free()
-    gamma_host.free()
-    expected_host.free()
-    expected.free()
-    host.free()
-    got.free()
+        act_host[g].unsafe_free()
+    gamma_host.unsafe_free()
+    expected_host.unsafe_free()
+    expected.unsafe_free()
+    host.unsafe_free()
+    got.unsafe_free()
     print("PASSED\n")
 
 
 def unsynced_skew_test[
     ngpus: Int
-](list_of_ctx: List[DeviceContext], M: Int, K: Int) raises:
+](list_of_ctx: List[DeviceContext[]], M: Int, K: Int) raises:
     """Enqueue NUM_UNSYNCED_ITERS fused calls back-to-back with NO cross-rank
     sync between calls, then verify every call's slice in a single final pass.
 
@@ -399,7 +388,7 @@ def unsynced_skew_test[
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
-    var gamma_host = alloc[Scalar[dtype]](K)
+    var gamma_host = unsafe_alloc[Scalar[dtype]](K)
     for i in range(K):
         gamma_host[i] = random_float64(min=0.5, max=1.5).cast[dtype]()
 
@@ -407,7 +396,7 @@ def unsynced_skew_test[
         # Per-call value for rank g, call it: (g+1) + (it % 5). Constant
         # across the slice, varies across calls, < 256 so the integer
         # ngpus-sum is exact in bf16.
-        var h = alloc[Scalar[dtype]](total_size)
+        var h = unsafe_alloc[Scalar[dtype]](total_size)
         for it in range(NUM_UNSYNCED_ITERS):
             var v = Scalar[dtype](Scalar[dtype](g + 1) + Scalar[dtype](it % 5))
             for j in range(slice_size):
@@ -459,7 +448,7 @@ def unsynced_skew_test[
         var in_tensors = Array[_, ngpus](
             fill_with=lambda (g: Int) -> InType: InType(
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    act_big[g].unsafe_ptr() + base
+                    act_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 act_layout,
             )
@@ -467,7 +456,7 @@ def unsynced_skew_test[
         var ar_out_tensors = Array[_, ngpus](
             fill_with=lambda (g: Int) -> OutType: OutType(
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    ar_big[g].unsafe_ptr() + base
+                    ar_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 act_layout,
             )
@@ -485,19 +474,18 @@ def unsynced_skew_test[
         # rms_norm_gpu on this slice's AR output per device. Pointer-offset
         # into the big buffer (no DeviceBuffer slice API needed).
         for g in range(ngpus):
-            _run_rms_norm_unfused(
+            _run_rms_norm_unfused[EPS](
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    ar_big[g].unsafe_ptr() + base
+                    ar_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    unfused_big[g].unsafe_ptr() + base
+                    unfused_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 M,
                 K,
-                EPS,
                 list_of_ctx[g],
             )
         for g in range(ngpus):
@@ -507,13 +495,13 @@ def unsynced_skew_test[
     for it in range(NUM_UNSYNCED_ITERS):
         var base = it * slice_size
         comptime for g in range(ngpus):
-            lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+            lamport_allreduce_rmsnorm[dtype, ngpus](
                 g,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    act_big[g].unsafe_ptr() + base
+                    act_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                    fused_big[g].unsafe_ptr() + base
+                    fused_big[g].unsafe_ptr().unsafe_offset(base)
                 ),
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
@@ -530,10 +518,10 @@ def unsynced_skew_test[
     for g in range(ngpus):
         list_of_ctx[g].synchronize()
 
-    var unfused_host = alloc[Scalar[dtype]](total_size)
-    var fused_host = alloc[Scalar[dtype]](total_size)
-    var expected_f32 = alloc[Float32](slice_size)
-    var got_f32 = alloc[Float32](slice_size)
+    var unfused_host = unsafe_alloc[Scalar[dtype]](total_size)
+    var fused_host = unsafe_alloc[Scalar[dtype]](total_size)
+    var expected_f32 = unsafe_alloc[Float32](slice_size)
+    var got_f32 = unsafe_alloc[Float32](slice_size)
 
     # Verify rank 0's slices against rank 0's unfused reference.
     list_of_ctx[0].enqueue_copy(unfused_host, unfused_big[0])
@@ -554,12 +542,12 @@ def unsynced_skew_test[
         )
 
     for g in range(ngpus):
-        act_host[g].free()
-    gamma_host.free()
-    unfused_host.free()
-    fused_host.free()
-    expected_f32.free()
-    got_f32.free()
+        act_host[g].unsafe_free()
+    gamma_host.unsafe_free()
+    unfused_host.unsafe_free()
+    fused_host.unsafe_free()
+    expected_f32.unsafe_free()
+    got_f32.unsafe_free()
     print("  [ok] all", NUM_UNSYNCED_ITERS, "unsynced slices match")
     print("PASSED\n")
 
@@ -571,7 +559,7 @@ def main() raises:
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     comptime ngpus = 2
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(ngpus):
         ctx.append(DeviceContext(device_id=i))
 

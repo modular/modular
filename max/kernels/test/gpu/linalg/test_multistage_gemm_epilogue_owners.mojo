@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import assert_equal
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulConfig
@@ -22,13 +22,14 @@ from std.utils.index import Index
 def test_epilogue_owners[
     dtype: DType, PARTITIONS: Int
 ](ctx: DeviceContext,) raises:
+    print("epilogue owners:", dtype, "warp k partitions:", PARTITIONS)
     comptime M = 32
     comptime N = 32
     comptime K = 512
     comptime GUARD = 32
     comptime config = MatmulConfig[dtype, dtype, dtype, True](
-        block_tile_shape=Index(32, 32, 32),
-        warp_tile_shape=Index(16, 16, 32),
+        block_tile_shape=(Int(32), Int(32), Int(32)),
+        warp_tile_shape=(Int(16), Int(16), Int(32)),
         num_pipeline_stages=3,
         num_warp_k_partitions=PARTITIONS,
     )
@@ -60,6 +61,9 @@ def test_epilogue_owners[
         c_linear_idx_type=c.linear_idx_type,
         a_linear_idx_type=a.linear_idx_type,
         b_linear_idx_type=b.linear_idx_type,
+        c_engine=c.Engine,
+        a_engine=a.Engine,
+        b_engine=b.Engine,
         config=config,
     ]
     ctx.enqueue_function[kernel](
@@ -69,9 +73,6 @@ def test_epilogue_owners[
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(config.shared_mem_usage())
-        ),
     )
     with a_device.map_to_host() as a, b_device.map_to_host() as b, c_device.map_to_host() as c:
         for row in range(M):

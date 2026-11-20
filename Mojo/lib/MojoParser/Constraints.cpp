@@ -24,7 +24,6 @@
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/DeclResolver.h"
-#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "llvm/ADT/STLExtras.h"
 
 using namespace M;
@@ -80,7 +79,7 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
     // because it calls a function that is not always_inline("builtin").
     if (op.getOpcode() == POC::Apply) {
       auto callee = op.getOperand(0);
-      if (auto sym = dyn_cast<SymbolConstantAttr>(callee)) {
+      if (auto sym = FuncSymbolGenerator::dynCast(callee)) {
         ASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(sym.getSymbol());
         diag.attachNote(*calleeDecl)
             << "cannot evaluate call to non-builtin function declared here";
@@ -96,32 +95,13 @@ TriBool LIT::canDischargeConstraintsInScope(
     ArrayRef<ConstraintAttr> origConstraints,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
-    ParameterEvaluator *evaluator,
-    ArrayRef<ConstraintAttr> additionalAssumptions,
+    ParameterEvaluator *evaluator, TypedAttr additionalAssumptions,
     llvm::BitVector *provenConstraints) {
   if (constraints.empty())
     return TriBool::yes();
 
-  SmallVector<ConstraintAttr> assumptions;
-  declScope.getKnownAssumptionsIncludingParents(assumptions);
-  // Add any additional assumptions passed in (e.g., conformance constraint).
-  assumptions.append(additionalAssumptions.begin(),
-                     additionalAssumptions.end());
-
-  SmallVector<TypedAttr> overallAssumptionOperands;
-  for (ConstraintAttr assumption : assumptions)
-    overallAssumptionOperands.push_back(
-        getCanonicalAttr(assumption.getProposition()));
-
-  TypedAttr overallAssumption;
-  if (overallAssumptionOperands.empty())
-    overallAssumption = SIMDAttr::getScalarBool(
-        constraints.front().getProposition().getContext(), true);
-  else if (overallAssumptionOperands.size() == 1)
-    overallAssumption = overallAssumptionOperands.front();
-  else
-    overallAssumption =
-        ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
+  TypedAttr overallAssumption = conjoinAssumptions(
+      declScope.getScopeAssumptions(), additionalAssumptions);
 
   if (provenConstraints)
     provenConstraints->resize(constraints.size());
@@ -259,11 +239,13 @@ ConstraintAttr LIT::buildBranchAssumption(TypedAttr cond, bool invertCondition,
   return ConstraintAttr::get(branchCondition, loc, /*message=*/StringAttr());
 }
 
-bool LIT::attrConformsToTraitUnderAssumptions(
-    TypedAttr actualAttr, TraitType expectedTrait, SharedState &shared,
-    ArrayRef<ConstraintAttr> assumptions) {
+bool LIT::attrConformsToTraitUnderAssumptions(TypedAttr actualAttr,
+                                              TraitType expectedTrait,
+                                              SharedState &shared,
+                                              TypedAttr assumptions) {
   ASTType actualType(actualAttr.getType());
-  if (actualType.doesConformTo(expectedTrait, shared, {}).isTrue()) {
+  if (actualType.doesConformTo(expectedTrait, shared, shared.noAssumptions)
+          .isTrue()) {
     return true;
   }
 
@@ -279,6 +261,6 @@ bool LIT::attrConformsToTraitUnderAssumptions(
     return false;
 
   return ASTType(refinedBound)
-      .doesConformTo(expectedTrait, shared, {})
+      .doesConformTo(expectedTrait, shared, shared.noAssumptions)
       .isTrue();
 }

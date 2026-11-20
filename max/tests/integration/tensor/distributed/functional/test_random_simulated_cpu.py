@@ -13,7 +13,7 @@
 """Random ops tests on simulated CPU mesh — inherits all logic from _random_ops."""
 
 from max.driver import CPU
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from functional._random_ops import RandomTests
 

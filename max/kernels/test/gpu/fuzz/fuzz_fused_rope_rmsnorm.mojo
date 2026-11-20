@@ -67,7 +67,6 @@ from layout import (
     row_major,
     TileTensor,
 )
-from std.utils.index import IndexList
 from nn.attention.gpu.mla_graph import mla_fused_rope_rmsnorm_quantization
 
 from _fuzz import (
@@ -320,7 +319,7 @@ def run_one_case(
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1] == 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -477,13 +476,13 @@ def run_one_case(
     )
 
     @inline(.always)
-    @__copy_capture(latent)
-    @__parameter
-    def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[kv_type, width]:
-        return latent.load[width=width]((coords[0], coords[1]))
+    def kv_input_fn[
+        width: Int
+    ](coords: Coord[Int, Int]) {var latent} -> SIMD[kv_type, width]:
+        return latent.load[width=width](coords)
 
     # === Kernel under test ===================================================
-    mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
+    mla_fused_rope_rmsnorm_quantization(
         q_rope_out,
         q_rope.as_imm(),
         row_offsets.as_imm(),
@@ -492,6 +491,7 @@ def run_one_case(
         kv_collection,
         UInt32(0),  # layer_idx
         EPS,
+        kv_input_fn,
         ctx,
     )
     ctx.synchronize()
@@ -670,24 +670,13 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch_size=",
-                specs[i].batch_size,
-                "max_cache_len=",
-                specs[i].max_cache_len,
-                "min_cache_len=",
-                specs[i].min_cache_len,
-                "seq_len=",
-                specs[i].seq_len,
-                "pattern=",
-                specs[i].pattern,
-                "ragged_q=",
-                specs[i].ragged_q,
-                "seed=",
-                specs[i].seed,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} batch_size="
+                t" {specs[i].batch_size} max_cache_len="
+                t" {specs[i].max_cache_len} min_cache_len="
+                t" {specs[i].min_cache_len} seq_len="
+                t" {specs[i].seq_len} pattern= {specs[i].pattern} ragged_q="
+                t" {specs[i].ragged_q} seed= {specs[i].seed} dist="
+                t" {specs[i].dist}"
             )
         return
 
@@ -710,13 +699,8 @@ def main() raises:
 
     # Default: standalone in-process fuzz.
     print(
-        "=== fuzz_fused_rope_rmsnorm num_heads=",
-        num_q_heads,
-        "seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_fused_rope_rmsnorm num_heads= {num_q_heads} seed="
+        t" {the_seed} budget= {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

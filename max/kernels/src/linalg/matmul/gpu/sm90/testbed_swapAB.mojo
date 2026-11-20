@@ -30,7 +30,6 @@ from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, TileTensor, row_major
 from internal_utils import assert_almost_equal
 from std.random import rand
-from std.utils.index import Index, IndexList
 
 from .config import MatmulConfig as MatmulConfigSM90
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
@@ -81,9 +80,9 @@ def test_matmul_sm90_swapAB_comparison[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # Convert SM90 configs to base configs for the kernel
     comptime base_config = config.to_base_config()
@@ -107,23 +106,19 @@ def test_matmul_sm90_swapAB_comparison[
 
     # Host allocations
     var a_host_alloc = alloc(
-        AllocLayout[Scalar[a_type]](count=a_size)
+        AllocLayout[Scalar[a_type]](length=a_size)
     ).into_managed()
     var b_host_alloc = alloc(
-        AllocLayout[Scalar[b_type]](count=b_size)
+        AllocLayout[Scalar[b_type]](length=b_size)
     ).into_managed()
     var c_normal_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_normal_host_ptr: UnsafePointer[
-        Scalar[c_type], origin_of(c_normal_host_alloc)
-    ] = c_normal_host_alloc.unsafe_ptr()
+    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_swapAB_host_ptr: UnsafePointer[
-        Scalar[c_type], origin_of(c_swapAB_host_alloc)
-    ] = c_swapAB_host_alloc.unsafe_ptr()
+    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -477,18 +472,18 @@ def test_matmul_sm90_swapAB_comparison_v2[
             when `has_compute_fn` is set.
     """
     comptime transpose_b = True
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     # Build compile-time configs directly using BaseMatmulConfig
     comptime base_config = BaseMatmulConfig[
         a_type, b_type, c_type, transpose_b
     ](
-        block_tile_shape=Index(BM, BN, BK),
-        warp_tile_shape=Index(MMA_M, MMA_N, BK),
-        mma_shape=Index(MMA_M, MMA_N, MMA_K),
-        cluster_shape=Index(1, 1, 1),
+        block_tile_shape=(BM, BN, BK),
+        warp_tile_shape=(MMA_M, MMA_N, BK),
+        mma_shape=(MMA_M, MMA_N, MMA_K),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=num_pipeline_stages,
         num_k_partitions=num_k_partitions,
         k_group_size=k_group_size,
@@ -500,10 +495,10 @@ def test_matmul_sm90_swapAB_comparison_v2[
     comptime base_config_swapAB = BaseMatmulConfig[
         a_type, b_type, c_type, transpose_b
     ](
-        block_tile_shape=Index(BM_SWAPAB, BN_SWAPAB, BK_SWAPAB),
-        warp_tile_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, BK_SWAPAB),
-        mma_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, MMA_K_SWAPAB),
-        cluster_shape=Index(1, 1, 1),
+        block_tile_shape=(BM_SWAPAB, BN_SWAPAB, BK_SWAPAB),
+        warp_tile_shape=(MMA_M_SWAPAB, MMA_N_SWAPAB, BK_SWAPAB),
+        mma_shape=(MMA_M_SWAPAB, MMA_N_SWAPAB, MMA_K_SWAPAB),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=num_pipeline_stages_swapAB,
         num_k_partitions=num_k_partitions_swapAB,
         k_group_size=k_group_size_swapAB,
@@ -525,23 +520,19 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     # Host allocations
     var a_host_alloc = alloc(
-        AllocLayout[Scalar[a_type]](count=a_size)
+        AllocLayout[Scalar[a_type]](length=a_size)
     ).into_managed()
     var b_host_alloc = alloc(
-        AllocLayout[Scalar[b_type]](count=b_size)
+        AllocLayout[Scalar[b_type]](length=b_size)
     ).into_managed()
     var c_normal_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_normal_host_ptr: UnsafePointer[
-        Scalar[c_type], origin_of(c_normal_host_alloc)
-    ] = c_normal_host_alloc.unsafe_ptr()
+    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
-        AllocLayout[Scalar[c_type]](count=c_size)
+        AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_swapAB_host_ptr: UnsafePointer[
-        Scalar[c_type], origin_of(c_swapAB_host_alloc)
-    ] = c_swapAB_host_alloc.unsafe_ptr()
+    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -734,7 +725,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
                 config=base_config,
                 schedule=MatmulSchedule.NONE,
                 swapAB=False,
-            ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn_normal, ctx)
+            ]((M, N), a_tensor, b_tensor, epilogue_fn_normal, ctx)
         else:
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -766,7 +757,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
             config=base_config_swapAB,
             schedule=MatmulSchedule.NONE,
             swapAB=True,
-        ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn_swapAB, ctx)
+        ]((M, N), a_tensor, b_tensor, epilogue_fn_swapAB, ctx)
     else:
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,

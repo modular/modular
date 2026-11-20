@@ -99,11 +99,17 @@ comptime SERIALIZERS = serializer_table()
 
 
 # MOCO-4947: Two recursive scc in the graph a <-> b, and __deinit__s from ArcPointer
+# TODO(https://github.com/modular/modular/issues/7398): Drop the explicit
+# `__deinit__`s on `Ty` and `Tree` once a synthesized one can prove a field like
+# `ArcPointer[Ty]` is `Deinitable` while `Ty` itself is still being declared.
 struct Ty(ImplicitlyCopyable):
     var v: Optional[ArcPointer[Ty]]
 
     def __init__(out self):
         self.v = None
+
+    def __deinit__(deinit self):
+        pass
 
     comptime leaf = Ty()
 
@@ -128,6 +134,9 @@ struct Tree(ImplicitlyCopyable):
 
     def __init__(out self, kid: Optional[ArcPointer[Tree]]):
         self.kid = kid
+
+    def __deinit__(deinit self):
+        pass
 
     comptime leaf = Tree(None)
 

@@ -1,0 +1,196 @@
+---
+title: Model debugging overview
+sidebar_label: Overview
+description: Review and configure available MAX debugging tools to diagnose issues during model development.
+---
+
+MAX includes built-in debugging tools that help you diagnose common issues
+during model development, such as numerical accuracy problems, correctness
+bugs, performance bottlenecks, and hard-to-trace runtime errors. This page
+explains how to configure debugging options.
+
+If you want to enable MAX's debugging defaults right away, you can set the
+[environment variable](/environment-variables/) `MODULAR_DEBUG=sensible`
+before running your model:
+
+```bash
+MODULAR_DEBUG=sensible max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+:::note
+
+See the [`DebugConfig`](/api/python/generated/max.engine.DebugConfig/) API
+reference to review all debugging options.
+
+:::
+
+## When debugging happens
+
+To configure debugging effectively, you must set debugging options at the
+correct stage of the model pipeline. Debugging options take effect at one of
+the following stages:
+
+- **Graph build time**: Set debugging options before you instantiate a `Graph`
+object. Options configured after graph creation don't apply.
+
+- **Model build time**: Set debugging options before you compile the graph.
+Debugging is integrated during compilation, so you must rebuild the model for
+any changes to take effect.
+
+- **Run time**: Set debugging options before you run the model. You can modify
+these options between runs without rebuilding an already compiled model.
+
+This matters when using the Python API, since Python execution is
+order-dependent. Environment variables and config files load before any
+processes run, so they're always in effect when needed.
+
+For the timing requirements of each debugging option, see the
+[`DebugConfig`](/api/python/generated/max.engine.DebugConfig/) API
+reference.
+
+## Configure debugging options
+
+You can configure debugging options two ways:
+
+- Using the Python API
+- Setting the `MODULAR_DEBUG` environment variable
+
+If you configure the same debugging option using both strategies, the option
+set with the Python API takes precedence.
+
+:::info
+
+Environment variable and config file options use kebab-case names
+(`nan-check`), while the Python API uses the underscored form (`nan_check`).
+
+:::
+
+### Use the Python API
+
+<!-- rumdl-disable MD013 -->
+The Python API provides the most direct way to enable debugging options. Most
+options live on
+[`InferenceSession.debug`](/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.debug)
+except for `source_tracebacks`, which lives on
+[`Graph.debug`](/api/python/generated/max.graph.Graph/#max.graph.Graph.debug) because it's
+consumed during graph construction.
+<!-- rumdl-enable MD013 -->
+
+Debug options are process-wide, so set them on the class (rather than an
+instance) before you create the corresponding object:
+
+```python
+from max.engine import InferenceSession
+from max.graph import Graph
+
+# Set source_tracebacks before graph construction
+Graph.debug.source_tracebacks = True
+g = Graph("my_model")
+
+
+# Set before session.compile() compiles the graph
+InferenceSession.debug.nan_check = True
+InferenceSession.debug.op_log_level = "TRACE"
+
+session = InferenceSession()
+compiled = session.compile(g)
+model = session.init(compiled)
+
+# Set before calling execute()
+InferenceSession.debug.device_sync_mode = True
+outputs = model.execute(inputs_a)
+
+InferenceSession.debug.device_sync_mode = False
+outputs = model.execute(inputs_b)
+
+# Clear every option set through the Python API
+# Values from MODULAR_DEBUG remain in effect
+InferenceSession.debug.reset()
+```
+
+### Set the `MODULAR_DEBUG` environment variable
+
+Another option is to use an environment variable to enable your debugging
+options. This is the recommended way to set global options.
+
+Set the `MODULAR_DEBUG` environment variable to a comma-separated list of
+debug option names. For options that take a value, use `=`.
+
+```bash
+export MODULAR_DEBUG=nan-check,device-sync-mode,source-tracebacks,assert-level=safe
+```
+
+See the [Debugging section](/environment-variables/#debugging) of the
+environment variables reference for every option you can pass to
+`MODULAR_DEBUG`.
+
+## Step through a model with Python's debugger (pdb) {#step-through-a-model-with-pdb}
+
+`max generate`, [`AutoModel`](/api/python/generated/max.pipelines.AutoModel/)
+and [`AutoPipeline`](/api/python/generated/max.pipelines.AutoPipeline/) compile
+the model into a graph. A
+`breakpoint()` in a module's `forward()` then stops only once, while the graph
+is built, and the tensors there have shapes but no values.
+
+To stop on every step with real values, run the decoder eagerly. It then runs
+op by op, so pdb, `print()` and [`Tensor.to_numpy()`][to-numpy] work inside
+`forward()`. The decoder isn't traced at load, so a breakpoint in
+it stops only on the steps.
+
+For example, add `breakpoint()` to
+[`Llama3TextModel.forward()`](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3_modulev3)
+(find the installed source with `python -c "import max; print(max.__path__)"`),
+then pass `eager=True` to `AutoModel`:
+
+```python
+from max.pipelines import AutoModel, AutoTokenizer
+
+model_path = "HuggingFaceTB/SmolLM2-135M"
+tokenizer = AutoTokenizer(model_path)
+model = AutoModel(model_path, eager=True)
+result = model.generate(
+    **tokenizer(["The capital of France is"]), max_new_tokens=4
+)
+```
+
+Or pass `--eager` to `max generate`. Keep `--max-new-tokens` small, since the
+breakpoint stops on every step:
+
+```bash
+max generate --model HuggingFaceTB/SmolLM2-135M --eager \
+  --max-new-tokens 4 --prompt "The capital of France is"
+```
+
+Eager mode is for debugging, and it has these limits:
+
+- Each step is much slower than the compiled graph. The slowdown depends on
+  the model, input shape and device.
+- The first step for each new input shape compiles the ops the interpreter
+  can't run, such as the paged attention kernels, which takes a minute or
+  more on a GPU. On a machine that hasn't run `max warm-interpreter-cache`,
+  the first step also builds the interpreter's op models, which takes several
+  minutes.
+- Only the decoder runs eagerly. The sampler and any vision encoder stay
+  compiled.
+- Logits differ a little from the compiled graph's, since eager mode rounds
+  after every op instead of fusing ops. In bfloat16, a token that is a near tie
+  can come out differently.
+- It runs ModuleV3 text generation architectures that register a `DECODER`
+  module, on one device or one device per data-parallel replica. Data
+  parallelism is checked with Llama. Any other model fails before anything
+  loads, with a message that says why. It can't be combined with device graph
+  capture, the overlap scheduler, LoRA, speculative decoding or expert
+  parallelism, and `max serve`, `max export` and `max warm-cache` refuse it.
+- The interpreter logs a warning that asks you to file a bug for each op it
+  hands to the compiler. For the paged attention and KV cache ops, that's
+  expected.
+
+## Next steps
+
+Now that you know how to set up debugging in MAX, review the full list of
+debugging options in the
+[`DebugConfig`](/api/python/generated/max.engine.DebugConfig/) class.
+You'll find detailed specifications for each option (property) including the
+type and accepted values.
+
+[to-numpy]: /api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy

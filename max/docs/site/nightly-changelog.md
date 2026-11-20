@@ -1,0 +1,562 @@
+---
+title: MAX nightly
+---
+
+This version is still a work in progress.
+
+## Highlights
+
+## Documentation
+
+## Models
+
+- LiquidAI LFM2-VL checkpoints now serve through the new
+  `Lfm2VlForConditionalGeneration` architecture.
+
+- Qwen 3.5 models served with MTP or DFlash2 speculative decoding now read the
+  images and videos in a request. They used to answer without them.
+
+- GLM-5.1, GLM-5.2, and GLM-5.3 now default `clear_thinking` to `False`, which
+  keeps the `reasoning_content` a client sends back for earlier turns in the
+  prompt. GLM-5.3 previously defaulted it to `True`, and GLM-5.1's and
+  GLM-5.2's templates clear earlier reasoning when it is unset. This matches
+  Z.ai's Coding Plan endpoint, and
+  [Z.ai's thinking-mode guide](https://docs.z.ai/guides/capabilities/thinking-mode)
+  recommends it for coding and agent workloads. Pass `clear_thinking=True` in
+  the chat template options to drop earlier reasoning.
+
+- FLUX.2 models now generate more than one image per request, so
+  `num_images` above 1 in `max serve` and `num_images_per_prompt` in
+  `generate_images()` and `AutoModel.generate()` work for them. Such a
+  request used to fail in the first denoising step.
+
+- InternVL and Gemma 3 multimodal models now return log probabilities, so
+  `logprobs` in `max serve` and `output_logprobs` in `generate()` work for
+  them.
+
+- Added support for
+  [`poolside/Laguna-S-2.1-NVFP4`](https://huggingface.co/poolside/Laguna-S-2.1-NVFP4)
+  on the `LagunaForCausalLM` architecture. The checkpoint interleaves 12
+  full-attention layers with 36 sliding-window layers on a 512-token window,
+  gates attention output per head rather than per element, and mixes expert
+  precisions: NVFP4 routed experts in layers 1-39 and bfloat16 ones in layers
+  40-47, with the dense first layer and every shared expert in bfloat16
+  throughout. Attention type, query-head count, RoPE scaling and MLP precision
+  are now all resolved per layer, so `poolside/Laguna-M.1-NVFP4` keeps its
+  uniform layout.
+
+- Added support for
+  [`LiquidAI/LFM3-1.7B`](https://huggingface.co/LiquidAI/LFM3-1.7B) and
+  [`LiquidAI/LFM3-1.7B-Base`](https://huggingface.co/LiquidAI/LFM3-1.7B-Base)
+  on the new `Lfm3ForCausalLM` architecture.
+
+- Added support for
+  [`LiquidAI/LFM3-VL-2B`](https://huggingface.co/LiquidAI/LFM3-VL-2B) on the
+  `Lfm3VlForConditionalGeneration` architecture, with image and video input.
+
+- Added support for
+  [`LiquidAI/LFM3-Omni-2B`](https://huggingface.co/LiquidAI/LFM3-Omni-2B) on
+  the `Lfm3OmniForConditionalGeneration` architecture, with text, image and
+  video input.
+
+## Inference server
+
+- `max serve` now sends about ten tokens per streamed chunk instead of one,
+  which cuts network traffic and per-chunk overhead without changing time to
+  first token. `MAX_SERVE_STREAM_MIN_CHUNK_TOKENS=1` restores the old
+  behavior.
+
+- `max serve`, `max generate`, `AutoModel`, and `AutoPipeline` now prefer
+  ModuleV3 when an architecture has both ModuleV3 and graph API
+  implementations. Pass `--no-prefer-module-v3` on the command line or
+  `prefer_module_v3=False` to use the graph API implementation.
+
+- Serving metric names now use `max.*` instead of `maxserve.*`. Batch
+  instruments use `max.batch.*`, such as `max.batch.size`. Prometheus
+  exposes the corresponding `max_*` families. Update collector allowlists,
+  dashboards, and alerts with the deployment; existing metric history stays
+  under its previous names. Units, labels, histogram boundaries, and
+  benchmark result fields are unchanged.
+
+- `max serve` now rejects an image generation request that asks for more
+  than 4 images with a 422 error naming `num_images`, the same response as
+  other out-of-range image options. `generate_images()` and
+  `AutoModel.generate()` raise a `ValueError` for `num_images_per_prompt`
+  above 4 before any prompt runs. A request had no upper limit before.
+
+- `/v1/completions` now returns a 400 error for `echo` with `logprobs` on a
+  server started without `--enable-echo`, when the model computes log
+  probabilities. The request used to crash the model worker. Other models
+  still return no log probabilities, and `echo` without `logprobs` has no
+  effect.
+
+- Qwen 3.5 now passes every `chat_template_kwargs` entry to its chat template,
+  such as `add_generation_prompt` or `preserve_thinking`. It used to keep only
+  `enable_thinking`, which still defaults to on.
+
+- MAX Serve's span attributes now sit under the entity they describe:
+  `max.request_id` is now `max.request.id`, `max.batch_id` is `max.batch.id`,
+  and the other request and batch attributes move under `max.request.*` and
+  `max.batch.*`. `kernel_agg:<name>` spans carry the kernel name in
+  `max.kernel.op` instead of `max.kernel.name`; per-kernel spans keep
+  `max.kernel.name`. Update trace queries that filter on the old names.
+
+### Server metrics
+
+- `maxserve_batch_execution_time_milliseconds` now measures the executor
+  call when overlap is off. The former full scheduler-step duration is
+  available as `maxserve_scheduler_batch_step_time_milliseconds`. Batch
+  throughput uses the executor interval and counts returned output tokens,
+  including prefill outputs and accepted speculative tokens. See the
+  [batch timing contract](/serve/metrics#batch-scheduler) for overlap timing.
+  Intermediate prefill chunks returning no tokens now contribute zero to
+  the CE generation-throughput histogram, shifting its distribution on
+  chunked-prefill workloads. The benchmark harness's
+  `prefill_batch_execution_time_ms` and `decode_batch_execution_time_ms`
+  columns use `maxserve_batch_execution_time_milliseconds`, so MAX's
+  synchronous values now exclude scheduler work; comparisons with older
+  builds are not like for like.
+
+- Added `maxserve_request_client_disconnect_cancellations_total`, which
+  counts streamed responses cut short by a client disconnect and completion
+  requests abandoned while waiting for a result, split by `phase`. A
+  mid-stream disconnect was previously invisible:
+  `maxserve_request_count_total` records it under the status code already
+  sent.
+
+## `max` CLI
+
+- `PipelineArgs` sub-config flags are now flat, matching `max serve`'s
+  spellings everywhere the class is bound with cyclopts. The benchmark
+  engine's `--pipeline.runtime.max-batch-size` becomes
+  `--pipeline.max-batch-size`, `--pipeline.kv-cache.enable-prefix-caching`
+  becomes `--pipeline.enable-prefix-caching`, and
+  `--pipeline.profiling.gpu-profiling` becomes `--pipeline.gpu-profiling`;
+  the `MODULAR_PIPELINE_*` environment variable names change with them
+  (`MODULAR_PIPELINE_MAX_BATCH_SIZE`, not
+  `MODULAR_PIPELINE_RUNTIME_MAX_BATCH_SIZE`). The experimental cascade
+  serve CLI (`//mach:cascade`) now accepts the full `max serve` flag
+  surface, including `--config-file` recipes and the `--model`,
+  `--devices`, and `--use-dummy-weights` aliases.
+
+- `max generate` runs image generation models such as FLUX.2 and saves the
+  images to `--output`, which defaults to `image.png` and whose suffix picks
+  the format. A path without a suffix is a directory, created with its parents
+  if missing. It adds `--negative-prompt`, `--height`, `--width`,
+  `--num-inference-steps`, `--guidance-scale`, `--true-cfg-scale`,
+  `--strength` and `--num-images-per-prompt` for them, and takes the input
+  image from `--image_url`. A flag the user set for the other kind of model,
+  including `--max-batch-size` and `--device-graph-capture` on an image
+  model, raises an error before anything loads. Text models run as before.
+
+- `max benchmark` renames `--warmup-to-steady-state` to `--warmup-multiturn`,
+  since it applies only to multi-turn workloads and is unrelated to the
+  steady-state measurement window. The old flag, its workload and config
+  file keys, and `MODULAR_WARMUP_TO_STEADY_STATE` still work and log a
+  deprecation warning. Result files record the option as `warmup_multiturn`
+  under `client_args`.
+
+## Python API
+
+- `AutoModel(eager=True)`, `AutoPipeline(eager=True)` and `max generate --eager`
+  run the decoder op by op instead of as a compiled graph, so `pdb` stopped
+  inside a module's `forward()` sees real values on every step. It is for
+  debugging and much slower than the compiled graph. It runs ModuleV3 text
+  generation architectures that register a `DECODER` module, on one device or
+  one device per data-parallel replica. See the
+  [pdb guide](/develop/debugging/#step-through-a-model-with-pdb).
+
+- The eager `Module` framework moved from `max.experimental.nn` to `max.nn`,
+  and the graph-based layers that `max.nn` held moved to `max.nn.legacy`.
+  `max.nn.legacy` is deprecated and will be removed in MAX 27.1. Code that
+  uses it gets a `DeprecationWarning` naming the line that used it. To keep
+  using the graph-based layers until then, change `from max.nn import ...` to
+  `from max.nn.legacy import ...`.
+
+- A custom op whose Mojo kernel is registered wrong, or doesn't match its
+  call, now raises `max.graph.KernelRegistrationError`, a `ValueError`
+  subclass. The message points at the Mojo code the way the Mojo compiler
+  does: the file, line and column, the source line and a caret. A custom op
+  package's kernels are now checked when it loads, so a misplaced
+  `DeviceContext` argument fails there instead of while compiling the
+  generated code.
+
+- Source tracebacks (`InferenceSession.debug.source_tracebacks`) now stop at
+  your code's call into the graph API, so errors point at the lines that
+  created each op rather than at MAX's implementation of it. Set
+  `source_tracebacks_hide_internal = False` to keep every frame. Errors
+  that `Model.execute` raises are now `max.engine.ModelExecutionError`, a
+  `RuntimeError` subclass that is also a `ValueError`, so existing
+  `except ValueError` handlers keep working.
+
+- `max.nn.legacy.Transformer`, `DistributedTransformer`,
+  `logits_postprocess()` and `distributed_logits_postprocess()` return a
+  `max.nn.legacy.graph_groups.DecoderOutputs` of named groups instead of a
+  tuple.
+  Read the logits as
+  `outputs.logits["logits"]` rather than `outputs[1]`, and pass the outputs to
+  `Graph.output(outputs)` rather than unpacking them. The graph's outputs keep
+  their order, and `Graph.output_tree` returns them by name.
+
+- `ops.matmul()` takes an `out_dtype` keyword argument that sets the result
+  dtype. The inputs keep their own dtypes and are no longer cast to a common
+  one, so `bfloat16` inputs with `out_dtype=DType.float32` keep the float32
+  accumulator. Without `out_dtype`, `ops.matmul()`, the `@` operator and
+  `max.functional`'s `matmul()` require both inputs to share a dtype, which
+  the result keeps, so `max.nn.legacy.Linear` raises when its input and weight
+  dtypes differ. `max.nn.Linear` casts its input to the weight's dtype, so a
+  float32 input to a bfloat16 `Linear` now gives bfloat16 instead of float32.
+
+- Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
+  slice in place with a byte value, without allocating a source buffer.
+
+- Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
+  slice in place with a byte value, without allocating a source buffer.
+
+- Added `ops.allreduce_rms_norm` and `max.functional.allreduce_rms_norm`, a
+  fused allreduce + RMSNorm collective for bfloat16 2-D tensors: every device
+  ends up with the RMS norm of the summed tensor, computed in one launch. The
+  norm runs on the unrounded float32 sum, so it is not bit-identical to
+  `allreduce_sum` followed by `rms_norm`, which reads the sum rounded back to
+  bfloat16. The `max.functional` form falls back to that two-launch path for
+  inputs that are not 2-D bfloat16 and for meshes without signal buffers.
+
+- Added `ops.allreduce_post_norm_residual_rms_norm` and
+  `max.functional.allreduce_post_norm_residual_rms_norm`, which run a
+  transformer block's branch allreduce, its post-norm, the weighted join to
+  the residual stream and the next pre-norm in one launch per device. They
+  take bfloat16 2-D tensors and need P2P access between the GPUs. On NVIDIA
+  GPUs, `allreduce_rms_norm` now also fuses small payloads into one launch.
+
+- Added the `ops.CoordinateTransformMode` and `ops.RoundMode` enums.
+  `ops.resize_linear`, `ops.resize_nearest`, and their `max.functional`
+  counterparts take them for `coordinate_transform_mode` and
+  `round_mode` in place of the integer codes 0-3. The integer codes still
+  work.
+
+- `ops.resize_bicubic()` and its `max.functional` counterpart
+  take an `antialias` keyword argument. With `antialias=True`, the resize
+  uses the filter of Pillow's `BICUBIC` and matches PyTorch's
+  `interpolate(mode="bicubic", antialias=True)` to float32 rounding. The
+  antialiased resize runs on the CPU, on a float32 input, or on a uint8 input
+  that it resizes to uint8 bit for bit as Pillow's `BICUBIC` does.
+  `ops.resize_bicubic()` also takes its output size as a runtime int64
+  tensor, with `out_dims` declaring the output's dimensions.
+
+- Added `max.driver.float32_to_bfloat16_as_uint16()`,
+  `max.driver.bfloat16_as_uint16_to_float32()`, and
+  `max.driver.float32_array_to_buffer()` for moving bfloat16 data between
+  NumPy and a `Buffer`. `max.pipelines.lib` still re-exports
+  `float32_to_bfloat16_as_uint16()` and `float32_array_to_buffer()`.
+
+- Removed the `max.pipelines.lib.bfloat16_utils` module. Import its functions
+  from `max.driver` instead.
+
+- Removed `GraphPipelineModel`, `ModuleV3PipelineModel` and
+  `MultiGraphPipelineModelWithKVCache` from `max.pipelines.lib`. Subclass
+  `PipelineModel`, return the module from `graph_specs()` under
+  `GraphRole.ENCODER`, and load it with `load_graphs()` instead.
+
+- Removed the `LLM` class, deprecated in 26.5 when `max.entrypoints` became
+  private. To generate in-process, use `AutoModel` or `AutoPipeline` from
+  `max.pipelines`.
+
+- `Buffer.to(device)` for a buffer on another queue of that device requires an
+  `after` event and no longer syncs implicitly. Mojo's `reassign_ownership_to()`
+  is removed; use `enqueue_wait_for()` and keep buffers alive until synced.
+
+- Removed `max.nn.legacy.FusedMLP`. Use `max.nn.legacy.MLP`, which takes the
+  separate `gate_proj` and `up_proj` weights a checkpoint ships and fuses their
+  matmuls in the graph.
+
+- `max.nn.legacy.kv_cache` moved to `max.nn.kv_cache`. Change
+  `from max.nn.legacy.kv_cache import ...` to
+  `from max.nn.kv_cache import ...`.
+
+- Removed `max.nn.legacy.kernels`, `max.nn.legacy.state_space`,
+  `max.nn.legacy.data_parallelism`, `max.nn.legacy.quant_ops`,
+  `max.nn.legacy.moe.quant_strategy`, `max.nn.legacy.sampling.penalties`, and
+  `max.nn.legacy.comm.ep.ep_kernels`. The graph ops they held are now internal
+  to MAX. `max.nn.kernels` provides the kernels `max.nn` modules use, and
+  `LogitPenalties` stays importable from `max.nn.legacy.sampling`.
+
+- Removed `max_single_alloc_size()` and `run_healthcheck()` from the Mojo
+  `DeviceContext`. On NVIDIA and AMD GPUs the health check still runs when a
+  device context is created. Python's `Device.max_single_alloc_size` is
+  unchanged.
+
+- `generate()`, `GenerateIterator`, `AutoModel.generate()` and
+  `AutoModel.generate_iter()` take `messages` and `images`, so they run chat
+  and image prompts on models such as Gemma 3 and InternVL.
+  `GenerateResult.prompt_lengths` gives each prompt's length. `AutoModel`
+  turns the vision encoder cache off by default.
+
+- Added `AutoProcessor` to `max.pipelines`, which turns chat conversations
+  with inline images into the `messages` and `images` that
+  `AutoModel.generate()` takes.
+
+- `AutoPipeline` now takes a chat conversation, or a list of them, with
+  images inline, and returns only the new text for each one.
+
+- `generate()`, `GenerateIterator`, `AutoModel.generate()`,
+  `AutoModel.generate_iter()` and `AutoPipeline` take `chat_template_kwargs`,
+  which reach the chat template of every `messages` row, such as
+  `{"enable_thinking": False}` to turn off Qwen 3.5's thinking.
+
+- `images` on `generate()`, `GenerateIterator`, `AutoModel.generate()` and
+  `AutoModel.generate_iter()` takes PIL images as well as encoded bytes, and
+  the tokenizer uses a PIL image without decoding it again. `AutoProcessor`
+  now passes a copy of each PIL image instead of encoding it.
+
+- `AutoProcessor` and `AutoPipeline` now read images from http(s) URLs, `data:`
+  URIs and base64 data, including OpenAI `image_url` parts. URLs are fetched
+  with a 30 second timeout and a 100 MiB limit per image.
+
+- Errors from `AutoModel.generate()` and `AutoModel.generate_iter()` now name
+  `AutoModel`, not `generate()`. An image part that holds its own image, or
+  an `image_url` part, now raises `ValueError` pointing to `AutoProcessor`,
+  even when `images` gives the row the right count.
+
+- Added `generate_images()` in `max.pipelines.lib.generate_images`, which runs
+  an image generation pipeline such as FLUX.2 in your own process and returns
+  one list of PIL images per prompt, in prompt order. Each prompt runs as the
+  request `max serve` builds for it, so the model's defaults are the same as in
+  serve.
+
+- `AutoModel` now loads image generation models such as FLUX.2, and
+  `AutoModel.generate(prompt=...)` runs them and returns a
+  `GenerateImagesResult`. Text models keep the same `generate()` call and
+  result. An argument for the other kind of model raises a `ValueError` that
+  names it. Image models need `max_batch_size=1` and no device graph capture.
+  `AutoPipeline` runs image models too, through
+  `AutoModel.generate(prompt=...)`, and returns a prompt's list of images.
+  On an image model, `AutoModel.generate_iter()` points to
+  `AutoModel.generate(prompt=...)`, and `generate()` points to
+  `generate_images()`.
+
+- `generate_images()`, `AutoPipeline` and the image path of
+  `AutoModel.generate()` take `images`, one list of input images per prompt as
+  for text `generate()`, each image encoded bytes or a PIL image. A list holds
+  one image, or none for a text-only prompt. FLUX.2 and Z-Image run image to
+  image this way. They also take `strength`, which Z-Image reads and FLUX.2
+  ignores. `ZImagePipeline` now lists image input.
+
+- `generate()` and `GenerateIterator` raise the same `TypeError` for a bare
+  image or bytes passed as `images` as for any other `images` that is not one
+  list of images per conversation, instead of a Python iteration error.
+
+- Removed the `blocking_sync`, `disable_timing` and `interprocess` parameters
+  from the Mojo `DeviceContext.create_event()`, along with `EventFlags`. Events
+  never record timing; use `DeviceContext.execution_time()` to time kernels.
+
+- Removed the `per_layer_buffers` KV cache option, which gave each layer its
+  own buffer to get past a device's per-allocation size limit, along with the
+  `kv_blocks_per_layer` and `kv_scales_per_layer` fields of
+  `KVCacheInputsPerDevice`. A KV cache is again one buffer per device, capped
+  at that limit.
+
+- Added `Device.architecture_version`, which returns an `ArchitectureVersion`
+  with `major`, `minor` and `stepping` fields so code can compare architectures
+  instead of parsing `architecture_name`: the compute capability on NVIDIA
+  GPUs (`sm_100a` is 10.0.0), the processor version on AMD GPUs (`gfx950` is
+  9.5.0), and the Apple silicon generation on Apple GPUs (an M5 is 5.0.0).
+  Versions compare for equality only, since a higher version is not always a
+  newer part. A virtual device for compile-only mode whose target is an
+  architecture name, such as `sm_100a` or `gfx950`, reports the version of
+  that architecture.
+
+## C API
+
+## Kernels and GPU programming
+
+- A custom op's `execute` method no longer accepts `ManagedTensorSlice`
+  arguments (`InputTensor`, `OutputTensor` and their fused, mutable and
+  variadic variants). Loading a kernel package that uses them fails with an
+  error at the offending argument. Declare the arguments with tensor traits
+  instead, for example `Some[Input & Tensor]`, `Some[Output & Tensor]`, or
+  `TensorTuple` for variadic operands.
+
+- `DeviceStream.wait_for_host_value()` in `max.gpu.host` is deprecated; use
+  `DeviceStream.wait_for_flag()` instead.
+
+- Built-in custom ops are now named after their class instead of `mo.`,
+  which is kept for the graph compiler's own ops. For example,
+  `mo.launch_host_func` and `mo.inplace_memcpy` are now
+  `runtime.launch_host_func` and `runtime.inplace_memcpy`, and
+  `mo.matmul_swiglu` is now `matmul.swiglu`. Update the name passed to
+  `ops.custom()` in graphs that call these ops directly.
+
+- On AMD MI355X (CDNA4), the fused gated activation now quantizes to MXFP4 as
+  well as MXFP8, so a `uint8` / `float8_e8m0fnu` request from
+  `swiglu_quantize_dynamic_block_scaled` runs as one kernel. Such a request
+  was rejected on AMD before; quantizing MXFP4 without the fusion writes the
+  bfloat16 `[M, N]` activation of the `[gate | up]` input out with a SwiGLU
+  kernel and reads it back in an ungated quantize, and the fused kernel never
+  materializes it.
+
+- Enabled automatic fusion of eligible bfloat16 matrix multiplications and
+  SwiGLU activations on NVIDIA B200 GPUs.
+
+- The deprecated `LayoutTensor` and `LayoutTensorIter` types have been removed
+  from the `layout` package, along with the `to_layout_tensor()` and
+  `lt_to_tt()` conversions. Use `TileTensor` and `TileTensorIter` instead.
+  `ThreadScope` now lives in `layout.tile_io`.
+
+- The legacy `Layout` and `IntTuple` types have been removed from the `layout`
+  package, along with the original `layout.layout` and `layout.int_tuple`
+  modules, the `to_layout()`, `LTToTTLayout` and `print_layout()` bridges, and
+  the legacy `tile_layout_k_major()`, `tile_layout_mn_major()` and
+  `tile_sf_layout_k_major()` constructors. Use the typed layouts in the new
+  `layout.layout` (`Layout`, also exported as `MixedLayout`) for layout values,
+  `Coord` for shapes, strides and indices, and the `*_typed` tile layout
+  constructors in `layout.tensor_core_async`. `wgmma_desc_sbo_lbo()` and
+  `wgmma_canonical_strides()` replace `tile_to_descriptor()`, and `print()`
+  accepts a typed layout directly.
+
+- `TileTensor.tile()` on a nested layout now indexes each mode first leaf
+  first, as `crd2idx` and the CuTe `local_tile` operation do: tile `c` of size
+  `t` starts at element `c * t` of the mode, and the tile keeps the leading
+  leaves it spans, with their strides. Before, it treated the first leaf of
+  each mode as the tile grid and the second as the fragment. To extract
+  fragments, put the fragment first in each mode, as `blocked_product()` does:
+  `((3, 2), (4, 2))` rather than `((2, 3), (2, 4))`. A tile size that doesn't
+  split a nested mode on leaf boundaries is now a compile-time error.
+
+- `TileTensor.load_linear()` and `TileTensor.store_linear()` have been removed.
+  Use `TileTensor.load()` and `TileTensor.store()` with a `Coord`, which also
+  work on nested layouts: `t.load_linear[4](IndexList[2](r, c))` becomes
+  `t.load[4](Coord(r, c))`. On CPU, `load()` and `store()` default to the
+  element's alignment rather than the full vector's, so pass `alignment=` to
+  keep a wider one.
+
+- `@extensibility.register` takes a platform as a second argument
+  that selects the devices a custom kernel supports, built from the `type`,
+  `api`, `arch`, and `model` platforms and the `CPU`, `ACCELERATOR`, `CUDA`,
+  `HIP`, and `METAL` helpers,
+  combined with `&` and `|` into a named alias:
+  `comptime TCGEN05 = ACCELERATOR & CUDA & (arch("sm_100a") |
+  arch("sm_103a"))`, then `@extensibility.register("my_op", TCGEN05)`.
+  When several registrations of an op match a device, the graph compiler now
+  selects the one whose set of devices is a strict subset of the sets of all
+  the others, and reports an error if no registration is. Before, it selected
+  the registration that set the most device fields. Two registrations of an op
+  for the same set of devices are an error. The `type`, `api`, `arch`, and
+  `model` arguments of `register` are removed: replace
+  `type="gpu", api="cuda"` with `CUDA`, and in general with the `&` of
+  the matching platforms.
+
+- Removed the `max`, `min`, `sum`, `product` and `mean` overloads in
+  `max.algorithm` that take an input shape, an `input_fn`, an `output_fn` and
+  a `reduce_dim`. To reduce along an axis, use the graph ops (`ops.sum`,
+  `ops.max`, `ops.min`, `ops.mean`, `ops.prod`), or call `map_reduce` once
+  per row. The `Span` overloads and the 1-D `sum` and `mean` overloads that
+  take a length and an `input_fn` are unchanged.
+
+- Added `DeviceContext.device()`, which returns a `Device` view of the
+  accelerator with an `id` field and `get_name()`, `get_attribute()`,
+  `is_host_unified()`, `get_arch()` and `can_access_peer()` methods.
+  `DeviceContext.id()`, `name()`, `get_attribute()`, `is_host_unified()` and
+  `can_access()` are deprecated: write `ctx.device().id`,
+  `ctx.device().get_name()`, `ctx.device().can_access_peer(peer.device())`
+  and so on.
+
+- `DeviceContext.enqueue_function()` accepts a `GridBlockLaunchConfig` (grid,
+  block, dynamic shared memory) or `ClusterLaunchConfig` (plus thread block
+  clusters) from `max.gpu.host` as a keyword-only `execution_config` argument
+  after the kernel arguments. A cluster launch on a GPU without clusters fails
+  to compile; generic code checks
+  `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
+  On NVIDIA GPUs, `GridBlockAttributeLaunchConfig` and
+  `ClusterAttributeLaunchConfig` from `max.gpu.host.nvidia` also carry launch
+  attributes, such as the ones `pdl_launch_attributes()` returns for
+  programmatic dependent launch.
+
+- A bare `DeviceContext` is now an unbound parameterized type, not a concrete
+  type.
+
+  Code written expecting a concrete `DeviceContext` can change to
+  `DeviceContext[]` to bind the default parameter values.
+
+  Prefer to accept generic `DeviceContext` as input instead of restricting an
+  implementation to the default parameter values.
+
+- `stencil()` and `stencil_gpu()` in `max.algorithm` now take a `Coord` where
+  they took an `IndexList[rank]`: the `shape` and `input_shape` arguments, and
+  the point passed to the `load_fn`, `compute_fn` and `compute_finalize_fn`
+  callbacks. A shape `Coord` keeps its static dimensions on the way to the
+  kernel. Wrap an existing `IndexList` shape with `Coord(shape)`. The point
+  holds the same values as before:
+
+  ```mojo
+  # was: def load_fn[...](point: IndexList[rank, ...]) -> ...
+  def load_fn[simd_width: Int, dtype: DType](point: Coord) -> SIMD[
+      dtype, simd_width
+  ]:
+      return input.load[width=simd_width](point)
+  ```
+
+  `map_fn` now takes and returns `DynamicCoord[DType.int, stencil_rank]`
+  instead of `IndexList[stencil_rank]`, and the `stencil_axis` parameter is
+  gone: it only accepted the spatial axes `(1, 2)`, which both backends
+  assume. Drop `stencil_axis` from the parameter list:
+
+  ```mojo
+  comptime StencilPoint = DynamicCoord[DType.int, stencil_rank]
+
+  def map_fn(point: StencilPoint) -> Tuple[StencilPoint, StencilPoint]:
+      var lower = StencilPoint(point[0] * stride, point[1] * stride)
+      var upper = StencilPoint(lower[0] + window_h, lower[1] + window_w)
+      return lower, upper
+  ```
+
+## Tools
+
+- Added the ability to install `max-serve` and `max-benchmark` as Conda extras,
+  using `max[extras=[serve]]` and `max[extras=[benchmark]]` respectively.
+  `max[extras=[all]]` installs both plus `mojo`.
+
+## Fixes
+
+- Reusing precompiled MEFs (`InferenceSession(precompiled_mefs=...)`,
+  `--precompiled-mefs`, and `max.tensor.support.set_precompiled_mefs`) now
+  checks that each artifact was built from the graph claiming it: its body,
+  the contents of its kernel libraries, its compile options, and the MAX build
+  that exported it. Before, only the graph's name and its input and output
+  types were compared, so editing a graph or a custom op and reusing an
+  artifact silently ran the old program. A mismatch raises
+  `ArtifactBodyMismatch`. A caller that knowingly builds different graphs than
+  it recorded, such as a test harness compiling under virtual devices, passes
+  `MefStore.for_import(..., verify_body=False)`, `InferenceSession(verify_body=
+  False)`, or `--no-precompiled-mefs-verify-body` to skip the check.
+
+- Loading a model on a device that reports no free memory now fails with a
+  "Model size exceeds available memory" error. Memory planning used to treat
+  0 as unmeasured and size against the device's total memory, so a full host
+  could crash during loading instead.
+
+- `max serve` now runs prompts given as token ids, with no images, on Gemma 3,
+  InternVL, Idefics3, Pixtral and Qwen 2.5 VL. These requests used to fail in
+  the tokenizer.
+
+- `max serve` now returns a 400 for a prompt given as token ids, on
+  completions, chat `prompt_tokens` or embeddings, when an id is below 0 or
+  past the model's vocabulary. Such a request used to fail its whole batch.
+  `generate()`, `GenerateIterator` and `AutoModel.generate()` raise
+  `InputError` for such an id in `input_ids`. Embeddings requests the
+  tokenizer rejects, such as a too-long prompt, now return a 400, not a 500.
+
+- The free memory that CPU and Apple GPU devices report now accounts for
+  memory used by other processes. Before, MAX could start a model that didn't
+  fit in memory, which on macOS could exhaust swap and crash the machine.
+
+- `bfloat16` models now run on CPU, so `--devices=cpu` works with a model
+  whose default encoding is `bfloat16` without
+  `--quantization-encoding=float32`. Such a model used to fail at startup
+  with "The encoding 'bfloat16' is not compatible with the selected device
+  type 'cpu'"
+  ([#7611](https://github.com/modular/modular/issues/7611)).
+
+## Mojo language
+
+For all the updates to the Mojo language, standard library, and tools,
+see the [Mojo release notes](https://mojolang.org/releases/).

@@ -28,7 +28,7 @@ from std.math import ceildiv
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 
 
@@ -204,13 +204,13 @@ struct Conv2dConfig[
     # - M: batch * output_spatial (multiple output pixels)
     # - N: output_channels (multiple filters)
     # - K: input_channels * filter_area (reduction dimension)
-    var block_tile_shape: IndexList[3]
+    var block_tile_shape: Coord[Int, Int, Int]
 
     # MMA instruction shape
-    var mma_shape: IndexList[3]
+    var mma_shape: Coord[Int, Int, Int]
 
     # Output tile shape for epilogue
-    var output_tile_shape: IndexList[2]
+    var output_tile_shape: Coord[Int, Int]
 
     # ========== Pipeline Configuration ==========
     var num_pipeline_stages: Int
@@ -220,7 +220,7 @@ struct Conv2dConfig[
     var k_group_size: Int
 
     # ========== Cluster Configuration ==========
-    var cluster_shape: IndexList[3]
+    var cluster_shape: Coord[Int, Int, Int]
     var cta_group: Int
 
     # ========== Memory Layout ==========
@@ -279,10 +279,10 @@ struct Conv2dConfig[
         ) else channels_per_pixel
         var config = Self(
             # 128×128 block tiles with cta_group=2 (mma_shape = 2 * block_tile)
-            block_tile_shape=IndexList[3](128, 128, BK),
-            mma_shape=IndexList[3](256, 256, 16),
+            block_tile_shape=(128, 128, BK),
+            mma_shape=(256, 256, 16),
             # Output tile: (128, 32) with SWIZZLE_64B - matches matmul pattern
-            output_tile_shape=IndexList[2](128, 32),
+            output_tile_shape=(128, 32),
             # Pipeline depths - num_pipeline_stages will be computed below
             num_pipeline_stages=4,  # Placeholder, will be maximized
             num_output_stages=2,
@@ -290,7 +290,7 @@ struct Conv2dConfig[
             num_clc_pipeline_stages=2,
             k_group_size=1,
             # 2-SM cluster mode
-            cluster_shape=IndexList[3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             # Swizzle modes for bank-conflict-free access
             a_swizzle=swizzle,
@@ -346,11 +346,11 @@ struct Conv2dConfig[
         ) else channels_per_pixel
         var config = Self(
             # 128×128 block tiles with cta_group=1
-            block_tile_shape=IndexList[3](128, 128, BK),
+            block_tile_shape=(128, 128, BK),
             # MMA shape: M=128, N=128, K=16 (K is reduction per MMA instruction)
-            mma_shape=IndexList[3](128, 128, 16),
+            mma_shape=(128, 128, 16),
             # Output tile: (128, 32) with SWIZZLE_64B
-            output_tile_shape=IndexList[2](128, 32),
+            output_tile_shape=(128, 32),
             # Pipeline depths - num_pipeline_stages will be computed below
             num_pipeline_stages=4,  # Placeholder, will be maximized
             num_output_stages=2,
@@ -358,7 +358,7 @@ struct Conv2dConfig[
             num_clc_pipeline_stages=2,
             k_group_size=1,
             # 1-SM mode
-            cluster_shape=IndexList[3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             # Swizzle modes for bank-conflict-free access
             a_swizzle=swizzle,

@@ -16,19 +16,19 @@ import re
 from typing import Any
 
 import pytest
-from max.driver import CPU, Buffer
+from max.driver import (
+    CPU,
+    Buffer,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Type
-from max.nn.comm.ep import calculate_ep_max_tokens_per_rank, ep_kernels
-from max.nn.comm.ep.ep_config import (
-    _EP_LOCAL_SYNC_RESERVED_WORDS,
-    NUM_GROUPS,
-    EPConfig,
-    _ep_fused_moe_requested,
-    estimate_ep_memory_usage,
-)
-from max.nn.comm.ep.ep_kernels import (
+from max.nn import ep_config as ep_config_module
+from max.nn._graph_ops import ep as ep_kernels
+from max.nn._graph_ops.ep import (
     _call_mega_ffn_ep_fused,
     _call_mega_ffn_ep_fused_init,
     _call_mega_ffn_ep_fused_plan,
@@ -40,7 +40,16 @@ from max.nn.comm.ep.ep_kernels import (
     call_ep_dispatch_async,
     call_ep_dispatch_wait,
 )
-from max.nn.comm.ep.ep_manager import (
+from max.nn.ep_config import (
+    _EP_LOCAL_SYNC_RESERVED_WORDS,
+    _EP_P2P_SMALL_WORDS,
+    NUM_GROUPS,
+    EPConfig,
+    _ep_fused_moe_requested,
+    calculate_ep_max_tokens_per_rank,
+    estimate_ep_memory_usage,
+)
+from max.nn.legacy.comm.ep.ep_manager import (
     _ep_counter_words,
     _ep_sync_counter_bytes,
     _fused_moe_answer,
@@ -131,16 +140,132 @@ def test_estimate_ep_memory_usage_mxfp6_uses_three_quarter_byte_packing() -> (
     distinct byte counts for the same logical shape.
     """
     assert (
-        _ep_memory_usage(DType.uint8, DType.float6_e2m3fn) == 556
+        _ep_memory_usage(DType.uint8, DType.float6_e2m3fn) == 812
     )  # d_token_size = 32*3//4 + 32//32 = 25 bytes.
     assert (
-        _ep_memory_usage(DType.uint8, DType.float6_e3m2fn) == 556
+        _ep_memory_usage(DType.uint8, DType.float6_e3m2fn) == 812
     )  # Both FP6 encodings pack identically; only the codes differ.
 
 
 def test_estimate_ep_memory_usage_distinguishes_fp6_from_fp4_packing() -> None:
-    assert _ep_memory_usage(DType.uint8, None) == 472  # NVFP4/MXFP4 ratio.
-    assert _ep_memory_usage(DType.bfloat16, None) == 1024  # Unpacked.
+    assert _ep_memory_usage(DType.uint8, None) == 728  # NVFP4/MXFP4 ratio.
+    assert _ep_memory_usage(DType.bfloat16, None) == 1280  # Unpacked.
+
+
+def test_estimate_ep_memory_usage_counts_mxfp8_block_scales() -> None:
+    """An MXFP8 dispatch row carries one E8M0 scale per 32 elements.
+
+    The dispatch kernels size each message as the fp8 row plus its scales,
+    so a float8 dispatch dtype with an MX element dtype adds one byte per
+    32 to every send and receive slot.
+    """
+    assert _ep_memory_usage(DType.float8_e4m3fn, None) == 896
+    assert (
+        _ep_memory_usage(DType.float8_e4m3fn, DType.float8_e4m3fn) == 908
+    )  # 12 message slots, one scale byte each at hidden_size 32.
+
+
+def test_estimate_ep_memory_usage_receives_a_token_once_per_device() -> None:
+    """A device receives each token once, whichever of its experts it picked.
+
+    GLM-5.3's MTP draft dispatch on eight devices at an 8192-token chunk
+    (1024 tokens a rank): the receive buffer holds every rank's tokens once,
+    plus a 32-byte token index per (expert, token). A slot per (expert, token)
+    took 3 GiB. Across nodes the SHMEM dispatch keeps that slot per expert.
+    """
+    token = 6144 * DType.bfloat16.size_in_bytes
+    send = 1024 * token
+    combine_recv = 8 * 1024 * token
+
+    def estimate(n_nodes: int) -> int:
+        return estimate_ep_memory_usage(
+            hidden_size=6144,
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            max_tokens_per_rank=1024,
+            n_experts=256,
+            n_nodes=n_nodes,
+            n_gpus_per_node=8,
+            top_k=8,
+        )
+
+    assert estimate(1) == (
+        send + 8 * 1024 * token + 256 * 1024 * 32 + combine_recv
+    )
+    combine_send = 128 * 1024 * token
+    assert estimate(2) == (
+        send + 256 * 1024 * token + combine_send + combine_recv
+    )
+
+
+@pytest.mark.parametrize("use_allreduce", [False, True])
+def test_ep_config_estimate_sizes_what_ep_init_is_given(
+    use_allreduce: bool,
+) -> None:
+    """The plan sizes the buffers for the experts and ranks ``ep.init`` gets.
+
+    Under allreduce each device routes among its own experts, so ``ep.init``
+    sees those experts on one rank. Planning for every expert on every rank
+    would reserve memory nothing allocates.
+    """
+    config = dataclasses.replace(_base_ep_config(), use_allreduce=use_allreduce)
+    params = {
+        k: v
+        for k, v in ep_kernels._ep_common_parameters(config).items()
+        if isinstance(v, int)
+    }
+    assert config.estimate_memory_usage() == estimate_ep_memory_usage(
+        hidden_size=config.hidden_size,
+        dispatch_dtype=config.dispatch_dtype,
+        combine_dtype=config.combine_dtype,
+        max_tokens_per_rank=params["max_token_per_rank"],
+        n_experts=params["n_experts"],
+        n_nodes=params["n_nodes"],
+        n_gpus_per_node=params["n_gpus_per_node"],
+        top_k=config.top_k,
+    )
+
+
+def test_estimate_ep_memory_usage_under_allreduce() -> None:
+    """Under allreduce a device's buffers hold its own tokens, once, and a
+    token index for each of its 32 experts."""
+    token = 6144 * DType.bfloat16.size_in_bytes
+    assert (
+        estimate_ep_memory_usage(
+            hidden_size=6144,
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            max_tokens_per_rank=1024,
+            n_experts=256,
+            n_nodes=1,
+            n_gpus_per_node=8,
+            top_k=8,
+            use_allreduce=True,
+        )
+        == (1024 * token) * 2 + 32 * 1024 * 32 + 8 * 1024 * token
+    )
+
+
+def test_ep_config_mxfp8_estimate_includes_block_scales() -> None:
+    config = dataclasses.replace(
+        _base_ep_config(),
+        dispatch_dtype=DType.float8_e4m3fn,
+        dispatch_quant_config=_mxfp8_quant_config(),
+    )
+    without_scales = estimate_ep_memory_usage(
+        hidden_size=config.hidden_size,
+        dispatch_dtype=config.dispatch_dtype,
+        combine_dtype=config.combine_dtype,
+        max_tokens_per_rank=config.max_tokens_per_rank,
+        n_experts=config.n_experts,
+        n_nodes=config.n_nodes,
+        n_gpus_per_node=config.n_gpus_per_node,
+        top_k=config.top_k,
+    )
+    slots = config.max_tokens_per_rank * (1 + config.n_gpus_per_node)
+    assert config.estimate_memory_usage() == (
+        without_scales + slots * config.hidden_size // 32
+    )
 
 
 def _base_ep_config() -> EPConfig:
@@ -177,6 +302,15 @@ def _ffn_send_config(
     )
 
 
+def test_max_recv_tokens_per_expert_sees_one_rank_under_allreduce() -> None:
+    """The MX scale slot stride must match the one-rank dispatch geometry the
+    allreduce backend gives its EP ops."""
+    config = _base_ep_config()
+    assert config._max_recv_tokens_per_expert() == 1024 * 8
+    allreduce = dataclasses.replace(config, use_allreduce=True)
+    assert allreduce._max_recv_tokens_per_expert() == 1024
+
+
 def test_ffn_combine_send_off_by_default() -> None:
     """The fused send must be opt-in: it changes what the planner reserves."""
     assert not _base_ep_config().fuse_ffn_combine_send
@@ -200,6 +334,17 @@ def test_ffn_combine_send_rejects_fused_shared_expert() -> None:
         _validate_ffn_combine_send_config(
             _ffn_send_config(fused_shared_expert=True)
         )
+
+
+def test_combine_mx_accepts_the_split_combine() -> None:
+    """The happy path must not raise, or the negative case proves nothing."""
+    dataclasses.replace(_base_ep_config(), combine_mx_min_tokens=2048)
+
+
+def test_combine_mx_rejects_ffn_combine_send() -> None:
+    """The fused send writes bfloat16, which the MXFP8 wait would misread."""
+    with pytest.raises(ValueError, match="fused FFN combine send"):
+        dataclasses.replace(_ffn_send_config(), combine_mx_min_tokens=2048)
 
 
 def _nvfp4_quant_config() -> QuantConfig:
@@ -344,6 +489,167 @@ def test_only_a_fused_capable_config_reserves_counter_words() -> None:
     assert _ep_counter_words(
         256, 8, True, 0
     ) == get_ep_local_sync_counters_size(32)
+
+
+@pytest.mark.parametrize(
+    "api, override, takes_it",
+    [
+        ("hip", {}, True),
+        ("cuda", {}, False),
+        ("cpu", {}, False),
+        ("hip", {"fused_shared_expert": False}, False),
+        ("hip", {"use_allreduce": True}, False),
+        ("hip", {"max_tokens_per_rank": 16}, False),
+        ("hip", {"tokens_split_evenly": False}, False),
+    ],
+)
+def test_only_an_amd_fused_shared_expert_config_takes_the_p2p_small_path(
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+    override: dict[str, Any],
+    takes_it: bool,
+) -> None:
+    """The P2P small path's counter words and receive-buffer flags opt the
+    kernels in, so only a configuration they serve allocates them; every other
+    one keeps its graph inputs and memory estimate."""
+    monkeypatch.setattr(
+        ep_config_module, "is_virtual_device_mode", lambda: False
+    )
+    monkeypatch.setattr(ep_config_module, "accelerator_api", lambda: api)
+    config = dataclasses.replace(
+        _base_ep_config(),
+        **{
+            "fused_shared_expert": True,
+            "tokens_split_evenly": True,
+            **override,
+        },
+    )
+    assert config.uses_p2p_small_path == takes_it
+    plain = dataclasses.replace(config, fused_shared_expert=False)
+    words = _ep_counter_words(
+        config.n_experts,
+        config.n_gpus_per_node,
+        config.use_allreduce,
+        config.moe_dim,
+        config.uses_p2p_small_path,
+    )
+    plain_words = _ep_counter_words(
+        plain.n_experts,
+        plain.n_gpus_per_node,
+        plain.use_allreduce,
+        plain.moe_dim,
+        plain.uses_p2p_small_path,
+    )
+    extra = config.estimate_memory_usage() - plain.estimate_memory_usage()
+    if takes_it:
+        assert words == plain_words + _EP_P2P_SMALL_WORDS
+        assert extra == 2 * 4096
+    else:
+        assert words == plain_words
+        assert extra == 0
+
+
+@pytest.mark.parametrize(
+    "override, takes_it",
+    [
+        ({}, True),
+        ({"max_tokens_per_rank": 32}, True),
+        ({"max_tokens_per_rank": 31}, False),
+        # n_experts // n_gpus_per_node + 1 < 256
+        ({"n_experts": 1016, "n_gpus_per_node": 4}, True),
+        ({"n_experts": 1020, "n_gpus_per_node": 4}, False),
+        # top_k * 32 * 4 <= EP_P2P_SMALL_COMBINE_BYTES
+        ({"top_k": 32}, True),
+        ({"top_k": 33}, False),
+        # hidden_size % EP_P2P_SMALL_HIDDEN_MULTIPLE
+        ({"hidden_size": 1024}, True),
+        ({"hidden_size": 512}, False),
+        ({"hidden_size": 7168 + 512}, False),
+    ],
+)
+def test_the_p2p_small_gate_matches_the_kernels_at_the_boundaries(
+    monkeypatch: pytest.MonkeyPatch, override: dict[str, Any], takes_it: bool
+) -> None:
+    """The cases of ``test_ep_p2p_small_gate.mojo``, which pins the kernels'
+    ``ep_p2p_small_on`` at the same boundaries: the property must agree, or the
+    graph opts in a configuration whose kernels fall back (or the reverse)."""
+    monkeypatch.setattr(
+        ep_config_module, "is_virtual_device_mode", lambda: False
+    )
+    monkeypatch.setattr(ep_config_module, "accelerator_api", lambda: "hip")
+    config = dataclasses.replace(
+        _base_ep_config(),
+        **{
+            "fused_shared_expert": True,
+            "tokens_split_evenly": True,
+            "hidden_size": 7168,
+            "n_experts": 256,
+            "n_gpus_per_node": 4,
+            "max_tokens_per_rank": 128,
+            **override,
+        },
+    )
+    assert config.uses_p2p_small_path == takes_it
+
+
+@pytest.mark.parametrize(
+    "virtual_api, host_api, amd",
+    [
+        ("hip", "cpu", True),
+        ("hip", "cuda", True),
+        ("amdgpu", "cpu", True),
+        ("cuda", "hip", False),
+        ("nvidia", "hip", False),
+    ],
+)
+def test_the_p2p_small_path_follows_the_virtual_target_not_the_host(
+    monkeypatch: pytest.MonkeyPatch, virtual_api: str, host_api: str, amd: bool
+) -> None:
+    """A compile-only export for MI355 opts in from a CPU or NVIDIA builder,
+    and one for an NVIDIA target does not from an AMD builder."""
+    set_virtual_device_api(virtual_api)
+    set_virtual_device_target_arch("gfx950" if amd else "sm_100a")
+    set_virtual_device_count(4)
+    try:
+        monkeypatch.setattr(
+            ep_config_module, "accelerator_api", lambda: host_api
+        )
+        config = dataclasses.replace(
+            _base_ep_config(),
+            fused_shared_expert=True,
+            tokens_split_evenly=True,
+            n_gpus_per_node=4,
+        )
+        assert config.uses_p2p_small_path == amd
+    finally:
+        set_virtual_device_count(0)
+
+
+def test_the_p2p_prefill_scratch_is_counted_in_the_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GLM-5.3-Flash on 4 devices (288 experts, top-8, 2048 tokens a rank)
+    takes the prefill paths too, whose scratch sits in the receive-buffer
+    headers next to the small path's flags."""
+    monkeypatch.setattr(
+        ep_config_module, "is_virtual_device_mode", lambda: False
+    )
+    monkeypatch.setattr(ep_config_module, "accelerator_api", lambda: "hip")
+    config = dataclasses.replace(
+        _base_ep_config(),
+        hidden_size=4096,
+        n_experts=288,
+        max_tokens_per_rank=2048,
+        n_gpus_per_node=4,
+        fused_shared_expert=True,
+        tokens_split_evenly=True,
+    )
+    plain = dataclasses.replace(config, fused_shared_expert=False)
+    dispatch = 4096 + 2 * 8 * 2048 * 4 + 2 * 72 * 4
+    combine = 4096 + 4 * 2048 * 8 * (4 + 8) + 256 + 4 * 2048 * 4
+    assert config.estimate_memory_usage() - plain.estimate_memory_usage() == (
+        -(-dispatch // 256) * 256 + -(-combine // 256) * 256
+    )
 
 
 def test_fused_moe_is_requested_only_by_the_developer_switch(
@@ -505,7 +811,7 @@ def _ep2_fused_config(**override: Any) -> EPConfig:
 
 
 def _fused_moe_plans(
-    cases: list[dict[str, bool | int | str | DType]],
+    cases: list[dict[str, bool | int | float | str | DType]],
 ) -> list[tuple[int, int, str]]:
     """The backend's plan answer for each parameter set, all from one host
     graph: every new plan graph is a compile."""
@@ -570,6 +876,44 @@ def test_fused_moe_plan_follows_the_backend(
             refusal,
         )
     assert _plan_fused_moe_workspace(_ep2_fused_config()) == nv24
+
+
+def test_fused_moe_plan_serves_the_top6_cell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A top-6 MoE cell, split over 2 ranks, is served: 192
+    routed experts (96 local), top-6, hidden 5120, MoE width 2304, NVFP4, at
+    a 128-token per-rank capacity, on the decode token block. Its
+    neighbors keep the chain: top-k 8 at the same shape, one token of capacity
+    more, and 384 routed experts over 2 ranks (192 local, past
+    the scheduler's 128)."""
+    monkeypatch.setattr(ep_kernels, "accelerator_api", lambda: "cuda")
+    top6 = _ep2_fused_config(
+        n_experts=192,
+        top_k=6,
+        hidden_size=5120,
+        moe_dim=2304,
+        max_tokens_per_rank=128,
+    )
+    cells, *refusals = _fused_moe_plans(
+        [
+            _fused_moe_parameters(config)
+            for config in (
+                top6,
+                dataclasses.replace(top6, top_k=8),
+                dataclasses.replace(top6, max_tokens_per_rank=129),
+                dataclasses.replace(top6, n_experts=384),
+            )
+        ]
+    )
+    assert cells[1:] == (8, ""), cells
+    assert cells[0] > 0, cells
+    reasons = ("local experts", "capacity", "local experts")
+    for answer, reason in zip(refusals, reasons, strict=True):
+        assert (answer[0], answer[1]) == (0, 0) and reason in answer[2], (
+            reason,
+            answer,
+        )
 
 
 def test_fused_moe_bound_covers_every_format_of_its_element_type(

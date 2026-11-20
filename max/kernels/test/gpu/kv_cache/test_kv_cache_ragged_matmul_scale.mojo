@@ -37,6 +37,7 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
+from std.utils.index import Index
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
@@ -108,12 +109,14 @@ def _initialize_ragged_inputs[
         var ragged_start_idx = Int(input_row_offsets_host_ptr[bs])
         for s in range(unpadded_seq_len):
             var padded_ptr = (
-                hidden_state_padded_host_ptr.unsafe_ptr()
-                + (bs * max_seq_length_batch + s) * hidden_size
+                hidden_state_padded_host_ptr.unsafe_ptr().unsafe_offset(
+                    (bs * max_seq_length_batch + s) * hidden_size
+                )
             )
             var ragged_ptr = (
-                hidden_state_ragged_host_ptr.unsafe_ptr()
-                + (ragged_start_idx + s) * hidden_size
+                hidden_state_ragged_host_ptr.unsafe_ptr().unsafe_offset(
+                    (ragged_start_idx + s) * hidden_size
+                )
             )
             unsafe_memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 
@@ -304,8 +307,7 @@ def execute_matmul_k_cache_ragged_scale[
 
     # Execute test with scaled implementation.
     _matmul_k_cache_ragged_scale_impl[
-        target="gpu",
-        scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
+        scales_granularity_mnk=(1, block_scale, block_scale),
     ](
         hidden_state_ragged_tensor,
         input_row_offsets_tensor,
@@ -319,7 +321,9 @@ def execute_matmul_k_cache_ragged_scale[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=True,
-        scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, block_scale, block_scale
+        ),
     ](
         ref_output.device_tensor(),
         hidden_state_ragged_tensor,

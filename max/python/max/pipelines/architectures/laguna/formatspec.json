@@ -1,0 +1,54 @@
+{
+  "argument_markers": "text",
+  "argument_syntax": "glm_xml",
+  "call": {
+    "begin": {
+      "id": 25,
+      "special": false,
+      "text": "<tool_call>"
+    },
+    "end": {
+      "id": 26,
+      "special": false,
+      "text": "</tool_call>"
+    },
+    "name_layout": {
+      "kind": "bare_then_args"
+    },
+    "section": null,
+    "sep": null
+  },
+  "delivery": {
+    "kind": "id",
+    "string_delim": null
+  },
+  "format": "formatspec.spec",
+  "json_whitespace": "spaced",
+  "reasoning": {
+    "close": {
+      "id": 19,
+      "special": false,
+      "text": "</think>"
+    },
+    "close_suffix": "",
+    "default": "on",
+    "open": {
+      "id": 18,
+      "special": false,
+      "text": "<think>"
+    },
+    "prompt_start": "prefilled_when_on",
+    "strip_prefix": ""
+  },
+  "spec_version": 1,
+  "terminators": [
+    {
+      "id": 2,
+      "text": "〈|EOS|〉"
+    },
+    {
+      "id": 24,
+      "text": "</assistant>"
+    }
+  ]
+}

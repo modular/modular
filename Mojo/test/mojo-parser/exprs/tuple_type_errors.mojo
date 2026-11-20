@@ -13,7 +13,7 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
-# MOCO-3472: a non-empty tuple literal used in type position must be
+# MOCO-3472: a tuple literal used in type position must be
 # diagnosed directly, instead of falling through to Tuple's constructor-call
 # machinery and failing with a confusing trait-conformance error.
 
@@ -40,7 +40,7 @@ def single_element_tuple_type():
     var x: (Int,)
 
 
-# The empty tuple is the one legitimate type/value ambiguity and must
-# continue to work as sugar for 'Tuple[]'.
+# MOCO-4331: the empty tuple is now always a tuple value, not a type.
+# expected-error @+1 {{expected a type, found a tuple value; use 'Tuple[...]' to write a tuple type}}
 def returns_empty_tuple_type() -> ():
     return ()

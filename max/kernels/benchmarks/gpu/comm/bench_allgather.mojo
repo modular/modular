@@ -63,23 +63,24 @@ def _compute_lengths[
     var base_length = num_bytes // elem_size
     var lengths = Array[Int, ngpus](fill=base_length)
 
-    comptime if length_mode == "uniform":
-        pass
-    elif length_mode == "halved_last":
-        lengths[ngpus - 1] = base_length // 2
-    elif length_mode == "doubled_first":
-        lengths[0] = base_length * 2
-    elif length_mode == "staircase":
-        for i in range(ngpus):
-            lengths[i] = base_length * (i + 1) // ngpus
-    elif length_mode == "uneven":
-        # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
-        # If base_length is 0 the shorter ones clamp to 0.
-        var half = (ngpus + 1) // 2
-        for i in range(half, ngpus):
-            lengths[i] = max(base_length - 1, 0)
-    else:
-        comptime assert False, "unknown length_mode: " + length_mode
+    comptime match length_mode:
+        case "uniform":
+            pass
+        case "halved_last":
+            lengths[ngpus - 1] = base_length // 2
+        case "doubled_first":
+            lengths[0] = base_length * 2
+        case "staircase":
+            for i in range(ngpus):
+                lengths[i] = base_length * (i + 1) // ngpus
+        case "uneven":
+            # First ceil(ngpus/2) GPUs get base_length, rest get base_length - 1.
+            # If base_length is 0 the shorter ones clamp to 0.
+            var half = (ngpus + 1) // 2
+            for i in range(half, ngpus):
+                lengths[i] = max(base_length - 1, 0)
+        case _:
+            comptime assert False, t"unknown length_mode: {length_mode}"
 
     return lengths^
 
@@ -114,7 +115,7 @@ def bench_allgather[
     cache_busting: Bool,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     lengths: Array[Int, ngpus],
     max_num_blocks: Optional[Int],
 ) raises:
@@ -217,11 +218,11 @@ def bench_allgather[
 
     @inline(.always)
     def bench_iter(
-        mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bencher: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut tt_in, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut tt_in, imm}:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
@@ -258,17 +259,8 @@ def bench_allgather[
     # See: https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md
     var busbw = gbps * Float64(ngpus - 1) / Float64(ngpus)
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Copy results back and verify the benchmarked outputs directly.
@@ -290,12 +282,8 @@ def bench_allgather[
                 var expected = _per_gpu_value[dtype](src_idx, j)
                 if verify_host[j] != expected:
                     print(
-                        "Verification failed at GPU",
-                        gpu_idx,
-                        "source",
-                        src_idx,
-                        "index",
-                        j,
+                        t"Verification failed at GPU {gpu_idx} source"
+                        t" {src_idx} index {j}"
                     )
                     print("Value:", verify_host[j])
                     print("Expected:", expected)
@@ -335,7 +323,7 @@ def main() raises:
     )
 
     # Create GPU contexts.
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 

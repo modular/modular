@@ -18,6 +18,7 @@ from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
+from std.sys.intrinsics import assume
 from std.bit import next_power_of_two
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
@@ -27,9 +28,16 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from max.gpu import (
     block_id_in_cluster,
     thread_idx,
@@ -54,17 +62,21 @@ from layout import (
     coord,
     Coord,
     Idx,
-    IntTuple,
-    Layout,
     TensorLayout,
-    RuntimeLayout,
+    TMemEngine,
+    TMem16x256bRegisters,
+    TMemStorage,
+    TMEM_NUM_COLS,
+    TMEM_NUM_LANES,
     row_major,
+    tmem_copy_async,
+    tmem_16x256b,
 )
-from layout.tile_tensor import TileTensor, LTToTTLayout
+from layout.tile_tensor import TileTensor
 
 from .utils import partial_simd_load
 from layout.swizzle import Swizzle, make_swizzle
-from layout.tile_layout import col_major as tl_col_major
+from layout.layout import Layout, col_major as tl_col_major
 from layout.tensor_core_async import tile_layout_k_major_typed
 from structured_kernels.tile_types import (
     SMemTileArray2D,
@@ -78,7 +90,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -86,10 +98,8 @@ from .arch.sm100 import MmaOpSM100_SS
 from .utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
     identity_compute_fn,
     no_compute_fn,
-    elementwise_epilogue_type,
     lora_qkv_plane_row_offset,
     no_epilogue_fn,
 )
@@ -98,6 +108,24 @@ from .matmul.gpu.sm100_structured.structured_kernels.epilogue_components import 
 )
 from .utils_gpu import MatmulConfig
 from .grouped_matmul_tile_scheduler import TileScheduler
+
+comptime ACCUM_LAYOUT = Layout(
+    shape=coord[TMEM_NUM_LANES, TMEM_NUM_COLS],
+    stride=coord[1, TMEM_NUM_LANES],
+)
+"""The whole TMEM allocation as a lane-by-column grid."""
+# 32-bit indices: TMEM addresses are 32-bit, so the layout math that
+# produces view offsets should not widen them.
+comptime AccumTile = TileTensor[
+    _,
+    type_of(ACCUM_LAYOUT),
+    MutAnyOrigin,
+    Engine=TMemEngine,
+    linear_idx_type=DType.uint32,
+]
+comptime AccumStorage = TMemStorage[_, MutAnyOrigin]
+comptime FRAGMENT_LANES = 16
+"""Lanes of the block a `tmem_16x256b` view covers."""
 
 
 @fieldwise_init
@@ -165,12 +193,12 @@ def load_AB[
     num_pipeline_stages: Int,
     //,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
-    expert_ids: UnsafePointer[mut=False, Int32, _],
+    expert_ids: ImmPointer[Int32, _],
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     a_smem_tiles: SMemTileArray2D[
@@ -179,12 +207,8 @@ def load_AB[
     b_smem_tiles: SMemTileArray2D[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
+    tma_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
@@ -314,11 +338,11 @@ def load_AB[
     var b_smem_tile = b_smem_tiles[stage]
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size,
+        a_smem_tile.ptr.unsafe_offset(peer_cta_coord[2] * a_tma_load_size),
         a_smem_tile.layout,
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size,
+        b_smem_tile.ptr.unsafe_offset(peer_cta_coord[1] * b_tma_load_size),
         b_smem_tile.layout,
     )
 
@@ -362,23 +386,19 @@ def load_AB_cuda_core[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_32B,
     a_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
     b_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
     a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     b_gmem: TileTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
-    expert_ids: UnsafePointer[mut=False, Int32, _],
+    expert_ids: ImmPointer[Int32, _],
     a_smem_tiles: SMemTileArray2D[
         a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
     b_smem_tiles: SMemTileArray2D[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
+    tma_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
@@ -501,7 +521,7 @@ def load_AB_cuda_core[
 
     # A tile [BM, BK]
     comptime a_sw = make_swizzle[a_type, a_swizzle]()
-    var a_smem_ptr = a_smem_tiles[stage].ptr
+    var a_smem = a_smem_tiles[stage].reshape(row_major[BM * BK]())
     comptime a_rows_per_thread = BM // WARP_SIZE
     comptime a_tv = tl_col_major(Idx[WARP_SIZE], Idx[a_rows_per_thread])
 
@@ -515,7 +535,7 @@ def load_AB_cuda_core[
         var vec: SIMD[a_type, K_padded]
         comptime if K_actual == K_padded:
             vec = a_gmem.load[width=K_padded, alignment=a_row_align](
-                Coord(Int(a_row0 + m), Int(a_col0))
+                (Int(a_row0 + m), Int(a_col0))
             )
         else:
             vec = partial_simd_load[K_padded](
@@ -527,13 +547,13 @@ def load_AB_cuda_core[
         comptime for k in range(BK):
             var smem_off = a_sw(m * Int32(BK) + Int32(k))
             comptime if k < K_actual:
-                a_smem_ptr[smem_off] = vec[k]
+                a_smem[smem_off] = vec[k]
             else:
-                a_smem_ptr[smem_off] = Scalar[a_type](0)
+                a_smem[smem_off] = 0
 
     # B tile [BN, BK]
     comptime b_sw = make_swizzle[b_type, b_swizzle]()
-    var b_smem_ptr = b_smem_tiles[stage].ptr
+    var b_smem = b_smem_tiles[stage].reshape(row_major[BN * BK]())
     comptime b_rows_per_thread = BN // WARP_SIZE
     comptime b_tv = tl_col_major(Idx[WARP_SIZE], Idx[b_rows_per_thread])
 
@@ -542,7 +562,7 @@ def load_AB_cuda_core[
         var vec: SIMD[b_type, K_padded]
         comptime if K_actual == K_padded:
             vec = b_gmem.load[width=K_padded, alignment=b_row_align](
-                Coord(Int(b_row0 + n), Int(b_col0))
+                (Int(b_row0 + n), Int(b_col0))
             )
         else:
             vec = partial_simd_load[K_padded](
@@ -554,9 +574,9 @@ def load_AB_cuda_core[
         comptime for k in range(BK):
             var smem_off = b_sw(n * Int32(BK) + Int32(k))
             comptime if k < K_actual:
-                b_smem_ptr[smem_off] = vec[k]
+                b_smem[smem_off] = vec[k]
             else:
-                b_smem_ptr[smem_off] = Scalar[b_type](0)
+                b_smem[smem_off] = 0
 
     # fence.proxy.async makes smem stores visible through the
     # mbarrier async proxy before signaling completion.
@@ -585,10 +605,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     //,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
 ](
     tmem_addr: UInt32,
     a_smem_tiles: SMemTileArray2D[
@@ -597,12 +617,8 @@ def consumer_main_loop[
     b_smem_tiles: SMemTileArray2D[
         b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
+    tma_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
         c_type,
@@ -696,7 +712,7 @@ def consumer_main_loop[
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
-        mma_op.commit(mma_mbar + stage)
+        mma_op.commit(mma_mbar.unsafe_offset(stage))
 
 
 @inline(.always)
@@ -740,7 +756,7 @@ def stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.static_stride[0]
     comptime stride1 = dst.static_stride[1]
-    comptime assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
+    comptime assert stride1 == 1, String(t"stride1 must be 1. Got: {stride1}")
     comptime shape0 = dst.static_shape[
         1
     ] if not transpose_c else dst.static_shape[0]
@@ -748,19 +764,21 @@ def stsm_helper[
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-matrix-fragments-shape-16256b
     # but transposed and coalesced by 8 elements.
     comptime trans_st_matrix_layout = Layout(
-        IntTuple(8, 2, 2), IntTuple(stride0, 8 * stride1, 8 * stride0)
+        Coord(Idx[8], Idx[2], Idx[2]),
+        Coord(Idx[stride0], Idx[8 * stride1], Idx[8 * stride0]),
     )
     comptime stsmx4_tile_offset = (
         stride0 if transpose_c else stride1
     ) * stsmx4_row_size
 
     var lane = lane_id()
-    comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-        layout, element_type=.uint32, linear_idx_type=.uint32
-    ]
     var stsm_lane_offset = UInt32(
         (lane & 15) * stride0 + (lane >> 4)
-    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
+    ) * 8 if not transpose_c else trans_st_matrix_layout.__call__[
+        linear_idx_type=.uint32
+    ](
+        Coord(lane)
+    )
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx4_row_size):
@@ -776,7 +794,7 @@ def stsm_helper[
             comptime for _j in range(cast_width):
                 v[k * cast_width + _j] = casted[_j]
         st_matrix[simd_width=4, transpose=transpose_c](
-            dst.unsafe_ptr().unsafe_mut_cast[True]() + offset,
+            dst.unsafe_ptr().unsafe_mut_cast[True]().unsafe_offset(offset),
             bitcast[.float32, 4](v),
         )
 
@@ -810,34 +828,28 @@ def multi_stage_store_C[
     num_accum_pipeline_stages: Int,
     /,
     *,
-    c_smem_layout: Layout,
+    c_smem_layout_t: TensorLayout,
+    c_smem_layout: c_smem_layout_t,
     accum_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     stage_stride_cols: Int,
     c_static_N: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
     transpose_c: Bool = False,
 ](
-    c_smem_base: UnsafePointer[
-        mut=True, Scalar[c_type], _, address_space=.SHARED
-    ],
+    c_smem_base: MutPointer[Scalar[c_type], _, address_space=.SHARED],
     c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
-    c_ptr: UnsafePointer[mut=True, Scalar[c_type], _],
+    c_ptr: MutPointer[Scalar[c_type], _],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
-    accum_full_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
-    accum_empty_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
+    accum_full_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
+    accum_empty_mbar: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[Int, Int],
     group_end_idx: UInt32,
@@ -862,6 +874,8 @@ def multi_stage_store_C[
             per-store element counts and row stride.
         num_accum_pipeline_stages: Number of accumulator pipeline stages
             used to double-buffer TMEM-to-global-memory C stores.
+        c_smem_layout_t: Type of the C shared-memory output tile stage
+            layout.
         c_smem_layout: Layout of one C shared-memory output tile stage;
             its shape determines the per-stage column width and tile size.
         accum_type: Accumulator dtype loaded from tensor memory before
@@ -880,11 +894,9 @@ def multi_stage_store_C[
             dimension (defaults to 1).
         num_output_warps: Number of warps participating in the epilogue
             store (defaults to 4).
-        elementwise_lambda_fn: Optional elementwise epilogue applied to
-            stored C fragments (defaults to None).
         EpilogueFnType: Type of `epilogue_fn`.
-        has_epilogue_fn: Whether `epilogue_fn` stores C in place of
-            `elementwise_lambda_fn` (defaults to False).
+        has_epilogue_fn: Whether `epilogue_fn` stores C in place of the
+            TMA store (defaults to False).
         ComputeFnType: Type of `compute_fn`.
         has_compute_fn: Whether `compute_fn` maps the C fragments in
             registers before they are staged to shared memory, so the TMA
@@ -940,8 +952,8 @@ def multi_stage_store_C[
     # and output one tile per stage.
     # stage N is 32
     comptime N_dim = 0 if transpose_c else 1
-    comptime stageN = c_smem_layout.shape[N_dim].value()
-    comptime stage_contiguous_size = c_smem_layout.shape[1].value()
+    comptime stageN = c_smem_layout_t.static_shape[N_dim]
+    comptime stage_contiguous_size = c_smem_layout_t.static_shape[1]
     # so num stages is usually 256 by 32 is 8
     # MMA Size will be larger than output tile shape. E.G. MMA_MxMMA_N = (128, 256); OUT_MxOUT_N = (128, 32)
 
@@ -968,13 +980,27 @@ def multi_stage_store_C[
     var index = accum_pipeline_consumer_state.index()
     var phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[index].wait(phase)
-    # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
+    var accum = AccumTile[accum_type](
+        AccumStorage[accum_type](tmem_addr), ACCUM_LAYOUT
+    )
+    # Taking the warp's quadrant before the stage keeps its lane offset in
+    # the loop-invariant base address.
+    var warp_tile = accum.tile[WARP_SIZE, TMEM_NUM_COLS](
+        Coord(Int(warp_id), Idx[0])
+    )
+    # Without the bound, encoding the stage column masks the high bits of
+    # the product on every tile.
+    assume(index < UInt32(num_accum_pipeline_stages))
+    var stage_tile = warp_tile.tile[WARP_SIZE, stage_stride_cols](
+        Coord(Idx[0], Int(index))
+    )
 
     comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
+    comptime FragRegs = TMem16x256bRegisters[stageN]
+    comptime assert FragRegs.static_product == frag_width
 
     comptime assert not (
-        (Bool(elementwise_lambda_fn) or has_epilogue_fn) and has_compute_fn
+        has_epilogue_fn and has_compute_fn
     ), "a store epilogue and a compute epilogue are mutually exclusive"
     comptime if has_compute_fn:
         comptime assert transpose_c and (MMA_M == 256 or cta_group == 1), (
@@ -983,33 +1009,39 @@ def multi_stage_store_C[
         )
 
     comptime for stage in range(num_stages):
-        # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
-        # MMA has result in 32 rows per warp's data paths.
-        # upper_frag is for rows 0-15, lower is for 16-31.
-        var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
-        var upper_frag = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=rep,
-            dtype=accum_type,
-            pack=False,
-        ](stage_tmem_addr)
-
-        var lower_frag = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=rep,
-            dtype=accum_type,
-            pack=False,
-        ](stage_tmem_addr + (16 << 16))
-
-        tcgen05_load_wait()
+        # The fragments stay `Array`s for `stsm_helper` and the compute
+        # epilogue; the register tiles only give the copies their layout.
+        var upper_frag = Array[Scalar[accum_type], frag_width](
+            uninitialized=True
+        )
+        var lower_frag = Array[Scalar[accum_type], frag_width](
+            uninitialized=True
+        )
+        tmem_copy_async(
+            TileTensor(upper_frag.unsafe_ptr(), FragRegs),
+            tmem_16x256b(
+                stage_tile[
+                    : Idx[FRAGMENT_LANES],
+                    Idx[stage * stageN] : Idx[(stage + 1) * stageN],
+                ]
+            ),
+        )
+        tmem_copy_async(
+            TileTensor(lower_frag.unsafe_ptr(), FragRegs),
+            tmem_16x256b(
+                stage_tile[
+                    Idx[FRAGMENT_LANES] : Idx[2 * FRAGMENT_LANES],
+                    Idx[stage * stageN] : Idx[(stage + 1) * stageN],
+                ]
+            ),
+        )
+        TMemEngine.wait_load()
 
         comptime if stage == num_stages - 1:
-            umma_arrive_leader_cta(accum_empty_mbar + index)
+            umma_arrive_leader_cta(accum_empty_mbar.unsafe_offset(index))
 
         # Assume double-buffer for shared memory packing
-        comptime c_smem_tile_size = c_smem_layout.size()
+        comptime c_smem_tile_size = c_smem_layout_t.static_product
 
         comptime if has_compute_fn:
             # Round to c_type first so the function sees exactly the values
@@ -1048,8 +1080,8 @@ def multi_stage_store_C[
 
         # 128B alignment comes from external_memory and aligned buffer offsets.
         var c_smem_tile = TileTensor(
-            c_smem_base + (stage % 2) * c_smem_tile_size,
-            LTToTTLayout[c_smem_layout](),
+            c_smem_base.unsafe_offset((stage % 2) * c_smem_tile_size),
+            c_smem_layout,
         )
 
         comptime if transpose_c:
@@ -1096,9 +1128,10 @@ def multi_stage_store_C[
 
         var lane = lane_id()
 
-        comptime TMA_BM = c_smem_layout.shape[
-            0
-        ].value() if MMA_M == 256 or cta_group == 1 else BM
+        comptime TMA_BM = (
+            c_smem_layout_t.static_shape[0] if MMA_M == 256
+            or cta_group == 1 else BM
+        )
 
         var elect_one_warp = (
             warp_id == 0 if MMA_M == 256
@@ -1118,15 +1151,13 @@ def multi_stage_store_C[
             or cta_group == 1 else coord_n_mma_m128
         )
 
-        var n_inbound_size = group_end_idx - UInt32(coord_n)
+        # A stage can start past the group's last row when MMA_N spans
+        # several stages; it then stores nothing.
+        var n_inbound_size = group_end_idx - min(UInt32(coord_n), group_end_idx)
 
-        comptime M = c_smem_layout.shape[1].value()
+        comptime M = c_smem_layout_t.static_shape[1]
 
-        comptime has_elementwise_lambda = (
-            Bool(elementwise_lambda_fn) or has_epilogue_fn
-        )
-
-        if not has_elementwise_lambda and n_inbound_size >= UInt32(stageN):
+        if not has_epilogue_fn and n_inbound_size >= UInt32(stageN):
             if elect_one_warp and lane == 0:
                 fence_async_view_proxy()
 
@@ -1170,33 +1201,34 @@ def multi_stage_store_C[
             comptime assert (
                 transpose_c
             ), "Unaligned handling only supports transpose_c"
-            comptime assert MMA_M == 256 or cta_group == 1, (
-                "Unaligned handling only supports MMA_M == 256 or cta_group =="
-                " 1. Got "
-                + String(MMA_M)
-                + " and "
-                + String(cta_group)
+            comptime assert MMA_M == 256 or cta_group == 1, String(
+                t"Unaligned handling only supports MMA_M == 256 or "
+                t"cta_group == 1. Got {MMA_M} and {cta_group}"
             )
+
+            # Earlier stages' TMA stores may still read the C buffer a later
+            # stage rewrites, and this branch skips their waits.
+            comptime if not has_epilogue_fn:
+                if elect_one_warp and lane == 0:
+                    c_tma_op.wait_group[0]()
 
             comptime chunkM = st_matrix_swizzle.bytes() // size_of[c_type]()
             comptime vec_chunkM = chunkM // simd_size
             comptime chunk_num = M // chunkM
-            comptime logical_c_layout = Layout.row_major(
-                chunk_num, stageN, vec_chunkM
-            )
+            comptime logical_c_size = chunk_num * stageN * vec_chunkM
             comptime thread_num = num_output_warps * WARP_SIZE
-            comptime assert logical_c_layout.size() % thread_num == 0, (
-                "logical_c_layout.size() must be a multiple of thread_num. Got "
-                + String(logical_c_layout.size())
-                + "."
+            comptime assert logical_c_size % thread_num == 0, String(
+                t"logical C tile size must be a multiple of thread_num."
+                t" Got {logical_c_size}."
             )
-            comptime value_shape = logical_c_layout.size() // thread_num
+            comptime value_shape = logical_c_size // thread_num
             comptime cN = c_static_N
+            # `swizzle` yields offsets into the stage's flat storage.
+            var c_smem_flat = c_smem_tile.reshape(row_major[c_smem_tile_size]())
 
             comptime for v in range(value_shape):
                 comptime thread_offset = v * thread_num
                 var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
-                # idx2crd but RuntimeTuple.idx2crd is too hard to use
                 var vec_chunkM_idx = thread_index % UInt32(vec_chunkM)
                 var rest = thread_index // UInt32(vec_chunkM)
                 var n_idx = rest % UInt32(stageN)
@@ -1205,23 +1237,23 @@ def multi_stage_store_C[
                 var src_idx = UInt32(simd_size) * thread_index
                 var c_smem_idx = swizzle(src_idx)
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
-                var val_vec = (c_smem_tile.unsafe_ptr() + c_smem_idx).load[
+                var val_vec = c_smem_flat.load[
                     width=simd_size, alignment=alignment
-                ]()
+                ](Coord(c_smem_idx))
                 var chunk_idx = rest // UInt32(stageN)
                 var n = UInt32(coord_n) + n_idx
                 var m = UInt32(work_tile_coord[0]) + (
                     chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
                 ) * UInt32(simd_size)
                 if m < UInt32(cN):
-                    comptime if has_elementwise_lambda:
-                        apply_elementwise_epilogue[
-                            elementwise_lambda_fn, alignment=alignment
-                        ](epilogue_fn, (n, m), val_vec)
+                    comptime if has_epilogue_fn:
+                        epilogue_fn[c_type, simd_size, alignment=alignment](
+                            (n, m), val_vec
+                        )
                     else:
-                        (c_ptr + Int(n) * cN + Int(m)).store[
-                            alignment=alignment
-                        ](val_vec)
+                        c_ptr.unsafe_offset(Int(n) * cN).unsafe_offset(
+                            Int(m)
+                        ).unsafe_store[alignment=alignment](val_vec)
 
         comptime if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
@@ -1237,7 +1269,7 @@ def zero_output[
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
 ](
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
     coord: Tuple[UInt32, UInt32],
     group_end_idx: UInt32,
     compute_fn: ComputeFnType,
@@ -1278,11 +1310,11 @@ def zero_output[
 
     # Note that output_tile_shape is always the proper C tile shape independent of transpose_c.
     comptime output_N = output_tile_shape.element_types[1].static_value
-    var ptr = c_ptr + Int(coord[1]) * c_stride + Int(coord[0])
-    comptime assert thread_num * simd_size >= output_N, (
-        "output_N must be less than thread_num * simd_size. Got "
-        + String(output_N)
-        + "."
+    var ptr = c_ptr.unsafe_offset(Int(coord[1]) * c_stride).unsafe_offset(
+        Int(coord[0])
+    )
+    comptime assert thread_num * simd_size >= output_N, String(
+        t"output_N must be less than thread_num * simd_size. Got {output_N}."
     )
     comptime row_thread_num = UInt32(output_N // simd_size)
     var row_boundary = (UInt32(c_N) - coord[0]) // UInt32(simd_size)
@@ -1302,8 +1334,10 @@ def zero_output[
                     ),
                     zero_vec,
                 )
-            (ptr + thread_idx.x * simd_size).store[alignment=alignment](val)
-            ptr += c_stride
+            (ptr.unsafe_offset(thread_idx.x * simd_size)).unsafe_store[
+                alignment=alignment
+            ](val)
+            ptr = ptr.unsafe_offset(c_stride)
 
 
 @inline(.always)
@@ -1311,14 +1345,13 @@ def zero_output_epilogue[
     c_type: DType,
     /,
     *,
-    c_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    c_smem_layout: TensorLayout,
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     c_static_N: Int,
     c_swizzle: TensorMapSwizzle,
     cta_group: Int,
     num_output_warps: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     EpilogueFnType: ElementwiseEpilogueFn,
     has_epilogue_fn: Bool,
     transpose_c: Bool,
@@ -1329,10 +1362,10 @@ def zero_output_epilogue[
 ):
     """Zero an inactive group's output THROUGH the elementwise epilogue.
 
-    Mirror of the epilogue (unaligned/`elementwise_lambda_fn`) branch of
+    Mirror of the epilogue (unaligned/`epilogue_fn`) branch of
     `multi_stage_store_C`, but with a zero accumulator: for an inactive group
     (`expert_id < 0`) there is no MMA, so this walks the same output-tile
-    coordinate mapping and calls `elementwise_lambda_fn` with a zero vector at
+    coordinate mapping and calls `epilogue_fn` with a zero vector at
     each `(n, m)`. It deliberately does NOT wait on `accum_full_mbar` or read
     TMEM: the main-load and MMA warps skip inactive groups entirely (they never
     arrive on that barrier), so waiting would deadlock. Matches the naive
@@ -1340,15 +1373,13 @@ def zero_output_epilogue[
     `expert == -1` instead of storing zeros directly to C -- so callers whose
     real output lives behind the epilogue (e.g. the LoRA-B QKV expand's
     `route_qkv`) get their `-1` tokens zeroed without a separate memset.
-    With `has_epilogue_fn`, `epilogue_fn` takes the zeros in place of
-    `elementwise_lambda_fn`.
     """
     comptime MMA_M = mma_shape[0]
     comptime MMA_N = mma_shape[1]
     comptime simd_size = simd_width_of[c_type]()
 
     comptime N_dim = 0 if transpose_c else 1
-    comptime stageN = c_smem_layout.shape[N_dim].value()
+    comptime stageN = c_smem_layout.static_shape[N_dim]
     comptime num_stages = MMA_N // stageN if (
         MMA_M == 256 or cta_group == 1
     ) else MMA_N // stageN // 2
@@ -1361,15 +1392,15 @@ def zero_output_epilogue[
     ), "zero_output_epilogue only supports MMA_M == 256 or cta_group == 1"
 
     # `M` here is the tile's contiguous (row) extent, matching
-    # `c_smem_layout.shape[1]` in `multi_stage_store_C`.
-    comptime M = c_smem_layout.shape[1].value()
+    # `c_smem_layout.static_shape[1]` in `multi_stage_store_C`.
+    comptime M = c_smem_layout.static_shape[1]
     comptime chunkM = c_swizzle.bytes() // size_of[c_type]()
     comptime vec_chunkM = chunkM // simd_size
     comptime chunk_num = M // chunkM
-    comptime logical_c_layout = Layout.row_major(chunk_num, stageN, vec_chunkM)
+    comptime logical_c_size = chunk_num * stageN * vec_chunkM
     comptime thread_num = num_output_warps * WARP_SIZE
-    comptime assert logical_c_layout.size() % thread_num == 0
-    comptime value_shape = logical_c_layout.size() // thread_num
+    comptime assert logical_c_size % thread_num == 0
+    comptime value_shape = logical_c_size // thread_num
     comptime cN = c_static_N
     comptime alignment = align_of[SIMD[c_type, simd_size]]()
     var zero_vec = SIMD[c_type, simd_size](0)
@@ -1378,7 +1409,7 @@ def zero_output_epilogue[
         # Only the M==256/cta_group==1 coord form is reachable here (asserted
         # above); `coord_n` matches `coord_n_mma_m256` in `multi_stage_store_C`.
         var coord_n = work_tile_coord[1] + stage * stageN
-        var n_inbound_size = group_end_idx - UInt32(coord_n)
+        var n_inbound_size = group_end_idx - min(UInt32(coord_n), group_end_idx)
 
         comptime for v in range(value_shape):
             comptime thread_offset = v * thread_num
@@ -1394,9 +1425,9 @@ def zero_output_epilogue[
                 chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
             ) * UInt32(simd_size)
             if m < UInt32(cN):
-                apply_elementwise_epilogue[
-                    elementwise_lambda_fn, alignment=alignment
-                ](epilogue_fn, (n, m), zero_vec)
+                epilogue_fn[c_type, simd_size, alignment=alignment](
+                    (n, m), zero_vec
+                )
 
 
 # Important deviation from the normal SM100 matmul: The coordinate returned by
@@ -1404,7 +1435,13 @@ def zero_output_epilogue[
 # splitting. Thus, we simply take the `work_tile_coord` without scaling it
 # in the callee; the scheduler returns element coordinates instead of tile
 # coordinates.
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1420,9 +1457,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
     b_desc_shape: Coord,
     c_tile_shape: Coord,
     c_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     num_output_stages: Int = 2,
@@ -1432,25 +1469,25 @@ def blackwell_tma_umma_warp_specialized_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     transpose_c: Bool = False,
     use_tma: Bool = True,
     K_actual: Int = 0,
     a_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
     b_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
-    expert_usage_stats: UnsafePointer[UInt32, ImmutAnyOrigin],
+    expert_usage_stats: ImmPointer[UInt32, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
-    expert_ids: UnsafePointer[Int32, ImmutAnyOrigin],
+    expert_ids: ImmPointer[Int32, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    b_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
+    b_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
     c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
     a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     b_gmem: TileTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
@@ -1502,16 +1539,14 @@ def blackwell_tma_umma_warp_specialized_kernel[
             to `SWIZZLE_128B`).
         cta_group: Number of CTAs cooperating per MMA along the M dimension
             (defaults to 2).
-        elementwise_lambda_fn: Optional elementwise epilogue applied to stored
-            C fragments (defaults to None).
         EpilogueFnType: Type of `epilogue_fn`.
-        has_epilogue_fn: Whether `epilogue_fn` stores C in place of
-            `elementwise_lambda_fn` (defaults to False). Launch with
-            `host_arg=epilogue_fn`.
+        has_epilogue_fn: Whether `epilogue_fn` stores C in place of the TMA
+            store (defaults to False). Launch with
+            `epilogue_fn` as the first `host_args` element.
         ComputeFnType: Type of `compute_fn`.
         has_compute_fn: Whether `compute_fn` maps C in registers ahead of
             the TMA store (defaults to False). Launch with
-            `host_arg2=compute_fn`.
+            `compute_fn` as the second `host_args` element.
         a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane row
             offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
         transpose_c: Whether to transpose the C output tile in shared memory
@@ -1524,6 +1559,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
             CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
         b_gmem_layout: Layout of the B global-memory tensor, used only by the
             CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
+        pdl_level: Programmatic dependent launch level; above `PDLLevel.OFF`
+            the kernel waits for the predecessor grid immediately before
+            reading `expert_usage_stats`. `PDLLevel.OVERLAP_AT_BEGINNING`
+            releases dependent grids after the TMEM allocation, any other
+            level at the end of the body (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         expert_usage_stats: Pointer to per-expert usage stats; index 1 holds
@@ -1616,8 +1656,12 @@ def blackwell_tma_umma_warp_specialized_kernel[
     )
 
     var a_smem_base = base_ptr_smem
-    var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
+    var b_smem_base = a_smem_base.unsafe_offset(a_smem_size).unsafe_bitcast[
+        Scalar[b_type]
+    ]()
+    var c_smem_base = b_smem_base.unsafe_offset(b_smem_size).unsafe_bitcast[
+        Scalar[c_type]
+    ]()
 
     # TileTensor views of shared memory for both TMA producer and MMA consumer.
     var a_smem_tt = SMemTileArray2D[
@@ -1635,24 +1679,34 @@ def blackwell_tma_umma_warp_specialized_kernel[
         swizzle_mode_to_bytes[b_swizzle],
     ](b_smem_base)
 
-    var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
+    var smem_pool = c_smem_base.unsafe_offset(c_smem_size).unsafe_bitcast[
+        Int64
+    ]()
 
     var tma_mbar_ptr = smem_pool
-    var mma_mbar_ptr = tma_mbar_ptr + num_pipeline_stages
-    var accum_full_mbar_ptr = mma_mbar_ptr + num_pipeline_stages
-    var accum_empty_mbar_ptr = accum_full_mbar_ptr + num_accum_pipeline_stages
+    var mma_mbar_ptr = tma_mbar_ptr.unsafe_offset(num_pipeline_stages)
+    var accum_full_mbar_ptr = mma_mbar_ptr.unsafe_offset(num_pipeline_stages)
+    var accum_empty_mbar_ptr = accum_full_mbar_ptr.unsafe_offset(
+        num_accum_pipeline_stages
+    )
 
     var tmem_dealloc_mbar_ptr = (
-        accum_empty_mbar_ptr + num_accum_pipeline_stages
-    ).bitcast[Int64]()
+        accum_empty_mbar_ptr.unsafe_offset(num_accum_pipeline_stages)
+    ).unsafe_bitcast[Int64]()
 
-    var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
+    var ptr_tmem_addr = tmem_dealloc_mbar_ptr.unsafe_offset(1).unsafe_bitcast[
+        UInt32
+    ]()
 
-    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    var accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    var accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var accum_full_mbar = accum_full_mbar_ptr.unsafe_bitcast[SharedMemBarrier]()
+    var accum_empty_mbar = accum_empty_mbar_ptr.unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.unsafe_bitcast[
+        SharedMemBarrier
+    ]()
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -1673,7 +1727,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+                Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
             )
 
         comptime for i in range(num_accum_pipeline_stages):
@@ -1703,13 +1757,27 @@ def blackwell_tma_umma_warp_specialized_kernel[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
+
+    # Everything above this point builds descriptors, shared-memory views and
+    # mbarriers, and touches only this CTA's own state, so it runs while the
+    # predecessor grid is still finishing. `expert_usage_stats` is written by
+    # the MoE index kernel that precedes us, so the wait goes immediately
+    # before its first read -- after the TMA descriptor prefetch and the
+    # mbarrier/cluster setup, and before any global load. `b_offsets` is also
+    # written by the predecessor, so the scheduler reads it with plain loads
+    # under PDL: ptxas hoists an invariant `ld.global.nc` of `b_offsets[0]`
+    # above the wait.
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
 
     # num_active_experts is a TileScheduler loop bound, and the persistent grid
     # is fixed at one CTA per SM, so it can be read from the device tensor
@@ -1721,12 +1789,15 @@ def blackwell_tma_umma_warp_specialized_kernel[
     )
     var scheduler = TileScheduler[
         static_MN=expert_m,
-        cluster=Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
+        cluster=(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
         cta_group=cta_group,
-        tile_shape=Index(
-            block_tile_shape[0], block_tile_shape[1], block_tile_shape[2]
+        tile_shape=(
+            block_tile_shape[0],
+            block_tile_shape[1],
+            block_tile_shape[2],
         ),
         swapAB=transpose_c,
+        invariant_offsets=pdl_level == PDLLevel.OFF,
     ](num_active_experts, b_offsets_tensor)
 
     var work_info = scheduler.fetch_next_work()
@@ -1836,6 +1907,18 @@ def blackwell_tma_umma_warp_specialized_kernel[
         # non blocking, arrives and proceeds
         named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
+        # The allocation stays below `wait_on_dependent_grids()`: a CTA that
+        # holds the SM's TMEM while it waits can deadlock against a
+        # predecessor CTA that released this grid before its own allocation
+        # and is still resident on the same SM. Releasing dependents here
+        # only decides when they are scheduled; their own wait still blocks
+        # until this grid has completed. A dependent launches only after every
+        # CTA of this grid has released it, so none is left unscheduled behind
+        # it, and each CTA already holds its TMEM, so a dependent that
+        # allocates TMEM before its own wait cannot starve this grid of it.
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
+
         var tmem_addr = ptr_tmem_addr[0]
 
         while not work_info.is_done():
@@ -1862,8 +1945,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
-                        cluster_shape=Index(
-                            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                        cluster_shape=(
+                            Int(cluster_shape[0]),
+                            Int(cluster_shape[1]),
+                            Int(cluster_shape[2]),
                         ),
                     ](
                         tmem_offset,
@@ -1882,11 +1967,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 if elect_one_sync():
                     comptime if cta_group == 2:
                         mma_arrive_multicast[cta_group](
-                            accum_full_mbar + accum_index,
+                            accum_full_mbar.unsafe_offset(accum_index),
                             UInt16(mma_complete_mask),
                         )
                     else:
-                        mma_arrive(accum_full_mbar + accum_index)
+                        mma_arrive(accum_full_mbar.unsafe_offset(accum_index))
 
                 accum_pipeline_producer_state.step()
             work_info = next_work_info
@@ -1909,16 +1994,18 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 continue
 
             if expert_ids[Int(scheduler.current_group_idx)] < 0:
-                comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
+                comptime if has_epilogue_fn:
                     # An epilogue owns every store and `c_ptr` may be dangling,
                     # so zero the inactive group THROUGH the epilogue (accum==0)
                     # rather than storing zeros straight to C. Matches the naive
                     # path; see `zero_output_epilogue`.
                     zero_output_epilogue[
                         c_type,
-                        c_smem_layout=Layout.row_major(
-                            output_tile_shape.element_types[0].static_value,
-                            output_tile_shape.element_types[1].static_value,
+                        c_smem_layout=type_of(
+                            row_major[
+                                output_tile_shape.element_types[0].static_value,
+                                output_tile_shape.element_types[1].static_value,
+                            ]()
                         ),
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
@@ -1926,7 +2013,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         c_swizzle=c_swizzle,
                         cta_group=cta_group,
                         num_output_warps=num_output_warps,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
                         EpilogueFnType=EpilogueFnType,
                         has_epilogue_fn=has_epilogue_fn,
                         transpose_c=transpose_c,
@@ -1938,9 +2024,17 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         epilogue_fn=epilogue_fn,
                     )
                 else:
+                    # The work tile spans MMA_N tokens; the store tile only
+                    # its first stage of them.
+                    comptime zero_rows = MMA_N if transpose_c else (
+                        output_tile_shape.element_types[0].static_value
+                    )
                     # c_stride == c_N == expert_m for contiguous row-major C.
                     zero_output[
-                        output_tile_shape=output_tile_shape,
+                        output_tile_shape=coord[
+                            zero_rows,
+                            output_tile_shape.element_types[1].static_value,
+                        ],
                         c_stride=expert_m,
                         c_N=expert_m,
                         ComputeFnType=ComputeFnType,
@@ -1957,11 +2051,13 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 continue
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
+            comptime c_smem_layout = row_major[
+                output_tile_shape.element_types[0].static_value,
+                output_tile_shape.element_types[1].static_value,
+            ]()
             multi_stage_store_C[
-                c_smem_layout=Layout.row_major(
-                    output_tile_shape.element_types[0].static_value,
-                    output_tile_shape.element_types[1].static_value,
-                ),
+                c_smem_layout_t=type_of(c_smem_layout),
+                c_smem_layout=c_smem_layout,
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
@@ -1970,7 +2066,6 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
-                elementwise_lambda_fn=elementwise_lambda_fn,
                 EpilogueFnType=EpilogueFnType,
                 has_epilogue_fn=has_epilogue_fn,
                 ComputeFnType=ComputeFnType,
@@ -2004,6 +2099,15 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
         _ = tmem_dealloc_mbar[].arrive()
 
+    # Release the grids that depend on this one: every store has been issued by
+    # the epilogue role above, and a dependent's own `wait_on_dependent_grids`
+    # still blocks until this grid has completed and its stores are visible.
+    # (`OVERLAP_AT_BEGINNING` released them earlier, after the TMEM allocation.)
+    comptime if pdl_level > PDLLevel.OFF and (
+        pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        launch_dependent_grids()
+
 
 def grouped_matmul_sm100_persistent[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
@@ -2019,10 +2123,10 @@ def grouped_matmul_sm100_persistent[
     num_pipeline_stages: Optional[Int] = None,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2063,14 +2167,15 @@ def grouped_matmul_sm100_persistent[
             (defaults to `SWIZZLE_128B`).
         b_swizzle: TMA swizzle mode applied to B shared-memory tiles
             (defaults to `SWIZZLE_128B`).
-        elementwise_lambda_fn: Optional elementwise epilogue applied to
-            stored C fragments (defaults to None).
-        has_epilogue_fn: Whether `epilogue_fn` stores C in place of
-            `elementwise_lambda_fn` (defaults to False).
+        has_epilogue_fn: Whether `epilogue_fn` stores C in place of the
+            TMA store (defaults to False).
         has_compute_fn: Whether `compute_fn` maps C in registers ahead of
             the TMA store (defaults to False).
         a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
             row offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
+        pdl_level: Programmatic dependent launch level, forwarded to the
+            warp-specialized kernel and to its launch attributes (defaults
+            to `PDLLevel()`, which disables PDL).
 
     Args:
         c: Output C tile tensor in generic address space.
@@ -2108,13 +2213,13 @@ def grouped_matmul_sm100_persistent[
         transpose_c=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=has_epilogue_fn,
         ComputeFnType=ComputeFnType,
         has_compute_fn=has_compute_fn,
         # Plane-split boundaries (output-column element offsets) for the optional
         # activation plane select, forwarded unchanged across the swapAB boundary.
         a_plane_splits=a_plane_splits,
+        pdl_level=pdl_level,
     ](
         c.ptr.as_unsafe_any_origin(),
         b.ptr.as_unsafe_any_origin(),  # weights (a after swapAB)
@@ -2148,19 +2253,19 @@ def _grouped_matmul_sm100_persistent[
     transpose_c: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     has_epilogue_fn: Bool = False,
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    expert_ids: UnsafePointer[Int32, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
-    b_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
-    expert_usage_stats: UnsafePointer[UInt32, ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    expert_ids: ImmPointer[Int32, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    b_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    expert_usage_stats: ImmPointer[UInt32, ImmutAnyOrigin],
     M_runtime: Int,
     b_desc_rows: Int,
     epilogue_fn: EpilogueFnType,
@@ -2220,12 +2325,12 @@ def _grouped_matmul_sm100_persistent[
     # No-epilogue callers (e.g. MoE `grouped_matmul_ragged`) emit NO extra host
     # op here: `c_desc_scratch` stays `None` and the descriptor uses `c_ptr`
     # directly, exactly as before this change.
-    comptime has_epilogue = Bool(elementwise_lambda_fn) or has_epilogue_fn
     var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
     var c_desc_ptr = c_ptr
-    comptime if has_epilogue:
-        c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
-        c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
+    comptime if has_epilogue_fn:
+        var scratch = ctx.enqueue_create_buffer[c_type](1)
+        c_desc_ptr = scratch.unsafe_ptr().as_unsafe_any_origin()
+        c_desc_scratch = scratch^
     var c_device = TileTensor(c_desc_ptr, row_major(M_runtime, Idx[expert_m]))
 
     var M = M_runtime
@@ -2261,7 +2366,6 @@ def _grouped_matmul_sm100_persistent[
     comptime output_tile_shape = coord[out_m, out_n]
     comptime split_m = 64 if not transpose_c else width
     comptime split_n = width if not transpose_c else 64
-    comptime split_tile_shape = coord[split_m, split_n]
     comptime c_m = out_m if MMA_M == 256 else split_m
     comptime c_n = out_n if MMA_M == 256 else split_n
     comptime c_tma_tile_shape = coord[c_m, c_n]
@@ -2366,11 +2470,7 @@ def _grouped_matmul_sm100_persistent[
         config.block_tile_shape,
         config.mma_shape,
         transpose_b=transpose_b,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(cluster_shape[0]),
-            Int32(cluster_shape[1]),
-            Int32(cluster_shape[2]),
-        ),
+        cluster_shape=cluster_shape,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
@@ -2384,17 +2484,17 @@ def _grouped_matmul_sm100_persistent[
         K_actual=K,
         a_gmem_layout=a_gmem_layout,
         b_gmem_layout=b_gmem_layout,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         EpilogueFnType=EpilogueFnType,
         has_epilogue_fn=has_epilogue_fn,
         ComputeFnType=ComputeFnType,
         has_compute_fn=has_compute_fn,
         a_plane_splits=a_plane_splits,
+        pdl_level=pdl_level,
     ]
 
-    comptime assert (
-        cluster_shape[1] == 1
-    ), "cluster_shape[1] must be 1. Got " + String(cluster_shape[1])
+    comptime assert cluster_shape[1] == 1, String(
+        t"cluster_shape[1] must be 1. Got {cluster_shape[1]}"
+    )
 
     var grid_dim = (
         B200.sm_count,
@@ -2415,19 +2515,18 @@ def _grouped_matmul_sm100_persistent[
         mnk,
         a_gmem,
         b_gmem,
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
-        grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 4 EPILOGUE warps
-        block_dim=(32 * 6),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 4 EPILOGUE warps
+            block_dim=(32 * 6),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
         ),
+        host_args=(epilogue_fn, compute_fn),
     )
 
     # Keep the C-descriptor scratch buffer alive until the kernel launch above
     # has been enqueued (`c_device`/`c_tma_op` alias its pointer when an
     # epilogue owns all stores). Only exists in the epilogue case.
-    comptime if has_epilogue:
+    comptime if has_epilogue_fn:
         _ = c_desc_scratch^

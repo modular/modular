@@ -163,7 +163,7 @@ def _verify_kv_cache[
                             + ", got "
                             + String(v_val)
                             + " in v_cache at index "
-                            + String(IndexList[4](i, h, actual_len, d))
+                            + String((i, h, actual_len, d))
                         )
             slice_row_offset += 1
 
@@ -279,12 +279,13 @@ def test_kv_cache_2m_iadd_gpu[
         ctx,
     )
     var a_host = a.host_tensor()
+    var a_host_flat = a_host.reshape(row_major(a_host.num_elements()))
     for i in range(a_host.num_elements()):
-        a_host.raw_store(i, Scalar[dtype](i))
+        a_host_flat[i] = Scalar[dtype](i)
     a.to_device()
 
     var layer_idx = 1
-    kv_cache_2m_iadd_dispatch[target="gpu"](
+    kv_cache_2m_iadd_dispatch(
         a.device_tensor(),
         kv_collection_device,
         input_row_offsets_slice.device_tensor(),
@@ -331,7 +332,7 @@ def test_kv_cache_2m_iadd_cpu[
     prompt_lens: IndexList[batch_size],
     cache_lens: IndexList[batch_size],
     num_active_loras: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     comptime num_layers = 2
     assert (
@@ -439,11 +440,12 @@ def test_kv_cache_2m_iadd_cpu[
         a_host_ptr,
         row_major(2 * total_slice_length, Idx[num_heads * head_dim]),
     )
+    var a_host_flat = a_host.reshape(row_major(a_host.num_elements()))
     for i in range(a_host.num_elements()):
-        a_host.raw_store(i, Scalar[dtype](i))
+        a_host_flat[i] = Scalar[dtype](i)
 
     var layer_idx = 1
-    kv_cache_2m_iadd_dispatch[target="cpu"](
+    kv_cache_2m_iadd_dispatch(
         a_host,
         kv_collection_host,
         input_row_offsets_slice_host,
@@ -470,22 +472,22 @@ def test_kv_cache_2m_iadd_cpu[
 
 def main() raises:
     # CPU tests
-    with DeviceContext(api="cpu") as cpu_ctx:
+    with DeviceContext.cpu() as cpu_ctx:
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             2,
             cpu_ctx,
         )
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             4,
             cpu_ctx,
         )
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             0,
             cpu_ctx,
         )
@@ -499,20 +501,20 @@ def main() raises:
     # GPU tests
     with DeviceContext() as ctx:
         test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             2,
             ctx,
         )
         test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             4,
             ctx,
         )
         test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             0,
             ctx,
         )

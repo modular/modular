@@ -32,7 +32,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def test_matmul_sm100_epilogue[
@@ -43,9 +43,9 @@ def test_matmul_sm100_epilogue[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -67,11 +67,11 @@ def test_matmul_sm100_epilogue[
             c_type,
             ") ",
             " problem shape=(",
-            Int(m.value()),
+            Int(m),
             ", ",
-            Int(n.value()),
+            Int(n),
             ", ",
-            Int(k.value()),
+            Int(k),
             ") ",
             "mma_shape=",
             mma_shape,
@@ -93,13 +93,9 @@ def test_matmul_sm100_epilogue[
     )
     var c_shape = row_major(m, Idx[NType.static_value])
 
-    var a_size = Int(m.value()) * Int(k.value())
-    var b_size = (
-        Int(n.value())
-        * Int(k.value()) if transpose_b else Int(k.value())
-        * Int(n.value())
-    )
-    var c_size = Int(m.value()) * Int(n.value())
+    var a_size = Int(m) * Int(k)
+    var b_size = Int(n) * Int(k) if transpose_b else Int(k) * Int(n)
+    var c_size = Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -135,8 +131,8 @@ def test_matmul_sm100_epilogue[
     rand(a_host.as_span())
     rand(b_host.as_span())
 
-    for i in range(Int(m.value())):
-        for j in range(Int(n.value())):
+    for i in range(Int(m)):
+        for j in range(Int(n)):
             comptime assert c_host.flat_rank == 2
             c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
             c_host_copy[i, j] = c_host[i, j]
@@ -147,8 +143,10 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_device, c_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
@@ -215,8 +213,8 @@ def test_matmul_sm100_epilogue[
 
     comptime if test_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
-        for i in range(Int(m.value())):
-            for j in range(Int(n.value())):
+        for i in range(Int(m)):
+            for j in range(Int(n)):
                 comptime assert c_host_ref.flat_rank == 2
                 c_host_ref[i, j] = test_lambda_add_coords_summ_local(
                     Coord(i, j), c_host_ref[i, j]
@@ -258,12 +256,16 @@ def main() raises:
                 ) and mma_n_scale % 2 != 0:
                     continue
 
-                comptime block_tile_shape = Index(
-                    64 * mma_m_scale, 8 * mma_n_scale, BK
+                comptime block_tile_shape = (
+                    64 * mma_m_scale,
+                    8 * mma_n_scale,
+                    BK,
                 )
 
-                comptime umma_shape = Index(
-                    128 * mma_m_scale, 16 * mma_n_scale, MMA_K
+                comptime umma_shape = (
+                    128 * mma_m_scale,
+                    16 * mma_n_scale,
+                    MMA_K,
                 )
 
                 comptime for register_based_epilogue in [True, False]:
@@ -283,9 +285,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](
-                                Int32(cluster_m), Int32(cluster_n), 1
-                            ),
+                            cluster_shape=(cluster_m, cluster_n, 1),
                             cta_group=2,
                             test_lambda_fn=True,
                             register_based_epilogue=register_based_epilogue,

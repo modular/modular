@@ -657,6 +657,7 @@ def generate_tokens(
         "where": WHERE,
         "__extension": EXTENSION,
         "__enum": ENUM,
+        "__union": UNION,
         "__async": ASYNC,
         "__await": AWAIT,
     }

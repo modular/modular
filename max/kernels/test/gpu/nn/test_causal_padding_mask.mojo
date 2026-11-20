@@ -20,8 +20,6 @@ from nn.attention.mha_mask import (
 )
 from std.testing import assert_equal
 
-from std.utils.index import Index
-
 
 def test_causal_padding_mask_status() raises:
     """Test tile status classification for CausalPaddingMask.
@@ -36,42 +34,42 @@ def test_causal_padding_mask_status() raises:
     # ---- Causal FULL_MASK cases (independent of padding). ----
     # Tile entirely above diagonal: q < k always.
     assert_equal(
-        mask.status(UInt32(0), Index(0, 4), Index(4, 4)),
+        mask.status(UInt32(0), (Int(0), Int(4)), (Int(4), Int(4))),
         TileMaskStatus.FULL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(0, 4), Index(2, 4)),
+        mask.status(UInt32(0), (Int(0), Int(4)), (Int(2), Int(4))),
         TileMaskStatus.FULL_MASK,
     )
 
     # ---- Causal NO_MASK + padding doesn't cut -> NO_MASK. ----
     # seq 0 (valid_len=6): tile k range [0,4), all within valid_len.
     assert_equal(
-        mask.status(UInt32(0), Index(4, 0), Index(4, 4)),
+        mask.status(UInt32(0), (Int(4), Int(0)), (Int(4), Int(4))),
         TileMaskStatus.NO_MASK,
     )
     # seq 1 (valid_len=4): tile k range [0,4), exactly at the boundary
     # (k=3 is the last visible position, tile end = 4 <= valid_len = 4).
     assert_equal(
-        mask.status(UInt32(1), Index(4, 0), Index(4, 4)),
+        mask.status(UInt32(1), (Int(4), Int(0)), (Int(4), Int(4))),
         TileMaskStatus.NO_MASK,
     )
 
     # ---- Causal PARTIAL_MASK + padding doesn't cut -> PARTIAL_MASK. ----
     assert_equal(
-        mask.status(UInt32(0), Index(2, 2), Index(4, 4)),
+        mask.status(UInt32(0), (Int(2), Int(2)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
 
     # ---- Padding-driven FULL_MASK: first column already past valid_len. ----
     # seq 1 (valid_len=4): tile starts at k=4, padding-masked.
     assert_equal(
-        mask.status(UInt32(1), Index(4, 4), Index(4, 4)),
+        mask.status(UInt32(1), (Int(4), Int(4)), (Int(4), Int(4))),
         TileMaskStatus.FULL_MASK,
     )
     # seq 0 (valid_len=6): tile starts at k=8, padding-masked.
     assert_equal(
-        mask.status(UInt32(0), Index(8, 8), Index(4, 4)),
+        mask.status(UInt32(0), (Int(8), Int(8)), (Int(4), Int(4))),
         TileMaskStatus.FULL_MASK,
     )
 
@@ -79,13 +77,13 @@ def test_causal_padding_mask_status() raises:
     # seq 0 (valid_len=6): tile (q=[8,12), k=[4,8)). Causal alone is NO_MASK
     # (8 >= 7) but padding boundary at k=6 cuts the tile.
     assert_equal(
-        mask.status(UInt32(0), Index(8, 4), Index(4, 4)),
+        mask.status(UInt32(0), (Int(8), Int(4)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
     # seq 1 (valid_len=4): tile (q=[4,8), k=[2,6)). Causal NO_MASK; padding
     # at k=4 cuts.
     assert_equal(
-        mask.status(UInt32(1), Index(4, 2), Index(4, 4)),
+        mask.status(UInt32(1), (Int(4), Int(2)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
 
@@ -164,31 +162,33 @@ def test_causal_padding_mask_apply() raises:
     # q=4, k=0..3: causal allows all (q >= k), padding allows k<3.
     # k=0: visible, k=1: visible, k=2: visible, k=3: padding-masked.
     assert_equal(
-        mask.mask(Index(0, 0, 4, 0), score_vec),
+        mask.mask((Int(0), Int(0), Int(4), Int(0)), score_vec),
         SIMD_T(1.0, 2.0, 3.0, MASK_VALUE),
     )
 
     # q=1, k=0..3: causal allows k=0,1; padding allows k<3.
     # k=0: visible, k=1: visible, k=2: causal-masked, k=3: both masked.
     assert_equal(
-        mask.mask(Index(0, 0, 1, 0), score_vec),
+        mask.mask((Int(0), Int(0), Int(1), Int(0)), score_vec),
         SIMD_T(1.0, 2.0, MASK_VALUE, MASK_VALUE),
     )
 
     # q=2, k=4..7: all masked (both causal q<k and padding k>=3).
-    assert_equal(mask.mask(Index(0, 0, 2, 4), score_vec), inf_vec)
+    assert_equal(
+        mask.mask((Int(0), Int(0), Int(2), Int(4)), score_vec), inf_vec
+    )
 
     # q=0, k=0..3: causal allows only k=0; padding allows k<3.
     # k=0: visible, k=1..3: causal-masked.
     assert_equal(
-        mask.mask(Index(0, 0, 0, 0), score_vec),
+        mask.mask((Int(0), Int(0), Int(0), Int(0)), score_vec),
         SIMD_T(1.0, MASK_VALUE, MASK_VALUE, MASK_VALUE),
     )
 
     # q=2, k=0..3: causal allows k=0,1,2; padding allows k<3.
     # All three conditions agree: k=0,1,2 visible, k=3 padding-masked.
     assert_equal(
-        mask.mask(Index(0, 0, 2, 0), score_vec),
+        mask.mask((Int(0), Int(0), Int(2), Int(0)), score_vec),
         SIMD_T(1.0, 2.0, 3.0, MASK_VALUE),
     )
 
@@ -252,7 +252,7 @@ def test_causal_padding_mask_multi_seq() raises:
     # causal allows k=0,1,2,3; padding allows k<2.
     # k=0: visible, k=1: visible, k=2,3: padding-masked.
     assert_equal(
-        mask.mask(Index(0, 0, 3, 0), score_vec),
+        mask.mask((Int(0), Int(0), Int(3), Int(0)), score_vec),
         SIMD_T(1.0, 2.0, MASK_VALUE, MASK_VALUE),
     )
 
@@ -260,7 +260,7 @@ def test_causal_padding_mask_multi_seq() raises:
     # causal allows k=0,1,2,3; padding allows all (k<5).
     # All visible.
     assert_equal(
-        mask.mask(Index(1, 0, 3, 0), score_vec),
+        mask.mask((Int(1), Int(0), Int(3), Int(0)), score_vec),
         SIMD_T(1.0, 2.0, 3.0, 4.0),
     )
 

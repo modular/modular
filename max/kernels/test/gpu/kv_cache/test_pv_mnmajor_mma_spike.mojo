@@ -42,7 +42,7 @@ B200-only (SM100). Single CTA, single elected thread issues the MMA.
 """
 
 from std.memory import bitcast
-from std.sys import default_accelerator, size_of
+from std.sys import size_of
 
 from max.gpu import (
     WARP_SIZE,
@@ -52,8 +52,15 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu import block_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    default_accelerator,
+)
+from max.gpu.host.nvidia.tma import (
+    TensorMapSwizzle,
+    create_tma_descriptor,
+)
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
@@ -67,6 +74,8 @@ from layout import (
     TileTensor,
     coord,
     row_major,
+    coord,
+    Idx,
 )
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -74,16 +83,18 @@ from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     create_tensor_tile,
 )
 
+from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
+from std.utils.coord import Coord
 
 
 # Core-matrix row count for the WGMMA/UMMA descriptor canonical layout. Matches
@@ -103,7 +114,7 @@ comptime _tile_layout_mn_major[
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle,
     native: Bool,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(
             Idx[_row_len[dtype, swizzle_mode]],
@@ -141,12 +152,7 @@ kernel asserts stride-for-stride.
 ``((1, CM*row_len), (row_len, CM*mn))``; see `_tile_layout_mn_major_native`.
 """
 
-comptime _tile_layout_mn_major_native[
-    dtype: DType,
-    mn_dim: Int,
-    k_dim: Int,
-    swizzle_mode: TensorMapSwizzle,
-] = _tile_layout_mn_major[dtype, mn_dim, k_dim, swizzle_mode, True]
+comptime _tile_layout_mn_major_native = _tile_layout_mn_major[_, _, _, _, True]
 """The native (pre-`#73811`) mn-major SMEM layout, recovered verbatim from
 `fe239ba77a3:max/kernels/src/layout/tensor_core_async.mojo`.
 
@@ -192,8 +198,8 @@ def pv_mma_kernel[
     v_tile_shape: Coord,
     v_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     swizzle_mode: TensorMapSwizzle,
     use_native_mn: Bool,
     num_threads: Int = 128,
@@ -257,12 +263,12 @@ def pv_mma_kernel[
     comptime v_size = BN * BK
     comptime assert ((p_size * size_of[ab_type]()) % 128) == 0
     comptime assert ((v_size * size_of[ab_type]()) % 16) == 0
-    var v_smem = (p_smem + p_size).bitcast[Scalar[ab_type]]()
+    var v_smem = p_smem.unsafe_offset(p_size).unsafe_bitcast[Scalar[ab_type]]()
 
     var p_smem_tile = TileTensor(p_smem, p_smem_layout)
     var v_smem_tile = TileTensor(v_smem, v_smem_layout)
 
-    var ptr_tmem_addr = (v_smem + v_size).bitcast[UInt32]()
+    var ptr_tmem_addr = v_smem.unsafe_offset(v_size).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[ab_type]()
     comptime c_frag_size = MMA_M * MMA_N // num_threads
@@ -272,8 +278,10 @@ def pv_mma_kernel[
     comptime v_expected_bytes = v_size * size_of[ab_type]()
     comptime expected_bytes = p_expected_bytes + v_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -315,15 +323,15 @@ def pv_mma_kernel[
         accum_type,
         ab_type,
         ab_type,
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        (UInt32(MMA_M), UInt32(MMA_N)),
         transpose_b=False,
     ]()
 
     for i in range(num_iters):
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
-            var m = Int(block_idx.y) * BM
-            var n = Int(block_idx.x) * BN
+            var m = block_idx.y * BM
+            var n = block_idx.x * BN
             var k = i * BK
             # A=P : (k, m).   B=V mn-major (transpose_b=False) : (n, k).
             p_tma_op.async_copy(p_smem_tile, tma_mbar[0], (k, m))
@@ -382,7 +390,7 @@ def pv_mma_kernel[
     comptime num_warps = num_threads // WARP_SIZE
     var warp_id = get_warp_id()
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -421,25 +429,13 @@ def run_pv_spike[
     comptime MMA_M = 64
     comptime MMA_N = N
     comptime MMA_K = 16  # tcgen05 bf16/F16 native instruction-K (fp8 would be 32)
-    comptime block_tile_shape = Index(BM, BN, BK)
-    comptime mma_shape = Index(MMA_M, MMA_N, MMA_K)
+    comptime block_tile_shape = (BM, BN, BK)
+    comptime mma_shape = (MMA_M, MMA_N, MMA_K)
     comptime gran = swizzle_mode.bytes() // size_of[ab_type]()
 
     print(
-        "pv_mnmajor_spike native="
-        + String(use_native_mn)
-        + " "
-        + String(swizzle_mode)
-        + " MNK="
-        + String(M)
-        + "x"
-        + String(N)
-        + "x"
-        + String(K)
-        + " gran="
-        + String(gran)
-        + " num_chunks(BK/gran)="
-        + String(BK // gran)
+        t"pv_mnmajor_spike"
+        t" native={use_native_mn} {swizzle_mode} MNK={M}x{N}x{K} gran={gran} num_chunks(BK/gran)={BK // gran}"
     )
 
     var p = HostDeviceTileTensor[ab_type](row_major[M, K](), ctx)
@@ -461,9 +457,6 @@ def run_pv_spike[
     comptime block_dim = 128
     comptime smem_use = (BM + BN) * size_of[ab_type]() * BK + 64
     comptime native_box = coord[_CM_NUM_ROWS, gran]
-    # `create_tma_descriptor` still takes IndexList for shared_mem_shape (low-level
-    # TMA-builder API); only the high-level TMATensorTile uses Coord.
-    comptime native_box_idx = Index(_CM_NUM_ROWS, gran)
 
     # The kernel + enqueue is duplicated in each comptime-if arm (rather than
     # factored into a shared closure) because the two arms produce V tiles with
@@ -479,16 +472,16 @@ def run_pv_spike[
     # and wrap the raw descriptor via TMATensorTile's @implicit constructor.
     comptime if use_native_mn:
         var v_ptr = v.device_tensor().unsafe_ptr()
-        var v_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
+        var v_desc = create_tma_descriptor[ab_type, swizzle_mode=swizzle_mode](
             DeviceBuffer(
                 ctx,
-                v_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
+                v_ptr,
                 1,
                 owning=False,
             ),
-            Index(K, N),  # gmem [seq_k, head_v], row-major
-            Index(N, 1),  # head_v contiguous
-            native_box_idx,  # (_CM_NUM_ROWS, gran) core-matrix box
+            coord[K, N],  # gmem [seq_k, head_v], row-major
+            (N, 1),  # head_v contiguous
+            native_box,  # (_CM_NUM_ROWS, gran) core-matrix box
         )
         var v_tma_op = TMATensorTile[
             ab_type, coord[BK, BN], native_box, is_k_major=False
@@ -515,9 +508,6 @@ def run_pv_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     else:
         var v_tma_op = create_tensor_tile[
@@ -545,9 +535,6 @@ def run_pv_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     cpu_pv_naive(o_ref.host_tensor(), p.host_tensor(), v.host_tensor())
@@ -565,25 +552,19 @@ def run_pv_spike[
                     o_host_ref[m, n],
                     atol=0.05,
                     rtol=0.05,
-                    msg=String(m) + "," + String(n),
+                    msg=String(t"{m},{n}"),
                 )
             except e:
                 if mismatches < 8:
                     print(
-                        "  MISMATCH ["
-                        + String(m)
-                        + ","
-                        + String(n)
-                        + "] got="
-                        + String(o_host[m, n])
-                        + " ref="
-                        + String(o_host_ref[m, n])
+                        t"  MISMATCH [{m},{n}]"
+                        t" got={o_host[m, n]} ref={o_host_ref[m, n]}"
                     )
                 mismatches += 1
     if mismatches == 0:
         print("  PASS")
     else:
-        print("  FAIL: " + String(mismatches) + " mismatches")
+        print(t"  FAIL: {mismatches} mismatches")
         raise Error(
             "pv_mnmajor_spike (native="
             + String(use_native_mn)
@@ -611,7 +592,7 @@ def _print_layouts[mn: Int, k: Int]():
     comptime cur_lbo = type_of(cur).static_stride[1] * 2
     comptime nat_sbo = type_of(nat).static_stride[3] * 2
     comptime nat_lbo = type_of(nat).static_stride[1] * 2
-    print("---- mn-major layout diagnostics (mn=", mn, " k=", k, ") ----")
+    print(t"---- mn-major layout diagnostics (mn= {mn}  k= {k} ) ----")
     print("current SBO,LBO=", cur_sbo, cur_lbo)
     print("native  SBO,LBO=", nat_sbo, nat_lbo)
     print("per-MMA_K(16) elem offsets (mn=0): k, cur, nat")

@@ -569,6 +569,9 @@ class BlockManager:
         # Commit blocks into the prefix cache.
         for block_idx in range(num_committed_blocks, num_computed_blocks):
             block = req_blocks[block_idx]
+            if block.is_null:
+                # A dummy request's pages all alias the null block.
+                continue
             block_hash = req_hashes[block_idx]
 
             new_block = pool.get_or_commit_into_prefix_cache(block_hash, block)
@@ -783,13 +786,20 @@ class BlockManager:
             ctx.cached_prefix_length = 0
             ctx.cached_prefix_external_length = 0
 
-    def register_dummy_request(self, ctx: TextContext) -> None:
-        """Maps a dummy request to the replica pool's reserved null block."""
+    def register_dummy_request(
+        self, ctx: TextContext, seq_len: int = 1
+    ) -> None:
+        """Maps every page of a dummy request to the replica pool's null block.
+
+        The null block is shared and never freed, so a dummy of any length
+        holds no real page: its forward writes and reads the null page.
+        """
         request_id = ctx.request_id
         assert self.req_to_blocks[request_id] == []
-        self.req_to_blocks[request_id] = [
-            self.device_block_pools[self._replica_of(ctx)].null_block
-        ]
+        null_block = self.device_block_pools[self._replica_of(ctx)].null_block
+        self.req_to_blocks[request_id] = [null_block] * max(
+            1, -(-seq_len // self.block_size)
+        )
 
     @traced
     def get_req_blocks(self, ctx: TextContext) -> list[int]:

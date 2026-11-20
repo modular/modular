@@ -34,7 +34,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 # MAX imports
-from bench import bench_kineto_with_cupti_warmup, setup_ninja_path
+from bench import (
+    bench_kineto_with_cupti_warmup,
+    setup_cutlass_dsl,
+    setup_ninja_path,
+)
 from bencher_utils import Bench, ThroughputMeasure
 from max._kv_cache_ops import mla_dispatch_args_scalar
 from max.driver import Accelerator, Buffer
@@ -42,11 +46,11 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     flare_mla_decode_ragged,
     flare_mla_decode_ragged_scaled,
 )
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     MLAKVCacheParams,
     PagedCacheValues,
@@ -115,6 +119,7 @@ def to_float8(
 # Try importing external libraries (installed via Bazel pycross_wheel_library)
 _flashinfer: types.ModuleType | None
 try:
+    setup_cutlass_dsl()
     setup_ninja_path()  # Required for FlashInfer JIT compilation
     import flashinfer as _flashinfer
 except ImportError as e:

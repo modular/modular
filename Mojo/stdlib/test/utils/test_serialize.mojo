@@ -16,14 +16,6 @@ from std.testing import TestSuite, assert_equal
 from std.utils._serialize import _serialize, _serialize_elements
 
 
-def _iota_ptr(
-    data: List[Int32],
-) -> OptionalPointer[Scalar[DType.int32], ImmutAnyOrigin]:
-    return OptionalPointer[Scalar[DType.int32], ImmutAnyOrigin](
-        data.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
-    )
-
-
 def _iota(n: Int) -> List[Int32]:
     var data = List[Int32]()
     for i in range(n):
@@ -32,7 +24,7 @@ def _iota(n: Int) -> List[Int32]:
 
 
 def _write_tensor(
-    ptr: OptionalPointer[Scalar[DType.int32], ImmutAnyOrigin],
+    ptr: Pointer[Scalar[DType.int32], _],
     shape: List[Int],
     mut writer: Some[Writer],
 ):
@@ -49,15 +41,15 @@ def test_serialize_elements() raises:
     def serialize[T: Writable](val: T) {mut out}:
         out.write(val)
 
-    _serialize_elements(_iota_ptr(data), 5, serialize)
+    _serialize_elements(data.unsafe_ptr(), 5, serialize)
     assert_equal(out, "0, 1, 2, 3, 4")
 
     out = String()
-    _serialize_elements[compact=True](_iota_ptr(data), 3, serialize)
+    _serialize_elements[compact=True](data.unsafe_ptr(), 3, serialize)
     assert_equal(out, "[0, 1, 2]")
 
     out = String()
-    _serialize_elements[compact=True](_iota_ptr(data), 20, serialize)
+    _serialize_elements[compact=True](data.unsafe_ptr(), 20, serialize)
     assert_equal(out, "[0, 1, 2, ..., 17, 18, 19]")
 
 
@@ -68,14 +60,14 @@ def test_serialize_2d() raises:
     def serialize[T: Writable](val: T) {mut out}:
         out.write(val)
 
-    _serialize(_iota_ptr(data), [2, 3], serialize)
+    _serialize(data.unsafe_ptr(), [2, 3], serialize)
     assert_equal(out, "[[0, 1, 2],\n[3, 4, 5]], dtype=int32, shape=2x3\n")
 
 
 def test_serialize_3d_through_writer() raises:
     var data = _iota(4)
     var out = String()
-    _write_tensor(_iota_ptr(data), [2, 1, 2], out)
+    _write_tensor(data.unsafe_ptr(), [2, 1, 2], out)
     assert_equal(out, "[[[0, 1]],\n[[2, 3]]], dtype=int32, shape=2x1x2")
 
 

@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for :mod:`max.experimental.sharding.action`."""
+"""Tests for :mod:`max.tensor.sharding.action`."""
 
 from __future__ import annotations
 
 import pytest
-from max.experimental.sharding.action import PerShard
+from max.tensor.sharding.action import PerShard
 
 
 class TestPerShard:

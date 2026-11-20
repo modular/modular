@@ -57,7 +57,7 @@ struct MXFormat(EnumLike, Equatable, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -122,7 +122,7 @@ struct MXFormat(EnumLike, Equatable, TrivialRegisterPassable):
             return Self.FP8_E4M3
         if name == "mxfp8_e5m2":
             return Self.FP8_E5M2
-        abort("unknown MX format name: " + String(name))
+        abort(String(t"unknown MX format name: {name}"))
 
     def bits_per_element(self) -> Int:
         """Returns how many bits one element of this format occupies.

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import contextlib
+import http.client
 import json
 import logging
 import os
@@ -31,6 +32,7 @@ from huggingface_hub import HfApi
 from transformers import (
     AutoConfig,
     AutoTokenizer,
+    PreTrainedConfig,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
@@ -189,9 +191,40 @@ def fetch_server_max_model_len(
         ValueError,
         AttributeError,
         TypeError,
+        # A dry run's placeholder host yields a URL http.client rejects.
+        http.client.HTTPException,
     ):
         return None
     return max_model_len if isinstance(max_model_len, int) else None
+
+
+def fetch_model_config_max_length(
+    pretrained_model_name_or_path: str,
+    *,
+    revision: str | None,
+    trust_remote_code: bool,
+    local_files_only: bool = False,
+) -> int | None:
+    """The model's maximum context length from its config, or ``None``."""
+    try:
+        with _quiet_hf_hub_retries():
+            config = AutoConfig.from_pretrained(
+                pretrained_model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                revision=revision,
+                local_files_only=local_files_only,
+            )
+        # Composite configs (vision-language, audio) keep the length on a
+        # sub-config; ``get_text_config`` resolves both shapes.
+        text_config = (
+            config.get_text_config()
+            if hasattr(config, "get_text_config")
+            else config
+        )
+        value = getattr(text_config, "max_position_embeddings", None)
+    except (ValueError, OSError, AttributeError):
+        return None
+    return value if isinstance(value, int) else None
 
 
 def resolve_revision(pretrained_model_name_or_path: str) -> str | None:
@@ -234,7 +267,9 @@ def _resolve_architectures(
                 local_files_only=local_files_only,
             )
         return getattr(config, "architectures", None) or []
-    except (ValueError, OSError) as exc:
+    # get_tokenizer loads a tokenizer whose config.json the installed
+    # transformers rejects with any error type, so this probe must too.
+    except Exception as exc:
         if pretrained_model_name_or_path not in _reported_autoconfig_failures:
             _reported_autoconfig_failures.add(pretrained_model_name_or_path)
             logger.warning(
@@ -282,9 +317,34 @@ def get_tokenizer(
     if model_max_length is not None:
         tokenizer_kwargs["model_max_length"] = model_max_length
     with _quiet_hf_hub_retries():
-        tokenizer = AutoTokenizer.from_pretrained(
-            pretrained_model_name_or_path, **tokenizer_kwargs
-        )
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                pretrained_model_name_or_path, **tokenizer_kwargs
+            )
+        except OSError:
+            # Missing files, a gated repo or an unreachable Hub: a retry
+            # fails the same way.
+            raise
+        except Exception as exc:
+            # AutoTokenizer reads the model's config.json first, which fails
+            # for an architecture newer than the installed transformers even
+            # when the tokenizer files themselves are standard. A blank config
+            # makes it pick the class from the tokenizer files alone, and it
+            # still refuses a custom class without trust_remote_code.
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    pretrained_model_name_or_path,
+                    config=PreTrainedConfig(),
+                    **tokenizer_kwargs,
+                )
+            except Exception:
+                raise exc from None
+            logger.warning(
+                "AutoTokenizer failed for %r (%s); loaded its tokenizer files"
+                " without config.json.",
+                pretrained_model_name_or_path,
+                exc,
+            )
     # Stash the resolved revision so downstream consumers (e.g. the worker
     # tokenizer pool) can pin worker loads to the same snapshot without
     # re-resolving against the Hub. Transformers does not expose this on

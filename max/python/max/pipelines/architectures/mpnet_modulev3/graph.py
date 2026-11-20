@@ -10,19 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The MPNet encoder as a ModuleV3 graph."""
+
 from __future__ import annotations
 
 import math
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Embedding, LayerNorm, Linear, Module, ModuleList
-from max.experimental.nn.common_layers.activation import (
+from max.graph import DeviceRef
+from max.nn import Embedding, LayerNorm, Linear, Module, ModuleList
+from max.nn.common_layers.activation import (
     activation_function_from_name,
 )
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef
+from max.pipelines.lib.registration_encoder import EncoderInputs
+from max.tensor import Tensor
 
 from .model_config import MPNetConfig
 
@@ -49,6 +52,7 @@ class MPNetEmbeddings(Module[[Tensor], Tensor]):
         )
 
     def forward(self, input_ids: Tensor) -> Tensor:
+        """Embeds ``input_ids`` and adds their positions."""
         position_ids = _create_position_ids_from_input_ids(
             input_ids, self.pad_token_id
         )
@@ -100,6 +104,7 @@ class MPNetSelfAttention(Module[[Tensor, Tensor, Tensor], Tensor]):
         )
 
     def transpose_for_scores(self, x: Tensor) -> Tensor:
+        """Splits the last dim into attention heads."""
         new_x_shape = x.shape[:-1] + [
             self.num_attention_heads,
             self.attention_head_size,
@@ -113,6 +118,7 @@ class MPNetSelfAttention(Module[[Tensor, Tensor, Tensor], Tensor]):
         attention_mask: Tensor,
         position_bias: Tensor,
     ) -> Tensor:
+        """Runs the scaled dot-product attention."""
         q = self.q(hidden_states)
         k = self.k(hidden_states)
         v = self.v(hidden_states)
@@ -163,6 +169,7 @@ class MPNetAttention(Module[[Tensor, Tensor, Tensor], Tensor]):
         attention_mask: Tensor,
         position_bias: Tensor,
     ) -> Tensor:
+        """Runs the attention block and its output projection."""
         attn_output = self.attn(hidden_states, attention_mask, position_bias)
         return self.layer_norm(attn_output + hidden_states)
 
@@ -183,6 +190,7 @@ class MPNetIntermediate(Module[[Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the feed-forward's dense layer and activation."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
@@ -206,6 +214,7 @@ class MPNetOutput(Module[[Tensor, Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor, input_tensor: Tensor) -> Tensor:
+        """Runs the feed-forward's output layer, adding its input."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.layer_norm(hidden_states + input_tensor)
         return hidden_states
@@ -226,6 +235,7 @@ class MPNetLayer(Module[[Tensor, Tensor, Tensor], Tensor]):
         attention_mask: Tensor,
         position_bias: Tensor,
     ) -> Tensor:
+        """Runs the attention block, then the feed-forward."""
         attention_output = self.attention(
             hidden_states, attention_mask, position_bias
         )
@@ -252,12 +262,14 @@ class MPNetEncoder(Module[[Tensor, Tensor], Tensor]):
         self.num_attention_heads = hf_config.num_attention_heads
 
     def forward(self, hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
+        """Runs the encoder's layers over ``hidden_states``."""
         position_bias = self.compute_position_bias(hidden_states)
         for layer in self.layer:
             hidden_states = layer(hidden_states, attention_mask, position_bias)
         return hidden_states
 
     def compute_position_bias(self, hidden_states: Tensor) -> Tensor:
+        """Builds the relative-position attention bias."""
         shape = hidden_states.shape
         bsz, qlen, klen = shape[0], shape[1], shape[1]
         context_position = F.unsqueeze(
@@ -287,6 +299,7 @@ class MPNetEncoder(Module[[Tensor, Tensor], Tensor]):
         num_buckets: int = 32,
         max_distance: int = 128,
     ) -> Tensor:
+        """Maps relative positions onto their bias buckets."""
         n = -relative_position
 
         num_buckets //= 2
@@ -314,10 +327,15 @@ class MPNetEncoder(Module[[Tensor, Tensor], Tensor]):
         return ret
 
 
-class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
-    """The MPNet encoder model.
+class MPNetModel(Module[[EncoderInputs], Tensor]):
+    """The MPNet encoder, registered for the ``ENCODER`` role.
 
-    Based on the MPNetModel transformers implementation."""
+    Based on the MPNetModel transformers implementation.
+    """
+
+    graph_name = "MPNetModel"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
 
     def __init__(self, config: MPNetConfig) -> None:
         super().__init__()
@@ -325,10 +343,11 @@ class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
         self.encoder = MPNetEncoder(config)
         self.pool_outputs = config.pool_embeddings
 
-    def forward(
-        self, input_ids: Tensor, attention_mask: Tensor
-    ) -> tuple[Tensor, ...]:
-        embedding_output = self.embeddings(input_ids)
+    def forward(self, inputs: EncoderInputs) -> Tensor:
+        """Runs the encoder over the padded tokens and their mask."""
+        attention_mask = inputs.attention_mask
+        assert attention_mask is not None
+        embedding_output = self.embeddings(inputs.tokens)
         extended_attention_mask = F.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
@@ -338,17 +357,16 @@ class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
         encoded_results = self.encoder(
             embedding_output, extended_attention_mask
         )
-        if self.pool_outputs:
-            # Pool the embeddings.
-            encoded_results = F.transpose(encoded_results, 1, 2)
-            input_mask_expanded = F.broadcast_to(
-                F.unsqueeze(attention_mask, 1),
-                ("batch_size", encoded_results.shape[1], "seq_len"),
-            )
-            input_lengths = F.max(F.sum(input_mask_expanded), 1e-9)
-            pooled_output = (
-                F.sum(encoded_results * input_mask_expanded) / input_lengths
-            )
-            return (F.squeeze(pooled_output, 2),)
-        else:
-            return (encoded_results,)
+        if not self.pool_outputs:
+            return encoded_results
+        # Pool the embeddings.
+        encoded_results = F.transpose(encoded_results, 1, 2)
+        input_mask_expanded = F.broadcast_to(
+            F.unsqueeze(attention_mask, 1),
+            ("batch_size", encoded_results.shape[1], "seq_len"),
+        )
+        input_lengths = F.max(F.sum(input_mask_expanded), 1e-9)
+        pooled_output = (
+            F.sum(encoded_results * input_mask_expanded) / input_lengths
+        )
+        return F.squeeze(pooled_output, 2)

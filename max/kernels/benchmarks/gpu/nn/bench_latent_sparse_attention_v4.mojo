@@ -17,8 +17,8 @@ sequence):
 
 * `slow`: the portable `_latent_sparse_attention_gpu_kernel`, launched
   directly exactly as the op launched it before the SM100 route.
-* `fast`: `latent_sparse_attention_ragged_paged`, the op's entry, which on
-  SM100 runs the plan kernel, the sparse MLA decode and its split-K combine.
+* `fast`: `SM100MLAGraph.latent_sparse_attention`, the op's SM100 entry, which
+  runs the plan kernel, the sparse MLA decode and its split-K combine.
 * `fast_nosplit`: the same entry with `split_k=False`, one CTA per row and no
   combine, so no split partial is rounded to bf16.
 * `slow_pbf16`: `slow` with each attention weight rounded to bf16 before its
@@ -34,7 +34,6 @@ from std.random import randn_float64, seed
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -43,9 +42,9 @@ from layout import (
     TileTensor,
     row_major,
 )
+from nn.attention.gpu.mla_graph import SM100MLAGraph
 from nn.attention.latent_sparse_attention import (
     _latent_sparse_attention_gpu_kernel,
-    latent_sparse_attention_ragged_paged,
 )
 
 comptime HEAD_DIM = 512
@@ -110,14 +109,14 @@ def _collection[
     )
 
 
-def _fill_randn(ctx: DeviceContext, buf: DeviceBuffer[bf16], n: Int) raises:
+def _fill_randn(ctx: DeviceContext[], buf: DeviceBuffer[bf16], n: Int) raises:
     with buf.map_to_host() as h:
         for i in range(n):
             h[i] = Float32(randn_float64()).cast[bf16]()
 
 
 def _paged_lut(
-    ctx: DeviceContext, batch: Int, pages_per_seq: Int
+    ctx: DeviceContext[], batch: Int, pages_per_seq: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     # Pages mapped in reverse so consecutive keys are not physically adjacent.
     var total = batch * pages_per_seq
@@ -131,7 +130,7 @@ def _paged_lut(
 def run_shape[
     num_heads: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch: Int,
     pos: Int,
@@ -279,7 +278,7 @@ def run_shape[
 
     @inline(.always)
     def launch_slow(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm op_slow,
         imm qp,
@@ -314,12 +313,13 @@ def run_shape[
                 batch,
                 ceildiv(num_heads, heads_per_warp * warps_per_block),
             ),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=launch_ctx.default_device_info.warp_size
+            * warps_per_block,
         )
 
     @inline(.always)
     def launch_pbf16(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm op_pbf16,
         imm qp,
@@ -354,12 +354,13 @@ def run_shape[
                 batch,
                 ceildiv(num_heads, heads_per_warp * warps_per_block),
             ),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=launch_ctx.default_device_info.warp_size
+            * warps_per_block,
         )
 
     @inline(.always)
     def launch_fast(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm out_tt,
         imm q_tt,
@@ -370,13 +371,13 @@ def run_shape[
         imm cmp,
         imm scale,
     }:
-        latent_sparse_attention_ragged_paged[target="gpu", window=WINDOW](
+        SM100MLAGraph.latent_sparse_attention[window=WINDOW](
             out_tt, q_tt, offs_tt, idx_tt, sink_tt, win, cmp, scale, launch_ctx
         )
 
     @inline(.always)
     def launch_nosplit(
-        launch_ctx: DeviceContext,
+        launch_ctx: DeviceContext[],
     ) raises {
         imm out_nosplit_tt,
         imm q_tt,
@@ -387,9 +388,7 @@ def run_shape[
         imm cmp,
         imm scale,
     }:
-        latent_sparse_attention_ragged_paged[
-            target="gpu", window=WINDOW, split_k=False
-        ](
+        SM100MLAGraph.latent_sparse_attention[window=WINDOW, split_k=False](
             out_nosplit_tt,
             q_tt,
             offs_tt,
@@ -424,22 +423,14 @@ def run_shape[
             max_pbf16 = max(
                 max_pbf16, abs(a - Float64(ph[i].cast[DType.float64]()))
             )
-        print("CHECK", tag, "max|slow-fast|=", max_fast, "max|slow|=", max_ref)
+        print(t"CHECK {tag} max|slow-fast|= {max_fast} max|slow|= {max_ref}")
         print(
-            "CHECK",
-            tag,
-            "max|slow-fast_nosplit|=",
-            max_nosplit,
-            "max|slow|=",
-            max_ref,
+            t"CHECK {tag} max|slow-fast_nosplit|= {max_nosplit} max|slow|="
+            t" {max_ref}"
         )
         print(
-            "CHECK",
-            tag,
-            "max|slow-slow_pbf16|=",
-            max_pbf16,
-            "max|slow|=",
-            max_ref,
+            t"CHECK {tag} max|slow-slow_pbf16|= {max_pbf16} max|slow|="
+            t" {max_ref}"
         )
 
     @inline(.always)
@@ -481,7 +472,7 @@ def run_shape[
 
 def run_heads[
     num_heads: Int
-](ctx: DeviceContext, mut m: Bench, only: Int, base: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, only: Int, base: Int) raises:
     # The four census shapes of the feasibility bench, at c1, plus the two
     # compressed shapes at c8.
     # Window-only layer.

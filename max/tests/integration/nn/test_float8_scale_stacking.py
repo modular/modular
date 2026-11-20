@@ -25,7 +25,7 @@ import pytest
 from max.dtype import DType
 from max.graph.shape import Shape
 from max.graph.weights.weights import WeightData
-from max.nn.float8_scale_stacking import (
+from max.nn.legacy.float8_scale_stacking import (
     _concatable,
     _weight_scale_name,
     can_use_fused_mlp,

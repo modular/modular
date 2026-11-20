@@ -18,7 +18,7 @@ from std.format._utils import (
     TypeNames,
 )
 from std.memory import MaybeUninit
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.reflection import call_location
 from std.traits import (
     IsTriviallyCopyable,
@@ -60,7 +60,7 @@ trait _VariantStorage(Copyable, Deinitable):
         """Initialize storage with a value of type `U`."""
         ...
 
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         """Create storage whose active-type slot is left uninitialized.
 
         The caller must mark the active type with `unsafe_set_active` and then
@@ -217,7 +217,7 @@ struct _NichedOptionalStorage[
             self = Self()
 
     @inline(.always)
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         self._memory = {}
 
     @inline(.always)
@@ -301,7 +301,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     var _impl: Self._mlir_type
 
     @inline(.always)
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @inline(.always)
@@ -552,6 +552,10 @@ struct Variant[*Ts: AnyType](
     comptime __copy_ctor_is_trivial = IsTriviallyCopyable[Self._Storage]
     comptime __move_ctor_is_trivial = IsTriviallyMovable[Self._Storage]
 
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "value"
+    ]
+
     # Fields
     var _storage: Self._Storage
 
@@ -639,7 +643,7 @@ struct Variant[*Ts: AnyType](
     @inline(.always)
     def __getitem_param__[
         T: AnyType
-    ](ref self) -> ref[origin_of(self)._get_owned_interior["value"]] T:
+    ](ref self) -> ref[Self._InteriorOrigin[origin_of(self)]] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -955,13 +959,10 @@ struct Variant[*Ts: AnyType](
         Self._check[T]()
         return self._storage.isa[T]()
 
-    @inline(.always)
-    def _unsafe_unchecked_get[T: AnyType](ref self) -> ref[self] T:
-        return self._storage.unsafe_ptr[T]().unsafe_origin_cast[
-            origin_of(self)
-        ]()[]
-
-    def unsafe_get[T: AnyType](ref self) -> ref[self] T:
+    @__unsafe_nested_origins_read_only
+    def unsafe_get[
+        T: AnyType
+    ](ref self) -> ref[Self._InteriorOrigin[origin_of(self)]] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!
@@ -969,18 +970,17 @@ struct Variant[*Ts: AnyType](
         a type that _looks_ like your type, but has potentially unsafe
         and garbage member data.
 
-        For now this has the limitations that it
-            - requires the variant value to be mutable
-
         Parameters:
             T: The type of the value to get out.
 
         Returns:
-            The internal data represented as a `Pointer[T]`.
+            A reference to the internal data.
         """
         Self._check[T]()
         assert self.isa[T](), "get: wrong variant type"
-        return self._unsafe_unchecked_get[T]()
+        return self._storage.unsafe_ptr[
+            T
+        ]()._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     # ===-------------------------------------------------------------------===#
     # In-place construction primitives
@@ -998,7 +998,7 @@ struct Variant[*Ts: AnyType](
     # `@doc_hidden` because a dunder can't be hidden by an underscore name.
 
     @doc_hidden
-    def __init__(out self, *, unsafe_uninitialized: ()):
+    def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         """Create a variant whose active-type slot is left uninitialized.
 
         Args:

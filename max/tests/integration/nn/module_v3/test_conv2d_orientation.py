@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Orientation regression test for ``max.experimental.nn.Conv2d``.
+"""Orientation regression test for ``max.nn.Conv2d``.
 
 Loads identical weights into V3 ``Conv2d(permute=True)`` and
 ``torch.nn.Conv2d``, feeds an explicitly asymmetric input (linear
@@ -30,12 +30,12 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
+from max import functional as F
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Conv2d
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Conv2d
+from max.tensor import Tensor
 from torch import nn
 
 
@@ -73,7 +73,7 @@ def test_v3_conv2d_permute_preserves_orientation(device: Device) -> None:
     torch_device = torch.device("cuda" if not device.is_host else "cpu")
     torch_conv = nn.Conv2d(
         in_c, out_c, kernel_size=k, padding=padding, bias=False
-    ).to(torch_device)
+    )
     weight_np = torch_conv.weight.data.detach().cpu().numpy().copy()
 
     # Input: noise + strong L-to-R column gradient so mirroring is
@@ -83,7 +83,8 @@ def test_v3_conv2d_permute_preserves_orientation(device: Device) -> None:
     x_np = x_np + (np.arange(w, dtype=np.float32) * 5.0)[None, None, None, :]
     x_np = np.ascontiguousarray(x_np)
 
-    # V3 Conv2d on the same device.
+    # V3 Conv2d on the same device. The weight reaches the device when the
+    # compiled model binds it, after the compile.
     with F.lazy():
         conv = Conv2d(
             kernel_size=k,
@@ -95,7 +96,7 @@ def test_v3_conv2d_permute_preserves_orientation(device: Device) -> None:
             has_bias=False,
             permute=True,
         ).to(device)
-    conv.load_state_dict({"weight": Tensor.from_dlpack(weight_np).to(device)})
+        conv.load_state_dict({"weight": Tensor(weight_np, device=device)})
     compiled = conv.compile(
         TensorType(
             DType.float32,
@@ -106,6 +107,7 @@ def test_v3_conv2d_permute_preserves_orientation(device: Device) -> None:
     v3_out = _to_numpy(compiled(Tensor.from_dlpack(x_np).to(device)))
 
     # Torch reference.
+    torch_conv = torch_conv.to(torch_device)
     with torch.no_grad():
         torch_out = (
             torch_conv(torch.from_numpy(x_np).to(torch_device)).cpu().numpy()

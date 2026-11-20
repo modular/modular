@@ -14,11 +14,9 @@
 from std.math import isclose
 from std.random import rand
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout.tensor_engine import DefaultEngine
 from nn.conv.conv import Naive2dConvolution
-
-from std.utils.index import Index
 
 
 @inline(.always)
@@ -119,8 +117,8 @@ def winograd_2d_convolution_3x3[
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):
             # Extract 4x4 input tile
-            comptime for di in range(4):
-                comptime for dj in range(4):
+            for di in range(4):
+                for dj in range(4):
                     var v = Scalar[dtype](0)
                     if (i + di) < H and (j + dj) < W:
                         v = signal[i + di, j + dj]
@@ -140,8 +138,8 @@ def winograd_2d_convolution_3x3[
             matmul[2, 2, 4, True](y, scratch, A)
 
             # Store results
-            comptime for di in range(2):
-                comptime for dj in range(2):
+            for di in range(2):
+                for dj in range(2):
                     if i + di < Oh and j + dj < Ow:
                         output[i + di, j + dj] = y[di, dj]
 
@@ -167,7 +165,7 @@ def outputs_are_close[
                 atol=1e-6,  # absolute error tolerance
                 rtol=1e-6,  # relative error tolerance
             ):
-                print("Mismatch at position (", i, ",", j, ")")
+                print(t"Mismatch at position ( {i} , {j} )")
                 print("Naive:", output_naive[i, j])
                 print("Winograd:", output_winograd[i, j])
                 print("Difference:", output_naive[i, j] - output_winograd[i, j])
@@ -204,14 +202,14 @@ def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     winograd_2d_convolution_3x3[dtype](input, filter, output_winograd)
 
     # Perform Naive convolution
-    comptime output_shape = Index(1, 1, Oh, Ow, 1)
-    comptime input_shape = Index(1, 1, H, W, 1)
-    comptime filter_shape = Index(1, Kh, Kw, 1, 1)
-    comptime pad_d = Index(0, 0)
-    comptime pad_h = Index(0, 0)
-    comptime pad_w = Index(0, 0)
-    comptime stride = Index(1, 1, 1)
-    comptime dilation = Index(1, 1, 1)
+    comptime output_shape = (1, 1, Oh, Ow, 1)
+    comptime input_shape = (1, 1, H, W, 1)
+    comptime filter_shape = (1, Kh, Kw, 1, 1)
+    comptime pad_d = Coord(0, 0)
+    comptime pad_h = Coord(0, 0)
+    comptime pad_w = Coord(0, 0)
+    comptime stride = Coord(1, 1, 1)
+    comptime dilation = Coord(1, 1, 1)
 
     Naive2dConvolution[dtype, dtype, dtype].run(
         output_ptr_naive.unsafe_ptr(),

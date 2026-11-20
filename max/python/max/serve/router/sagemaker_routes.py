@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""SageMaker inference routes."""
+
 import logging
 
 from fastapi import APIRouter, Request
@@ -36,5 +38,5 @@ async def ping() -> Response:
 async def invocations(
     request: Request,
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
-    """proxy to /v1/chat/completions"""
+    """Proxy to /v1/chat/completions."""
     return await openai_create_chat_completion(request)

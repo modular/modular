@@ -1,0 +1,247 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""The inputs and outputs of each role a registered module fills.
+
+An architecture registers a module class per role in
+:attr:`~max.pipelines.lib.arch_lookup.SupportedArchitecture.modules`: a
+:class:`~max.nn.Module` (ModuleV3) or a graph-API
+:class:`~max.nn.legacy.Module`. The framework builds the role's graph and
+batches from the contract here, so the module's ``forward`` (``__call__`` for
+a graph-API module) takes the role's inputs and returns its outputs. A
+ModuleV3 module sees :class:`~max.tensor.Tensor` fields, and a graph-API
+module :class:`~max.graph.TensorValue` fields.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Generic
+
+from max import tree
+from max.graph import BufferValue
+from max.tensor import Tensor
+from typing_extensions import TypeVar
+
+from .interfaces.pipeline_model import ModuleV3Outputs
+
+__all__ = [
+    "BlockDiffusionInputs",
+    "BlockDiffusionOutputs",
+    "DecoderInputs",
+    "DecoderOutputs",
+    "VisionInputs",
+]
+
+
+TensorT = TypeVar("TensorT", default=Tensor)
+"""The tensor type a decoder's fields hold: a ModuleV3
+:class:`~max.tensor.Tensor` or a graph-API :class:`~max.graph.TensorValue`.
+"""
+
+_LeafT = TypeVar("_LeafT")
+_SignalT = TypeVar("_SignalT", default=BufferValue)
+
+
+@tree.dataclass(frozen=True, kw_only=True)
+class VisionInputs(Generic[_LeafT]):
+    """The image embeddings a ``DECODER`` merges into its token stream.
+
+    The framework passes them when a ``VISION`` module is registered. On a
+    batch without new images both are empty.
+    """
+
+    embeddings: _LeafT
+    """The encoded images, shape ``[num_image_tokens, hidden_size]``,
+    replicated on every device of the decoder's mesh."""
+
+    scatter_indices: _LeafT
+    """Each embedding row's position in the decoder's tokens, shape
+    ``[num_image_tokens]``, replicated like :attr:`embeddings`."""
+
+
+@tree.dataclass(frozen=True, kw_only=True)
+class DecoderInputs(Generic[TensorT, _SignalT]):
+    """The inputs of a ``DECODER`` module's ``forward``.
+
+    The decoder graph takes the fields in this order, which is the canonical
+    order of the design's role contract. A field that is ``None`` is not a
+    graph input: the framework sets each optional field only when the
+    deployment needs it.
+    """
+
+    tokens: TensorT
+    """The batch's ragged tokens, shape ``[total_seq_len]``."""
+
+    vision: VisionInputs[TensorT] | None = None
+    """The batch's image embeddings, when a ``VISION`` module is registered."""
+
+    input_row_offsets: TensorT
+    """Each sequence's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
+
+    token_positions: TensorT | None = None
+    """Each ragged token's absolute sequence position, when declared."""
+
+    host_input_row_offsets: TensorT | None = None
+    """A CPU copy of :attr:`input_row_offsets`, under data parallelism.
+
+    It bounds each replica's slice of the batch without a device-to-host
+    copy inside the graph.
+    """
+
+    return_n_logits: TensorT
+    """How many logits per sequence to return, a CPU tensor of shape ``[1]``.
+    """
+
+    data_parallel_splits: TensorT | None = None
+    """Each replica's first sequence, a CPU ``int64`` tensor of shape
+    ``[data_parallel_degree + 1]``, under data parallelism.
+
+    Replica ``i`` serves sequences ``data_parallel_splits[i]`` up to
+    ``data_parallel_splits[i + 1]``.
+    """
+
+    signals: tuple[_SignalT, ...] | None = None
+    """The allreduce signal buffers, one per device, of a graph-API decoder.
+
+    A multi-device graph-API decoder takes them, and so does one that sets
+    ``always_signal_buffers``. A ModuleV3 decoder never sees them: its
+    compiled graph adds its own, where its ``input_layout`` names them.
+    Runtime inputs hold driver buffers; graph-API inputs hold buffer values
+    by default.
+    """
+
+    kv: Any
+    """The KV cache inputs, in the tree the config's KV params declare."""
+
+    batch_context_lengths: tuple[TensorT, ...] | None = None
+    """Each data-parallel replica's page-aligned KV context length, a CPU
+    ``int32`` tensor of shape ``[1]`` per replica. A decoder that sets
+    ``takes_total_context_length`` takes each replica's total context length
+    instead, a CPU ``uint32`` per device. The graph takes them as the
+    ``length`` or ``total_length`` of a
+    :class:`~max.nn.legacy.graph_groups.BatchContext` group.
+
+    Set when the config sets
+    :attr:`~max.pipelines.lib.registration_runtime.DeploymentConfig.takes_batch_context_lengths`,
+    as the MLA family does to size its prefill buffers without a
+    device-to-host copy.
+    """
+
+    ep: Any = None
+    """The expert-parallel communication buffers, under expert parallelism,
+    in the tree :meth:`~max.nn.legacy.comm.ep.EPBatchManager.input_tree`
+    declares."""
+
+    hisparse: tuple[TensorT, ...] | None = None
+    """Host and hot page tables per device, followed by the host mirror."""
+
+    lora: tuple[TensorT, ...] | None = None
+    """The LoRA routing and adapter inputs, when serving LoRA adapters.
+
+    The framework binds them into the decoder's LoRA layers before it calls
+    the decoder, so a decoder doesn't read them.
+    """
+
+    constants: Any = None
+    """The checkpoint-backed deployment inputs, held for the model lifetime."""
+
+    state: tuple[Any, ...] | None = None
+    """The decoder's per-request state, in the order its
+    :class:`~max.pipelines.lib.request_state.RequestStateStore` declares:
+    tensors, or buffers for state the graph updates in place. The
+    architecture defines what each one holds.
+    """
+
+    scratch: tuple[Any, ...] | None = None
+    """The workspace buffers the decoder declares with ``scratch_types``, in
+    its order (see :mod:`~max.pipelines.lib.decoder_scratch`). The same
+    buffers come every step, and nothing in them outlives one."""
+
+    stage_boundary: Any = None
+    """What the previous pipeline stage's decoder returned, in the tree it
+    returned it, on a stage after the first (see
+    :attr:`~max.pipelines.lib.pipeline_stage.PipelineStage.boundary_types`).
+    A stage before the last returns such a tree in place of
+    :class:`DecoderOutputs`."""
+
+
+DecoderOutputs = ModuleV3Outputs
+"""The outputs of a ``DECODER`` module's ``forward``.
+
+Generic over the same tensor type as :class:`DecoderInputs`.
+"""
+
+
+@tree.dataclass(frozen=True, kw_only=True)
+class BlockDiffusionInputs(Generic[TensorT]):
+    """The inputs of a ``BLOCK_DIFFUSION`` module's ``forward``.
+
+    One denoise step over the batch's canvases. The framework builds every
+    field, and the graph takes them in this order, named by a
+    :class:`~max.nn.legacy.graph_groups.BlockDiffusionGraphInputs`. The
+    ``DECODER`` has
+    already committed each request's context into the KV cache; the step
+    reads it and writes the canvas's keys and values into the slots after
+    it, without committing them.
+    """
+
+    tokens: TensorT
+    """The canvases' token ids, shape ``[total_seq_len]``, in batch order."""
+
+    input_row_offsets: TensorT
+    """Each canvas's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
+
+    sc_logits: TensorT
+    """The previous step's processed logits, shape
+    ``[total_seq_len, vocab_size]``: the self-conditioning signal."""
+
+    sc_enabled: TensorT
+    """Whether :attr:`sc_logits` holds a previous step, a ``float32`` tensor
+    of shape ``[1]``: zero on a canvas's first step, one after."""
+
+    temperature: TensorT
+    """The step's sampling temperature, a ``float32`` tensor of shape
+    ``[1]``."""
+
+    kv: Any
+    """The KV cache inputs, in the tree the config's KV params declare."""
+
+
+@tree.kind("block_diffusion_outputs")
+@tree.dataclass(frozen=True, kw_only=True)
+class BlockDiffusionOutputs(Generic[TensorT]):
+    """The outputs of a ``BLOCK_DIFFUSION`` module's ``forward``.
+
+    The graph returns them in this order. The processed logits feed the
+    next step's
+    :attr:`BlockDiffusionInputs.sc_logits`; the rest are the sampling
+    statistics the block-diffusion pipeline accepts and renoises from.
+    """
+
+    logits: TensorT
+    """The temperature-scaled logits, ``bfloat16`` of shape
+    ``[total_seq_len, vocab_size]``."""
+
+    argmax: TensorT
+    """Each token's most likely id, ``int64`` of shape ``[total_seq_len]``."""
+
+    top_k_probs: TensorT
+    """Each token's largest probabilities, ``float32`` of shape
+    ``[total_seq_len, k]``."""
+
+    top_k_indices: TensorT
+    """The ids of :attr:`top_k_probs`, ``int64`` of shape
+    ``[total_seq_len, k]``."""
+
+    entropy: TensorT
+    """Each token's entropy over the full vocabulary, ``float32`` of shape
+    ``[total_seq_len]``."""

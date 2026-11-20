@@ -17,14 +17,21 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, DimLike, TensorValue, ops
-from max.nn.kernels import (
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Dim,
+    DimLike,
+    TensorType,
+    TensorValue,
+    ops,
+)
+from max.nn._graph_ops import (
     eagle_prefill_shift_tokens,
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.sampling.penalties import LogitPenalties
-from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn._graph_ops.sampling import AcceptanceSampler, LogitPenalties
 
 from .ragged_token_merger import (
     RaggedTokenMerger,
@@ -38,9 +45,15 @@ __all__ = [
     "broadcast_per_device",
     "gather_accepted_hidden_states",
     "gather_rows_per_device",
+    "mask_padded_tail",
     "merge_tokens_and_host_offsets",
     "shift_corrected_tokens",
 ]
+
+# The stream a side-stream bitmask copy runs on. Its host wait holds every
+# later launch on that stream until the grammar masks are published, so it
+# must not share stream 1, where expert-parallel MoE runs its shared expert.
+_BITMASK_STREAM_ID = 2
 
 
 def broadcast_per_device(
@@ -56,6 +69,29 @@ def broadcast_per_device(
     if n_devs == 1:
         return [value]
     return ops.distributed_broadcast(value, list(signal_buffers))
+
+
+def mask_padded_tail(
+    logits: TensorValue, vocab_size: int, unpadded_vocab_size: int | None
+) -> TensorValue:
+    """Sends the padding rows of a padded vocabulary to negative infinity.
+
+    A head padded past its tokenizer has live weights in those rows, so a
+    sampler could pick a token id no tokenizer decodes.
+    """
+    if unpadded_vocab_size is None or unpadded_vocab_size >= vocab_size:
+        return logits
+    device = logits.device
+    # Two broadcast scalars rather than a materialized row: keeps a
+    # vocab-sized fp32 constant out of the graph.
+    keep = ops.broadcast_to(
+        ops.constant(0.0, DType.float32, device=device), [unpadded_vocab_size]
+    )
+    drop = ops.broadcast_to(
+        ops.constant(float("-inf"), DType.float32, device=device),
+        [vocab_size - unpadded_vocab_size],
+    )
+    return logits + ops.cast(ops.concat([keep, drop]), logits.dtype)
 
 
 def gather_rows_per_device(
@@ -140,8 +176,14 @@ def apply_overlap_bitmask(
     *,
     num_steps: Dim,
     device: DeviceRef,
+    side_stream: bool = False,
 ) -> TensorValue | None:
-    """Gate the model stream on the constrained-decoding bitmask H2D."""
+    """Gate the model stream on the constrained-decoding bitmask H2D.
+
+    With ``side_stream``, the wait and the copy run on their own stream, which
+    the model stream waits for only where it reads the returned bitmask. Issued
+    ahead of the forward, the copy then overlaps it.
+    """
     if not (
         (pinned_bitmask is None)
         == (wait_payload is None)
@@ -160,18 +202,35 @@ def apply_overlap_bitmask(
         or device_bitmask_scratch is None
     ):
         return None
-    wait_host_value_with_dep(
-        wait_payload, device_bitmask_scratch, device=device
+    pinned, payload, scratch = (
+        pinned_bitmask,
+        wait_payload,
+        device_bitmask_scratch,
     )
-    inplace_memcpy(device_bitmask_scratch, pinned_bitmask)
-    # Trim the persistent buffer's worst-case num_speculative_tokens + 1
-    # rows down to num_steps + 1 so the acceptance sampler's rebind to
-    # num_steps + 1 lines up. Position i holds the FSM state with i
-    # drafts consumed, so positions 0..num_steps cover the num_steps
-    # draft-verification slots plus the bonus slot at index num_steps; the
-    # target never emits logits for the trailing worst-case rows this iteration.
-    num_steps_plus_one = num_steps + 1
-    return device_bitmask_scratch[:, :num_steps_plus_one, :]
+
+    def copy() -> TensorValue:
+        wait_host_value_with_dep(payload, scratch, device=device)
+        inplace_memcpy(scratch, pinned)
+        # Trim the persistent buffer's worst-case num_speculative_tokens + 1
+        # rows down to num_steps + 1 so the acceptance sampler's rebind to
+        # num_steps + 1 lines up. Position i holds the FSM state with i
+        # drafts consumed, so positions 0..num_steps cover the num_steps
+        # draft-verification slots plus the bonus slot at index num_steps; the
+        # target never emits logits for the trailing worst-case rows this
+        # iteration.
+        return scratch[:, : num_steps + 1, :]
+
+    if not side_stream:
+        return copy()
+    # The region's result type is declared up front, so pin the slice to it.
+    shape = [scratch.shape[0], num_steps + 1, scratch.shape[2]]
+    (bitmask,) = ops.side_stream(
+        [],
+        lambda: [copy().rebind(shape)],
+        result_types=[TensorType(scratch.dtype, shape, device=device)],
+        stream_id=_BITMASK_STREAM_ID,
+    )
+    return bitmask
 
 
 def merge_tokens_and_host_offsets(

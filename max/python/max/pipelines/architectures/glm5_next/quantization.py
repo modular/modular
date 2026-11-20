@@ -63,7 +63,7 @@ _WEIGHT_BLOCK_SIZE = [128, 128]
 #: folds it into the query and output paths at graph-build time, so a BF16
 #: source needs no dequant -- but MAX's FP8 MLA class asserts that weight and
 #: input scale block sizes exist
-#: (max/python/max/nn/attention/multi_latent_attention_fp8.py:146), so the
+#: (max/python/max/nn/legacy/attention/multi_latent_attention_fp8.py:146), so the
 #: sparse-MLA constructor has to take a per-projection dtype rather than one
 #: ``dtype`` for the block.
 UNQUANTIZED_ATTN_PROJECTIONS = frozenset(
@@ -102,10 +102,6 @@ class Glm5NextQuantScheme:
     KDA projection and conv, ``kv_b_proj``, the indexer, the vision tower and
     the mHC mapping. Distinct from :attr:`Glm5NextConfig.dtype`, which is the
     *storage* dtype the resolved encoding implies."""
-
-    def mlp_config(self, layer_idx: int) -> QuantConfig | None:
-        """Returns the config for layer ``layer_idx``'s MLP, or None if BF16."""
-        return self.config if layer_idx in self.mlp_layers else None
 
     def attn_config(self, layer_idx: int) -> QuantConfig | None:
         """Returns the config for layer ``layer_idx``'s attention projections.

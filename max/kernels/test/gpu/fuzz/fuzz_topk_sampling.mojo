@@ -319,20 +319,10 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         var tok = Int(out_host[r])
         if tok < 0 or tok >= vocab_size:
             print(
-                "FUZZ_CONTRACT_FAIL row=",
-                r,
-                "token=",
-                tok,
-                "vocab_size=",
-                vocab_size,
-                "gumbel=",
-                spec.gumbel,
-                "temp_milli=",
-                spec.temp_milli,
-                "logit_sign=",
-                spec.logit_sign,
-                "row_k=",
-                _row_k(spec.seed, r, spec.k_lo, spec.k_hi),
+                t"FUZZ_CONTRACT_FAIL row= {r} token= {tok} vocab_size="
+                t" {vocab_size} gumbel= {spec.gumbel} temp_milli="
+                t" {spec.temp_milli} logit_sign= {spec.logit_sign} row_k="
+                t" {_row_k(spec.seed, r, spec.k_lo, spec.k_hi)}"
             )
             raise Error("sampled token id out of range [0, vocab_size)")
 
@@ -356,26 +346,12 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch_size=",
-                specs[i].batch_size,
-                "vocab_size=",
-                specs[i].vocab_size,
-                "k_lo=",
-                specs[i].k_lo,
-                "k_hi=",
-                specs[i].k_hi,
-                "temp_milli=",
-                specs[i].temp_milli,
-                "dist=",
-                specs[i].dist,
-                "seed=",
-                specs[i].seed,
-                "gumbel=",
-                specs[i].gumbel,
-                "logit_sign=",
-                specs[i].logit_sign,
+                t"FUZZ_SPEC idx= {i} batch_size="
+                t" {specs[i].batch_size} vocab_size="
+                t" {specs[i].vocab_size} k_lo= {specs[i].k_lo} k_hi="
+                t" {specs[i].k_hi} temp_milli= {specs[i].temp_milli} dist="
+                t" {specs[i].dist} seed= {specs[i].seed} gumbel="
+                t" {specs[i].gumbel} logit_sign= {specs[i].logit_sign}"
             )
         return
 
@@ -390,24 +366,10 @@ def main() raises:
         var gumbel = flag_int(args, "--gumbel", 0)
         var logit_sign = flag_int(args, "--logit_sign", 0)
         print(
-            "FUZZ_SINGLE batch_size=",
-            batch_size,
-            "vocab_size=",
-            vocab_size,
-            "k_lo=",
-            k_lo,
-            "k_hi=",
-            k_hi,
-            "temp_milli=",
-            temp_milli,
-            "dist=",
-            dist,
-            "seed=",
-            spec_seed,
-            "gumbel=",
-            gumbel,
-            "logit_sign=",
-            logit_sign,
+            t"FUZZ_SINGLE batch_size= {batch_size} vocab_size="
+            t" {vocab_size} k_lo= {k_lo} k_hi= {k_hi} temp_milli="
+            t" {temp_milli} dist= {dist} seed= {spec_seed} gumbel="
+            t" {gumbel} logit_sign= {logit_sign}"
         )
         with DeviceContext() as ctx:
             run_one_case(
@@ -427,9 +389,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print(
-        "=== fuzz_topk_sampling seed=", the_seed, "budget=", the_budget, "==="
-    )
+    print(t"=== fuzz_topk_sampling seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

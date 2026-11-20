@@ -37,6 +37,11 @@ from std.utils.numerics import get_accum_type
 from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_gpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from kv_cache.types import (
     KVCacheStaticParams,
     KVCacheT,
@@ -70,7 +75,7 @@ def _ring_slot(
 ) -> Int:
     """Returns the ring slot `batch_idx` occupies in row `layer_row` of
     `conv_rows`."""
-    return Int(conv_rows.load[width=1](Coord(Int(layer_row), batch_idx))[0])
+    return Int(conv_rows[Int(layer_row), batch_idx][0])
 
 
 @inline(.always)
@@ -121,24 +126,20 @@ def _short_conv_ring_step[
     else:
         comptime for w in range(width):
             comptime for i in range(simd_width):
-                taps[w][i] = weight.load[width=1](Coord(channel + i, w)).cast[
-                    accum_dtype
-                ]()[0]
+                taps[w][i] = weight[channel + i, w].cast[accum_dtype]()[0]
 
-    var x_cur = x.load[width=simd_width](Coord(token_idx, col)).cast[
-        accum_dtype
-    ]()
+    var x_cur = x.load[width=simd_width]((token_idx, col)).cast[accum_dtype]()
     var acc = x_cur + x_cur * taps[width - 1]
     comptime for j in range(1, width):
         var tap_pos = position - j
         var value = SIMD[accum_dtype, simd_width](0)
         if tap_pos >= chunk_start:
-            value = x.load[width=simd_width](Coord(token_idx - j, col)).cast[
+            value = x.load[width=simd_width]((token_idx - j, col)).cast[
                 accum_dtype
             ]()
         elif tap_pos >= 0:
             value = ring.load[width=simd_width](
-                Coord(slot, tap_pos % ring_len, channel)
+                (slot, tap_pos % ring_len, channel)
             ).cast[accum_dtype]()
         acc += value * taps[width - 1 - j]
     return acc
@@ -170,10 +171,10 @@ def _commit_sequence_tail[
     comptime assert ring_len != -1, "the conv ring needs a static length"
 
     for token_idx in range(max(first_token, end - ring_len), end):
-        var position = Int(positions.load[width=1](Coord(token_idx))[0])
-        ring.store[width=simd_width](
-            Coord(slot, position % ring_len, channel),
-            x.load[width=simd_width](Coord(token_idx, col)).cast[ring.dtype](),
+        var position = Int(positions[token_idx][0])
+        ring.store(
+            (slot, position % ring_len, channel),
+            x.load[width=simd_width]((token_idx, col)).cast[ring.dtype](),
         )
 
 
@@ -181,7 +182,6 @@ def short_conv_ring[
     dtype: DType,
     ring_dtype: DType,
     //,
-    target: StaticString,
     commit: Bool,
 ](
     x: TileTensor[mut=False, dtype, ...],
@@ -202,7 +202,7 @@ def short_conv_ring[
     `conv_rows`: `[num_layers, batch]` ring slot per sequence; `layer_row`
     picks this layer's row. Without `commit` the ring is only read.
     """
-    comptime assert is_gpu[target](), "short_conv_ring is GPU-only"
+    comptime assert context.target.is_gpu(), "short_conv_ring is GPU-only"
     comptime assert x.flat_rank == 2, "x must be [total_seq_len, channels]"
     comptime assert output.flat_rank == 2, "output must match x"
     comptime assert weight.flat_rank == 2, "weight must be [channels, width]"
@@ -238,50 +238,63 @@ def short_conv_ring[
         var channel = (
             (block_idx.x % Int(channel_blocks)) * block_dim.x + thread_idx.x
         ) * vec
+
         if channel >= Int(channels_dev):
             return
-        var batch_idx, idx_in_seq = get_batch_and_token_idx_from_row_offsets(
-            input_row_offsets, token_idx
-        )
-        var slot = _ring_slot(conv_rows, layer_row, batch_idx)
-        var end = Int(input_row_offsets.load[width=1](Coord(batch_idx + 1))[0])
-        var steps = 1
-        comptime if commit:
-            # Tokens 1 .. width - 2 read entries the commit overwrites, so
-            # the chunk's first token computes them too.
-            if idx_in_seq > 0 and idx_in_seq < width - 1:
-                return
-            if idx_in_seq == 0:
-                steps = max(1, min(end - token_idx, width - 1))
-        for step in range(steps):
-            var token = token_idx + step
-            var position = Int(positions.load[width=1](Coord(token))[0])
-            var value = _short_conv_ring_step[width, accum_dtype, vec](
-                x,
-                weight,
-                ring,
-                token,
-                channel,
-                channel,
-                slot,
-                position,
-                position - (idx_in_seq + step),
-            )
-            output.store[width=vec](Coord(token, channel), value.cast[dtype]())
-        comptime if commit:
-            if idx_in_seq == 0:
-                _commit_sequence_tail[vec](
-                    x, ring, positions, slot, token_idx, end, channel, channel
-                )
 
-    with Trace[TraceLevel.OP, target=target](
-        "short_conv_ring.channels_" + String(channels),
+        with PDL():
+            var batch_idx, idx_in_seq = (
+                get_batch_and_token_idx_from_row_offsets(
+                    input_row_offsets, token_idx
+                )
+            )
+            var slot = _ring_slot(conv_rows, layer_row, batch_idx)
+            var end = Int(input_row_offsets[batch_idx + 1][0])
+            var steps = 1
+            comptime if commit:
+                # Tokens 1 .. width - 2 read entries the commit overwrites, so
+                # the chunk's first token computes them too.
+                if idx_in_seq > 0 and idx_in_seq < width - 1:
+                    return
+                if idx_in_seq == 0:
+                    steps = max(1, min(end - token_idx, width - 1))
+            for step in range(steps):
+                var token = token_idx + step
+                var position = Int(positions[token][0])
+                var value = _short_conv_ring_step[width, accum_dtype, vec](
+                    x,
+                    weight,
+                    ring,
+                    token,
+                    channel,
+                    channel,
+                    slot,
+                    position,
+                    position - (idx_in_seq + step),
+                )
+                output.store((token, channel), value.cast[dtype]())
+            comptime if commit:
+                if idx_in_seq == 0:
+                    _commit_sequence_tail[vec](
+                        x,
+                        ring,
+                        positions,
+                        slot,
+                        token_idx,
+                        end,
+                        channel,
+                        channel,
+                    )
+
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+        String(t"short_conv_ring.channels_{channels}"),
         task_id=get_safe_task_id(context),
     ):
         context.enqueue_function(
             kernel,
             grid_dim=total_seq_len * Int(channel_blocks),
             block_dim=_BLOCK,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -388,131 +401,136 @@ def _launch_fused_qk_rms_norm_short_conv[
             head_dim
         ) + channel
         var slot = 0
-        if not is_q:
-            batch_idx, tok_in_seq = get_batch_and_token_idx_from_row_offsets(
-                input_row_offsets, token_idx
-            )
-            end = Int(input_row_offsets.load[width=1](Coord(batch_idx + 1))[0])
-            slot = _ring_slot(
-                k_conv_rows, k_layer_row, batch_idx
-            ) if is_k else (_ring_slot(v_conv_rows, v_layer_row, batch_idx))
-            comptime if commit:
-                # Tokens 1 .. width - 2 read entries the commit overwrites,
-                # so the chunk's first token's block handles them too.
-                if tok_in_seq > 0 and tok_in_seq < width - 1:
-                    return
-                if tok_in_seq == 0:
-                    steps = max(1, min(end - token_idx, width - 1))
 
-        for step in range(steps):
-            var token = token_idx + step
-            var token_in_seq = tok_in_seq + step
-            var value = SIMD[accum_dtype, vec](0)
-            var gamma_val = SIMD[dtype, vec](0)
-            if is_q:
-                if in_head:
-                    value = qkvr.load[width=vec](
-                        Coord(token, head_idx * head_dim + idx)
-                    ).cast[accum_dtype]()
-                    gamma_val = q_gamma.load[width=vec](Coord(idx))
-            else:
-                var position = Int(positions.load[width=1](Coord(token))[0])
-                var chunk_start = position - token_in_seq
-                # Distinct operands never share a TileTensor type, so no
-                # select.
-                if in_head and is_k:
-                    value = _short_conv_ring_step[width, accum_dtype, vec](
-                        qkvr,
-                        k_weight,
-                        k_conv_ring,
-                        token,
-                        col,
-                        channel,
-                        slot,
-                        position,
-                        chunk_start,
+        with PDL():
+            if not is_q:
+                batch_idx, tok_in_seq = (
+                    get_batch_and_token_idx_from_row_offsets(
+                        input_row_offsets, token_idx
                     )
-                    gamma_val = k_gamma.load[width=vec](Coord(idx))
-                elif in_head:
-                    value = _short_conv_ring_step[width, accum_dtype, vec](
-                        qkvr,
-                        v_weight,
-                        v_conv_ring,
-                        token,
-                        col,
-                        channel,
-                        slot,
-                        position,
-                        chunk_start,
-                    )
-
-            var out_val: SIMD[dtype, vec]
-            if is_q or is_k:
-                out_val = _rms_norm_warp_tiling_subkernel[
-                    warps_per_block, multiply_before_cast
-                ](
-                    row,
-                    idx,
-                    value,
-                    gamma_val,
-                    epsilon,
-                    Scalar[accum_dtype](0),
-                    head_dim,
                 )
-            else:
-                out_val = value.cast[dtype]()
+                end = Int(input_row_offsets[batch_idx + 1][0])
+                slot = _ring_slot(
+                    k_conv_rows, k_layer_row, batch_idx
+                ) if is_k else (_ring_slot(v_conv_rows, v_layer_row, batch_idx))
+                comptime if commit:
+                    # Tokens 1 .. width - 2 read entries the commit overwrites,
+                    # so the chunk's first token's block handles them too.
+                    if tok_in_seq > 0 and tok_in_seq < width - 1:
+                        return
+                    if tok_in_seq == 0:
+                        steps = max(1, min(end - token_idx, width - 1))
 
-            # Every thread takes the next iteration's norm reduction.
-            if not in_head:
-                continue
-            if is_q:
-                comptime if apply_log_scaling:
-                    # Rounds to dtype before scaling, as the unfused graph
-                    # did.
-                    var factor = log_scaling.load[width=1](Coord(token))
-                    out_val = (out_val.cast[DType.float32]() * factor).cast[
-                        dtype
-                    ]()
-                q_output.store[width=vec](Coord(token, head_idx, idx), out_val)
-            else:
-                var cache = k_cache if is_k else v_cache
-                cache.store(
-                    bs=batch_idx,
-                    head_idx=head_idx,
-                    tok_idx=token_in_seq + cache.cache_length(batch_idx),
-                    head_dim_idx=idx,
-                    val=out_val.cast[cache_t.dtype](),
-                )
+            for step in range(steps):
+                var token = token_idx + step
+                var token_in_seq = tok_in_seq + step
+                var value = SIMD[accum_dtype, vec](0)
+                var gamma_val = SIMD[dtype, vec](0)
+                if is_q:
+                    if in_head:
+                        value = qkvr.load[width=vec](
+                            (token, head_idx * head_dim + idx)
+                        ).cast[accum_dtype]()
+                        gamma_val = q_gamma.load[width=vec]((idx,))
+                else:
+                    var position = Int(positions[token][0])
+                    var chunk_start = position - token_in_seq
+                    # Distinct operands never share a TileTensor type, so no
+                    # select.
+                    if in_head and is_k:
+                        value = _short_conv_ring_step[width, accum_dtype, vec](
+                            qkvr,
+                            k_weight,
+                            k_conv_ring,
+                            token,
+                            col,
+                            channel,
+                            slot,
+                            position,
+                            chunk_start,
+                        )
+                        gamma_val = k_gamma.load[width=vec]((idx,))
+                    elif in_head:
+                        value = _short_conv_ring_step[width, accum_dtype, vec](
+                            qkvr,
+                            v_weight,
+                            v_conv_ring,
+                            token,
+                            col,
+                            channel,
+                            slot,
+                            position,
+                            chunk_start,
+                        )
 
-        comptime if commit:
-            if not is_q and in_head and tok_in_seq == 0:
-                if is_k:
-                    _commit_sequence_tail[vec](
-                        qkvr,
-                        k_conv_ring,
-                        positions,
-                        slot,
-                        token_idx,
-                        end,
-                        col,
-                        channel,
+                var out_val: SIMD[dtype, vec]
+                if is_q or is_k:
+                    out_val = _rms_norm_warp_tiling_subkernel[
+                        warps_per_block, multiply_before_cast
+                    ](
+                        row,
+                        idx,
+                        value,
+                        gamma_val,
+                        epsilon,
+                        Scalar[accum_dtype](0),
+                        head_dim,
                     )
                 else:
-                    _commit_sequence_tail[vec](
-                        qkvr,
-                        v_conv_ring,
-                        positions,
-                        slot,
-                        token_idx,
-                        end,
-                        col,
-                        channel,
+                    out_val = value.cast[dtype]()
+
+                # Every thread takes the next iteration's norm reduction.
+                if not in_head:
+                    continue
+                if is_q:
+                    comptime if apply_log_scaling:
+                        # Rounds to dtype before scaling, as the unfused graph
+                        # did.
+                        var factor = log_scaling.load[width=1]((token,))
+                        out_val = (out_val.cast[DType.float32]() * factor).cast[
+                            dtype
+                        ]()
+                    q_output.store((token, head_idx, idx), out_val)
+                else:
+                    var cache = k_cache if is_k else v_cache
+                    cache.store(
+                        bs=batch_idx,
+                        head_idx=head_idx,
+                        tok_idx=token_in_seq + cache.cache_length(batch_idx),
+                        head_dim_idx=idx,
+                        val=out_val.cast[cache_t.dtype](),
                     )
+
+            comptime if commit:
+                if not is_q and in_head and tok_in_seq == 0:
+                    if is_k:
+                        _commit_sequence_tail[vec](
+                            qkvr,
+                            k_conv_ring,
+                            positions,
+                            slot,
+                            token_idx,
+                            end,
+                            col,
+                            channel,
+                        )
+                    else:
+                        _commit_sequence_tail[vec](
+                            qkvr,
+                            v_conv_ring,
+                            positions,
+                            slot,
+                            token_idx,
+                            end,
+                            col,
+                            channel,
+                        )
 
     context.enqueue_function(
         kernel,
         grid_dim=Int(q_rows + 2 * kv_rows),
         block_dim=warps_per_block * WARP_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -523,7 +541,6 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     apply_log_scaling: Bool,
     commit: Bool,
@@ -567,9 +584,9 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     sequence's last `R` tokens are also written into the rings; without it
     the rings are only read.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_qk_rms_norm_short_conv_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_qk_rms_norm_short_conv_ragged_paged is GPU-only"
     comptime assert qkvr.flat_rank == 2, "qkvr must be rank 2"
     comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
     comptime head_dim = params.head_size
@@ -586,11 +603,10 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     if qkvr.dim[0]() == 0:
         return
 
-    with Trace[TraceLevel.OP, target=target](
-        "fused_qk_rms_norm_short_conv_ragged_paged.kv_nhead_"
-        + String(params.num_heads)
-        + ".hdim_"
-        + String(head_dim),
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+        String(
+            t"fused_qk_rms_norm_short_conv_ragged_paged.kv_nhead_{params.num_heads}.hdim_{head_dim}"
+        ),
         task_id=get_safe_task_id(context),
     ):
         _launch_fused_qk_rms_norm_short_conv[

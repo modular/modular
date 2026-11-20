@@ -11,15 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.io import IOError
 from std.os import PathLike, remove, unlink
 from std.os.path import exists
 from std.pathlib import Path
 
-from std.testing import TestSuite, assert_false, assert_raises, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 
 def create_file_and_test_delete_path[
-    func: def[PathLike: PathLike](PathLike) thin raises -> None,
+    func: def[PathLike: PathLike](PathLike) thin raises IOError -> None,
     name: StaticString,
 ](filepath: Path) raises:
     try:
@@ -45,10 +52,14 @@ def test_remove() raises:
     )
 
     # trying to delete non existing file
-    with assert_raises(contains="Can not remove file: "):
+    with assert_raises(contains=String(t"unlink {my_file_name}: ")):
         remove(my_file_name)
-    with assert_raises(contains="Can not remove file: "):
+    try:
         remove(my_file_path)
+    except e:
+        assert_equal(e.kind(), .not_found)
+    else:
+        raise Error("removing a missing file succeeded")
 
     create_file_and_test_delete_path[remove, "remove"](my_file_name)
     create_file_and_test_delete_path[unlink, "unlink"](my_file_name)

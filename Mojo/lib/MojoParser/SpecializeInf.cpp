@@ -22,7 +22,7 @@
 #include "ParamMatcher.h"
 
 #include "Mojo/LITDialect/LITOps.h"
-#include "Mojo/MojoParser/IRValues.h"
+#include "Mojo/MojoParser/ASTDecl.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -36,7 +36,8 @@ SpecializeInf::SpecializeInf(ASTDecl &declScope, const ExprNode *expr,
                              PogListAttr declaredParamPogs, SMLoc defaultLoc,
                              bool discardError)
     : InferenceState(declScope, declaredParamTypes, declaredParamPogs,
-                     defaultLoc, discardError),
+                     defaultLoc, discardError,
+                     declScope.getShared().noAssumptions),
       expr(expr) {}
 
 LogicalResult SpecializeInf::matchValueType(ASTType actualType, size_t argIdx,
@@ -74,6 +75,9 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
 
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
@@ -106,9 +110,10 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
                                     expectedRef.getElementType())))
         return failure();
       expectedType = evaluator.getReboundType(expectedType);
-      if (!paramFinder.hasReferences(expectedType)) {
+      if (!hasReferences(expectedType)) {
         if (IREmitter::canZeroCostConvert(valueRefType, expectedType,
-                                          getShared(), getDeclScope())
+                                          getShared(), getDeclScope(),
+                                          getShared().noAssumptions)
                 .isTrue())
           return success();
         return failure();
@@ -216,11 +221,8 @@ SpecializeInf::inferSpecialization(FnTypeGeneratorType target,
       return mlir::failure();
   }
 
-  for (TypedAttr binding : evaluator.getIndexBindings()) {
-    if (!binding)
-      return mlir::failure();
-    assert(!sugarIsa<UnboundAttr>(binding));
-  }
+  if (llvm::is_contained(evaluator.getIndexBindings(), TypedAttr()))
+    return mlir::failure();
 
   SmallVector<TypedAttr> specialization;
   specialization.reserve(evaluator.getIndexBindings().size());

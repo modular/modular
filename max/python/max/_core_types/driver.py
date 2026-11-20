@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The DLPack protocol MAX uses to accept external arrays."""
+
 from typing import Any, Protocol, runtime_checkable
 
 

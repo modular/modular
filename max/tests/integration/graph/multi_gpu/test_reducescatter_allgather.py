@@ -23,7 +23,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 NUM_GPUS = 4
 HIDDEN = 8

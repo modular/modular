@@ -85,7 +85,7 @@ def bench_rs_norm_gemm_pdl[
     bm: Int = 64,
     bn: Int = 64,
     prefetch_tiles_n: Int = 2,
-](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext[]]) raises:
     """Bench the fused RS+RMSNorm -> GEMM pair across the PDL configurations.
 
     Parameters:
@@ -122,18 +122,18 @@ def bench_rs_norm_gemm_pdl[
     comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime BK = swizzle.bytes() // size_of[in_dtype]()
     comptime MMA_K = 16
-    comptime block_tile_shape = Index(bm, bn, BK)
-    comptime mma_shape = Index(2 * bm, 2 * bn, MMA_K)
+    comptime block_tile_shape = (bm, bn, BK)
+    comptime mma_shape = (2 * bm, 2 * bn, MMA_K)
 
     comptime gemm_config_off = MatmulConfig[in_dtype, in_dtype, in_dtype, True](
-        cluster_shape=Index(2, 1, 1),
+        cluster_shape=(Int(2), Int(1), Int(1)),
         mma_shape=mma_shape,
         cta_group=2,
     )
     comptime gemm_config_prefetch = MatmulConfig[
         in_dtype, in_dtype, in_dtype, True
     ](
-        cluster_shape=Index(2, 1, 1),
+        cluster_shape=(Int(2), Int(1), Int(1)),
         mma_shape=mma_shape,
         cta_group=2,
         prefetch_tiles_n=prefetch_tiles_n,
@@ -196,12 +196,9 @@ def bench_rs_norm_gemm_pdl[
 
         if i == 0:
             print(
-                "cache-busting windows: inputs=",
-                cb_inputs[i].buffer_size // cb_inputs[i].stride,
-                " weights=",
-                cb_weights[i].buffer_size // cb_weights[i].stride,
-                " (1 means the buster COLLAPSED -- raise budget_bytes)",
-                sep="",
+                t"cache-busting windows:"
+                t" inputs={cb_inputs[i].buffer_size // cb_inputs[i].stride} weights={cb_weights[i].buffer_size // cb_weights[i].stride} (1"
+                t" means the buster COLLAPSED -- raise budget_bytes)"
             )
 
         var alloc_i = config.rank_num_elements(i)
@@ -244,13 +241,13 @@ def bench_rs_norm_gemm_pdl[
     # consumer's operands are built with `Idx[...]` further down because the
     # SM100 kernel needs static N and K.
     comptime InTensorType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), MutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0, num_cols))), MutAnyOrigin
     ]
     comptime GammaShardType = TileTensor[
-        in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
+        in_dtype, type_of(row_major(Coord(0))), ImmutAnyOrigin
     ]
     # `[N, K]` (transpose_b) with BOTH dims static, as the SM100 kernel needs.
     # Built from the rotating cache-bust window rather than the base pointer so
@@ -266,7 +263,7 @@ def bench_rs_norm_gemm_pdl[
             ref normed, imm config
         } -> OutShardType: OutShardType(
             normed[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
     )
     var sum_shards = Array[OutShardType, ngpus](
@@ -274,7 +271,7 @@ def bench_rs_norm_gemm_pdl[
             ref fused_sum, imm config
         } -> OutShardType: OutShardType(
             fused_sum[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(config.rank_units(i), num_cols)),
         )
     )
     var gamma_shards = Array[GammaShardType, ngpus](
@@ -282,7 +279,7 @@ def bench_rs_norm_gemm_pdl[
             rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
-            row_major(Coord(Index(num_cols))),
+            row_major(Coord(num_cols)),
         )
     )
 
@@ -328,7 +325,7 @@ def bench_rs_norm_gemm_pdl[
                     rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(0)
                     ),
-                    row_major(Coord(Index(num_rows, num_cols))),
+                    row_major(Coord(num_rows, num_cols)),
                 )
             reducescatter_rmsnorm[pdl_level=v_pdl](
                 in_bufs,
@@ -418,13 +415,13 @@ def bench_rs_norm_gemm_pdl[
 
         @inline(.always)
         def bench_pair_iter(
-            mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+            mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_bufs, imm}:
             var local_rows = config.rank_units(ctx_idx)
 
             @inline(.always)
             def call_fn(
-                ctx_inner: DeviceContext, cache_iter: Int
+                ctx_inner: DeviceContext[], cache_iter: Int
             ) raises {mut in_bufs, imm}:
                 comptime if not consumer_only:
                     comptime for _j in range(ngpus):
@@ -432,7 +429,7 @@ def bench_rs_norm_gemm_pdl[
                             rebind[
                                 ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                             ](cb_inputs[_j].offset_ptr(cache_iter)),
-                            row_major(Coord(Index(num_rows, num_cols))),
+                            row_major(Coord(num_rows, num_cols)),
                         )
                     reducescatter_rmsnorm[pdl_level=prod_pdl](
                         in_bufs,
@@ -518,22 +515,13 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "Paired fused reduce-scatter+RMSNorm -> GEMM, PDL: ",
-        num_gpus,
-        " GPUs, ",
-        in_dtype,
-        ", M=",
-        num_rows,
-        " H=",
-        num_cols,
-        " N=",
-        gemm_n,
-        sep="",
+        t"Paired fused reduce-scatter+RMSNorm -> GEMM, PDL: {num_gpus} GPUs,"
+        t" {in_dtype}, M={num_rows} H={num_cols} N={gemm_n}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=num_reps))

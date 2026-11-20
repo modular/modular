@@ -27,8 +27,8 @@ from concurrent.futures.process import BrokenProcessPool
 from max import mlir
 from max._core import Operation
 from max.driver import DeviceSpec
-from max.experimental.compile_pool import ProcessCompilePool
 from max.graph import Module
+from max.tensor.compile_pool import ProcessCompilePool
 
 from . import gc_compile
 from .gc_compile import GCOpFamily

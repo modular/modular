@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen2.5-VL with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import (
@@ -18,7 +19,6 @@ from max.pipelines.context import (
     TextContext,
 )
 from max.pipelines.context.exceptions import InputError
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -84,9 +84,6 @@ qwen2_5_vl_arch = SupportedArchitecture(
         validate_qwen2_5vl_required_args,
     ],
     config=Qwen2_5VLConfig,
-    memory_planner=PagedMemoryPlanner.with_activation_reservation(
-        5 * 1024**3, always_signal_buffers=True
-    ),
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

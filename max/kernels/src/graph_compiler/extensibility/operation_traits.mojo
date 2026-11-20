@@ -84,7 +84,5 @@ trait ElementwiseBinaryComparisonOp:
     def elementwise[
         dtype: DType,
         width: SIMDLength,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-        DType.bool, width
-    ]:
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[.bool, width]:
         ...

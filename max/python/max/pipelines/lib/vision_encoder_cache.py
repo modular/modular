@@ -25,6 +25,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
+    Any,
     Generic,
     Protocol,
     TypeVar,
@@ -48,7 +49,7 @@ from max.pipelines.context import (
     VLMContextType,
 )
 from max.pipelines.lib.vlm_utils import (
-    compute_multimodal_merge_indices,
+    _compute_selected_merge_indices,
     compute_windowed_merge_indices,
 )
 from max.pipelines.request import RequestID
@@ -381,6 +382,32 @@ class SupportsVisionEncoding(Protocol[PackedVisionInputsT]):
 
 
 @runtime_checkable
+class DelegatesVisionEncoding(Protocol):
+    """A pipeline model that hands its image encoding to another object.
+
+    A pipeline model that serves every registration of a task implements
+    this rather than :class:`SupportsVisionEncoding`, since only some of
+    them take images.
+    """
+
+    @property
+    def vision_encoding(self) -> SupportsVisionEncoding[Any] | None:
+        """What encodes the model's images, or ``None`` when it takes none."""
+        ...
+
+
+def vision_encoding(
+    pipeline_model: object,
+) -> SupportsVisionEncoding[Any] | None:
+    """Returns what encodes a pipeline model's images, if it takes any."""
+    if isinstance(pipeline_model, DelegatesVisionEncoding):
+        return pipeline_model.vision_encoding
+    if isinstance(pipeline_model, SupportsVisionEncoding):
+        return pipeline_model
+    return None
+
+
+@runtime_checkable
 class SupportsPooledVisionMetrics(Protocol):
     """A pipeline model that owns its vision/video encoder cache internally.
 
@@ -593,7 +620,6 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
 
         self._empty_indices_cache: list[Buffer] | None = None
-        self._scatter_buffers: dict[int, list[Buffer]] = {}
 
         self._pool: _VisionBlockPool | None = None
         if plan is not None:
@@ -975,10 +1001,14 @@ class VisionEncoderCache(Generic[VLMContextType]):
             self._batch_metrics = None
 
         if not self.enabled:
+            # The encoder ran on the selection alone (in-window images), so
+            # the indices follow the selection, not every image in the batch.
             embeddings = (
                 vision_embeds if uncached_contexts else empty_embeddings
             )
-            indices = compute_multimodal_merge_indices(context_batch)
+            indices = _compute_selected_merge_indices(
+                context_batch, uncached_contexts, uncached_images
+            )
             return embeddings, indices
 
         if not per_image_token_counts:
@@ -1313,11 +1343,13 @@ class VisionEncoderCache(Generic[VLMContextType]):
     ) -> list[Buffer]:
         """Copy merge indices to each device.
 
-        Allocates a fresh pinned host buffer every call and never reuses it
-        across calls: under the overlap scheduler a reused pinned buffer would
-        be clobbered by the next step's host write while the current step's
-        asynchronous H2D copy is still reading it. The per-device destination
-        buffers are cached by index count and reused (never pinned).
+        Allocates fresh buffers every call and never reuses them across calls:
+        under the overlap scheduler a reused pinned buffer would be clobbered by
+        the next step's host write while the current step's asynchronous H2D
+        copy is still reading it. The per-device destinations are freed with
+        the step's inputs rather than cached by index count: the count varies
+        from batch to batch, so such a cache keeps a buffer on every device for
+        each count ever seen, and each one pins a whole memory-manager page.
         """
         dev = devices[0]
         n = len(scatter_np)
@@ -1325,13 +1357,9 @@ class VisionEncoderCache(Generic[VLMContextType]):
             Usage.DEFAULT if dev.is_host else Usage.STAGING | Usage.UNTRACKED
         )
         host = Buffer(dtype=DType.int32, shape=(n,), device=dev, usage=usage)
-
-        device_bufs = self._scatter_buffers.get(n)
-        if device_bufs is None:
-            device_bufs = [
-                Buffer(shape=(n,), dtype=DType.int32, device=d) for d in devices
-            ]
-            self._scatter_buffers[n] = device_bufs
+        device_bufs = [
+            Buffer(shape=(n,), dtype=DType.int32, device=d) for d in devices
+        ]
 
         host.to_numpy()[:] = scatter_np.astype(np.int32)
         copy_pinned_to_destinations(host, device_bufs)

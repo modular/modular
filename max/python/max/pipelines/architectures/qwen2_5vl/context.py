@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen2.5-VL interleaved text and image context."""
 
 from dataclasses import dataclass
 from typing import Any

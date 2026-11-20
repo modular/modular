@@ -23,7 +23,7 @@ from layout import (
     row_major,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 
@@ -148,8 +148,9 @@ def test_case_sampling[
     var _xx_no_lifetimes = out_vals
     var _x_no_lifetimes = out_idxs
 
-    for i in range(out_idxs.num_elements()):
-        print(out_idxs.raw_load(i), end="")
+    var out_idxs_flat = out_idxs.reshape(row_major(out_idxs.num_elements()))
+    for i in range(out_idxs_flat.num_elements()):
+        print(out_idxs_flat[i], end="")
         print(",", end="")
     print("")
 
@@ -322,16 +323,10 @@ def main() raises:
             mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
         ]
     ):
-        var flat_buf = TileTensor(
-            buf._storage,
-            row_major(buf.num_elements()),
-        )
+        var flat_buf = buf.reshape(row_major(buf.num_elements()))
 
         for i in range(flat_buf.num_elements()):
-            var idx = flat_buf.layout(Coord(i))
-            flat_buf.raw_store(
-                idx, Scalar[dtype](flat_buf.num_elements() - i - 1)
-            )
+            flat_buf[i] = Scalar[dtype](flat_buf.num_elements() - i - 1)
         flat_buf[0] = -1
 
     def test_5d():
@@ -393,10 +388,10 @@ def main() raises:
             mut=True, dtype, ..., Engine=DefaultEngine[element_width=1]
         ]
     ):
-        for i in range(
-            coord_to_index_list(buf.layout.shape_coord()).flattened_length()
-        ):
-            buf.raw_store(i, 1)
+        var n = coord_to_index_list(buf.layout.shape_coord()).flattened_length()
+        var flat = buf.reshape(row_major(n))
+        for i in range(n):
+            flat[i] = 1
 
     def test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")

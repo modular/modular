@@ -30,7 +30,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kernels import (
+from max.nn._graph_ops import (
+    BLOCKWISE_FP8_LANE_BYTES,
     MXFP6_LANE_BYTES,
     preshuffle_block_scaled_b,
     preshuffle_block_scaled_b_scales,
@@ -144,6 +145,39 @@ def test_stacked_gate_up_matches_per_half_layout(
             )
 
 
+@pytest.mark.parametrize(
+    ("lane_bytes", "expected"),
+    [(_MFMA_LANE_BYTES, _expected_b_5d), (MXFP6_LANE_BYTES, _expected_planes)],
+)
+def test_bf16_permutes_as_its_bytes(
+    session: InferenceSession,
+    lane_bytes: int,
+    expected: Callable[[np.ndarray], np.ndarray],
+) -> None:
+    """A bf16 weight lands where the byte layout puts its bytes.
+
+    With 16-byte lanes that is the B layout of ``smallm_streaming_matmul``,
+    eight bf16 per lane.
+    """
+    src = np.random.default_rng(2).integers(0, 2**16, (1, 32, 192), np.uint16)
+    cpu = DeviceRef.CPU()
+    with Graph(
+        "preshuffle_bf16",
+        input_types=[TensorType(DType.bfloat16, src.shape, cpu)],
+    ) as graph:
+        graph.output(
+            preshuffle_block_scaled_b(
+                graph.inputs[0].tensor, lane_bytes=lane_bytes
+            )
+        )
+    (out,) = session.load(graph).execute(
+        Buffer.from_numpy(src).view(DType.bfloat16)
+    )
+    got = cast(Buffer, out).view(DType.uint16).to_numpy()
+    want = expected(src[0].view(np.uint8)).view(np.uint16)
+    np.testing.assert_array_equal(got[0], want)
+
+
 def test_scales_match_cell_layout(session: InferenceSession) -> None:
     src = _bytes(1, (2, 64, 16))
     got = _run(session, preshuffle_block_scaled_b_scales, src)
@@ -179,6 +213,33 @@ def test_mxfp6_planes_match_kernel_offsets(
         got.reshape(-1, tile_bytes)[:, :plane0_bytes].reshape(-1),
         _expected_b_5d(truncated.reshape(n_rows, -1)).reshape(-1),
     )
+
+
+def test_blockwise_fp8_lane_is_two_16_byte_planes(
+    session: InferenceSession,
+) -> None:
+    """Each 32-byte lane fragment lands as two 16-byte planes, each in the
+    16-byte-lane layout of its half of the bytes: the order the blockwise-FP8
+    MegaFFN reads."""
+    experts, n, k_bytes = 2, 32, 256
+    src = _bytes(4, (experts, n, k_bytes))
+    got = _run(
+        session,
+        lambda w: preshuffle_block_scaled_b(w, BLOCKWISE_FP8_LANE_BYTES),
+        src,
+    )
+    tile_bytes = _MFMA_MN_LANES * _MFMA_K_LANES * _MFMA_LANE_BYTES
+    for e in range(experts):
+        lanes = src[e].reshape(n, -1, BLOCKWISE_FP8_LANE_BYTES)
+        planes = [
+            _expected_b_5d(lanes[..., half].reshape(n, -1)).reshape(
+                -1, tile_bytes
+            )
+            for half in (slice(0, 16), slice(16, 32))
+        ]
+        np.testing.assert_array_equal(
+            got[e], np.concatenate(planes, axis=1).reshape(n, k_bytes)
+        )
 
 
 @pytest.mark.parametrize(

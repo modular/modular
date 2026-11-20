@@ -1,0 +1,432 @@
+---
+title: C-compatible data types
+description: >
+  How numbers, pointers, structs, arrays, strings, and function pointers
+  cross the C ABI, who owns shared memory, and how long it stays valid.
+---
+
+{/* VERIFIED against these sources:
+  Mojo/stdlib/std/ffi/__init__.mojo (C type aliases, _c_char_dtype)
+  Mojo/stdlib/std/ffi/cstring.mojo (CStringSpan)
+  Mojo/stdlib/std/ffi/unsafe_union.mojo (UnsafeUnion)
+  Mojo/stdlib/std/memory/pointer.mojo (Pointer, OpaquePointer)
+  Mojo/stdlib/std/origin/__init__.mojo (untracked origins)
+  Mojo/stdlib/std/collections/string/string.mojo (as_c_string_span,
+    from_utf8, from_utf8_lossy, unsafe_from_utf8, unsafe_from_utf8_ptr)
+  Mojo/stdlib/std/collections/array.mojo (Array)
+  Mojo/stdlib/std/sys/info.mojo (platform_map)
+  Mojo/docs/site/reference/decorators/align.mdx
+  C headers: macOS SDK and glibc time.h (CLOCK_MONOTONIC), stdlib.h (div_t)
+  Probes: ~/here/studio-claude/share-data/ (FINDINGS.md, inject/)
+  Tests: Mojo/docs/site/code/manual/interop/data-types/tests.mojo */}
+{/* Compiler verified: 2026-11-17, repo build at b8bcc16b3cc (bazel tests
+    on macOS ARM64, Linux x86-64, and Linux ARM64). */}
+{/* Last updated: 2026-11-17 (C type table from stdlib definitions,
+    Examples links, span rule, checked C string conversion) */}
+
+When Mojo shares data with another language through the C ABI, it can
+pass only the small set of types that C itself understands:
+
+- Integers and floating-point numbers
+- Pointers, including pointers to C-compatible structs
+- Arrays, passed as a pointer plus a length
+- Strings, passed as null-terminated `char*` pointers
+- Thin function pointers, such as comparison callbacks
+
+The following items don't cross the C ABI directly:
+
+- Classes, objects, and generics
+- Closures that capture state
+- Exceptions and language-specific error types
+- Language-specific string and collection types
+
+Errors cross as return values or null pointers, not as exceptions. So a
+wrapper around a foreign library is usually small. It exposes a few
+functions that use only C types, and the library keeps its richer types on
+its own side of the boundary.
+
+This page describes how each type is represented and who owns it, so its
+code shows declarations only. The complete, runnable examples live on two
+companion pages: [Passing data to C ABI
+functions](/docs/manual/interop/passing-data-to-c) shows Mojo calling
+foreign code, and [Passing data to exported Mojo
+functions](/docs/manual/interop/passing-data-to-mojo) shows foreign code
+calling Mojo. Each section below ends with links to its examples.
+
+## Ownership and lifetime
+
+Two questions decide whether code uses shared memory safely. *Ownership*
+answers who frees the memory. *Lifetime* answers how long a pointer to it
+stays valid. They're separate questions: a borrowed pointer can become
+invalid long before the owner frees anything.
+
+### Who owns shared memory
+
+Shared memory has an owner: the side that allocated it. The owner frees
+the memory with its own deallocator. Before you pass or receive a pointer,
+answer three questions:
+
+- Who allocated this memory?
+- Who frees it, and with which function?
+- How long does the other side need it?
+
+Numbers, booleans, and small structs passed by value cross as copies.
+Each side owns its own copy, and nothing needs freeing. Pointers, strings,
+buffers, and handles cross as addresses of shared memory. One side owns
+that memory, and the other side borrows it.
+
+Memory that foreign code allocates has no Mojo owner. Declare pointers to
+it with an untracked origin, such as `MutUntrackedOrigin`. When the library
+says the caller frees it, call the deallocator the library documents, and
+make sure nothing uses the memory afterward.
+
+### How long a borrowed pointer stays valid
+
+Mojo tracks the memory it owns with *origins*. An origin records which
+Mojo value a pointer points into, so Mojo keeps that value alive while the
+pointer is in use. When you pass `Pointer(to=value)` or a span to foreign
+code, the origin keeps `value` alive through the call.
+
+Origins can't see what foreign code does after the call returns. Mojo
+destroys a value after its last use, not at the end of its scope, so
+`value` can disappear as soon as the call returns. If foreign code keeps
+the pointer, keep the data alive yourself until foreign code is done with
+it.
+
+A pointer can also go stale while its owner is still alive. A `List` can
+move its storage when it grows, so get its `unsafe_ptr()` right before the
+call, after any `append()`. A string that C keeps, such as a value from
+`getenv()`, can change when the environment changes.
+
+A callback that foreign code stores for later follows the same rule.
+Everything it reads, including its context, has to stay alive until its
+last call.
+
+## C type aliases
+
+The C standard sets only minimum sizes for its integer types. Each
+platform's C ABI picks the actual sizes, so the same C type can have
+different sizes on different platforms.
+
+The type aliases in `std.ffi` match the C ABI of the platform you build
+for. Use them whenever you declare a foreign function, and the sizes take
+care of themselves.
+
+{/* markdownlint-disable MD013 */}
+
+| C type                  | `std.ffi` alias | Equivalent Mojo type | Notes                                                            |
+|-------------------------|-----------------|----------------------|------------------------------------------------------------------|
+| `char`                  | `c_char`        | Platform dependent   | Unsigned on Linux ARM64, signed elsewhere; often used as `char*` |
+| `signed char`           | None            | Platform dependent   |                                                                  |
+| `unsigned char`         | `c_uchar`       | `UInt8`              |                                                                  |
+| `short`                 | `c_short`       | `Int16`              |                                                                  |
+| `unsigned short`        | `c_ushort`      | `UInt16`             |                                                                  |
+| `int`                   | `c_int`         | `Int32`              | Not Mojo `Int`, which is 64 bits                                 |
+| `unsigned int`          | `c_uint`        | `UInt32`             |                                                                  |
+| `long`                  | `c_long`        | Platform dependent   | 64 bits on macOS and Linux                                       |
+| `unsigned long`         | `c_ulong`       | Platform dependent   | Matches `c_long` width                                           |
+| `long long`             | `c_long_long`   | `Int64`              |                                                                  |
+| `unsigned long long`    | `c_ulong_long`  | `UInt64`             |                                                                  |
+| `int8_t` … `int64_t`    | None            | `Int8` … `Int64`     |                                                                  |
+| `uint8_t` … `uint64_t`  | None            | `UInt8` … `UInt64`   |                                                                  |
+| `size_t`                | `c_size_t`      | `UInt`               | Sizes and counts                                                 |
+| `ssize_t`               | `c_ssize_t`     | `Int`                | Signed sizes                                                     |
+| `pid_t`                 | `c_pid_t`       | `Int32`              | Process IDs; an alias for `c_int`                                |
+| `intptr_t`, `ptrdiff_t` | None            | Platform dependent   | Pointer-sized                                                    |
+| `bool`                  | None            | Platform dependent   | One byte                                                         |
+| `float`                 | `c_float`       | `Float32`            |                                                                  |
+| `double`                | `c_double`      | `Float64`            |                                                                  |
+| `long double`           | None            | None                 | 8 bytes on macOS ARM64, 16 bytes on Linux                        |
+| `void*`                 | None            | `OpaquePointer`      | See note after table                                             |
+
+{/* markdownlint-enable MD013 */}
+
+For `void*`, use `OpaquePointer`, an alias for `Pointer[NoneType]`. It's
+defined in `std.memory`.
+
+{/*
+Mojo has no equivalent of C enums or `#define` constants. UPDATE THIS SECTION
+*/}
+
+Declare each value you
+need as a `comptime` constant of the matching C type, as the
+[`clock_gettime()`
+example](/docs/manual/interop/passing-data-to-c#structs) does
+for `CLOCK_REALTIME`. Pass enum values as `c_int` unless the header says
+otherwise.
+
+Copy the values from the target platform's headers. A constant can have a
+different value on each platform: `CLOCK_MONOTONIC` is 6 on macOS and 1 on
+Linux.
+
+`platform_map()` picks the value for the platform you build for:
+
+```mojo
+from std.ffi import c_int
+from std.sys.info import platform_map
+
+comptime CLOCK_MONOTONIC = c_int(
+    platform_map["CLOCK_MONOTONIC", linux=1, macos=6]()
+)
+```
+
+If `platform_map()` has no value for the target platform, the build fails.
+
+## Pointers
+
+A `Pointer[T]` points to a value of type `T`. `Pointer(to=value)` creates
+a pointer to a Mojo value. Foreign code can read and write through it. If
+foreign code writes, `value` must be mutable.
+
+A `Pointer` can't be null. When a C function can return null, declare the
+result as `Optional`, and check it before you use it. If you declare a
+plain `Pointer` and C returns null anyway, using it is undefined behavior.
+
+Many C functions return a result by writing to a C-style out argument you
+pass.
+
+Examples: [Mojo calls
+C](/docs/manual/interop/passing-data-to-c#c-style-out-arguments).
+
+:::tip Worth knowing
+
+Pointers cross the boundary safely only when both sides follow the
+rules:
+
+- Read and write within the bounds of the supplied memory.
+- Use the pointer only during the call, unless the C function documents
+  that it retains the pointer and you keep the memory alive.
+- Only free memory with the allocator that created it.
+- Pass or return null only where the Mojo declaration uses `Optional`.
+
+:::
+
+## Opaque handles
+
+Many C libraries give you a *handle*: a pointer to a struct that only the
+library understands. C's `FILE*` is one. You get it from `fopen()`, pass it
+to other functions, and give it back to `fclose()`. You never read its
+fields.
+
+Declare a handle as an `OpaquePointer` with `MutUntrackedOrigin`, because
+the library owns the memory behind it. Wrap it in `Optional` when the
+function that creates it can return null:
+
+```mojo
+comptime FILE = Optional[MutOpaquePointer[MutUntrackedOrigin]]
+```
+
+A Mojo library can hand out handles. Foreign code holds the handle and
+passes it back, but never looks further.
+
+Examples: [Mojo calls
+C](/docs/manual/interop/passing-data-to-c#opaque-handles) and [C calls
+Mojo](/docs/manual/interop/passing-data-to-mojo#opaque-handles).
+
+## Structs
+
+To represent a C struct in Mojo, declare a struct using the same fields in
+the same order. Each field must have the same size and alignment as its C
+counterpart, and a nested struct must follow the same rule. When the
+fields match, Mojo inserts the same alignment padding that C does, so the
+layouts match:
+
+```mojo
+from std.ffi import c_int
+
+@fieldwise_init
+struct DivT(RegisterPassable):  # C's div_t
+    var quot: c_int
+    var rem: c_int
+```
+
+`DivT` conforms to `RegisterPassable` because `external_call()` requires
+that trait for its return type, as does `OwnedDLHandle.get_function()`.
+The restriction belongs to those helpers, not to the C ABI: an exported
+`abi("C")` function can return a struct that isn't `RegisterPassable`. A
+struct that you only pass to C, by value or through a pointer, needs no
+particular trait.
+
+A C function takes a struct by value or through a pointer, as its
+declaration says. A struct passed through a pointer works like any other
+C-style out argument.
+
+A struct with a Mojo `String`, `List`, or other non-C field isn't
+C-compatible. Nested structs and fixed-size array fields are. Declare a
+nested C struct as a field of the matching Mojo struct type, and a C array
+field such as `char name[16]` as `Array[c_char, 16]`. `Array` isn't
+`RegisterPassable`, so `external_call()` and `get_function()` can't call a
+C function that returns a struct with an array field. An exported function
+can return one when the array holds integers or characters.
+
+{/* Struct by-value limits track open C ABI issues. UPDATE THIS SECTION */}
+
+Check each field's alignment, not only its size. `SIMD[DType.float32, 4]`
+holds the same 16 bytes as C's `float v[4]`, but Mojo aligns it to 16 bytes
+and C aligns the array to 4. Put a `UInt8` field before it, and the struct
+is 32 bytes in Mojo but 20 bytes in C. Declare a C array field as an
+`Array`, which uses the C alignment.
+
+Mojo has no bitfields or packed layouts. For a C struct that uses either,
+read its bytes as raw data, or call C functions that read the fields for
+you.
+
+When a C struct declares more alignment than its fields need, such as
+`_Alignas(16)`, add the same alignment to the Mojo struct with the
+[`@align` decorator](/docs/reference/decorators/align/).
+
+Examples: [Mojo calls
+C](/docs/manual/interop/passing-data-to-c#structs) and [C calls
+Mojo](/docs/manual/interop/passing-data-to-mojo#structs).
+
+### Unions
+
+`UnsafeUnion` from `std.ffi` matches a C union. Its size is the size of
+its largest member rounded up to the strictest member alignment. Pass unions
+through a pointer. A union passed by value
+can arrive with undefined content, and nothing reports it. Each member type
+must differ, so a C union with two `int` members becomes one `c_int`
+member.
+
+## Arrays
+
+A C function receives an array as a pointer to its first element and a
+separate count. Pass an `Array`, `List`, or `Span` as its `unsafe_ptr()`
+and the count the function expects. Check whether the function counts
+elements or bytes.
+
+Foreign code passes arrays to Mojo the same way. An exported Mojo function
+can view the elements as a `Span` for the length of the call.
+
+Examples: [Mojo calls
+C](/docs/manual/interop/passing-data-to-c#buffers) and [C calls
+Mojo](/docs/manual/interop/passing-data-to-mojo#arrays).
+
+## Strings
+
+A C string is a `char*` pointer to bytes that end with a zero byte. A Mojo
+string stores UTF-8 bytes and their length instead. Who owns a C string
+decides what you do with it.
+
+`as_c_string_span()` prepares a Mojo string for C and returns a
+`CStringSpan`, a view of the string's bytes that ends in a zero byte. The
+string must be mutable, because Mojo may need to add the terminating zero
+byte, which can move the string's buffer. String literals already end in a
+zero byte. The span keeps the string alive through the call, and no
+longer.
+
+Get the span after your last change to the string, and use one span at a
+time. Changing the string can move its buffer, and a second call to
+`as_c_string_span()` ends the first span, so take a fresh span right before
+each call.
+
+To copy a C string into a Mojo `String`, wrap the pointer with
+`CStringSpan(unsafe_from_ptr=)`, which stops at the terminating zero, and
+convert the span's bytes with `String(from_utf8=span.as_bytes())`, which
+checks that they're valid UTF-8. `String(unsafe_from_utf8_ptr=)` makes the
+same copy in one step, but trusts the bytes without checking them. To keep
+a view instead of a copy,
+declare the C return type as `CStringSpan` with the origin of the data's
+owner, such as `ImmStaticOrigin` for static data or
+`ImmOrigin(origin_of(lib))` for data inside a loaded library. When the
+function can return null, as `getenv()` can, declare
+`Optional[CStringSpan[...]]` and check it before use.
+
+A C string carries no length. Measure it with C's `strlen()`. A Mojo
+string's `byte_length()` measures the Mojo string, and says nothing about a
+buffer that C returned.
+
+Once you know the length, wrap the bytes in a `Span[Byte]` and choose how
+much to trust them:
+
+- `String(from_utf8=bytes)` checks the bytes and raises an error if they
+  aren't valid UTF-8.
+- `String(from_utf8_lossy=bytes)` replaces invalid sequences with the
+  replacement character, U+FFFD.
+- `String(unsafe_from_utf8=bytes)` trusts the bytes without checking them.
+
+Use `from_utf8` for text from outside your program, such as file contents,
+environment variables, or network data.
+
+Examples: [Mojo calls
+C](/docs/manual/interop/passing-data-to-c#strings) and [C calls
+Mojo](/docs/manual/interop/passing-data-to-mojo#strings).
+
+## Function pointers
+
+A *callback* is a function you give to foreign code so that foreign code
+can call it. C passes a callback as a bare function pointer, so the Mojo
+function must be *thin*: it captures no state, and its address alone is
+enough to call it. Marking it `abi("C")` makes it use C's calling
+convention. Wherever a C function expects a callback, you can pass any of
+these:
+
+- A named function declared with `abi("C")`
+- A thin lambda marked `abi("C")`, written inline or stored in a `var`
+- A variable typed as `def(...) thin abi("C") -> ...`
+
+Follow these rules:
+
+- Mark every callback `abi("C")`. The FFI helpers don't validate the
+  callback signature against the foreign function's declaration, so an
+  incompatible callback can cause undefined behavior.
+- Pass only non-capturing functions as callbacks. The compiler rejects a
+  capturing or mismatched function at a parameter typed
+  `def(...) thin abi("C") -> ...`, but `external_call()` accepts any
+  argument, so a capturing closure passed there still compiles.
+- Report errors through the return value. A callback marked `abi("C")`
+  can't raise.
+
+[Callbacks and
+exports](/docs/manual/interop/safety#callbacks-and-exports) list the
+first two failures.
+
+:::tip Worth knowing
+
+`external_call()` requires a consistent signature for each C function
+throughout your program. Pass every callback to a given C function the
+same way, as a function or as an `Int` address, not both.
+
+Mojo pointers aren't nullable. Foreign code must not return a null
+pointer where Mojo expects a `Pointer`. An `Optional` of a callback type
+isn't the size of a pointer, so it can't represent a C null function
+pointer.
+
+:::
+
+A thin callback can't capture state, so C functions pass state alongside
+it as a `void*` *context*. The library hands the context back to the
+callback unchanged. Only the callback knows what it points to. A function
+type for a callback that takes a context looks like this:
+
+```mojo
+from std.ffi import c_double
+
+comptime Context = MutOpaquePointer[MutUntrackedOrigin]
+comptime Progress = def(c_double, Context) thin abi("C")
+```
+
+Examples: [Mojo calls
+C](/docs/manual/interop/passing-data-to-c#callbacks) and [C calls
+Mojo](/docs/manual/interop/passing-data-to-mojo#callbacks).
+
+## Ownership at a glance
+
+{/* markdownlint-disable MD013 */}
+
+| Data                                 | Owner                  | Who frees it, and how                         | Valid until                   | Mojo declares                                               |
+|--------------------------------------|------------------------|-----------------------------------------------|-------------------------------|-------------------------------------------------------------|
+| Numbers, `bool`, enums               | Each side (copied)     | Nothing to free                               | Always                        | `c_int`, `Bool`, `comptime` constants                       |
+| Struct passed by value               | Each side (copied)     | Nothing to free                               | Always                        | Struct with scalar or integer-array fields                  |
+| C-style out argument                 | Mojo                   | Mojo, automatically                           | The call returns              | `Pointer(to=result)`                                        |
+| Buffer Mojo passes                   | Mojo                   | Mojo, automatically                           | The call returns              | `unsafe_ptr()` and a count                                  |
+| Buffer an exported function receives | Caller                 | Caller                                        | The call returns              | `Pointer[T, ImmUntrackedOrigin]` and a count                |
+| String Mojo passes                   | Mojo                   | Mojo, automatically                           | The call returns              | `as_c_string_span()`                                        |
+| String C keeps (`getenv()`)          | C                      | Nobody                                        | C changes it; copy it at once | `Optional[Pointer[c_char, ImmUntrackedOrigin]]`             |
+| String C allocates (`strdup()`)      | Caller, after the call | Caller, with `free()`, unless C keeps it      | It's freed                    | `Optional[Pointer[c_char, MutUntrackedOrigin]]`             |
+| String an exported function returns  | Caller, after the call | Caller, with Mojo's exported free function    | It's freed                    | `Pointer[c_char, MutUntrackedOrigin]` from `unsafe_leak()`  |
+| Handle from a C library (`FILE*`)    | The library            | The library's close function                  | It's closed                   | `Optional[MutOpaquePointer[MutUntrackedOrigin]]`            |
+| Handle an exported function returns  | Mojo library           | Caller, with Mojo's exported destroy function | It's destroyed                | `MutOpaquePointer[MutUntrackedOrigin]` from `unsafe_leak()` |
+| Callback context                     | Caller                 | Caller                                        | The last callback returns     | `MutOpaquePointer[MutUntrackedOrigin]`                      |
+
+{/* markdownlint-enable MD013 */}

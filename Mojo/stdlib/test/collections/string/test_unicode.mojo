@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string._unicode import _get_uppercase_mapping
+from std.collections.string._unicode import (
+    _CaseMapping,
+    _get_lowercase_mapping,
+    _get_uppercase_mapping,
+)
 
 from std.testing import assert_equal
 from std.testing import TestSuite
@@ -19,32 +23,44 @@ from std.testing import TestSuite
 
 def test_uppercase_conversion() raises:
     # a -> A
-    var count1: Int
-    count1, ref chars1 = _get_uppercase_mapping(Codepoint(97)).value()
-    assert_equal(count1, 1)
-    assert_equal(chars1[0], Codepoint(65))
-    assert_equal(chars1[1], Codepoint(0))
-    assert_equal(chars1[2], Codepoint(0))
+    assert_equal(
+        _get_uppercase_mapping(Codepoint(97)),
+        _CaseMapping.single([Codepoint(65)]),
+    )
 
     # ß -> SS
-    var count2: Int
-    count2, ref chars2 = _get_uppercase_mapping(
-        Codepoint.from_u32(0xDF).value()
-    ).value()
-    assert_equal(count2, 2)
-    assert_equal(chars2[0], Codepoint.from_u32(0x53).value())
-    assert_equal(chars2[1], Codepoint.from_u32(0x53).value())
-    assert_equal(chars2[2], Codepoint(0))
+    assert_equal(
+        _get_uppercase_mapping(Codepoint.from_u32(0xDF).value()),
+        _CaseMapping.pair(
+            [Codepoint.from_u32(0x53).value(), Codepoint.from_u32(0x53).value()]
+        ),
+    )
 
     # ΐ -> Ϊ́
-    var count3: Int
-    count3, ref chars3 = _get_uppercase_mapping(
-        Codepoint.from_u32(0x390).value()
-    ).value()
-    assert_equal(count3, 3)
-    assert_equal(chars3[0], Codepoint.from_u32(0x0399).value())
-    assert_equal(chars3[1], Codepoint.from_u32(0x0308).value())
-    assert_equal(chars3[2], Codepoint.from_u32(0x0301).value())
+    assert_equal(
+        _get_uppercase_mapping(Codepoint.from_u32(0x390).value()),
+        _CaseMapping.triple(
+            [
+                Codepoint.from_u32(0x0399).value(),
+                Codepoint.from_u32(0x0308).value(),
+                Codepoint.from_u32(0x0301).value(),
+            ]
+        ),
+    )
+
+
+def test_lowercase_conversion() raises:
+    # A -> a
+    assert_equal(
+        _get_lowercase_mapping(Codepoint(65)),
+        _CaseMapping.single([Codepoint(97)]),
+    )
+
+    # U+0130 -> "i" followed by U+0307 COMBINING DOT ABOVE
+    assert_equal(
+        _get_lowercase_mapping(Codepoint.from_u32(0x130).value()),
+        _CaseMapping.pair([Codepoint(105), Codepoint.from_u32(0x0307).value()]),
+    )
 
 
 def main() raises:

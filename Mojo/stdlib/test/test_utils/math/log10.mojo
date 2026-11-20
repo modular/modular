@@ -14,6 +14,8 @@
 
 from std.math import inf, nan
 
+from .rng import xorshift64
+
 comptime num_log10_inputs = 16384
 """The number of values each `log10_*_inputs` function returns."""
 
@@ -33,13 +35,6 @@ comptime f64_max_subnormal_bits: UInt64 = 0x000F_FFFF_FFFF_FFFF
 """The bit pattern of the largest float64 subnormal."""
 
 comptime _sweep_seed: UInt64 = 0x2545F4914F6CDD1D
-
-
-def _xorshift64(mut state: UInt64) -> UInt64:
-    state ^= state << 13
-    state ^= state >> 7
-    state ^= state << 17
-    return state
 
 
 def log10_f64_inputs() -> List[Float64]:
@@ -103,7 +98,7 @@ def log10_f64_inputs() -> List[Float64]:
     while len(v) < num_log10_inputs:
         v.append(
             Float64(
-                from_bits=f64_min_normal_bits + _xorshift64(state) % normal_span
+                from_bits=f64_min_normal_bits + xorshift64(state) % normal_span
             )
         )
     return v^
@@ -152,6 +147,6 @@ def log10_f32_inputs() -> List[Float32]:
         v.append(-Float32(i + 1) * 3.7)
     var state = _sweep_seed
     while len(v) < num_log10_inputs:
-        var bits = (_xorshift64(state) % f32_inf_bits).cast[.uint32]()
+        var bits = (xorshift64(state) % f32_inf_bits).cast[.uint32]()
         v.append(Float32(from_bits=bits))
     return v^

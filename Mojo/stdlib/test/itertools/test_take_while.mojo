@@ -42,7 +42,7 @@ def is_even(x: Int) -> Bool:
 def test_take_while_basic() raises:
     """Tests basic take_while behavior."""
     var nums = [1, 2, 3, 4, 5, 6, 7]
-    var it = take_while[less_than_5](nums)
+    var it = take_while(nums, less_than_5)
 
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
@@ -56,7 +56,7 @@ def test_take_while_stops_at_first_failure() raises:
     """Tests that take_while stops at the first element failing the predicate.
     """
     var nums = [2, 4, 6, 7, 8, 10]  # 7 is odd
-    var it = take_while[is_even](nums)
+    var it = take_while(nums, is_even)
 
     assert_equal(next(it), 2)
     assert_equal(next(it), 4)
@@ -68,7 +68,7 @@ def test_take_while_stops_at_first_failure() raises:
 def test_take_while_all_pass() raises:
     """Tests take_while when all elements pass the predicate."""
     var nums = [1, 2, 3, 4]
-    var it = take_while[less_than_5](nums)
+    var it = take_while(nums, less_than_5)
 
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
@@ -81,7 +81,7 @@ def test_take_while_all_pass() raises:
 def test_take_while_none_pass() raises:
     """Tests take_while when no elements pass the predicate."""
     var nums = [5, 6, 7, 8]
-    var it = take_while[less_than_5](nums)
+    var it = take_while(nums, less_than_5)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)  # first element fails
@@ -90,7 +90,7 @@ def test_take_while_none_pass() raises:
 def test_take_while_empty() raises:
     """Tests take_while on an empty list."""
     var empty = List[Int]()
-    var it = take_while[less_than_5](empty)
+    var it = take_while(empty, less_than_5)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
@@ -99,7 +99,7 @@ def test_take_while_empty() raises:
 def test_take_while_single_pass() raises:
     """Tests take_while with single element that passes."""
     var nums = [3]
-    var it = take_while[less_than_5](nums)
+    var it = take_while(nums, less_than_5)
 
     assert_equal(next(it), 3)
     with assert_raises(contains="StopIteration"):
@@ -109,7 +109,7 @@ def test_take_while_single_pass() raises:
 def test_take_while_single_fail() raises:
     """Tests take_while with single element that fails."""
     var nums = [10]
-    var it = take_while[less_than_5](nums)
+    var it = take_while(nums, less_than_5)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
@@ -120,7 +120,7 @@ def test_take_while_in_for_loop() raises:
     var nums = [1, 2, 3, 4, 5, 6, 7]
     var results = List[Int]()
 
-    for num in take_while[less_than_5](nums):
+    for num in take_while(nums, less_than_5):
         results.append(num)
 
     assert_equal(len(results), 4)
@@ -133,7 +133,7 @@ def test_take_while_in_for_loop() raises:
 def test_take_while_always_true() raises:
     """Tests take_while with a predicate that always returns True."""
     var nums = [1, 2, 3]
-    var it = take_while[always_true](nums)
+    var it = take_while(nums, always_true)
 
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
@@ -145,7 +145,7 @@ def test_take_while_always_true() raises:
 def test_take_while_always_false() raises:
     """Tests take_while with a predicate that always returns False."""
     var nums = [1, 2, 3]
-    var it = take_while[always_false](nums)
+    var it = take_while(nums, always_false)
 
     with assert_raises(contains="StopIteration"):
         _ = next(it)
@@ -154,7 +154,7 @@ def test_take_while_always_false() raises:
 def test_take_while_is_positive() raises:
     """Tests take_while with is_positive predicate."""
     var nums = [5, 3, 1, 0, -1, 2]
-    var it = take_while[is_positive](nums)
+    var it = take_while(nums, is_positive)
 
     assert_equal(next(it), 5)
     assert_equal(next(it), 3)
@@ -165,7 +165,7 @@ def test_take_while_is_positive() raises:
 
 def test_take_while_from_range() raises:
     """Tests take_while on a range."""
-    var it = take_while[less_than_5](range(10))
+    var it = take_while(range(10), less_than_5)
 
     assert_equal(next(it), 0)
     assert_equal(next(it), 1)
@@ -179,7 +179,7 @@ def test_take_while_from_range() raises:
 def test_take_while_exhausted_stays_exhausted() raises:
     """Tests that once exhausted, take_while stays exhausted."""
     var nums = [1, 2, 10, 3, 4]
-    var it = take_while[less_than_5](nums)
+    var it = take_while(nums, less_than_5)
 
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
@@ -193,13 +193,26 @@ def test_take_while_exhausted_stays_exhausted() raises:
 
 def test_take_while_owned() raises:
     var l: List[Int] = [1, 2, 3, 4, 5, 6]
-    var it = take_while[less_than_5](l^)
+    var it = take_while(l^, less_than_5)
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
     assert_equal(next(it), 3)
     assert_equal(next(it), 4)
     with assert_raises(contains="StopIteration"):
         _ = next(it)
+
+
+def test_take_while_capturing() raises:
+    var nums = [1, 2, 3, 4, 5, 6]
+    var limit = 3
+    var it = take_while(nums, lambda (x: Int) {limit} -> Bool: x < limit)
+
+    var copied = it.copy()
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    with assert_raises(contains="StopIteration"):
+        _ = next(it)
+    assert_equal(next(copied), 1)
 
 
 def main() raises:

@@ -28,7 +28,7 @@ def compute_rms[
     comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):
-        var d = data.raw_load(i).cast[.float32]()
+        var d = data.load[width=1]((i,)).cast[.float32]()
         sum_of_squares += d * d
     return sqrt((sum_of_squares / Float32(data.num_elements())) + eps)
 
@@ -57,38 +57,36 @@ def run_rms_norm_cpu[
         gamma_ptr,
         row_major(Coord(param_shape)),
     )
-    var epsilon = Float32(0.0001)
-    var weight_offset = Scalar[dtype](0.0)
-
-    @__copy_capture(input_buf)
-    @inline(.always)
-    def input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
-        var idx = input_buf.layout(coords)
-        return input_buf.raw_load[width=width](idx)
+    comptime epsilon = Float32(0.0001)
+    comptime weight_offset = Float32(0.0)
 
     @inline(.always)
-    @__copy_capture(output_buf)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var input_buf} -> SIMD[dtype, width]:
+        return input_buf.load[width=width](coords)
+
+    @inline(.always)
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) {imm} -> None:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[width=width, alignment=alignment](idx, val)
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
+        output_buf.store[alignment=alignment](coords, val)
 
-    rms_norm_cpu[multiply_before_cast=True](
+    rms_norm_cpu[
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](
         input_fn,
         identity_output_fn,
         Coord(shape),
         gamma,
-        epsilon,
-        weight_offset,
     )
 
-    var input_ptr_ptr: MutPointer[
-        input_ptr.T, origin_of(input_ptr)
-    ] = input_ptr.unsafe_ptr()
+    var input_ptr_ptr = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr_ptr + r * cols,
+            input_ptr_ptr.unsafe_offset(r * cols),
             row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
@@ -96,7 +94,7 @@ def run_rms_norm_cpu[
         # PyTorch converts the input to float32 before computing the RMS norm
         # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
         var val = (input_ptr[idx].cast[.float32]() / rms_ref).cast[dtype]() * (
-            gamma_ptr[c] + weight_offset
+            gamma_ptr[c] + weight_offset.cast[dtype]()
         )
         assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 

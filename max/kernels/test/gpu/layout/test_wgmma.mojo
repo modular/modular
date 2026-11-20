@@ -24,7 +24,7 @@ from max.gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout import TensorLayout, Coord, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -41,19 +41,22 @@ def wgmma_kernel_rs[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: TileLayout,
-    b_layout: TileLayout,
-    c_layout: TileLayout,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
     WMMA_M: Int,
     WMMA_N: Int,
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    c_gmem_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    a_gmem: TileTensor[a_type, type_of(a_layout), MutAnyOrigin],
-    b_gmem: TileTensor[b_type, type_of(b_layout), MutAnyOrigin],
-    c_gmem: TileTensor[c_type, type_of(c_layout), MutAnyOrigin],
+    a_gmem: TileTensor[a_type, type_of(a_layout), a_gmem_origin],
+    b_gmem: TileTensor[b_type, type_of(b_layout), b_gmem_origin],
+    c_gmem: TileTensor[c_type, type_of(c_layout), c_gmem_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -73,9 +76,9 @@ def wgmma_kernel_rs[
     comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = SIMD[.float32, num_output_regs](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N
@@ -101,20 +104,14 @@ def wgmma_kernel_rs[
         var lane_q, lane_r = udivmod(lane_id(), 4)
         var row = warp_id() * 16 + lane_q
         var col = lane_r * 2
-        a_reg[0] = a_gmem_tile.ptr[row * K + col].cast[.bfloat16]()
-        a_reg[1] = a_gmem_tile.ptr[row * K + col + 1].cast[.bfloat16]()
-        a_reg[2] = a_gmem_tile.ptr[(row + 8) * K + col].cast[.bfloat16]()
-        a_reg[3] = a_gmem_tile.ptr[(row + 8) * K + col + 1].cast[
-            DType.bfloat16
-        ]()
-        a_reg[4] = a_gmem_tile.ptr[row * K + col + 8].cast[.bfloat16]()
-        a_reg[5] = a_gmem_tile.ptr[row * K + col + 9].cast[.bfloat16]()
-        a_reg[6] = a_gmem_tile.ptr[(row + 8) * K + col + 8].cast[
-            DType.bfloat16
-        ]()
-        a_reg[7] = a_gmem_tile.ptr[(row + 8) * K + col + 9].cast[
-            DType.bfloat16
-        ]()
+        a_reg[0] = a_gmem_tile[row, col].cast[.bfloat16]()
+        a_reg[1] = a_gmem_tile[row, col + 1].cast[.bfloat16]()
+        a_reg[2] = a_gmem_tile[row + 8, col].cast[.bfloat16]()
+        a_reg[3] = a_gmem_tile[row + 8, col + 1].cast[.bfloat16]()
+        a_reg[4] = a_gmem_tile[row, col + 8].cast[.bfloat16]()
+        a_reg[5] = a_gmem_tile[row, col + 9].cast[.bfloat16]()
+        a_reg[6] = a_gmem_tile[row + 8, col + 8].cast[.bfloat16]()
+        a_reg[7] = a_gmem_tile[row + 8, col + 9].cast[.bfloat16]()
 
         wgmma_fence_aligned()
 
@@ -147,19 +144,22 @@ def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: TileLayout,
-    b_layout: TileLayout,
-    c_layout: TileLayout,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
     WMMA_M: Int,
     WMMA_N: Int,
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    c_gmem_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    a_gmem: TileTensor[a_type, type_of(a_layout), MutAnyOrigin],
-    b_gmem: TileTensor[b_type, type_of(b_layout), MutAnyOrigin],
-    c_gmem: TileTensor[c_type, type_of(c_layout), MutAnyOrigin],
+    a_gmem: TileTensor[a_type, type_of(a_layout), a_gmem_origin],
+    b_gmem: TileTensor[b_type, type_of(b_layout), b_gmem_origin],
+    c_gmem: TileTensor[c_type, type_of(c_layout), c_gmem_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -179,9 +179,9 @@ def wgmma_kernel_ss[
     comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = SIMD[.float32, num_output_regs](0)
 
-    comptime M = Int(a_layout.shape[0]().value())
-    comptime K = Int(a_layout.shape[1]().value())
-    comptime N = Int(c_layout.shape[1]().value())
+    comptime M = Int(a_layout.shape[0]())
+    comptime K = Int(a_layout.shape[1]())
+    comptime N = Int(c_layout.shape[1]())
 
     comptime b_tile_dim0 = N if transpose_b else WMMA_K
     comptime b_tile_dim1 = WMMA_K if transpose_b else N
@@ -231,12 +231,8 @@ def wgmma_kernel_ss[
 def wgmma_bf16_bf16_f32[
     M: Int, N: Int, K: Int, transpose_b: Bool = False, a_reg: Bool = False
 ](ctx: DeviceContext) raises:
-    print(
-        "== wgmma_bf16_bf16_f32_64xNx16(N, r/s) => ",
-        N,
-        ", r" if a_reg else ", s",
-        sep="",
-    )
+    var operand = ", r" if a_reg else ", s"
+    print(t"== wgmma_bf16_bf16_f32_64xNx16(N, r/s) => {N}{operand}")
 
     var a = HostDeviceTileTensor[.bfloat16, type_of(row_major[M, K]())](
         row_major[M, K](), ctx
@@ -273,15 +269,18 @@ def wgmma_bf16_bf16_f32[
         K,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(a),
+        b_gmem_origin=origin_of(b),
+        c_gmem_origin=origin_of(c),
         transpose_b=transpose_b,
     ]
 
     a.to_device()
     b.to_device()
     ctx.enqueue_function[kernel](
-        a.device_tensor().as_unsafe_any_origin(),
-        b.device_tensor().as_unsafe_any_origin(),
-        c.device_tensor().as_unsafe_any_origin(),
+        a.device_tensor(),
+        b.device_tensor(),
+        c.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )

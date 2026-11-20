@@ -168,7 +168,7 @@ def _test_rope_ragged_gpu_impl[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var q_out_device_tensor} -> None:
-        q_out_device_tensor.store[width=width](idx, val)
+        q_out_device_tensor.store(idx, val)
 
     # Execute rope_ragged kernel on GPU
     comptime if has_position_ids:
@@ -176,7 +176,6 @@ def _test_rope_ragged_gpu_impl[
             dtype,
             dtype,
             interleaved=True,
-            target=StaticString("gpu"),
         ](
             x=q_device_tensor.as_unsafe_any_origin(),
             input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
@@ -191,7 +190,6 @@ def _test_rope_ragged_gpu_impl[
             dtype,
             dtype,
             interleaved=True,
-            target=StaticString("gpu"),
         ](
             x=q_device_tensor.as_unsafe_any_origin(),
             input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
@@ -412,7 +410,7 @@ def test_rope_ragged_gpu_rope_first[
     def full_output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var full_out_device_tensor} -> None:
-        full_out_device_tensor.store[width=width](idx, val)
+        full_out_device_tensor.store(idx, val)
 
     @inline(.always)
     def prefix_output_fn[
@@ -420,13 +418,12 @@ def test_rope_ragged_gpu_rope_first[
     ](idx: Coord, val: SIMD[dtype, width]) {
         var prefix_out_device_tensor
     } -> None:
-        prefix_out_device_tensor.store[width=width](idx, val)
+        prefix_out_device_tensor.store(idx, val)
 
     rope_ragged[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("gpu"),
         rope_first=True,
     ](
         x=q_device_tensor.as_unsafe_any_origin(),
@@ -441,7 +438,6 @@ def test_rope_ragged_gpu_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("gpu"),
     ](
         x=prefix_device_tensor.as_unsafe_any_origin(),
         input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),

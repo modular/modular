@@ -14,7 +14,9 @@
 # Provides utilities for setting up linters
 
 import os
+import re
 import subprocess
+from collections.abc import Iterable
 
 
 def is_check() -> bool:
@@ -47,6 +49,50 @@ def _has_jj(cwd: str = ".") -> bool:
 
 def _get_files(stdout: bytes) -> set[str]:
     return set(stdout.decode().splitlines())
+
+
+def _in_git_repo(cwd: str = ".") -> bool:
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "--git-dir"], cwd=cwd, capture_output=True
+        ).returncode
+        == 0
+    )
+
+
+def list_tracked_files(cwd: str = ".") -> list[str]:
+    """Lists the tracked files in a checkout, like `git ls-files`.
+
+    A secondary `jj workspace add` checkout has a `.jj` directory but no
+    `.git`, so git fails there. In that case this lists the working-copy
+    commit with `jj file list`.
+
+    Args:
+        cwd: The repo root. Paths are relative to it.
+    """
+    if not _in_git_repo(cwd) and _has_jj(cwd):
+        command = ["jj", "file", "list"]
+    else:
+        command = ["git", "-c", "core.quotepath=off", "ls-files"]
+    return subprocess.check_output(command, cwd=cwd).decode().splitlines()
+
+
+def files_containing(
+    pattern: re.Pattern[bytes], files: Iterable[str]
+) -> set[str]:
+    """Returns the files among `files` whose contents match `pattern`.
+
+    Works without a git repo, unlike `git grep -l`. Like `git grep`, it reads
+    only regular files, skipping symlinks, submodules and deleted files.
+    """
+    matches = set()
+    for file in files:
+        if os.path.islink(file) or not os.path.isfile(file):
+            continue
+        with open(file, "rb") as f:
+            if pattern.search(f.read()):
+                matches.add(file)
+    return matches
 
 
 def _submodule_paths() -> list[str]:

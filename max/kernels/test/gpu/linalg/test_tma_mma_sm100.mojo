@@ -20,7 +20,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import block_rank_in_cluster
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
 from max.gpu.memory import external_memory
@@ -46,11 +46,13 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
+from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, max_finite
 from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def cpu_matmul_naive[
@@ -59,33 +61,25 @@ def cpu_matmul_naive[
     var M = Int(C.dim[0]())
     var N = Int(C.dim[1]())
     var K = Int(A.dim[0]()) if transpose_a else Int(A.dim[1]())
-    var a_ptr = A.unsafe_ptr()
-    var b_ptr = B.unsafe_ptr()
-    var c_ptr = C.unsafe_ptr()
     for n in range(N):
         for m in range(M):
             var acc: Float32 = 0.0
             for k in range(K):
-                var a_idx: Int
-
-                comptime if transpose_a:
-                    a_idx = k * M + m
-                else:
-                    a_idx = m * K + k
-                var b_idx: Int
-
-                comptime if transpose_b:
-                    b_idx = n * K + k
-                else:
-                    b_idx = k * N + n
-                acc += (
-                    a_ptr[a_idx].cast[.float32]()
-                    * b_ptr[b_idx].cast[.float32]()
-                )
-            c_ptr[m * N + n] = acc.cast[C.dtype]()
+                var a_coord = Coord(k, m) if transpose_a else Coord(m, k)
+                var b_coord = Coord(n, k) if transpose_b else Coord(k, n)
+                acc += rebind[Float32](
+                    A.load(a_coord).cast[.float32]()
+                ) * rebind[Float32](B.load(b_coord).cast[.float32]())
+            C.store((m, n), acc.cast[C.dtype]())
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def tma_umma_kernel_ss[
@@ -97,11 +91,11 @@ def tma_umma_kernel_ss[
     b_tile_shape: Coord,
     b_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_a: Bool = False,
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
@@ -168,13 +162,13 @@ def tma_umma_kernel_ss[
     comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+    var b_smem = a_smem.unsafe_offset(a_size).unsafe_bitcast[Scalar[b_type]]()
 
     var a_smem_tile = TileTensor(a_smem, a_smem_layout)
     var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -185,8 +179,10 @@ def tma_umma_kernel_ss[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -248,7 +244,7 @@ def tma_umma_kernel_ss[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
+        (UInt32(mma_shape[0]), UInt32(mma_shape[1])),
         transpose_a=transpose_a,
         transpose_b=transpose_b,
     ]()
@@ -329,7 +325,7 @@ def tma_umma_kernel_ss[
         var warp_id_q, warp_id_r = udivmod(warp_id, 4)
         warp_id = 2 * warp_id_r + warp_id_q
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -366,8 +362,8 @@ def tma_umma_kernel_ts[
     b_tile_shape: Coord,
     b_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
@@ -424,7 +420,7 @@ def tma_umma_kernel_ts[
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
+    var ptr_tmem_addr = b_smem.unsafe_offset(b_size).unsafe_bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag: Array[Scalar[accum_type], c_frag_size]
@@ -432,8 +428,10 @@ def tma_umma_kernel_ts[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = b_expected_bytes
 
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
+    var tma_mbar = ptr_tmem_addr.unsafe_offset(2).unsafe_bitcast[
+        SharedMemBarrier
+    ]()
+    var mma_mbar = tma_mbar.unsafe_offset(1)
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -478,7 +476,7 @@ def tma_umma_kernel_ts[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
+        (UInt32(mma_shape[0]), UInt32(mma_shape[1])),
         transpose_b=transpose_b,
     ]()
 
@@ -495,7 +493,7 @@ def tma_umma_kernel_ts[
     for i in range(num_iters):
         # Load A from global memory to registers.
         # Each thread loads 32 values
-        var a_gmem_tile = a.tile[BM, BK](Int(block_idx.y), i)
+        var a_gmem_tile = a.tile[BM, BK](block_idx.y, i)
         var a_gmem_warp_tile = a_gmem_tile.tile[BM // num_warps, BK](
             Int(warp_id), 0
         )
@@ -594,7 +592,7 @@ def tma_umma_kernel_ts[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
@@ -627,11 +625,11 @@ def test_tma_umma[
     b_type: DType,
     c_type: DType,
     prob_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_a: Bool = False,
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
@@ -707,7 +705,7 @@ def test_tma_umma[
 
     # Int-folded dims: selecting between two distinct Coord types does not
     # fold at comptime; selecting Ints does. Matches the pre-migration
-    # `Index(BK, BM) if transpose_a else Index(BM, BK)` semantics.
+    # `(BK, BM) if transpose_a else (BM, BK)` semantics.
     comptime a_rows = BK if transpose_a else BM
     comptime a_cols = BM if transpose_a else BK
     var a_tma_op = create_tensor_tile[
@@ -751,9 +749,6 @@ def test_tma_umma[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     else:
@@ -781,9 +776,6 @@ def test_tma_umma[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     comptime if M >= 64 and N >= 64 and K >= 64:
@@ -846,13 +838,13 @@ def main() raises:
                                 dtype,
                                 dtype,
                                 .bfloat16,
-                                Index(
+                                (
                                     MMA_M * size_scale,
                                     128 * size_scale,
                                     BK * size_scale,
                                 ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
+                                (MMA_M, 128, BK),
+                                (MMA_M, 128, MMA_K),
                                 a_swizzle=swizzle,
                                 b_swizzle=swizzle,
                                 transpose_b=Bool(transpose_b),
@@ -862,13 +854,13 @@ def main() raises:
                                 dtype,
                                 dtype,
                                 .bfloat16,
-                                Index(
+                                (
                                     MMA_M * size_scale,
                                     128 * size_scale,
                                     BK * size_scale,
                                 ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
+                                (MMA_M, 128, BK),
+                                (MMA_M, 128, MMA_K),
                                 b_swizzle=swizzle,
                                 transpose_b=Bool(transpose_b),
                                 a_smem=False,
@@ -878,13 +870,13 @@ def main() raises:
                                 dtype,
                                 dtype,
                                 .bfloat16,
-                                Index(
+                                (
                                     MMA_M * size_scale,
                                     128 * size_scale,
                                     BK * size_scale,
                                 ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
+                                (MMA_M, 128, BK),
+                                (MMA_M, 128, MMA_K),
                                 a_swizzle=swizzle,
                                 b_swizzle=swizzle,
                                 transpose_a=True,
@@ -895,13 +887,13 @@ def main() raises:
                                 dtype,
                                 dtype,
                                 .bfloat16,
-                                Index(
+                                (
                                     MMA_M * size_scale,
                                     128 * size_scale,
                                     BK * size_scale,
                                 ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
+                                (MMA_M, 128, BK),
+                                (MMA_M, 128, MMA_K),
                                 a_swizzle=swizzle,
                                 b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
                                 transpose_a=True,
@@ -911,13 +903,13 @@ def main() raises:
                                 dtype,
                                 dtype,
                                 .bfloat16,
-                                Index(
+                                (
                                     MMA_M * size_scale,
                                     128 * size_scale,
                                     BK * size_scale,
                                 ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
+                                (MMA_M, 128, BK),
+                                (MMA_M, 128, MMA_K),
                                 a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
                                 b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
                                 transpose_a=True,
@@ -931,9 +923,9 @@ def main() raises:
                         .bfloat16,
                         .bfloat16,
                         .bfloat16,
-                        Index(size_scale * 64, 8, 16),
-                        Index(size_scale * 64, 8, 16),
-                        Index(size_scale * 64, 8, 16),
+                        (size_scale * 64, 8, 16),
+                        (size_scale * 64, 8, 16),
+                        (size_scale * 64, 8, 16),
                         a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
                         b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
                         transpose_a=Bool(transpose_a),

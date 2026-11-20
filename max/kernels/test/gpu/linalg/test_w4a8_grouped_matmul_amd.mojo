@@ -214,22 +214,14 @@ def _check[
         )
     if rows > 0:
         ctx.enqueue_function[_reference[N, K]](
-            a.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            b.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            sa.unsafe_ptr()
-            .bitcast[UInt8]()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
-            sb.unsafe_ptr()
-            .bitcast[UInt8]()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
-            offsets.unsafe_ptr().as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
-            expert_ids.unsafe_ptr()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
-            reference.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-            mag.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+            a.unsafe_ptr().as_imm(),
+            b.unsafe_ptr().as_imm(),
+            sa.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm(),
+            sb.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm(),
+            offsets.unsafe_ptr().as_imm(),
+            expert_ids.unsafe_ptr().as_imm(),
+            reference.unsafe_ptr(),
+            mag.unsafe_ptr(),
             Int32(rows),
             Int32(num_active),
             grid_dim=(ceildiv(rows, 16), ceildiv(N, 16)),
@@ -271,25 +263,10 @@ def _check[
         assert_true(ch[i] == sentinel, "guard rows changed")
     __ownership_keepalive(a, b, sa, sb, offsets, expert_ids, c, reference, mag)
     print(
-        "W4A8 N=",
-        N,
-        " K=",
-        K,
-        " rows=",
-        rows,
-        " active=",
-        num_active,
-        " forced_bk=",
-        forced_bk,
-        " dense_mma_32=",
-        dense_mma_32,
-        " max_abs_error=",
-        max_error,
-        " max_abs_reference=",
-        max_reference,
-        " nonzero_reference=",
-        nonzero_reference,
-        " PASS",
+        t"W4A8 N= {N}  K= {K}  rows= {rows}  active= {num_active}  forced_bk="
+        t" {forced_bk}  dense_mma_32= {dense_mma_32}  max_abs_error="
+        t" {max_error}  max_abs_reference= {max_reference}  nonzero_reference="
+        t" {nonzero_reference}  PASS"
     )
 
 

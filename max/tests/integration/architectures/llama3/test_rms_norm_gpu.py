@@ -17,7 +17,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.norm.rms_norm import RMSNorm
 from torch.utils.dlpack import from_dlpack
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
@@ -101,10 +101,10 @@ def test_rms_norm(
     rms_weight: torch.Tensor,
 ) -> None:
     """Test that RMSNorm matches LlamaRMSNorm."""
+    max_output = generate_max_outputs(llama_config, input_tensor, rms_weight)
     torch_output = generate_torch_outputs(
         llama_config, input_tensor, rms_weight
     )
-    max_output = generate_max_outputs(llama_config, input_tensor, rms_weight)
 
     torch.testing.assert_close(
         torch_output,

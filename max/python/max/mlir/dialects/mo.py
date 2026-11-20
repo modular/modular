@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Builders for the MLIR ``mo`` dialect ops."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -86,6 +88,11 @@ def if_(  # type: ignore[no-redef]
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
+    """Builds an ``mo.if`` op, attaching pre-built blocks to its regions.
+
+    A block passed as ``then_block`` or ``else_block`` is appended to that
+    region; a region without a block gets an empty entry block instead.
+    """
     return _ods_common.get_op_result_or_op_results(
         # mypy doesn't see the IfOp definition above, but the one that is replaced
         IfOp(  # type: ignore[call-arg]
@@ -140,6 +147,11 @@ def while_(  # type: ignore[no-redef]
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
+    """Builds an ``mo.while`` op, attaching pre-built blocks to its regions.
+
+    A block passed as ``cond_block`` or ``body_block`` is appended to that
+    region; a region without a block gets an empty entry block instead.
+    """
     return _ods_common.get_op_result_or_op_results(
         WhileOp(  # type: ignore[call-arg]
             results_=results_,
@@ -161,6 +173,11 @@ def call_(
     ip=None,  # noqa: ANN001
     prefix: str = "",
 ) -> _ods_common.VariadicResultValueT:
+    """Builds an ``mo.call`` op and returns its results.
+
+    A ``results`` value of ``None`` becomes an empty result list; ``prefix``
+    is forwarded to the op builder.
+    """
     if results is None:
         results = []
     call_op = CallOp(

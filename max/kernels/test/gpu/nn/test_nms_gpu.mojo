@@ -239,9 +239,9 @@ def _run_case[
     ctx.enqueue_copy(out_dev, poison_host)
     ctx.synchronize()
 
-    non_max_suppression[target="gpu"](
-        boxes_dev_t,
-        scores_dev_t,
+    non_max_suppression(
+        boxes_dev_t.as_imm(),
+        scores_dev_t.as_imm(),
         out_dev_t,
         max_output,
         iou_threshold,

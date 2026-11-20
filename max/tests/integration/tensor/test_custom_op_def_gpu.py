@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Accelerator tests for `max.experimental.custom.declare` bindings.
+"""Accelerator tests for `max.functional.custom_op.declare` bindings.
 
 The sibling CPU suite (``test_custom_op_def.py``) forces
 ``CUDA_VISIBLE_DEVICES=""``, so device-conditional coverage (the binding
@@ -27,16 +27,15 @@ from typing import Any
 
 import pytest
 from max import _core, engine
+from max import functional as F
 from max._interpreter_ops import custom_gc
 from max._interpreter_ops import handlers as _handlers
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import custom as C
-from max.experimental import executor
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
-from max.experimental.testing import assert_all_close
+from max.functional import custom_op as C
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.tensor import Tensor, executor
+from max.tensor.testing import assert_all_close
 
 KERNEL_VERIFICATION_OPS = Path(
     os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"]

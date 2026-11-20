@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for Flux2."""
 
 from __future__ import annotations
 
@@ -52,6 +53,7 @@ class Flux2ArchConfig(ArchConfig):
     quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
+        """The text sequence length Flux 2 was trained at."""
         return FLUX2_TEXT_SEQ_LEN
 
     @classmethod
@@ -60,6 +62,7 @@ class Flux2ArchConfig(ArchConfig):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The fixed text sequence length; the checkpoint does not set it."""
         del huggingface_config, model_config
         return FLUX2_TEXT_SEQ_LEN
 
@@ -71,6 +74,7 @@ class Flux2ArchConfig(ArchConfig):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         return cls(pipeline_config=pipeline_config)
 
 

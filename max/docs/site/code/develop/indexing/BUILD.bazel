@@ -1,0 +1,94 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# gather.py
+modular_py_binary(
+    name = "gather",
+    srcs = ["gather.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "gather_test",
+    size = "large",
+    binary = "gather",
+    tags = ["skip-ci-asan"],
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+# where.py
+modular_py_binary(
+    name = "where",
+    srcs = ["where.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "where_test",
+    size = "large",
+    binary = "where",
+    tags = ["skip-ci-asan"],
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+# scatter.py
+modular_py_binary(
+    name = "scatter",
+    srcs = ["scatter.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+    ],
+)
+
+modular_run_binary_test(
+    name = "scatter_test",
+    size = "large",
+    binary = "scatter",
+    tags = ["skip-ci-asan"],
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+# slicing.py
+modular_py_binary(
+    name = "slicing",
+    srcs = ["slicing.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+    ],
+)
+
+modular_run_binary_test(
+    name = "slicing_test",
+    size = "large",
+    binary = "slicing",
+    tags = ["skip-ci-asan"],
+    # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

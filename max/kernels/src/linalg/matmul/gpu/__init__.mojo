@@ -21,20 +21,16 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
+from std.sys.info import _accelerator_arch
 
 from std.algorithm.functional import tile_and_unswitch
 
 from max.algorithm.functional import elementwise
-from max.gpu import (
-    WARP_SIZE,
-    global_idx,
-    thread_idx,
-)
+from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.primitives.grid_controls import PDLLevel
-from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
+from max.gpu.host.info import A100, B200, H100, MI355X, get_gpu_info
 from layout import (
     Coord,
     Idx,
@@ -42,29 +38,25 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
-from layout.layout import *
 from layout.tensor_core import get_mma_shape
+from std.utils.coord import Coord
 from std.logger import Logger
 from std.memory import unsafe_stack_allocation
-from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 from ...gemv import (
     GEMVAlgorithm,
     gemm_mma_cpasync,
     gemv_gpu,
     gemv_gpu_dispatch,
-    is_minimax_router_gemm,
+    _amd_small_m_gemv_route,
+    _is_amd_small_m_gemv,
 )
 from ...utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
     GemmShape,
-    apply_elementwise_epilogue,
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -76,7 +68,7 @@ from ...utils_gpu import (
     select_config,
     _vendor_blas_fallback_disabled,
 )
-from ..vendor.matmul import apply_compute_fn_in_place, matmul as matmul_vendor
+from ..vendor.matmul import matmul as matmul_vendor
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_kernel_compute_fn,
@@ -116,12 +108,11 @@ def matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: UnsafePointer[mut=True, Scalar[c_type], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    b_ptr: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -140,9 +131,6 @@ def matmul_kernel[
         b_type: DType of the input matrix B elements.
         tile_size: Side length, in elements, of the square shared-memory
             tile loaded from A and B and written to C.
-        elementwise_lambda_fn: Optional epilogue applied to the accumulated
-            value before it is stored to C (defaults to `None`, which
-            stores the raw accumulation).
         s_type: DType used for the inner accumulation (defaults to the
             accumulator type for `c_type`).
 
@@ -223,28 +211,22 @@ def matmul_kernel[
         var a_val: Scalar[a_type]
 
         comptime if not full_tile:
-            a_val = rebind[Scalar[a_type]](a[row, offset + localCol]) if (
+            a_val = a[row, offset + localCol] if (
                 row < m and offset + localCol < k
             ) else 0.0
         else:
-            a_val = (
-                rebind[Scalar[a_type]](a[row, offset + localCol]) if row
-                < m else 0.0
-            )
+            a_val = a[row, offset + localCol] if row < m else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
         var b_val: Scalar[b_type]
 
         comptime if not full_tile:
-            b_val = rebind[Scalar[b_type]](b[offset + localRow, col]) if (
+            b_val = b[offset + localRow, col] if (
                 col < n and offset + localRow < k
             ) else 0.0
         else:
-            b_val = (
-                rebind[Scalar[b_type]](b[offset + localRow, col]) if col
-                < n else 0.0
-            )
+            b_val = b[offset + localRow, col] if col < n else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -262,10 +244,7 @@ def matmul_kernel[
     )
 
     if row < m and col < n:
-        comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
-            elementwise_lambda[c_type, 1]((row, col), result.cast[c_type]())
-        else:
-            c[row, col] = result.cast[c_type]()
+        c[row, col] = result.cast[c_type]()
 
 
 @__name(
@@ -419,15 +398,15 @@ def _matmul_kernel_naive_impl[
     comptime if transpose_b:
         for i in range(_k):
             accum += (
-                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
-                * rebind[Scalar[b_type]](b[y, i]).cast[s_type]()
+                a.load[width=1]((x, i)).cast[s_type]()
+                * b.load[width=1]((y, i)).cast[s_type]()
             )
 
     else:
         for i in range(_k):
             accum += (
-                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
-                * rebind[Scalar[b_type]](b[i, y]).cast[s_type]()
+                a.load[width=1]((x, i)).cast[s_type]()
+                * b.load[width=1]((i, y)).cast[s_type]()
             )
     comptime if has_epilogue_fn:
         epilogue_fn[c_type, 1, alignment=1]((x, y), accum.cast[c_type]())
@@ -504,9 +483,11 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=epilogue_fn,
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
+            host_args=(epilogue_fn,),
         )
     elif has_compute_fn:
         comptime kernel = matmul_kernel_naive_compute_fn[
@@ -530,9 +511,11 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            host_arg=compute_fn,
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
+            host_args=(compute_fn,),
         )
     else:
         comptime kernel = matmul_kernel_naive[
@@ -555,15 +538,19 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
         )
 
 
-def _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
+def _amdgpu_get_mma_shape[
+    dtype: DType, transpose_b: Bool
+]() -> Tuple[Int, Int, Int]:
     comptime if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
         comptime if dtype.is_half_float():
-            return Index(16, 16, 32)
+            return (16, 16, 32)
 
     return get_mma_shape[dtype, DType.float32]()
 
@@ -575,7 +562,7 @@ def _amdgpu_matmul_config_from_block_shape[
     transpose_b: Bool,
     K: Int,
     pdl_level: PDLLevel = PDLLevel(),
-](block_shape: IndexList[2]) -> MatmulConfig[
+](block_shape: Tuple[Int, Int]) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
     comptime max_num_warps: Int = 4
@@ -587,20 +574,21 @@ def _amdgpu_matmul_config_from_block_shape[
     var num_warp_k_partitions: Int = 1
 
     # TODO(KERN-2432): Merge these configurations into the below logic.
+    # Both need K >= 2 * BK: the AMD kernel loads two K tiles before its loop.
     if block_m == 16 and a_type.is_float8() and transpose_b:
-        if block_n == 32:
+        if block_n == 32 and K >= 2 * 256:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(16, 32, 256),
-                warp_tile_shape=Index(16, 32, 256),
+                block_tile_shape=(16, 32, 256),
+                warp_tile_shape=(16, 32, 256),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_warp_k_partitions=4,
                 pdl_level=pdl_level,
             )
-        if block_n == 64:
+        if block_n == 64 and K >= 2 * 1024:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(16, 64, 1024),
-                warp_tile_shape=Index(16, 16, 1024),
+                block_tile_shape=(16, 64, 1024),
+                warp_tile_shape=(16, 16, 1024),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_warp_k_partitions=1,
@@ -626,11 +614,11 @@ def _amdgpu_matmul_config_from_block_shape[
             if smem_a + smem_b <= 32 * 1024:
                 block_k *= 2
 
-    var block_tile_shape = Index(block_m, block_n, block_k)
+    var block_tile_shape = (block_m, block_n, block_k)
     var warp_tile_shape = block_tile_shape
 
     # Warp partition block_m and block_n.
-    for i in reversed(range(2)):
+    comptime for i in reversed(range(2)):
         if (
             block_tile_shape[i] >= 32
             and block_tile_shape[i] % 32 == 0
@@ -649,8 +637,8 @@ def _amdgpu_matmul_config_from_block_shape[
     )
 
 
-def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
-    comptime sm_count = GPUInfo.default_accelerator().sm_count
+def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[Tuple[Int, Int]]:
+    comptime sm_count = get_gpu_info().sm_count
 
     comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
     comptime len_block_sizes = len(block_sizes_alias)
@@ -691,7 +679,7 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     for m in range(1024, 8192, 32):
         process_m(m)
 
-    var block_shape_list = List[IndexList[2]]()
+    var block_shape_list = List[Tuple[Int, Int]]()
 
     for idx in range(len(emit_block_shape)):
         if not emit_block_shape[idx]:
@@ -699,16 +687,76 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
 
         var idx_m, idx_n = divmod(idx, len_block_sizes)
 
-        block_shape_list.append(Index(block_sizes[idx_m], block_sizes[idx_n]))
+        block_shape_list.append((block_sizes[idx_m], block_sizes[idx_n]))
 
     return block_shape_list^
 
 
-# TODO(MOCO-4720): the Apple kernels take only the legacy epilogue lambda;
-# `_matmul_gpu_impl` must not hand them a bare value.
-comptime _matmul_gpu_needs_legacy_epilogue = (
-    DeviceContext.target.is_apple_gpu()
-)
+def _amd_bm16_small_m_block_n[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    static_N: Int,
+    static_K: Int,
+](m: Int) -> Int:
+    """Returns the block_n width of the unsplit BM16 small-M bf16 band on
+    gfx950, or 0 when the dispatch keeps its default arm.
+
+    At decode M the wide-N split-K plus reduce launch (N/64 * num_splits
+    CTAs) and the auto-scored BN64+ tile leave the GPU underfilled; a
+    single BM16 x BN16/BN32 `AMDMatmul` launch covers N in one pass of
+    N/BN * ceil(M/16) CTAs and measures 5-35% faster in the bands below
+    (MI355X bf16 re-measure, cold medians; the warm median wins at
+    every routed edge too). Outside them the default arm wins, ties
+    within noise, or the warm ordering flips, so the default arm is
+    kept:
+
+    - 8192 < N < 16384, K >= 4096 (K % 1024 == 0): 2 <= m <= 16 -> BN16
+      (the 8448x7168 dense MLP gate). Both edges keep the default arm:
+      the N cap is the CTA-fill point, where the auto-scored BN64 tile
+      already issues a full 256-CTA wave and runs at the HBM floor, and
+      past it the band arm measured slower cold and warm (the 20480x7168
+      LM head); at N = 8192 the 4-wave gate below still fires, so the
+      base launch there is split-K(2), which the band never measured
+      against.
+    - 4096 <= N < 8192, K >= 4096 (K % 1024 == 0): 4 <= m <= 16 -> BN16
+      (the 4608x7168 KDA qkv; m = 2..3 and m >= 17 keep the split-K arm:
+      BN32 wins cold by ~4% at m = 17..24 but loses warm by +24%, and
+      the split-K arm wins warm at m = 32).
+    - N == 7168, 3584 <= K < 4096: 24 <= m <= 48 -> BN32 (the 7168x3584
+      MoE exit, which carries the residual-add epilogue).
+    - N == 7168, K == 1536: m == 48 -> BN32 (the 7168x1536 o_proj row;
+      m = 24..32 wins cold by ~13% but the warm ordering flips, and the
+      shallower 7168x768 row also flips warm at m = 48 (+7.7%), so both
+      keep the default arm). K outside {3584, 1536} in (0, 4096) was
+      never measured and keeps the default arm. N is pinned to the
+      measured family: a wider N range here would admit shapes the
+      probe never measured.
+
+    bf16 output only; other c_type keep the default arm.
+    """
+    comptime if _accelerator_arch() != "amdgpu:gfx950":
+        return 0
+    comptime if not (
+        a_type == .bfloat16 and b_type == .bfloat16 and c_type == .bfloat16
+    ):
+        return 0
+
+    comptime wide_k = static_K >= 4096 and static_K % 1024 == 0
+
+    if wide_k and 8192 < static_N < 16384 and 2 <= m <= 16:
+        return 16
+
+    if wide_k and 4096 <= static_N < 8192 and 4 <= m <= 16:
+        return 16
+
+    if static_N == 7168 and static_K < 4096:
+        if 3584 <= static_K and 24 <= m <= 48:
+            return 32
+        if static_K == 1536 and m == 48:
+            return 32
+
+    return 0
 
 
 @inline(.always)
@@ -717,11 +765,8 @@ def _matmul_gpu[
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     use_tf32: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    row_invariant: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -735,54 +780,65 @@ def _matmul_gpu[
     of TF32 tensor-core truncation; it is implemented for the SM100 dispatch
     only, and only for shapes the fp32 split-K GEMV supports (compile-time
     error otherwise).
+
+    `row_invariant=True` keeps a one-row BF16 `transpose_b` matmul off the
+    GEMV and on the multi-row dispatch; it applies to the SM100 dispatch only.
+    It removes that one arm: the heuristic below still picks its kernel and its
+    `num_split_k` from tables bucketed in `m`, so rows in different buckets
+    reduce K in a different order. See `mo.matmul.row_invariant`.
     """
-    # Kernels that take epilogue values get the lambda forwarded through a
-    # value; the lambda itself still reaches the Apple ones.
-    comptime if case .Some(compute_lambda) = elementwise_compute_lambda_fn:
+    _matmul_gpu_impl[
+        use_tensor_core=use_tensor_core,
+        transpose_b=transpose_b,
+        use_tf32=use_tf32,
+        pdl_level=pdl_level,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+        row_invariant=row_invariant,
+    ](c, a, b, no_epilogue_fn, no_compute_fn, ctx)
 
-        def compute_fn[
-            dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-            return compute_lambda[dtype, width, alignment=alignment](idx, val)
 
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-            has_epilogue_fn=False,
-            has_compute_fn=True,
-        ](c, a, b, no_epilogue_fn, compute_fn, ctx)
-    elif case .Some(store_lambda) = elementwise_lambda_fn:
+def _matmul_gpu[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    use_tensor_core: Bool = False,
+    transpose_b: Bool = False,
+    use_tf32: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """GPU matmul dispatch that stores the output through `epilogue_fn`.
 
-        def epilogue_fn[
-            dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: Coord, val: SIMD[dtype, width]):
-            store_lambda[dtype, width, alignment=alignment](idx, val)
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        use_tensor_core: Whether to use tensor cores where available.
+        transpose_b: Whether `b` is stored as `(N, K)`.
+        use_tf32: Whether fp32 inputs may use TF32 tensor cores.
+        pdl_level: Programmatic dependent launch level.
 
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=None,
-            pdl_level=pdl_level,
-            has_epilogue_fn=True,
-            has_compute_fn=False,
-        ](c, a, b, epilogue_fn, no_compute_fn, ctx)
-    else:
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=None,
-            elementwise_compute_lambda_fn=None,
-            pdl_level=pdl_level,
-            has_epilogue_fn=False,
-            has_compute_fn=False,
-        ](c, a, b, no_epilogue_fn, no_compute_fn, ctx)
+    Args:
+        c: Rank-2 tensor of shape `(M, N)`. Some dispatch paths use it as
+            scratch for the product.
+        a: Rank-2 input tensor of shape `(M, K)`.
+        b: Rank-2 input tensor of shape `(K, N)`, or `(N, K)` when
+            `transpose_b` is set.
+        epilogue_fn: Stores each output index and chunk.
+        ctx: Device context used to launch the kernels.
+    """
+    _matmul_gpu_impl[
+        use_tensor_core=use_tensor_core,
+        transpose_b=transpose_b,
+        use_tf32=use_tf32,
+        pdl_level=pdl_level,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](c, a, b, epilogue_fn, no_compute_fn, ctx)
 
 
 def _matmul_gpu[
@@ -802,10 +858,6 @@ def _matmul_gpu[
 ) raises:
     """GPU matmul dispatch that stores `compute_fn(idx, a @ b)` into `c`.
 
-    The kernels apply `compute_fn` in their epilogue, except on Apple GPUs:
-    those run the matmul into `c` and then apply `compute_fn` in place in a
-    separate elementwise pass.
-
     Parameters:
         ComputeFnType: Type of `compute_fn` (inferred).
         use_tensor_core: Whether to use tensor cores where available.
@@ -821,27 +873,14 @@ def _matmul_gpu[
         compute_fn: Maps each output index and value to the value to store.
         ctx: Device context used to launch the kernels.
     """
-    comptime if _matmul_gpu_needs_legacy_epilogue:
-        # TODO(MOCO-4720): the extra pass re-reads and re-writes `c`. Pass
-        # `compute_fn` to the Apple kernels once they take epilogue values.
-        _matmul_gpu[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-        apply_compute_fn_in_place(c, compute_fn, ctx)
-    else:
-        _matmul_gpu_impl[
-            use_tensor_core=use_tensor_core,
-            transpose_b=transpose_b,
-            use_tf32=use_tf32,
-            elementwise_lambda_fn=None,
-            elementwise_compute_lambda_fn=None,
-            pdl_level=pdl_level,
-            has_epilogue_fn=False,
-            has_compute_fn=True,
-        ](c, a, b, no_epilogue_fn, compute_fn, ctx)
+    _matmul_gpu_impl[
+        use_tensor_core=use_tensor_core,
+        transpose_b=transpose_b,
+        use_tf32=use_tf32,
+        pdl_level=pdl_level,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+    ](c, a, b, no_epilogue_fn, compute_fn, ctx)
 
 
 def _matmul_gpu_impl[
@@ -852,11 +891,10 @@ def _matmul_gpu_impl[
     use_tensor_core: Bool,
     transpose_b: Bool,
     use_tf32: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    elementwise_compute_lambda_fn: Optional[elementwise_compute_lambda_type],
     pdl_level: PDLLevel,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
+    row_invariant: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -865,17 +903,9 @@ def _matmul_gpu_impl[
     compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
-    comptime has_legacy_epilogue = Bool(elementwise_lambda_fn) or Bool(
-        elementwise_compute_lambda_fn
-    )
-    comptime assert not has_legacy_epilogue or (
+    comptime assert not row_invariant or not (
         has_epilogue_fn or has_compute_fn
-    ), "a legacy epilogue lambda must come with the value that forwards it"
-    comptime assert (
-        has_legacy_epilogue
-        or not (has_epilogue_fn or has_compute_fn)
-        or not _matmul_gpu_needs_legacy_epilogue
-    ), "the Apple matmuls take only legacy epilogue lambdas"
+    ), "row_invariant covers the plain matmul only"
     comptime assert not (
         has_epilogue_fn and has_compute_fn
     ), "pass either epilogue_fn or compute_fn, not both"
@@ -893,9 +923,7 @@ def _matmul_gpu_impl[
     # Fail loudly instead of silently ignoring the precision request on
     # targets whose fp32 matmul paths have no TF32 opt-out wired up.
     comptime assert (
-        use_tf32
-        or a_type != .float32
-        or (ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05())
+        use_tf32 or a_type != .float32 or ctx.target._has_blackwell_tcgen05()
     ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -906,7 +934,7 @@ def _matmul_gpu_impl[
     logger.info("---- MATMUL GPU execution started ----")
     logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
-    logger.info("Device: ", ctx.name())
+    logger.info("Device: ", ctx.device().get_name())
     logger.info(
         "Transpose B: ",
         transpose_b,
@@ -938,35 +966,6 @@ def _matmul_gpu_impl[
 
     comptime matmul_supported_format = matmul_supported_format_amd if ctx.target.is_amd_gpu() else matmul_supported_format_nvidia
 
-    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
-    # `DeviceBuffer`-backed tile would reach the device as a host reference.
-    var c_epilogue = c.reshape(c.layout)
-
-    # The legacy-only kernels take a store lambda, so a compute lambda is
-    # wrapped into one that stores its result.
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_epilogue)
-    def compute_lambda_wrapper[
-        _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]):
-        comptime assert (
-            coords.rank == 2
-        ), "the matmul epilogue contract is rank 2"
-        comptime if case .Some(compute_lambda) = elementwise_compute_lambda_fn:
-            var output = compute_lambda(coords, val)
-            comptime assert (
-                output.dtype == c_type
-            ), "compute epilogue lambda output and c type mismatch"
-            c_epilogue.store[alignment=alignment * size_of[c_type]()](
-                coords,
-                rebind[SIMD[c_type, _width]](output),
-            )
-
-    comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
-        compute_lambda_wrapper
-    ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
-
     # Helper for gemv_gpu dispatch — passes TileTensor directly.
     @inline(.always)
     def _gemv_dispatch() raises {imm}:
@@ -991,10 +990,16 @@ def _matmul_gpu_impl[
         and a_type == .bfloat16
     )
     var amdgpu_matmul_cond = ctx.target.is_amd_gpu() and n % 4 == 0
-    # AMD matmul kernels require K % BK == 0 and K >= 2*BK due to the
-    # 2-deep software pipeline prologue. BK = _bk_base (128 for FP8,
-    # 64 for BF16 on AMD). Use that as the minimum alignment/size gate
-    # so unsupported K values fall through to vendor BLAS.
+    # `AMDMatmul` (bf16 with transpose_b on CDNA) zero-fills the columns past
+    # K, so it takes any even K. An odd K would read the last element of the
+    # last row as zero, because the buffer resource bound is dword-granular.
+    # Every other AMD path still needs K % BK == 0 and K >= 2 * BK.
+    var amd_k_ragged = (
+        ctx.target.is_amd_gpu()
+        and transpose_b
+        and a_type == .bfloat16
+        and k % 2 == 0
+    )
     comptime amd_bk = _bk_base[a_type, True]() if ctx.target.is_amd_gpu() else 1
     var amd_k_cond = (
         k % amd_bk == 0 and k >= 2 * amd_bk
@@ -1003,9 +1008,7 @@ def _matmul_gpu_impl[
     var multi_gemm_cond = (
         (m > 1 or ctx.target.is_amd_gpu())
         and (n % 128 == 0 or h100_matmul_cond or amdgpu_matmul_cond)
-        and k % 32 == 0
-        and k >= 128
-        and amd_k_cond
+        and (amd_k_ragged or (k % 32 == 0 and k >= 128 and amd_k_cond))
     )
 
     # Static shape queries from TileTensor. -1 means dynamic.
@@ -1044,7 +1047,7 @@ def _matmul_gpu_impl[
             # decode reaches this line on every matmul.
             if (
                 apple_gemv_small_batch_supported(m, k)
-                and ctx.compute_capability() == 5
+                and ctx.compute_capability() >= 5
             ):
                 logger.info("Executing: Apple M5 small-batch GEMV kernel")
                 enqueue_apple_gemv[
@@ -1065,7 +1068,7 @@ def _matmul_gpu_impl[
             m > 1
             and n >= 64
             and k >= 16
-            and ctx.compute_capability() == 5
+            and ctx.compute_capability() >= 5
             and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
         ):
             logger.info("Executing: Apple M5 simdgroup-tiled MATMUL kernel")
@@ -1099,7 +1102,7 @@ def _matmul_gpu_impl[
                 and k >= 16
                 and k % 16 == 0
                 and (
-                    ctx.compute_capability() != 5
+                    ctx.compute_capability() < 5
                     or (f32_in and not _apple_m5_allow_lossy_f32_matmul())
                 )
             ):
@@ -1124,24 +1127,25 @@ def _matmul_gpu_impl[
         logger.info("Executing: Vendor BLAS")
         return _vendor_dispatch()
 
-    comptime if (ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05()):
+    comptime if ctx.target._has_blackwell_tcgen05():
         comptime if has_epilogue_fn:
             return matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
-                pdl_level=PDLLevel.ON,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](c, a, b, epilogue_fn, ctx)
         elif has_compute_fn:
             return matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
-                pdl_level=PDLLevel.ON,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](c, a, b, compute_fn, ctx)
         else:
             return matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
-                pdl_level=PDLLevel.ON,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
+                row_invariant=row_invariant,
             ](c, a, b, ctx)
 
     comptime if ctx.default_device_info == H100:
@@ -1150,7 +1154,6 @@ def _matmul_gpu_impl[
             a_type,
             b_type,
             transpose_b,
-            pdl_level=pdl_level,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
         ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
@@ -1233,11 +1236,15 @@ def _matmul_gpu_impl[
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        block_tile_shape=Index(
-                            block_m, block_n, _bk_base[a_type, True]()
+                        block_tile_shape=(
+                            block_m,
+                            block_n,
+                            _bk_base[a_type, True](),
                         ),
-                        warp_tile_shape=Index(
-                            block_m // 2, block_n // 2, _bk_base[a_type, True]()
+                        warp_tile_shape=(
+                            block_m // 2,
+                            block_n // 2,
+                            _bk_base[a_type, True](),
                         ),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=num_pipeline_stages,
@@ -1248,11 +1255,13 @@ def _matmul_gpu_impl[
 
                 comptime if (
                     transpose_b
-                    and is_minimax_router_gemm[
+                    and _is_amd_small_m_gemv[
                         c_type, a_type, b_type, static_N, static_K
                     ]()
                 ):
-                    if m <= 16:
+                    if _amd_small_m_gemv_route[
+                        c_type, a_type, b_type, static_N, static_K
+                    ](m)[0] and (m != 1 or not has_compute_fn):
                         comptime if has_epilogue_fn:
                             return gemv_gpu_dispatch[
                                 transpose_b=True,
@@ -1443,6 +1452,67 @@ def _matmul_gpu_impl[
                                 block_k_override=block_k,
                             ](a, b, c, ctx)
 
+                    # Small-M bf16 bands: one unsplit BM16
+                    # `AMDMatmul` launch replaces the split-K + reduce arm
+                    # (4096 <= N < 8192, K >= 4096) or the auto-scored tile
+                    # (N > 8192, or N = 7168 with K < 4096) in the measured
+                    # bands. N = 8192 is excluded: the 4-wave split-K arm
+                    # covers it and the band was never measured against it.
+                    # `_amd_bm16_small_m_block_n` is the single source of
+                    # truth for the band table; `test_matmul_dispatching_amd`
+                    # asserts its edges. The comptime shape gate keeps the
+                    # two band configs from instantiating for shapes that
+                    # can never route. Autotuning builds keep authority
+                    # over the launch, so the band steps aside there:
+                    # `TUNE_4WAVE_KERNEL` and `AUTOTUNING_MODE` sweeps
+                    # would otherwise measure this arm instead of the
+                    # kernel they ask for.
+                    comptime if (
+                        a_type == .bfloat16
+                        and b_type == .bfloat16
+                        and c_type == .bfloat16
+                        and 4096 <= static_N < 16384
+                        and not get_defined_bool["AUTOTUNING_MODE", False]()
+                        and get_defined_int["TUNE_4WAVE_KERNEL", 0]() == 0
+                        and (
+                            (static_K >= 4096 and static_K % 1024 == 0)
+                            or static_N == 7168
+                        )
+                    ):
+                        var bm16_block_n = _amd_bm16_small_m_block_n[
+                            c_type, a_type, b_type, static_N, static_K
+                        ](m)
+                        if bm16_block_n == 16:
+                            comptime config = (
+                                _amdgpu_matmul_config_from_block_shape[
+                                    c_type,
+                                    a_type,
+                                    b_type,
+                                    transpose_b,
+                                    static_K,
+                                    pdl_level,
+                                ]((16, 16))
+                            )
+                            logger.info(
+                                "Executing: AMD BM16 x BN16 small-M bf16 matmul"
+                            )
+                            return _multistage_gemm[config]()
+                        elif bm16_block_n == 32:
+                            comptime config = (
+                                _amdgpu_matmul_config_from_block_shape[
+                                    c_type,
+                                    a_type,
+                                    b_type,
+                                    transpose_b,
+                                    static_K,
+                                    pdl_level,
+                                ]((16, 32))
+                            )
+                            logger.info(
+                                "Executing: AMD BM16 x BN32 small-M bf16 matmul"
+                            )
+                            return _multistage_gemm[config]()
+
                     comptime if (
                         static_N >= 1024
                         and static_N <= 8192
@@ -1560,8 +1630,19 @@ def _matmul_gpu_impl[
                             # wide-N wants split-K(2) (autotune: +4.8%
                             # at M=64 N=K=8192) because bf16's higher
                             # arithmetic intensity makes split-K(4)
-                            # over-split the K-dim at wide N.
+                            # over-split the K-dim at wide N. At decode
+                            # M <= 16 that intensity is gone and wide-N
+                            # bf16 wants split-K(4) too (-11% at M=2..3
+                            # N=6416 K=4096, GLM-5.3-Flash's fused KDA
+                            # input projection, MI355X); the BM16 band
+                            # above takes over at 4 <= M <= 16 for the N
+                            # it measured.
                             comptime if a_type.is_float8() or is_skinny_n:
+                                logger.info(
+                                    "Executing: AMD 4-wave + split-K(4) matmul"
+                                )
+                                return _launch_4wave_split_k[4]()
+                            if m <= 16:
                                 logger.info(
                                     "Executing: AMD 4-wave + split-K(4) matmul"
                                 )
@@ -1658,10 +1739,8 @@ def _matmul_gpu_impl[
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        block_tile_shape=Index(block_m, block_n, block_k),
-                        warp_tile_shape=Index(
-                            block_m // 2, block_n // 2, block_k
-                        ),
+                        block_tile_shape=(block_m, block_n, block_k),
+                        warp_tile_shape=(block_m // 2, block_n // 2, block_k),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=1,
                         num_k_partitions=num_k_partitions,
@@ -1687,8 +1766,8 @@ def _matmul_gpu_impl[
                             comptime config = MatmulConfig[
                                 a_type, b_type, c_type, transpose_b
                             ](
-                                block_tile_shape=Index(_bm, _bn, _bk),
-                                warp_tile_shape=Index(_bm // 2, _bn // 2, _bk),
+                                block_tile_shape=(_bm, _bn, _bk),
+                                warp_tile_shape=(_bm // 2, _bn // 2, _bk),
                                 mma_shape=_amdgpu_get_mma_shape[
                                     a_type, transpose_b
                                 ](),
@@ -1718,32 +1797,54 @@ def _matmul_gpu_impl[
                                 if k >= 256:
                                     return _small_m_gemm[128, 128, 256]()
 
-                # Skinny-deep fp32 (MoE router gate: N=128, K=6144) leaves
-                # the machine idle, so split the K reduction. Config is built
-                # directly because kernel_helper's warp=block//2 degenerates
-                # at BM=16.
-                comptime split_k_p = 16
+                # Skinny-deep fp32 (MoE router gate: N=128, K=6144; the
+                # GLM-5.3-Flash indexer's weights_proj: N=32, K=4096) leaves
+                # the machine idle, so split the K reduction. On gfx950 up to
+                # M=64 the unsplit tiles still launch only a handful of CTAs
+                # (6 at M=48, N=32: 19 us against 9 us split on MI355X), and
+                # past it the MI355X sweep of the router gate keeps splitting
+                # (13-15 us instead of 45 us at 64-256 rows, 61 us instead of
+                # 117 us at 2048); other AMD targets were never measured past
+                # M=32 and keep that reach. Config is built directly because
+                # kernel_helper's warp=block//2 degenerates at BM=16.
                 comptime if (
                     a_type == .float32
                     and transpose_b
                     and static_N <= 256
                     and static_K >= 2048
-                    and static_K % (split_k_p * 64) == 0
+                    and static_K % (16 * 64) == 0
                 ):
-                    if m > 1 and m <= 32:
+
+                    @inline(.always)
+                    def _split_k_gemm[
+                        block_m: Int, num_k_partitions: Int
+                    ]() raises {imm}:
                         comptime config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(16, 16, 64),
-                            warp_tile_shape=Index(16, 16, 64),
+                            block_tile_shape=(block_m, 16, 64),
+                            warp_tile_shape=(block_m, 16, 64),
                             mma_shape=_amdgpu_get_mma_shape[
                                 a_type, transpose_b
                             ](),
                             num_pipeline_stages=1,
-                            num_k_partitions=split_k_p,
+                            num_k_partitions=num_k_partitions,
                             pdl_level=pdl_level,
                         )
                         return _multistage_gemm[config]()
+
+                    comptime split_k_max_m = (
+                        64 if _accelerator_arch() == "amdgpu:gfx950" else 32
+                    )
+                    if m > 1 and m <= split_k_max_m:
+                        return _split_k_gemm[16, 16]()
+                    comptime if _accelerator_arch() == "amdgpu:gfx950":
+                        if m > split_k_max_m and m <= 256:
+                            return _split_k_gemm[16, 8]()
+                        elif m > 256 and m <= 512:
+                            return _split_k_gemm[16, 4]()
+                        elif m > 512:
+                            return _split_k_gemm[32, 4]()
 
                 comptime sm_count = ctx.default_device_info.sm_count
                 comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[
@@ -1896,6 +1997,7 @@ def _matmul_gpu_impl[
             WARP_TILE_N: Int,
         ]() raises {imm}:
             comptime NUM_WARPS = WARPS_M * WARPS_N
+            comptime warp_size = ctx.default_device_info.warp_size
             comptime if has_epilogue_fn:
                 comptime rdna_kernel = gemm_kernel_rdna_epilogue_fn[
                     c_type,
@@ -1924,9 +2026,11 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=epilogue_fn,
-                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                    block_dim=(NUM_WARPS * WARP_SIZE,),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                        block_dim=(NUM_WARPS * warp_size,),
+                    ),
+                    host_args=(epilogue_fn,),
                 )
             elif has_compute_fn:
                 comptime rdna_kernel = gemm_kernel_rdna_compute_fn[
@@ -1956,9 +2060,11 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    host_arg=compute_fn,
-                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                    block_dim=(NUM_WARPS * WARP_SIZE,),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                        block_dim=(NUM_WARPS * warp_size,),
+                    ),
+                    host_args=(compute_fn,),
                 )
             else:
                 comptime rdna_kernel = gemm_kernel_rdna[
@@ -1987,8 +2093,10 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                    block_dim=(NUM_WARPS * WARP_SIZE,),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                        block_dim=(NUM_WARPS * warp_size,),
+                    ),
                 )
 
         # Large transpose_b shapes with BK=64. Two A+B tiles don't fit LDS at
@@ -2182,9 +2290,12 @@ def _split_k_reduce_impl[
                     c_coord,
                     out,
                 )
-            c.store[width=simd_width]((c_coord[0], c_coord[1]), out)
+            c.store((c_coord[0], c_coord[1]), out)
 
-    elementwise[simd_width, target="gpu"](_reduce, (M, N), ctx)
+    elementwise[
+        simd_width,
+        _trace_description="matmul_split_k_reduce",
+    ](_reduce, (M, N), ctx)
 
 
 @inline(.always)
@@ -2244,9 +2355,11 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                host_arg=epilogue_fn,
-                grid_dim=grid,
-                block_dim=kernel_config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=kernel_config.num_threads(),
+                ),
+                host_args=(epilogue_fn,),
             )
         elif has_compute_fn:
             comptime k = kernel_type.run_with_compute_fn[
@@ -2262,9 +2375,11 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                host_arg=compute_fn,
-                grid_dim=grid,
-                block_dim=kernel_config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=kernel_config.num_threads(),
+                ),
+                host_args=(compute_fn,),
             )
         else:
             comptime k = kernel_type.run[
@@ -2279,8 +2394,10 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                grid_dim=grid,
-                block_dim=kernel_config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=kernel_config.num_threads(),
+                ),
             )
 
     @inline(.always)
@@ -2308,9 +2425,11 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                host_arg=epilogue_fn,
-                grid_dim=matmul_config.grid_dim(M, N),
-                block_dim=matmul_config.block_dim(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=matmul_config.grid_dim(M, N),
+                    block_dim=matmul_config.block_dim(),
+                ),
+                host_args=(epilogue_fn,),
             )
         elif has_compute_fn:
             comptime k = kernel_type.run_with_compute_fn[
@@ -2326,9 +2445,11 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                host_arg=compute_fn,
-                grid_dim=matmul_config.grid_dim(M, N),
-                block_dim=matmul_config.block_dim(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=matmul_config.grid_dim(M, N),
+                    block_dim=matmul_config.block_dim(),
+                ),
+                host_args=(compute_fn,),
             )
         else:
             comptime k = kernel_type.run[
@@ -2343,21 +2464,23 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                grid_dim=matmul_config.grid_dim(M, N),
-                block_dim=matmul_config.block_dim(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=matmul_config.grid_dim(M, N),
+                    block_dim=matmul_config.block_dim(),
+                ),
             )
 
     comptime if a_type.is_float8():
         # FP8 dispatch: ping-pong for large shapes, standard for small.
         comptime pingpong_config = KernelConfig(
-            block_shape=Index(256, 256, 128),
-            warp_shape=Index(128, 64, 128),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(256, 256, 128),
+            warp_shape=(128, 64, 128),
+            mma_shape=(16, 16, 128),
         )
         comptime skinny_config = KernelConfig(
-            block_shape=Index(128, 256, 128),
-            warp_shape=Index(64, 64, 128),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(128, 256, 128),
+            warp_shape=(64, 64, 128),
+            mma_shape=(16, 16, 128),
         )
         comptime std_config = MatmulConfig[a_type, b_type, c_type, True](
             block_tile_shape=config.block_tile_shape,
@@ -2405,9 +2528,8 @@ def multistage_gemm[
     ctx: DeviceContext,
 ) raises:
     """TileTensor overload of `multistage_gemm`. Dispatches to a GEMM kernel
-    over the native TileTensor operands; the device-side pipeline bridges to
-    legacy `LayoutTensorIter` views internally (the multistage pipeline is
-    iterator-driven and has no TileTensor equivalent yet).
+    over the native TileTensor operands; the device-side pipeline is driven
+    by `TileTensorIter` views.
 
     Parameters:
         c_type: DType of the output tile `c` elements (inferred).
@@ -2451,17 +2573,19 @@ def multistage_gemm[
             c_linear_idx_type=c.linear_idx_type,
             a_linear_idx_type=a.linear_idx_type,
             b_linear_idx_type=b.linear_idx_type,
+            c_engine=c.Engine,
+            a_engine=a.Engine,
+            b_engine=b.Engine,
             config=config,
         ]
         ctx.enqueue_function[gemm_kernel_type](
             c,
             a,
             b,
-            grid_dim=config.grid_dim(M, N),
-            block_dim=config.block_dim(),
-            shared_mem_bytes=config.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(config.shared_mem_usage())
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=config.grid_dim(M, N),
+                block_dim=config.block_dim(),
+                shared_mem_bytes=config.shared_mem_usage(),
             ),
         )
 
@@ -2525,6 +2649,9 @@ def multistage_gemm[
             c_linear_idx_type=c.linear_idx_type,
             a_linear_idx_type=a.linear_idx_type,
             b_linear_idx_type=b.linear_idx_type,
+            c_engine=c.Engine,
+            a_engine=a.Engine,
+            b_engine=b.Engine,
             config=config,
             EpilogueFnType=EpilogueFnType,
         ]
@@ -2534,13 +2661,12 @@ def multistage_gemm[
             c,
             a,
             b,
-            host_arg=epilogue_fn,
-            grid_dim=config.grid_dim(M, N),
-            block_dim=config.block_dim(),
-            shared_mem_bytes=config.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(config.shared_mem_usage())
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=config.grid_dim(M, N),
+                block_dim=config.block_dim(),
+                shared_mem_bytes=config.shared_mem_usage(),
             ),
+            host_args=(epilogue_fn,),
         )
 
 
@@ -2602,6 +2728,9 @@ def multistage_gemm[
             c_linear_idx_type=c.linear_idx_type,
             a_linear_idx_type=a.linear_idx_type,
             b_linear_idx_type=b.linear_idx_type,
+            c_engine=c.Engine,
+            a_engine=a.Engine,
+            b_engine=b.Engine,
             config=config,
             ComputeFnType=ComputeFnType,
         ]
@@ -2611,13 +2740,12 @@ def multistage_gemm[
             c,
             a,
             b,
-            host_arg=compute_fn,
-            grid_dim=config.grid_dim(M, N),
-            block_dim=config.block_dim(),
-            shared_mem_bytes=config.shared_mem_usage(),
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(config.shared_mem_usage())
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=config.grid_dim(M, N),
+                block_dim=config.block_dim(),
+                shared_mem_bytes=config.shared_mem_usage(),
             ),
+            host_args=(compute_fn,),
         )
 
 
@@ -2831,8 +2959,10 @@ def _multistage_gemm_runtime_impl[
                 b,
                 tensor_work_space,
                 Int32(runtime_config.num_k_partitions),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                ),
             )
         else:
             ctx.enqueue_function[gemm_kernel_type](
@@ -2841,11 +2971,10 @@ def _multistage_gemm_runtime_impl[
                 b,
                 tensor_work_space,
                 Int32(runtime_config.num_k_partitions),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(runtime_config.shared_mem_usage())
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
                 ),
             )
 
@@ -2879,6 +3008,9 @@ def _multistage_gemm_runtime_impl[
                 c_linear_idx_type=c.linear_idx_type,
                 a_linear_idx_type=a.linear_idx_type,
                 b_linear_idx_type=b.linear_idx_type,
+                c_engine=c.Engine,
+                a_engine=a.Engine,
+                b_engine=b.Engine,
                 config=config,
                 EpilogueFnType=EpilogueFnType,
             ]
@@ -2886,13 +3018,12 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
-                host_arg=epilogue_fn,
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(config.shared_mem_usage())
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
                 ),
+                host_args=(epilogue_fn,),
             )
         elif has_compute_fn:
             comptime gemm_kernel_type = multistage_gemm_kernel_compute_fn[
@@ -2902,6 +3033,9 @@ def _multistage_gemm_runtime_impl[
                 c_linear_idx_type=c.linear_idx_type,
                 a_linear_idx_type=a.linear_idx_type,
                 b_linear_idx_type=b.linear_idx_type,
+                c_engine=c.Engine,
+                a_engine=a.Engine,
+                b_engine=b.Engine,
                 config=config,
                 ComputeFnType=ComputeFnType,
             ]
@@ -2909,13 +3043,12 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
-                host_arg=compute_fn,
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(config.shared_mem_usage())
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
                 ),
+                host_args=(compute_fn,),
             )
         else:
             comptime gemm_kernel_type = multistage_gemm_kernel[
@@ -2925,16 +3058,18 @@ def _multistage_gemm_runtime_impl[
                 c_linear_idx_type=c.linear_idx_type,
                 a_linear_idx_type=a.linear_idx_type,
                 b_linear_idx_type=b.linear_idx_type,
+                c_engine=c.Engine,
+                a_engine=a.Engine,
+                b_engine=b.Engine,
                 config=config,
             ]
             ctx.enqueue_function[gemm_kernel_type](
                 c,
                 a,
                 b,
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(config.shared_mem_usage())
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
                 ),
             )

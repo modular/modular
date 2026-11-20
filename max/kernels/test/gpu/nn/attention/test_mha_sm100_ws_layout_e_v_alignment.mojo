@@ -284,7 +284,7 @@ def main() raises:
 
         print("nan_count =", nan_count, " max-abs diff =", max_abs_diff)
         if nan_count > 0:
-            raise Error("NaN x" + String(nan_count))
+            raise Error(t"NaN x{nan_count}")
         if max_abs_diff > 0.04:
-            raise Error("max-abs diff too large: " + String(max_abs_diff))
+            raise Error(t"max-abs diff too large: {max_abs_diff}")
         print("PASSED")

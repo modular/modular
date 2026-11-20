@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import logging
 import os
-from unittest.mock import MagicMock, Mock
+from typing import NoReturn, cast
+from unittest.mock import MagicMock
 
 from max.driver import is_virtual_device_mode
-from max.engine import InferenceSession
+from max.engine import CompileOnlyExecutionError, InferenceSession
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVConnectorType,
@@ -57,9 +58,9 @@ def _use_jenga_kv_cache(
 
     Raises:
         ValueError: If no manager can serve the configuration. The legacy
-            manager supports neither disaggregated inference nor a KV
-            connector, and disaggregated inference on Jenga supports only full
-            attention caches.
+            manager supports neither disaggregated inference, a KV connector
+            nor a scratch leaf, and disaggregated inference on Jenga supports
+            only full attention caches.
 
     TODO: temporary flag for the Jenga cutover. Delete once the transition is complete.
     """
@@ -70,6 +71,14 @@ def _use_jenga_kv_cache(
         "y",
     )
     if prefer_legacy and recurrent_leaf(params) is None:
+        if any(leaf.group_id.is_scratch() for leaf in params.leaves().values()):
+            # The legacy manager gives every leaf the request's page table, so
+            # a scratch leaf would write into prefix-shared pages.
+            raise ValueError(
+                "This model has a scratch KV cache leaf, which the legacy KV"
+                " manager selected by MODULAR_USE_LEGACY_KV_CACHE cannot hold."
+                " Unset MODULAR_USE_LEGACY_KV_CACHE."
+            )
         if is_di_enabled:
             raise ValueError(
                 "Disaggregated inference is incompatible with the legacy KV"
@@ -153,6 +162,52 @@ def kv_cache_memory_size(
     return min(available_cache_memory, max(exact, generic))
 
 
+class CompileOnlyKVCacheManager:
+    """Stands in for the KV cache manager of a pipeline built for virtual devices.
+
+    A virtual device has no memory to hold a cache, so the pipeline gets this
+    instead, in the pattern of :class:`~max.engine.CompileOnlyModel`: it
+    carries the parameters the pipeline's graphs are built for, and raises
+    :class:`~max.engine.CompileOnlyExecutionError` from everything that would
+    need the cache. A stand-in that answered those calls with placeholder
+    values would move the failure to whatever consumed them.
+
+    ``shutdown`` is the exception: closing a pipeline calls it, and there is
+    nothing to shut down.
+    """
+
+    def __init__(self, params: KVCacheParamInterface) -> None:
+        self.params = params
+
+    def shutdown(self) -> None:
+        """Does nothing: there is no cache to release."""
+
+    def __getattr__(self, name: str) -> NoReturn:
+        """Refuses any manager member this stand-in does not carry.
+
+        Every member is refused rather than enumerated, so one added to
+        :class:`PagedKVCacheManagerInterface` later is refused too, rather
+        than answering with an :class:`AttributeError` that reads as a
+        broken caller.
+
+        Args:
+            name: The member the caller reached for.
+
+        Raises:
+            CompileOnlyExecutionError: If the manager interface carries
+                ``name``.
+            AttributeError: If it does not, as any object would.
+        """
+        if hasattr(PagedKVCacheManagerInterface, name):
+            raise CompileOnlyExecutionError(
+                f"{name} needs the KV cache, and this pipeline was built for "
+                "a virtual device, which stands in for hardware that is not "
+                "attached, so it has none. Build the pipeline on a real "
+                "device to run it."
+            )
+        raise AttributeError(name)
+
+
 def load_kv_manager(
     params: KVCacheParamInterface,
     max_batch_size: int | None,
@@ -167,24 +222,29 @@ def load_kv_manager(
 
     Accepts both ``KVCacheParams`` (single cache) and ``MultiKVCacheParams``
     (multiple caches).  The returned manager natively handles all caches
-    with a single ``BlockManager`` and ``KVConnector``.
+    with a single ``BlockManager`` and ``KVConnector``. Under virtual devices
+    it returns a :class:`CompileOnlyKVCacheManager`, which allocates nothing.
 
     TODO: remove `is_di_enabled` once Jenga supports DI.
     """
     if isinstance(params, MagicMock):
         return MagicMock()
 
-    # In compile-only mode (virtual device mode), use the null KV manager
-    # to avoid GPU memory allocation
     if is_virtual_device_mode():
         logger.info(
-            "Detected compile-only mode, Use fake KVCache to avoid GPU allocation"
+            "Compiling for virtual devices, so the pipeline gets no KV cache."
         )
-        return Mock()
+        # Deliberately not a manager: the point is that it holds no cache.
+        return cast(
+            PagedKVCacheManagerInterface, CompileOnlyKVCacheManager(params)
+        )
 
     if available_cache_memory is None:
         raise ValueError(
-            "available_cache_memory should have been set during memory estimation"
+            "No KV-cache budget was planned. With measuring disabled "
+            "(MAX_MEMORY_MEASURE_DISABLE=1), memory planning leaves none when "
+            "the model leaves no memory for a KV cache: try a higher "
+            "--device-memory-utilization, a smaller model, or more devices."
         )
 
     if max_batch_size is None:

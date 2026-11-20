@@ -38,9 +38,9 @@ from layout import (
     row_major,
 )
 from layout.swizzle import make_swizzle
-from layout.tile_layout import Layout, UpcastLayout, ZippedDivideLayout
+from layout.layout import Layout, UpcastLayout, ZippedDivideLayout
 from layout.tma_async import TMATensorTile
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
 from ..structured_kernels.epilogue_components import (
@@ -71,8 +71,8 @@ struct BlockwiseFP8TileWriter[
     accum_num_elements: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     is_lower_frag_required: Bool,
     cta_group: Int,
     num_output_stages: Int,
@@ -552,20 +552,18 @@ struct BlockwiseFP8TileWriter[
                     var dst_crd = Coord(Int(global_i), Int(global_j))
 
                     comptime if size_of[Self.c_type]() == 2:
-                        var src_ptr = c_smem_split._storage + swizzle(
+                        var src_ptr = c_smem_split._storage.unsafe_offset(
+                            swizzle(linear_idx)
+                        )
+                        var src = src_ptr.unsafe_load[
+                            width=simd_size, alignment=alignment
+                        ]()
+                        c_tensor.store[alignment=alignment](dst_crd, src)
+                    else:
+                        var src_ptr = c_smem_split._storage.unsafe_offset(
                             linear_idx
                         )
-                        var src = src_ptr.load[
+                        var src = src_ptr.unsafe_load[
                             width=simd_size, alignment=alignment
                         ]()
-                        c_tensor.store[width=simd_size, alignment=alignment](
-                            dst_crd, src
-                        )
-                    else:
-                        var src_ptr = c_smem_split._storage + linear_idx
-                        var src = src_ptr.load[
-                            width=simd_size, alignment=alignment
-                        ]()
-                        c_tensor.store[width=simd_size, alignment=alignment](
-                            dst_crd, src
-                        )
+                        c_tensor.store[alignment=alignment](dst_crd, src)

@@ -23,10 +23,10 @@ import std.math
 from std.collections.string.string_span import _get_kgen_string
 from std.memory._poison import _check_not_poison_masked
 from std.sys.info import is_gpu
+from std._plugin import CurrentPlugin
 
 
-from ._assembly import inlined_assembly
-from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
+from .info import size_of
 
 
 # ===-----------------------------------------------------------------------===#
@@ -263,6 +263,12 @@ def scatter[
 # ===-----------------------------------------------------------------------===#
 
 
+comptime _PrefetchPluginHookFnType[address_space: AddressSpace] = def(
+    Pointer[NoneType, ImmUntrackedOrigin, address_space=address_space]
+) thin -> None
+"""Plugin-hook signature for `PluginHooks.prefetch_fn`; keep in sync with `prefetch`."""
+
+
 struct PrefetchLocality(TrivialRegisterPassable):
     """The prefetch locality.
 
@@ -273,14 +279,23 @@ struct PrefetchLocality(TrivialRegisterPassable):
 
     var value: Int32
     """The prefetch locality to use. It should be a value in [0, 3]."""
-    comptime NONE = PrefetchLocality(0)
+    comptime none = PrefetchLocality(0)
     """No locality."""
-    comptime LOW = PrefetchLocality(1)
+    comptime low = PrefetchLocality(1)
     """Low locality."""
-    comptime MEDIUM = PrefetchLocality(2)
+    comptime medium = PrefetchLocality(2)
     """Medium locality."""
-    comptime HIGH = PrefetchLocality(3)
+    comptime high = PrefetchLocality(3)
     """Extremely local locality (keep in cache)."""
+
+    comptime NONE = Self.none
+    """Alias for `none`."""
+    comptime LOW = Self.low
+    """Alias for `low`."""
+    comptime MEDIUM = Self.medium
+    """Alias for `medium`."""
+    comptime HIGH = Self.high
+    """Alias for `high`."""
 
     @inline(.nodebug)
     def __init__(out self, value: Int):
@@ -298,10 +313,15 @@ struct PrefetchRW(TrivialRegisterPassable):
 
     var value: Int32
     """The read-write prefetch. It should be in [0, 1]."""
-    comptime READ = PrefetchRW(0)
+    comptime read = PrefetchRW(0)
     """Read prefetch."""
-    comptime WRITE = PrefetchRW(1)
+    comptime write = PrefetchRW(1)
     """Write prefetch."""
+
+    comptime READ = Self.read
+    """Alias for `read`."""
+    comptime WRITE = Self.write
+    """Alias for `write`."""
 
     @inline(.nodebug)
     def __init__(out self, value: Int):
@@ -332,10 +352,15 @@ struct PrefetchCache(TrivialRegisterPassable):
 
     var value: Int32
     """The cache prefetch. It should be in [0, 1]."""
-    comptime INSTRUCTION = PrefetchCache(0)
+    comptime instruction = PrefetchCache(0)
     """The instruction prefetching option."""
-    comptime DATA = PrefetchCache(1)
+    comptime data = PrefetchCache(1)
     """The data prefetching option."""
+
+    comptime INSTRUCTION = Self.instruction
+    """Alias for `instruction`."""
+    comptime DATA = Self.data
+    """Alias for `data`."""
 
     @inline(.nodebug)
     def __init__(out self, value: Int):
@@ -496,16 +521,14 @@ def prefetch[
         params.rw == PrefetchRW.READ or type_of(addr).mut == True
     ), "prefetch pointer mutability must match the prefetch read-write option"
 
-    comptime if is_nvidia_gpu():
-        inlined_assembly[
-            "prefetch.global.L2 [$0];",
-            NoneType,
-            constraints="l,~{memory}",
-            has_side_effect=True,
-        ](addr.unsafe_bitcast[NoneType]())
-    elif is_apple_gpu():
-        # Apple GPU officially does not support prefetch intrinsic
-        pass
+    comptime if case .Some(_prefetch) = CurrentPlugin.prefetch_fn[
+        type_of(addr).address_space, params
+    ]:
+        _prefetch(
+            addr.unsafe_bitcast[NoneType]()
+            .as_imm()
+            .unsafe_origin_cast[ImmUntrackedOrigin]()
+        )
     else:
         llvm_intrinsic["llvm.prefetch", NoneType](
             addr.unsafe_bitcast[NoneType](),
@@ -676,10 +699,12 @@ def strided_load[
             dtype
         ]()
 
-    comptime if is_apple_gpu():
-        # The `gather` path below would erase address space via
-        # `Int(addr)`; on Apple AIR the resulting GENERIC load silently
-        # reads zero (MOCO-3762).
+    comptime if not CurrentPlugin.has_generic_address_space or (
+        type_of(addr).address_space != .GENERIC
+        and type_of(addr).address_space != .GLOBAL
+    ):
+        # The `gather` path below rebuilds lane pointers from `Int(addr)`,
+        # which loses the address space, so load through `addr` instead.
         var result = SIMD[dtype, simd_width]()
         comptime for i in range(simd_width):
             if mask[i]:
@@ -711,7 +736,7 @@ def strided_store[
     stride: Int,
     mask: SIMD[.bool, simd_width] = SIMD[.bool, simd_width](fill=True),
 ):
-    """Loads values from addr according to a specific stride.
+    """Stores values to addr according to a specific stride.
 
     Parameters:
       dtype: DType of `value`, the value to store.
@@ -727,6 +752,17 @@ def strided_store[
     comptime if simd_width == 1:
         if mask:
             addr.unsafe_store(value[0])
+        return
+
+    comptime if not CurrentPlugin.has_generic_address_space or (
+        type_of(addr).address_space != .GENERIC
+        and type_of(addr).address_space != .GLOBAL
+    ):
+        # The `scatter` path below rebuilds lane pointers from `Int(addr)`,
+        # which loses the address space, so store through `addr` instead.
+        comptime for i in range(simd_width):
+            if mask[i]:
+                addr.unsafe_offset(i * stride).unsafe_store(value[i])
         return
 
     var offset = (
@@ -848,124 +884,3 @@ def assume(val: Bool):
     if __is_run_in_comptime_interpreter:
         return
     llvm_intrinsic["llvm.assume", NoneType](val)
-
-
-# ===-----------------------------------------------------------------------===#
-# implicitarg_ptr
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def implicitarg_ptr(
-    out result: Pointer[UInt8, MutUntrackedOrigin, address_space=.CONSTANT]
-):
-    """
-    Get a pointer to AMD's implicit arguments table.
-
-    Returns:
-        A pointer to LLVM's implicit arguments table.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    result = llvm_intrinsic[
-        "llvm.amdgcn.implicitarg.ptr",
-        type_of(result),
-    ]()
-
-
-# ===-----------------------------------------------------------------------===#
-# readfirstlane
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def readfirstlane[T: AnyType, //](value: Pointer[T, ...]) -> type_of(value):
-    """
-    Get the value in the lowest active lane of the input operand.
-
-    Parameters:
-        T: The type the pointer points to.
-
-    Args:
-        value: The input pointer.
-
-    Returns:
-        The value in the lowest active lane of the input operand.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
-    ](value)
-
-
-@inline(.always)
-def readfirstlane[dtype: DType](value: Scalar[dtype]) -> Scalar[dtype]:
-    """Gets the value in the lowest active lane of the input operand.
-
-    Constraints:
-        The scalar type must be 2, 4, or 8 bytes wide.
-
-    Parameters:
-        dtype: The element type.
-
-    Args:
-        value: The input scalar value.
-
-    Returns:
-        The value in the lowest active lane of the input operand.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    comptime assert (
-        size_of[Scalar[dtype]]() >= 2
-    ), "readfirstlane requires a scalar type of at least 16 bits"
-    return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", Scalar[dtype], Scalar[dtype]
-    ](value)
-
-
-# ===-----------------------------------------------------------------------===#
-# sendmsg
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def sendmsg(opcode: Int32, msg: Int32):
-    """
-    Send a message to fixed function hardware.
-    Refer to the specific ISA manual for the ops and messages.
-
-    Args:
-        opcode: The operation to perform.
-        msg: The message to send.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    _ = llvm_intrinsic["llvm.amdgcn.s.sendmsg", NoneType, Int32, Int32](
-        opcode, msg
-    )
-
-
-# ===-----------------------------------------------------------------------===#
-# ballot
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
-    """
-    Returns a bitfield(Int32 or Int64) containing the result
-    of its Bool argument in all active lanes, and zero in all inactive lanes.
-    For example, ballot(True) returns EXEC mask.
-
-    Parameters:
-        dtype: The DType of the return type.
-
-    Args:
-        value: The value to place across the mask.
-
-    Returns:
-        A bitfield(Int32 or Int64) containing the result of its Bool argument in all active lanes.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    comptime assert (
-        dtype == .int32 or dtype == .int64
-    ), "This intrinsic is only defined for i32 or i64"
-    return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)

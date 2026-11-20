@@ -26,7 +26,7 @@ from std.testing import assert_equal, assert_true
 
 def all_gather_test[
     dtype: DType, ngpus: Int
-](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
+](list_of_ctx: List[DeviceContext[]], lengths: List[Int]) raises -> None:
     """Test allgather with new variadic output semantics.
 
     Each device should receive individual copies of all inputs,
@@ -172,7 +172,7 @@ def _verify_results[
     dtype: DType
 ](
     out_bufs_list: List[List[DeviceBuffer[dtype]]],
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     lengths: List[Int],
     ngpus: Int,
 ) raises:
@@ -205,19 +205,15 @@ def _verify_results[
                         input_idx,
                     )
                     print(
-                        "Index",
-                        j,
-                        "value:",
-                        host_output[j],
-                        "expected:",
-                        expected,
+                        t"Index {j} value: {host_output[j]} expected:"
+                        t" {expected}"
                     )
                     raise e^
 
 
 def grouped_all_gather_test[
     dtype: DType, ngpus: Int, group_size: Int
-](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
+](list_of_ctx: List[DeviceContext[]], lengths: List[Int]) raises -> None:
     """Test allgather with two independent contiguous groups."""
     comptime assert ngpus == 4, "grouped test expects 4 GPUs"
     comptime assert group_size == 2, "grouped test expects groups of 2 GPUs"
@@ -327,12 +323,9 @@ def grouped_all_gather_test[
                     assert_equal(host_output[j], expected)
                 except e:
                     print(
-                        "Grouped verification failed: device",
-                        device_idx,
-                        "local input",
-                        local_idx,
-                        "global input",
-                        input_idx,
+                        t"Grouped verification failed: device"
+                        t" {device_idx} local input {local_idx} global input"
+                        t" {input_idx}"
                     )
                     raise e^
 
@@ -341,7 +334,7 @@ def grouped_all_gather_test[
 
 def relay_all_gather_test[
     dtype: DType, ngpus: Int, group_size: Int
-](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
+](list_of_ctx: List[DeviceContext[]], lengths: List[Int]) raises -> None:
     """Test the relay-assisted allgather reached through the entrypoint.
 
     Adjacent groups pair up and relay for each other, which `allgather` picks
@@ -463,12 +456,8 @@ def relay_all_gather_test[
                     assert_equal(host_output[j], expected)
                 except e:
                     print(
-                        "Relay verification failed: device",
-                        device_idx,
-                        "source",
-                        input_idx,
-                        "index",
-                        j,
+                        t"Relay verification failed: device {device_idx} source"
+                        t" {input_idx} index {j}"
                     )
                     raise e^
 
@@ -507,15 +496,15 @@ def main() raises -> None:
         if DeviceContext.number_of_devices() < num_gpus:
             continue
 
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
+        print(t"  Testing configuration: {test_idx} with {num_gpus} GPUs")
         all_gather_test[.bfloat16, ngpus=num_gpus](ctx, materialize[lengths]())
 
     if DeviceContext.number_of_devices() >= 4:
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(4):
             ctx.append(DeviceContext(device_id=i))
         print("  Testing grouped allgather with 4 GPUs")
@@ -562,7 +551,7 @@ def main() raises -> None:
             )
 
     if DeviceContext.number_of_devices() == 8:
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(8):
             ctx.append(DeviceContext(device_id=i))
         comptime relay_lengths_8: List[List[Int]] = [

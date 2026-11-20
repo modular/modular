@@ -42,8 +42,8 @@ def test_roi_align_avg[scale_type: DType]() raises:
         output.make_dynamic[.int64](),
         input,
         rois,
-        Int(out_layout.shape[1]().value()),
-        Int(out_layout.shape[2]().value()),
+        Int(out_layout.shape[1]()),
+        Int(out_layout.shape[2]()),
         Scalar[scale_type](1.0),
         Scalar[scale_type](2.0),
     )
@@ -105,8 +105,8 @@ def test_roi_align_max() raises:
         output.make_dynamic[.int64](),
         input,
         rois,
-        Int(out_layout.shape[1]().value()),
-        Int(out_layout.shape[2]().value()),
+        Int(out_layout.shape[1]()),
+        Int(out_layout.shape[2]()),
         1.0,
         2.0,
     )
@@ -168,8 +168,8 @@ def test_roi_align_KERN_692() raises:
         output.make_dynamic[.int64](),
         input,
         rois,
-        Int(out_layout.shape[1]().value()),
-        Int(out_layout.shape[2]().value()),
+        Int(out_layout.shape[1]()),
+        Int(out_layout.shape[2]()),
         0.25,
         2.0,
     )

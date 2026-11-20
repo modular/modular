@@ -17,7 +17,7 @@ tensorcore 5th generation (tcgen05) instructions."""
 from std.os import abort
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
-from std.sys.info import _has_blackwell_tcgen05
+from std.sys.info import current_accelerator
 from std.memory import bitcast
 
 from max.gpu import external_memory
@@ -29,35 +29,10 @@ from max.gpu.intrinsics import _get_nvtx_register_constraint
 @inline(.nodebug)
 def check_blackwell_constraint():
     """Compile-time constraint ensuring Blackwell hardware is targeted."""
-    comptime assert _has_blackwell_tcgen05(), (
+    comptime assert current_accelerator()._has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
         " (sm_100a, sm_101a) hardware."
     )
-
-
-struct TensorMemory(TrivialRegisterPassable):
-    """A wrapper around tensor memory allocated for tcgen05 instructions."""
-
-    var ptr: Pointer[UInt32, MutUntrackedOrigin, address_space=.SHARED]
-    """Pointer to the tensor memory address."""
-
-    var num_cols: UInt32
-    """The number of columns in the tensor memory."""
-
-    @inline(.always)
-    def __init__(out self, num_cols: UInt32):
-        """Initialize the TensorMemory struct.
-
-        Args:
-            num_cols: The number of columns to allocate.
-        """
-        # Bitcast to avoid `cannot implicitly convert` error.
-        self.ptr = (
-            external_memory[UInt32, address_space=.SHARED, alignment=16]()
-            .unsafe_bitcast[UInt32]()
-            .unsafe_origin_cast[MutUntrackedOrigin]()
-        )
-        self.num_cols = num_cols
 
 
 @inline(.nodebug)
@@ -205,7 +180,7 @@ def tcgen05_ld[
         (repeat * bits * datapaths) // (32 * 32),
     )
 
-    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime shape_str = String(t"{datapaths}x{bits}")
     comptime num_str = String(repeat)
     comptime pack_str = ".pack::16b" if pack else ""
     comptime constraints_str = (
@@ -214,7 +189,7 @@ def tcgen05_ld[
     comptime output_args_str = "{" + _str_iota[
         width, prefix="$", sep=","
     ]() + "}"
-    comptime addr_str = "[$" + String(width) + "]"
+    comptime addr_str = String(t"[${width}]")
 
     @inline(.nodebug)
     def call_ld_intrinsic[
@@ -374,13 +349,13 @@ def tcgen05_st[
         " * m) // (32 * 32)."
     )
 
-    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime shape_str = String(t"{datapaths}x{bits}")
     comptime num_str = String(repeat)
     comptime pack_str = ".unpack::16b" if pack else ""
     comptime constraints_str = (
         _get_nvtx_register_constraint[dtype]() + ","
     ) * Int(width) + "r"
-    comptime addr_str = "[$" + String(Int(width)) + "]"
+    comptime addr_str = String(t"[${Int(width)}]")
     comptime input_args_str = "{" + _str_iota[
         Int(width), prefix="$", sep=","
     ]() + "}"

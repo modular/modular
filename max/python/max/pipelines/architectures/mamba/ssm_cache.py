@@ -115,14 +115,17 @@ class SSMStateCache:
 
     @property
     def num_free_slots(self) -> int:
+        """The slots no request holds."""
         return len(self._free_slots)
 
     @property
     def num_active_slots(self) -> int:
+        """The slots a live request holds."""
         return len(self._request_to_slot)
 
     @property
     def max_slots(self) -> int:
+        """The number of slots the cache allocates."""
         return self._max_slots
 
     def claim(self, request_id: RequestID) -> int:
@@ -158,6 +161,7 @@ class SSMStateCache:
         self._free_slots.add(slot)
 
     def contains(self, request_id: RequestID) -> bool:
+        """Whether ``request_id`` holds a slot."""
         return request_id in self._request_to_slot
 
     def has_valid_state(self, request_id: RequestID) -> bool:

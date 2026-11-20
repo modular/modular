@@ -36,11 +36,25 @@ from max.gpu import (
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import fence_mbarrier_init
-from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
+from max.gpu.primitives.cluster import (
+    block_rank_in_cluster,
+    cluster_arrive_relaxed,
+    cluster_sync,
+    cluster_wait,
+)
+from max.gpu.compute.arch.tcgen05 import (
+    tcgen05_alloc,
+    tcgen05_dealloc,
+    tcgen05_release_allocation_lock,
+)
 from layout import Coord
 from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    attn_tmem_addr,
     elect,
     kv_sub_tile_rows,
     o_store_tma_blocks_per_op,
@@ -64,7 +78,6 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from .barriers import Depth512MBars
 from .config import Depth512SM100Config
@@ -260,6 +273,15 @@ struct SM100MHADepth512[
 
         # ---- Initialization (per-CTA, then cluster sync) ----------------
 
+        # The pair-CTA `tcgen05.alloc` lowers to a handshake on an mbarrier in
+        # both CTAs' reserved SMEM, which the driver initializes before the
+        # kernel body runs. Nothing in the body orders that init before the
+        # peer's arrive, so compute-sanitizer racecheck reports a race unless a
+        # cluster barrier precedes the alloc. A full `cluster_sync()` here
+        # costs 1-4% on prefill (every CTA pays a round trip before barrier
+        # init); splitting it costs nothing measurable, because only the
+        # allocating warp waits, and the alloc already waits for the peer.
+        cluster_arrive_relaxed()
         var warp_idx = UInt32(warp_id[broadcast=True]())
         match warp_idx:
             case 0:
@@ -267,6 +289,13 @@ struct SM100MHADepth512[
                 Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](
                     smem.mbar_base()
                 ).init(lane_idx=Int32(thread_idx.x))
+            case 1:
+                # TMEM allocation (pair-CTA cooperative).
+                cluster_wait()
+                tcgen05_alloc[Int32(Self.cta_group)](
+                    smem.tmem_addr_ptr(),
+                    UInt32(Self.config.sm100_tmem_cols),
+                )
             case 2:
                 var e = elect()
                 if e != 0:
@@ -275,236 +304,257 @@ struct SM100MHADepth512[
                     k_tma_op.prefetch_descriptor()
                 if e != 0:
                     v_tma_op.prefetch_descriptor()
+            case _:
+                pass
 
+        if warp_idx != 1:
+            cluster_wait()
         fence_mbarrier_init()
         cluster_sync()
 
-        # Read the TMEM base once and carry it in a register to every consumer
-        # warp (softmax/correction/mma), matching `SM100MHA2Q`.
-        var tmem_addr = attn_tmem_addr[cluster_size=Self.cta_group]()
-
-        # ---- Warp dispatch -----------------------------------------------
+        # Read the TMEM base from SMEM EXACTLY ONCE here, where the prologue
+        # `cluster_sync()` (preceded by `tcgen05_alloc`'s SMEM store +
+        # MEMBAR.ALL) has provably published it, and carry it in a register to
+        # every consumer warp (softmax/correction/mma) as an explicit argument.
+        # Do NOT let the consumers re-read `smem.tmem_addr_ptr()` in their
+        # bodies: SASS showed the in-body re-reads (the P@V O-operand load deep
+        # in the MMA loop) gated only on KV-pipeline barriers, not on the alloc
+        # publish, so under SM co-residency with the TP `allreduce_1stage` grid
+        # (graph capture) a re-read could observe a stale/pre-alloc slot value
+        # -> garbage TMEM base -> invalid `UTCHMMA` operand ->
+        # CUDA_ERROR_ILLEGAL_INSTRUCTION. Reading once post-barrier and passing
+        # by register (matches the proven `SM100MHA2Q` FA4 structure) removes
+        # every in-body slot reload. Value is identical to the old per-warp
+        # reads (same published base), so single-shot is bit-identical.
+        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
 
         var cta_rank = UInt32(block_rank_in_cluster() % 2)
 
-        if warp_idx < 4:
-            # Softmax warp group (warps 0-3, 128 threads).
-            warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=True,
-            ](batch_size, max_seq_len, valid_length, partition)
+        with PDL():
+            # ---- Warp dispatch -----------------------------------------------
 
-            if not seq_info.is_valid():
-                return
+            if warp_idx < 4:
+                # Softmax warp group (warps 0-3, 128 threads).
+                warpgroup_reg_alloc[num_reg_softmax]()
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.PairBM_mask,
+                    Self.num_q_heads
+                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                    pair_cta=True,
+                ](batch_size, max_seq_len, valid_length, partition)
 
-            var pos: PositionSummary = PositionSummary.create[
-                ragged=Self.ragged,
-                _is_cache_length_accurate=Self._is_cache_length_accurate,
-            ](
-                kv_lut,
-                seq_info,
-                num_keys_arg,
-                kv_input_row_offsets,
-                max_seq_len,
-            )
+                if not seq_info.is_valid():
+                    return
 
-            # Compute per-CTA output write parameters.
-            var gmem_row = Self.PositionType.get_q_gmem_row[ragged=Self.ragged](
-                seq_info, max_seq_len.as_uint32()
-            )
-            var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM_eff)
-            var out_head_idx = seq_info.head_idx
-            var num_output_rows = min(
-                Int32(seq_info.seq_len)
-                - Int32(seq_info.prompt_offset)
-                - Int32(cta_rank) * Int32(Self.BM_eff),
-                Int32(Self.BM_eff),
-            )
-
-            depth512_softmax[
-                Self.MaskType,
-                Self.qkv_type,
-                Self.output_type,
-                Self.config,
-                Self.page_size,
-            ](
-                smem,
-                tmem_addr,
-                seq_info.prompt_idx,
-                pos.score_row,
-                pos.num_keys,
-                mask,
-                scale.cast[Self.accum_type](),
-                ragged_tma_store,
-                num_output_rows,
-                out_head_idx,
-                out_row_idx,
-                sink_weights,
-            )
-
-        elif warp_idx < 8:
-            # Correction warp group (warps 4-7, 128 threads).
-            warpgroup_reg_alloc[num_reg_correction]()
-
-            var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=True,
-            ](batch_size, max_seq_len, valid_length, partition)
-            if not seq_info.is_valid():
-                return
-            var pos: PositionSummary = PositionSummary.create[
-                ragged=Self.ragged,
-                _is_cache_length_accurate=Self._is_cache_length_accurate,
-            ](
-                kv_lut,
-                seq_info,
-                num_keys_arg,
-                kv_input_row_offsets,
-                max_seq_len,
-            )
-            depth512_correction[
-                Self.MaskType,
-                Self.qkv_type,
-                Self.config,
-                Self.page_size,
-            ](
-                smem,
-                tmem_addr,
-                seq_info.prompt_idx,
-                pos.score_row,
-                pos.num_keys,
-                mask,
-            )
-
-        elif warp_idx == 8:
-            # MMA warp (single warp; leader issues pair-CTA MMA, peer
-            # early-returns inside depth512_mma).
-            warpgroup_reg_dealloc[num_reg_other]()
-
-            var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=True,
-            ](batch_size, max_seq_len, valid_length, partition)
-
-            if not seq_info.is_valid():
-                return
-            var pos: PositionSummary = PositionSummary.create[
-                ragged=Self.ragged,
-                _is_cache_length_accurate=Self._is_cache_length_accurate,
-            ](
-                kv_lut,
-                seq_info,
-                num_keys_arg,
-                kv_input_row_offsets,
-                max_seq_len,
-            )
-            depth512_mma[
-                Self.MaskType,
-                Self.qkv_type,
-                Self.config,
-                Self.page_size,
-            ](
-                smem,
-                tmem_addr,
-                seq_info.prompt_idx,
-                pos.score_row,
-                pos.num_keys,
-                mask,
-            )
-
-        elif warp_idx == 9:
-            # Load warp (single warp; both CTAs issue TMA multicast).
-            warpgroup_reg_dealloc[num_reg_other]()
-
-            var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=True,
-            ](batch_size, max_seq_len, valid_length, partition)
-
-            if not seq_info.is_valid():
-                return
-            var pos: PositionSummary = PositionSummary.create[
-                ragged=Self.ragged,
-                _is_cache_length_accurate=Self._is_cache_length_accurate,
-            ](
-                kv_lut,
-                seq_info,
-                num_keys_arg,
-                kv_input_row_offsets,
-                max_seq_len,
-            )
-            # Hoist the pair-CTA rank branch to dispatch to two
-            # comptime specializations of `depth512_load` (is_leader=
-            # True for the even CTA, False for the odd one). Mirrors
-            # the pattern at `sm100/kernel.mojo:447-483`.
-            if cta_rank == UInt32(0):
-                depth512_load[
-                    q_tile_shape=q_tma_op.tile_shape,
-                    q_desc_shape=q_tma_op.desc_shape,
-                    KVLUTType=Self.KVLUTType,
-                    MaskType=Self.MaskType,
-                    qkv_dtype=Self.qkv_type,
-                    config=Self.config,
-                    ValidLengthType=Self.ValidLengthType,
+                var pos: PositionSummary = PositionSummary.create[
+                    ragged=Self.ragged,
                     _is_cache_length_accurate=Self._is_cache_length_accurate,
-                    MaxSeqLenType=Self.MaxSeqLenType,
-                    is_leader=True,
+                ](
+                    kv_lut,
+                    seq_info,
+                    num_keys_arg,
+                    kv_input_row_offsets,
+                    max_seq_len,
+                )
+
+                # Compute per-CTA output write parameters.
+                var gmem_row = Self.PositionType.get_q_gmem_row[
+                    ragged=Self.ragged
+                ](seq_info, max_seq_len.as_uint32())
+                var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM_eff)
+                var out_head_idx = seq_info.head_idx
+                var num_output_rows = min(
+                    Int32(seq_info.seq_len)
+                    - Int32(seq_info.prompt_offset)
+                    - Int32(cta_rank) * Int32(Self.BM_eff),
+                    Int32(Self.BM_eff),
+                )
+
+                depth512_softmax[
+                    Self.MaskType,
+                    Self.qkv_type,
+                    Self.output_type,
+                    Self.config,
+                    Self.page_size,
                 ](
                     smem,
+                    tmem_addr,
+                    seq_info.prompt_idx,
                     pos.score_row,
                     pos.num_keys,
-                    seq_info,
-                    max_seq_len,
                     mask,
-                    q_tma_op,
-                    k_tma_op,
-                    v_tma_op,
-                    kv_lut,
+                    scale.cast[Self.accum_type](),
+                    ragged_tma_store,
+                    num_output_rows,
+                    out_head_idx,
+                    out_row_idx,
+                    sink_weights,
                 )
+
+            elif warp_idx < 8:
+                # Correction warp group (warps 4-7, 128 threads).
+                warpgroup_reg_alloc[num_reg_correction]()
+
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.PairBM_mask,
+                    Self.num_q_heads
+                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                    pair_cta=True,
+                ](batch_size, max_seq_len, valid_length, partition)
+                if not seq_info.is_valid():
+                    return
+                var pos: PositionSummary = PositionSummary.create[
+                    ragged=Self.ragged,
+                    _is_cache_length_accurate=Self._is_cache_length_accurate,
+                ](
+                    kv_lut,
+                    seq_info,
+                    num_keys_arg,
+                    kv_input_row_offsets,
+                    max_seq_len,
+                )
+                depth512_correction[
+                    Self.MaskType,
+                    Self.qkv_type,
+                    Self.config,
+                    Self.page_size,
+                ](
+                    smem,
+                    tmem_addr,
+                    seq_info.prompt_idx,
+                    pos.score_row,
+                    pos.num_keys,
+                    mask,
+                )
+
+            elif warp_idx == 8:
+                # MMA warp (single warp; leader issues pair-CTA MMA, peer
+                # early-returns inside depth512_mma).
+                warpgroup_reg_dealloc[num_reg_other]()
+
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.PairBM_mask,
+                    Self.num_q_heads
+                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                    pair_cta=True,
+                ](batch_size, max_seq_len, valid_length, partition)
+
+                if not seq_info.is_valid():
+                    tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
+                    tcgen05_dealloc[Int32(Self.cta_group)](
+                        tmem_addr, UInt32(Self.config.sm100_tmem_cols)
+                    )
+                    return
+                var pos: PositionSummary = PositionSummary.create[
+                    ragged=Self.ragged,
+                    _is_cache_length_accurate=Self._is_cache_length_accurate,
+                ](
+                    kv_lut,
+                    seq_info,
+                    num_keys_arg,
+                    kv_input_row_offsets,
+                    max_seq_len,
+                )
+                depth512_mma[
+                    Self.MaskType,
+                    Self.qkv_type,
+                    Self.config,
+                    Self.page_size,
+                ](
+                    smem,
+                    tmem_addr,
+                    seq_info.prompt_idx,
+                    pos.score_row,
+                    pos.num_keys,
+                    mask,
+                )
+
+            elif warp_idx == 9:
+                # Load warp (single warp; both CTAs issue TMA multicast).
+                warpgroup_reg_dealloc[num_reg_other]()
+
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.PairBM_mask,
+                    Self.num_q_heads
+                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                    pair_cta=True,
+                ](batch_size, max_seq_len, valid_length, partition)
+
+                if not seq_info.is_valid():
+                    return
+                var pos: PositionSummary = PositionSummary.create[
+                    ragged=Self.ragged,
+                    _is_cache_length_accurate=Self._is_cache_length_accurate,
+                ](
+                    kv_lut,
+                    seq_info,
+                    num_keys_arg,
+                    kv_input_row_offsets,
+                    max_seq_len,
+                )
+                # Hoist the pair-CTA rank branch to dispatch to two
+                # comptime specializations of `depth512_load` (is_leader=
+                # True for the even CTA, False for the odd one). Mirrors
+                # the pattern at `sm100/kernel.mojo:447-483`.
+                if cta_rank == UInt32(0):
+                    depth512_load[
+                        q_tile_shape=q_tma_op.tile_shape,
+                        q_desc_shape=q_tma_op.desc_shape,
+                        KVLUTType=Self.KVLUTType,
+                        MaskType=Self.MaskType,
+                        qkv_dtype=Self.qkv_type,
+                        config=Self.config,
+                        ValidLengthType=Self.ValidLengthType,
+                        _is_cache_length_accurate=Self._is_cache_length_accurate,
+                        MaxSeqLenType=Self.MaxSeqLenType,
+                        is_leader=True,
+                    ](
+                        smem,
+                        pos.score_row,
+                        pos.num_keys,
+                        seq_info,
+                        max_seq_len,
+                        mask,
+                        q_tma_op,
+                        k_tma_op,
+                        v_tma_op,
+                        kv_lut,
+                    )
+                else:
+                    depth512_load[
+                        q_tile_shape=q_tma_op.tile_shape,
+                        q_desc_shape=q_tma_op.desc_shape,
+                        KVLUTType=Self.KVLUTType,
+                        MaskType=Self.MaskType,
+                        qkv_dtype=Self.qkv_type,
+                        config=Self.config,
+                        ValidLengthType=Self.ValidLengthType,
+                        _is_cache_length_accurate=Self._is_cache_length_accurate,
+                        MaxSeqLenType=Self.MaxSeqLenType,
+                        is_leader=False,
+                    ](
+                        smem,
+                        pos.score_row,
+                        pos.num_keys,
+                        seq_info,
+                        max_seq_len,
+                        mask,
+                        q_tma_op,
+                        k_tma_op,
+                        v_tma_op,
+                        kv_lut,
+                    )
+
             else:
-                depth512_load[
-                    q_tile_shape=q_tma_op.tile_shape,
-                    q_desc_shape=q_tma_op.desc_shape,
-                    KVLUTType=Self.KVLUTType,
-                    MaskType=Self.MaskType,
-                    qkv_dtype=Self.qkv_type,
-                    config=Self.config,
-                    ValidLengthType=Self.ValidLengthType,
-                    _is_cache_length_accurate=Self._is_cache_length_accurate,
-                    MaxSeqLenType=Self.MaxSeqLenType,
-                    is_leader=False,
-                ](
-                    smem,
-                    pos.score_row,
-                    pos.num_keys,
-                    seq_info,
-                    max_seq_len,
-                    mask,
-                    q_tma_op,
-                    k_tma_op,
-                    v_tma_op,
-                    kv_lut,
-                )
-
-        else:
-            # Spare warps 10-11 (no-op). 24 is the floor for
-            # `setmaxnreg.dec` on SM90+ — drop these warps' allocation
-            # to the minimum so the active WGs claim their share of the
-            # SM register file.
-            warpgroup_reg_dealloc[24]()
+                # Spare warps 10-11 (no-op). 24 is the floor for
+                # `setmaxnreg.dec` on SM90+ — drop these warps' allocation
+                # to the minimum so the active WGs claim their share of the
+                # SM register file.
+                warpgroup_reg_dealloc[24]()
 
     @staticmethod
     @inline(.always)
@@ -516,9 +566,6 @@ struct SM100MHADepth512[
     ) -> TileMaskStatus:
         return mask.status(
             seq_id,
-            Index[dtype=DType.int32](
-                Int(score_row),
-                Int(kv_row),
-            ),
-            Index[dtype=DType.int32](Self.PairBM_mask, Self.BN),
+            (Int(score_row), Int(kv_row)),
+            (Int(Self.PairBM_mask), Int(Self.BN)),
         )

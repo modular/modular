@@ -50,13 +50,12 @@ the mask types the SM100 native prefill kernel accepts, so the `comptime if`
 guard blocks elaboration of the whole body on a non-AMD build, not just its
 execution (mirrors `test_mla_decode_sparse_kv_fp8_gather.mojo`). The native
 SM100 sparse prefill path is already covered by
-`test_mla_prefill_sparse_kv_fp8.mojo` and friends.
+`test_mla_decode_sparse_skip_masked_tiles.mojo` and friends.
 """
 
 from std.math import ceildiv, exp, isnan
-from std.sys import default_accelerator
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
@@ -65,17 +64,17 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
-from nn.attention.gpu.mla import flare_mla_decoding
+from layout.layout import Layout
+from nn.attention.gpu.mla import AMDMLA, flare_mla_decoding
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
     _amd_sparse_mla_gather_kv_rows,
     mla_prefill_branch_sparse_fp8,
+    AMDMLAGraph,
 )
 from nn.attention.mha_mask import NullMask, PaddingMask
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_raises, assert_true
-from std.utils import IndexList
 from std.utils.numerics import nan
 
 comptime KV_LATENT_DIM = 512
@@ -175,7 +174,7 @@ def _run_case[
     var max_pages_per_batch = ceildiv(cache_len, PAGE_SIZE)
     var total_pages = batch_size * max_pages_per_batch
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -373,7 +372,7 @@ def _run_case[
     )
     var q_padded = TileTensor(
         q_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (total_q, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 Idx[num_heads * K_CACHE_DIM],
@@ -385,7 +384,7 @@ def _run_case[
     )
     var out_padded = TileTensor(
         out_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (total_q, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],
@@ -396,7 +395,7 @@ def _run_case[
         ),
     )
     var topk_lengths_tt = TileTensor(
-        topk_lengths_device.unsafe_ptr().bitcast[UInt32](),
+        topk_lengths_device.unsafe_ptr().unsafe_bitcast[UInt32](),
         row_major(total_q),
     )
     var padding_mask = PaddingMask(topk_lengths_tt)
@@ -404,6 +403,7 @@ def _run_case[
     flare_mla_decoding[
         config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
         decoding_warp_split_k=False,
+        kernels=AMDMLA,
     ](
         out_padded,
         q_padded,
@@ -424,8 +424,10 @@ def _run_case[
     # `bi*max_pages_per_batch + p`), so a plain row-major reshape over
     # `blocks_device` is a dense `[batch, num_keys_padded, 1, depth]` view.
     var q_last_padded = TileTensor(
-        q_device.unsafe_ptr() + (seq_q_len - 1) * num_heads * K_CACHE_DIM,
-        TileLayout(
+        q_device.unsafe_ptr().unsafe_offset(
+            (seq_q_len - 1) * num_heads * K_CACHE_DIM
+        ),
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 seq_q_len * num_heads * K_CACHE_DIM,
@@ -437,7 +439,7 @@ def _run_case[
     )
     var out_red_padded = TileTensor(
         out_red_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],
@@ -450,6 +452,7 @@ def _run_case[
     flare_mla_decoding[
         config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
         decoding_warp_split_k=False,
+        kernels=AMDMLA,
     ](
         out_red_padded,
         q_last_padded,
@@ -619,36 +622,16 @@ def _check[
                     if _mismatch(g, r):
                         num_bad += 1
         print(
-            "  [",
-            name,
-            "] seq=",
-            bi,
-            " cache_offset=",
-            cache_offsets_list[bi],
-            " last_topk_len=",
-            min(indices_stride, cache_offsets_list[bi] + seq_q_len),
-            " max_abs=",
-            b_max_abs,
-            " max_rel=",
-            b_max_rel,
+            t"  [ {name} ] seq= {bi}  cache_offset= {cache_offsets_list[bi]} "
+            t" last_topk_len="
+            t" {min(indices_stride, cache_offsets_list[bi] + seq_q_len)} "
+            t" max_abs= {b_max_abs}  max_rel= {b_max_rel}"
         )
 
     print(
-        "[",
-        name,
-        "] GREEN (gather) overall max_abs=",
-        max_abs,
-        " max_rel=",
-        max_rel,
-        " mismatches=",
-        num_bad,
-        " / ",
-        out_size,
-        " (atol=",
-        ATOL,
-        " rtol=",
-        RTOL,
-        ")",
+        t"[ {name} ] GREEN (gather) overall max_abs= {max_abs}  max_rel="
+        t" {max_rel}  mismatches= {num_bad}  /  {out_size}  (atol= {ATOL} "
+        t" rtol= {RTOL} )"
     )
     # RED control for the comparison: a NaN-poisoned output must count.
     got[0] = nan[.bfloat16]()
@@ -684,14 +667,8 @@ def _check[
                     red_num_bad += 1
 
     print(
-        "[",
-        name,
-        "] RED (dense) max_abs=",
-        red_max_abs,
-        " mismatches=",
-        red_num_bad,
-        " / ",
-        out_red_size,
+        t"[ {name} ] RED (dense) max_abs= {red_max_abs}  mismatches="
+        t" {red_num_bad}  /  {out_red_size}"
     )
     assert_true(
         red_num_bad > 0,
@@ -735,7 +712,7 @@ def _check_attn_sink_guard(ctx: DeviceContext) raises:
         num_heads=KV_NUM_HEADS, head_size=K_CACHE_DIM, is_mla=True
     )
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -895,20 +872,20 @@ def _check_attn_sink_guard(ctx: DeviceContext) raises:
         scalar_args_dev.unsafe_ptr(), row_major[3]()
     )
 
-    @__parameter
     @always_inline
-    def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[dtype, width]:
+    def kv_input_fn[
+        width: Int
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
-        return kv_in_tt.load[width=width](Coord(coords))
+        return kv_in_tt.load[width=width](coords)
 
     with assert_raises(contains="attention sink"):
         mla_prefill_branch_sparse_fp8[
             m_scale_granularity=1,
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
-            kv_input_fn=kv_input_fn,
             indices_stride=indices_stride,
-            target="gpu",
+            kernels=AMDMLAGraph,
         ](
             out_tt,
             q_tt,
@@ -924,6 +901,7 @@ def _check_attn_sink_guard(ctx: DeviceContext) raises:
             w_uv_tt,
             w_uv_scale_tt,
             scalar_args_buf_tt,
+            kv_input_fn,
             ctx,
             d_indices_device.unsafe_ptr().as_unsafe_any_origin(),
             topk_lengths_device.unsafe_ptr().as_unsafe_any_origin(),
@@ -959,7 +937,7 @@ def main() raises:
     # code does NOT block elaboration of that code on the other arch (only
     # a real if/else does), so the whole body must be nested inside the
     # `comptime if` below. The native SM100 sparse prefill path is already
-    # covered by test_mla_prefill_sparse_kv_fp8.mojo and friends.
+    # covered by test_mla_decode_sparse_skip_masked_tiles.mojo and friends.
     comptime if default_accelerator().is_amd_gpu():
         with DeviceContext() as ctx:
             # GLM-5.3 shape: 8 heads, kv_lora_rank 512, qk_rope 64

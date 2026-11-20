@@ -27,12 +27,12 @@ comptime _AssertMode[
 @inline(.always)
 def check_bounds[
     cpu_default: Bool = True,
-](idx: Some[Indexer], size: Int, location: Optional[SourceLocation] = None):
+](idx: Int, *, length: Int, location: Optional[SourceLocation] = None):
     """Bounds check which is on by default for CPU, and off by default for GPU.
 
     You can turn off CPU bounds checks for a specific collection by setting
-    `check_bounds[cpu_default=False](idx, size, loc)`, but turn them on for
-    tests with:
+    `check_bounds[cpu_default=False](idx, length=len(self))`, but turn them
+    on for tests with:
 
     ```bash
     mojo build -D ASSERT=all main.mojo
@@ -52,18 +52,18 @@ def check_bounds[
 
     Args:
         idx: The index for the bounds check.
-        size: The size of the container, and first index that would be out of range.
+        length: The length of the container, and first index that would be out of range.
         location: `SourceLocation` shown on assert error. Defaults to showing the callsite
             two levels of function calls above this one. So if `check_bounds` is called
             inside a `__getitem__` method, it will show the source location where
             the incorrect index was provided.
     """
     debug_assert[assert_mode=_AssertMode[cpu_default]](
-        UInt(index(idx)) < UInt(size),
+        UInt(idx) < UInt(length),
         "index ",
-        index(idx),
+        idx,
         " is out of bounds, valid range is 0 to ",
-        size - 1,
+        length - 1,
         location=location.or_else(call_location[inline_count=2]()),
     )
 

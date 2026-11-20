@@ -54,20 +54,21 @@ def parameterized_on_cuda() -> Int:
 
 
 @inline(.always)
-def _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
+def _verify_parameterized_on_cuda(asm: StringSpan) raises -> None:
     assert_true("test_cuda_target_parameterized" in asm)
 
     # Now make sure that we have something like this:
     #     st.param.b64 	[func_retval0], 42;
     # PTX ISA 8.3+ spells the function-param state space explicitly, so newer
     # targets emit `st.param::func.b64` for the same store.
-    var instruction_start_loc = asm.find("st.param.b64")
-    if instruction_start_loc < 0:
-        instruction_start_loc = asm.find("st.param::func.b64")
-    assert_true(instruction_start_loc >= 0)  # Assert it's present
-    var instruction_end_loc = asm.find(";", instruction_start_loc)
-    assert_true(instruction_end_loc >= 0)
-    var instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
+    var store = asm.find("st.param.b64")
+    if not store:
+        store = asm.find("st.param::func.b64")
+    __guard case .Some(start) = store else:
+        raise Error("expected a `st.param` store in the assembly")
+    __guard case .Some(end) = asm.find(";", start) else:
+        raise Error("expected a `;` after the `st.param` store")
+    var instruction_str = asm[byte=start:end]
     # Make sure 42 appears somewhere in the instruction
     assert_true("42" in instruction_str)
 
@@ -96,7 +97,7 @@ def hello_mojo():
 
 
 @inline(.always)
-def _verify_hello(asm: StringSlice) raises -> None:
+def _verify_hello(asm: StringSpan) raises -> None:
     assert_true("test_cuda_target_hello_mojo" in asm)
     assert_true("vprintf" in asm)
 
@@ -116,26 +117,26 @@ def test_hello_mojo_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def erf_elementwise(
-    buf: MutPointer[Float32, MutAnyOrigin], len: Int, ctx: DeviceContext
-) raises:
+def erf_elementwise[
+    buf_origin: MutOrigin
+](buf: MutPointer[Float32, buf_origin], len: Int, ctx: DeviceContext) raises:
     # Each thread will process 4 * simd_width elements.
     comptime granularity = 4 * simd_width_of[DType.float32]()
     var tid = granularity * global_idx.x
 
     @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        var offset = tid + Int(idx[0].value())
+        var offset = tid + Int(idx[0])
         if offset >= len:
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[simd_width=simd_width_of[DType.float32](), target="gpu"](
+    elementwise[simd_width=simd_width_of[DType.float32]()](
         func, Coord(granularity), ctx
     )
 
 
-def _verify_erf_elementwise(asm: StringSlice) raises:
+def _verify_erf_elementwise(asm: StringSpan) raises:
     assert_true("test_cuda_target_erf_elementwis" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.x" in asm)
@@ -144,14 +145,14 @@ def _verify_erf_elementwise(asm: StringSlice) raises:
 
 def test_erf_elementwise_sm80() raises:
     var asm = _compile_code[
-        erf_elementwise, target=get_gpu_target["sm_80"]()
+        erf_elementwise[MutUntrackedOrigin], target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
 
 def test_erf_elementwise_sm90() raises:
     var asm = _compile_code[
-        erf_elementwise, target=get_gpu_target["sm_90"]()
+        erf_elementwise[MutUntrackedOrigin], target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
@@ -161,7 +162,9 @@ def test_erf_elementwise_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def erf_kernel(buf: MutPointer[Float32, MutAnyOrigin], len: Int):
+def erf_kernel[
+    buf_origin: MutOrigin
+](buf: MutPointer[Float32, buf_origin], len: Int):
     var tid = thread_idx.x + block_dim.y * block_idx.y
 
     if tid >= len:
@@ -171,7 +174,7 @@ def erf_kernel(buf: MutPointer[Float32, MutAnyOrigin], len: Int):
 
 
 @inline(.always)
-def _verify_erf_kernel(asm: StringSlice) raises -> None:
+def _verify_erf_kernel(asm: StringSpan) raises -> None:
     assert_true("erf_kernel" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.y" in asm)
@@ -179,12 +182,16 @@ def _verify_erf_kernel(asm: StringSlice) raises -> None:
 
 
 def test_erf_kernel_sm80() raises:
-    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_80"]()]().asm
+    var asm = _compile_code[
+        erf_kernel[MutUntrackedOrigin], target=get_gpu_target["sm_80"]()
+    ]().asm
     _verify_erf_kernel(asm)
 
 
 def test_erf_kernel_sm90() raises:
-    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_90"]()]().asm
+    var asm = _compile_code[
+        erf_kernel[MutUntrackedOrigin], target=get_gpu_target["sm_90"]()
+    ]().asm
     _verify_erf_kernel(asm)
 
 
@@ -200,7 +207,7 @@ def test_shared_stack_allocation() -> (
 
 
 @inline(.always)
-def _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
+def _verify_shared_stack_allocation(asm: StringSpan) raises -> None:
     assert_true("test_cuda_target_test_shared_" in asm)
     assert_true(".shared .align 8 .b8" in asm)
 
@@ -229,7 +236,7 @@ def test_barrier():
 
 
 @inline(.always)
-def _verify_barrier(asm: StringSlice) raises -> None:
+def _verify_barrier(asm: StringSpan) raises -> None:
     assert_true("barrier" in asm)
     assert_true("bar.sync 	0" in asm)
 
@@ -253,10 +260,12 @@ def test_barrier_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def gemm(
-    c: MutPointer[Float32, MutAnyOrigin],
-    a: ImmPointer[Float32, ImmutAnyOrigin],
-    b: ImmPointer[Float32, ImmutAnyOrigin],
+def gemm[
+    c_origin: MutOrigin, a_origin: ImmOrigin, b_origin: ImmOrigin
+](
+    c: MutPointer[Float32, c_origin],
+    a: ImmPointer[Float32, a_origin],
+    b: ImmPointer[Float32, b_origin],
     m: Int,
     n: Int,
     k: Int,
@@ -277,11 +286,11 @@ def gemm(
     # Utilities for accessing flattened matrices.
     @inline(.always)
     def get_a(row: Int, col: Int) {imm} -> Float32:
-        return a.load(row + m * col)
+        return a.unsafe_load(row + m * col)
 
     @inline(.always)
     def get_b(row: Int, col: Int) {imm} -> Float32:
-        return b.load(row * n + col)
+        return b.unsafe_load(row * n + col)
 
     @inline(.always)
     def set_c(row: Int, col: Int, val: Float32) {imm}:
@@ -337,10 +346,10 @@ def gemm(
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
         if row < m and col + out_idx < n:
-            set_c(row, col + out_idx, c_reg.load(out_idx))
+            set_c(row, col + out_idx, c_reg.unsafe_load(out_idx))
 
 
-def _verify_gemm(asm: StringSlice) raises:
+def _verify_gemm(asm: StringSpan) raises:
     assert_true("gemm" in asm)
     assert_true(".shared .align 4 .b8" in asm)
     assert_true("st.shared.b32" in asm)
@@ -348,12 +357,18 @@ def _verify_gemm(asm: StringSlice) raises:
 
 
 def test_gemm_sm80() raises:
-    var asm = _compile_code[gemm, target=get_gpu_target["sm_80"]()]().asm
+    var asm = _compile_code[
+        gemm[MutUntrackedOrigin, ImmUntrackedOrigin, ImmUntrackedOrigin],
+        target=get_gpu_target["sm_80"](),
+    ]().asm
     _verify_gemm(asm)
 
 
 def test_gemm_sm90() raises:
-    var asm = _compile_code[gemm, target=get_gpu_target["sm_90"]()]().asm
+    var asm = _compile_code[
+        gemm[MutUntrackedOrigin, ImmUntrackedOrigin, ImmUntrackedOrigin],
+        target=get_gpu_target["sm_90"](),
+    ]().asm
     _verify_gemm(asm)
 
 
@@ -373,7 +388,7 @@ def test_warp_shuffle_up(val: Float32) -> Float32:
 
 
 @inline(.always)
-def _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
+def _verify_warp_shuffle_up(asm: StringSpan) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.up.b32" in asm)
 
@@ -403,7 +418,7 @@ def test_warp_shuffle_down(val: Int32) -> Int32:
 
 
 @inline(.always)
-def _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
+def _verify_warp_shuffle_down(asm: StringSpan) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.down.b32" in asm)
 
@@ -438,7 +453,7 @@ def warp_sum_reduce(val: Float32) -> Float32:
 
 
 @inline(.always)
-def _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
+def _verify_warp_sum_reduce(asm: StringSpan) raises -> None:
     assert_true("warp_sum_" in asm)
     assert_true("shfl.sync.bfly.b32" in asm)
 
@@ -475,13 +490,13 @@ def block_reduce(val: Float32) -> Float32:
     barrier()
 
     return warp_sum_reduce(
-        shared.load(lane) if thread_idx.x
+        shared.unsafe_load(lane) if thread_idx.x
         < ufloordiv(block_dim.x, WARP_SIZE) else 0
     )
 
 
 @inline(.always)
-def _verify_block_reduce(asm: StringSlice) raises -> None:
+def _verify_block_reduce(asm: StringSpan) raises -> None:
     assert_true("block_reduce" in asm)
     assert_true("mov.u32" in asm)
 

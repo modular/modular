@@ -681,7 +681,8 @@ def _explain_divergence(
     if call.excinfo is None:
         return
     if not isinstance(
-        call.excinfo.value, (MissingArtifactError, ArtifactBodyMismatch)
+        call.excinfo.value,
+        (MissingArtifactError, ArtifactBodyMismatch),
     ):
         return
 

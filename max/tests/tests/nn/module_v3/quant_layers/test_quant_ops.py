@@ -22,21 +22,34 @@ layer-level lazy-trace tests.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from max.driver import CPU
+from max import functional as F
+from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPConfig
-from max.nn.quant_config import QuantConfig, QuantFormat
-from max.pipelines.architectures.deepseekV3_modulev3.layers import quant_ops
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.graph import DeviceRef, Graph
+from max.nn._graph_ops import ep as ep_kernels
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockActivation,
     FP8BlockTensor,
+    MXFP4Quantizer,
+    MXFP4Tensor,
+    MXFP8Activation,
+    MXFP8Quantizer,
+    MXFP8Tensor,
     NVFP4Activation,
     NVFP4Tensor,
+    NVFP4TensorQuantizer,
+    QuantAwareTensor,
 )
+from max.nn.ep_config import EPConfig
+from max.nn.kernels.quant import stack_blockwise_mega_ffn_b
+from max.nn.quant_config import QuantConfig, QuantFormat
+from max.tensor import Tensor, default_dtype
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128
@@ -69,6 +82,33 @@ def test_predicates_separate_fp8_from_nvfp4(
     assert not quant_ops.is_nvfp4_quantized(None)
 
 
+def test_source_is_orthogonal_to_format(
+    nvfp4_quant_config: QuantConfig, nvfp4_fake_quant_config: QuantConfig
+) -> None:
+    """On-the-fly NVFP4 is still NVFP4; only its source differs.
+
+    The format answers what the weight becomes, so both configs say NVFP4.
+    The source answers what the checkpoint holds, and only there do they
+    diverge.
+    """
+    assert quant_ops.is_nvfp4_quantized(nvfp4_quant_config)
+    assert quant_ops.is_nvfp4_quantized(nvfp4_fake_quant_config)
+
+    assert not nvfp4_quant_config.quantizes_on_load
+    assert nvfp4_fake_quant_config.quantizes_on_load
+
+
+def test_storage_dtype_follows_the_source_not_the_format(
+    nvfp4_quant_config: QuantConfig, nvfp4_fake_quant_config: QuantConfig
+) -> None:
+    """A weight quantized on load is bf16 on disk, whatever it becomes."""
+    assert quant_ops.routed_weight_dtype(nvfp4_quant_config) == DType.uint8
+    assert (
+        quant_ops.routed_weight_dtype(nvfp4_fake_quant_config) == DType.bfloat16
+    )
+    assert quant_ops.routed_weight_dtype(None) == DType.bfloat16
+
+
 def test_only_nvfp4_needs_dispatch_scales_and_offsets(
     fp8_quant_config: QuantConfig, nvfp4_quant_config: QuantConfig
 ) -> None:
@@ -80,6 +120,31 @@ def test_only_nvfp4_needs_dispatch_scales_and_offsets(
     assert quant_ops.moe_requires_scales_offsets(nvfp4_quant_config)
     assert not quant_ops.moe_requires_scales_offsets(fp8_quant_config)
     assert not quant_ops.moe_requires_scales_offsets(None)
+
+
+def test_dispatch_predicates_refuse_on_the_fly_weights(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    """EP dispatch refuses a quantize-on-load config.
+
+    The MoE index kernel does not. An on-the-fly NVFP4 weight is an
+    ``NVFP4Tensor``, and the grouped matmul requires the scale offsets.
+    Answering the EP predicate would decide ``from_dispatch``'s unpack
+    arity for weights that are still native precision at dispatch.
+    """
+    with pytest.raises(NotImplementedError, match="quantized on load"):
+        quant_ops.ep_requires_dispatch_scales(nvfp4_fake_quant_config)
+    assert quant_ops.moe_requires_scales_offsets(nvfp4_fake_quant_config)
+
+
+def test_dispatch_predicates_answer_checkpoint_weights(
+    nvfp4_quant_config: QuantConfig, fp8_quant_config: QuantConfig
+) -> None:
+    """Checkpoint-sourced configs still get an ordinary answer."""
+    assert quant_ops.ep_requires_dispatch_scales(nvfp4_quant_config)
+    assert quant_ops.moe_requires_scales_offsets(nvfp4_quant_config)
+    assert not quant_ops.ep_requires_dispatch_scales(fp8_quant_config)
+    assert not quant_ops.ep_requires_dispatch_scales(None)
 
 
 # --------------------------------------------------------------------------- #
@@ -96,7 +161,7 @@ def test_quantized_weight_nvfp4(nvfp4_quant_config: QuantConfig) -> None:
 
         assert isinstance(weight, NVFP4Tensor)
         assert weight.block_size == (1, 16)
-        assert list(weight.data.shape) == [_MOE_DIM, _HIDDEN_DIM // 2]
+        assert list(weight.weight.shape) == [_MOE_DIM, _HIDDEN_DIM // 2]
         assert list(weight.weight_scale.shape) == [_MOE_DIM, _HIDDEN_DIM // 16]
 
 
@@ -120,14 +185,41 @@ def test_quantized_weight_dispatch_by_format(
         )
 
 
+def test_quantized_weight_nvfp4_fake(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    """Fake-quant NVFP4 wraps the logical bf16 weight instead of packed leaves."""
+    # The default dtype is float32 on a CPU host and bfloat16 on a GPU one;
+    # models build under bfloat16.
+    with F.lazy(), default_dtype(DType.bfloat16):
+        weight = quant_ops.quantized_weight(
+            _MOE_DIM, _HIDDEN_DIM, nvfp4_fake_quant_config
+        )
+
+        assert isinstance(weight, NVFP4TensorQuantizer)
+        assert weight.block_size == (1, 16)
+        assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
+        # The dtype the checkpoint holds, not whatever device happens to be
+        # available: this matches what `routed_weight_dtype` promises.
+        assert weight._tensor.dtype == DType.bfloat16
+        assert weight._tensor.dtype == quant_ops.routed_weight_dtype(
+            nvfp4_fake_quant_config
+        )
+
+
 def test_quantized_weight_rejects_unsupported_format(
     nvfp4_quant_config: QuantConfig,
 ) -> None:
-    """Formats this architecture has not wired up are rejected up front."""
-    mxfp4 = dataclasses.replace(nvfp4_quant_config, format=QuantFormat.MXFP4)
+    """Formats this architecture has not wired up are rejected up front.
+
+    MXFP6 stands in for the unregistered case: it is in the same MX family as
+    the formats that *are* wired up, so this also records where the boundary
+    currently sits. Pick another unregistered format if MXFP6 is ever added.
+    """
+    mxfp6 = dataclasses.replace(nvfp4_quant_config, format=QuantFormat.MXFP6)
     with F.lazy():
         with pytest.raises(ValueError, match="not yet supported"):
-            quant_ops.quantized_weight(_MOE_DIM, _HIDDEN_DIM, mxfp4)
+            quant_ops.quantized_weight(_MOE_DIM, _HIDDEN_DIM, mxfp6)
 
 
 # --------------------------------------------------------------------------- #
@@ -145,7 +237,7 @@ def test_stack_nvfp4_adds_expert_axis_to_every_leaf() -> None:
         stacked = quant_ops.stack([_nvfp4_weight() for _ in range(4)], axis=0)
 
         assert isinstance(stacked, NVFP4Tensor)
-        assert list(stacked.data.shape) == [4, _MOE_DIM, _HIDDEN_DIM // 2]
+        assert list(stacked.weight.shape) == [4, _MOE_DIM, _HIDDEN_DIM // 2]
         assert list(stacked.weight_scale.shape) == [
             4,
             _MOE_DIM,
@@ -168,13 +260,87 @@ def test_concat_nvfp4_shares_the_global_scales() -> None:
         fused = quant_ops.concat_weights(gate, up, axis=0)
 
         assert isinstance(fused, NVFP4Tensor)
-        assert list(fused.data.shape) == [2 * _MOE_DIM, _HIDDEN_DIM // 2]
+        assert list(fused.weight.shape) == [2 * _MOE_DIM, _HIDDEN_DIM // 2]
         assert list(fused.weight_scale.shape) == [
             2 * _MOE_DIM,
             _HIDDEN_DIM // 16,
         ]
         assert fused.weight_scale_2 is gate.weight_scale_2
         assert fused.input_scale is gate.input_scale
+
+
+def _host_nvfp4(
+    scale_2: list[float] | list[list[float]],
+    input_scale: list[float] | list[list[float]],
+) -> NVFP4Tensor:
+    num_experts = len(scale_2)
+    return NVFP4Tensor(
+        weight=Tensor(np.zeros((num_experts, 2, 1), np.uint8), device=CPU()),
+        weight_scale=Tensor(
+            np.zeros((num_experts, 2, 1), np.float32), device=CPU()
+        ),
+        weight_scale_2=Tensor(np.array(scale_2, np.float32), device=CPU()),
+        input_scale=Tensor(np.array(input_scale, np.float32), device=CPU()),
+    )
+
+
+def test_gate_scaled_nvfp4_keeps_the_gate_scales() -> None:
+    """A fused gate/up stack carries the gate's scales, as concat does."""
+    gate_up = _host_nvfp4([[1.0, 4.0], [2.0, 2.0]], [[0.5, 7.0], [0.25, 9.0]])
+    gated = quant_ops.gate_scaled_nvfp4(gate_up)
+    np.testing.assert_array_equal(gated.weight_scale_2.to_numpy(), [1.0, 2.0])
+    np.testing.assert_array_equal(gated.input_scale.to_numpy(), [0.5, 0.25])
+    assert gated.weight is gate_up.weight
+
+
+def test_fold_up_scale_nvfp4_moves_the_up_gate_ratio_into_down() -> None:
+    """With r = up / gate scale, down's scale gains r and its input scale
+    loses it, so the down matmul sees the up half at its own scale."""
+    gate_up = _host_nvfp4([[1.0, 4.0], [2.0, 2.0]], [[1.0, 1.0], [1.0, 1.0]])
+    down = _host_nvfp4([3.0, 5.0], [8.0, 6.0])
+    folded = quant_ops.fold_up_scale_nvfp4(down, gate_up)
+    # r = [4, 1]
+    np.testing.assert_array_equal(folded.weight_scale_2.to_numpy(), [12.0, 5.0])
+    np.testing.assert_array_equal(folded.input_scale.to_numpy(), [2.0, 6.0])
+    assert folded.input_scale.dtype == DType.float32
+    assert folded.weight is down.weight
+
+
+def test_concat_nvfp4_quantizers_pin_the_max_amax(sm100_arch: None) -> None:
+    """Fake-quant gate||up shares one global amax before the packed concat.
+
+    Each member still quantizes its own values. The pinned amax is the max
+    across the group, and the fused tensor keeps the first member's scale,
+    which was encoded with that same amax.
+    """
+    del sm100_arch
+    with F.lazy():
+        gate = NVFP4TensorQuantizer(
+            Tensor.zeros((128, 64), dtype=DType.bfloat16)
+        )
+        up = NVFP4TensorQuantizer(Tensor.zeros((128, 64), dtype=DType.bfloat16))
+
+        fused = quant_ops.concat_nvfp4(gate, up)
+
+        assert isinstance(fused, NVFP4Tensor)
+        assert not isinstance(fused, NVFP4TensorQuantizer)
+        assert gate._pinned_amax is up._pinned_amax
+        assert gate._pinned_amax is not None
+        assert fused.weight_scale_2 is gate.weight_scale_2
+        assert fused.input_scale is gate.input_scale
+        assert list(fused.weight.shape) == [256, 32]
+        assert list(fused.weight_scale.shape) == [256, 4]
+
+
+def test_concat_nvfp4_rejects_mixed_quantizer_and_packed() -> None:
+    """A packed checkpoint scale and a fake-quant amax cannot share one scale."""
+    with F.lazy():
+        packed = _nvfp4_weight(rows=16, cols=32)
+        quantizer = NVFP4TensorQuantizer(
+            Tensor.zeros((16, 32), dtype=DType.bfloat16)
+        )
+        with pytest.raises(TypeError, match="cannot mix"):
+            quant_ops.concat_nvfp4(packed, quantizer)
 
 
 def test_concat_nvfp4_rejects_non_row_axis() -> None:
@@ -200,12 +366,8 @@ def test_concat_nvfp4_requires_a_tensor() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
-    """The fused SwiGLU kernel wants ``[g0, u0, g1, u1, ...]`` on the N axis.
-
-    Checked eagerly on CPU: the stacked ``[gate; up]`` rows come back
-    row-interleaved, and the same permutation is applied to the block scales.
-    """
+def _gate_up_leaves() -> tuple[np.ndarray, np.ndarray, list[int]]:
+    """Returns distinct-valued ``[gate; up]`` leaves and their sigma order."""
     num_experts, gate_rows, cols = 2, 3, 4
     rows = 2 * gate_rows
 
@@ -215,19 +377,36 @@ def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
     scales = np.arange(num_experts * rows * 2, dtype=np.float32).reshape(
         num_experts, rows, 2
     )
+    # sigma(2i) = i (gate row i), sigma(2i + 1) = gate_rows + i (up row i).
+    order = [i // 2 if i % 2 == 0 else gate_rows + i // 2 for i in range(rows)]
+    return data, scales, order
 
+
+@pytest.mark.parametrize(
+    "permute",
+    [quant_ops.sigma_permute_gate_up_nvfp4, quant_ops.sigma_permute_gate_up],
+)
+def test_sigma_permute_interleaves_gate_and_up_rows(
+    permute: Callable[[NVFP4Tensor], QuantAwareTensor],
+) -> None:
+    """The fused SwiGLU kernel wants ``[g0, u0, g1, u1, ...]`` on the N axis.
+
+    Checked eagerly on CPU: the stacked ``[gate; up]`` rows come back
+    row-interleaved, and the same permutation is applied to the block scales.
+    """
+    data, scales, order = _gate_up_leaves()
+    num_experts = data.shape[0]
     weight = NVFP4Tensor(
-        data=Tensor(data, device=CPU()),
+        weight=Tensor(data, device=CPU()),
         weight_scale=Tensor(scales, device=CPU()),
         weight_scale_2=Tensor(np.ones(num_experts, np.float32), device=CPU()),
         input_scale=Tensor(np.ones(num_experts, np.float32), device=CPU()),
     )
 
-    permuted = quant_ops.sigma_permute_gate_up_nvfp4(weight)
+    permuted = permute(weight)
 
-    # sigma(2i) = i (gate row i), sigma(2i + 1) = gate_rows + i (up row i).
-    order = [i // 2 if i % 2 == 0 else gate_rows + i // 2 for i in range(rows)]
-    np.testing.assert_array_equal(permuted.data.to_numpy(), data[:, order])
+    assert isinstance(permuted, NVFP4Tensor)
+    np.testing.assert_array_equal(permuted.weight.to_numpy(), data[:, order])
     np.testing.assert_array_equal(
         permuted.weight_scale.to_numpy(), scales[:, order]
     )
@@ -235,6 +414,82 @@ def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
     assert permuted.weight_scale_2 is weight.weight_scale_2
     assert permuted.input_scale is weight.input_scale
     assert permuted.block_size == weight.block_size
+
+
+@pytest.mark.parametrize("container", [MXFP4Tensor, MXFP8Tensor])
+def test_sigma_permute_interleaves_mx_gate_and_up_rows(
+    container: type[MXFP4Tensor | MXFP8Tensor],
+) -> None:
+    """MX weights take the same interleave on both leaves, in their own type."""
+    data, scales, order = _gate_up_leaves()
+    weight = container(
+        weight=Tensor(data, device=CPU()),
+        weight_scale=Tensor(scales, device=CPU()),
+    )
+
+    permuted = quant_ops.sigma_permute_gate_up(weight)
+
+    assert type(permuted) is container
+    np.testing.assert_array_equal(permuted.weight.to_numpy(), data[:, order])
+    np.testing.assert_array_equal(
+        permuted.weight_scale.to_numpy(), scales[:, order]
+    )
+    assert permuted.block_size == weight.block_size
+
+
+@pytest.mark.parametrize("experts, halves", [(3, 1), (10, 2)])
+def test_stack_blockwise_mega_ffn_permutes_each_expert(
+    experts: int, halves: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hands the stacking op each expert's projections in order, once, and
+    stacks the scales row-major.
+
+    The op is stubbed with a visible byte change: the eager interpreter this
+    suite runs on cannot run it, and its byte order is pinned on the GPU by
+    ``test_stack_blockwise_fp8_b_matches_the_permute``.
+    """
+
+    def stack_b(
+        projections: list[Tensor], n_experts: int, device: DeviceRef
+    ) -> Tensor:
+        assert device == DeviceRef.CPU()
+        per = len(projections) // n_experts
+        joined = [
+            F.concat(projections[e * per : (e + 1) * per], axis=0)
+            for e in range(n_experts)
+        ]
+        return F.stack(joined, axis=0) + 1
+
+    monkeypatch.setattr(quant_ops, "stack_blockwise_mega_ffn_b", stack_b)
+    n, k = 32, 256
+    rng = np.random.default_rng(5)
+    data = rng.integers(0, 256, (experts, n, k), dtype=np.uint8)
+    scales = rng.random((experts, n // 16, k // 128)).astype(np.float32)
+    rows, scale_rows = n // halves, n // 16 // halves
+    items: list[list[QuantAwareTensor]] = [
+        [
+            FP8BlockTensor(
+                weight=Tensor(data[e, h * rows : (h + 1) * rows], device=CPU()),
+                weight_scale_inv=Tensor(
+                    scales[e, h * scale_rows : (h + 1) * scale_rows],
+                    device=CPU(),
+                ),
+            )
+            for h in range(halves)
+        ]
+        for e in range(experts)
+    ]
+
+    stacked = quant_ops.stack_blockwise_mega_ffn(items, CPU())
+
+    np.testing.assert_array_equal(stacked.weight.to_numpy(), data + 1)
+    np.testing.assert_array_equal(stacked.weight_scale_inv.to_numpy(), scales)
+
+
+def test_stack_blockwise_mega_ffn_b_rejects_uneven_experts() -> None:
+    projection = Tensor(np.zeros((16, 128), dtype=np.uint8), device=CPU())
+    with pytest.raises(ValueError, match="do not split into 2 experts"):
+        stack_blockwise_mega_ffn_b([projection] * 3, 2, DeviceRef.CPU())
 
 
 # --------------------------------------------------------------------------- #
@@ -307,6 +562,21 @@ def _nvfp4_dispatch() -> list[tuple[Tensor, ...]]:
     ]
 
 
+def _mxfp8_dispatch() -> list[tuple[Tensor, ...]]:
+    """The six MXFP8 dispatch outputs in the NVIDIA block-scaled layout."""
+    return [
+        (
+            _value([_TOKENS, _HIDDEN_DIM], DType.float8_e4m3fn),
+            _value([1, 1, 32, 4, 4], DType.float8_e8m0fnu),
+            _value([_NUM_LOCAL_EXPERTS + 1], DType.uint32),
+            _value([_NUM_LOCAL_EXPERTS], DType.uint32),
+            _value([_NUM_LOCAL_EXPERTS], DType.int32),
+            _metadata(),
+        )
+        for _ in range(2)
+    ]
+
+
 def test_payload_bf16_has_no_scales() -> None:
     """A bf16 dispatch carries usage stats and no scale columns."""
     with F.lazy():
@@ -324,13 +594,13 @@ def test_payload_bf16_has_no_scales() -> None:
         # The bf16 grouped matmul reads num_active_experts off the host.
         assert payload.usage_stats[0].device.is_host
 
-        assert payload.per_device_tokens(None) == payload.tokens
+        assert payload.per_device_tokens() == payload.tokens
 
 
 def test_payload_fp8_carries_activation_scales(
     fp8_quant_config: QuantConfig,
 ) -> None:
-    """An FP8 dispatch yields pre-quantized FP8BlockTensor activations."""
+    """An FP8 dispatch yields pre-quantized FP8BlockActivation tokens."""
     with F.lazy():
         config = _ep_config(DType.float8_e4m3fn, fp8_quant_config)
         payload = quant_ops.EPDispatchPayload.from_dispatch(
@@ -341,15 +611,12 @@ def test_payload_fp8_carries_activation_scales(
         assert payload.scales_offset is None
         assert payload.usage_stats is not None
 
-        tokens = payload.per_device_tokens(fp8_quant_config)
+        tokens = payload.per_device_tokens()
         assert len(tokens) == 2
         first = tokens[0]
-        assert isinstance(first, FP8BlockTensor)
-        # Activations are quantized per-token along K, not on the weight grid.
-        assert first.block_size == (
-            1,
-            fp8_quant_config.weight_scale.block_size[1],  # type: ignore[index]
-        )
+        assert isinstance(first, FP8BlockActivation)
+        assert first.data is payload.tokens[0]
+        assert first.scales is payload.scales[0]
 
 
 def test_payload_nvfp4_carries_scales_and_offsets(
@@ -368,9 +635,7 @@ def test_payload_nvfp4_carries_scales_and_offsets(
         assert payload.usage_stats is None
 
         global_scale = Tensor.zeros((), dtype=DType.float32, device=CPU())
-        tokens = payload.per_device_tokens(
-            nvfp4_quant_config, nvfp4_global_scale=global_scale
-        )
+        tokens = payload.per_device_tokens(nvfp4_global_scale=global_scale)
         assert len(tokens) == 2
         first = tokens[0]
         assert isinstance(first, NVFP4Activation)
@@ -391,4 +656,694 @@ def test_payload_nvfp4_tokens_require_the_uniform_scale(
         )
 
         with pytest.raises(AssertionError, match="uniform scale"):
-            payload.per_device_tokens(nvfp4_quant_config)
+            payload.per_device_tokens()
+
+
+def test_payload_mxfp8_carries_scales_offsets_and_usage_stats(
+    mxfp8_quant_config: QuantConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An MXFP8 dispatch adds scale offsets beside the host usage stats.
+
+    On CUDA it takes NVFP4's padded block-scaled layout; MX has no uniform
+    activation scale, so its tokens wrap without one.
+    """
+    monkeypatch.setattr(ep_kernels, "accelerator_api", lambda: "cuda")
+    with F.lazy():
+        config = _ep_config(DType.float8_e4m3fn, mxfp8_quant_config)
+        payload = quant_ops.EPDispatchPayload.from_dispatch(
+            _mxfp8_dispatch(), mxfp8_quant_config, config
+        )
+
+        assert payload.scales is not None
+        assert payload.scales_offset is not None
+        assert payload.usage_stats is not None
+
+        tokens = payload.per_device_tokens()
+        assert len(tokens) == 2
+        first = tokens[0]
+        assert isinstance(first, MXFP8Activation)
+        assert first.data is payload.tokens[0]
+        assert first.scales is payload.scales[0]
+        assert first.scales_offset is payload.scales_offset[0]
+
+
+def test_nvfp4_grouped_matmul_reports_the_routed_row_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatcher's row estimate is the routed row count, not a constant.
+
+    It picks decode tiles when ``estimated_total_m / num_active_experts <= 8``
+    and, given no estimate, reads ``estimated_total_m`` from the host stats.
+    """
+    seen: dict[str, object] = {}
+
+    def spy(*args: Tensor, estimated_total_m: object, **_: object) -> Tensor:
+        seen["stats"], seen["estimate"] = args[8], estimated_total_m
+        return Tensor.zeros((_TOKENS, _MOE_DIM), dtype=DType.bfloat16)
+
+    monkeypatch.setattr(quant_ops, "grouped_matmul_block_scaled", spy)
+    monkeypatch.setattr(
+        quant_ops, "interleave_grouped_scales", lambda s, **_: s
+    )
+    with F.lazy():
+        device = CPU()
+        offsets = Tensor.zeros(
+            (_NUM_EXPERTS,), dtype=DType.uint32, device=device
+        )
+        tokens = NVFP4Activation(
+            data=Tensor.zeros(
+                (_TOKENS, _HIDDEN_DIM // 2), dtype=DType.uint8, device=device
+            ),
+            scales=Tensor.zeros(
+                (_NUM_EXPERTS + 1, _HIDDEN_DIM // 64, 32, 4, 4),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            input_scale=Tensor.zeros(
+                (_NUM_EXPERTS,), dtype=DType.float32, device=device
+            ),
+            scales_offset=offsets,
+        )
+        quant_ops.grouped_matmul(
+            tokens,
+            _stacked_nvfp4(_MOE_DIM, _HIDDEN_DIM, device),
+            Tensor.zeros(
+                (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+            ),
+            Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+            None,
+        )
+
+    assert seen["estimate"] is None
+    stats = seen["stats"]
+    assert isinstance(stats, Tensor)
+    assert stats.to_numpy().tolist() == [_TOKENS, _NUM_EXPERTS]
+
+
+@pytest.mark.parametrize("container", [MXFP4Tensor, MXFP8Tensor])
+def test_mx_grouped_matmul_reports_the_routed_row_count(
+    container: type[MXFP4Tensor | MXFP8Tensor],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatcher's row estimate is the routed row count, not a constant.
+
+    Dispatched MXFP8 rows reach the kernel as they are, without a second
+    quantize.
+    """
+    seen: dict[str, object] = {}
+
+    def spy(*args: Tensor, estimated_total_m: object, **_: object) -> Tensor:
+        seen["tokens"], seen["scales"], seen["offsets"] = (
+            args[0],
+            args[2],
+            args[5],
+        )
+        seen["stats"], seen["estimate"] = args[8], estimated_total_m
+        return Tensor.zeros((_TOKENS, _MOE_DIM), dtype=DType.bfloat16)
+
+    monkeypatch.setattr(quant_ops, "grouped_matmul_block_scaled", spy)
+    monkeypatch.setattr(
+        quant_ops, "interleave_grouped_scales", lambda s, **_: s
+    )
+    device = CPU()
+    tokens = MXFP8Activation(
+        data=Tensor.zeros(
+            (_TOKENS, _HIDDEN_DIM), dtype=DType.float8_e4m3fn, device=device
+        ),
+        scales=Tensor.zeros(
+            (_NUM_EXPERTS + 1, _HIDDEN_DIM // 128, 32, 4, 4),
+            dtype=DType.float8_e8m0fnu,
+            device=device,
+        ),
+        scales_offset=Tensor.zeros(
+            (_NUM_EXPERTS,), dtype=DType.uint32, device=device
+        ),
+    )
+    quant_ops.grouped_matmul(
+        tokens,
+        _stacked_mx(container, _MOE_DIM, _HIDDEN_DIM, device),
+        Tensor.zeros((_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device),
+        Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+        None,
+    )
+
+    assert seen["tokens"] is tokens.data
+    assert seen["scales"] is tokens.scales
+    assert seen["offsets"] is tokens.scales_offset
+    assert seen["estimate"] is None
+    stats = seen["stats"]
+    assert isinstance(stats, Tensor)
+    assert stats.to_numpy().tolist() == [_TOKENS, _NUM_EXPERTS]
+
+
+# --------------------------------------------------------------------------- #
+# SwiGLU route
+# --------------------------------------------------------------------------- #
+
+
+def _stacked_nvfp4(rows: int, cols: int, device: Device) -> NVFP4Tensor:
+    return NVFP4Tensor(
+        weight=Tensor.zeros(
+            (_NUM_EXPERTS, rows, cols // 2), dtype=DType.uint8, device=device
+        ),
+        weight_scale=Tensor.zeros(
+            (_NUM_EXPERTS, rows, cols // 16),
+            dtype=DType.float8_e4m3fn,
+            device=device,
+        ),
+        weight_scale_2=Tensor.zeros(
+            (_NUM_EXPERTS,), dtype=DType.float32, device=CPU()
+        ),
+        input_scale=Tensor.zeros(
+            (_NUM_EXPERTS,), dtype=DType.float32, device=CPU()
+        ),
+        block_size=(1, 16),
+    )
+
+
+def _stacked_mx(
+    container: type[MXFP4Tensor | MXFP8Tensor],
+    rows: int,
+    cols: int,
+    device: Device,
+) -> MXFP4Tensor | MXFP8Tensor:
+    return container(
+        weight=Tensor.zeros(
+            (_NUM_EXPERTS, rows, cols // container.values_per_byte),
+            dtype=container.storage_dtype,
+            device=device,
+        ),
+        weight_scale=Tensor.zeros(
+            (_NUM_EXPERTS, rows, cols // 32),
+            dtype=DType.float8_e8m0fnu,
+            device=device,
+        ),
+    )
+
+
+def _stacked_fp8(rows: int, cols: int, device: Device) -> FP8BlockTensor:
+    return FP8BlockTensor(
+        weight=Tensor.zeros(
+            (_NUM_EXPERTS, rows, cols),
+            dtype=DType.float8_e4m3fn,
+            device=device,
+        ),
+        weight_scale_inv=Tensor.zeros(
+            (_NUM_EXPERTS, max(rows // 128, 1), max(cols // 128, 1)),
+            dtype=DType.float32,
+            device=device,
+        ),
+        block_size=(128, 128),
+    )
+
+
+def _swiglu_route(
+    encoding: str,
+    prequantized: bool,
+    accum_dtype: DType | None,
+    swiglu_limit: float,
+    device: Device,
+    quant_config: QuantConfig,
+    down_matmul: bool = False,
+) -> str:
+    """Traces ``grouped_matmul_silu`` and names the activation it returns.
+
+    ``down_matmul`` also traces the down projection reading that activation.
+    """
+    nvfp4 = encoding == "nvfp4"
+    mxfp4 = encoding == "mxfp4"
+    gate_up: QuantAwareTensor
+    down: QuantAwareTensor
+    if mxfp4:
+        gate_up = _stacked_mx(MXFP4Tensor, 2 * _MOE_DIM, _HIDDEN_DIM, device)
+        down = _stacked_mx(MXFP4Tensor, _HIDDEN_DIM, _MOE_DIM, device)
+    else:
+        build = _stacked_nvfp4 if nvfp4 else _stacked_fp8
+        gate_up = build(2 * _MOE_DIM, _HIDDEN_DIM, device)
+        down = build(_HIDDEN_DIM, _MOE_DIM, device)
+    offsets = Tensor.zeros((_NUM_EXPERTS,), dtype=DType.uint32, device=device)
+    if not prequantized:
+        tokens: quant_ops.QuantAwareTensor = Tensor.zeros(
+            (_NUM_EXPERTS, _HIDDEN_DIM), dtype=DType.bfloat16, device=device
+        )
+    elif nvfp4:
+        tokens = NVFP4Activation(
+            data=Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM // 2),
+                dtype=DType.uint8,
+                device=device,
+            ),
+            scales=Tensor.zeros(
+                (_NUM_EXPERTS + 1, _HIDDEN_DIM // 64, 32, 4, 4),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            input_scale=Tensor.zeros(
+                (_NUM_EXPERTS,), dtype=DType.float32, device=CPU()
+            ),
+            scales_offset=offsets,
+        )
+    elif mxfp4:
+        tokens = MXFP8Activation(
+            data=Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            scales=Tensor.zeros(
+                (_NUM_EXPERTS + 1, _HIDDEN_DIM // 128, 32, 4, 4),
+                dtype=DType.float8_e8m0fnu,
+                device=device,
+            ),
+            scales_offset=offsets,
+        )
+    else:
+        tokens = FP8BlockActivation(
+            data=Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            scales=Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM // 128),
+                dtype=DType.float32,
+                device=device,
+            ),
+        )
+    starts = Tensor.zeros(
+        (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+    )
+    ids = Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device)
+    out = quant_ops.grouped_matmul_silu(
+        tokens,
+        gate_up,
+        down,
+        starts,
+        ids,
+        Tensor.zeros((2,), dtype=DType.uint32, device=device),
+        quant_config,
+        scales_offset=offsets if nvfp4 or mxfp4 else None,
+        accum_dtype=accum_dtype,
+        swiglu_limit=swiglu_limit,
+    )
+    if down_matmul:
+        quant_ops.grouped_matmul(
+            out, down, starts, ids, None, scales_offset=offsets
+        )
+    return type(out).__name__
+
+
+@pytest.mark.parametrize(
+    ("arch", "encoding", "prequantized", "accum_dtype", "limit", "expected"),
+    [
+        # deepseekV3_modulev3 and kimik2_5_modulev3 share one MoE: no
+        # gate/up accumulation dtype and no activation clamp.
+        ("deepseekV3/kimik2_5 TP", "fp8", False, None, 0.0, "Tensor"),
+        ("deepseekV3/kimik2_5 TP", "nvfp4", False, None, 0.0, "Tensor"),
+        (
+            "deepseekV3/kimik2_5 EP",
+            "fp8",
+            True,
+            None,
+            0.0,
+            "FP8BlockActivation",
+        ),
+        (
+            "deepseekV3/kimik2_5 EP",
+            "nvfp4",
+            True,
+            None,
+            0.0,
+            "NVFP4Activation",
+        ),
+        # deepseekV3_2_modulev3 accumulates the gate/up in float32 off the EP
+        # dispatch; glm5_next does too, and clamps the activation.
+        ("deepseekV3_2 TP", "fp8", False, DType.float32, 0.0, "Tensor"),
+        ("deepseekV3_2 EP", "fp8", True, None, 0.0, "FP8BlockActivation"),
+        ("glm5_next TP", "fp8", False, DType.float32, 10.0, "Tensor"),
+        (
+            "glm5_next EP",
+            "fp8",
+            True,
+            DType.float32,
+            10.0,
+            "FP8BlockActivation",
+        ),
+        # A float32 SwiGLU output over an NVFP4 down weight is the one case
+        # that must take the fused quantized SiLU: the down matmul quantizes
+        # from bf16 only.
+        (
+            "float32 SwiGLU, NVFP4 down",
+            "nvfp4",
+            False,
+            DType.float32,
+            0.0,
+            "NVFP4Activation",
+        ),
+        # deepseekV41_modulev3's MXFP4 experts read MXFP8 dispatch rows
+        # through the fused SwiGLU, which re-quantizes to MXFP8.
+        (
+            "deepseekV41 EP",
+            "mxfp4",
+            True,
+            None,
+            0.0,
+            "MXFP8Activation",
+        ),
+    ],
+)
+def test_swiglu_route_per_architecture(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    fp8_quant_config: QuantConfig,
+    mxfp8_quant_config: QuantConfig,
+    sm100_arch: None,
+    arch: str,
+    encoding: str,
+    prequantized: bool,
+    accum_dtype: DType | None,
+    limit: float,
+    expected: str,
+) -> None:
+    """Pins the SwiGLU each shipped MoE configuration asks for.
+
+    Off the EP dispatch a bf16 SwiGLU output is left for the down matmul to
+    quantize, which it does with the same static per-expert input scale the
+    fused quantized SiLU would use.
+    """
+    device = mock_accelerator()
+    config = {
+        "fp8": fp8_quant_config,
+        "nvfp4": nvfp4_quant_config,
+        # The EP dispatch's quant config, as V4.1's MXFP4 experts build it.
+        "mxfp4": dataclasses.replace(
+            mxfp8_quant_config, can_use_fused_swiglu=True
+        ),
+    }[encoding]
+    with F.lazy():
+        got = _swiglu_route(
+            encoding, prequantized, accum_dtype, limit, device, config
+        )
+    assert got == expected, arch
+
+
+@pytest.mark.parametrize(
+    ("accum_dtype", "fused"), [(None, False), (DType.float32, True)]
+)
+def test_nvfp4_swiglu_kernel_per_output_dtype(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+    accum_dtype: DType | None,
+    fused: bool,
+) -> None:
+    """Off the EP dispatch only a float32 SwiGLU emits the fused NVFP4 SiLU.
+
+    The down matmul quantizes from bf16 only, so a float32 SwiGLU output has
+    to be packed by ``ep.fused_silu.nvfp4``; a bf16 one takes the plain
+    ``ep.fused_silu`` and the down matmul quantizes it. Checked on the traced
+    graph rather than the returned activation's type.
+    """
+    with F.lazy():
+        _swiglu_route(
+            "nvfp4",
+            False,
+            accum_dtype,
+            0.0,
+            mock_accelerator(),
+            nvfp4_quant_config,
+            down_matmul=True,
+        )
+        ir = str(Graph.current._mlir_op)
+
+    assert ('symbol = "ep.fused_silu.nvfp4"' in ir) == fused
+    assert ('symbol = "ep.fused_silu"' in ir) != fused
+    # The gate/up matmul quantizes the bf16 tokens on both routes; the down
+    # matmul adds a second quantize only for the plain SiLU's bf16 output.
+    quantizes = ir.count(
+        'symbol = "quantization.grouped.quantize.dynamic.block.scaled"'
+    )
+    assert quantizes == (1 if fused else 2)
+
+
+# --------------------------------------------------------------------------- #
+# MXFP8
+# --------------------------------------------------------------------------- #
+
+
+def test_mxfp8_predicates_and_moe_inputs(
+    mxfp8_quant_config: QuantConfig, nvfp4_quant_config: QuantConfig
+) -> None:
+    """MXFP8 needs MoE scale offsets but no EP dispatch scales."""
+    assert quant_ops.is_mxfp8_quantized(mxfp8_quant_config)
+    assert not quant_ops.is_mxfp8_quantized(nvfp4_quant_config)
+    assert not quant_ops.is_mxfp8_quantized(None)
+    assert not quant_ops.is_nvfp4_quantized(mxfp8_quant_config)
+
+    assert quant_ops.moe_requires_scales_offsets(mxfp8_quant_config)
+    assert not quant_ops.ep_requires_dispatch_scales(mxfp8_quant_config)
+    assert (
+        quant_ops.routed_weight_dtype(mxfp8_quant_config) == DType.float8_e4m3fn
+    )
+
+
+def test_quantized_weight_mxfp8(mxfp8_quant_config: QuantConfig) -> None:
+    """An MXFP8 config yields an MXFP8Tensor with one scale per 32 values."""
+    with F.lazy():
+        weight = quant_ops.quantized_weight(
+            _MOE_DIM, _HIDDEN_DIM, mxfp8_quant_config
+        )
+
+        assert isinstance(weight, MXFP8Tensor)
+        assert weight.block_size == (1, 32)
+        assert list(weight.weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
+        assert list(weight.weight_scale.shape) == [_MOE_DIM, _HIDDEN_DIM // 32]
+
+
+def test_stack_and_concat_mxfp8() -> None:
+    """Stacking adds an expert axis to both leaves; concat fuses rows."""
+    with F.lazy():
+        weights: list[quant_ops.QuantAwareTensor] = [
+            MXFP8Tensor.zeros((_MOE_DIM, _HIDDEN_DIM)) for _ in range(4)
+        ]
+        stacked = quant_ops.stack(weights, axis=0)
+        assert isinstance(stacked, MXFP8Tensor)
+        assert list(stacked.weight.shape) == [4, _MOE_DIM, _HIDDEN_DIM]
+        assert list(stacked.weight_scale.shape) == [
+            4,
+            _MOE_DIM,
+            _HIDDEN_DIM // 32,
+        ]
+
+        fused = quant_ops.concat_weights(weights[0], weights[1], axis=0)
+        assert isinstance(fused, MXFP8Tensor)
+        assert list(fused.weight.shape) == [2 * _MOE_DIM, _HIDDEN_DIM]
+        assert list(fused.weight_scale.shape) == [
+            2 * _MOE_DIM,
+            _HIDDEN_DIM // 32,
+        ]
+
+
+def test_concat_mxfp8_rejects_non_row_axis() -> None:
+    with F.lazy():
+        w = MXFP8Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        with pytest.raises(ValueError, match="only supports axis=0"):
+            quant_ops.concat_mxfp8(w, w, axis=1)
+
+
+def test_grouped_silu_takes_a_swiglu_limit(
+    mock_accelerator: MagicMock,
+) -> None:
+    """The bf16 SiLU accepts a clamping limit and keeps its shape."""
+    device = mock_accelerator()
+    with F.lazy():
+        x = Tensor.zeros(
+            [_TOKENS, 2 * _MOE_DIM], dtype=DType.bfloat16, device=device
+        )
+        offsets = Tensor.zeros([3], dtype=DType.uint32, device=device)
+        out = quant_ops.grouped_silu(x, offsets, swiglu_limit=7.0)
+        assert isinstance(out, Tensor)
+        assert list(out.shape) == [_TOKENS, _MOE_DIM]
+
+
+# --------------------------------------------------------------------------- #
+# MXFP4 and on-the-fly MX quantization
+# --------------------------------------------------------------------------- #
+
+
+def test_mxfp8_constructor_matches_the_parsed_config(
+    mxfp8_quant_config: QuantConfig,
+) -> None:
+    """``QuantConfig.mxfp8()`` builds what the checkpoint parser produces."""
+    assert (
+        QuantConfig.mxfp8(mlp_quantized_layers={0}, attn_quantized_layers={0})
+        == mxfp8_quant_config
+    )
+
+
+def test_quantized_weight_mxfp8_fake(
+    mxfp8_fake_quant_config: QuantConfig,
+) -> None:
+    """Quantize-on-load MXFP8 wraps the logical bf16 weight."""
+    with F.lazy():
+        weight = quant_ops.quantized_weight(
+            _MOE_DIM, _HIDDEN_DIM, mxfp8_fake_quant_config
+        )
+
+        assert isinstance(weight, MXFP8Quantizer)
+        # It is also the container, so MXFP8 quant ops accept it as is.
+        assert isinstance(weight, MXFP8Tensor)
+        assert weight.block_size == (1, 32)
+        assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
+        assert weight._tensor.dtype == DType.bfloat16
+        assert weight._tensor.dtype == quant_ops.routed_weight_dtype(
+            mxfp8_fake_quant_config
+        )
+
+
+def test_routed_weight_dtype_mx_follows_source(
+    mxfp8_quant_config: QuantConfig,
+    mxfp8_fake_quant_config: QuantConfig,
+    mxfp4_quant_config: QuantConfig,
+    mxfp4_fake_quant_config: QuantConfig,
+) -> None:
+    """The source decides the dtype, not the format."""
+    assert (
+        quant_ops.routed_weight_dtype(mxfp8_quant_config) == DType.float8_e4m3fn
+    )
+    assert quant_ops.routed_weight_dtype(mxfp4_quant_config) == DType.uint8
+    for config in (mxfp8_fake_quant_config, mxfp4_fake_quant_config):
+        assert quant_ops.routed_weight_dtype(config) == DType.bfloat16
+
+
+def test_quantized_weight_mxfp4(mxfp4_quant_config: QuantConfig) -> None:
+    """MXFP4 packs two codes per byte, with one E8M0 scale per 32 inputs."""
+    with F.lazy():
+        weight = quant_ops.quantized_weight(
+            _MOE_DIM, _HIDDEN_DIM, mxfp4_quant_config
+        )
+
+        assert isinstance(weight, MXFP4Tensor)
+        assert weight.block_size == (1, 32)
+        # Halved trailing dim, unlike MXFP8: two e2m1 values per uint8.
+        assert list(weight.weight.shape) == [_MOE_DIM, _HIDDEN_DIM // 2]
+        assert weight.weight.dtype == DType.uint8
+        assert list(weight.weight_scale.shape) == [_MOE_DIM, _HIDDEN_DIM // 32]
+        assert weight.weight_scale.dtype == DType.float8_e8m0fnu
+
+
+def test_quantized_weight_mxfp4_fake(
+    mxfp4_fake_quant_config: QuantConfig,
+) -> None:
+    """Quantize-on-load MXFP4 wraps the logical bf16 weight."""
+    with F.lazy():
+        weight = quant_ops.quantized_weight(
+            _MOE_DIM, _HIDDEN_DIM, mxfp4_fake_quant_config
+        )
+
+        assert isinstance(weight, MXFP4Quantizer)
+        assert isinstance(weight, MXFP4Tensor)
+        assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
+        assert weight._tensor.dtype == DType.bfloat16
+
+
+def test_stack_mxfp4_adds_expert_axis_to_both_leaves() -> None:
+    """Stacking per-expert weights lifts both leaves to a leading E axis."""
+    with F.lazy():
+        weights: list[QuantAwareTensor] = [
+            MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM)) for _ in range(4)
+        ]
+        stacked = quant_ops.stack(weights, axis=0)
+
+        assert isinstance(stacked, MXFP4Tensor)
+        assert list(stacked.weight.shape) == [4, _MOE_DIM, _HIDDEN_DIM // 2]
+        assert list(stacked.weight_scale.shape) == [
+            4,
+            _MOE_DIM,
+            _HIDDEN_DIM // 32,
+        ]
+        assert stacked.block_size == (1, 32)
+
+
+def test_concat_mxfp4_fuses_rows() -> None:
+    """Fusing gate||up concatenates both leaves along the rows."""
+    with F.lazy():
+        gate = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        up = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        fused = quant_ops.concat_weights(gate, up, axis=0)
+
+        assert isinstance(fused, MXFP4Tensor)
+        assert list(fused.weight.shape) == [2 * _MOE_DIM, _HIDDEN_DIM // 2]
+        assert list(fused.weight_scale.shape) == [
+            2 * _MOE_DIM,
+            _HIDDEN_DIM // 32,
+        ]
+        assert fused.block_size == gate.block_size
+
+
+@pytest.mark.parametrize("axis", [1, -1])
+def test_concat_mxfp4_rejects_the_packed_k_axis(axis: int) -> None:
+    with F.lazy():
+        w = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        with pytest.raises(ValueError, match="packed K axis"):
+            quant_ops.concat_mxfp4(w, w, axis=axis)
+
+
+def test_concat_mxfp4_rejects_mixed_block_sizes() -> None:
+    with F.lazy():
+        w = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM))
+        other = MXFP4Tensor.zeros((_MOE_DIM, _HIDDEN_DIM), block_size=(1, 16))
+        with pytest.raises(ValueError, match="same block_size"):
+            quant_ops.concat_mxfp4(w, other)
+
+
+def test_concat_mxfp4_requires_a_tensor() -> None:
+    with pytest.raises(ValueError, match="at least one tensor"):
+        quant_ops.concat_mxfp4()
+
+
+def test_matmul_mxfp4_names_the_hardware_on_nvidia(
+    mxfp4_quant_config: QuantConfig,
+) -> None:
+    """Off AMD, MXFP4 matmul refuses up front instead of failing in the kernel.
+
+    The SM100 block-scaled op takes ``uint8`` operands only with
+    ``float8_e4m3fn`` scales, so MXFP4's E8M0 scales would otherwise surface
+    as a scales-dtype mismatch well below this call.
+    """
+    with F.lazy():
+        weight = quant_ops.quantized_weight(128, 64, mxfp4_quant_config)
+        x = Tensor.zeros((8, 64), dtype=DType.bfloat16)
+
+        with pytest.raises(NotImplementedError, match="AMD CDNA"):
+            quant_ops.matmul(x, weight)
+
+
+def test_matmul_mxfp4_builds_the_amd_graph(
+    amd_arch: None, mxfp4_quant_config: QuantConfig
+) -> None:
+    """On AMD the matmul traces, with rank-2 scales and no interleave.
+
+    Graph construction only -- numerics are covered by the AMD integration
+    test, not here.
+    """
+    del amd_arch
+    with F.lazy():
+        weight = quant_ops.quantized_weight(128, 64, mxfp4_quant_config)
+        out = quant_ops.matmul(
+            Tensor.zeros((8, 64), dtype=DType.bfloat16), weight
+        )
+
+        assert out.dtype == DType.bfloat16
+        assert list(out.shape) == [8, 128]
+
+
+def test_interleave_grouped_scales_passes_interleaved_scales_through() -> None:
+    """Scales already in the rank-6 TCGEN layout come back unchanged."""
+    with F.lazy():
+        scales = Tensor.zeros(
+            (_NUM_EXPERTS, 1, _HIDDEN_DIM // 64, 32, 4, 4),
+            dtype=DType.float8_e4m3fn,
+        )
+
+        assert quant_ops.interleave_grouped_scales(scales) is scales

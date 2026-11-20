@@ -17,14 +17,18 @@ from __future__ import annotations
 from array import array
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, ClassVar
 
-from max._kv_core import blocks_held_of_hit
+from max._kv_core import PrefixCache, blocks_held_of_hit
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 
 from .block_utils import LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
+
+if TYPE_CHECKING:
+    from .jenga_block_manager import JengaBlockManager
 
 __all__ = [
     "FullKVGroupCoordinator",
@@ -72,6 +76,9 @@ class KVGroupCoordinatorInterface:
     group_id: KVCacheGroupId
     page_size: int
     """Tokens per page, which turns a window width into a block count."""
+    demand_plateaus: ClassVar[bool] = True
+    """Whether a request's pages stop growing past some length, so admission
+    counts this leaf's headroom in requests rather than pages."""
 
     rows: dict[RequestID, dict[str, list[LittleKVCacheBlock]]] = field(
         default_factory=dict, kw_only=True
@@ -88,8 +95,8 @@ class KVGroupCoordinatorInterface:
         default_factory=dict, init=False, repr=False
     )
     """Per request, the row index :meth:`commit` scans from. Never moves back:
-    every block below it is null or published, and it stays a block short of
-    the last one committed, which is the latest slot a checkpoint can fill."""
+    every block below it is null, published, or permanently incomplete.
+    Published runs leave the latest checkpoint slot available to fill."""
 
     def _rewrote(self, req_id: RequestID) -> None:
         """Forgets what was derived from the row.
@@ -148,13 +155,38 @@ class KVGroupCoordinatorInterface:
         allow_cross_replica: bool = False,
     ) -> list[bool]:
         """Which of ``desired_hashes`` this leaf can serve, positionally."""
+        local, *peers = self._searched_caches(replica_idx, allow_cross_replica)
         return [
-            self.find_replica_with_hash(
-                block_hash, replica_idx, allow_cross_replica
-            )
-            is not None
+            block_hash in local or any(block_hash in peer for peer in peers)
             for block_hash in desired_hashes
         ]
+
+    def resident_run(
+        self,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int,
+        allow_cross_replica: bool = False,
+    ) -> int:
+        """How many of ``desired_hashes``, from the first, this leaf holds.
+
+        Stops at the first miss, unlike :meth:`residency`.
+        """
+        local, *peers = self._searched_caches(replica_idx, allow_cross_replica)
+        for run, block_hash in enumerate(desired_hashes):
+            if block_hash not in local and not any(
+                block_hash in peer for peer in peers
+            ):
+                return run
+        return len(desired_hashes)
+
+    def _searched_caches(
+        self, replica_idx: int, allow_cross_replica: bool
+    ) -> list[PrefixCache]:
+        """The prefix caches :meth:`find_replica_with_hash` searches."""
+        caches = [pool.prefix_caches[self.leaf_id] for pool in self.pools]
+        if not allow_cross_replica:
+            return [caches[replica_idx]]
+        return [caches.pop(replica_idx), *caches]
 
     def longest_cache_hit(
         self,
@@ -281,16 +313,22 @@ class KVGroupCoordinatorInterface:
         }
 
     def grow(
-        self, req_id: RequestID, num_required_blocks: int, replica_idx: int
+        self,
+        req_id: RequestID,
+        num_required_blocks: int,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> None:
         """Allocates the blocks every row still needs."""
-        pool = self.pools[replica_idx]
         leaf_id = self.leaf_id
         req_blocks = self.rows[req_id][leaf_id]
         for _ in range(
             self._num_blocks_to_allocate(req_blocks, num_required_blocks)
         ):
-            req_blocks.append(pool.alloc_block(leaf_id))
+            req_blocks.append(
+                allocation_owner.allocate_block(replica_idx, leaf_id)
+            )
 
     def _is_committable(
         self,
@@ -347,9 +385,29 @@ class KVGroupCoordinatorInterface:
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
-        """Frees the blocks the group no longer reads, nulling their slots."""
+        """Frees the blocks the group no longer reads, nulling their slots.
+
+        Args:
+            req_id: The request whose row to trim.
+            num_committed_blocks: How many blocks the request has filled.
+            replica_idx: Which pool the blocks live in.
+            keep: Page boundaries the request can resume from, in blocks,
+                lowest first. The cache keeps the blocks needed to resume at
+                each.
+        """
         raise NotImplementedError("Subclasses must implement this method.")
+
+    @property
+    def has_full_prefix_dependency(self) -> bool:
+        """Whether a hit on this cache reads every block before its depth.
+
+        Each block such a cache commits is then needed by every later hit, so
+        it is worth offloading as soon as it is committed rather than at a
+        checkpoint.
+        """
+        return False
 
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """How many blocks of a hit that deep this group actually holds.
@@ -405,7 +463,11 @@ class KVGroupCoordinatorInterface:
         return {}
 
     def checkpoint(
-        self, ctx: TextContext, replica_idx: int
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> Mapping[str, tuple[int | None, int]]:
         """Returns the block each leaf carries onto its successor.
 
@@ -418,6 +480,7 @@ class KVGroupCoordinatorInterface:
         Args:
             ctx: The request whose forward just ran.
             replica_idx: Which pool its blocks belong to.
+            allocation_owner: Allocates any successor the leaf draws.
         """
         return {}
 
@@ -425,6 +488,8 @@ class KVGroupCoordinatorInterface:
 @dataclass(frozen=True)
 class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
     """A group whose caches read their whole history."""
+
+    demand_plateaus: ClassVar[bool] = False
 
     def claimable_hashes(
         self, desired_hashes: Sequence[bytes]
@@ -452,9 +517,15 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
         """Keeps every block: this group reads its whole history."""
         return
+
+    @property
+    def has_full_prefix_dependency(self) -> bool:
+        """Returns true: this group reads its whole history."""
+        return True
 
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """All of it: this group reads its whole history."""
@@ -467,6 +538,92 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
 
     window_size: int
     """The sliding window's width in tokens."""
+
+    _write_ranges: dict[RequestID, tuple[int, int]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    """Known contiguous written tails, never a computed prefix."""
+
+    _full_write_ranges: dict[RequestID, tuple[int, int]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
+    def record_full_write(self, req_id: RequestID, end: int) -> None:
+        """Remembers ordinary writes until the first partial-write report."""
+        if req_id in self._write_ranges:
+            return
+        previous = self._full_write_ranges.get(req_id)
+        if previous is None:
+            row = self.rows[req_id][self.leaf_id]
+            high = 0
+            while high < len(row) and (
+                row[high].is_null or row[high].block_hash is not None
+            ):
+                high += 1
+            low = high
+            while low and row[low - 1].block_hash is not None:
+                low -= 1
+            start = low * self.page_size
+        else:
+            start = previous[0]
+        self._full_write_ranges[req_id] = (min(start, end), end)
+
+    def record_write_range(
+        self, req_id: RequestID, start: int, end: int
+    ) -> None:
+        """Records writes common to every layer sharing this leaf.
+
+        Adjacent forwards may together fill a page. A gap permanently rules
+        out its pages: subsequent forwards only append to the written tail.
+        """
+        if not 0 <= start <= end:
+            raise ValueError("Invalid write range")
+        previous = self._write_ranges.get(
+            req_id, self._full_write_ranges.get(req_id)
+        )
+        if previous is None:
+            # Only published blocks prove validity; allocated pages and the
+            # null prefix of a window hit do not.
+            row = self.rows[req_id][self.leaf_id]
+            high = min(start // self.page_size, len(row))
+            low = high
+            while low and row[low - 1].block_hash is not None:
+                low -= 1
+            previous = (low * self.page_size, high * self.page_size)
+        old_start, old_end = previous
+        if end < old_end or start < old_start:
+            raise ValueError("Write ranges must advance monotonically")
+        if start <= old_end:
+            start = old_start
+        self._write_ranges[req_id] = (start, end)
+        self._full_write_ranges.pop(req_id, None)
+        # A page crossing the floor can never become fully written later.
+        first_complete = (start + self.page_size - 1) // self.page_size
+        self._commit_from[req_id] = max(
+            self._commit_from[req_id], first_complete
+        )
+
+    def _is_committable(
+        self,
+        req_id: RequestID,
+        row: Sequence[LittleKVCacheBlock],
+        block_idx: int,
+    ) -> bool:
+        written = self._write_ranges.get(req_id)
+        if written is not None:
+            start, end = written
+            if not (
+                start <= block_idx * self.page_size
+                and (block_idx + 1) * self.page_size <= end
+            ):
+                return False
+        return super()._is_committable(req_id, row, block_idx)
+
+    def release(self, req_id: RequestID, replica_idx: int) -> None:
+        """Drops write coverage along with the request's blocks."""
+        self._write_ranges.pop(req_id, None)
+        self._full_write_ranges.pop(req_id, None)
+        super().release(req_id, replica_idx)
 
     @property
     def _blocks_in_window(self) -> int:
@@ -506,10 +663,17 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
-        """Frees the blocks below the window, nulling their slots."""
+        """Frees the blocks below the window, nulling their slots.
+
+        Keeps the window ending at the lowest boundary in ``keep``, which also
+        covers every higher one. With nothing in ``keep``, keeps the window
+        ending at the committed depth.
+        """
         pool = self.pools[replica_idx]
-        first_needed = max(0, num_committed_blocks - self._blocks_in_window)
+        end = min(keep) if keep else num_committed_blocks
+        first_needed = max(0, end - self._blocks_in_window)
         req_blocks = self.rows[req_id][self.leaf_id]
         null_block = pool.null_little_blocks[self.leaf_id]
         for idx in range(first_needed - 1, -1, -1):

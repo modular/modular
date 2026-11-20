@@ -24,6 +24,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace M {
 namespace Detail {
@@ -83,6 +84,44 @@ struct ProfilingRangeGlobals {
 };
 
 extern MODULAR_CXX_EXPORT ProfilingRangeGlobals &getProfilingRangeGlobals();
+
+// Process-wide state for //Support:ProfilingRanges' capture labels
+// (Support/Profiling/CaptureLabels.h). Op spans push labels from the Mojo
+// runtime's copy of the shim while the device launch site that reads them
+// lives in another shared library, so both must reach one instance.
+struct CaptureLabelOp {
+  uint64_t opSeq = 0;
+  uint64_t parentSeq = 0;
+  uint64_t thread = 0;
+  std::string label;
+};
+
+struct CaptureLabelGlobals {
+  // Number of device-graph captures in progress; labels record while > 0.
+  std::atomic<int> activeCaptures{0};
+  // Source of per-push op sequence numbers and per-thread ids; 0 means none.
+  std::atomic<uint64_t> nextOpSeq{1};
+  std::atomic<uint64_t> nextThread{1};
+  // Every label pushed while a capture is in progress, in push order.
+  // Guarded by `opsMutex`; cleared when the last capture ends.
+  std::mutex opsMutex;
+  std::vector<CaptureLabelOp> ops;
+};
+
+struct CaptureLabelFrame {
+  std::string label;
+  uint64_t opSeq = 0;
+  // The thread that pushed the op; differs from the holder for an adopted op.
+  uint64_t thread = 0;
+};
+
+struct CaptureLabelThreadState {
+  uint64_t thread = 0;
+  std::vector<CaptureLabelFrame> stack;
+};
+
+extern MODULAR_CXX_EXPORT CaptureLabelGlobals &getCaptureLabelGlobals();
+extern MODULAR_CXX_EXPORT CaptureLabelThreadState &getCaptureLabelThreadState();
 
 // Per-thread request correlation, described in
 // `Support/include/Support/RequestContext.h`.

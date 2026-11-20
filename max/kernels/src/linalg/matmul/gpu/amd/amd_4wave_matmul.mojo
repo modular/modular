@@ -36,8 +36,7 @@ through a single body: MMA shape and BK select on dtype.
 from std.bit import log2_floor
 from std.math import ceildiv
 from std.sys import align_of, size_of, llvm_intrinsic
-from std.sys.intrinsics import readfirstlane
-from std.utils import Index, IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.collections import Array
 from std.utils.numerics import get_accum_type
 
@@ -48,14 +47,14 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import MI355X
-from max.gpu.intrinsics import AMDBufferResource
+from max.gpu.intrinsics import AMDBufferResource, readfirstlane
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 
 from pipeline.config import ScheduleConfig, SchedulingStrategy
@@ -69,8 +68,6 @@ from structured_kernels.amd_tile_io_conv import TileLoaderLDSIm2col
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -154,19 +151,19 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
     warp / MMA tile shapes.
     """
 
-    var block_shape: IndexList[3]
+    var block_shape: Tuple[Int, Int, Int]
     """Workgroup tile shape `(BM, BN, BK)`."""
-    var warp_shape: IndexList[3]
+    var warp_shape: Tuple[Int, Int, Int]
     """Per-warp tile shape `(WM, WN, WK)`."""
-    var mma_shape: IndexList[3]
+    var mma_shape: Tuple[Int, Int, Int]
     """Single-MMA instruction shape `(MMA_M, MMA_N, MMA_K)`."""
 
     def __init__(
         out self,
         *,
-        block_shape: IndexList[3],
-        warp_shape: IndexList[3],
-        mma_shape: IndexList[3],
+        block_shape: Tuple[Int, Int, Int],
+        warp_shape: Tuple[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
     ):
         """Constructs a `MatmulKernelConfig` from the three tile shapes.
 
@@ -181,12 +178,12 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
 
     @staticmethod
     def _write_index_list(
-        mut writer: Some[Writer], list: IndexList, sep: StaticString
+        mut writer: Some[Writer], list: Tuple[Int, Int, Int], sep: StaticString
     ):
-        comptime for i in range(list.size):
+        comptime for i in range(3):
             if i != 0:
                 writer.write(sep)
-            writer.write(list[i])
+            writer.write(Int(list[i]))
 
     @inline(.always)
     def num_threads(self) -> Int:
@@ -195,8 +192,12 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
         Returns:
             The number of threads in one workgroup.
         """
-        var num_warps = self.block_shape // self.warp_shape
-        return num_warps.flattened_length() * WARP_SIZE
+        var num_warps = (
+            (Int(self.block_shape[0]) // Int(self.warp_shape[0]))
+            * (Int(self.block_shape[1]) // Int(self.warp_shape[1]))
+            * (Int(self.block_shape[2]) // Int(self.warp_shape[2]))
+        )
+        return num_warps * WARP_SIZE
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes a human-readable shape tag to `writer`.
@@ -410,7 +411,6 @@ struct AMD4WaveMatmul[
     config: MatmulKernelConfig,
     /,
     enable_swizzle: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Hand-written 4-warp 2x2 inline-MMA matmul for AMD MI355X.
 
@@ -425,7 +425,6 @@ struct AMD4WaveMatmul[
         c_type: Output C element type.
         config: MatmulKernelConfig with block/warp/mma shapes.
         enable_swizzle: Enable LDS bank conflict avoidance.
-        elementwise_lambda_fn: Optional epilogue.
     """
 
     comptime BM = Self.config.block_shape[0]
@@ -843,8 +842,7 @@ struct AMD4WaveMatmul[
         """Same as `run` without split-K, storing the output through
         `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_args=(epilogue_fn,)`.
 
         Parameters:
             a_layout: Logical layout of `a`.
@@ -892,8 +890,7 @@ struct AMD4WaveMatmul[
         """Same as `run` without split-K, storing `compute_fn(idx, value)`
         into `c`.
 
-        Launch with `host_arg=compute_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_args=(compute_fn,)`.
 
         Parameters:
             a_layout: Logical layout of `a`.
@@ -1240,6 +1237,8 @@ struct AMD4WaveMatmul[
                         )
                     case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                    case _:
+                        pass
 
             # Prologue. The schedule overrides `warp_stagger=none()`
             # (4-wave has only 4 warps, so warp-group staggering is
@@ -1292,23 +1291,19 @@ struct AMD4WaveMatmul[
         # the matmul kernel writes f32 partials to a stacked workspace
         # at row `split_id * M + pid_m * BM + m_global_base` while the
         # in-bounds gate uses the LOGICAL row `m + m_global_base` — the
-        # two coincide for non-split-K. Lambda mode requires the lambda
-        # to fire on the FINAL value, so split-K + lambda is rejected
-        # at comptime; the reduce kernel applies the lambda there.
+        # two coincide for non-split-K. An output closure must fire on
+        # the FINAL value, so split-K + closure is rejected at comptime;
+        # the reduce kernel applies the closure there.
         comptime quad_m_mmas = Self.quadrant_m_mmas
         comptime quad_n_mmas = Self.quadrant_n_mmas
 
-        comptime if Bool(Self.elementwise_lambda_fn):
+        comptime if has_epilogue_fn or has_compute_fn:
             comptime assert num_splits == 1, (
-                "elementwise epilogue is not supported with split-K"
+                "an output closure is not supported with split-K"
                 " (would fire on each partial, not the reduced output)"
             )
 
-        var c_writer = RegTileEpilogue[
-            Self.c_type,
-            c_frag_size,
-            elementwise_lambda_fn=Self.elementwise_lambda_fn,
-        ](c)
+        var c_writer = RegTileEpilogue[Self.c_type, c_frag_size](c)
 
         if m < M and n < N:
             var c_reg = mma_op.accum_tile()
@@ -1334,11 +1329,10 @@ struct AMD4WaveMatmul[
                             + n_within * MMA_N
                             + lane_group * c_frag_size
                         )
-                        var v = (
-                            c_reg.tile[1, c_frag_size](m_mma, n_mma)
-                            .raw_load[width=c_frag_size](0)
-                            .cast[Self.c_type]()
-                        )
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_dtype](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
                         comptime if has_epilogue_fn:
                             c_writer.store_with_epilogue_fn(
                                 epilogue_fn, v, m=m_dram, n=n_global
@@ -1368,25 +1362,20 @@ struct AMD4WaveMatmul[
         a_engine: TensorEngine,
         b_engine: TensorEngine,
         c_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
         has_residual: Bool = False,
-        # Pre-residual fused compute lambda (SM100 reference:
-        # `D = lambda(Conv(A,B)) + beta * C`). Fires on the post-cast
-        # `c_type` MMA output, BEFORE the residual FMA. Signature
-        # `(Coord, SIMD) capturing -> SIMD`. Use for bias / ReLU /
-        # SiLU / GELU fusion. The post-residual store-site lambda is
-        # the existing struct-level `Self.elementwise_lambda_fn` and
-        # fires after the residual FMA (or directly on the MMA output
-        # when `has_residual=False`).
-        elementwise_compute_lambda_fn: Optional[
-            elementwise_compute_lambda_type
-        ] = None,
+        has_epilogue_fn: Bool = False,
+        has_compute_fn: Bool = False,
     ](
         a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-        source_ptr: UnsafePointer[Scalar[Self.c_type], ImmutAnyOrigin],
+        source_ptr: ImmPointer[Scalar[Self.c_type], ImmutAnyOrigin],
         source_row_stride: Int32,
         beta: Float32,
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Runs the 4-wave kernel as a 2D convolution via implicit-GEMM.
 
@@ -1418,17 +1407,16 @@ struct AMD4WaveMatmul[
             a_engine: `TensorEngine` of `a`.
             b_engine: `TensorEngine` of `b`.
             c_engine: `TensorEngine` of `c`.
+            EpilogueFnType: Type of `epilogue_fn`.
+            ComputeFnType: Type of `compute_fn`.
             has_residual: When True, prefetch + FMA in `source * beta`
                 during the epilogue. When False, the residual args are
                 unused and the epilogue is identical to the no-residual
                 kernel (dead-code-eliminated by the compiler).
-            elementwise_compute_lambda_fn: Optional pre-residual fused
-                compute lambda. Fires on the post-cast `c_type` MMA
-                output BEFORE the residual FMA, matching the SM100
-                `D = lambda(Conv(A,B)) + beta * C` ordering. Use for
-                bias / ReLU / SiLU / GELU fusion. Signature
-                `(Coord, SIMD) capturing -> SIMD`. When unset,
-                the comptime branch dead-code-eliminates.
+            has_epilogue_fn: Whether `epilogue_fn` stores each output
+                chunk instead of the kernel.
+            has_compute_fn: Whether `compute_fn` transforms each output
+                chunk before the residual add.
 
         Args:
             a: Input tile-tensor for A (NHWC activations).
@@ -1441,6 +1429,12 @@ struct AMD4WaveMatmul[
             source_row_stride: Element stride of the residual's row
                 dimension. Unused when `has_residual=False`.
             beta: Residual scale. Unused when `has_residual=False`.
+            epilogue_fn: Post-residual epilogue that stores each output
+                chunk, matching the SM100 `D = lambda(Conv(A,B)) + beta * C`
+                ordering. Used when `has_epilogue_fn` is set.
+            compute_fn: Pre-residual compute epilogue (bias / ReLU / SiLU
+                / GELU) applied to the post-cast `c_type` MMA output.
+                Used when `has_compute_fn` is set.
         """
         Self.validate_config()
         var _source_row_stride = Int(source_row_stride)
@@ -1841,6 +1835,8 @@ struct AMD4WaveMatmul[
                         )
                     case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                    case _:
+                        pass
 
             # Prologue. The schedule overrides `warp_stagger=none()`
             # (4-wave has only 4 warps, so warp-group staggering is
@@ -1888,17 +1884,11 @@ struct AMD4WaveMatmul[
         # the matmul kernel writes f32 partials to a stacked workspace
         # at row `split_id * M + pid_m * BM + m_global_base` while the
         # in-bounds gate uses the LOGICAL row `m + m_global_base` — the
-        # two coincide for non-split-K. Lambda mode requires the lambda
-        # to fire on the FINAL value, so split-K + lambda is rejected
-        # at comptime; the reduce kernel applies the lambda there.
+        # two coincide for non-split-K. An output closure must fire on
+        # the FINAL value, so split-K + closure is rejected at comptime;
+        # the reduce kernel applies the closure there.
         comptime quad_m_mmas = Self.quadrant_m_mmas
         comptime quad_n_mmas = Self.quadrant_n_mmas
-
-        comptime if Bool(Self.elementwise_lambda_fn):
-            comptime assert num_splits == 1, (
-                "elementwise epilogue is not supported with split-K"
-                " (would fire on each partial, not the reduced output)"
-            )
 
         # Residual prefetch: when `has_residual`, bulk-issue per-lane
         # `buffer_load_*` for source[m_logical, n_global] into a VGPR
@@ -1965,11 +1955,7 @@ struct AMD4WaveMatmul[
 
         _emit_framework_body()
 
-        var c_writer = RegTileEpilogue[
-            Self.c_type,
-            c_frag_size,
-            elementwise_lambda_fn=Self.elementwise_lambda_fn,
-        ](c)
+        var c_writer = RegTileEpilogue[Self.c_type, c_frag_size](c)
 
         # Drain prefetched loads before the first `v_pk_fma_f32` reads
         # the prefetched array. By now the main loop's MMAs have given
@@ -2002,20 +1988,17 @@ struct AMD4WaveMatmul[
                             + n_within * MMA_N
                             + lane_group * c_frag_size
                         )
-                        var v = (
-                            c_reg.tile[1, c_frag_size](m_mma, n_mma)
-                            .raw_load[width=c_frag_size](0)
-                            .cast[Self.c_type]()
-                        )
-                        # Pre-residual fused compute lambda — matches
+                        var v = c_reg.load[
+                            width=c_frag_size,
+                            alignment=align_of[Self.accum_dtype](),
+                        ](Coord(m_mma, n_mma * c_frag_size)).cast[Self.c_type]()
+                        # Pre-residual fused compute closure — matches
                         # SM100 `D = lambda(Conv(A,B)) + beta * C`
                         # semantics. Fires on the post-cast `c_type`
                         # MMA output (use cases: bias / ReLU / SiLU /
                         # GELU before the skip add).
-                        comptime if case .Some(
-                            _compute_fn
-                        ) = elementwise_compute_lambda_fn:
-                            v = _compute_fn[
+                        comptime if has_compute_fn:
+                            v = compute_fn[
                                 alignment=align_of[
                                     SIMD[Self.c_type, c_frag_size]
                                 ]()
@@ -2026,7 +2009,12 @@ struct AMD4WaveMatmul[
                             ].cast[.float32]()
                             var fused_f32 = v.cast[.float32]() + beta * skip
                             v = fused_f32.cast[Self.c_type]()
-                        c_writer.store(v, m=m_dram, n=n_global)
+                        comptime if has_epilogue_fn:
+                            c_writer.store_with_epilogue_fn(
+                                epilogue_fn, v, m=m_dram, n=n_global
+                            )
+                        else:
+                            c_writer.store(v, m=m_dram, n=n_global)
 
 
 @inline(.always)
@@ -2314,9 +2302,11 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                host_arg=epilogue_fn,
-                grid_dim=(num_blocks_n * num_blocks_m,),
-                block_dim=config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(num_blocks_n * num_blocks_m,),
+                    block_dim=config.num_threads(),
+                ),
+                host_args=(epilogue_fn,),
             )
         elif has_compute_fn:
             comptime value_kernel = kernel_type.run_with_compute_fn[
@@ -2332,9 +2322,11 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                host_arg=compute_fn,
-                grid_dim=(num_blocks_n * num_blocks_m,),
-                block_dim=config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(num_blocks_n * num_blocks_m,),
+                    block_dim=config.num_threads(),
+                ),
+                host_args=(compute_fn,),
             )
         elif dump_asm_path != "":
             ctx.enqueue_function[kernel, dump_asm=dump_asm_path](
@@ -2349,8 +2341,10 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                grid_dim=(num_blocks_n * num_blocks_m,),
-                block_dim=config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(num_blocks_n * num_blocks_m,),
+                    block_dim=config.num_threads(),
+                ),
             )
 
     comptime if block_m_override > 0 and block_n_override > 0:
@@ -2367,9 +2361,9 @@ def _structured_4wave_matmul_impl[
         ), "block_n_override must be >= block_m_override (BN < BM is broken)"
 
         comptime config_override = MatmulKernelConfig(
-            block_shape=Index(BM_o, BN_o, _bk),
-            warp_shape=Index(BM_o // 2, BN_o // 2, _bk),
-            mma_shape=Index(16, 16, _mma_k),
+            block_shape=(BM_o, BN_o, _bk),
+            warp_shape=(BM_o // 2, BN_o // 2, _bk),
+            mma_shape=(16, 16, _mma_k),
         )
         run_kernel[config_override]()
         return
@@ -2381,14 +2375,14 @@ def _structured_4wave_matmul_impl[
     # regime). For M ≥ 1024 the dispatcher should pass
     # `block_m_override=128, block_n_override=128, block_k_override=64`.
     comptime config_64 = MatmulKernelConfig(
-        block_shape=Index(64, 64, _bk),
-        warp_shape=Index(32, 32, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(64, 64, _bk),
+        warp_shape=(32, 32, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
     comptime config_128 = MatmulKernelConfig(
-        block_shape=Index(128, 128, _bk),
-        warp_shape=Index(64, 64, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(128, 128, _bk),
+        warp_shape=(64, 64, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
 
     comptime if _is_fp8:

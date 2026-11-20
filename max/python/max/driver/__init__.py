@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Device programming for MAX: allocate buffers, manage devices, and
-dispatch work through device queues.
+"""Device programming for MAX.
+
+It allocates buffers, manages devices, and dispatches work through device
+queues.
 """
 
 import contextlib
@@ -20,6 +22,7 @@ from collections.abc import Iterator
 
 from max._core import __version__
 from max._core.driver import (
+    ArchitectureVersion,
     CompletionFlag,
     DeviceEvent,
     HostHazardError,
@@ -42,6 +45,11 @@ from max._core.driver import (
 )
 from max._core_types.driver import DLPackArray
 
+from .bfloat16 import (
+    bfloat16_as_uint16_to_float32,
+    float32_array_to_buffer,
+    float32_to_bfloat16_as_uint16,
+)
 from .buffer import (
     Buffer,
     _ChunkedStagingRegion,
@@ -125,6 +133,7 @@ def launch_trace() -> Iterator[list[LaunchTraceEntry]]:
 __all__ = [
     "CPU",
     "Accelerator",
+    "ArchitectureVersion",
     "Buffer",
     "CompletionFlag",
     "DLPackArray",
@@ -141,11 +150,14 @@ __all__ = [
     "accelerator_count",
     "batch_inplace_copy",
     "begin_launch_trace",
+    "bfloat16_as_uint16_to_float32",
     "calculate_virtual_device_count",
     "calculate_virtual_device_count_from_cli",
     "copy_pinned_to_destinations",
     "devices_exist",
     "enable_all_peer_access",
+    "float32_array_to_buffer",
+    "float32_to_bfloat16_as_uint16",
     "get_virtual_cpu_target",
     "get_virtual_device_api",
     "get_virtual_device_count",

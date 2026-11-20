@@ -16,7 +16,7 @@ Every sequential unified spec-decode module in the tree runs the same seven
 phases -- merge, verify, mask, accept, shift, propose, pack -- and differs only
 in how it calls its target, how it calls its draft, and what per-step cache
 bookkeeping the draft needs. :class:`SequentialDriver` owns the phases; a model
-contributes a :class:`SpecDecodeTarget` and a :class:`SequentialProposer`.
+contributes a verify callable and a :class:`SequentialProposer`.
 
 The two adapters are deliberately not ``Module`` subclasses. The driver
 registers the target and draft modules under the same attribute names the
@@ -24,26 +24,23 @@ hand-written modules used, so weight loading, ``state_dict`` keys and the
 weights registry are unchanged.
 
 The driver runs on graph values, but nothing outside it has to. A caller may
-pass experimental :class:`~max.experimental.tensor.Tensor` inputs, one per
-device, and gets ``Tensor`` outputs back; an adapter that subclasses
-:class:`TensorAdapter` reads and returns ``Tensor`` values too. Both convert at
-the boundary, so a ModuleV3 model never reaches for the graph API.
+pass experimental :class:`~max.tensor.Tensor` inputs, one per
+device, and gets ``Tensor`` outputs back; a proposer that subclasses
+:class:`TensorAdapter`, and a verify wrapped in :func:`tensor_compat_verify`, read and
+return ``Tensor`` values too. Both convert at the boundary, so a ModuleV3
+model never reaches for the graph API.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Generic, Literal, Protocol
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module as ModuleV3
-from max.experimental.realization_context import current_realization_context
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -57,19 +54,23 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kernels import topk_fused_sampling_with_dist
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.sampling.penalties import LogitPenalties
-from max.nn.sampling.rejection_sampler import (
+from max.nn import Module as ModuleV3
+from max.nn._graph_ops import topk_fused_sampling_with_dist
+from max.nn._graph_ops.sampling import (
     AcceptanceSampler,
+    LogitPenalties,
     _draft_step_seed,
     _reshape_target_logits,
 )
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
+from max.tensor import Tensor
+from max.tensor.realization_context import current_realization_context
+from max.tensor.sharding import DeviceMesh
 from typing_extensions import TypeVar, override
 
 from ._tensor_compat import as_graph_values, as_tensors
@@ -78,8 +79,9 @@ from .ragged_token_merger import RaggedTokenMerger, _shape_to_scalar
 from .spec_input_types import (
     SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
+    without_mixed_step_split,
 )
-from .spec_target import SpecDecodeTarget, Verified
+from .spec_target import Verified
 from .spec_width_policy import declares_skippable_draft
 from .unified_graph_ops import (
     accept_and_pick_next_tokens,
@@ -104,6 +106,7 @@ __all__ = [
     "SequentialProposer",
     "TensorAdapter",
     "gather_variable_rows",
+    "tensor_compat_verify",
 ]
 
 _T = TypeVar("_T", TensorValue, Tensor, default=TensorValue)
@@ -125,12 +128,12 @@ BufferLike = TypeVar("BufferLike", BufferValue, Tensor)
 
 
 class TensorAdapter:
-    """Marks a target or proposer that runs on experimental ``Tensor`` values.
+    """Marks a proposer that runs on experimental ``Tensor`` values.
 
     The driver hands such an adapter its batch and carries as single-device
     ``Tensor`` values, one per device where it holds a list, and accepts
     ``Tensor`` results back. A ModuleV3 adapter therefore builds its
-    distributed inputs with :meth:`~max.experimental.tensor.Tensor.from_shard_values`
+    distributed inputs with :meth:`~max.tensor.Tensor.from_shard_values`
     rather than converting graph values itself.
     """
 
@@ -138,6 +141,20 @@ class TensorAdapter:
 def _for_adapter(adapter: object, value: Any) -> Any:
     """Converts ``value`` to the value type ``adapter`` runs on."""
     return as_tensors(value) if isinstance(adapter, TensorAdapter) else value
+
+
+def _from_adapter(adapter: object, value: Any) -> Any:
+    """Converts ``value`` from the value type ``adapter`` runs on.
+
+    The mirror of :func:`_for_adapter`: a ``TensorAdapter``'s results come
+    back as Tensors, which the driver's graph ops need as graph values;
+    any other adapter already runs on graph values, and converting those
+    results (a mesh-distributed one among them) either no-ops or raises,
+    so they pass through untouched, as they did before TensorAdapters.
+    """
+    return (
+        as_graph_values(value) if isinstance(adapter, TensorAdapter) else value
+    )
 
 
 @tree.dataclass(frozen=True)
@@ -298,9 +315,9 @@ class SequentialBatch(Generic[_T, _B, _V]):
 _TargetHiddenT = TypeVar("_TargetHiddenT", contravariant=True)
 """The target's hidden-state payload.
 
-Opaque to the driver, which passes it from :meth:`SpecDecodeTarget.verify`
-straight to :meth:`SequentialProposer.prefill`. Contravariant because it is
-only ever consumed here -- nothing on this side hands it back out.
+Opaque to the driver, which passes it from the verify callable straight to
+:meth:`SequentialProposer.prefill`. Contravariant because it is only ever
+consumed here -- nothing on this side hands it back out.
 """
 
 
@@ -539,12 +556,36 @@ def gather_variable_rows(
     input_row_offsets: Tensor,
     return_n_logits: Tensor,
     mesh: DeviceMesh,
+    data_parallel_degree: int = 1,
 ) -> tuple[Tensor, Tensor]:
     """Gathers each request's last ``return_n_logits`` rows of ``h``.
 
     Also returns their offsets, ``return_n_logits`` apart, matching the
     graph-API ``deepseek_logits_postprocess``.
+
+    Under data parallelism (``data_parallel_degree > 1``), ``h`` holds each
+    replica's own rows and ``input_row_offsets`` is in each replica's local
+    frame. Each replica gathers from its own rows, and one allgather joins
+    them in replica order, which is global request order, so only the
+    gathered rows cross devices. The offsets then span the joined batch.
     """
+    variable_h = _gather_last_n_rows(
+        h, input_row_offsets, return_n_logits, mesh
+    )
+    if data_parallel_degree > 1:
+        # Joining per-device rows is replica order only while each replica is
+        # one device. The ModuleV3 GLM-5.x and DeepSeek-V3.2 configs reject a
+        # DP x TP mesh today; allowing one needs a gather over replicas.
+        variable_h = F.allgather(variable_h, tensor_axis=0)
+    return variable_h, _variable_row_offsets(variable_h, return_n_logits, mesh)
+
+
+def _gather_last_n_rows(
+    h: Tensor,
+    input_row_offsets: Tensor,
+    return_n_logits: Tensor,
+    mesh: DeviceMesh,
+) -> Tensor:
     # Built on one device and broadcast: per-device ranges that share the
     # symbolic out_dim trip a cross-device rebind (see the graph-API
     # implementation).
@@ -568,10 +609,15 @@ def gather_variable_rows(
         return ops.gather(h, ops.reshape(rows, (-1,)), axis=0)
 
     # The rule-less body gathers each device's own rows.
-    variable_h = F.functional(_body)(
-        h, input_row_offsets, n_range
-    ).rebind_mapping(h.mapping)
-    offsets = F.range(
+    return F.functional(_body)(h, input_row_offsets, n_range).rebind_mapping(
+        h.mapping
+    )
+
+
+def _variable_row_offsets(
+    variable_h: Tensor, return_n_logits: Tensor, mesh: DeviceMesh
+) -> Tensor:
+    return F.range(
         0,
         F.shape_to_tensor(variable_h.shape)[0] + return_n_logits[0],
         return_n_logits[0],
@@ -579,7 +625,38 @@ def gather_variable_rows(
         dtype=DType.int64,
         device=mesh.devices[0],
     )
-    return variable_h, offsets
+
+
+_VerifiedHiddenT = TypeVar("_VerifiedHiddenT")
+"""The hidden-state payload a wrapped verify returns."""
+
+
+def tensor_compat_verify(
+    verify: Callable[
+        [SequentialBatch[Tensor, Tensor, Tensor]],
+        Verified[_VerifiedHiddenT, Tensor],
+    ],
+) -> Callable[[SequentialBatch], Verified[_VerifiedHiddenT]]:
+    """Adapts a verify that runs on experimental ``Tensor`` values.
+
+    The driver hands its verify callable graph values; the returned callable
+    passes ``verify`` its batch as single-device ``Tensor`` values and converts
+    the result back.
+
+    Args:
+        verify: The target's verify, reading and returning ``Tensor`` values.
+
+    Returns:
+        A verify callable the driver accepts.
+    """
+
+    def on_graph_values(batch: SequentialBatch) -> Verified[_VerifiedHiddenT]:
+        verified: Verified[_VerifiedHiddenT] = as_graph_values(
+            verify(as_tensors(batch))
+        )
+        return verified
+
+    return on_graph_values
 
 
 class SequentialDriver(
@@ -593,10 +670,7 @@ class SequentialDriver(
 
     def __init__(
         self,
-        target: SpecDecodeTarget[SequentialBatch, _TargetHiddenT]
-        | SpecDecodeTarget[
-            SequentialBatch[Tensor, Tensor, Tensor], Any, Tensor
-        ],
+        verify: Callable[[SequentialBatch], Verified[_TargetHiddenT]],
         proposer: SequentialProposer[_TargetHiddenT]
         | SequentialProposer[Any, Tensor, Tensor, Tensor],
         *,
@@ -608,9 +682,16 @@ class SequentialDriver(
         use_greedy_acceptance: bool = False,
         num_draft_steps: int | None = None,
         vocab_size: int | None = None,
+        ep_input_types: Sequence[TensorType | BufferType] = (),
+        trailing_input_types: Sequence[TensorType | BufferType] = (),
+        hisparse_input_types: Sequence[TensorType | BufferType] = (),
+        fold_index_glue: bool = False,
     ) -> None:
         super().__init__()
-        self._target = target
+        self._verify = verify
+        self._ep_input_types = tuple(ep_input_types)
+        self._trailing_input_types = tuple(trailing_input_types)
+        self._hisparse_input_types = tuple(hisparse_input_types)
         self._proposer = proposer
         draft_proposal: Literal["argmax", "sampled"] = (
             speculative_config.draft_proposal
@@ -728,6 +809,7 @@ class SequentialDriver(
             relaxed_delta=relaxed_delta,
             draft_proposal=draft_proposal,
             vocab_size=vocab_size,
+            fold_index_glue=fold_index_glue,
         )
         # Registered under the names the hand-written modules used, so the
         # state_dict keys and the weights registry are unchanged.
@@ -1009,9 +1091,7 @@ class SequentialDriver(
                 draft_block_offsets=draft_block_offsets,
             )
 
-            verified: Verified[Any] = as_graph_values(
-                self._target.verify(_for_adapter(self._target, batch))
-            )
+            verified = self._verify(batch)
 
         with Graph.current.profile_scope(
             "verify_and_sample", color=ProfileScopeColor.ORANGE
@@ -1056,6 +1136,10 @@ class SequentialDriver(
         with Graph.current.profile_scope(
             "draft_forward", color=ProfileScopeColor.ORANGE
         ):
+            # A target with state the verify advanced lands it on the
+            # accepted prefix before the draft runs.
+            if verified.roll_forward is not None:
+                verified.roll_forward(replace(batch, num_accepted=num_accepted))
             shifted_corrected = shift_corrected_tokens(
                 self.merger, tokens, input_row_offsets, recovered, bonus
             )
@@ -1180,16 +1264,20 @@ class SequentialDriver(
             and the matching ``[batch_size, vocab_size]`` distributions under
             ``draft_proposal="sampled"`` (``None`` otherwise).
         """
-        batch = replace(batch, num_accepted=num_accepted)
+        # The split record describes the verify rows, not the draft's.
+        batch = without_mixed_step_split(
+            replace(batch, num_accepted=num_accepted)
+        )
         sampled = self._draft_proposal == "sampled"
         with Graph.current.profile_scope("draft_step_0"):
             proposer = self._proposer
-            prefill: Proposed = as_graph_values(
+            prefill: Proposed = _from_adapter(
+                proposer,
                 proposer.prefill(
                     _for_adapter(proposer, batch),
                     _for_adapter(proposer, shifted_corrected),
                     _for_adapter(proposer, target_hidden),
-                )
+                ),
             )
 
             splits = (
@@ -1475,12 +1563,13 @@ class SequentialDriver(
                     batch_context_lengths=batch_context_lengths,
                 )
 
-                proposed: Proposed = as_graph_values(
+                proposed: Proposed = _from_adapter(
+                    self._proposer,
                     self._proposer.step(
                         _for_adapter(self._proposer, step_batch),
                         _for_adapter(self._proposer, draft_input),
                         index,
-                    )
+                    ),
                 )
 
                 assert proposed.logits is not None, (
@@ -1710,4 +1799,12 @@ class SequentialDriver(
 
     @override
     def ep_input_types(self) -> Sequence[TensorType | BufferType]:
-        return self._target.ep_input_types()
+        return self._ep_input_types
+
+    @override
+    def hisparse_input_types(self) -> Sequence[TensorType | BufferType]:
+        return self._hisparse_input_types
+
+    @override
+    def trailing_input_types(self) -> Sequence[TensorType | BufferType]:
+        return self._trailing_input_types

@@ -87,6 +87,7 @@ logger = logging.getLogger("max.serve")
 
 
 def validate_port_is_free(port: int) -> int:
+    """Returns the port after confirming it can be bound."""
     # check if port is already in use
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
@@ -101,6 +102,8 @@ def validate_port_is_free(port: int) -> int:
 
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
+    """Settings that a serving token generator is built from."""
+
     # Pipeline config
     model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
@@ -121,6 +124,7 @@ async def lifespan(
     serving_settings: ServingTokenGeneratorSettings,
     zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
+    """Runs the app's startup and shutdown work."""
     try:
         if not _telemetry_disabled(settings):
             send_telemetry_log(
@@ -156,6 +160,8 @@ async def lifespan(
             start_telemetry_consumer(settings)
         )
         METRICS.configure(client=metric_client)
+        METRICS.export_zero_client_disconnect_cancellations()
+        METRICS.export_zero_structured_output_requests()
 
         # start model worker
 
@@ -236,7 +242,26 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
-        app.state.memory_plan = serving_settings.memory_plan
+        # The worker sized its KV cache once loaded and may have lowered the
+        # planned max length; the tokenizer refuses prompts past it.
+        app.state.memory_plan = (
+            model_worker.memory_plan or serving_settings.memory_plan
+        )
+        served_length = (
+            app.state.memory_plan.planned_max_length
+            if app.state.memory_plan is not None
+            else None
+        )
+        tokenizer_length = getattr(
+            serving_settings.tokenizer, "max_length", None
+        )
+        if (
+            served_length is not None
+            and isinstance(tokenizer_length, int)
+            and served_length < tokenizer_length
+        ):
+            tokenizer: Any = serving_settings.tokenizer
+            tokenizer.max_length = served_length
         # The served task, for routes that only mean something for one of them:
         # every API type is mounted regardless, so a route with no counterpart
         # in the served model has to refuse the request itself.
@@ -294,6 +319,7 @@ async def health() -> Response:
 
 
 def make_metrics_app() -> Callable[..., Any]:
+    """Builds the ASGI app that serves Prometheus metrics."""
     from prometheus_client import disable_created_metrics, make_asgi_app
 
     disable_created_metrics()
@@ -328,7 +354,7 @@ async def _request_queue_full_exception_handler(
     before any response status is committed) by any endpoint that submits to the
     worker, so it is handled centrally here rather than per route. Returns the
     OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
-    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    rejection rate is observable via ``max.request_count{code="429"}``.
     """
     assert isinstance(exc, RequestQueueFull)
     request_id = getattr(request.state, "request_id", "<unknown>")
@@ -346,6 +372,7 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
+    """Builds the FastAPI app from the server settings."""
     zmq_endpoint_base = generate_zmq_ipc_path()
 
     @asynccontextmanager
@@ -362,11 +389,11 @@ def fastapi_app(
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
     app.state.zmq_endpoint_base = zmq_endpoint_base
 
-    if settings.max_request_bytes > 0:
-        app.add_middleware(
-            RequestBodySizeLimitMiddleware,
-            max_bytes=settings.max_request_bytes,
-        )
+    app.add_middleware(
+        RequestBodySizeLimitMiddleware,
+        max_bytes=settings.max_request_bytes,
+        body_timeout_s=settings.request_body_timeout_s,
+    )
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
@@ -479,6 +506,7 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
+    """Builds the uvicorn config for a FastAPI app."""
     config = Config(
         app=app,
         log_config=None,

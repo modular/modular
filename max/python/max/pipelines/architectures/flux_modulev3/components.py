@@ -22,11 +22,11 @@ single-Module-with-two-forward-methods-and-shared-weights pattern is
 self-contained.
 """
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Conv2d, GroupNorm, Module, ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Conv2d, GroupNorm, Module, ModuleList
+from max.tensor import Tensor
 
 from .layers import Downsample2D, ResnetBlock2D, Upsample2D, VAEAttention
 

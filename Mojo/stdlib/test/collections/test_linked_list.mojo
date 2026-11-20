@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import LinkedList
-from std.hashlib import hash
+from std.hash import hash
 
 from test_utils import (
     CopyCountedStruct,
@@ -938,6 +938,16 @@ def test_linked_list_prepend_explicit_destroy() raises:
     assert_equal(len(order), 2)
     assert_equal(order[0], 1)
     assert_equal(order[1], 2)
+
+
+def test_insert_pointer_with_mutable_origin() raises:
+    var o = 1
+    var l = LinkedList[Pointer[Int, origin_of(o)]]()
+    l.append(Pointer(to=o))
+    l.prepend(Pointer(to=o))
+    l.insert(1, Pointer(to=o))
+    assert_equal(len(l), 3)
+    assert_equal(l.pop()[], 1)
 
 
 def main() raises:

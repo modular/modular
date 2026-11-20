@@ -142,7 +142,7 @@ def _run_case[
 
     var a = TileTensor(a_buf, row_major(total_m, Idx[K]))
     var b = TileTensor(
-        b_buf.unsafe_ptr() - expert_base * N * K,
+        b_buf.unsafe_ptr().unsafe_offset(-(expert_base * N * K)),
         row_major[num_experts, N, K](),
     )
     var off = TileTensor(off_buf, row_major(num_experts + 1))
@@ -175,7 +175,7 @@ def _run_case[
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var out = val.cast[.float32]() * 2 + 1
         epi_ptr.unsafe_store[width=width](
-            Int(idx[0].value()) * N + Int(idx[1].value()), out.cast[out_type]()
+            Int(idx[0]) * N + Int(idx[1]), out.cast[out_type]()
         )
 
     grouped_matmul[has_epilogue_fn=True](
@@ -237,8 +237,10 @@ def _run_case[
 
 def main() raises:
     with DeviceContext() as ctx:
-        if ctx.compute_capability() != 5:
-            print("skip: Apple grouped matmul requires Apple M5 (cc==5)")
+        if ctx.compute_capability() < 5:
+            print(
+                "skip: Apple grouped matmul requires Apple M5 or newer (cc>=5)"
+            )
             return
 
         comptime BF16 = DType.bfloat16
@@ -269,7 +271,7 @@ def main() raises:
             [70, 130, 1, 64], [3, 1, 0, 2], ctx, atol=1e-3, rtol=1e-4
         )
 
-        # LoRA SGMV (`mo.lora_sgmv.ragged`): 4 adapters of rank 16 on a
+        # LoRA SGMV (`matmul.lora_sgmv.ragged`): 4 adapters of rank 16 on a
         # 4096-wide layer, shrink `[4, 16, 4096]` and expand `[4, 4096, 16]`.
         # Id -1 is a request without an adapter. Decode, then prefill.
         var lora_ids: List[Int] = [1, -1, 3, 0]

@@ -17,9 +17,11 @@ from std.sys.info import Endian, is_64bit
 from std.bit import count_leading_zeros
 from std.memory import alloc, Layout
 from std.memory.unsafe import bitcast
+from std.benchmark import black_box
 from std.builtin._format_float import _write_float
 from std.simd import _modf
 from std.itertools import product
+from std.python import PythonObject
 from std.random import randn, seed
 from std.testing import (
     assert_almost_equal,
@@ -36,6 +38,7 @@ from std.testing.prop.strategy import SIMD
 
 from std.utils import StaticTuple
 from std.utils.numerics import isfinite, isinf, isnan, nan
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_cast() raises:
@@ -279,7 +282,7 @@ def test_from_to_bits_roundtrip_property_test() raises:
     var prop_test = PropTest()
 
     comptime for dtype, size in product(dtypes, sizes):
-        prop_test.test[properties[dtype, size]](SIMD[dtype, size].strategy())
+        prop_test.test(SIMD[dtype, size].strategy(), properties[dtype, size])
 
 
 def test_simd_variadic() raises:
@@ -428,7 +431,7 @@ def test_issue_1625() raises:
 
 
 def test_issue_20421() raises:
-    var a_layout = Layout[UInt8, alignment=.of_bytes[64]()](count=16 * 64)
+    var a_layout = Layout[UInt8, alignment=.of_bytes[64]()](length=16 * 64)
     var allocation = alloc(a_layout).into_managed()
     var ptr = allocation.unsafe_ptr()
     for i in range(16 * 64):
@@ -1284,6 +1287,21 @@ def test_insert() raises:
         SIMD[.uint, 8](9, 6, 3, 7, 5, 6, 7, 8),
     )
 
+    assert_equal(
+        SIMD[.int64, 2](1, 2).insert[offset=1](Scalar[.int64](99)),
+        SIMD[.int64, 2](1, 99),
+    )
+
+    assert_equal(
+        SIMD[.int64, 2](1, 2).insert[offset=0](Scalar[.int64](99)),
+        SIMD[.int64, 2](99, 2),
+    )
+
+    assert_equal(
+        SIMD[.float32, 4](0, 1, 2, 3).insert[offset=3](Float32(9)),
+        SIMD[.float32, 4](0, 1, 2, 9),
+    )
+
 
 def test_join() raises:
     comptime I2 = SIMD[.int32, 2]
@@ -1873,19 +1891,6 @@ def test_pow() raises:
     assert_equal(Int64(27), Int64.__pow__(Int64(3), Int64(3)))
     assert_equal(Int64(81), Int64.__pow__(Int64(3), Int64(4)))
 
-    # Negative exponents: 1 ** n == 1 for all n.
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-5)))
-
-    # Negative exponents: (-1) ** n depends on parity.
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(-1), Int64(-2)))
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-3)))
-
-    # Negative exponents: |base| > 1 truncates to 0.
-    assert_equal(Int64(0), Int64.__pow__(Int64(2), Int64(-1)))
-    assert_equal(Int64(0), Int64.__pow__(Int64(3), Int64(-2)))
-
 
 def test_powf() raises:
     assert_almost_equal(Float32(2.0) ** Float32(0.5), 1.4142135)
@@ -1911,6 +1916,52 @@ def test_powf() raises:
         atol=1e-162,
         rtol=1e-162,
     )
+
+
+def test_powf_large_whole_exponent() raises:
+    # Whole exponents too large for an Int32, and infinite ones.
+    comptime inf = FloatLiteral.infinity
+    assert_equal(Float64(0.5) ** Float64(4294967296.0), 0.0)
+    assert_equal(Float64(2.0) ** Float64(4294967296.0), inf)
+    assert_equal(Float64(2.0) ** Float64(-2147483648.0), 0.0)
+    assert_equal(Float64(-2.0) ** Float64(4294967297.0), -inf)
+    assert_equal(Float64(-1.0) ** Float64(4294967297.0), -1.0)
+    assert_equal(Float32(0.5) ** Float32(1e10), 0.0)
+    assert_equal(Float64(0.5) ** Float64(inf), 0.0)
+    assert_equal(Float64(2.0) ** Float64(-inf), 0.0)
+    assert_equal(Float64(1.0) ** Float64(inf), 1.0)
+    assert_almost_equal(
+        Float64(1.0000001) ** Float64(3e9), 1.9423975992963885e130, rtol=1e-8
+    )
+
+    # `-0.0` keeps its sign for odd exponents, like the `_powi` path.
+    comptime neg_zero = FloatLiteral.negative_zero
+    assert_equal(String(Float64(neg_zero) ** Float64(4294967297.0)), "-0.0")
+    assert_equal(String(Float64(neg_zero) ** Float64(4294967296.0)), "0.0")
+    assert_equal(Float64(neg_zero) ** Float64(-4294967297.0), -inf)
+    assert_equal(Float64(neg_zero) ** Float64(-4294967296.0), inf)
+
+
+def test_pow_large_integer_exponent() raises:
+    # Integer exponents too large for an Int32, and each type's `MIN`.
+    comptime inf = FloatLiteral.infinity
+    assert_equal(Float64(2.0) ** Int64(4294967296), inf)
+    assert_equal(Float64(0.5) ** Int64(4294967296), 0.0)
+    assert_equal(Float64(-2.0) ** Int64(4294967297), -inf)
+    assert_equal(Float64(2.0) ** Int64(-4294967295), 0.0)
+    assert_equal(Float64(2.0) ** Int64(-2147483649), 0.0)
+    assert_equal(Float64(2.0) ** Int32.MIN, 0.0)
+    assert_equal(Float64(2.0) ** Int64.MIN, 0.0)
+    assert_equal(Float64(-1.0) ** Int64.MIN, 1.0)
+    assert_equal(Float64(-1.0) ** Int64.MAX, -1.0)
+    assert_equal(Float64(1.0) ** UInt64.MAX, 1.0)
+    assert_equal(Float64(2.0) ** Int8.MIN, 2.938735877055719e-39)
+
+    # Integer results wrap modulo 2^64, as for any other `Int64` product.
+    assert_equal(Int64(3) ** Int64(4294967296), 2491309678558969857)
+    assert_equal(Int64(7) ** Int64(4294967297), -5799782102597631993)
+    assert_equal(Int64(-3) ** Int64.MAX, 6148914691236517205)
+    assert_equal(UInt64(3) ** UInt64.MAX, 12297829382473034411)
 
 
 def test_rpow() raises:
@@ -2190,6 +2241,17 @@ def test_comparison() raises:
         test_dtype[dtype]()
 
     test_dtype[.bfloat16]()
+
+
+def test_nan_comparison() raises:
+    var n = black_box(nan[DType.float64]())
+    var v = black_box(SIMD[DType.float64, 4](1.0, 2.0, n, 4.0))
+    var lit = black_box(SIMD[DType.float64, 4](2.0))
+
+    assert_equal(v.ne(lit), ~v.eq(lit))
+    assert_true(v.ne(lit)[2])
+    assert_true(n.ne(2.0))
+    assert_true(Bool(n))
 
 
 def test_float_conversion() raises:
@@ -2582,6 +2644,38 @@ def test_slice() raises:
     assert_equal(slice1_5, expected1_5)
 
 
+def test_slice_aligned_offsets() raises:
+    # `llvm.vector.extract` takes any offset that is a multiple of the output
+    # width, whatever the target's native vector width happens to be.
+    var f8 = SIMD[DType.float32, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    assert_equal(f8.slice[4, offset=4](), SIMD[DType.float32, 4](5, 6, 7, 8))
+    assert_equal(f8.slice[2, offset=6](), SIMD[DType.float32, 2](7, 8))
+    assert_equal(f8.slice[8, offset=0](), f8)
+
+    var lo, hi = f8.split()
+
+    for i in range(4):
+        assert_equal(lo[i], Float32(i + 1))
+        assert_equal(hi[i], Float32(i + 5))
+
+    # Wider than any native vector, at an offset that is not a multiple of the
+    # output width. The old check compared against the native width, so this
+    # reached the intrinsic with an index it rejects.
+    var f32 = SIMD[DType.float32, 32]()
+
+    for i in range(32):
+        f32[i] = Float32(i)
+
+    var wide = f32.slice[16, offset=8]()
+
+    for i in range(16):
+        assert_equal(wide[i], Float32(i + 8))
+
+    # Unaligned offsets still take the element-wise path.
+    assert_equal(f8.slice[4, offset=3](), SIMD[DType.float32, 4](4, 5, 6, 7))
+    assert_equal(f8.slice[2, offset=5](), SIMD[DType.float32, 2](6, 7))
+
+
 def test_hash() raises:
     # Test hash function for SIMD values
     var simd1 = SIMD[.int32, 4](1, 2, 3, 4)
@@ -2811,6 +2905,35 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     randn(h_A.unsafe_ptr(), size=1)
     # Simply verify that cast doesn't error.
     _ = h_A[0].cast[.float8_e8m0fnu]()
+
+
+def test_convertible_to_python() raises:
+    check_convertible_to_python(42, "42")
+    check_convertible_to_python(1.5, "1.5")
+    check_convertible_to_python(Float32(1.5), "1.5")
+    check_convertible_to_python(Int32(42), "42")
+    check_convertible_to_python(
+        UInt64(12345678901234567890), "12345678901234567890"
+    )
+
+    # test implicit conversions
+    check_python_object(42, "42")
+    check_python_object(1.5, "1.5")
+    check_python_object(Float32(1.5), "1.5")
+    check_python_object(Int32(42), "42")
+    check_python_object(UInt64(12345678901234567890), "12345678901234567890")
+
+    # non raising conversion to PythonObject
+    def non_raising_to_python[
+        dtype: DType
+    ](var value: Scalar[dtype]) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(Int32(42))), "42")
+    assert_equal(
+        String(non_raising_to_python(UInt64(12345678901234567890))),
+        "12345678901234567890",
+    )
 
 
 def main() raises:

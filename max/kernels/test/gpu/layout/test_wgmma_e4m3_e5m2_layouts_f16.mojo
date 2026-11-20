@@ -24,7 +24,7 @@ from max.gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout import TensorLayout, Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from std.memory import bitcast
@@ -43,10 +43,13 @@ def wgmma_f16_kernel[
     smem_operand_b_layout: BSmemLayout,
     a_type: DType,
     b_type: DType,
+    operand_a_origin: MutOrigin,
+    operand_b_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    operand_a: TileTensor[a_type, type_of(row_major[M, K]()), MutAnyOrigin],
-    operand_b: TileTensor[b_type, type_of(row_major[K, N]()), MutAnyOrigin],
-    result_c: TileTensor[.float16, type_of(row_major[M, N]()), MutAnyOrigin],
+    operand_a: TileTensor[a_type, type_of(row_major[M, K]()), operand_a_origin],
+    operand_b: TileTensor[b_type, type_of(row_major[K, N]()), operand_b_origin],
+    result_c: TileTensor[.float16, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert (
         K == WMMA_K
@@ -210,13 +213,13 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = TileLayout(
+    comptime a_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
         Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[16], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
@@ -234,13 +237,16 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         b_smem_layout,
         a_type=.float8_e4m3fn,
         b_type=.float8_e4m3fn,
+        operand_a_origin=origin_of(lhs),
+        operand_b_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -349,13 +355,13 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = TileLayout(
+    comptime a_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
         Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[16], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
@@ -373,14 +379,17 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         b_smem_layout,
         a_type=.float8_e5m2,
         b_type=.float8_e5m2,
+        operand_a_origin=origin_of(lhs),
+        operand_b_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -489,13 +498,13 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = TileLayout(
+    comptime a_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
         Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[16], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
@@ -513,14 +522,17 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         b_smem_layout,
         a_type=.float8_e4m3fn,
         b_type=.float8_e5m2,
+        operand_a_origin=origin_of(lhs),
+        operand_b_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -629,13 +641,13 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = TileLayout(
+    comptime a_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
         Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[16], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
@@ -653,14 +665,17 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         b_smem_layout,
         a_type=.float8_e5m2,
         b_type=.float8_e4m3fn,
+        operand_a_origin=origin_of(lhs),
+        operand_b_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )

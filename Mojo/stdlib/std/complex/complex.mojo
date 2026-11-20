@@ -20,7 +20,6 @@ from std.complex import ComplexSIMD
 """
 
 import std.math
-from std.math.math import _Expable
 from std.sys import llvm_intrinsic
 from std.format._utils import FormatStruct
 
@@ -39,7 +38,7 @@ comptime ComplexFloat64 = ComplexScalar[.float64]
 
 
 struct ComplexSIMD[dtype: DType, length: SIMDLength](
-    Equatable, TrivialRegisterPassable, Writable, _Expable
+    Equatable, TrivialRegisterPassable, Writable
 ):
     """Represents a complex SIMD value.
 

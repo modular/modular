@@ -31,14 +31,15 @@ adjusts them (heading demotion, empty-section removal, sidebar stub population).
 ## RST file organization
 
 Each Python module has one flat RST file (for example, `nn.rst`,
-`nn.attention.rst`, `pipelines.rst`). There are two documentation patterns:
+`nn.legacy.attention.rst`, `pipelines.rst`). There are two documentation
+patterns:
 
 - **Explicit autosummary** (most files): uses `.. automodule::` with
   `:no-members:`, then groups members into semantic sections with
   `.. autosummary::` directives referencing templates in
   `_templates/autosummary/` (`class.rst`, `function.rst`).
 - **Automodule with :members:** (for example, `graph.ops.rst`,
-  `nn.kernels.rst`, `experimental.functional.rst`): documents all public
+  `functional.rst`): documents all public
   members automatically without explicit listing.
 
 `index.rst` lists all module pages in its toctree. Module pages that have
@@ -111,7 +112,7 @@ directive with it.
 1. Create `{module}.rst` with `.. automodule::` and `.. autosummary::` sections
    (copy an existing file like `nn.rst` as a starting point).
 2. Add the filename (without `.rst`) to the toctree in `index.rst`.
-3. Add a sidebar entry in `oss/modular/docs/sidebars.json` with
+3. Add a sidebar entry in `max/docs/site/sidebars.json` with
    `"__AUTOGEN:max.module.name__"` as the items stub.
 4. Run `./bazelw build //max/python/docs:python-api-docs` and verify.
 
@@ -122,10 +123,10 @@ Read these when you need to understand or modify the doc build:
 - `conf.py.in` -- Sphinx config: warning suppression (`SuppressionFilter`),
   autodoc hooks (`skip_imported_for_modules`), monkey-patch for `__all__`
   filtering in autosummary.
-- `oss/modular/docs/post-process-docs.py` -- Runs after Sphinx generates
+- `max/docs/site/scripts/post-process-docs.py` -- Runs after Sphinx generates
   markdown. Demotes headings, removes empty sections, populates
   `__AUTOGEN:prefix__` stubs in `sidebars.json` with generated page paths.
-- `oss/modular/docs/sidebars.json` -- Docusaurus sidebar definition. Each
+- `max/docs/site/sidebars.json` -- Docusaurus sidebar definition. Each
   module's `items` array uses an `__AUTOGEN` stub that `post-process-docs.py`
   fills in.
 - `_templates/autosummary/` -- Jinja2 templates for autosummary stub pages

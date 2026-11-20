@@ -41,14 +41,15 @@ set_virtual_device_count(NUM_GPUS)
 
 import pytest
 from max._core.dialects import mo
-from max._core.dialects.builtin import IntegerAttr, IntegerType
+from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 from max.driver import CPU, Accelerator, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph.ops.rms_norm import _float32_attr
 from max.graph.type import _ChainType
 from max.graph.value import _ChainValue
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 N = 1024  # Allreduce/reduce-scatter column count.
 COLS = 6144  # Hidden size the fused RMSNorm composites are tuned for.
@@ -257,8 +258,6 @@ def _allgather_rms_norm_graph_unvalidated(cols_per_device: list[int]) -> Graph:
             )
             for i, device in enumerate(signals.devices)
         ]
-        eps = ops.constant(EPS, DType.float32, DeviceRef.CPU())
-        offset = ops.constant(WEIGHT_OFFSET, DType.bfloat16, DeviceRef.CPU())
         *results, out_chain = graph._add_op_generated(
             mo.CompositeDistributedAllgatherRmsNormOp,
             gathered_types,
@@ -267,10 +266,12 @@ def _allgather_rms_norm_graph_unvalidated(cols_per_device: list[int]) -> Graph:
             [v.tensor for v in graph.inputs[:NUM_GPUS]],
             [v.buffer for v in graph.inputs[2 * NUM_GPUS :]],
             [v.tensor for v in graph.inputs[NUM_GPUS : 2 * NUM_GPUS]],
-            [eps] * NUM_GPUS,
-            [offset] * NUM_GPUS,
             graph.device_chains.merge_for(signals.devices),
+            _float32_attr(EPS),
+            _float32_attr(WEIGHT_OFFSET),
             IntegerAttr(IntegerType(64), GROUP_SIZE),
+            IntegerAttr(IntegerType(64), 0),
+            BoolAttr(False),
         )
         assert isinstance(out_chain, _ChainValue)
         graph._update_chain(out_chain)

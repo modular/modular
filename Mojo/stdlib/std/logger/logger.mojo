@@ -72,28 +72,43 @@ struct Level(
 
     var _value: Int
 
-    comptime NOTSET = Self(0)
+    comptime notset = Self(0)
     """Lowest level, used when no level is set."""
 
-    comptime TRACE = Self(10)
+    comptime trace = Self(10)
     """Repetitive trace information, Indicates repeated execution or IO-coupled
     activity, typically only of interest when diagnosing hangs or ensuring a
     section of code is executing."""
 
-    comptime DEBUG = Self(20)
+    comptime debug = Self(20)
     """Detailed information, typically of interest only when diagnosing problems."""
 
-    comptime INFO = Self(30)
+    comptime info = Self(30)
     """Confirmation that things are working as expected."""
 
-    comptime WARNING = Self(40)
+    comptime warning = Self(40)
     """Indication that something unexpected happened, or may happen in the near future."""
 
-    comptime ERROR = Self(50)
+    comptime error = Self(50)
     """Due to a more serious problem, the software has not been able to perform some function."""
 
-    comptime CRITICAL = Self(60)
+    comptime critical = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
+
+    comptime NOTSET = Self.notset
+    """Alias for `notset`."""
+    comptime TRACE = Self.trace
+    """Alias for `trace`."""
+    comptime DEBUG = Self.debug
+    """Alias for `debug`."""
+    comptime INFO = Self.info
+    """Alias for `info`."""
+    comptime WARNING = Self.warning
+    """Alias for `warning`."""
+    comptime ERROR = Self.error
+    """Alias for `error`."""
+    comptime CRITICAL = Self.critical
+    """Alias for `critical`."""
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:
@@ -140,7 +155,7 @@ struct Level(
         return Color("")
 
     @staticmethod
-    def _from_str(name: StringSlice) -> Self:
+    def _from_str(name: StringSpan) -> Self:
         """Converts a string level name to a Level value.
 
         Args:
@@ -187,6 +202,8 @@ struct Level(
                 writer.write("ERROR")
             case .CRITICAL:
                 writer.write("CRITICAL")
+            case _:
+                pass
 
 
 # ===-----------------------------------------------------------------------===#
@@ -201,13 +218,13 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         level: The minimum severity level for messages to be logged.
     """
 
-    var _fd: RawFileDescriptor
+    var _fd: BorrowedFileDescriptor[ImmStaticOrigin]
     var _prefix: String
     var _source_location: Bool
 
     def __init__(
         out self,
-        fd: RawFileDescriptor = std.sys.stdout,
+        fd: BorrowedFileDescriptor[ImmStaticOrigin] = std.sys.stdout,
         *,
         prefix: String = "",
         source_location: Bool = False,
@@ -448,7 +465,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
     ):
         comptime color = _level.color()
 
-        var file = self._fd
+        var file = self._fd._value
         var buffer = _FlushingWriteBuffer(file)
 
         if self._prefix:

@@ -26,8 +26,8 @@ The state is consumed at iteration boundaries:
     exit (signalling even on exception, per
     ``Device.cpp:asyncHostFuncTrampoline``).
   * The captured model graph waits on ``bitmask_flag`` via
-    ``mo.wait_host_value_with_dep`` (keyed off :attr:`wait_payload`),
-    then ``mo.inplace_memcpy`` copies :attr:`pinned_bitmask` into
+    ``runtime.wait_host_value_with_dep`` (keyed off :attr:`wait_payload`),
+    then ``runtime.inplace_memcpy`` copies :attr:`pinned_bitmask` into
     :attr:`device_bitmask_scratch` for the sampler.
   * Cold-start paths (prefill -> decode boundary, capture-time warmup,
     first iter after a new-context join) use :meth:`prime` to pre-fill
@@ -134,7 +134,7 @@ class StructuredOutputOverlapState:
         self.bitmask_flag: CompletionFlag = CompletionFlag(device)
         """The 64-bit device-mapped pinned flag the callback signals. Single process-lifetime flag."""
 
-        # Payload consumed by the in-graph `mo.wait_host_value_with_dep`
+        # Payload consumed by the in-graph `runtime.wait_host_value_with_dep`
         # op. Contract: CPU int64[2] = [flag._unsafe_ptr,
         # expected_value]. Allocated as pinned host memory so the
         # engine's input binding sees a pinned -> CPU-graph-input
@@ -147,7 +147,7 @@ class StructuredOutputOverlapState:
             device=device,
             usage=Usage.STAGING | Usage.UNTRACKED,
         )
-        """A CPU-resident ``int64[2]`` buffer holding ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload consumed by the in-graph ``mo.wait_host_value_with_dep`` op. Allocated once; contents written once at construction."""
+        """A CPU-resident ``int64[2]`` buffer holding ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload consumed by the in-graph ``runtime.wait_host_value_with_dep`` op. Allocated once; contents written once at construction."""
         payload_np = self.wait_payload.to_numpy()
         payload_np[0] = self.bitmask_flag._unsafe_ptr
         payload_np[1] = 1
@@ -185,6 +185,12 @@ class StructuredOutputOverlapState:
             tuple[int, int], tuple[Buffer, Buffer]
         ] = {}
 
+        # Per width, how many leading pinned rows :meth:`prime_all_valid`
+        # left all-valid (-1) with no write since. Lets an unconstrained
+        # batch skip rewriting megabytes of -1 every step. Any other writer
+        # (:meth:`prime`, :meth:`pinned_for`, an async callback) drops it.
+        self._all_valid_rows: dict[int, int] = {}
+
     @property
     def max_bitmask_shape(self) -> tuple[int, int, int]:
         """Returns the persistent buffer's max shape.
@@ -215,6 +221,8 @@ class StructuredOutputOverlapState:
                 f"pinned_for num_positions={num_positions} has no allocated "
                 f"buffer; supported widths are {self.supported_num_positions}."
             )
+        # The caller is about to write rows of this buffer.
+        self._all_valid_rows.pop(num_positions, None)
         return pair[0]
 
     @property
@@ -294,11 +302,11 @@ class StructuredOutputOverlapState:
         """Pre-fills the pinned bitmask and signals the flag.
 
         Writes into :attr:`pinned_bitmask` and then release-stores
-        ``1`` to the flag so the next replay's ``mo.wait_host_value_with_dep``
+        ``1`` to the flag so the next replay's ``runtime.wait_host_value_with_dep``
         passes immediately.
 
         Used at cold-start sites where no prior async callback has
-        run and the next replay's ``mo.wait_host_value_with_dep`` would
+        run and the next replay's ``runtime.wait_host_value_with_dep`` would
         otherwise block forever:
 
           * Before the first decode iteration post-prefill.
@@ -357,8 +365,50 @@ class StructuredOutputOverlapState:
         # A staging Buffer's to_numpy() returns a writable view that
         # aliases the pinned host backing store. Copy in place so the
         # caller's source array can be freed.
+        self._all_valid_rows.pop(num_positions, None)
         pinned_view[:batch, :num_positions, :] = bitmask
         self.bitmask_flag.signal(1)
+
+    def prime_all_valid(
+        self, batch_size: int, num_positions: int, signal: bool = True
+    ) -> None:
+        """Primes an all-valid (unconstrained) bitmask and signals the flag.
+
+        Equivalent to :meth:`prime` with an all ``-1`` array, without building
+        one: the pinned rows are rewritten only when another writer touched
+        them since the last call, so a run of unconstrained steps writes the
+        buffer once instead of every step.
+
+        Args:
+            batch_size: Leading rows the next replay reads, in
+                ``[1, max_batch_size]``.
+            num_positions: The width the next replay binds; one of
+                :attr:`supported_num_positions`.
+            signal: Whether to signal the flag. Pass False while an async
+                callback that will signal it may still be running, so the
+                graph waiting on that callback cannot start early.
+
+        Raises:
+            ValueError: If ``batch_size`` is out of bounds or
+                ``num_positions`` has no allocated buffer.
+        """
+        if not (1 <= batch_size <= self.max_batch_size):
+            raise ValueError(
+                f"prime_all_valid() batch_size {batch_size} out of bounds "
+                f"[1, {self.max_batch_size}]"
+            )
+        if num_positions not in self._buffers:
+            raise ValueError(
+                f"prime_all_valid() num_positions {num_positions} has no "
+                "allocated buffer; supported widths are "
+                f"{self.supported_num_positions}"
+            )
+        if self._all_valid_rows.get(num_positions, 0) < batch_size:
+            pinned_view = self._buffers[num_positions][0].to_numpy()
+            pinned_view[:batch_size] = -1
+            self._all_valid_rows[num_positions] = batch_size
+        if signal:
+            self.bitmask_flag.signal(1)
 
     def enqueue_async_callback(self, fn: Any) -> None:
         """Dispatches ``fn`` onto the device default stream's AsyncRT worker.
@@ -372,7 +422,7 @@ class StructuredOutputOverlapState:
         Posts the kickoff host node on the **device default stream**, not
         a side stream. This is intentional: the trampoline's
         ``flag.reset()`` and the next iter's captured-graph
-        ``mo.wait_host_value_with_dep`` end up serialised on the same stream, so
+        ``runtime.wait_host_value_with_dep`` end up serialised on the same stream, so
         the wait can never observe a stale ``1`` left over from a prior
         iter's prime / worker signal. The trampoline body is small
         (atomic store + heap alloc + dispatch + return -- microseconds),
@@ -384,6 +434,8 @@ class StructuredOutputOverlapState:
             fn: A zero-argument callable. It will run on an AsyncRT
                 worker thread, not on the main Python thread.
         """
+        # ``fn`` may write any width's rows.
+        self._all_valid_rows.clear()
         # Use getattr to dodge the name-mangling of the dunder method.
         getattr(self.device, "__unsafe_enqueue_async_py_host_func")(
             fn, self.bitmask_flag, 1, self.cpu

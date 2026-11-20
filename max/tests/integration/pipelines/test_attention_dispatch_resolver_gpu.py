@@ -13,116 +13,18 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Buffer
+from max._kv_cache_ops import MLASparseKVForm
+from max.driver import accelerator_api
 from max.dtype import DType
-from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
-from max.nn.kv_cache.utils import MHAAttnKey
-
-N_KV_HEADS = 8
-# Every head count ``compute_mla_dispatch_scalars_runtime`` enumerates. A count
-# missing an arm raises out of both the resolver and the reference graph, so
-# this list is what keeps the enumeration reachable end to end; that the arm
-# forwards to the specialization it names is pinned on the Mojo side, in
-# ``max/kernels/test/gpu/nn/test_mla_decode_split_policy.mojo``.
-MLA_NUM_HEADS = [8, 12, 16, 24, 32, 48, 64, 128]
-TEST_CASES = [
-    (1, 17, 128),
-    (4, 17, 768),
-    (16, 17, 2048),
-    (64, 17, 8192),
-]
-MLA_TEST_CASES = [
-    (1, 1, 128),
-    (16, 1, 2048),
-    (64, 1, 8192),
-]
-
-
-def _build_reference_mha_model(
-    session: InferenceSession, device: DeviceRef, n_kv_heads: int
-) -> Model:
-    with Graph(
-        "decode_num_partitions_reference",
-        input_types=[
-            TensorType(DType.int64, shape=[2], device=DeviceRef.CPU())
-        ],
-    ) as graph:
-        (request,) = graph.inputs
-        (num_partitions,) = ops.custom(
-            "mo.mha.decode.get_num_partitions",
-            values=[request.tensor],
-            out_types=[
-                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU())
-            ],
-            parameters={"n_kv_heads": n_kv_heads},
-            device=device,
-        )
-        graph.output(num_partitions.tensor)
-    return session.load(graph)
-
-
-def _resolve_reference(
-    model: Model, batch_size: int, max_cache_valid_length: int
-) -> int:
-    request = Buffer.from_numpy(
-        np.array([batch_size, max_cache_valid_length], dtype=np.int64)
-    )
-    (output,) = model(request)
-    return int(output.to_numpy()[0])
-
-
-def _build_reference_mla_model(
-    session: InferenceSession,
-    device: DeviceRef,
-    num_heads: int,
-    *,
-    is_fp8_kv: bool = False,
-) -> Model:
-    with Graph(
-        "mla_dispatch_args_reference",
-        input_types=[
-            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
-        ],
-    ) as graph:
-        batch_size_val = graph.inputs[0].tensor
-        max_cache_val = graph.inputs[1].tensor
-        q_max_seq_len_val = graph.inputs[2].tensor
-        (scalars,) = ops.custom(
-            "mo.mla.compute_dispatch_args.scalar",
-            device=device,
-            values=[batch_size_val, max_cache_val, q_max_seq_len_val],
-            out_types=[
-                TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU())
-            ],
-            parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
-        )
-        graph.output(scalars.tensor)
-    return session.load(graph)
-
-
-def _resolve_mla_reference(
-    model: Model,
-    batch_size: int,
-    max_prompt_length: int,
-    max_cache_valid_length: int,
-) -> np.ndarray:
-    (output,) = model(
-        Buffer.from_numpy(np.array([batch_size], dtype=np.int64)),
-        Buffer.from_numpy(np.array([max_cache_valid_length], dtype=np.int64)),
-        Buffer.from_numpy(np.array([max_prompt_length], dtype=np.int64)),
-    )
-    return output.to_numpy()
-
-
-@pytest.fixture(scope="module")
-def gpu_session() -> InferenceSession:
-    return InferenceSession(devices=[CPU(), Accelerator()])
+from max.graph import DeviceRef
+from max.nn.kv_cache import (
+    KVCacheQuantizationConfig,
+    MLAKVCacheParams,
+    MultiKVCacheParams,
+)
+from max.nn.kv_cache.cache_params import _SPARSE_MLA_KEY_SATURATION
+from max.nn.kv_cache.utils import MLAAttnKey
 
 
 @pytest.fixture(scope="module")
@@ -130,167 +32,293 @@ def gpu_device_ref() -> DeviceRef:
     return DeviceRef.GPU()
 
 
-@pytest.fixture(scope="module", params=MLA_NUM_HEADS)
-def mla_num_heads(request: pytest.FixtureRequest) -> int:
-    return int(request.param)
+# (batch_size, num_heads, sparse_indices_stride, AMD partitions for an FP8
+# cache, AMD partitions for a BF16 cache). The counts hold for 256 and 304
+# compute units alike. FP8 reads the rows in place, one wave of CTAs of at
+# least 32 rows. BF16 decodes one 128-row tile per workgroup at a time and
+# minimizes waves times per-workgroup cost without empty partitions, so a
+# 2051-row selection (k-pool tail, 17 tiles) takes 17 partitions at batch 8
+# and 4 at batch 64.
+# 65536 rows at batch 1 clamp to the reducer's 256.
+SPARSE_MLA_CASES = [
+    (1, 8, 2048, 64, 16),
+    (16, 8, 2048, 16, 16),
+    (32, 8, 2048, 8, 8),
+    (64, 8, 2048, 4, 4),
+    (128, 8, 2048, 2, 2),
+    (16, 16, 2048, 16, 16),
+    (8, 8, 2051, 32, 17),
+    (64, 8, 2051, 4, 4),
+    (1, 8, 65536, 256, 256),
+]
+SPARSE_MLA_CACHE_LENGTHS = [128, 2048, 8192, 100_000]
 
 
-@pytest.fixture(scope="module")
-def mha_params(
+@pytest.mark.parametrize(
+    (
+        "batch_size",
+        "num_heads",
+        "sparse_indices_stride",
+        "fp8_partitions",
+        "bf16_partitions",
+    ),
+    SPARSE_MLA_CASES,
+)
+@pytest.mark.parametrize("dtype", [DType.float8_e4m3fn, DType.bfloat16])
+def test_sparse_mla_dispatch_key_follows_selection(
     gpu_device_ref: DeviceRef,
-) -> MHAKVCacheParams:
-    return MHAKVCacheParams(
-        dtype=DType.bfloat16,
-        head_dim=128,
-        num_layers=1,
-        devices=[gpu_device_ref],
-        n_kv_heads=N_KV_HEADS,
+    batch_size: int,
+    num_heads: int,
+    sparse_indices_stride: int,
+    fp8_partitions: int,
+    bf16_partitions: int,
+    dtype: DType,
+) -> None:
+    amd_partitions = (
+        fp8_partitions if dtype == DType.float8_e4m3fn else bf16_partitions
     )
 
+    def params(stride: int | None) -> MLAKVCacheParams:
+        return MLAKVCacheParams(
+            dtype=dtype,
+            head_dim=576,
+            num_layers=1,
+            devices=[gpu_device_ref],
+            num_q_heads=num_heads,
+            sparse_indices_stride=stride,
+        )
 
-@pytest.fixture(scope="module")
-def mla_params(
+    sparse = params(sparse_indices_stride)
+    multi = MultiKVCacheParams.from_params({"mla": sparse, "indexer": sparse})
+    if accelerator_api() == "hip":
+        for cache_length in SPARSE_MLA_CACHE_LENGTHS:
+            key = sparse.resolve_attn_key(batch_size, 1, cache_length)
+            assert isinstance(key, MLAAttnKey)
+            # The AMD sparse decode kernel splits the selected rows, not the
+            # context, so the capture key must not move with the context.
+            assert key.num_partitions == amd_partitions
+            # The composite key folds in every leaf, the indexer's too.
+            assert multi.resolve_attn_key(
+                batch_size, 1, cache_length
+            ) == multi.resolve_attn_key(batch_size, 1, 1)
+        return
+    # On SM100 the short-context FP8 policy can relax the split floor even
+    # after the selection saturates, so only contexts past both share a key.
+    # Capture probes stop there, so every verify width must share it too.
+    saturated = max(sparse_indices_stride, _SPARSE_MLA_KEY_SATURATION)
+    max_cache_length = max(4 * saturated, 100_000)
+    probes = sparse.graph_capture_probe_cache_lengths(max_cache_length)
+    assert [p for p in probes if p >= saturated] == [
+        saturated,
+        max_cache_length,
+    ]
+    for q_len in (1, 2, 4):
+        key = sparse.resolve_attn_key(batch_size, q_len, saturated)
+        assert isinstance(key, MLAAttnKey)
+        multi_key = multi.resolve_attn_key(batch_size, q_len, saturated)
+        for cache_length in (saturated + 1, 2 * saturated, max_cache_length):
+            assert (
+                sparse.resolve_attn_key(batch_size, q_len, cache_length) == key
+            )
+            assert (
+                multi.resolve_attn_key(batch_size, q_len, cache_length)
+                == multi_key
+            )
+
+
+# (batch_size, cache_length, num_partitions, kernel_variant) for a 128-head
+# FP8 sparse decode over a 2048-row selection on SM100: the launch the
+# sparse decode makes, which its graph ops do not override.
+SPARSE_MLA_H128_CASES = [
+    (1, 256, 1, 0),
+    (1, 448, 1, 1),
+    (1, 32768, 8, 0),
+    (10, 1024, 4, 0),
+    (10, 32768, 4, 1),
+    (64, 32768, 1, 1),
+]
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "cuda", reason="SM100 sparse decode launch"
+)
+def test_sparse_mla_h128_dispatch_key_follows_the_launch(
     gpu_device_ref: DeviceRef,
-    mla_num_heads: int,
-) -> MLAKVCacheParams:
-    return MLAKVCacheParams(
-        dtype=DType.bfloat16,
-        head_dim=576,
-        num_layers=1,
-        devices=[gpu_device_ref],
-        num_q_heads=mla_num_heads,
-    )
-
-
-@pytest.fixture(scope="module")
-def mla_params_fp8(
-    gpu_device_ref: DeviceRef, mla_num_heads: int
-) -> MLAKVCacheParams:
-    return MLAKVCacheParams(
+) -> None:
+    sparse = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         head_dim=576,
         num_layers=1,
         devices=[gpu_device_ref],
-        num_q_heads=mla_num_heads,
+        num_q_heads=128,
+        sparse_indices_stride=2048,
     )
+    for (
+        batch_size,
+        cache_length,
+        num_partitions,
+        variant,
+    ) in SPARSE_MLA_H128_CASES:
+        key = sparse.resolve_attn_key(batch_size, 1, cache_length)
+        assert key == MLAAttnKey(
+            batch_size=batch_size,
+            max_prompt_length=1,
+            num_partitions=num_partitions,
+            kernel_variant=variant,
+        )
+    # Past the selection the launch, and so the capture key, stops moving.
+    multi = MultiKVCacheParams.from_params({"mla": sparse, "indexer": sparse})
+    for batch_size in (1, 10, 64):
+        assert multi.resolve_attn_key(
+            batch_size, 1, 4096
+        ) == multi.resolve_attn_key(batch_size, 1, 163_840)
 
 
-@pytest.fixture(scope="module")
-def reference_mha_model(
-    gpu_session: InferenceSession, gpu_device_ref: DeviceRef
-) -> Model:
-    return _build_reference_mha_model(
-        gpu_session, gpu_device_ref, n_kv_heads=N_KV_HEADS
-    )
+# Columns: cache dtype, scales, index row stride, cache length, split count.
+# Scaled FP8 and NVFP4 caches launch the dense heuristic of the top-k, with
+# the relaxed split at caches of 1024 to 2048; NVFP4's index row is twice its
+# top-k.
+SPARSE_MLA_H128_FORM_CASES = [
+    (
+        DType.uint8,
+        KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn,
+            quantization_granularity=16,
+            fp8_tail_dim=64,
+        ),
+        4096,
+        1024,
+        9,
+    ),
+    (
+        DType.uint8,
+        KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn,
+            quantization_granularity=16,
+            fp8_tail_dim=64,
+        ),
+        4096,
+        32768,
+        16,
+    ),
+    (
+        DType.float8_e4m3fn,
+        KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=64
+        ),
+        2048,
+        1024,
+        9,
+    ),
+    (
+        DType.float8_e4m3fn,
+        KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=64
+        ),
+        2048,
+        32768,
+        16,
+    ),
+]
 
 
-@pytest.fixture(scope="module")
-def reference_mla_model(
-    gpu_session: InferenceSession,
+@pytest.mark.skipif(
+    accelerator_api() != "cuda", reason="SM100 sparse decode launch"
+)
+def test_sparse_mla_h128_dispatch_key_follows_the_cache_form(
     gpu_device_ref: DeviceRef,
-    mla_num_heads: int,
-) -> Model:
-    return _build_reference_mla_model(
-        gpu_session,
-        gpu_device_ref,
-        num_heads=mla_num_heads,
-    )
+) -> None:
+    for (
+        dtype,
+        quant_config,
+        stride,
+        cache_length,
+        num_partitions,
+    ) in SPARSE_MLA_H128_FORM_CASES:
+        params = MLAKVCacheParams(
+            dtype=dtype,
+            head_dim=576,
+            num_layers=1,
+            devices=[gpu_device_ref],
+            num_q_heads=128,
+            kvcache_quant_config=quant_config,
+            sparse_indices_stride=stride,
+        )
+        assert params.resolve_attn_key(1, 1, cache_length) == MLAAttnKey(
+            batch_size=1,
+            max_prompt_length=1,
+            num_partitions=num_partitions,
+            kernel_variant=0,
+        )
 
 
-@pytest.fixture(scope="module")
-def reference_mla_model_fp8(
-    gpu_session: InferenceSession,
+@pytest.mark.skipif(
+    accelerator_api() != "cuda", reason="SM100 sparse decode launch"
+)
+def test_sparse_mla_h128_dispatch_key_follows_topk(
     gpu_device_ref: DeviceRef,
-    mla_num_heads: int,
-) -> Model:
-    return _build_reference_mla_model(
-        gpu_session, gpu_device_ref, num_heads=mla_num_heads, is_fp8_kv=True
-    )
-
-
-@pytest.mark.parametrize(
-    ("batch_size", "max_prompt_length", "max_cache_valid_length"),
-    TEST_CASES,
-)
-def test_mha_dispatch_resolver_matches_reference_graph(
-    mha_params: MHAKVCacheParams,
-    reference_mha_model: Model,
-    batch_size: int,
-    max_prompt_length: int,
-    max_cache_valid_length: int,
 ) -> None:
-    expected_num_partitions = _resolve_reference(
-        reference_mha_model, batch_size, max_cache_valid_length
-    )
+    def resolve(
+        cache_length: int, page_size: int = 128, fixed_topk: bool = True
+    ) -> MLAAttnKey:
+        params = MLAKVCacheParams(
+            dtype=DType.float8_e4m3fn,
+            head_dim=576,
+            num_layers=1,
+            devices=[gpu_device_ref],
+            num_q_heads=128,
+            page_size=page_size,
+            kvcache_quant_config=KVCacheQuantizationConfig(
+                scale_dtype=DType.float32, quantization_granularity=64
+            ),
+            sparse_indices_stride=2048,
+            sparse_fixed_topk=fixed_topk,
+        )
+        key = params.resolve_attn_key(1, 1, cache_length)
+        assert isinstance(key, MLAAttnKey)
+        return key
 
-    key = mha_params.resolve_attn_key(
-        batch_size, max_prompt_length, max_cache_valid_length
-    )
-    assert isinstance(key, MHAAttnKey)
-    assert key.num_partitions == expected_num_partitions
-
-    # MHA packs a 4-int CPU buffer ending in max_cache_valid_length.
-    metadata = key.pack_into_buffer(CPU(), max_cache_valid_length).to_numpy()
-    np.testing.assert_array_equal(
-        metadata,
-        np.array(
-            [
-                batch_size,
-                max_prompt_length,
-                expected_num_partitions,
-                max_cache_valid_length,
-            ],
-            dtype=np.int64,
-        ),
-    )
+    # Fixed top-k takes the relaxed split, so the count tracks the cache's
+    # pages (nine over the clamped 1025 keys); per-token top-k lengths keep
+    # the page floor, so the count tracks the top-k's (sixteen over 2048).
+    # The scaled-form split never reads the KV page size, so a 64-token page
+    # moves no pick; the host pins in test_mla_decode_split_policy cover
+    # where the page still reaches a record.
+    assert resolve(1024).num_partitions == 9
+    assert resolve(1024, fixed_topk=False).num_partitions == 16
+    assert resolve(1024, page_size=64).num_partitions == 9
 
 
-@pytest.mark.parametrize(
-    ("batch_size", "max_prompt_length", "max_cache_valid_length"),
-    MLA_TEST_CASES,
+@pytest.mark.skipif(
+    accelerator_api() != "cuda", reason="SM100 sparse decode launch"
 )
-def test_mla_dispatch_resolver_matches_reference_graph(
-    mla_params: MLAKVCacheParams,
-    reference_mla_model: Model,
-    batch_size: int,
-    max_prompt_length: int,
-    max_cache_valid_length: int,
+def test_sparse_mla_indexer_key_follows_the_mla_cache_form(
+    gpu_device_ref: DeviceRef,
 ) -> None:
-    key = mla_params.resolve_attn_key(
-        batch_size, max_prompt_length, max_cache_valid_length
+    mla = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=576,
+        num_layers=1,
+        devices=[gpu_device_ref],
+        num_q_heads=128,
+        sparse_indices_stride=2048,
     )
-    # MLA packs a 3-int buffer on the accelerator.
-    np.testing.assert_array_equal(
-        key.pack_into_buffer(Accelerator(), max_cache_valid_length).to_numpy(),
-        _resolve_mla_reference(
-            reference_mla_model,
-            batch_size,
-            max_prompt_length,
-            max_cache_valid_length,
+    # The indexer's FP8 cache carries per-token scales, which on its own
+    # would key it on the scaled FP8 form.
+    indexer = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=128,
+        num_layers=1,
+        devices=[gpu_device_ref],
+        num_q_heads=128,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=128
         ),
+        sparse_indices_stride=2048,
+        sparse_kv_form=mla.resolved_sparse_kv_form,
     )
-
-
-@pytest.mark.parametrize(
-    ("batch_size", "max_prompt_length", "max_cache_valid_length"),
-    MLA_TEST_CASES,
-)
-def test_mla_fp8_dispatch_resolver_matches_reference_graph(
-    mla_params_fp8: MLAKVCacheParams,
-    reference_mla_model_fp8: Model,
-    batch_size: int,
-    max_prompt_length: int,
-    max_cache_valid_length: int,
-) -> None:
-    key = mla_params_fp8.resolve_attn_key(
-        batch_size, max_prompt_length, max_cache_valid_length
-    )
-    np.testing.assert_array_equal(
-        key.pack_into_buffer(Accelerator(), max_cache_valid_length).to_numpy(),
-        _resolve_mla_reference(
-            reference_mla_model_fp8,
-            batch_size,
-            max_prompt_length,
-            max_cache_valid_length,
-        ),
-    )
+    assert mla.resolved_sparse_kv_form == MLASparseKVForm.PLAIN
+    for batch_size, cache_length in ((1, 448), (1, 1024), (10, 32768)):
+        assert indexer.resolve_attn_key(
+            batch_size, 1, cache_length
+        ) == mla.resolve_attn_key(batch_size, 1, cache_length)

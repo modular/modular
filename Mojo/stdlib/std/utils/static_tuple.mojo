@@ -175,7 +175,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         _static_tuple_construction_checks[Self.element_type, Self.size]()
 
-        comptime num_values = values.size
+        comptime num_values = values.length
         if num_values == 1:
             return Self(fill=values[0])
 
@@ -246,7 +246,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
             Pointer(to=self._mlir_value)._get_kgen_pointer(),
-            idx.__mlir_index__(),
+            idx._mlir_value,
         )
         return Pointer[origin=origin_of(self)](_mlir_value=ptr)[]
 

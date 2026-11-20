@@ -78,14 +78,14 @@ def _spin_until_released(flag: MutPointer[Int32, MutAnyOrigin]):
     is why the small barrier kernels never reproduced this.
     """
     var start = global_perf_counter_ns()
-    while flag.load[volatile=True]() == 0:
+    while flag.unsafe_load[volatile=True]() == 0:
         if global_perf_counter_ns() - start > UInt64(SPIN_TIMEOUT_NS):
             return
 
 
 def _release(flag: MutPointer[Int32, MutAnyOrigin]):
     """Peer arrival: releases device 0's spin over P2P."""
-    flag.store[volatile=True](Int32(1))
+    flag.unsafe_store[volatile=True](Int32(1))
 
 
 def _unrelated():
@@ -107,13 +107,7 @@ struct _Clock(ImplicitlyCopyable, Movable):
 
     def mark(self, label: StaticString):
         """Prints `label` stamped with the time since the run began."""
-        print(
-            "[",
-            Float64(monotonic() - self._start_ns) / 1.0e6,
-            "ms ] ",
-            label,
-            sep="",
-        )
+        print(t"[{Float64(monotonic() - self._start_ns) / 1.0e6}ms ] {label}")
 
     def elapsed_sec(self) -> Float64:
         """Seconds since the run began."""
@@ -230,8 +224,8 @@ def _cold_load_onto_busy_device(ctx: DeviceContext, clock: _Clock):
 
 
 def _spin_and_release(
-    ctx0: DeviceContext,
-    ctx1: DeviceContext,
+    ctx0: DeviceContext[],
+    ctx1: DeviceContext[],
     flag: MutPointer[Int32, MutAnyOrigin],
     clock: _Clock,
 ) -> Optional[Error]:
@@ -291,7 +285,7 @@ def _assert_no_stall(clock: _Clock) raises:
     )
 
 
-def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
+def _run_round[call: Int](ctx0: DeviceContext[], ctx1: DeviceContext[]) raises:
     """Lands one blocking call from the starved lane in a fresh window.
 
     Parameters:
@@ -330,14 +324,10 @@ def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
     var tg = TaskGroup()
     # Resolved before the coroutine exists: a raise between the two would
     # abandon it, and Coroutine is not implicitly destroyable.
-    var loader_worker = task_id_for_device(Int(ctx1.id()))
+    var loader_worker = task_id_for_device(Int(ctx1.device().id))
 
-    @__copy_capture(a_tt)
-    @__copy_capture(b_tt)
-    @__copy_capture(c_tt)
     @inline(.always)
-    @__parameter
-    __async def loader() -> None:
+    __async def loader() {var} -> None:
         sleep(LOADER_DELAY_SEC)
         comptime if call == _HANDLE_BRING_UP:
             _bring_up_vendor_handle_on_busy_device(ctx0, clock)
@@ -350,6 +340,10 @@ def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
 
     var collective_error = _spin_and_release(ctx0, ctx1, flag, clock)
     tg.wait()
+    # The coroutine reads the closure's captures, but `TaskGroup` drops the
+    # coroutine's origins (MOCO-771), so nothing else keeps `loader` alive
+    # until the task finishes.
+    _ = loader
     clock.mark("loader: joined")
     if collective_error:
         raise collective_error.take()

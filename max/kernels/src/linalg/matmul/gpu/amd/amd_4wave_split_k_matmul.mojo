@@ -36,21 +36,19 @@ from std.sys import align_of
 from std.utils import Index
 
 from max.gpu import block_dim, global_idx, grid_dim
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import row_major
+from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
+from layout.layout import row_major
 
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
 
-from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
+from .amd_4wave_matmul import AMD4WaveMatmul, MatmulKernelConfig
 
 
 # ===----------------------------------------------------------------------=== #
@@ -62,10 +60,11 @@ from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
 def _split_k_reduce_kernel[
     num_splits: Int,
     c_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
@@ -76,22 +75,14 @@ def _split_k_reduce_kernel[
     so split `s`'s element `(m, n)` lives at
     `scratch[s * M*N + m*N + n] = scratch[s * elems_per_split + tid]`
     when threads walk the flat M*N index space.
-
-    When `elementwise_lambda_fn` is set, the reduced f32 value at
-    flat index `tid` is delivered to the lambda with global
-    coords `(tid // N, tid % N)` instead of being stored to `c_ptr`.
-    The lambda fires exactly once per output cell (on the reduced
-    sum, not on each partial), which is the correct epilogue semantics
-    for split-K.
     """
     _split_k_reduce_impl[
         num_splits,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](
         scratch,
-        c_ptr,
+        c,
         total_elems,
         elems_per_split,
         n_dim,
@@ -104,26 +95,28 @@ def _split_k_reduce_kernel[
 def _split_k_reduce_kernel_epilogue_fn[
     num_splits: Int,
     c_type: DType,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
     EpilogueFnType: ElementwiseEpilogueFn,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
     epilogue_fn: EpilogueFnType,
 ):
     """Same as `_split_k_reduce_kernel`, delivering each reduced value to
-    `epilogue_fn` instead of `c_ptr`. Launch with `host_arg=epilogue_fn`.
+    `epilogue_fn` instead of `c`. Launch with
+    `host_args=(epilogue_fn,)`.
     """
     _split_k_reduce_impl[
         num_splits,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](
         scratch,
-        c_ptr,
+        c,
         total_elems,
         elems_per_split,
         n_dim,
@@ -136,26 +129,28 @@ def _split_k_reduce_kernel_epilogue_fn[
 def _split_k_reduce_kernel_compute_fn[
     num_splits: Int,
     c_type: DType,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
     ComputeFnType: ElementwiseComputeFn,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
     compute_fn: ComputeFnType,
 ):
     """Same as `_split_k_reduce_kernel`, storing `compute_fn` of each
-    reduced value into `c_ptr`. Launch with `host_arg=compute_fn`.
+    reduced value into `c`. Launch with
+    `host_args=(compute_fn,)`.
     """
     _split_k_reduce_impl[
         num_splits,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](
         scratch,
-        c_ptr,
+        c,
         total_elems,
         elems_per_split,
         n_dim,
@@ -167,17 +162,18 @@ def _split_k_reduce_kernel_compute_fn[
 @inline(.always)
 def _split_k_reduce_impl[
     c_type: DType,
+    c_layout: TensorLayout,
+    c_engine: TensorEngine,
     EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
     num_splits: Int,
     *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     total_elems: Int32,
     elems_per_split: Int32,
     n_dim: Int32,
@@ -187,30 +183,25 @@ def _split_k_reduce_impl[
     var _total_elems = Int(total_elems)
     var _elems_per_split = Int(elems_per_split)
     var _n_dim = Int(n_dim)
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     var stride = Int(grid_dim.x * block_dim.x)
     while tid < _total_elems:
         var acc = Float32(0.0)
         comptime for s in range(num_splits):
             acc += scratch[s * _elems_per_split + tid]
-        comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
+        comptime if has_epilogue_fn:
             var m = tid // _n_dim
             var n = tid - m * _n_dim
-            apply_elementwise_epilogue[
-                elementwise_lambda_fn, alignment=align_of[Scalar[c_type]]()
-            ](
-                epilogue_fn,
-                (m, n),
-                SIMD[c_type, 1](acc.cast[c_type]()),
+            epilogue_fn[c_type, 1, alignment=align_of[Scalar[c_type]]()](
+                (m, n), SIMD[c_type, 1](acc.cast[c_type]())
             )
         else:
+            var m = tid // _n_dim
+            var n = tid - m * _n_dim
             var out = acc.cast[c_type]()
             comptime if has_compute_fn:
-                var m = tid // _n_dim
-                out = compute_fn[c_type, 1, alignment=1](
-                    (m, tid - m * _n_dim), out
-                )
-            c_ptr[tid] = out
+                out = compute_fn[c_type, 1, alignment=1]((m, n), out)
+            c.store((m, n), out)
         tid += stride
 
 
@@ -520,19 +511,19 @@ def _amd_4wave_split_k_matmul_impl[
     var M = Int(c.dim[0]())
     var elems_per_split = M * N
 
-    comptime config_64 = KernelConfig(
-        block_shape=Index(64, 64, _bk),
-        warp_shape=Index(32, 32, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+    comptime config_64 = MatmulKernelConfig(
+        block_shape=(64, 64, _bk),
+        warp_shape=(32, 32, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
-    comptime config_128 = KernelConfig(
-        block_shape=Index(128, 128, _bk),
-        warp_shape=Index(64, 64, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+    comptime config_128 = MatmulKernelConfig(
+        block_shape=(128, 128, _bk),
+        warp_shape=(64, 64, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
 
     @inline(.always)
-    def launch_split_k[config: KernelConfig]() raises {imm}:
+    def launch_split_k[config: MatmulKernelConfig]() raises {imm}:
         # Workspace is row-major (num_splits * M, N) — split_id selects
         # the M-band inside the kernel via `pid_m + split_id*num_pid_m`.
         var ws_tile = TileTensor(
@@ -562,8 +553,10 @@ def _amd_4wave_split_k_matmul_impl[
             a,
             b,
             ws_tile,
-            grid_dim=(num_blocks_n * num_blocks_m, 1, num_splits),
-            block_dim=config.num_threads(),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks_n * num_blocks_m, 1, num_splits),
+                block_dim=config.num_threads(),
+            ),
         )
 
     # Same auto-pick as the base kernel: BM=BN=64 for M ≤ 512, else 128.
@@ -587,47 +580,66 @@ def _amd_4wave_split_k_matmul_impl[
 
     # Reduce + cast on the same (default) stream — naturally serialized
     # after the split-K launch. With `epilogue_fn`, the reduce kernel
-    # fires it per cell instead of writing to c, but c.ptr is still
+    # fires it per cell instead of writing to c, but c is still
     # passed so the other branches can store there.
     comptime block_dim_x: Int = 256
     var total_elems = M * N
     var num_blocks = ceildiv(total_elems, block_dim_x)
     comptime if has_epilogue_fn:
         comptime reduce_kernel = _split_k_reduce_kernel_epilogue_fn[
-            num_splits, c_type, EpilogueFnType
+            num_splits,
+            c_type,
+            type_of(c).LayoutType,
+            type_of(c).Engine,
+            EpilogueFnType,
         ]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
-            c.ptr,
+            c,
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=epilogue_fn,
-            grid_dim=(num_blocks,),
-            block_dim=(block_dim_x,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks,),
+                block_dim=(block_dim_x,),
+            ),
+            host_args=(epilogue_fn,),
         )
     elif has_compute_fn:
         comptime reduce_kernel = _split_k_reduce_kernel_compute_fn[
-            num_splits, c_type, ComputeFnType
+            num_splits,
+            c_type,
+            type_of(c).LayoutType,
+            type_of(c).Engine,
+            ComputeFnType,
         ]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
-            c.ptr,
+            c,
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            host_arg=compute_fn,
-            grid_dim=(num_blocks,),
-            block_dim=(block_dim_x,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks,),
+                block_dim=(block_dim_x,),
+            ),
+            host_args=(compute_fn,),
         )
     else:
-        comptime reduce_kernel = _split_k_reduce_kernel[num_splits, c_type]
+        comptime reduce_kernel = _split_k_reduce_kernel[
+            num_splits,
+            c_type,
+            type_of(c).LayoutType,
+            type_of(c).Engine,
+        ]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
-            c.ptr,
+            c,
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            grid_dim=(num_blocks,),
-            block_dim=(block_dim_x,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks,),
+                block_dim=(block_dim_x,),
+            ),
         )

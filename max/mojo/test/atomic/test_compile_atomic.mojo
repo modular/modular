@@ -25,10 +25,10 @@ comptime _MI300X_TARGET = get_gpu_target["mi300x"]()
 def _assert_ordered(text: String, first: String, second: String) raises:
     """Asserts that both substrings appear in `text` and that `first`
     occurs before `second`."""
-    var first_pos = text.find(first)
-    var second_pos = text.find(second)
-    assert_true(first_pos >= 0, String(t"expected to find {first}"))
-    assert_true(second_pos >= 0, String(t"expected to find {second}"))
+    __guard case .Some(first_pos) = text.find(first) else:
+        raise Error(t"expected to find {first}")
+    __guard case .Some(second_pos) = text.find(second) else:
+        raise Error(t"expected to find {second}")
     assert_true(
         first_pos < second_pos,
         String(t"{first} must precede {second}"),
@@ -38,7 +38,7 @@ def _assert_ordered(text: String, first: String, second: String) raises:
 def test_compile_store_nvptx_default_scope() raises:
     # Default (empty) scope maps to NVPTX's system syncscope.
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[Int32].store[ordering=Ordering.RELEASE](ptr, v)
+        Atomic[Int32].store[ordering=.release](ptr, v)
 
     var ptx = String(compile_info[my_store, target=A100.target]())
 
@@ -50,7 +50,7 @@ def test_compile_store_nvptx_default_scope() raises:
 
 def test_compile_store_nvptx_device_scope() raises:
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[Int32, scope="device"].store[ordering=Ordering.RELEASE](ptr, v)
+        Atomic[Int32, scope="device"].store[ordering=.release](ptr, v)
 
     var ptx = String(compile_info[my_store, target=A100.target]())
 
@@ -63,7 +63,7 @@ def test_compile_load_nvptx_default_scope() raises:
         dst: Pointer[Int32, MutAnyOrigin],
         ptr: Pointer[Int32, MutAnyOrigin],
     ):
-        dst[] = Atomic[Int32].load[ordering=Ordering.ACQUIRE](ptr)
+        dst[] = Atomic[Int32].load[ordering=.acquire](ptr)
 
     var ptx = String(compile_info[my_load, target=A100.target]())
 
@@ -75,9 +75,7 @@ def test_compile_load_nvptx_device_scope() raises:
         dst: Pointer[Int32, MutAnyOrigin],
         ptr: Pointer[Int32, MutAnyOrigin],
     ):
-        dst[] = Atomic[Int32, scope="device"].load[ordering=Ordering.ACQUIRE](
-            ptr
-        )
+        dst[] = Atomic[Int32, scope="device"].load[ordering=.acquire](ptr)
 
     var ptx = String(compile_info[my_load, target=A100.target]())
 
@@ -89,7 +87,7 @@ def test_compile_store_amdgpu_default_scope() raises:
     # SC0/SC1 bypass-cache flags on the `global_store` itself. Memory model:
     # https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[Int32].store[ordering=Ordering.RELEASE](ptr, v)
+        Atomic[Int32].store[ordering=.release](ptr, v)
 
     var asm = String(compile_info[my_store, target=_MI300X_TARGET]())
 
@@ -105,7 +103,7 @@ def test_compile_load_amdgpu_default_scope() raises:
         dst: Pointer[Int32, MutAnyOrigin],
         ptr: Pointer[Int32, MutAnyOrigin],
     ):
-        dst[] = Atomic[Int32].load[ordering=Ordering.ACQUIRE](ptr)
+        dst[] = Atomic[Int32].load[ordering=.acquire](ptr)
 
     var asm = String(compile_info[my_load, target=_MI300X_TARGET]())
 
@@ -120,7 +118,7 @@ def test_compile_store_amdgpu_agent_scope() raises:
     # scope is no longer required. Absence of that sequence is the
     # concrete witness that scope narrowing reaches AMDGPU codegen.
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[Int32, scope="agent"].store[ordering=Ordering.RELEASE](ptr, v)
+        Atomic[Int32, scope="agent"].store[ordering=.release](ptr, v)
 
     var asm = String(compile_info[my_store, target=_MI300X_TARGET]())
 
@@ -134,8 +132,8 @@ def test_compile_store_load_amdgpu_llvm_ir() raises:
         ptr: Pointer[Int32, MutAnyOrigin],
         v: Int32,
     ):
-        Atomic[Int32].store[ordering=Ordering.RELEASE](ptr, v)
-        dst[] = Atomic[Int32].load[ordering=Ordering.ACQUIRE](ptr)
+        Atomic[Int32].store[ordering=.release](ptr, v)
+        dst[] = Atomic[Int32].load[ordering=.acquire](ptr)
 
     var ir = String(
         compile_info[

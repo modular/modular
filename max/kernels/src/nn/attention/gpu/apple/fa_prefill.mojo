@@ -13,7 +13,7 @@
 """Apple (Metal) M5 MMA-based flash-attention (FA2) prefill kernel.
 
 Two `MmaOpApple` 16x16 simdgroup GEMMs (Q.K^T and P.V) sandwiching an online
-softmax, for Apple silicon prefill (`compute_capability == 5`), paged KV via
+softmax, for Apple silicon prefill (`compute_capability >= 5`), paged KV via
 `MHAOperand`, BF16/FP16 storage with FP32 accumulation.
 
 4 simdgroups share one threadgroup with no threadgroup memory and no
@@ -50,14 +50,13 @@ from max.gpu.compute.arch.mma_apple import (
     _apple_frag_layout,
     _mma_apple_transposable,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.primitives.warp import shuffle_xor
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
 from std.os.env import getenv
 from std.sys.info import align_of, size_of
 from std.sys.intrinsics import llvm_intrinsic
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
@@ -67,7 +66,7 @@ from layout import (
     TileTensor,
 )
 from layout.coord import Coord
-from layout.tile_layout import Layout as TileLayout, TensorLayout, row_major
+from layout.layout import Layout, TensorLayout, row_major
 
 from linalg.arch.apple.mma import MmaOpApple
 
@@ -128,7 +127,6 @@ comptime FA_PREFILL_APPLE_MAX_HEAD_DIM = 256
 # (NUM_M_MMAS*((depth/16) + NUM_N_MMAS) fp32 fragments) binds occupancy: a narrow
 # 1x2 tile keeps them resident while a wider score tile collapses occupancy.
 # NUM_N_MMAS=2 measured fastest.
-comptime DEFAULT_NUM_M_MMAS = 1
 comptime DEFAULT_NUM_N_MMAS = 2
 comptime MMA_DIM = 16
 
@@ -169,8 +167,10 @@ def _softmax_seed_sink(
 def _softmax_row_max[
     num_n_mmas: Int
 ](
-    scores: MmaOpApple[.float32, DType.float32, 1, num_n_mmas].AccumType,
-) -> Array[Float32, _SOFTMAX_FRAG_ROWS]:
+    scores: MmaOpApple[.float32, .float32, 1, num_n_mmas].AccumType,
+) -> Array[
+    Float32, _SOFTMAX_FRAG_ROWS
+]:
     """Full-row max over the single score row-block (across all `ni` cols).
 
     Returns `[rb_max, rb8_max]` for the two rows this lane owns. The per-fragment
@@ -198,12 +198,8 @@ def _softmax_update[
 ](
     mut sm_m: Array[Float32, _SOFTMAX_FRAG_ROWS],
     mut sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
-    mut scores: MmaOpApple[
-        DType.float32, DType.float32, 1, num_n_mmas
-    ].AccumType,
-    mut output: MmaOpApple[
-        DType.float32, DType.float32, 1, out_num_n_mmas
-    ].AccumType,
+    mut scores: MmaOpApple[.float32, .float32, 1, num_n_mmas].AccumType,
+    mut output: MmaOpApple[.float32, .float32, 1, out_num_n_mmas].AccumType,
 ):
     """One online-softmax step over the masked score tile `scores`.
 
@@ -265,9 +261,7 @@ def _softmax_normalize[
     out_num_n_mmas: Int
 ](
     sm_l: Array[Float32, _SOFTMAX_FRAG_ROWS],
-    mut output: MmaOpApple[
-        DType.float32, DType.float32, 1, out_num_n_mmas
-    ].AccumType,
+    mut output: MmaOpApple[.float32, .float32, 1, out_num_n_mmas].AccumType,
 ):
     """Final epilogue: divide each output row by its running denominator `l`.
 
@@ -417,7 +411,6 @@ def fa_prefill_apple_core[
         so a 16-key sub-tile never crosses a page boundary. Other page sizes are
         gated to `mha_gpu_naive` by the dispatcher.
     """
-    var _batch_size = Int(batch_size)
     var _max_prompt_len = Int(max_prompt_len)
     var _max_cache_size = Int(max_cache_size)
     var _num_heads = Int(num_heads)
@@ -444,9 +437,7 @@ def fa_prefill_apple_core[
     var kv_head = head_id // _group
     var sg = Int(warp_id())  # this simdgroup's slot in the threadgroup
     var lane = Int(lane_id())
-    var rb_cb = _apple_frag_layout(lane)
-    var rb = rb_cb[0]
-    var cb = rb_cb[1]
+    var rb, cb = _apple_frag_layout(lane)
 
     # Offset math — mirror `_bmm0_bs` / `_bmm1_bs` (mha.mojo).
     var seq_start: Int
@@ -501,7 +492,7 @@ def fa_prefill_apple_core[
     # Build the layout value, then derive the TileTensor type via `type_of`
     # (the matmul idiom for a runtime-stride layout).
     var q_row_stride = _num_heads * _depth
-    var q_layout_val = TileLayout(
+    var q_layout_val = Layout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
     # Offsetting through the engine keeps `q`'s engine on the view; the `ptr=`
@@ -536,14 +527,14 @@ def fa_prefill_apple_core[
     var kv_row_stride = (Int(k_base1) - Int(k_base0)) // kv_elt_size
 
     # KV sub-tile layout (16 keys x Depth), reused for every K/V sub-tile.
-    var kv_layout_val = TileLayout(
+    var kv_layout_val = Layout(
         Coord(Idx[MMA_DIM], Idx[Depth]), Coord(kv_row_stride, Idx[1])
     )
 
     # ScoreMma loads K in its native dtype; q and k share the model dtype in
     # attention, so `k_t.dtype == q_type` in practice.
     comptime ScoreMma = MmaOpApple[
-        DType.float32,
+        .float32,
         q_type,
         1,
         1,
@@ -553,7 +544,7 @@ def fa_prefill_apple_core[
     # Full Sk-wide score storage (NumNMmas col-blocks), filled one page-resolved
     # 16-key column-block at a time.
     comptime ScoreAccum = MmaOpApple[
-        DType.float32,
+        .float32,
         q_type,
         1,
         NumNMmas,
@@ -612,10 +603,10 @@ def fa_prefill_apple_core[
         # m, l, and O all unchanged), so skipping it is equivalent to processing
         # it. Decided over the whole threadgroup row span so the skip/break is
         # identical across simdgroups (barrier lockstep).
-        var tg_tile_status = mask_functor.status[element_type=DType.uint32](
+        var tg_tile_status = mask_functor.status(
             UInt32(batch_id),
-            Index[dtype=DType.uint32](tg_score_row_base, kv0),
-            Index[dtype=DType.uint32](NumSimdgroups * SQ, SK),
+            (Int(tg_score_row_base), Int(kv0)),
+            (Int(NumSimdgroups * SQ), Int(SK)),
         )
         if tg_tile_status == TileMaskStatus.FULL_MASK:
             comptime if causal_monotonic:
@@ -624,10 +615,10 @@ def fa_prefill_apple_core[
                 continue
 
         # Per-simdgroup status drives this simdgroup's fast-path / mask decision.
-        var tile_status = mask_functor.status[element_type=DType.uint32](
+        var tile_status = mask_functor.status(
             UInt32(batch_id),
-            Index[dtype=DType.uint32](score_row_base, kv0),
-            Index[dtype=DType.uint32](SQ, SK),
+            (Int(score_row_base), Int(kv0)),
+            (Int(SQ), Int(SK)),
         )
 
         # Whole-tile KV validity: every key in [kv0, kv0+SK) is < cur_cache_len.
@@ -655,17 +646,17 @@ def fa_prefill_apple_core[
             comptime k_align = align_of[Scalar[k_t.dtype]]()
             comptime if DEPTH_MMAS % 2 == 0:
                 comptime for sp in range(DEPTH_MMAS // 2):
-                    var qlo = q_tile.raw_load[width=8, alignment=q_align](
-                        rb * q_row_stride + 32 * sp + 2 * cb
+                    var qlo = q_tile.load[width=8, alignment=q_align](
+                        (rb, 32 * sp + 2 * cb)
                     )
-                    var qhi = q_tile.raw_load[width=8, alignment=q_align](
-                        (rb + 8) * q_row_stride + 32 * sp + 2 * cb
+                    var qhi = q_tile.load[width=8, alignment=q_align](
+                        (rb + 8, 32 * sp + 2 * cb)
                     )
-                    var klo = k_tile.raw_load[width=8, alignment=k_align](
-                        rb * kv_row_stride + 32 * sp + 2 * cb
+                    var klo = k_tile.load[width=8, alignment=k_align](
+                        (rb, 32 * sp + 2 * cb)
                     )
-                    var khi = k_tile.raw_load[width=8, alignment=k_align](
-                        (rb + 8) * kv_row_stride + 32 * sp + 2 * cb
+                    var khi = k_tile.load[width=8, alignment=k_align](
+                        (rb + 8, 32 * sp + 2 * cb)
                     )
                     _mma_apple_transposable(
                         score_col[0],
@@ -725,9 +716,9 @@ def fa_prefill_apple_core[
                 comptime for ni in range(NumNMmas):
                     var kbase = kv0 + ni * 16 + cb
                     # Per-key in-bounds mask for the 4 consecutive keys.
-                    var keys = SIMD[.int32, 4](Int32(kbase)) + SIMD[
-                        DType.int32, 4
-                    ](0, 1, 2, 3)
+                    var keys = SIMD[.int32, 4](Int32(kbase)) + SIMD[.int32, 4](
+                        0, 1, 2, 3
+                    )
                     var k_ok = keys.lt(Int32(cur_cache_len))
                     var neg = SIMD[.float32, 4](NEG_INF)
                     var lrow_lo = rb
@@ -735,14 +726,20 @@ def fa_prefill_apple_core[
                     var s_lo = scores[ni].slice[4, offset=0]()
                     var s_hi = scores[ni].slice[4, offset=4]()
                     var m_lo = mask_functor.mask(
-                        Index(
-                            batch_id, head_id, score_row_base + lrow_lo, kbase
+                        (
+                            Int(batch_id),
+                            Int(head_id),
+                            Int(score_row_base + lrow_lo),
+                            Int(kbase),
                         ),
                         s_lo,
                     )
                     var m_hi = mask_functor.mask(
-                        Index(
-                            batch_id, head_id, score_row_base + lrow_hi, kbase
+                        (
+                            Int(batch_id),
+                            Int(head_id),
+                            Int(score_row_base + lrow_hi),
+                            Int(kbase),
                         ),
                         s_hi,
                     )
@@ -767,11 +764,11 @@ def fa_prefill_apple_core[
                         var qrow = q_row0 + lrow
                         if qrow < cur_query_len and key < cur_cache_len:
                             frag[el] = mask_functor.mask(
-                                Index(
-                                    batch_id,
-                                    head_id,
-                                    score_row_base + lrow,
-                                    key,
+                                (
+                                    Int(batch_id),
+                                    Int(head_id),
+                                    Int(score_row_base + lrow),
+                                    Int(key),
                                 ),
                                 frag[el],
                             )
@@ -842,7 +839,7 @@ def fa_prefill_apple_core[
     # cast to `output_type` on store, so the fp32-only `store_bounded` fast path
     # is unavailable; scatter each fragment via `out_mma`'s `rb`/`cb` lane map
     # with a per-element cast and a query-row bounds check.
-    var out_layout_val = TileLayout(
+    var out_layout_val = Layout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
     var out_tile = output.OffsetViewType[
@@ -860,19 +857,18 @@ def fa_prefill_apple_core[
     var row_lo = rb
     var lo_ok = row_lo < valid_q
     var hi_ok = row_lo + 8 < valid_q
-    var off_lo = rb * q_row_stride + cb
-    var off_hi = (rb + 8) * q_row_stride + cb
+    comptime o_align = align_of[Scalar[output_type]]()
     comptime for ni in range(DEPTH_MMAS):
         var o_sub = out_tile.tile[MMA_DIM, MMA_DIM](0, ni)
         comptime assert o_sub.flat_rank == 2, "output sub-tile must be 2D"
         var frag = output_accum[ni]
         if lo_ok:
-            o_sub.raw_store(
-                off_lo, frag.slice[4, offset=0]().cast[output_type]()
+            o_sub.store[alignment=o_align](
+                (rb, cb), frag.slice[4, offset=0]().cast[output_type]()
             )
         if hi_ok:
-            o_sub.raw_store(
-                off_hi, frag.slice[4, offset=4]().cast[output_type]()
+            o_sub.store[alignment=o_align](
+                (rb + 8, cb), frag.slice[4, offset=4]().cast[output_type]()
             )
 
 
@@ -977,13 +973,11 @@ def fa_prefill_apple[
 
     # Flatten to 1-D views; the kernel bakes the
     # ragged/BSHD + q_row0 offset into each per-simdgroup tile base.
-    var q_flat = TileTensor(
-        q.unsafe_ptr().as_imm().as_unsafe_any_origin(),
-        row_major(q.num_elements()),
+    var q_flat = (
+        q.as_imm().as_unsafe_any_origin().reshape(row_major(q.num_elements()))
     )
-    var output_flat = TileTensor(
-        output.unsafe_ptr().as_unsafe_any_origin(),
-        row_major(output.num_elements()),
+    var output_flat = output.as_unsafe_any_origin().reshape(
+        row_major(output.num_elements())
     )
 
     # MODULAR_APPLE_FA_PREFILL_NUM_SIMDGROUPS={4,8,16,32} overrides the
@@ -1036,8 +1030,10 @@ def fa_prefill_apple[
                     Int32(num_heads),
                     Int32(depth),
                     Int32(group),
-                    grid_dim=(num_q_tiles, num_heads, batch_size),
-                    block_dim=sg * WARP_SIZE,
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(num_q_tiles, num_heads, batch_size),
+                        block_dim=sg * WARP_SIZE,
+                    ),
                 )
 
             def _dispatch[sg: Int]() raises {var}:

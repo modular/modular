@@ -54,8 +54,8 @@ struct MemExample(ImplicitlyCopyable):
     def __bool__(self) -> Bool:
         return True
 
-    def unsafe_ptr(self) -> UnsafePointer[Int, AnyOrigin[mut=True]]:
-        return UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
+    def unsafe_ptr(self) -> Pointer[Int, AnyOrigin[mut=True]]:
+        return Pointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
         pass
@@ -121,7 +121,6 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
 
     # CHECK: [[ONE:%.+]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT: hlcf.if [[ONE]] {
-    # expected-warning @below {{'if' condition always evaluates to 'True'; 'else' branch is unreachable}}
     if True:
         # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
@@ -470,6 +469,7 @@ def testErrorReturn() raises:
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__deinit__
+        # expected-warning @+1 {{assignment to 'x' was never used}}
         var x = ctx.read()
         input = "hello"
     # CHECK: except
@@ -537,11 +537,11 @@ def test_param_for1(cond: Bool, cond2: Bool):
         marker()
         # CHECK-NEXT: hlcf.comptime.for.break
     # Finish out the comptime.if and the comptime.for
-    # CHECK-NEXT:   } {elseIsolated, thenIsolated}
+    # CHECK-NEXT:   } <thenIsolated, elseIsolated>
     # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.unreachable
-    # CHECK-NEXT: } {bodyIsolated, elseIsolated}
+    # CHECK-NEXT: } <bodyIsolated, elseIsolated>
 
 
 # CHECK-LABEL: lit.fn @"test_param_for2
@@ -717,9 +717,8 @@ def nested_for_reassign_nontrivial():
         for _ in TrivialRange():
             # The old value dies on the non-raising arm, i.e. only once
             # __next__ says the body runs.
-            # CHECK: lit.try.raise "try1"
-            # CHECK-NEXT: } else {
-            # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
+            # CHECK: hlcf.if
+            # CHECK: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
             # CHECK-NEXT: lifetime.end %mem
 
             # CHECK: lifetime.start %mem
@@ -751,8 +750,8 @@ def use_before_noreturn_in_if(cond: Bool):
         # CHECK: hlcf.unreachable
         use(mem)
         abort()
-    # CHECK-NEXT: } else {
-    # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
+    # CHECK: } else {
+    # CHECK: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
     # CHECK-NEXT: lifetime.end %mem
 
 
@@ -780,3 +779,40 @@ def noreturn_except_after_try() raises:
     except e:
         abort()
     use(mem)
+
+
+def make_optional_string() -> Optional[String]:
+    return String("payload")
+
+def make_optional_int() -> Optional[Int]:
+    return Optional[Int](None)
+
+
+def make_optional_movable() -> Optional[MyStringReturningCtx]:
+    return MyStringReturningCtx()
+
+
+# The rvalue `Optional` must transfer its payload into `x` rather than borrow
+# the payload and require a copy.
+def extract_temporary_optional_payload() -> MyStringReturningCtx:
+    match make_optional_movable():
+        case .Some(var x):
+            return x^
+        case .None:
+            abort()
+
+
+# The enum payload reference is tied to the temporary returned by
+# `make_optional_string()`.
+def match_temporary_optional_payload():
+    match make_optional_string():
+    case .Some(payload):
+        use(payload)
+    case .None:
+        pass
+
+    match make_optional_string():
+    case .Some(payload):
+        _ = payload
+    case .None:
+        pass

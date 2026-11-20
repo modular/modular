@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Qwen3.5's DFlash2 tap, checked against HuggingFace rather than itself.
 
-`unified_dflash2_qwen3_5/test_tap_capture.py` pins the tap against MAX's own
-final hidden state. That rules out a hook firing at the wrong point in the
-loop, but it cannot see a disagreement between MAX's layer `i` and
-HuggingFace's layer `i` -- and the DFlash2 reference reads
+Pinning the tap against MAX's own final hidden state rules out a hook firing
+at the wrong point in the loop, but it cannot see a disagreement between
+MAX's layer `i` and HuggingFace's layer `i` -- and the DFlash2 reference reads
 `hidden_states[layer_id + 1]` from HuggingFace, so that correspondence is
 what the drafter's context actually rests on.
 
@@ -41,7 +40,6 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -50,7 +48,8 @@ from max.nn.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.allreduce import Signals
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
@@ -179,7 +178,6 @@ def _max_config(
         vocab_size=VOCAB,
         dtype=DType.float32,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=MHAKVCacheParams(
             dtype=DType.float32,
             devices=[device],
@@ -191,10 +189,7 @@ def _max_config(
         norm_dtype=DType.float32,
         rms_norm_eps=RMS_EPS,
         attention_multiplier=HEAD_DIM**-0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[device],
-        clip_qkv=None,
         layer_types=list(LAYER_TYPES),
         linear_key_head_dim=LINEAR_KEY_DIM,
         linear_value_head_dim=LINEAR_VALUE_DIM,
@@ -322,7 +317,7 @@ def _compile_taps(
             signal_buffers,
             tree.leaves(state_inputs, leaf=RecurrentStateInputsPerDevice),
         )
-        graph.output(*outputs)
+        graph.output(outputs)
 
     kv_params = config.kv_params
     assert isinstance(kv_params, MultiKVCacheParams)

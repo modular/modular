@@ -52,7 +52,7 @@ from comm.device_query import dispatch_select_comm_config
 from comm.relay import RelayTuningConfig
 from comm.sync import enable_p2p
 from internal_utils import arg_parse, human_readable_size
-from layout import TileTensor, row_major
+from layout import TensorLayout, TileTensor, row_major
 from max.algorithm import sync_parallelize
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -105,8 +105,10 @@ def _res_pattern(group_id: Int, j: Int) -> Scalar[accum_type]:
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
 )
-def _check_kernel(
-    out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+def _check_kernel[
+    out_layout: TensorLayout
+](
+    output: TileTensor[dtype, out_layout, MutAnyOrigin],
     length: Int32,
     part_start: Int32,
     group_base: Int32,
@@ -130,7 +132,7 @@ def _check_kernel(
                 rounded.cast[accum_type]()
                 + _res_pattern(Int(group_base) // GROUP, Int(part_start) + i)
             ).cast[dtype]()
-        if out_ptr[i] != rounded:
+        if output[i] != rounded:
             first_bad[] = Int32(i) + 1
 
 
@@ -152,7 +154,7 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(WORLD):
         list_of_ctx.append(DeviceContext(device_id=i))
 
@@ -235,7 +237,7 @@ def main() raises:
     def out_tile(rank: Int, numel: Int) {imm} -> OutTileType:
         return TileTensor(out_ptrs[rank], row_major(numel))
 
-    comptime sm_version = DeviceContext.default_device_info.version
+    comptime sm_version = DeviceContext[].default_device_info.version
 
     @inline(.always)
     def table_recipe(part: Int) {imm} -> RelayTuningConfig:
@@ -247,7 +249,10 @@ def main() raises:
 
     @inline(.always)
     def launch_baseline(
-        rank: Int, ctx: DeviceContext, part: Int, max_num_blocks: Optional[Int]
+        rank: Int,
+        ctx: DeviceContext[],
+        part: Int,
+        max_num_blocks: Optional[Int],
     ) raises {imm}:
         # The group is presented as its own world, so `reducescatter` sees one
         # group and leaves the relay gate shut.
@@ -296,7 +301,7 @@ def main() raises:
     @inline(.always)
     def launch_relay(
         rank: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         part: Int,
         override: Optional[RelayTuningConfig],
     ) raises {imm}:
@@ -354,8 +359,8 @@ def main() raises:
             var ctx = list_of_ctx[gpu_idx]
             var group_base = ualign_down(gpu_idx, GROUP)
             ctx.enqueue_memset[.int32](flag_bufs[gpu_idx], 0)
-            ctx.enqueue_function[_check_kernel](
-                out_tile(gpu_idx, part).ptr,
+            ctx.enqueue_function[_check_kernel[OutTileType.LayoutType]](
+                out_tile(gpu_idx, part),
                 Int32(part),
                 Int32((gpu_idx - group_base) * part),
                 Int32(group_base),
@@ -381,7 +386,7 @@ def main() raises:
 
     @inline(.always)
     def measure[
-        LaunchType: def(Int, DeviceContext) raises -> None
+        LaunchType: def(Int, DeviceContext[]) raises -> None
     ](launch: LaunchType, part: Int) raises {mut times_ms, imm} -> Float64:
         for gpu_idx in range(WORLD):
             list_of_ctx[gpu_idx].enqueue_memset[dtype](out_bufs[gpu_idx], 0)
@@ -390,7 +395,7 @@ def main() raises:
         def per_gpu(rank: Int) raises {mut times_ms, imm}:
             var ctx = list_of_ctx[rank]
 
-            def one_iter(c: DeviceContext) raises {imm}:
+            def one_iter(c: DeviceContext[]) raises {imm}:
                 launch(rank, c)
 
             for _ in range(warmup):
@@ -410,7 +415,7 @@ def main() raises:
     def run_baseline(
         part: Int, max_num_blocks: Optional[Int], label: String
     ) raises {mut times_ms, imm} -> Float64:
-        def launch(rank: Int, ctx: DeviceContext) raises {imm}:
+        def launch(rank: Int, ctx: DeviceContext[]) raises {imm}:
             launch_baseline(rank, ctx, part, max_num_blocks)
 
         var ms = measure(launch, part)
@@ -421,7 +426,7 @@ def main() raises:
     def run_relay(
         part: Int, override: Optional[RelayTuningConfig], label: String
     ) raises {mut times_ms, imm} -> Float64:
-        def launch(rank: Int, ctx: DeviceContext) raises {imm}:
+        def launch(rank: Int, ctx: DeviceContext[]) raises {imm}:
             launch_relay(rank, ctx, part, override)
 
         var ms = measure(launch, part)
@@ -434,20 +439,9 @@ def main() raises:
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     print(
-        "# relay reduce-scatter:",
-        WORLD,
-        "GPUs,",
-        WORLD // GROUP,
-        "groups of",
-        GROUP,
-        "| dtype",
-        dtype,
-        "| simd_width",
-        simd_width,
-        "| iters",
-        iters,
-        "| residual",
-        HAS_RESIDUAL,
+        t"# relay reduce-scatter: {WORLD} GPUs, {WORLD // GROUP} groups of"
+        t" {GROUP} | dtype {dtype} | simd_width {simd_width} | iters {iters} |"
+        t" residual {HAS_RESIDUAL}"
     )
 
     var part_kb = List[Int](capacity=8)
@@ -471,12 +465,8 @@ def main() raises:
             var part = part_kb[si] * 1024 // size_of[dtype]()
             var base_ms = run_baseline(part, None, "baseline")
             print(
-                "CSV,",
-                part_kb[si],
-                ",baseline,-,-,",
-                base_ms,
-                ",",
-                gbps(part, base_ms),
+                t"CSV, {part_kb[si]} ,baseline,-,-, {base_ms} ,"
+                t" {gbps(part, base_ms)}"
             )
             for di in range(len(direct_blocks)):
                 for ri in range(len(relay_blocks)):
@@ -490,18 +480,9 @@ def main() raises:
                         )
                         var ms = run_relay(part, Optional(cfg), "relay")
                         print(
-                            "CSV,",
-                            part_kb[si],
-                            ",",
-                            direct_blocks[di],
-                            ",",
-                            relay_blocks[ri],
-                            ",",
-                            percents[pi],
-                            ",",
-                            ms,
-                            ",",
-                            gbps(part, ms),
+                            t"CSV, {part_kb[si]} , {direct_blocks[di]} ,"
+                            t" {relay_blocks[ri]} , {percents[pi]} , {ms} ,"
+                            t" {gbps(part, ms)}"
                         )
         return
 
@@ -514,31 +495,17 @@ def main() raises:
 
         if table_recipe(part).relay_percent == 0:
             print(
-                "|",
-                human_readable_size(part * size_of[dtype]()),
-                "|",
-                base_ms,
-                "|",
-                gbps(part, base_ms),
-                "| relay declined by the tuning table |",
+                t"| {human_readable_size(part * size_of[dtype]())} |"
+                t" {base_ms} | {gbps(part, base_ms)} | relay declined by the"
+                t" tuning table |"
             )
             continue
 
         var relay_ms = run_relay(part, None, "relay")
         print(
-            "|",
-            human_readable_size(part * size_of[dtype]()),
-            "|",
-            base_ms,
-            "|",
-            gbps(part, base_ms),
-            "|",
-            relay_ms,
-            "|",
-            gbps(part, relay_ms),
-            "|",
-            base_ms / relay_ms,
-            "|",
+            t"| {human_readable_size(part * size_of[dtype]())} | {base_ms} |"
+            t" {gbps(part, base_ms)} | {relay_ms} | {gbps(part, relay_ms)} |"
+            t" {base_ms / relay_ms} |"
         )
 
     _ = host_buffer^

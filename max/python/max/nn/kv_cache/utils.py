@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Types and helpers shared by the KV cache."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -175,15 +177,33 @@ class MHAAttnKey(AttnKey):
 class MLAAttnKey(AttnKey):
     """Decode dispatch metadata for multi-latent attention (MLA)."""
 
+    kernel_variant: int = 0
+    """Tells apart SM100 sparse launches with the same partition count.
+
+    Values 0, 1, and 2 select single-CTA 64-key, paired 128-key, and
+    single-CTA 128-key launches, respectively. This is part of the capture
+    identity only; :meth:`pack_into` does not write it.
+    """
+    decode_batch_size: int = 0
+    """Rows of the record's decode view, zero when the record does not split."""
+    decode_max_prompt_length: int = 0
+    """Per-step query width of the decode view, zero when it does not split."""
+    decode_num_partitions: int = 0
+    """Partition count of the decode view, zero when it does not split."""
+
     @classmethod
     def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
-        """MLA decode kernels read three ints, on the accelerator."""
+        """MLA decode kernels read six ints, on the accelerator.
+
+        Values 0-2 are the whole batch's; values 3-5 the decode view's,
+        zero when the record does not split.
+        """
         return DispatchMetadataSpec(
-            shape=(3,), dtype=DType.int64, on_device=True
+            shape=(6,), dtype=DType.int64, on_device=True
         )
 
     def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
-        """Writes batch size, prompt width and partition count.
+        """Writes the whole batch's and the decode view's dispatch values into ``into``.
 
         The cache length is not part of the MLA dispatch buffer; it is carried
         separately in ``max_cache_length``.
@@ -192,29 +212,48 @@ class MLAAttnKey(AttnKey):
             self.batch_size,
             self.max_prompt_length,
             self.num_partitions,
+            self.decode_batch_size,
+            self.decode_max_prompt_length,
+            self.decode_num_partitions,
         )
 
 
 @dataclass(frozen=True)
 class MSAAttnKey(AttnKeyInterface):
-    """Decode dispatch metadata for multi-step attention (MSA)."""
+    """Decode dispatch metadata for MiniMax Sparse Attention (MSA).
+
+    Graph capture keys each captured graph by its caches' attention keys, so
+    the key holds the batch size even where no other cache's key does.
+    """
+
+    batch_size: int
 
     @classmethod
     def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
-        """A single host int, since MSA kernels read no dispatch metadata."""
+        """The batch size and the cache length, on the accelerator."""
         return DispatchMetadataSpec(
-            shape=(1,), dtype=DType.int64, on_device=False
+            shape=(2,), dtype=DType.int64, on_device=True
         )
 
     def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
-        """Writes the sentinel the placeholder input carries."""
-        into[:] = 42
+        """Writes the batch size and this step's cache length."""
+        into[:] = (self.batch_size, max_cache_valid_length)
+
+
+@dataclass(frozen=True)
+class MSAIndexAttnKey(MSAAttnKey):
+    """Decode dispatch metadata for the MSA indexer's index-K cache.
+
+    A type of its own, so a graph captured for one MSA cache is never
+    replayed for the other.
+    """
 
 
 @dataclass(frozen=True)
 class MultiAttnKey(AttnKeyInterface):
-    """A tree of resolved dispatch metadata mirroring a ``MultiKVCacheParams``
-    tree.
+    """A tree of resolved dispatch metadata.
+
+    Mirrors a ``MultiKVCacheParams`` tree.
 
     ``children`` is a tuple of ``(name, key)`` pairs (rather than a dict) so it
     stays a frozen, hashable identity for the graph-capture key map.

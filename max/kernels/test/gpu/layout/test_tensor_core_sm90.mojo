@@ -39,10 +39,13 @@ def load_and_mma_16x8x32[
     layout_c: TensorLayout,
     layout_a: TensorLayout,
     layout_b: TensorLayout,
+    mat_c_origin: MutOrigin,
+    mat_a_origin: ImmOrigin,
+    mat_b_origin: ImmOrigin,
 ](
-    mat_c: TileTensor[mut=True, out_type, layout_c, MutAnyOrigin],
-    mat_a: TileTensor[mut=False, in_type, layout_a, ImmutAnyOrigin],
-    mat_b: TileTensor[mut=False, in_type, layout_b, ImmutAnyOrigin],
+    mat_c: TileTensor[mut=True, out_type, layout_c, mat_c_origin],
+    mat_a: TileTensor[mut=False, in_type, layout_a, mat_a_origin],
+    mat_b: TileTensor[mut=False, in_type, layout_b, mat_b_origin],
 ):
     comptime assert (
         in_type == .float8_e4m3fn or in_type == .float8_e5m2
@@ -99,12 +102,15 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext) raises:
         mat_c.LayoutType,
         mat_a.LayoutType,
         mat_b.LayoutType,
+        mat_c_origin=origin_of(mat_c),
+        mat_a_origin=origin_of(mat_a),
+        mat_b_origin=origin_of(mat_b),
     ]
 
     ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
-        mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
-        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_c.device_tensor(),
+        mat_a.device_tensor().as_imm(),
+        mat_b.device_tensor().as_imm(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
@@ -157,12 +163,15 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext) raises:
         mat_c.LayoutType,
         mat_a.LayoutType,
         mat_b.LayoutType,
+        mat_c_origin=origin_of(mat_c),
+        mat_a_origin=origin_of(mat_a),
+        mat_b_origin=origin_of(mat_b),
     ]
 
     ctx.enqueue_function[load_and_mma_e5m2_e5m2_f32_16x8x32_kernel_fn](
-        mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
-        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_c.device_tensor(),
+        mat_a.device_tensor().as_imm(),
+        mat_b.device_tensor().as_imm(),
         grid_dim=(1, 1),
         block_dim=(32),
     )

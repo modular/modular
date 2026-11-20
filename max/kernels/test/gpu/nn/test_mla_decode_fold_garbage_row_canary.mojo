@@ -25,7 +25,7 @@ Both layouts map physical row `= lane_id & (BM-1)` to `(q_local, head_local)`
 via `q_local = row // num_heads`, so a 32-lane warp covers MULTIPLE q_local
 values whenever `num_heads < 32` -- e.g. num_heads=16 packs 2 query tokens
 per warp. Their online-softmax lazy-rescale gate
-(`if _vote_nvidia_helper(diff < rescale_threshold) != 0:`) is a warp-wide
+(`if vote[.uint32](diff < rescale_threshold) != 0:`) is a warp-wide
 ANY-ballot over this per-thread predicate, exactly the pattern fixed for the
 SM100 FA4 dense-GQA kernel in `softmax_warp.mojo` (PR #98402): one row's
 `diff` can force every row physically sharing its warp onto the adopt
@@ -62,7 +62,7 @@ from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
 from layout import Idx, TileTensor, row_major
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -133,7 +133,7 @@ def _run_mla_decode_fold[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime config = MHAConfig[q_type](num_heads, depth)
-    flare_mla_decoding[config=config](
+    flare_mla_decoding[config=config, kernels=SM100MLA](
         out_tt.as_unsafe_any_origin(),
         q_tt,
         k_tt,
@@ -184,17 +184,8 @@ def test_fold_garbage_row_canary[
     comptime kv_num_heads = num_heads // group
     var num_keys = prefix + seq_len
     print(
-        "  [MLA fold garbage-row canary] q_type=",
-        String(q_type),
-        " num_heads=",
-        num_heads,
-        " seq_len=",
-        seq_len,
-        " prefix=",
-        prefix,
-        " seed=",
-        rng_seed,
-        sep="",
+        t"  [MLA fold garbage-row canary]"
+        t" q_type={String(q_type)} num_heads={num_heads} seq_len={seq_len} prefix={prefix} seed={rng_seed}"
     )
 
     var q_clean = ctx.enqueue_create_host_buffer[q_type](seq_len * row_w)
@@ -238,13 +229,8 @@ def test_fold_garbage_row_canary[
         if o_poison[i] != o_poison[i]:  # NaN != NaN
             any_nan = True
     print(
-        "     token0 mismatches=",
-        mismatches,
-        "/",
-        v_row_w,
-        "  token0_has_nan(poisoned run)=",
-        any_nan,
-        sep="",
+        t"     token0 mismatches={mismatches}/{v_row_w} "
+        t" token0_has_nan(poisoned run)={any_nan}"
     )
     assert_equal(
         mismatches,

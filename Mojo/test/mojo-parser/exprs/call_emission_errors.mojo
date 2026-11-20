@@ -165,9 +165,9 @@ def mutateInt(mut a: Int):
 
 
 def initialize_in_addrspace(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
@@ -177,13 +177,13 @@ def initialize_in_addrspace(
 
 
 def mutate_in_addrspace(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    memtcptr: UnsafePointer[
+    memtcptr: Pointer[
         MemExampleTriviallyCopyable,
         AnyOrigin[mut=True],
         address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
@@ -195,9 +195,9 @@ def mutate_in_addrspace(
 
 
 def variadic_addr_space(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @below {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
@@ -386,17 +386,6 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # expected-error @below {{aliasing values passed mutably to 'strs' argument and passed mutably to 'strs' argument in 'mutate_pack' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_pack(s, s)
-
-
-def capture_exclusivity(var x: MemExample):
-    @__parameter
-    def capture_and_read(y: MemExample):
-        _ = x^
-
-    # FIXME(MOCO-3241): Re-enable this.
-    # xpected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
-    # xpected-note @below {{'origin_of(x)' value is passed through aliasing 'imm' argument}}
-    capture_and_read(x)
 
 
 # expected-note @below {{function declared here}}

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/serve-custom-model-architectures.mdx
+# DOC: develop/serve-custom-model-architectures.mdx
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.llama3 import weight_adapters

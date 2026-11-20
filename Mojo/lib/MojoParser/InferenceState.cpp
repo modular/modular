@@ -42,8 +42,8 @@ InferenceState::InferenceState(ASTDecl &declScope,
                                ArrayRef<Type> declaredParamTypes,
                                PogListAttr declaredParamPogs, SMLoc defaultLoc,
                                bool discardError,
-                               DeferredTypingContext *deferredTypingContext,
-                               ArrayRef<ConstraintAttr> additionalAssumptions)
+                               TypedAttr additionalAssumptions,
+                               DeferredTypingContext *deferredTypingContext)
     : deferredTypingContext(deferredTypingContext),
       additionalAssumptions(additionalAssumptions), declScope(declScope),
       shared(declScope.getShared()), evaluator(shared.getParameterEvaluator()),
@@ -57,7 +57,12 @@ InferenceState::InferenceState(ASTDecl &declScope,
 void InferenceState::setInferredValue(size_t paramIdx, TypedAttr paramVal,
                                       bool isDefaulted) {
   paramVal = evaluator.getReboundAttribute(paramVal);
-  ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+  ASTType targetType;
+  {
+    // The decl is always at depth 0.
+    auto declScope = evaluator.enterDeclScope();
+    targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+  }
 
   // If the parameter being inferred is a type, and if the source value is
   // non-mterializable, infer to the materialized type. This ensures that things
@@ -155,13 +160,13 @@ private:
 LogicalResult InferenceState::checkBodyConstraints(
     ArrayRef<ConstraintAttr> extraConstraints) {
   // Substitute the parameters that are bound, but leave the unbound ones as
-  // references rather than inlining their `UnboundAttr` marker.
+  // references.
+  assert(evaluator.getDepth() == 0 &&
+         "body constraints are checked from the decl scope");
   ParameterEvaluator partialEvaluator;
   partialEvaluator.setEvaluationContext(evaluator.getEvaluationContext());
-  partialEvaluator.setInputDepth(evaluator.getInputDepth());
   for (TypedAttr binding : evaluator.getIndexBindings())
-    partialEvaluator.appendIndexBinding(
-        binding && sugarIsa<UnboundAttr>(binding) ? TypedAttr() : binding);
+    partialEvaluator.appendIndexBinding(binding);
 
   // Check the extra constraints first.
   if (LIT::canDischargeConstraintsInScope(
@@ -218,21 +223,12 @@ LogicalResult InferenceState::checkBodyConstraints(
 TypedAttr
 VerifiedParamBindings::specializeStructType(StructDeclOp structOp) const {
   assert(*this && "specializing with failed inference bindings");
-  return PValue(structOp.bindReference(getValues()));
+  return PValue(structOp.bindReference(evaluationContext, bindings));
 }
 
 TypedAttr
 VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
   assert(*this && "specializing with failed inference bindings");
-  // Special case for structs types: If the generator is a struct meta type,
-  // bind the corresponding struct type directly.
-  if (auto structMetaType = sugarDynCast<StructMetaType>(generator.getType())) {
-    LIT::StructType boundType =
-        structMetaType.getType().bindUnbound(getValues());
-    return TypeParamAttr::get(boundType, StructMetaType::get(boundType));
-  }
-
-  // Otherwise, the type of the generator must be a GeneratorType.
   assert(sugarIsa<GeneratorType>(generator.getType()) &&
          "generator type expected");
   Type specializedType =
@@ -240,7 +236,7 @@ VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       generator.getContext(), dischargedBodyConstraints);
   TypedAttr result =
-      BindParamsAttr::get(generator.getContext(), generator, getValues(),
+      BindParamsAttr::get(generator.getContext(), generator, bindings,
                           discharged, evaluationContext);
   assert(isEqualCanon(result.getType(), specializedType) &&
          "inferred bind_params type must match verified specialization");
@@ -252,7 +248,7 @@ Type VerifiedParamBindings::specializeGeneratorType(
   assert(*this && "specializing with failed inference bindings");
   std::optional<PartiallySpecializedInputParams> specializationOpt =
       PartiallySpecializedInputParams::from(
-          genType.getInputParamTypes(), getValues(), evaluationContext,
+          genType.getInputParamTypes(), bindings, evaluationContext,
           /*emitErrorFn=*/{}, dischargedBodyConstraints);
   assert(specializationOpt &&
          "verified bindings should specialize this generator");

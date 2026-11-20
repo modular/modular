@@ -36,7 +36,7 @@ def test_epilogue_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that the closure-value overloads store exactly what the
     legacy path computes, passed through the closure."""
-    print(a_type, "->", c_type, m, "x", N, "x", K, config.num_k_partitions)
+    print(t"{a_type} -> {c_type} {m} x {N} x {K} {config.num_k_partitions}")
 
     var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
     var b_dev = ctx.enqueue_create_buffer[a_type](N * K)
@@ -97,16 +97,8 @@ def test_compute_fn[
     """Checks that a compute closure's result is what the kernel stores
     into `c`, at the index the closure was given."""
     print(
-        "compute:",
-        a_type,
-        "->",
-        c_type,
-        m,
-        "x",
-        N,
-        "x",
-        K,
-        config.num_k_partitions,
+        t"compute: {a_type} -> {c_type} {m} x {N} x"
+        t" {K} {config.num_k_partitions}"
     )
 
     var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
@@ -131,7 +123,7 @@ def test_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
+        var row_scale = -scale if Int(idx[0]) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
     comptime if config.num_k_partitions > 1:
@@ -157,7 +149,7 @@ def main() raises:
     with DeviceContext() as ctx:
         comptime bf16_config = _amdgpu_matmul_config_from_block_shape[
             .float32, .bfloat16, .bfloat16, True, 512
-        ](Index(128, 128))
+        ]((128, 128))
         test_epilogue_fn[.bfloat16, .float32, 256, 512, bf16_config](ctx, 130)
         test_compute_fn[.bfloat16, .float32, 256, 512, bf16_config](ctx, 130)
 
@@ -167,7 +159,7 @@ def main() raises:
         )
         comptime fp8_config = _amdgpu_matmul_config_from_block_shape[
             .bfloat16, fp8_type, fp8_type, True, 512
-        ](Index(128, 128))
+        ]((128, 128))
         # Standard, skinny, and ping-pong branches of the FP8 dispatch.
         for m in [64, 300, 640]:
             test_epilogue_fn[fp8_type, .bfloat16, 4096, 512, fp8_config](ctx, m)
@@ -176,8 +168,8 @@ def main() raises:
         comptime split_k_config = MatmulConfig[
             .float32, .float32, .float32, True
         ](
-            block_tile_shape=Index(16, 16, 64),
-            warp_tile_shape=Index(16, 16, 64),
+            block_tile_shape=(Int(16), Int(16), Int(64)),
+            warp_tile_shape=(Int(16), Int(16), Int(64)),
             mma_shape=_amdgpu_get_mma_shape[.float32, True](),
             num_pipeline_stages=1,
             num_k_partitions=4,

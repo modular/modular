@@ -1,0 +1,38 @@
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
+load("//bazel:api.bzl", "lit_tests")
+
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
+# Common configuration shared across all lit_tests targets
+_COMMON_CUSTOM_SUBSTITUTIONS = {
+    "%kernel_api_test_lib": "$(rlocationpath //GraphCompiler/test/kernels:testing_kernels)",
+}
+
+_COMMON_DATA = [
+    "//GraphCompiler/test/kernels:testing_kernels",
+    "//max/kernels/src/graph_compiler/builtin_kernels",
+]
+
+_COMMON_MOJO_DEPS = [
+    "//max:builtin_kernels",
+    "//max:builtin_primitives",
+    "//max:extensibility",
+] + INTERNAL_KERNEL_MOJOPKGS
+
+_COMMON_TOOLS = [
+    "//GraphCompiler/tools/mo-opt",
+    "//GraphCompiler/tools/mt",
+]
+
+lit_tests(
+    name = "multi-gpu-integration-test",
+    srcs = glob(["**/*.mlir"]),
+    custom_substitutions = _COMMON_CUSTOM_SUBSTITUTIONS,
+    data = _COMMON_DATA,
+    gpu_constraints = ["//:has_multi_gpu"],
+    mojo_deps = _COMMON_MOJO_DEPS,
+    tags = ["gpu"],
+    tools = _COMMON_TOOLS,
+)

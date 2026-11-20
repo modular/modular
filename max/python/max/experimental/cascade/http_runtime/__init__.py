@@ -10,7 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""HTTP-backed Cascade :py:class:`Runtime`."""
+"""HTTP-backed Cascade :py:class:`Runtime`.
+
+.. warning::
+
+    The pickle-over-HTTP transport is for local development and testing
+    only. It has no authentication, and the server unpickles request bodies
+    before validating them, so any peer that can reach it can execute
+    arbitrary code with the server process's privileges. Bind only to
+    loopback or a Unix socket, and never expose it to an untrusted network.
+    Do not use it for anything else.
+"""
 
 from max.experimental.cascade.http_runtime.client import HttpRuntimeProxy
 from max.experimental.cascade.http_runtime.subproc import SubprocHttpRuntime

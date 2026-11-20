@@ -24,8 +24,9 @@ def use[T: AnyType](a: T):
 
 # CHECK-LABEL: lit.fn @"tuples_rv
 def tuples_rv(a: Int, b: FloatDyn):
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}Tuple <:param_list<!AnyType_Movable> []
-    # CHECK: lit.call {{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]])
+    # CHECK: [[EMPTY:%.*]] = lit.call {{.*}}@Tuple::@"__init__(){{.*}}>()
+    # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl{{.*}}Tuple <:param_list<!AnyType_Movable> []
+    # CHECK-NEXT: lit.ref.store [[EMPTY]], [[TMPVAR]]
     use(())
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
@@ -33,10 +34,8 @@ def tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: lit.ref.store %a, [[AREF]]
     # CHECK-NEXT: [[BREF:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.ref.store %b, [[BREF]]
-    # CHECK-NEXT: [[AIMM:%.*]] = lit.ref.immut [[AREF]] : <!Int, mut [[ALT:.*]]>
-    # CHECK-NEXT: [[BIMM:%.*]] = lit.ref.immut [[BREF]] : <!FloatDyn, mut [[BLT:.*]]>
-    # CHECK-NEXT: [[AREBOUND:%.*]] = lit.ref.upcast [[AIMM]] : <!Int, muttoimm [[ALT]]> -> <!Int, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
-    # CHECK-NEXT: [[BREBOUND:%.*]] = lit.ref.upcast [[BIMM]] : <!FloatDyn, muttoimm [[BLT]]> -> <!FloatDyn, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
+    # CHECK-NEXT: [[AREBOUND:%.*]] = lit.ref.upcast [[AREF]] : <!Int, mut [[ALT:.*]]> -> <!Int, mut {[[ALT]], [[BLT:.*]]}>
+    # CHECK-NEXT: [[BREBOUND:%.*]] = lit.ref.upcast [[BREF]] : <!FloatDyn, mut [[BLT]]> -> <!FloatDyn, mut {[[ALT]], [[BLT]]}>
     # CHECK-NEXT: = lit.ref.pack.create([[AREBOUND]], [[BREBOUND]])
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}Tuple
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}({{.*}}, [[TMPVAR]])
@@ -50,19 +49,19 @@ def tuples_rv(a: Int, b: FloatDyn):
     use(t3)
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
-    # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK:  = lit.ref.pack.create({{.*}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
-    # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK:  = lit.ref.pack.create({{.*}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}#Tuple
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}, [[TMPVAR]])
     use((a,))
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
 
-    # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK:  = lit.ref.pack.create({{.*}})
     # CHECK: %t2 = lit.var.decl "t2"
     # CHECK: [[TUP2:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}({{.*}}, %t2)
     var t2 = (a,)
@@ -158,25 +157,17 @@ def swap_container_fields(mut v: Container[_]):
 # Tuple Types
 ##===----------------------------------------------------------------------===##
 
-# FIXME: Empty tuple `Tuple[]` cannot be spelled.
-
 
 # CHECK-LABEL: lit.fn @"returnTup0
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> []
+# CHECK-SAME: () -> !lit.struct<#Tuple <:param_list<!AnyType_Movable> []
 def returnTup0() -> Tuple[]:
-    # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
-    return ()
-
-
-# CHECK-LABEL: lit.fn @"returnTup0a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> []
-def returnTup0a() -> ():
-    # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
+    # CHECK: [[EMPTY:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}>()
+    # CHECK-NEXT: lit.return [[EMPTY]]
     return ()
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> [!Int]
+# CHECK-SAME: () -> !lit.struct<#Tuple <:param_list<!AnyType_Movable> [!Int]
 def returnTup1() -> Tuple[Int]:
     # CHECK: %0 = kgen.param.constant: !Int
     # CHECK:   = lit.ref.pack.create({{.*}}) : !lit.ref.pack<:param_list<!AnyType_Movable> [!Int],
@@ -185,7 +176,7 @@ def returnTup1() -> Tuple[Int]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup1
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> [!Int]
+# CHECK-SAME: () -> !lit.struct<#Tuple <:param_list<!AnyType_Movable> [!Int]
 def returnTup1a() -> Tuple[Int]:
     return (Int(4),)
 
@@ -195,7 +186,7 @@ def returnTup1b() -> Tuple[Int]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup2
-# CHECK-SAME:  %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> [!Int, !FloatDyn]
+# CHECK-SAME: () -> !lit.struct<#Tuple <:param_list<!AnyType_Movable> [!Int, !FloatDyn]
 def returnTup2() -> Tuple[Int, FloatDyn]:
     # CHECK:  = kgen.param.constant: !Int = <{:scalar<index> 4}>
     # CHECK:  = kgen.param.constant: !FloatDyn = <{{.*}}{:scalar<f64> "2"}
@@ -204,7 +195,7 @@ def returnTup2() -> Tuple[Int, FloatDyn]:
 
 
 # CHECK-LABEL: lit.fn @"returnTup2a
-# CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> [!Int, !FloatDyn]
+# CHECK-SAME: () -> !lit.struct<#Tuple <:param_list<!AnyType_Movable> [!Int, !FloatDyn]
 def returnTup2a() -> Tuple[Int, FloatDyn]:
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:param_list<!AnyType_Movable> [!Int, !FloatDyn]
     return (Int(4), 2.0)

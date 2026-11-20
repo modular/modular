@@ -19,6 +19,7 @@
 #define ASYNCRT_RUNTIME_COMPACT_CPU_DEVICE_PTR_H
 
 #include "AsyncRT/Runtime/Globals/Globals.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
@@ -36,7 +37,7 @@ namespace Detail {
 //===----------------------------------------------------------------------===//
 
 /// Global singleton which maintains the cpuDevice index to CPUDevice map.
-class CPUDeviceTable {
+class MODULAR_CXX_EXPORT CPUDeviceTable {
 public:
   /// Returns CPUDevice with given index, which must have already been added or
   /// registered.
@@ -51,9 +52,6 @@ public:
 
   /// Unregisters the CPUDevice with the given index.
   void clearCPUDevice(uint8_t index);
-
-  /// Returns the number of active CPUDevices.
-  size_t numActiveCPUDevices() const;
 
   /// Index representing 'no CPUDevice'.
   static constexpr uint8_t kInvalidIndex = 255;
@@ -82,7 +80,7 @@ private:
 /// `Runtime*` that fits in 8 bits.  This allows every AsyncValue to carry a
 /// backpointer to the Runtime which allocated it, and allows deallocating the
 /// memory for the AsyncValue through the Runtime's allocator.
-class CompactCPUDevicePtr {
+class MODULAR_CXX_EXPORT CompactCPUDevicePtr {
 public:
   constexpr CompactCPUDevicePtr() = default;
   CompactCPUDevicePtr(const CompactCPUDevicePtr &) = default;

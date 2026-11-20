@@ -10,19 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""LLaVA's projection into the text width."""
 
-
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.nn import Module
+from max.nn.linear import Linear
+from max.tensor import Tensor
 
 
 class LlavaMultiModalConnector(Module[[Tensor], Tensor]):
-    """
-    Simple multi-layer cross-modal connector to connect image features into the
-    text token embedding space.
-    Uses Gelu activation function.
+    """Connects image features into the text token embedding space.
+
+    Two linear layers with a GELU between them.
     """
 
     linear_1: Linear
@@ -46,4 +45,5 @@ class LlavaMultiModalConnector(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Projects the image features into the text width."""
         return self.linear_2(F.gelu(self.linear_1(x)))

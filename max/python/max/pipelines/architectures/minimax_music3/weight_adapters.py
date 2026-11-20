@@ -35,11 +35,16 @@ Every rewrite here happens once at load time rather than in the graph:
 from __future__ import annotations
 
 import numpy as np
-from max.driver import CPU, Buffer, DLPackArray
+from max.driver import (
+    CPU,
+    Buffer,
+    DLPackArray,
+    bfloat16_as_uint16_to_float32,
+    float32_array_to_buffer,
+)
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph.weights import WeightData, Weights
-from max.pipelines.lib.bfloat16_utils import float32_array_to_buffer
+from max.tensor import Tensor
 
 from .model_config import LanguageModelConfig
 
@@ -205,7 +210,7 @@ def convert_depth_decoder_state(
 
     This checkpoint needs no rewriting -- every key already matches the module's
     attribute path, and its embedding tables are stored the way
-    :class:`~max.experimental.nn.Embedding` wants them -- but it is one table
+    :class:`~max.nn.Embedding` wants them -- but it is one table
     short of what the module needs. A frame's semantic code is embedded by the
     *global model's* table, and this stage is the only place that table's audio
     rows are read, so they are sliced out of the checkpoint and joined here (see
@@ -251,7 +256,7 @@ def _row_slice(data: WeightData, rows: np.ndarray, dtype: DType) -> Buffer:
     )
     if dtype == DType.bfloat16:
         return Buffer.from_numpy(gathered).view(DType.bfloat16)
-    widened = (gathered.astype(np.uint32) << 16).view(np.float32)
+    widened = bfloat16_as_uint16_to_float32(gathered)
     return float32_array_to_buffer(widened, dtype=dtype, device=CPU())
 
 

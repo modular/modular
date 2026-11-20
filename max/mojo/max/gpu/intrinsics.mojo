@@ -48,7 +48,7 @@ from std.sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
 )
-from std.sys.intrinsics import llvm_intrinsic, readfirstlane
+from std.sys.intrinsics import llvm_intrinsic
 from std.math.uutils import ufloordiv, umod
 
 from std._gpu import lane_id
@@ -56,6 +56,14 @@ from std._gpu import lane_id
 from std.memory.unsafe import bitcast
 
 from max.gpu._utils import to_i32
+
+
+@__doc_inline
+from std._plugin.hip.hip_intrinsics import (
+    implicitarg_ptr,
+    readfirstlane,
+    sendmsg,
+)
 
 # ===-----------------------------------------------------------------------===#
 # CacheOperation
@@ -415,7 +423,7 @@ struct Scope(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -669,20 +677,28 @@ struct AMDBufferResource(TrivialRegisterPassable):
 
         comptime bytes = size_of[dtype]() * width
         comptime aux = _cache_operation_to_amd_aux[cache_policy]()
+        comptime buffer_dtype = _get_buffer_intrinsic_simd_dtype[bytes]()
+        comptime buffer_width = _get_buffer_intrinsic_simd_width[bytes]()
 
         var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
         var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
-
-        var load_val = llvm_intrinsic[
-            "llvm.amdgcn.raw.buffer.load",
-            SIMD[
-                _get_buffer_intrinsic_simd_dtype[bytes](),
-                _get_buffer_intrinsic_simd_width[bytes](),
-            ],
-            has_side_effect=False,
-        ](self.desc, vector_offset_bytes, scalar_offset_bytes, aux)
-
-        return bitcast[dtype, width](load_val)
+        var desc_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=SIMD[DType.uint32, 4]._to_int_vector
+        ](self.desc)
+        var result = __mlir_op.`rocdl.raw.buffer.load`[
+            aux=__mlir_deferred_attr[+aux.__mlir_index__(), `: i32`],
+            _type=SIMD[buffer_dtype, buffer_width]._to_int_vector,
+        ](
+            desc_llvm,
+            to_i32(vector_offset_bytes),
+            to_i32(scalar_offset_bytes),
+        )
+        var buffer_val = rebind[SIMD[buffer_dtype, buffer_width]](
+            __mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=SIMD[buffer_dtype, buffer_width]._mlir_type
+            ](result)
+        )
+        return bitcast[dtype, width](buffer_val)
 
     @inline(.nodebug)
     def load_to_lds[
@@ -759,33 +775,31 @@ struct AMDBufferResource(TrivialRegisterPassable):
             Pointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
         ]()[]
 
+        var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=__mlir_type.`!llvm.ptr<8>`
+        ](desc_ptr)
+        var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=__mlir_type.`!llvm.ptr<3>`
+        ](shared_ptr)
+
         comptime if not async_copies:
-            # No alias-scope metadata — clean `llvm_intrinsic` call path.
-            llvm_intrinsic[
-                "llvm.amdgcn.raw.ptr.buffer.load.lds",
-                NoneType,
-                has_side_effect=True,
+            __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+                aux=__mlir_deferred_attr[+aux.__mlir_index__(), `: i32`],
+                _type=None,
             ](
-                desc_ptr,
-                shared_ptr,
-                Int32(bytes),
-                vector_offset_bytes,
-                scalar_offset_bytes,
-                Int32(0),
-                aux,
+                desc_ptr_llvm,
+                shared_ptr3,
+                to_i32(Int32(bytes)),
+                to_i32(vector_offset_bytes),
+                to_i32(scalar_offset_bytes),
+                to_i32(Int32(0)),
             )
         else:
             # Attach `amdgpu.AsyncCopies` alias scope via the
             # `rocdl.raw.ptr.buffer.load.lds` MLIR op (the `llvm_intrinsic`
             # wrapper can't attach arbitrary attrs).
-            var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
-                _type=__mlir_type.`!llvm.ptr<8>`
-            ](desc_ptr)
-            var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
-                _type=__mlir_type.`!llvm.ptr<3>`
-            ](shared_ptr)
             comptime async_copies_scope = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
-            _raw_ptr_buffer_load_lds[async_copies_scope, Int(aux)](
+            _raw_ptr_buffer_load_lds[async_copies_scope, aux](
                 desc_ptr_llvm,
                 shared_ptr3,
                 to_i32(Int32(bytes)),
@@ -834,7 +848,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         ), "The buffer_store function is only applicable on AMDGPU hardware."
 
         comptime bytes = width * size_of[dtype]()
-        comptime aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
+        comptime aux = _cache_operation_to_amd_aux[cache_policy]()
 
         var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
         var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
@@ -844,18 +858,27 @@ struct AMDBufferResource(TrivialRegisterPassable):
             _get_buffer_intrinsic_simd_width[bytes](),
         ](val)
 
-        llvm_intrinsic[
-            "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
+        var store_val_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=SIMD[
+                _get_buffer_intrinsic_simd_dtype[bytes](),
+                _get_buffer_intrinsic_simd_width[bytes](),
+            ]._to_int_vector
+        ](store_val)
+        var desc_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=SIMD[DType.uint32, 4]._to_int_vector
+        ](self.desc)
+        __mlir_op.`rocdl.raw.buffer.store`[
+            aux=__mlir_deferred_attr[+aux.__mlir_index__(), `: i32`],
+            _type=None,
         ](
-            store_val,
-            self.desc,
-            vector_offset_bytes,
-            scalar_offset_bytes,
-            aux,
+            store_val_llvm,
+            desc_llvm,
+            to_i32(vector_offset_bytes),
+            to_i32(scalar_offset_bytes),
         )
 
 
-def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
+def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int:
     """Converts CacheOperation to AMD auxiliary parameter at compile time.
 
     Parameters:
@@ -899,26 +922,9 @@ def _raw_ptr_buffer_load_lds[
     soffset: __mlir_type.i32,
     offset: __mlir_type.i32,
 ):
-    # The cache-policy `aux` slot is an `I32Attr`, i.e. a plain signless
-    # builtin `i32` IntegerAttr literal (`N : i32`). It cannot be fed a value
-    # expression (`to_i32(...)`) nor an `int_literal_convert` /
-    # `cast_to_builtin` attribute — both produce non-builtin attrs the
-    # `non-atomic AMDGPU buffer cache policy` verifier rejects. Splicing the
-    # comptime-constant `aux` with a builtin type annotation
-    # (`__mlir_attr[..., `: i32`]`) folds to the same builtin `N : i32`
-    # IntegerAttr literal the verifier accepts. `scopes` (the `alias_scopes`
-    # attribute) is threaded through unchanged so its identity is preserved.
-    comptime assert aux in (
-        0x00,
-        0x02,
-        0x03,
-        0x10,
-        0x11,
-        0x12,
-    ), "unsupported AMD buffer cache-policy aux bitmask"
     __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
         alias_scopes=scopes,
-        aux=__mlir_attr[aux.__mlir_index__(), `: i32`],
+        aux=__mlir_deferred_attr[+aux.__mlir_index__(), `: i32`],
         _type=None,
     ](desc_ptr_llvm, shared_ptr3, size, voffset, soffset, offset)
 
@@ -1120,7 +1126,7 @@ def permlane_swap[
     comptime assert bit_width_of[dtype]() == 32, "Unsupported dtype"
     comptime assert stride in (16, 32), "Unsupported stride"
 
-    comptime asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
+    comptime asm = String(t"llvm.amdgcn.permlane{stride}.swap")
     var result = llvm_intrinsic[
         asm,
         _RegisterPackType[Int32, Int32],

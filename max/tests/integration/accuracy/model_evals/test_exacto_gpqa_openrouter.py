@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the port of OpenRouter's GPQA sample construction."""
 
+import hashlib
+from pathlib import Path
+
 import exacto_gpqa_openrouter as gpqa
 import pytest
 
@@ -91,3 +94,16 @@ def test_placeholders_in_the_question_fill_like_the_harness() -> None:
 def test_non_string_fields_are_rejected() -> None:
     with pytest.raises(TypeError, match="Incorrect Answer 2"):
         gpqa.record_to_prompt({**RECORD, "Incorrect Answer 2": 5}, 0)
+
+
+def test_dataset_file_must_match_the_pinned_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "gpqa_diamond.csv"
+    path.write_bytes(b"Question\n")
+    with pytest.raises(ValueError, match="SHA-256"):
+        gpqa.check_dataset_file(str(path))
+    monkeypatch.setattr(
+        gpqa, "DATASET_SHA256", hashlib.sha256(b"Question\n").hexdigest()
+    )
+    gpqa.check_dataset_file(str(path))

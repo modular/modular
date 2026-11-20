@@ -59,7 +59,7 @@ from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
-from nn.attention.gpu.mla import flare_mla_prefill
+from nn.attention.gpu.mla import AMDMLA, flare_mla_prefill
 from nn.attention.mha_mask import CausalMask
 
 from _fuzz import boundary_int, collect_args, fill_normal, flag, flag_int
@@ -222,14 +222,8 @@ def _print_nonfinite_rows(bad: List[Int], seq_len: Int):
         var r = bad[i]
         var local = r % seq_len
         print(
-            "  row=",
-            r,
-            "batch=",
-            r // seq_len,
-            "local=",
-            local,
-            "local_mod128=",
-            local % 128,
+            t"  row= {r} batch= {r // seq_len} local= {local} local_mod128="
+            t" {local % 128}"
         )
     if len(bad) > max_print:
         print("  ... (", len(bad) - max_print, " more)")
@@ -337,7 +331,7 @@ def run_one_case(
 
     # Kernel under test: on AMD this routes to
     # `Attention[...].mla_prefill(k_rope)` in amd_structured/mla_prefill.mojo.
-    flare_mla_prefill[rank=q_tt.rank](
+    flare_mla_prefill[rank=q_tt.rank, kernels=AMDMLA](
         o_tt,
         q_tt,
         k_tt,
@@ -394,16 +388,11 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch_size=",
-                specs[i].batch_size,
-                "num_keys=",
-                specs[i].num_keys,
-                "spike_mode=",
-                specs[i].spike_mode,
-                "mu_target_x10=",
-                specs[i].mu_target_x10,
+                t"FUZZ_SPEC idx= {i} batch_size="
+                t" {specs[i].batch_size} num_keys="
+                t" {specs[i].num_keys} spike_mode="
+                t" {specs[i].spike_mode} mu_target_x10="
+                t" {specs[i].mu_target_x10}"
             )
         return
 
@@ -421,13 +410,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_mla_prefill num_heads=",
-        NUM_HEADS,
-        "seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_mla_prefill num_heads= {NUM_HEADS} seed= {the_seed} budget="
+        t" {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

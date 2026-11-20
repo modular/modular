@@ -49,27 +49,16 @@ def test[
     seq_len: Int,
     num_keys: Int,
     mask: MaskType,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     *,
     is_benchmark: Bool = False,
     num_partitions: Optional[Int] = None,
 ) raises:
     print("test_mha_causal_mask")
     print(
-        "qkv_type:",
-        qkv_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "mask:",
-        MaskType.name(),
+        t"qkv_type: {qkv_type} depth: {depth} num_heads: {num_heads} group:"
+        t" {group} seq_len: {seq_len} num_keys: {num_keys} mask:"
+        t" {MaskType.name()}"
     )
     # Query, key, value dimensions.
     comptime batch_size = 1
@@ -130,7 +119,7 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         flash_attention(
             output_device,
@@ -210,20 +199,10 @@ def test[
                         ].cast[.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
-                        "s, h, d = ",
-                        "(" + String(s),
-                        h,
-                        String(d) + ")",
-                        "actual =",
-                        actual,
-                        "expect =",
-                        expect,
-                        "rerr =",
-                        rerr,
-                        "next_expect =",
-                        next_expect,
-                        "next_actual =",
-                        next_actual,
+                        t"s, h, d = "
+                        t""" {"(" + String(s)} {h} {String(d) + ")"} actual ="""
+                        t" {actual} expect = {expect} rerr = {rerr} next_expect"
+                        t" = {next_expect} next_actual = {next_actual}"
                     )
 
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
@@ -511,7 +490,7 @@ def main() raises:
         # pins the allocation across the kernel. `test` synchronizes before it
         # returns, so that is the full extent of the launch.
         def vl_buffer(
-            val: UInt32, ctx: DeviceContext
+            val: UInt32, ctx: DeviceContext[]
         ) raises -> DeviceBuffer[.uint32]:
             var dev_buf = ctx.enqueue_create_buffer[.uint32](1)
             ctx.enqueue_memset(dev_buf, val)

@@ -34,10 +34,12 @@
 #include "Mojo/ToolCommon/Debug.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Mojo/ToolCommon/PipelineTiming.h"
+#include "Mojo/TransformUtils/SlicingUtils.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
 #include "Target/TargetTraits.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
@@ -52,6 +54,7 @@
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -79,6 +82,8 @@
 #include <fstream>
 #include <string>
 
+#include "mlir/Dialect/LLVMIR/LLVMConversionEnumsToLLVM.inc"
+
 using namespace M;
 using namespace KGEN;
 using namespace Cache;
@@ -104,8 +109,9 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
       << "ObjectCompiler::create: cachePath=" << cachePath.string()
       << " cacheBaseExtra=" << options.cacheBaseExtra << "\n";
 
-  auto transformCache =
-      Cache::getLocalDefaultBackendChain(cachePath, getVersionString());
+  auto transformCache = Cache::getLocalDefaultBackendChain(
+      cachePath, getVersionString(),
+      Cache::CacheOwner{getVersionBinaryPath(), getVersionBuildID()});
   if (failed(transformCache)) {
     MODULAR_CACHE_LOG("mojo")
         << "ObjectCompiler::create: backend creation failed\n";
@@ -238,8 +244,9 @@ static LogicalResult runLLVMOptPasses(llvm::Module &module,
   standardInstrumentations.registerCallbacks(pic, &moduleAnalysisMgr);
 
   TargetLibraryInfoImpl targetLibInfo(Triple(module.getTargetTriple()));
-  PassBuilder passBuilder(&targetMachine, PipelineTuningOptions(),
-                          /*PGOOpt=*/std::nullopt, &pic);
+  PassBuilder passBuilder(module.getContext(), &targetMachine,
+                          PipelineTuningOptions(), /*PGOOpt=*/std::nullopt,
+                          &pic);
 
   // Specially handle the alias analysis manager so that we can register
   // a custom pipeline of AA passes with it.
@@ -342,7 +349,8 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   }
 
   const_cast<TargetLoweringObjectFile *>(llvmTargetMachine.getObjFileLowering())
-      ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
+      ->initialize(machineModInfoPass->getMMI().getContext(), targetMachine,
+                   module);
 
   passMgr.run(module);
 
@@ -792,18 +800,21 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
   return success();
 }
 
+/// The name that `translateModuleToLLVMIR` gives the LLVM module.
+static StringRef getLLVMModuleName(ModuleOp module) {
+  // Use the input filename for the module name if possible.
+  if (auto moduleLoc = module.getLoc()->findInstanceOf<FileLineColLoc>())
+    return llvm::sys::path::filename(moduleLoc.getFilename());
+  return "LLVMDialectModule";
+}
+
 static std::unique_ptr<llvm::Module>
 translateModuleToLLVMIR(llvm::LLVMContext &ctx, ModuleOp module,
                         const CompilationOptions &options) {
-  // Use the input filename for the module name if possible.
-  StringRef moduleName = "LLVMDialectModule";
-  if (auto moduleLoc = module.getLoc()->findInstanceOf<FileLineColLoc>())
-    moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
-
   // Translate the operation into an LLVM module.
   CompilerTimeTraceScope mlirScope("mlir-to-llvmir");
   std::unique_ptr<llvm::Module> llvmModule =
-      mlir::translateModuleToLLVMIR(module, ctx, moduleName);
+      mlir::translateModuleToLLVMIR(module, ctx, getLLVMModuleName(module));
   if (!llvmModule)
     return nullptr;
 
@@ -812,15 +823,14 @@ translateModuleToLLVMIR(llvm::LLVMContext &ctx, ModuleOp module,
   return llvmModule;
 }
 
-ErrorOr<std::unique_ptr<llvm::Module>>
-ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
-  CompilerTimeTraceScope traceScope("lower-to-llvm");
-
+ErrorOrSuccess
+ObjectCompiler::lowerAllFuncsToLLVMDialect(ModuleOp module,
+                                           mlir::TimingScope &timing) {
   mlir::PassManager mgr = createPassManager(pmOptions.operationName, &context);
 
   // Ignore potential error that could happen when `mojo` tool is called,
   // which does not register pass manager options.
-  (void)pmOptions.configurePassManager(mgr);
+  (void)pmOptions.configurePassManager(mgr, timing);
 
   backend.prepareModuleForLowering(module, options);
 
@@ -830,6 +840,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
       static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
   llvmOptions.globalCtorFnName = ExecutionEngine::getGlobalCtorFnName();
   llvmOptions.globalDtorFnName = ExecutionEngine::getGlobalDtorFnName();
+  llvmOptions.inlinePrecompiledMLIR = true;
 
   buildLowerToLLVMPipeline(mgr, llvmOptions);
 
@@ -844,6 +855,17 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llvm-ir", module,
                              ".mlir")))
     return Error("writing module to file before converting to LLVM IR failed");
+
+  return success();
+}
+
+ErrorOr<std::unique_ptr<llvm::Module>>
+ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
+  CompilerTimeTraceScope traceScope("lower-to-llvm");
+
+  mlir::TimingScope timing = pmOptions.nestTimingScope("Lower to LLVM");
+  if (ErrorOrSuccess err = lowerAllFuncsToLLVMDialect(module, timing))
+    return err.takeError();
 
   // Translate the operation into an LLVM module.
   std::unique_ptr<llvm::Module> llvmModule =
@@ -891,9 +913,141 @@ ObjectCompiler::emitArchiveParallelCompilation(
     if (strategy == SplitStrategy::PerFunction)
       splitPerFunction(std::move(llvmModule), handleSplit, symbolLinkageTypes);
     else
-      splitPerExported(std::move(llvmModule), handleSplit);
+      // A kernel module must stay self-contained to be loadable.
+      splitPerExported(std::move(llvmModule), handleSplit, symbolLinkageTypes,
+                       /*outlineSharedSubtrees=*/!backend.isOffload(),
+                       cpuDevice.getWorkQueue()->getParallelismLevel());
   }
   return cacheResults;
+}
+
+/// Answers `TargetBackend::isSharedMemoryGlobal` for a global that is still in
+/// the LLVM dialect. The backend takes an LLVM IR global and reads its name,
+/// address space and linkage, which the probe built here carries.
+static bool isSharedMemoryGlobal(const TargetBackend &backend,
+                                 mlir::LLVM::GlobalOp global,
+                                 llvm::LLVMContext &probeCtx) {
+  std::unique_ptr<llvm::GlobalVariable> probe(new llvm::GlobalVariable(
+      llvm::Type::getInt8Ty(probeCtx), /*isConstant=*/false,
+      convertLinkageToLLVM(global.getLinkage()),
+      /*Initializer=*/nullptr, global.getSymName(),
+      llvm::GlobalValue::NotThreadLocal, global.getAddrSpace()));
+  return backend.isSharedMemoryGlobal(*probe);
+}
+
+/// Whether a library in `bitcodeLibs` has the target triple `triple`.
+/// `linkBitcodeLibraries` skips the others. A library whose triple cannot be
+/// read counts as a match.
+static bool
+hasBitcodeLibraryFor(const llvm::Triple &triple,
+                     ArrayRef<std::pair<bool, Attribute>> bitcodeLibs) {
+  for (Attribute library : llvm::make_second_range(bitcodeLibs)) {
+    std::unique_ptr<llvm::MemoryBuffer> file;
+    llvm::MemoryBufferRef buffer;
+    if (auto path = dyn_cast<StringAttr>(library)) {
+      llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOr =
+          llvm::MemoryBuffer::getFile(path.getValue());
+      if (!fileOr)
+        return true;
+      file = std::move(*fileOr);
+      buffer = file->getMemBufferRef();
+    } else if (auto resource = dyn_cast<DenseResourceElementsAttr>(library)) {
+      mlir::AsmResourceBlob *blob = resource.getRawHandle().getBlob();
+      if (!blob)
+        return true;
+      ArrayRef<char> data = blob->getData();
+      buffer = llvm::MemoryBufferRef(StringRef(data.data(), data.size()),
+                                     "package_bitcode");
+    } else {
+      continue;
+    }
+
+    llvm::Expected<std::string> libraryTriple =
+        llvm::getBitcodeTargetTriple(buffer);
+    if (!libraryTriple) {
+      llvm::consumeError(libraryTriple.takeError());
+      return true;
+    }
+    if (llvm::Triple(*libraryTriple) == triple)
+      return true;
+  }
+  return false;
+}
+
+bool ObjectCompiler::splitsInLLVMDialect(ModuleOp module) {
+  if (backend.isOffload() ||
+      backend.splitStrategy(options) != SplitStrategy::PerExported ||
+      cpuDevice.getWorkQueue()->getParallelismLevel() < 2)
+    return false;
+
+  // A library for this target links into the whole LLVM module, before the
+  // split.
+  // TODO(weiweic): Import the libraries with `translateLLVMIRToModule` and
+  // merge them into the module before the split, so these modules also split
+  // in the LLVM dialect. That needs an LLVM-dialect link step that matches
+  // `LinkOnlyNeeded` and the internalize callback in `linkBitcodeLibraries`.
+  auto triple = module->getAttrOfType<StringAttr>(
+      mlir::LLVM::LLVMDialect::getTargetTripleAttrName());
+  return !hasBitcodeLibraryFor(llvm::Triple(triple ? triple.getValue() : ""),
+                               bitcodeLibs);
+}
+
+ErrorOr<SmallVector<AsyncRT::AnyAsyncValueRef>>
+ObjectCompiler::emitArchiveSlices(
+    OwningOpRef<ModuleOp> module, Location opLoc,
+    llvm::TargetMachine &targetMachine,
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
+  CompilerTimeTraceScope traceScope("split-input-module");
+  unsigned threads = cpuDevice.getWorkQueue()->getParallelismLevel();
+  bool parLLC =
+      options.enableParallelLLC && !backend.isCodegenInterprocedural();
+
+  // The tasks share the splitter, which owns what is left of the module.
+  auto splitter =
+      std::make_shared<LLVMDialectModuleSplitter>(std::move(module));
+  llvm::LLVMContext probeCtx;
+  auto isSliceLocalGlobal = [&](mlir::LLVM::GlobalOp global) {
+    return isSharedMemoryGlobal(backend, global, probeCtx);
+  };
+  if (failed(splitter->plan(isSliceLocalGlobal, /*outlineThreads=*/threads)))
+    return Error("cannot split the module per exported function");
+
+  // `MCLinker` restores the linkage of each outlined function.
+  for (StringAttr name : splitter->getOutlinedFunctions())
+    symbolLinkageTypes.insert(
+        {name.getValue(), llvm::GlobalValue::InternalLinkage});
+
+  SmallVector<AsyncRT::AnyAsyncValueRef> results;
+  size_t numSlices = splitter->getNumSlices();
+  unsigned numSymbols = 0;
+  for (size_t idx = 0; idx != numSlices; ++idx) {
+    // `KGEN::splitPerExported` drops module inline asm from the modules it
+    // splits off, and keeps it in a module it does not split.
+    auto produceModule = [this, splitter, idx, isSplit = numSlices > 1]() {
+      OwningOpRef<ModuleOp> slice = splitter->takeSlice(idx);
+      // A failed translation leaves the module empty, which the task reports.
+      LLVMModuleAndContext sliceModule;
+      (void)sliceModule.create([&](llvm::LLVMContext &ctx)
+                                   -> ErrorOr<std::unique_ptr<llvm::Module>> {
+        std::unique_ptr<llvm::Module> llvmModule =
+            translateModuleToLLVMIR(ctx, *slice, options);
+        if (!llvmModule)
+          return Error("translate module to LLVMIR failed");
+        if (isSplit)
+          llvmModule->removeModuleInlineAsm();
+        return llvmModule;
+      });
+      return sliceModule;
+    };
+    std::optional<size_t> moduleIdx;
+    if (numSlices > 1)
+      moduleIdx = idx;
+    results.push_back(lowerLLVMModuleToObjects(std::move(produceModule), opLoc,
+                                               targetMachine, parLLC, moduleIdx,
+                                               numSymbols));
+    numSymbols += splitter->getNumSymbols(idx);
+  }
+  return results;
 }
 
 ErrorOr<WriteableBufferRef> ObjectCompiler::emitArchiveMCLinking(
@@ -1035,65 +1189,103 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
     auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
     chain.andThenSync([this, op, output = output.copy(), buf = buf.copy(), &tm,
                        emitAssembly]() mutable {
-      // Lower the module to LLVM.
-      LLVMModuleAndContext llvmModule;
       Location moduleLoc = op->getLoc();
-
-      if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
-            return lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
-          })) {
+      auto lowerError = [&](const Twine &message) {
         op->erase();
-        return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+        std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             Twine(
                 "failed to lower module to LLVM IR for archive compilation, ") +
-                err.getError(),
+                message,
             moduleLoc));
+      };
+
+      ModuleOp module = cast<ModuleOp>(op);
+      mlir::TimingScope timing = pmOptions.nestTimingScope("Lower to LLVM");
+      {
+        CompilerTimeTraceScope lowerScope("lower-to-llvm");
+        if (ErrorOrSuccess err = lowerAllFuncsToLLVMDialect(module, timing))
+          return lowerError(err.getError());
       }
 
-      // Link bitcode libraries.
-      if (failed(linkBitcodeLibraries(moduleLoc, *llvmModule, options,
-                                      bitcodeLibs, backend)))
-        return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-            Error("failed to link bitcode libraries"), moduleLoc));
-
-      // Split the module into multiple slices and compile each in parallel.
-      [[maybe_unused]] bool needsOriginalOrder =
-          backend.requiresOriginalFunctionOrder();
-      assert((!needsOriginalOrder || emitAssembly) &&
-             "backends requiring original function order should only emit "
-             "assembly here");
-
-      // Release mlir::ModuleOp before codegen happens to reduce memory
-      // pressure.
-      if (options.saveTempsPrefix.empty() || emitAssembly)
-        op->erase();
-
-      CompilerTimeTraceScope traceScope("split-input-module");
-
-      std::string moduleName = llvmModule->getName().str();
-
+      // `emitArchiveSaveTemps` compiles the module again after linking.
+      Operation *saveTempsModule =
+          options.saveTempsPrefix.empty() || emitAssembly ? nullptr : op;
+      std::string moduleName = getLLVMModuleName(module).str();
       llvm::StringMap<unsigned> originalFnOrdering;
-
-      // MCLinker changes function ordering in the linkedModule, but some
-      // backends may need the original order to generate function
-      // declarations properly and avoid use before def/decl illegal
-      // instructions. Keep record of the ordering here so that we can sort the
-      // linkedModule to its original order.
-      if (needsOriginalOrder)
-        computeFnOrdering(*llvmModule, originalFnOrdering);
-
-      // Split the module into multiple slices and compile each in parallel.
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
-      SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
-          emitArchiveParallelCompilation(std::move(llvmModule), moduleLoc, tm,
-                                         symbolLinkageTypes);
+      SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
+
+      if (splitsInLLVMDialect(module)) {
+        OwningOpRef<ModuleOp> toSplit(saveTempsModule ? module.clone()
+                                                      : module);
+        ErrorOr<SmallVector<AsyncRT::AnyAsyncValueRef>> resultsOr =
+            emitArchiveSlices(std::move(toSplit), moduleLoc, tm,
+                              symbolLinkageTypes);
+        if (resultsOr.isError()) {
+          if (saveTempsModule)
+            saveTempsModule->erase();
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              Twine("failed to lower module to LLVM IR for archive "
+                    "compilation, ") +
+                  resultsOr.getError(),
+              moduleLoc));
+        }
+        timing.stop();
+        cachedResults = resultsOr.takeValue();
+      } else {
+        LLVMModuleAndContext llvmModule;
+        if (auto err = llvmModule.create(
+                [&](llvm::LLVMContext &ctx)
+                    -> ErrorOr<std::unique_ptr<llvm::Module>> {
+                  std::unique_ptr<llvm::Module> llvmModule =
+                      translateModuleToLLVMIR(ctx, module, options);
+                  if (!llvmModule)
+                    return Error("translate module to LLVMIR failed");
+                  return llvmModule;
+                }))
+          return lowerError(err.getError());
+        timing.stop();
+
+        // Link bitcode libraries.
+        if (failed(linkBitcodeLibraries(moduleLoc, *llvmModule, options,
+                                        bitcodeLibs, backend)))
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              Error("failed to link bitcode libraries"), moduleLoc));
+
+        // Split the module into multiple slices and compile each in parallel.
+        [[maybe_unused]] bool needsOriginalOrder =
+            backend.requiresOriginalFunctionOrder();
+        assert((!needsOriginalOrder || emitAssembly) &&
+               "backends requiring original function order should only emit "
+               "assembly here");
+
+        // Release mlir::ModuleOp before codegen happens to reduce memory
+        // pressure.
+        if (!saveTempsModule)
+          op->erase();
+
+        CompilerTimeTraceScope traceScope("split-input-module");
+
+        // MCLinker changes function ordering in the linkedModule, but some
+        // backends may need the original order to generate function
+        // declarations properly and avoid use before def/decl illegal
+        // instructions. Keep record of the ordering here so that we can sort
+        // the linkedModule to its original order.
+        if (needsOriginalOrder)
+          computeFnOrdering(*llvmModule, originalFnOrdering);
+
+        // Split the module into multiple slices and compile each in parallel.
+        cachedResults = emitArchiveParallelCompilation(
+            std::move(llvmModule), moduleLoc, tm, symbolLinkageTypes);
+      }
 
       andThenSyncMoving(
-          cachedResults, [this, moduleName = std::move(moduleName), op,
-                          moduleLoc, buf = buf.copy(), output = output.copy(),
-                          emitAssembly, options = options, symbolLinkageTypes,
-                          originalFnOrdering = std::move(originalFnOrdering)](
-                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
+          cachedResults,
+          [this, moduleName = std::move(moduleName), saveTempsModule, moduleLoc,
+           buf = buf.copy(), output = output.copy(), emitAssembly,
+           options = options, symbolLinkageTypes,
+           originalFnOrdering = std::move(originalFnOrdering)](
+              MutableArrayRef<AnyAsyncValueRef> values) mutable {
             ErrorOr<WriteableBufferRef> mcLinkResult =
                 emitArchiveMCLinking(values, moduleName, emitAssembly,
                                      symbolLinkageTypes, originalFnOrdering);
@@ -1126,13 +1318,13 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
             }
 
             // Print assembly for saveTemps if needed.
-            if (!options.saveTempsPrefix.empty()) {
+            if (saveTempsModule) {
               // Clear seenCodeGenFns since we are going to do the whole codegen
               // step all over again for printing saveTemps.
               seenCodeGenFns.clear();
-              ErrorOrSuccess saveTempsResult =
-                  emitArchiveSaveTemps(cast<ModuleOp>(op), moduleName);
-              op->erase();
+              ErrorOrSuccess saveTempsResult = emitArchiveSaveTemps(
+                  cast<ModuleOp>(saveTempsModule), moduleName);
+              saveTempsModule->erase();
               if (saveTempsResult.isError()) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                     saveTempsResult.takeError(), moduleLoc));
@@ -1190,6 +1382,9 @@ ObjectCompiler::lowerLLVMModuleToObjects(
 
         // Materialize the module first.
         LLVMModuleAndContext module = produceModule();
+        if (!module.hasModule())
+          return std::move(result).setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to translate a module slice to LLVM IR", loc));
 
         auto tmOr = createTargetMachine(this->options, isJIT);
         if (failed(tmOr)) {
@@ -1713,6 +1908,15 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     // Materialize the module.
     LLVMModuleAndContext module = produceModule();
+    if (!module.hasModule()) {
+      std::move(resultBufs)
+          .setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to translate an offload kernel to LLVM IR", loc));
+      std::move(resultKernelId)
+          .setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to translate an offload kernel to LLVM IR", loc));
+      return;
+    }
 
     ErrorOr<std::pair<uint64_t, llvm::Function *>> kernelIdFuncOr =
         getKernelIDFromLLVMModule(*module);
@@ -1806,7 +2010,9 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 // Th output is a vector of compiled offload kernels with their corresponding
 // kernel ids.
 // This function does the following steps:
-// - Split the input module into submodules for each kernel.
+// - Lower the input module to the LLVM dialect.
+// - Split the input module into submodules for each kernel, and translate
+//   each to LLVM IR.
 //   We don't do per function splitting for offload kernels since
 //   some backends are inter-procedural.
 // - Extract kernel ID for each split.
@@ -1822,8 +2028,6 @@ ObjectCompiler::emitOffloadKernels(
   // Perform a cache aware transformation to translate the module to an
   // archive file.
 
-  // Lower the module to LLVM.
-  LLVMModuleAndContext llvmModule;
   Location moduleLoc = module->getLoc();
 
   // Save elaborated MLIR module to saveTempsPrefix.
@@ -1835,15 +2039,28 @@ ObjectCompiler::emitOffloadKernels(
       return Error("failed to save mlir to saveTempPrefix");
   }
 
-  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
-        return lowerAllFuncsToLLVM(ctx, *module);
-      })) {
+  auto lowerError = [](const char *message) {
     return Error(
         Twine("failed to lower module to LLVM IR for archive compilation, ") +
-        err.getError());
-  }
+        message);
+  };
+  auto translate =
+      [&options = options](
+          llvm::LLVMContext &ctx,
+          ModuleOp mlirModule) -> ErrorOr<std::unique_ptr<llvm::Module>> {
+    std::unique_ptr<llvm::Module> llvmModule =
+        translateModuleToLLVMIR(ctx, mlirModule, options);
+    if (!llvmModule)
+      return Error("translate module to LLVMIR failed");
+    return llvmModule;
+  };
 
-  (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
+  mlir::TimingScope timing = pmOptions.nestTimingScope("Lower to LLVM");
+  {
+    CompilerTimeTraceScope lowerScope("lower-to-llvm");
+    if (ErrorOrSuccess err = lowerAllFuncsToLLVMDialect(*module, timing))
+      return lowerError(err.getError());
+  }
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
   auto handleSplit =
@@ -1856,7 +2073,36 @@ ObjectCompiler::emitOffloadKernels(
         cachedResults.push_back(std::move(result.second));
       };
 
-  splitPerExported(std::move(llvmModule), handleSplit);
+  // The kernel tasks share the splitter, which owns what is left of the module.
+  auto splitter =
+      std::make_shared<LLVMDialectModuleSplitter>(std::move(module));
+  llvm::LLVMContext probeCtx;
+  auto isSliceLocalGlobal = [&](mlir::LLVM::GlobalOp global) {
+    return isSharedMemoryGlobal(backend, global, probeCtx);
+  };
+
+  if (failed(splitter->plan(isSliceLocalGlobal)))
+    return lowerError("cannot split the offload module per kernel");
+  timing.stop();
+  unsigned numSymbols = 0;
+  for (size_t idx = 0, e = splitter->getNumSlices(); idx != e; ++idx) {
+    auto produceModule = [splitter, idx, translate]() {
+      OwningOpRef<ModuleOp> slice = splitter->takeSlice(idx);
+      // A failed translation leaves the module empty, which the kernel task
+      // reports.
+      LLVMModuleAndContext sliceModule;
+      (void)sliceModule.create([&](llvm::LLVMContext &ctx) {
+        ErrorOr<std::unique_ptr<llvm::Module>> moduleOr =
+            translate(ctx, *slice);
+        if (!moduleOr.isError())
+          (*moduleOr)->removeModuleInlineAsm();
+        return moduleOr;
+      });
+      return sliceModule;
+    };
+    handleSplit(std::move(produceModule), idx, numSymbols);
+    numSymbols += splitter->getNumSymbols(idx);
+  }
 
   auto result = AsyncRT::AsyncValueRef<
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(cpuDevice);

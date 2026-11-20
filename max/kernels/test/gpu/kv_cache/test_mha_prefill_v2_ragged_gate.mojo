@@ -155,7 +155,7 @@ def _run_ragged_at[
         ceildiv(max_full_context_length, page_size) * batch_size
     )
 
-    var kv_block_continuous_shape = IndexList[6](
+    var kv_block_continuous_shape = (
         num_continuous_blocks,
         2,
         num_layers,
@@ -163,7 +163,7 @@ def _run_ragged_at[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    var kv_block_paged_shape = IndexList[6](
+    var kv_block_paged_shape = (
         num_paged_blocks,
         2,
         num_layers,
@@ -294,16 +294,19 @@ def _run_ragged_at[
                 )
                 var n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
                 unsafe_memcpy(
-                    dest=kv_block_paged_tensor.unsafe_ptr() + paged_offset,
-                    src=kv_block_continuous_tensor.unsafe_ptr()
-                    + continuous_offset,
+                    dest=kv_block_paged_tensor.unsafe_ptr().unsafe_offset(
+                        paged_offset
+                    ),
+                    src=kv_block_continuous_tensor.unsafe_ptr().unsafe_offset(
+                        continuous_offset
+                    ),
                     count=n_cpy,
                 )
                 if block_sz < page_size:
                     unsafe_memset_zero(
                         kv_block_paged_tensor.unsafe_ptr()
-                        + paged_offset
-                        + n_cpy,
+                        .unsafe_offset(paged_offset)
+                        .unsafe_offset(n_cpy),
                         (page_size - block_sz)
                         * kv_params.num_heads
                         * kv_params.head_size,
@@ -424,7 +427,7 @@ def _run_ragged_at[
         )
         var rejected_scalar = False
         try:
-            generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+            generic_cross_attention_kv_cache[mask_str="causal"](
                 q_ragged_lt,
                 input_row_offsets_dt,
                 TileTensor(invalid_q_max_seq_len, row_major[2]()),
@@ -453,7 +456,7 @@ def _run_ragged_at[
         )
         var rejected_stride = False
         try:
-            generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+            generic_cross_attention_kv_cache[mask_str="causal"](
                 q_ragged_lt,
                 input_row_offsets_dt,
                 TileTensor(q_max_seq_len, row_major[1]()),
@@ -471,7 +474,7 @@ def _run_ragged_at[
             rejected_stride = True
         assert_true(rejected_stride)
 
-        generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+        generic_cross_attention_kv_cache[mask_str="causal"](
             q_ragged_lt,
             input_row_offsets_dt,
             TileTensor(q_max_seq_len, row_major[1]()),

@@ -53,18 +53,6 @@ A tiled matrix multiplication that demonstrates block-level and warp-level
 synchronization, accompanying [GPU block and warp operations and
 synchronization](https://max.modular.com/gpu/block-and-warp/).
 
-## [Layouts](layouts/)
-
-Using the `Layout` type to describe how multidimensional data is arranged in
-memory, accompanying [Introduction to
-layouts](https://max.modular.com/layout/layouts/).
-
-## [LayoutTensor](layout_tensor/)
-
-Using the `LayoutTensor` type to manipulate multidimensional data on both CPU
-and GPU, accompanying [Using
-LayoutTensor](https://max.modular.com/layout/tensors/).
-
 ## [Music generation](music_generation/)
 
 Rendering a full-length song from a caption and lyrics with MiniMax-Music3,
@@ -96,7 +84,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )

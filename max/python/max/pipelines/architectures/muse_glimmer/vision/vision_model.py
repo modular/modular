@@ -15,22 +15,26 @@
 
 from __future__ import annotations
 
-from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
-    flash_attention_ragged_gpu,
-)
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
-    Gemma4RMSNorm,
-)
+from collections import OrderedDict
 
+from max import functional as F
+from max.dtype import DType
+from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kernels import flash_attention_ragged_gpu
+from max.nn.legacy.graph_groups import (
+    VisionHostMax,
+    VisionRowIndex,
+    VisionRows,
+    VisionSegments,
+)
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
+
+from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import MuseGlimmerVisionConfig
 
 
@@ -62,6 +66,7 @@ class MuseGlimmerVisionAttention(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seqlen: Tensor,
     ) -> Tensor:
+        """Runs the vision attention with rotary ``rot_cos`` and ``rot_sin``."""
         shape = (-1, self.num_heads, self.head_dim)
         q = _apply_rope(self.q_proj(x).reshape(shape), rot_cos, rot_sin)
         k = _apply_rope(self.k_proj(x).reshape(shape), rot_cos, rot_sin)
@@ -78,12 +83,15 @@ class MuseGlimmerVisionAttention(Module[..., Tensor]):
 
 
 class MuseGlimmerVisionMLP(Module[[Tensor], Tensor]):
+    """The vision tower's feed-forward block."""
+
     def __init__(self, hidden_size: int, intermediate_size: int) -> None:
         super().__init__()
         self.fc1 = Linear(hidden_size, intermediate_size)
         self.fc2 = Linear(intermediate_size, hidden_size)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the vision feed-forward over ``x``."""
         return self.fc2(F.gelu(self.fc1(x)))
 
 
@@ -109,6 +117,7 @@ class MuseGlimmerVisionEncoderLayer(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seqlen: Tensor,
     ) -> Tensor:
+        """Runs the encoder layer's attention, then its MLP."""
         x = x + self.attn(
             self.norm1(x), rot_cos, rot_sin, cu_seqlens, max_seqlen
         )
@@ -130,6 +139,7 @@ class MuseGlimmerVisionPatchEmbedder(Module[..., Tensor]):
     def forward(
         self, pixel_values: Tensor, interp_idx: Tensor, interp_w: Tensor
     ) -> Tensor:
+        """Embeds and interpolates ``pixel_values`` into patch tokens."""
         h = self.patch_embedding(pixel_values)
         taps = F.gather(self.position_embedding_table, interp_idx, axis=0)
         pos = (taps.cast(DType.float32) * interp_w.unsqueeze(-1)).sum(axis=1)
@@ -174,6 +184,7 @@ class MuseGlimmerVisionTower(Module[..., Tensor]):
         max_seqlen: Tensor,
         max_window_seqlen: Tensor,
     ) -> Tensor:
+        """Runs the vision tower over the image patches."""
         h = self.patch_embedder(pixel_values, interp_idx, interp_w)
         h = F.gather(self.ln_pre(h), window_index, axis=0)
         for layer, full in zip(self.layers, self.full_attention, strict=True):
@@ -197,12 +208,15 @@ class MuseGlimmerVisionTower(Module[..., Tensor]):
 
 
 class MuseGlimmerVisionAdapter(Module[[Tensor], Tensor]):
+    """Projects the vision tower's output to the text width."""
+
     def __init__(self, in_dim: int, hidden_dim: int) -> None:
         super().__init__()
         self.fc1 = Linear(in_dim, hidden_dim, bias=False)
         self.fc2 = Linear(hidden_dim, hidden_dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the adapter's two projections over ``x``."""
         return F.gelu(self.fc2(F.gelu(self.fc1(x))))
 
 
@@ -231,8 +245,38 @@ class MuseGlimmerVisionModel(Module[..., Tensor]):
             text_hidden_size, eps=rms_norm_eps, with_weight=False
         )
 
-    def forward(self, *inputs: Tensor) -> Tensor:
-        h = self.vision_adapter(self.vision_tower(*inputs))
+    def forward(
+        self,
+        pixel_values: Tensor,
+        interp_idx: Tensor,
+        interp_w: Tensor,
+        window_index: Tensor,
+        reverse_index: Tensor,
+        pixel_shuffle_index: Tensor,
+        rot_cos: Tensor,
+        rot_sin: Tensor,
+        cu_seqlens: Tensor,
+        cu_window_seqlens: Tensor,
+        max_seqlen: Tensor,
+        max_window_seqlen: Tensor,
+    ) -> Tensor:
+        """Runs the vision tower and adapter over the graph inputs."""
+        h = self.vision_adapter(
+            self.vision_tower(
+                pixel_values,
+                interp_idx,
+                interp_w,
+                window_index,
+                reverse_index,
+                pixel_shuffle_index,
+                rot_cos,
+                rot_sin,
+                cu_seqlens,
+                cu_window_seqlens,
+                max_seqlen,
+                max_window_seqlen,
+            )
+        )
         return self.perception_emb_norm(self.vision_projection(h))
 
 
@@ -255,5 +299,48 @@ def vision_input_types(
         *(
             TensorType(DType.uint32, [], device=DeviceRef.CPU())
             for _ in range(2)
+        ),
+    )
+
+
+def vision_input_tree(
+    config: MuseGlimmerVisionConfig, device: DeviceRef, dtype: DType
+) -> OrderedDict[str, object]:
+    """Returns :func:`vision_input_types` grouped as a serving engine packs them.
+
+    Its leaves are those types in order, each named as the argument of
+    :meth:`MuseGlimmerVisionModel.forward` it feeds. The window order and
+    pixel shuffle index each image's patch rows, and the segment bounds and
+    maximum lengths cover each image and each of its windows.
+    """
+    (
+        pixel_values,
+        interp_idx,
+        interp_w,
+        window_index,
+        reverse_index,
+        pixel_shuffle_index,
+        rot_cos,
+        rot_sin,
+        cu_seqlens,
+        cu_window_seqlens,
+        max_seqlen,
+        max_window_seqlen,
+    ) = vision_input_types(config, device, dtype)
+    return OrderedDict(
+        patches=VisionRows(
+            pixel_values=pixel_values, interp_idx=interp_idx, interp_w=interp_w
+        ),
+        window_order=VisionRowIndex(
+            window_index=window_index,
+            reverse_index=reverse_index,
+            pixel_shuffle_index=pixel_shuffle_index,
+        ),
+        rotary=VisionRows(rot_cos=rot_cos, rot_sin=rot_sin),
+        segments=VisionSegments(
+            cu_seqlens=cu_seqlens, cu_window_seqlens=cu_window_seqlens
+        ),
+        segment_bound=VisionHostMax(
+            max_seqlen=max_seqlen, max_window_seqlen=max_window_seqlen
         ),
     )

@@ -22,9 +22,13 @@ modular_cc_test(
 modular_cc_binary(
     name = "bench_allocator",
     srcs = ["bench_allocator.cpp"],
+    dynamic_deps = [
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+    ],
     deps = [
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Support:MicroBenchmark",
         "@llvm-project//llvm:Support",
     ],

@@ -25,7 +25,7 @@ from std.sys import size_of
 from layout import Coord, TileTensor, coord, row_major
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from std.testing import assert_false
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
@@ -77,9 +77,8 @@ def im2col_load_kernel[
             address_space=.SHARED,
             alignment=128,
             name="im2col_smem",
-        ]()
-        + barrier_offset
-    ).bitcast[SharedMemBarrier]()
+        ]().unsafe_offset(barrier_offset)
+    ).unsafe_bitcast[SharedMemBarrier]()
 
     # Thread 0 initializes barrier and issues TMA load
     if thread_idx.x == 0:
@@ -184,7 +183,7 @@ def im2col_reference[
                     + iw * in_channels
                     + c
                 )
-                val = input.load(input_idx)
+                val = input.unsafe_load(input_idx)
 
             output[m_local * BK + k_local] = val
 
@@ -223,28 +222,14 @@ def run_im2col_test[
     comptime K_gemm = filter_h * filter_w * in_channels
 
     print(
-        "    Input: [",
-        batch,
-        ",",
-        in_height,
-        ",",
-        in_width,
-        ",",
-        in_channels,
-        "] NHWC",
+        t"    Input: [ {batch} , {in_height} , {in_width} , {in_channels} ]"
+        t" NHWC"
     )
     print(
-        "    Filter: [",
-        out_channels,
-        ",",
-        filter_h,
-        ",",
-        filter_w,
-        ",",
-        in_channels,
-        "] KRSC",
+        t"    Filter: [ {out_channels} , {filter_h} , {filter_w} ,"
+        t" {in_channels} ] KRSC"
     )
-    print("    Output spatial: [", out_height, ",", out_width, "]")
+    print(t"    Output spatial: [ {out_height} , {out_width} ]")
     print("    GEMM: M=", M, " K=", K_gemm)
     print("    Tile: BM=", BM, " BK=", BK)
 
@@ -277,8 +262,8 @@ def run_im2col_test[
 
     # Debug: print descriptor parameters
     print("    Descriptor params:")
-    print("      lower_corner: (", lower_corner_h, ",", lower_corner_w, ")")
-    print("      upper_corner: (", upper_corner_h, ",", upper_corner_w, ")")
+    print(t"      lower_corner: ( {lower_corner_h} , {lower_corner_w} )")
+    print(t"      upper_corner: ( {upper_corner_h} , {upper_corner_w} )")
     print("      channels_per_pixel: 64 (128B swizzle / 2B bf16)")
     print("      pixels_per_column: 1")
 
@@ -346,9 +331,6 @@ def run_im2col_test[
         grid_dim=(1, 1, 1),
         block_dim=128,
         shared_mem_bytes=smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_bytes)
-        ),
     )
     ctx.synchronize()
 

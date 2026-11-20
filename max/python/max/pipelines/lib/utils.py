@@ -15,26 +15,37 @@
 from __future__ import annotations
 
 import logging
+import os
+import queue
+import threading
+import time
 from collections import OrderedDict
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
+from max.driver import is_virtual_device_mode
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 
 # Re-exported for back-compat with callers that import CompilationTimer from
-# max.pipelines.lib.utils. The canonical home is max.experimental.nn so that
+# max.pipelines.lib.utils. The canonical home is max.nn so that
 # Module.compile() can use it without max.experimental depending on
 # max.pipelines.
-from max.experimental.nn._compilation_timer import (  # noqa: F401
+from max.nn._compilation_timer import (  # noqa: F401
     CompilationTimer,
 )
-from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
+from max.tensor.sharding.action import PerShard
 from transformers import AutoConfig
+
+from .weight_transform import WeightTransform
 
 # Break circular import by importing PipelineConfig under TYPE_CHECKING.
 if TYPE_CHECKING:
-    from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -93,6 +104,79 @@ def compute_data_parallel_splits(
     return splits_summed
 
 
+def split_replicated_batch(
+    h: Tensor,
+    input_row_offsets: Tensor,
+    input_row_offsets_i64: Tensor,
+    data_parallel_splits: Tensor,
+    mapping: DeviceMapping,
+    group_size: int = 1,
+    prefix: str = "",
+) -> tuple[Tensor, Tensor]:
+    """Splits a replicated ragged batch into each replica's rows.
+
+    Each device cuts its replica's rows out of its own copy of ``h``, so no
+    device receives another's data. ``group_size`` consecutive devices form
+    one replica and take the same rows. It is built from tensor ops, so it
+    runs the same way traced and eagerly.
+
+    Args:
+        h: The batch, replicated on every device of ``mapping``.
+        input_row_offsets: The batch's row offsets, replicated likewise.
+        input_row_offsets_i64: The row offsets as int64, on the host.
+        data_parallel_splits: The first request of each replica, then the
+            batch size, on the host.
+        mapping: How the split tensors lie on the devices.
+        group_size: Devices per replica.
+        prefix: Prepended to the split dimensions' names.
+
+    Returns:
+        Each device's rows of ``h``, and their row offsets starting from zero.
+
+    Raises:
+        ValueError: If ``group_size`` doesn't evenly divide the devices.
+    """
+    num_devices = mapping.mesh.num_devices
+    if group_size < 1 or num_devices % group_size:
+        raise ValueError(
+            f"group_size {group_size} must evenly divide the {num_devices}"
+            " devices"
+        )
+    num_replicas = num_devices // group_size
+
+    def split(
+        rows: Tensor, row_offsets: Tensor, replica: int
+    ) -> tuple[Tensor, Tensor]:
+        first = data_parallel_splits[replica]
+        last = data_parallel_splits[replica + 1]
+        rows = F.slice_tensor(
+            rows,
+            [
+                (
+                    slice(
+                        input_row_offsets_i64[first],
+                        input_row_offsets_i64[last],
+                    ),
+                    f"{prefix}_input_split_{replica}",
+                ),
+                ...,
+            ],
+        )
+        # The last replica's offsets run to the end of the batch's.
+        stop = None if replica + 1 == num_replicas else last + 1
+        rebased = F.slice_tensor(
+            row_offsets,
+            [(slice(first, stop), f"{prefix}_offset_split_{replica}")],
+        )
+        return rows, rebased - row_offsets[first]
+
+    return F.call_on_mesh(split, mapping.mesh, out_specs=[mapping, mapping])(
+        h,
+        input_row_offsets,
+        PerShard([index // group_size for index in range(num_devices)]),
+    )
+
+
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:
     """Returns a value not exceeding the upper bound.
 
@@ -124,14 +208,122 @@ def parse_state_dict_from_weights(
     weights: Weights,
     adapter: WeightsAdapter | None = None,
     hf_config: AutoConfig | None = None,
+    model_config: MAXModelConfig | None = None,
 ) -> dict[str, WeightData]:
-    """Parse the state dict from the weights, using the adapter if provided."""
+    """Parse the state dict from the weights, using the adapter if provided.
+
+    A draft's checkpoint passes its own ``model_config``, which an adapter
+    that reads the encoding takes in place of the target's.
+    """
+    if isinstance(adapter, WeightTransform):
+        return adapter(dict(weights.items()))
     if adapter:
         if hf_config is None:
             hf_config = pipeline_config.model.huggingface_config
+        extra = {} if model_config is None else {"model_config": model_config}
         return adapter(
             dict(weights.items()),
             huggingface_config=hf_config,
             pipeline_config=pipeline_config,
+            **extra,
         )
     return {key: value.data() for key, value in weights.items()}
+
+
+# Measured over Kimi K3's 1.56 TB checkpoint on 8x MI355X from a cold page
+# cache: 54 GB/s with 64 MiB reads, where an init's own 4 KiB mmap faults
+# reach about 1.4 GB/s. Doubling the workers adds nothing.
+_PREFETCH_WORKERS = 32
+_PREFETCH_CHUNK = 64 << 20
+
+
+def weights_reach_devices(model_config: Any) -> bool:
+    """Whether loading ``model_config`` copies real checkpoint bytes to devices.
+
+    A compile-only load (header-only weights, virtual devices) never reads
+    them, and a forced download has just written them through the page cache,
+    so neither gains from :func:`prefetch_checkpoint`.
+    """
+    return not (
+        model_config.force_download
+        or model_config.header_only_weights
+        or is_virtual_device_mode()
+    )
+
+
+def start_checkpoint_prefetch(*model_configs: Any) -> None:
+    """Prefetches the checkpoints of ``model_configs`` on a daemon thread.
+
+    Skips configs that are ``None`` or whose weights never reach the devices
+    (see :func:`weights_reach_devices`), and reads a file that several
+    configs share once.
+    """
+    configs = [
+        config
+        for config in model_configs
+        if config is not None and weights_reach_devices(config)
+    ]
+    if not configs:
+        return
+
+    def run() -> None:
+        paths = dict.fromkeys(
+            os.path.realpath(path)
+            for config in configs
+            for path in config.resolved_weight_paths()
+        )
+        prefetch_checkpoint(list(paths))
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def prefetch_checkpoint(paths: Sequence[str | os.PathLike[str]]) -> int:
+    """Reads every byte of ``paths`` once, leaving them in the page cache.
+
+    The weights reach the graph as views of the checkpoint's mapping, so the
+    init that copies them to the devices then reads memory rather than
+    faulting the files in a page at a time.
+
+    Args:
+        paths: The checkpoint files; symlinks (as in the Hugging Face cache)
+            are followed.
+
+    Returns:
+        The number of bytes read.
+    """
+    files = [os.path.realpath(path) for path in paths]
+    jobs: queue.SimpleQueue[tuple[str, int]] = queue.SimpleQueue()
+    for path in files:
+        for offset in range(0, os.path.getsize(path), _PREFETCH_CHUNK):
+            jobs.put((path, offset))
+    read_bytes = [0] * _PREFETCH_WORKERS
+
+    def read(worker: int) -> None:
+        buffer = bytearray(_PREFETCH_CHUNK)
+        while True:
+            try:
+                path, offset = jobs.get_nowait()
+            except queue.Empty:
+                return
+            with open(path, "rb", buffering=0) as f:
+                f.seek(offset)
+                read_bytes[worker] += f.readinto(buffer) or 0
+
+    start = time.perf_counter()
+    # Daemon threads rather than an executor, whose workers interpreter exit
+    # would join: a process that stops early must not wait for the read.
+    workers = [
+        threading.Thread(target=read, args=(i,), daemon=True)
+        for i in range(_PREFETCH_WORKERS)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    total = sum(read_bytes)
+    logger.info(
+        "Prefetched %.1f GB of checkpoint into the page cache in %.1f s",
+        total / 1e9,
+        time.perf_counter() - start,
+    )
+    return total

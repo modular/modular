@@ -394,6 +394,8 @@ def _partial_lower_bound(
                 remaining_mma += body.ops[i].latency
             case .VALU:
                 remaining_valu += body.ops[i].latency
+            case _:
+                pass
 
     # Lower bound: each resource must serialize its remaining ops.
     var mma_bound = mma_free + remaining_mma

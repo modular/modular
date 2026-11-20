@@ -52,24 +52,34 @@ if TYPE_CHECKING:
 from max.pipelines.audio.pipeline import AudioGenerationPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
-from max.pipelines.lib.memory_estimation import MemoryEstimator, MemoryPlan
+from max.pipelines.lib.memory_plan import (
+    MemoryPlan,
+)
+from max.pipelines.lib.memory_plan import (
+    plan_memory as _plan_memory,
+)
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .arch_lookup import (
     ARCH_LOOKUP,
     ArchLookup,
     SupportedArchitecture,
-    select_speculator,
 )
 
 # The public arch_lookup names reach `max.pipelines.lib` through here rather
 # than directly
 from .arch_lookup import PipelineModelType as PipelineModelType
-from .arch_lookup import Speculator as Speculator
 from .embeddings_pipeline import EmbeddingsPipeline
+from .graph_specs import GraphRole
 from .interfaces import PipelineModel
+from .pipeline_variants.block_diffusion_text_generation import (
+    BlockDiffusionTextGenerationPipeline,
+)
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
+)
+from .pipeline_variants.spec_decode_pipeline_model import (
+    spec_decode_architecture,
 )
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
@@ -151,6 +161,17 @@ def get_pipeline_for_task(
         return AudioGenerationPipeline
     else:
         raise ValueError(f"Unsupported pipeline task: {task}")
+
+
+def architecture_pipeline(arch: SupportedArchitecture) -> type | None:
+    """Returns the pipeline class an architecture needs in place of its task's.
+
+    A registered role that needs its own generation loop selects it;
+    otherwise the architecture's ``pipeline_cls`` does.
+    """
+    if GraphRole.BLOCK_DIFFUSION in arch.modules:
+        return BlockDiffusionTextGenerationPipeline
+    return arch.pipeline_cls
 
 
 class _ValidatedNewContext:
@@ -397,7 +418,7 @@ class PipelineRegistry:
 
     def register(
         self,
-        architecture: SupportedArchitecture | Speculator,
+        architecture: SupportedArchitecture,
         *,
         allow_override: bool = False,
     ) -> None:
@@ -405,7 +426,6 @@ class PipelineRegistry:
 
         If multiple architectures share the same name but have different tasks,
         they are registered in a secondary lookup table keyed by (name, task).
-        A :class:`Speculator` registers the architecture it derives.
         """
         self._arch_lookup.register(architecture, allow_override=allow_override)
 
@@ -416,7 +436,6 @@ class PipelineRegistry:
         symbol: str,
         *,
         package: str | None = None,
-        speculates_on: str | None = None,
     ) -> None:
         """Records *how* to import an architecture without importing it yet.
 
@@ -432,19 +451,10 @@ class PipelineRegistry:
             module: Dotted module path to import the architecture from. May be
                 ``.``-relative, resolved against ``package``.
             symbol: The attribute on ``module`` holding the
-                :class:`SupportedArchitecture`, or the :class:`Speculator`
-                that derives it.
+                :class:`SupportedArchitecture`.
             package: Anchor package used to resolve a relative ``module`` path.
-            speculates_on: For a :class:`Speculator`, the name of the target
-                architecture it speculates on.
         """
-        self._arch_lookup.register_lazy(
-            name,
-            module,
-            symbol,
-            package=package,
-            speculates_on=speculates_on,
-        )
+        self._arch_lookup.register_lazy(name, module, symbol, package=package)
 
     def _materialize_lazy(self, name: str) -> None:
         """Imports and registers any architectures deferred under ``name``.
@@ -510,12 +520,15 @@ class PipelineRegistry:
             if draft is not None
             else None
         )
-        speculator = select_speculator(
-            name,
-            pipeline_config.speculative.speculative_method,
-            draft_archs[0] if draft_archs else None,
+        return (
+            spec_decode_architecture(
+                name,
+                pipeline_config.speculative.speculative_method,
+                draft_archs[0] if draft_archs else None,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+            )
+            or arch
         )
-        return arch if speculator is None else speculator.derive()
 
     def get_active_huggingface_config(
         self,
@@ -625,6 +638,11 @@ class PipelineRegistry:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
             )
+        if arch.pipeline_model is None:
+            raise ValueError(
+                f"{arch.name} is a draft architecture that only runs beside a"
+                " target model."
+            )
 
         # Calculate Max Length
         huggingface_config = pipeline_config.model.huggingface_config
@@ -646,15 +664,20 @@ class PipelineRegistry:
             )
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
+        # A weights-only release loads its tokenizer files from the sibling repo
+        # its architecture pins; every other checkpoint from its own repo.
+        tokenizer_repo, tokenizer_revision = arch.tokenizer_source(
+            pipeline_config.model
+        )
         if (
             arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
             and arch.tokenizer is TextTokenizer
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model.model_path,
+                tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
@@ -664,9 +687,9 @@ class PipelineRegistry:
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model.model_path,
+                model_path=tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=_retrieve_chat_template(
@@ -693,8 +716,15 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
+        *,
+        plan_memory: bool = True,
     ) -> RetrievedPipeline:
-        """Retrieves the tokenizer, pipeline factory, and memory plan for the config."""
+        """Retrieves the tokenizer, pipeline factory, and memory plan.
+
+        ``plan_memory=False`` keeps the config's own batch and length. An
+        export that never allocates a KV cache uses it so a checkpoint larger
+        than the devices is not rejected before it is built.
+        """
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
 
@@ -716,6 +746,11 @@ class PipelineRegistry:
         if arch is None:
             raise ValueError(
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
+            )
+        if arch.pipeline_model is None:
+            raise ValueError(
+                f"{arch.name} is a draft architecture that only runs beside a"
+                " target model."
             )
 
         # For speculative decoding, pre-resolve the draft architecture for
@@ -755,8 +790,9 @@ class PipelineRegistry:
         # anything else (a raw Module, an executor) gets a pass-through plan
         # carrying the config's own values. Multi-component pipelines have no
         # "main" model and are handled inside ``for_pipeline``.
-        if "main" in pipeline_config.models and not issubclass(
-            arch.pipeline_model, PipelineModel
+        if not plan_memory or (
+            "main" in pipeline_config.models
+            and not issubclass(arch.pipeline_model, PipelineModel)
         ):
             memory_plan = MemoryPlan(
                 planned_max_batch_size=pipeline_config.runtime.max_batch_size
@@ -767,17 +803,15 @@ class PipelineRegistry:
                 planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
         else:
-            memory_plan = MemoryEstimator.plan(
-                pipeline_config, arch, draft_arch=draft_arch
+            memory_plan = _plan_memory(
+                pipeline_config,
+                arch,
+                draft_arch=draft_arch,
             )
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
-        # An architecture may declare a custom pipeline class that overrides
-        # the task-based default (e.g. block-diffusion text generation).
-        # ``arch`` is already finalized above, so its choice wins.
-        if arch.pipeline_cls is not None:
-            pipeline_class = arch.pipeline_cls
+        pipeline_class = architecture_pipeline(arch) or pipeline_class
 
         # The tokenizer bound is the memory plan's planned_max_length; pixel
         # generation resolves its own per-arch bounds below.
@@ -904,6 +938,12 @@ class PipelineRegistry:
                 "Please ensure the model repository contains a valid config.json file."
             )
 
+        # A weights-only release loads its tokenizer files from the sibling repo
+        # its architecture pins; every other checkpoint from its own repo.
+        tokenizer_repo, tokenizer_revision = arch.tokenizer_source(
+            pipeline_config.model
+        )
+
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix
         # for only MistralModel in order to avoid any issues with performance
@@ -918,9 +958,9 @@ class PipelineRegistry:
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model.model_path,
+                tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
@@ -930,9 +970,9 @@ class PipelineRegistry:
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model.model_path,
+                model_path=tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=_retrieve_chat_template(
@@ -959,7 +999,7 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "weight_adapters": arch.weight_adapters,
+            "weight_adapters": arch.checkpoint_adapters(huggingface_config),
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
         }
@@ -1092,11 +1132,32 @@ class PipelineRegistry:
         retrieved = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )
-        return retrieved.tokenizer, retrieved.factory()
+        pipeline = retrieved.factory()
+        clamp_tokenizer_to_pipeline(retrieved.tokenizer, pipeline)
+        return retrieved.tokenizer, pipeline
 
     def reset(self) -> None:
         """Clears all registered architectures (mainly for tests)."""
         self._arch_lookup.reset()
+
+
+def clamp_tokenizer_to_pipeline(tokenizer: Any, pipeline: Any) -> None:
+    """Lowers ``tokenizer.max_length`` to the length ``pipeline`` serves.
+
+    A pipeline sizes its KV cache once loaded and may lower the planned max
+    length; a caller that builds the pipeline in its own process
+    (``retrieve``, offline generation) calls this so the tokenizer refuses
+    prompts past it.
+    """
+    plan = getattr(pipeline, "memory_plan", None)
+    tokenizer_length = getattr(tokenizer, "max_length", None)
+    if (
+        plan is not None
+        and plan.planned_max_length is not None
+        and isinstance(tokenizer_length, int)
+        and plan.planned_max_length < tokenizer_length
+    ):
+        tokenizer.max_length = plan.planned_max_length
 
 
 PIPELINE_REGISTRY = PipelineRegistry([], arch_lookup=ARCH_LOOKUP)

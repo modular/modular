@@ -267,16 +267,8 @@ def test_preshuffle_grouped_scale_gpu[
     var slot_bytes = max_padded_M * K_SCALES
 
     print(
-        "  ",
-        name,
-        " active=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " max_padded_M=",
-        max_padded_M,
-        " K_SCALES=",
-        K_SCALES,
+        t"   {name}  active= {num_active}  total_tokens= {total_tokens} "
+        t" max_padded_M= {max_padded_M}  K_SCALES= {K_SCALES}"
     )
 
     # ---- Host buffers + random-like init ----

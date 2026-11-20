@@ -16,10 +16,10 @@ These are the production monoids that the rowwise kernels use. They live
 here, next to their only callers, so the graph compiler can read them from a
 package it scans for registrations.
 
-Each is registered under its MO op's name with a temporary `.tmp` suffix
-(e.g. `mo.reduce.add.tmp`), because the plain name still belongs to the
-hand-written kernel. The suffix goes away when the reduction moves to the
-graph compiler.
+Each is registered under its MO op's name. Those whose MO op still has a
+hand-written kernel carry a temporary `.tmp` suffix (e.g.
+`reduction.arg_max.tmp`), dropped when the reduction moves to the graph
+compiler.
 """
 
 from std.math import exp
@@ -37,7 +37,7 @@ from algorithm.reduce_op import ReduceOp, Reducer
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.logsumexp.tmp")
+@extensibility.register("reduction.logsumexp.tmp")
 struct OnlineLogSumExp[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -236,7 +236,7 @@ struct OnlineLogSumExp[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.mean_var.tmp")
+@extensibility.register("reduction.mean_var.tmp")
 struct Welford[
     dtype: DType,
     W: Int = 1,
@@ -420,7 +420,7 @@ struct Welford[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.add.tmp")
+@extensibility.register("mo.reduce.add")
 struct ReduceSum[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -559,7 +559,7 @@ struct ReduceSum[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.max.tmp")
+@extensibility.register("mo.reduce.max")
 struct ReduceMax[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -688,7 +688,7 @@ struct ReduceMax[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.min.tmp")
+@extensibility.register("mo.reduce.min")
 struct ReduceMin[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -816,7 +816,7 @@ struct ReduceMin[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.mul.tmp")
+@extensibility.register("mo.reduce.mul")
 struct ReduceProduct[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -939,7 +939,7 @@ struct ReduceProduct[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.reduce_min_and_max.tmp")
+@extensibility.register("reduction.min_and_max.tmp")
 struct MinMax[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -1112,7 +1112,7 @@ def _argmin_identity[dtype: DType]() -> Scalar[dtype]:
         return Scalar[dtype].MAX
 
 
-@extensibility.register("mo.reduce.arg_max.tmp")
+@extensibility.register("reduction.arg_max.tmp")
 struct ArgMax[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -1313,7 +1313,7 @@ struct ArgMax[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.arg_min.tmp")
+@extensibility.register("reduction.arg_min.tmp")
 struct ArgMin[
     dtype: DType,
     W: Int = simd_width_of[dtype](),

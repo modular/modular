@@ -23,12 +23,15 @@ namespace M::KGEN {
 class ParameterEvaluationContext;
 class ParameterEvaluator;
 class SymTabEvaluationContext;
+class KGENParamPrinter;
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENAttrInterfaces.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_KGENDIALECT_KGENATTRINTERFACES_H

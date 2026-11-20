@@ -318,14 +318,22 @@ class JengaBlockPool:
             (the null block) included.
         cache_ratios: How many little blocks of each cache fit in a huge
             block, by cache id.
+        min_huge_bid: The lowest huge block allocation may hand out. Tests
+            raise it to put every block at the top of its id space, where
+            index arithmetic overflows first; ``0`` allows every block.
 
     Raises:
-        ValueError: If ``num_huge_blocks`` is below 2, or ``cache_ratios`` is
-            empty or not all positive.
+        ValueError: If ``num_huge_blocks`` is below 2, ``cache_ratios`` is
+            empty or not all positive, or ``min_huge_bid`` leaves no huge
+            block to allocate.
     """
 
     def __init__(
-        self, num_huge_blocks: int, cache_ratios: Mapping[str, int]
+        self,
+        num_huge_blocks: int,
+        cache_ratios: Mapping[str, int],
+        *,
+        min_huge_bid: int = 0,
     ) -> None: ...
     @property
     def num_huge_blocks(self) -> int:
@@ -333,7 +341,7 @@ class JengaBlockPool:
 
     @property
     def num_allocatable_huge_blocks(self) -> int:
-        """How many huge blocks allocation can hand out: all but the null block's."""
+        """How many huge blocks allocation can hand out, past ``min_huge_bid``."""
 
     @property
     def num_free_huge_blocks(self) -> int:
@@ -358,14 +366,23 @@ class JengaBlockPool:
     def alloc_block(self, cache_id: str) -> LittleKVCacheBlock:
         """Returns a fresh block of ``cache_id``, claiming huge blocks as needed.
 
-        Prefers claiming a pristine huge block over handing out a free little
-        block that is still committed, so a prefix is evicted only when
-        nothing else is left. Handing out a committed block evicts it: its
-        bytes are about to be overwritten.
+        Prefers uncommitted free blocks in huge blocks a request already
+        holds, so idle huge blocks stay parked for any cache, then a pristine
+        huge block. Only when neither is left does it hand out a committed
+        block, the least recently used one, which evicts that commit.
 
         Raises:
             InsufficientBlocksError: If the pool has no bytes left to serve
                 this cache.
+        """
+
+    def alloc_block_with_retype(
+        self, cache_id: str
+    ) -> tuple[LittleKVCacheBlock, bool]:
+        """Returns an allocation and whether its huge block changed cache type.
+
+        The Python memory owner clears retyped bytes before exposing the block
+        to writes. Pristine and same-leaf allocations report ``False``.
         """
 
     def free_block(self, block: LittleKVCacheBlock) -> None:
@@ -382,6 +399,14 @@ class JengaBlockPool:
 
         Reviving a block whose huge block is parked claims the huge block back
         for its cache. Touching the null block does nothing.
+        """
+
+    def refresh(self, block: LittleKVCacheBlock) -> None:
+        """Moves an unreferenced block to the recently used end of eviction.
+
+        Reorders the pool as :meth:`touch` then :meth:`free_block` would,
+        without claiming back a parked huge block. A referenced block and the
+        null block are left alone.
         """
 
     def uncommit_block(self, block: LittleKVCacheBlock) -> None:
@@ -425,6 +450,18 @@ class JengaBlockPool:
         not add up; ask :meth:`can_satisfy_demand` for a joint answer.
         """
 
+    def occupancy(self, cache_id: str) -> tuple[int, int, int, int, int]:
+        """Returns what ``cache_id`` holds, scanning the whole pool.
+
+        Returns:
+            ``(referenced, cached, free, claimed_huge_blocks,
+            parked_huge_blocks)``.
+        """
+
+    @property
+    def num_pristine_huge_blocks(self) -> int:
+        """How many parked huge blocks no cache has ever claimed."""
+
     def can_satisfy_demand(
         self, demand: Mapping[str, int], at_capacity: bool = False
     ) -> bool:
@@ -434,6 +471,14 @@ class JengaBlockPool:
         the same of a pool that has handed nothing out yet, making the answer
         a property of the pool's geometry rather than of what it currently
         holds. A count of 0 or less asks for nothing.
+        """
+
+    def max_satisfiable_multiple(
+        self, unit: Mapping[str, int], at_capacity: bool = False
+    ) -> int:
+        """Returns the most multiples of ``unit`` :meth:`can_satisfy_demand` accepts.
+
+        Returns 0 if ``unit`` asks for nothing.
         """
 
     def reset_prefix_cache(self) -> dict[str, int]:

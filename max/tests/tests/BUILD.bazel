@@ -18,6 +18,7 @@ modular_py_test(
             "mojo_runtime_foreign_thread_subprocess.py",
             "test_compilation.py",
             "test_compile_pool.py",
+            "test_compiled_callable.py",
             "test_compile_pool_gpu.py",
             "test_dim_substitute.py",
             "test_eager_cold_start_policy.py",
@@ -28,6 +29,7 @@ modular_py_test(
             "test_interpreter_ops_gpu.py",
             "test_mojo_runtime_background_thread_import.py",
             "test_mojo_runtime_foreign_thread.py",
+            "test_nn_legacy_deprecation.py",
         ],
     ),
     # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
@@ -50,9 +52,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/mlir",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
         requirement("numpy"),
@@ -79,14 +81,42 @@ modular_eager_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        requirement("numpy"),
+    ],
+)
+
+modular_eager_py_test(
+    name = "test_compiled_callable",
+    srcs = [
+        "conftest.py",
+        "test_compiled_callable.py",
+    ],
+    cpu_only = True,
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -98,10 +128,10 @@ modular_py_test(
         "test_compile_pool.py",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         requirement("numpy"),
     ],
@@ -120,10 +150,10 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         requirement("numpy"),
     ],
@@ -230,7 +260,10 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("ml-dtypes"),
         requirement("numpy"),
+        requirement("pillow"),
     ],
 )
 
@@ -244,8 +277,10 @@ modular_eager_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
+    # `max.tensor` imports `max.nn.legacy` lazily to allocate signal buffers
+    # for two or more devices, so no source here imports it.
     ignore_extra_deps = [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
@@ -256,7 +291,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -291,11 +326,11 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:interpreter",
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
     ],
 )
@@ -321,5 +356,25 @@ test_suite(
         "//max/tests/tests/profiler:tests",
         "//max/tests/tests/serve:parser_tests",
         "//max/tests/tests/support:tests",
+    ],
+)
+
+modular_py_test(
+    name = "test_nn_legacy_deprecation",
+    srcs = ["test_nn_legacy_deprecation.py"],
+    # Each case imports these in a subprocess, so no source imports them.
+    ignore_extra_deps = [
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/legacy/hooks",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy/hooks",
     ],
 )

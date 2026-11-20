@@ -79,32 +79,14 @@ constexpr size_t kRuntimeUnknownSize = std::numeric_limits<size_t>::max();
 /// Returns true if size in plain form is valid.
 inline bool isValidPlainSize(uint64_t size) { return size != kUnknownSize; }
 
-/// Returns true if size in optional form is specified.
-inline bool hasOptSize(std::optional<uint64_t> optSize) {
-  return optSize.has_value();
-}
-
 /// Returns true if size in optional form is valid.
 inline bool isValidOptSize(std::optional<uint64_t> optSize) {
   return !optSize || isValidPlainSize(*optSize);
 }
 
-/// Returns true if size in raw form is specified.
-inline bool hasRawSize(uint64_t rawSize) { return rawSize != kUnknownSize; }
-
-/// Returns true if size in raw signed form is specified.
-inline bool hasRawSignedSize(int64_t rawSignedSize) {
-  return rawSignedSize != kUnknownSignedSize;
-}
-
 /// Returns true if size in raw signed form is valid.
 inline bool isValidRawSignedSize(int64_t rawSignedSize) {
   return rawSignedSize == kUnknownSignedSize || rawSignedSize >= 0;
-}
-
-/// Returns true if size in runtime form is specified.
-inline bool hasRuntimeSize(size_t runtimeSize) {
-  return runtimeSize != kRuntimeUnknownSize;
 }
 
 /// Translates size from optional form to raw form.
@@ -159,34 +141,6 @@ inline size_t plainSizeToRuntimeSize(uint64_t size) {
   return runtimeSize;
 }
 
-/// Translates size from raw form to runtime form.
-/// We assert check for validity and no overflow, so there's no checking in
-/// release builds.
-inline size_t rawSizeToRuntimeSize(uint64_t rawSize) {
-  if (rawSize == kUnknownSize)
-    return kRuntimeUnknownSize;
-  assert(rawSize <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
-         "size in raw form is too large to represent in runtime form");
-  size_t runtimeSize = static_cast<size_t>(rawSize);
-  assert(runtimeSize != kRuntimeUnknownSize &&
-         "cannot represent raw size in runtime form");
-  return runtimeSize;
-}
-
-/// Translates size from raw form to runtime form. If the raw form is the
-/// distinguished unknown value the defaultSize is returned.
-/// We assert check for validity, so there's no checking in release builds.
-inline size_t rawSizeToRuntimeSizeOrDefault(uint64_t rawSize,
-                                            size_t defaultSize) {
-  if (rawSize == kUnknownSize)
-    return defaultSize;
-  assert(rawSize <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
-         "size in raw form too large to represent in runtime form");
-  assert(static_cast<size_t>(rawSize) != kRuntimeUnknownSize &&
-         "cannot represent raw size in runtime form");
-  return static_cast<size_t>(rawSize);
-}
-
 /// Maximum specifiable alignment attribute.
 /// TODO(5815): change this to make MEF file creation compatible across
 /// host/target systems with different page sizes.
@@ -215,18 +169,6 @@ inline bool isValidRawAlign(uint64_t rawAlign) {
 /// Returns true if align in optional form is valid.
 inline bool isValidOptAlign(std::optional<uint64_t> optAlign) {
   return !optAlign || isValidRawAlign(*optAlign);
-}
-
-/// Translates align in optional form to it's llvm::MaybeAlign
-/// representation. We assert check for validity (inside llvm::Align), so
-/// there's no checking in release builds.
-inline llvm::MaybeAlign optAlignToMaybeAlign(std::optional<uint64_t> optAlign) {
-  return llvm::MaybeAlign(optAlign.value_or(0));
-}
-
-/// Translates align in llvm::MaybeAlign form to it's optional form.
-inline std::optional<uint64_t> maybeAlignToOptAlign(llvm::MaybeAlign align) {
-  return align ? align->value() : std::optional<uint64_t>();
 }
 
 } // namespace M

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.activation."""
+"""Tests for max.nn.legacy.activation."""
 
 from __future__ import annotations
 
@@ -18,7 +18,8 @@ from functools import partial
 
 import pytest
 from max.graph import ops
-from max.nn.activation import GatedActivation, activation_function_from_name
+from max.nn.activation import GatedActivation
+from max.nn.legacy.activation import activation_function_from_name
 
 
 @pytest.mark.parametrize(
@@ -52,20 +53,37 @@ def test_unrecognized_raises() -> None:
 def test_gated_activation_defaults_to_silu() -> None:
     assert GatedActivation().kernel_parameters() == {
         "activation": "silu",
-        "swiglu_alpha": "0.0",
-        "swiglu_limit": "0.0",
+        "swiglu_alpha": 0.0,
+        "swiglu_limit": 0.0,
     }
 
 
 def test_gated_activation_encodes_constants_exactly() -> None:
-    # Kernel parameters cannot be floats; `repr` must round-trip the double so
-    # the kernel parses back exactly the value the model configured.
+    # The constants ride as f32 kernel parameters; the float32 rounding is
+    # the kernel's, not the encoder's.
     params = GatedActivation(
         "swigluoai", alpha=1.702, limit=7.0
     ).kernel_parameters()
     assert params["activation"] == "swigluoai"
-    assert float(params["swiglu_alpha"]) == 1.702
-    assert float(params["swiglu_limit"]) == 7.0
+    assert params["swiglu_alpha"] == 1.702
+    assert params["swiglu_limit"] == 7.0
+
+
+def test_gated_activation_round_to_bf16_renames_the_kernel_activation() -> None:
+    params = GatedActivation(
+        "swigluoai", alpha=1.702, limit=7.0, round_to_bf16=True
+    ).kernel_parameters()
+    assert params["activation"] == "swigluoai_bf16"
+    assert params["swiglu_alpha"] == 1.702
+    assert (
+        GatedActivation(round_to_bf16=True).kernel_parameters()["activation"]
+        == "silu_bf16"
+    )
+
+
+def test_gated_activation_round_to_bf16_only_for_silu_and_swigluoai() -> None:
+    with pytest.raises(ValueError, match="does not take round_to_bf16"):
+        GatedActivation("gelu_tanh", round_to_bf16=True)
 
 
 def test_gated_activation_rejects_unknown_name() -> None:

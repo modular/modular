@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Sparse latent attention for DeepSeek-V3.2."""
+
 from __future__ import annotations
 
 import logging
@@ -24,24 +26,21 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import (
+from max.nn._graph_ops import mla_decode_graph, mla_prefill_decode_graph
+from max.nn._graph_ops.quant import quantized_matmul
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
     MLAPrefillMetadata,
 )
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.comm import Allreduce
-from max.nn.kernels import (
-    mla_decode_graph,
-    mla_prefill_decode_graph,
-)
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.linear import Linear
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_matmul
-from max.nn.rotary_embedding import RotaryEmbedding
 
 from .indexer import Indexer
 
@@ -57,11 +56,9 @@ _SPARSE_PREFILL_SUPPORTED_HEADS_FP8 = (64, 128)
 # GLM 5.2's TP-sharded counts (64 // {8, 4, 2}) route to the combined op over a
 # bfloat16 OR float8_e4m3fn latent cache.  The combined op's prefill arm now
 # takes the sparse-prefill kernel for both cache dtypes: mla_graph.mojo
-# dispatches an FP8 latent cache to mla_sm100_prefill_sparse_fp8 read at unit
-# scale (scale_block_size=0), mirroring the sparse-decode kernel's read of the
-# scale-less FP8 latent cache.  So the absorbed sparse path -- not the dense
-# unabsorbed FP8 prefill (whose extra Q/K/V requantization cost accuracy) --
-# runs for FP8-cache prefill at these head counts.
+# runs an FP8 latent cache on the sparse decode kernel instead, so the absorbed
+# sparse path -- not the dense unabsorbed FP8 prefill (whose extra Q/K/V
+# requantization cost accuracy) -- serves prefill at these head counts.
 _SPARSE_PREFILL_TP_SHARDED_HEADS = (8, 16, 32)
 
 
@@ -99,11 +96,21 @@ def _sparse_prefill_head_count_supported(
     return n_heads in _SPARSE_PREFILL_TP_SHARDED_HEADS and cache_dtype in (
         DType.bfloat16,
         DType.float8_e4m3fn,
+        DType.uint8,
     )
 
 
 # Head counts already warned about; the guard runs per layer, so dedup the log.
 _WARNED_FALLBACK_HEADS: set[int] = set()
+
+
+def sparse_selection_width(kv_params: KVCacheParams, index_topk: int) -> int:
+    """Returns the width of one token's selected cache rows.
+
+    An NVFP4 cache pages its scales apart from its values, so the indexer
+    follows each token's value rows with the matching scale-pool rows.
+    """
+    return 2 * index_topk if kv_params.is_nvfp4_kv_cache else index_topk
 
 
 def _carried_rows(
@@ -401,6 +408,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs sparse MLA attention with FP8 weights."""
         wqkv, wqkv_scale = self.wqkv
         qkv = quantized_matmul(
             x=x,
@@ -451,7 +459,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
-            sparse_indices_stride=self.index_topk,
+            sparse_indices_stride=sparse_selection_width(
+                self.kv_params, self.index_topk
+            ),
             physical_rows=rows,
             selection_lag=selection_lag,
         )
@@ -623,6 +633,7 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the data-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -652,7 +663,12 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
                 if prev_topk_i is None:
                     prev_topk_i = ops.broadcast_to(
                         ops.constant(0, dtype=DType.int32, device=xs[i].device),
-                        (xs[i].shape[0], self.index_topk),
+                        (
+                            xs[i].shape[0],
+                            sparse_selection_width(
+                                self.kv_params, self.index_topk
+                            ),
+                        ),
                     )
                 topk_indices.append(prev_topk_i)
                 continue
@@ -738,6 +754,7 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the tensor-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -1029,6 +1046,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs sparse MLA attention over the hidden states."""
         q_lora_rank = self.q_lora_rank
         if q_lora_rank is None:
             raise ValueError(
@@ -1067,7 +1085,9 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
-            sparse_indices_stride=self.index_topk,
+            sparse_indices_stride=sparse_selection_width(
+                self.kv_params, self.index_topk
+            ),
             physical_rows=rows,
             selection_lag=selection_lag,
         )
@@ -1198,6 +1218,7 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Splits the prefill metadata across the data-parallel devices."""
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -1226,6 +1247,7 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the data-parallel devices."""
         del signal_buffers
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -1255,7 +1277,12 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
                 if prev_topk_i is None:
                     prev_topk_i = ops.broadcast_to(
                         ops.constant(0, dtype=DType.int32, device=xs[i].device),
-                        (xs[i].shape[0], self.index_topk),
+                        (
+                            xs[i].shape[0],
+                            sparse_selection_width(
+                                self.kv_params, self.index_topk
+                            ),
+                        ),
                     )
                 topk_outs.append(prev_topk_i)
                 continue
@@ -1312,6 +1339,7 @@ class TensorParallelSparseLatentAttentionWithRope(
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Splits the prefill metadata across the tensor-parallel devices."""
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -1340,6 +1368,7 @@ class TensorParallelSparseLatentAttentionWithRope(
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the tensor-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 

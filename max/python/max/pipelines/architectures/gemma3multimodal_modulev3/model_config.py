@@ -10,9 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3 configuration."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -20,8 +22,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.model_config import (
     Gemma3Config,
 )
@@ -36,11 +38,14 @@ from max.pipelines.lib.config.model_config import (
     _interleaved_rope_weights,
     _select_quantization_encoding,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
     ArchVLConfigWithTextSubconfig,
+    ModelOutputConfig,
 )
+from max.pipelines.lib.registration_runtime import DeploymentConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -51,9 +56,10 @@ from typing_extensions import Self, override
 
 @dataclass
 class Gemma3VisionConfig:
-    """
-    The vision-specific config for Gemma3
-    More info at: https://huggingface.co/google/gemma-3-4b-it/blob/main/config.json
+    """The vision half of the Gemma 3 config.
+
+    The checkpoint's own section is at
+    https://huggingface.co/google/gemma-3-4b-it/blob/main/config.json
     """
 
     hidden_act: str
@@ -125,12 +131,18 @@ class Gemma3ForConditionalGenerationConfig(
     ArchVLConfigWithTextSubconfig,
     ArchConfigWithStoredKVParams,
     ArchConfigWithKVCache,
+    DeploymentConfig,
 ):
     """Base configuration for Gemma 3 models.
 
     Contains parameters specific to the Gemma 3 architecture, typically
     extracted from a HuggingFace configuration object's text config.
     """
+
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "decoder.",
+        GraphRole.VISION: "vision.",
+    }
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -201,6 +213,7 @@ class Gemma3ForConditionalGenerationConfig(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     @classmethod
@@ -214,6 +227,7 @@ class Gemma3ForConditionalGenerationConfig(
         *,
         allow_kv_head_replication: bool = False,
     ) -> MultiKVCacheParams:
+        """The KV cache parameters, taken from the Gemma 3 text config."""
         # ArchVLConfigWithTextSubconfig reads text_config from annotations,
         # which stay strings under from __future__ import annotations, so it
         # would otherwise build a single full-attention leaf.
@@ -239,6 +253,9 @@ class Gemma3ForConditionalGenerationConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Gemma3ForConditionalGenerationConfig instance with fields initialized from config.
@@ -273,6 +290,7 @@ class Gemma3ForConditionalGenerationConfig(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace model configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Gemma3ForConditionalGenerationConfig instance ready for finalization.
@@ -346,16 +364,28 @@ class Gemma3ForConditionalGenerationConfig(
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
     ) -> None:
         """Finalize the Gemma3ForConditionalGenerationConfig instance with state_dict dependent fields.
 
         Args:
             huggingface_config: HuggingFace model configuration.
             state_dict: Model weights dictionary.
-            return_logits: Return logits configuration.
+            outputs: Requested decoder outputs.
         """
+        # Quantization metadata uses the original checkpoint's text prefix.
+        state_dict = {
+            (
+                name
+                if name.startswith("language_model.lm_head.")
+                else name.replace("language_model.", "language_model.model.", 1)
+            ): value
+            for key, value in state_dict.items()
+            if key.startswith("decoder.")
+            for name in (key.removeprefix("decoder."),)
+        }
+        return_logits = outputs.return_logits
         # Parse the float8 config from compressed-tensors
         layer_name_prefix = "language_model.model."
         quant_config = parse_quant_config(
@@ -373,9 +403,9 @@ class Gemma3ForConditionalGenerationConfig(
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
-        self.text_config.finalize(
+        self.text_config = self.text_config.finalize(
             huggingface_config=hf_text_config,
             state_dict=state_dict,
-            return_logits=return_logits,
+            outputs=ModelOutputConfig(return_logits=return_logits),
             quant_config=quant_config,
         )

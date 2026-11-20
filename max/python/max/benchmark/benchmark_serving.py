@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 import random
@@ -34,7 +33,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -56,6 +55,8 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
+    current_option_name,
+    deprecated_env_vars_renamed,
     get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.all import sample_requests
@@ -113,13 +114,17 @@ from max.benchmark.benchmark_shared.request import (
     progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
+    MACH_METRICS_QUIET_S,
+    MissingEngineMetricsError,
     collect_benchmark_metrics,
     fetch_spec_decode_metrics,
+    wait_for_metrics_to_settle,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
     build_pixel_generation_result,
     build_text_generation_result,
     compute_output_len,
+    run_cache_hit_rate,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     BenchmarkRunResultLabels,
@@ -133,6 +138,7 @@ from max.benchmark.benchmark_shared.single_turn import (
 )
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
+    fetch_model_config_max_length,
     fetch_server_max_model_len,
     get_tokenizer,
     openai_bearer_auth_headers,
@@ -150,8 +156,10 @@ from max.benchmark.benchmark_shared.workload import (
     load_workload_file,
 )
 from max.benchmark.benchmark_shared.workload_stats import (
+    EngineState,
     WorkloadStats,
     compute_workload_stats,
+    write_engine_state,
     write_workload_stats,
 )
 from max.profiler.cpu import (
@@ -160,9 +168,6 @@ from max.profiler.cpu import (
     collect_pids_for_port,
 )
 from max.profiler.gpu import GPUDiagContext, GpuStatsRecorder
-from openai.types.chat import ChatCompletionToolParam
-from openai.types.chat.completion_create_params import ResponseFormat
-from pydantic import TypeAdapter, ValidationError
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     "This command runs comprehensive benchmark tests on a model server to"
@@ -243,73 +248,6 @@ def _make_gpu_recorder(
     return BackgroundRecorder()
 
 
-def parse_response_format(arg: str) -> ResponseFormat:
-    """Parse response format from CLI arg (inline JSON or @filepath).
-
-    Args:
-        arg: Either a JSON string or '@path/to/schema.json' to load from file.
-
-    Returns:
-        Validated ResponseFormat.
-
-    Raises:
-        ValueError: If the JSON is invalid, the file cannot be read, or the
-            value does not match a recognised OpenAI response format.
-    """
-    if arg.startswith("@"):
-        # Load from file
-        file_path = Path(arg[1:])
-        try:
-            raw = file_path.read_text()
-        except FileNotFoundError as e:
-            raise ValueError(
-                f"Response format file not found: {file_path}"
-            ) from e
-        try:
-            return TypeAdapter(ResponseFormat).validate_json(raw)
-        except (json.JSONDecodeError, ValidationError) as e:
-            raise ValueError(
-                f"Invalid response format in file {file_path}: {e}"
-            ) from e
-
-    # Parse inline JSON
-    try:
-        return TypeAdapter(ResponseFormat).validate_json(arg)
-    except (json.JSONDecodeError, ValidationError) as e:
-        raise ValueError(f"Invalid response format: {e}") from e
-
-
-def parse_tools(arg: str) -> list[Mapping[str, Any]]:
-    """Parses tool definitions from a CLI arg (inline JSON or @filepath).
-
-    Args:
-        arg: Either a JSON list or '@path/to/tools.json' to load from file.
-
-    Returns:
-        The tool definitions, validated against the OpenAI tool shape.
-
-    Raises:
-        ValueError: If the JSON is invalid, the file cannot be read, or the
-            value is not a non-empty list of OpenAI tool definitions.
-    """
-    source = "tools"
-    raw = arg
-    if arg.startswith("@"):
-        file_path = Path(arg[1:])
-        source = f"tools file {file_path}"
-        try:
-            raw = file_path.read_text()
-        except FileNotFoundError as e:
-            raise ValueError(f"Tools file not found: {file_path}") from e
-    try:
-        tools = TypeAdapter(list[ChatCompletionToolParam]).validate_json(raw)
-    except (json.JSONDecodeError, ValidationError) as e:
-        raise ValueError(f"Invalid {source}: {e}") from e
-    if not tools:
-        raise ValueError(f"Invalid {source}: the list is empty")
-    return [dict(tool) for tool in tools]
-
-
 def get_default_trace_path() -> str:
     """Get the default trace output path."""
     workspace_path = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
@@ -380,7 +318,7 @@ async def benchmark(
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         ignore_first_turn_stats=args.ignore_first_turn_stats,
-        warmup_to_steady_state=args.warmup_to_steady_state,
+        warmup_multiturn=args.warmup_multiturn,
     )
 
     if args.warm_shared_prefix:
@@ -403,10 +341,9 @@ async def benchmark(
             )
 
     if isinstance(session.samples, ChatJudgeChatSamples):
-        if args.warmup_to_steady_state:
+        if args.warmup_multiturn:
             raise NotImplementedError(
-                "--warmup-to-steady-state is not yet implemented for"
-                " chat-judge."
+                "--warmup-multiturn is not yet implemented for chat-judge."
             )
 
     logger.info("Starting benchmark run")
@@ -523,11 +460,11 @@ async def benchmark(
             if args.max_concurrent_conversations is not None
             else max_concurrency
         )
-        if args.warmup_to_steady_state and warmup_count:
+        if args.warmup_multiturn and warmup_count:
             chat_sessions, report = pick_warmup_population(
                 chat_sessions,
                 warmup_count,
-                warmup_to_steady_state=True,
+                warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or len(chat_sessions),
                 rng=np.random.default_rng(args.seed),
@@ -541,7 +478,7 @@ async def benchmark(
                 1 for s in chat_sessions[:warmup_count] if s.prefix_turns == 0
             )
             logger.info(
-                "Warming up to steady state: %d sessions (%d will"
+                "Warming up multi-turn sessions: %d sessions (%d will"
                 " pre-run, %d drew prefix_turns=0 and start cold).",
                 warmup_count,
                 warmup_count - cold_count,
@@ -557,18 +494,23 @@ async def benchmark(
             disable_tqdm=args.disable_tqdm,
             max_concurrency=args.warmup_concurrency,
             use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
+            max_output_len=args.max_output_len,
         )
 
     # Capture baseline server metrics after priming so priming requests
     # don't affect the delta calculation.
     baseline_endpoints: Mapping[str, ParsedMetrics] = {}
     if args.collect_server_stats:
+        _settle_server_metrics(args, backend, session.base_url)
         try:
             baseline_endpoints = collect_benchmark_metrics(
                 args.metrics_urls, backend, session.base_url
             )
             logger.info("Captured baseline server metrics")
         except Exception as e:
+            # No required-metric verification on the baseline: the exporter
+            # omits a histogram until its first data point, so a fresh idle
+            # engine has no batch families yet.
             logger.warning(f"Failed to capture baseline server metrics: {e}")
 
     if session.benchmark_task == "text-generation":
@@ -711,6 +653,7 @@ async def benchmark(
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
                 disable_ignore_eos=args.disable_ignore_eos,
+                strip_harmony_wire_tags=args.strip_harmony_wire_tags,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -762,6 +705,8 @@ async def benchmark(
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
                 disable_ignore_eos=args.disable_ignore_eos,
+                max_output_len=args.max_output_len,
+                strip_harmony_wire_tags=args.strip_harmony_wire_tags,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -834,19 +779,27 @@ async def benchmark(
     # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     endpoint_metrics: Mapping[str, ParsedMetrics] = {}
     if args.collect_server_stats:
+        _settle_server_metrics(args, backend, session.base_url)
         try:
             endpoint_metrics = collect_benchmark_metrics(
                 args.metrics_urls,
                 backend,
                 session.base_url,
                 baseline=baseline_endpoints,
+                verify_required_metrics=True,
             )
             logger.info("Collected server metrics (final)")
+        except MissingEngineMetricsError:
+            # A reachable endpoint missing the metrics this backend always
+            # emits must fail the run, not degrade to null fields.
+            raise
         except Exception as e:
             logger.warning(f"Failed to collect server metrics: {e}")
 
     result: BenchmarkResult
     if session.benchmark_task in PIXEL_GENERATION_TASKS:
+        if args.goodput is not None:
+            logger.warning("--goodput is only supported for text-generation")
         result = build_pixel_generation_result(
             outputs=all_outputs,
             benchmark_duration=benchmark_duration,
@@ -875,7 +828,11 @@ async def benchmark(
             record_request_text=args.record_request_text,
             gpu_device_groups=gpu_device_groups,
             outputs_by_session=outputs_by_session,
+            steady_state_filtering=args.steady_state_filtering,
+            goodput_targets=args.goodput_targets,
+            num_gpus=args.num_gpus,
         )
+    result.record_run_cache_hit_rate(run_cache_hit_rate(all_outputs))
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics
 
@@ -893,6 +850,7 @@ async def benchmark(
 def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
+    """Raises when ``endpoint`` cannot serve ``benchmark_task``."""
     if benchmark_task == "text-generation":
         if endpoint in (
             "/v1/responses",
@@ -1158,7 +1116,7 @@ def _sample_for_seed(
     if args.tools is not None:
         augment_samples_with_tools(
             samples,
-            tools=parse_tools(args.tools),
+            tools=args.tools,
             fraction=args.tools_fraction,
             tokenizer=tokenizer,
             seed=seed,
@@ -1184,10 +1142,11 @@ def _sample_for_seed(
 
     # After images, which can cut sessions: a constraint on a cut turn
     # would never be sent.
-    if args.response_format is not None:
+    response_format = args.openai_response_format
+    if response_format is not None:
         augment_samples_with_response_format(
             samples,
-            response_format=parse_response_format(args.response_format),
+            response_format=response_format,
             fraction=args.response_format_fraction,
             turn=args.response_format_turn,
             seed=seed,
@@ -1242,6 +1201,11 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     tokenizer: PreTrainedTokenizerBase | None = None
 
     if benchmark_task == "text-generation":
+        # An explicit revision wins: ``resolve_revision`` asks the Hub and
+        # returns None for a repo it cannot see, which loads ``main``.
+        tokenizer_revision = args.tokenizer_revision or resolve_revision(
+            tokenizer_id
+        )
         model_max_length = args.model_max_length
         if model_max_length is None:
             # Best-effort: when the server is already up (e.g. benchmarking a
@@ -1263,19 +1227,26 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
                     model_max_length,
                     base_url,
                 )
-            elif args.dry_run:
+            else:
+                model_max_length = fetch_model_config_max_length(
+                    tokenizer_id,
+                    revision=tokenizer_revision,
+                    trust_remote_code=args.trust_remote_code,
+                    local_files_only=args.tokenizer_local_files_only,
+                )
                 logger.warning(
-                    "No server reachable at %s; --dry-run is using the"
-                    " tokenizer's context limit, so any workload the server"
-                    " would truncate is reported here as if it fit.",
+                    "No server reachable at %s; sampling against %s. A"
+                    " deployment's KV budget may plan lower.",
                     base_url,
+                    "the model config's max_position_embeddings"
+                    f" ({model_max_length})"
+                    if model_max_length is not None
+                    else "the tokenizer's own context limit",
                 )
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            # An explicit revision wins: ``resolve_revision`` asks the Hub and
-            # returns None for a repo it cannot see, which loads ``main``.
-            revision=args.tokenizer_revision or resolve_revision(tokenizer_id),
+            revision=tokenizer_revision,
             local_files_only=args.tokenizer_local_files_only,
             model_max_length=model_max_length,
             trust_remote_code=args.trust_remote_code,
@@ -1355,6 +1326,109 @@ def _emit_workload_stats(
         print_workload_stats(session.samples, stats)
 
 
+def _settle_server_metrics(
+    args: ServingBenchmarkConfig, backend: Backend, base_url: str
+) -> None:
+    """Lets a Mach engine publish its last metrics before they are read."""
+    if backend != "mach":
+        return
+    wait_for_metrics_to_settle(
+        lambda: collect_benchmark_metrics(args.metrics_urls, backend, base_url),
+        quiet_s=MACH_METRICS_QUIET_S,
+    )
+
+
+# Share of a run's requests that may fail before its engine state is dropped.
+MAX_FAILED_REQUEST_FRACTION = 0.01
+
+
+def _single_load_point(args: ServingBenchmarkConfig) -> bool:
+    return len(args.max_concurrency) * len(args.request_rate) == 1
+
+
+def _serving_engine(backend: Backend) -> Literal["max", "mach"] | None:
+    """Names the engine a backend drives, None for a third-party server."""
+    if backend == "mach":
+        return "mach"
+    if backend in ("modular", "modular-chat"):
+        return "max"
+    return None
+
+
+def _engine_state_or_reason(
+    result: BenchmarkResult,
+    max_concurrency: int | None,
+    validation_passed: bool,
+    backend: Backend,
+) -> EngineState | str:
+    """Returns the run's engine state, or why the run cannot supply one."""
+    if not validation_passed:
+        # Requests that errored leave the figures describing a different
+        # workload than the one run.
+        return "the run failed validation"
+    if result.text_data is None:
+        return "the run produced no text results"
+    # Validation does not fail a run for failed requests: the metrics leave
+    # them out (CENG-1381), so a run that lost most of its requests still
+    # passes. A few failures leave the figures close to the workload that
+    # was sent, so they are recorded rather than discarding the run.
+    records = [r for r in result.text_data.request_records if not r.cancelled]
+    failed = sum(1 for r in records if not r.success)
+    if failed > MAX_FAILED_REQUEST_FRACTION * len(records):
+        return f"{failed} of {len(records)} requests failed"
+    rate = result.run_cache_hit_rate
+    if rate is not None and rate > 1.0:
+        # The server reported more cached tokens than prompt tokens.
+        return f"the server reported a cache hit rate of {rate:.2f}"
+    return EngineState(
+        cache_hit_rate=result.run_cache_hit_rate,
+        decode_batch_size_mean=result.mean_decode_batch_size,
+        max_concurrency=max_concurrency,
+        engine=_serving_engine(backend),
+        failed_requests=failed,
+    )
+
+
+def _emit_engine_state(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    result: BenchmarkResult,
+    max_concurrency: int | None,
+    validation_passed: bool,
+) -> None:
+    # The stats file is first written before any request is sent. Once a run
+    # has measured the engine, it is rewritten with that state, so a real
+    # run no longer leaves the same file as a dry run. Both figures depend on
+    # the load, so a sweep over several load points has no single state.
+    into_stats = args.workload_stats_json is not None and _single_load_point(
+        args
+    )
+    if args.engine_state_json is None and not into_stats:
+        return
+    state = _engine_state_or_reason(
+        result, max_concurrency, validation_passed, args.backend
+    )
+    if isinstance(state, str):
+        logger.warning("No engine state written: %s", state)
+        return
+    if args.engine_state_json is not None:
+        write_engine_state(state, args.engine_state_json)
+        logger.info("Wrote engine state to %s", args.engine_state_json)
+    if into_stats:
+        assert args.workload_stats_json is not None
+        # Recomputed from the samples this run sent: the sweep draws a new
+        # sample for each concurrency level, so the file written before the
+        # run describes another draw of the same workload.
+        stats = _compute_session_stats(args, session).model_copy(
+            update={"engine_state": state}
+        )
+        write_workload_stats(stats, args.workload_stats_json)
+        logger.info(
+            "Wrote workload stats with the engine state to %s",
+            args.workload_stats_json,
+        )
+
+
 def _run_dry_run_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
@@ -1365,7 +1439,7 @@ def _run_dry_run_sweep(
 ) -> Iterator[BenchmarkRunResult]:
     if not args.print_workload_stats:
         print_workload_stats(session.samples, stats)
-    if isinstance(session.samples, ChatSamples) and args.warmup_to_steady_state:
+    if isinstance(session.samples, ChatSamples) and args.warmup_multiturn:
         rng = np.random.default_rng(args.seed or 0)
         for mc in concurrency_range:
             warmup_count = (
@@ -1380,7 +1454,7 @@ def _run_dry_run_sweep(
             _, report = pick_warmup_population(
                 session.samples.chat_sessions,
                 warmup_count,
-                warmup_to_steady_state=True,
+                warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
                 rng=rng,
@@ -1479,6 +1553,11 @@ def _run_benchmark_sweep(
             else:
                 idx = 0
             best_result = iteration_results[idx]
+            # Later iterations replay the same requests against a cache the
+            # first one filled, so only the first measures a cold start.
+            _emit_engine_state(
+                args, session, iteration_results[0], mc, validation_passed
+            )
 
             yield BenchmarkRunResult(
                 max_concurrency=mc,
@@ -1534,6 +1613,17 @@ def main_with_parsed_args(
 
     _load_workload_yaml(args)
     resolve_seed(args)
+
+    if args.engine_state_json is not None and not _single_load_point(args):
+        raise ValueError(
+            "--engine-state-json needs a single --max-concurrency and"
+            " --request-rate: the engine state depends on the load driven"
+        )
+    if args.engine_state_json is not None and args.dry_run:
+        raise ValueError(
+            "--engine-state-json needs a real run: a dry run sends no"
+            " requests, so it measures no engine state"
+        )
 
     end_condition = _resolve_end_condition(
         args=args, concurrency_range=args.max_concurrency
@@ -1640,6 +1730,26 @@ def _extract_metadata_args(
     return clean_args, metadata_values
 
 
+_ENV_PREFIX = "MODULAR_"
+
+
+def _rename_deprecated_flags(args: list[str]) -> list[str]:
+    """Rewrites renamed flags, including their negated forms, to their new names."""
+    renamed: list[str] = []
+    for arg in args:
+        flag, sep, value = arg.partition("=")
+        # cyclopts accepts ``_`` in place of ``-`` anywhere in a flag, so the
+        # negation prefix may be spelled either way.
+        prefix = next(
+            (p for p in ("--no-", "--no_") if flag.startswith(p)), "--"
+        )
+        if flag.startswith("--"):
+            name = flag.removeprefix(prefix)
+            arg = f"{prefix}{current_option_name(name)}{sep}{value}"
+        renamed.append(arg)
+    return renamed
+
+
 def parse_args(
     args: Sequence[str] | None = None,
     *,
@@ -1656,6 +1766,7 @@ def parse_args(
     raw_args = list(sys.argv[1:] if args is None else args)
 
     clean_args, metadata_values = _extract_metadata_args(raw_args)
+    clean_args = _rename_deprecated_flags(clean_args)
 
     parsed_configs: list[ServingBenchmarkConfig] = []
 
@@ -1663,7 +1774,7 @@ def parse_args(
         name=app_name,
         help=description,
         help_formatter="plain",
-        config=[Env(prefix="MODULAR_")],
+        config=[Env(prefix=_ENV_PREFIX)],
         result_action="return_value",
     )
 
@@ -1675,7 +1786,8 @@ def parse_args(
     ) -> None:
         parsed_configs.append(config)
 
-    app(clean_args)
+    with deprecated_env_vars_renamed(_ENV_PREFIX):
+        app(clean_args)
     if not parsed_configs:
         raise SystemExit(0)
     config = parsed_configs[0]

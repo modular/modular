@@ -44,12 +44,17 @@ Inputs:
 Outputs:
   conv_output_ragged : [total_seq_len, conv_dim]              float32
       Causal conv output in the same ragged layout as the input.
+  qkv_window         : [batch_size * window_row_len, conv_dim] float32
+      Under CAPTURE_INPUT, a copy of every row of at most window_row_len
+      tokens, row b at window row b * window_row_len; untouched otherwise.
   (conv_state is mutated in place; there is no separate state-out
    tensor.  Window slot j ends up holding the raw input at position
    seq_len - (kernel_size-1) + j within the sequence, carrying forward
    from the old window when seq_len is shorter.  Under
    WRITE_STATE = False the window is left alone and the only result is
-   the conv output.)
+   the conv output, except that under CAPTURE_INPUT a row longer than
+   window_row_len writes the window ending at its last real token, before
+   its num_draft_tokens drafts.)
 
 Thread mapping (GPU)
 --------------------
@@ -60,7 +65,7 @@ Thread mapping (GPU)
   tokens, so long prefill rows spread across the whole GPU.
 """
 
-from std.bit import count_leading_zeros
+from std.bit import count_leading_zeros, next_power_of_two
 from std.sys.info import is_nvidia_gpu
 
 import max.gpu.primitives.warp as warp
@@ -70,7 +75,10 @@ from max.gpu import (
     lane_id,
     thread_idx,
 )
-from layout import Coord, TensorEngine, TensorLayout, TileTensor
+from algorithm.bisect import bisect_right
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
+from nn.activations import silu
+from state_space.gated_delta import pdl_enter, pdl_exit
 
 
 # Upper bound on the runtime `tokens_per_block`; the host shrinks it to the
@@ -81,6 +89,59 @@ comptime CONV1D_TOKENS_PER_BLOCK: Int = 8
 # ===----------------------------------------------------------------------=== #
 # GPU Kernel
 # ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def _activate[apply_silu: Bool](conv_sum: Float32) -> Float32:
+    comptime if apply_silu:
+        return silu(conv_sum)
+    else:
+        return conv_sum
+
+
+@always_inline
+def _row_of_token[
+    LT: TensorLayout, Engine: TensorEngine
+](
+    input_row_offsets: TileTensor[
+        .uint32, LT, ImmUntrackedOrigin, Engine=Engine
+    ],
+    batch_size: Int,
+    flat_token_idx: Int,
+) -> Int:
+    """Returns the rightmost row `b` with `input_row_offsets[b] <=
+    flat_token_idx`, which skips zero-length rows.
+
+    Every lane of the warp must pass the same token: the lookup is one ballot
+    over the warp.
+    """
+    if batch_size == 1:
+        return 0
+    # The 32-bit ballot does not lower on 64-lane AMD wavefronts.
+    comptime if is_nvidia_gpu():
+        comptime assert WARP_SIZE == 32, "ballot is 32 bits wide"
+        if batch_size <= WARP_SIZE:
+            # One parallel load instead of a dependent-load chain.
+            var lane = lane_id()
+            var found = False
+            if lane < batch_size:
+                found = (
+                    Int(input_row_offsets.load[width=1]((lane,)))
+                    <= flat_token_idx
+                )
+            var ballot = warp.vote[.uint32](found)
+            return max(0, WARP_SIZE - 1 - Int(count_leading_zeros(ballot)))
+    return max(
+        bisect_right(
+            batch_size,
+            flat_token_idx,
+            lambda (i: Int) {input_row_offsets} -> Int: Int(
+                input_row_offsets.load[width=1]((i,))
+            ),
+        )
+        - 1,
+        0,
+    )
 
 
 def gated_delta_conv1d_fwd_gpu[
@@ -96,11 +157,16 @@ def gated_delta_conv1d_fwd_gpu[
     input_row_offsets_LT: TensorLayout,
     conv_output_ragged_LT: TensorLayout,
     Engine: TensorEngine,
+    CAPTURE_INPUT: Bool = False,
+    qkv_window_LT: TensorLayout = conv_output_ragged_LT,
+    APPLY_SILU: Bool = False,
 ](
     batch_size: Int32,
     total_seq_len: Int32,
     conv_dim: Int32,
     tokens_per_block: Int32,
+    window_row_len: Int32,
+    num_draft_tokens: Int32,
     qkv_input_ragged: TileTensor[
         work_dtype, qkv_input_ragged_LT, ImmUntrackedOrigin, Engine=Engine
     ],
@@ -119,6 +185,9 @@ def gated_delta_conv1d_fwd_gpu[
     conv_output_ragged: TileTensor[
         work_dtype, conv_output_ragged_LT, MutUntrackedOrigin, Engine=Engine
     ],
+    qkv_window: TileTensor[
+        work_dtype, qkv_window_LT, MutUntrackedOrigin, Engine=Engine
+    ],
 ):
     """Slot-indexed causal depthwise conv1d over a ragged batch.
 
@@ -126,7 +195,25 @@ def gated_delta_conv1d_fwd_gpu[
     see the old conv window and then rewrites the window; later tokens read
     only the ragged input. With `WRITE_STATE` False the window is left
     unchanged.
+
+    With `CAPTURE_INPUT` (a verify's forward launch) every thread of a row
+    of at most `window_row_len` tokens also copies the input it owns to that
+    row's slot of `qkv_window`, for the rollback to replay. A longer row is
+    not copied: its head thread writes the window ending at the row's last
+    real token, before the `num_draft_tokens` drafts every verify row ends
+    with, so the rollback replays none of it. Both arguments are read only
+    under `CAPTURE_INPUT`.
+
+    With `APPLY_SILU` every output is `silu(conv_sum)`, the graph's SiLU on
+    the fp32 sum, before the store rounds it to `work_dtype`.
+
+    Every thread waits for the preceding grid before it reads any operand,
+    since each of them (the input, the weight, the offsets) can be that
+    grid's output. The launch must carry `pdl_launch_attributes`; the grid
+    releases its dependent after the last store.
     """
+    pdl_enter()
+
     comptime KERNEL_SIZE_MINUS_ONE = KERNEL_SIZE - 1
 
     var _total_seq_len = Int(total_seq_len)
@@ -171,57 +258,110 @@ def gated_delta_conv1d_fwd_gpu[
             linear_idx_type=conv_output_ragged.linear_idx_type
         ](Coord(0, conv_channel_idx))
     )
-
-    # Cached across the consecutive tokens this thread owns.
-    var batch_item_idx = 0
-    var sequence_start_flat_idx = 0
-    var sequence_end_flat_idx = 0
+    var window_row_stride = UInt32(
+        qkv_window.layout[linear_idx_type=qkv_window.linear_idx_type](
+            Coord(1, 0)
+        )
+    )
+    var window_channel_offset = UInt32(
+        qkv_window.layout[linear_idx_type=qkv_window.linear_idx_type](
+            Coord(0, conv_channel_idx)
+        )
+    )
+    var qkv_input_flat = qkv_input_ragged.reshape(
+        row_major(
+            Int(qkv_input_ragged.layout(qkv_input_ragged.layout.product() - 1))
+            + 1
+        )
+    )
+    var conv_output_flat = conv_output_ragged.reshape(
+        row_major(
+            Int(
+                conv_output_ragged.layout(
+                    conv_output_ragged.layout.product() - 1
+                )
+            )
+            + 1
+        )
+    )
+    var qkv_window_flat = qkv_window.reshape(
+        row_major(Int(qkv_window.layout(qkv_window.layout.product() - 1)) + 1)
+    )
 
     var first_flat_token_idx = block_idx.x * _tokens_per_block
-    for flat_token_idx in range(
-        first_flat_token_idx,
-        min(first_flat_token_idx + _tokens_per_block, _total_seq_len),
-    ):
-        if flat_token_idx >= sequence_end_flat_idx:
-            # Rightmost b with input_row_offsets[b] <= flat_token_idx, which
-            # skips zero-length sequences.
-            if _batch_size == 1:
-                batch_item_idx = 0
-            else:
-                var looked_up = False
-                # The 32-bit ballot does not lower on 64-lane AMD wavefronts.
-                comptime if is_nvidia_gpu():
-                    comptime assert WARP_SIZE == 32, "ballot is 32 bits wide"
-                    if _batch_size <= WARP_SIZE:
-                        # One parallel load instead of a dependent-load chain.
-                        var lane = lane_id()
-                        var found = False
-                        if lane < _batch_size:
-                            found = (
-                                Int(input_row_offsets.load[width=1]((lane,)))
-                                <= flat_token_idx
+
+    # Cached across the consecutive tokens this thread owns.
+    var batch_item_idx = _row_of_token(
+        input_row_offsets, _batch_size, first_flat_token_idx
+    )
+    var sequence_start_flat_idx = Int(
+        input_row_offsets.load[width=1]((batch_item_idx,))
+    )
+    var sequence_end_flat_idx = Int(
+        input_row_offsets.load[width=1]((batch_item_idx + 1,))
+    )
+
+    # A full tile inside one row, past the row's first KERNEL_SIZE - 1
+    # tokens, reads only the ragged input, so it issues all of its loads
+    # before its first store. In the per-token loop each token's loads wait
+    # behind the previous token's store, which keeps one token's loads in
+    # flight per thread.
+    var whole_tile_in_row = (
+        _tokens_per_block == CONV1D_TOKENS_PER_BLOCK
+        and first_flat_token_idx - sequence_start_flat_idx
+        >= KERNEL_SIZE_MINUS_ONE
+        and first_flat_token_idx + CONV1D_TOKENS_PER_BLOCK
+        <= sequence_end_flat_idx
+    )
+    comptime if CAPTURE_INPUT:
+        # Rows of at most window_row_len tokens also copy their input.
+        whole_tile_in_row = whole_tile_in_row and (
+            sequence_end_flat_idx - sequence_start_flat_idx
+            > Int(window_row_len)
+        )
+    var per_token_end_flat_idx = min(
+        first_flat_token_idx + _tokens_per_block, _total_seq_len
+    )
+    if whole_tile_in_row:
+        comptime TILE_TAPS = CONV1D_TOKENS_PER_BLOCK + KERNEL_SIZE_MINUS_ONE
+        var taps = SIMD[DType.float32, Int(next_power_of_two(TILE_TAPS))](0)
+        comptime for tap in range(TILE_TAPS):
+            taps[tap] = Float32(
+                rebind[Scalar[work_dtype]](
+                    qkv_input_flat.load(
+                        Coord(
+                            UInt32(
+                                first_flat_token_idx
+                                - KERNEL_SIZE_MINUS_ONE
+                                + tap
                             )
-                        var ballot = warp.vote[.uint32](found)
-                        var warp_lookup = (
-                            WARP_SIZE - 1 - Int(count_leading_zeros(ballot))
+                            * input_row_stride
+                            + input_channel_offset
                         )
-                        if warp_lookup < 0:
-                            warp_lookup = 0
-                        batch_item_idx = warp_lookup
-                        looked_up = True
-                if not looked_up:
-                    var lo = 0
-                    var hi = _batch_size - 1
-                    while lo < hi:
-                        var mid = (lo + hi + 1) >> 1
-                        if (
-                            Int(input_row_offsets.load[width=1]((mid,)))
-                            <= flat_token_idx
-                        ):
-                            lo = mid
-                        else:
-                            hi = mid - 1
-                    batch_item_idx = lo
+                    )
+                )
+            )
+        comptime for token in range(CONV1D_TOKENS_PER_BLOCK):
+            var conv_sum = Float32(0.0)
+            comptime for kernel_offset_k in range(KERNEL_SIZE):
+                conv_sum += taps[token + kernel_offset_k] * Float32(
+                    weight_register[kernel_offset_k]
+                )
+            if active:
+                conv_output_flat.store(
+                    (
+                        UInt32(first_flat_token_idx + token) * output_row_stride
+                        + output_channel_offset,
+                    ),
+                    Scalar[work_dtype](_activate[APPLY_SILU](conv_sum)),
+                )
+        per_token_end_flat_idx = first_flat_token_idx
+
+    for flat_token_idx in range(first_flat_token_idx, per_token_end_flat_idx):
+        if flat_token_idx >= sequence_end_flat_idx:
+            batch_item_idx = _row_of_token(
+                input_row_offsets, _batch_size, flat_token_idx
+            )
             sequence_start_flat_idx = Int(
                 input_row_offsets.load[width=1]((batch_item_idx,))
             )
@@ -233,6 +373,27 @@ def gated_delta_conv1d_fwd_gpu[
         var token_position_in_sequence = (
             flat_token_idx - sequence_start_flat_idx
         )
+
+        comptime if CAPTURE_INPUT:
+            if active and sequence_length <= Int(window_row_len):
+                qkv_window_flat.store(
+                    (
+                        UInt32(
+                            batch_item_idx * Int(window_row_len)
+                            + token_position_in_sequence
+                        )
+                        * window_row_stride
+                        + window_channel_offset,
+                    ),
+                    rebind[Scalar[work_dtype]](
+                        qkv_input_flat.load(
+                            (
+                                UInt32(flat_token_idx) * input_row_stride
+                                + input_channel_offset,
+                            )
+                        )
+                    ),
+                )
 
         if token_position_in_sequence >= KERNEL_SIZE_MINUS_ONE:
             # All K taps come from the ragged input; conv_state is untouched.
@@ -247,14 +408,18 @@ def gated_delta_conv1d_fwd_gpu[
                     + input_channel_offset
                 )
                 conv_sum += Float32(
-                    qkv_input_ragged.raw_load(tap_offset)
+                    rebind[Scalar[work_dtype]](
+                        qkv_input_flat.load(Coord(tap_offset))
+                    )
                 ) * Float32(weight_register[kernel_offset_k])
 
             if active:
-                conv_output_ragged.raw_store(
-                    UInt32(flat_token_idx) * output_row_stride
-                    + output_channel_offset,
-                    Scalar[work_dtype](conv_sum),
+                conv_output_flat.store(
+                    (
+                        UInt32(flat_token_idx) * output_row_stride
+                        + output_channel_offset,
+                    ),
+                    Scalar[work_dtype](_activate[APPLY_SILU](conv_sum)),
                 )
             continue
 
@@ -281,10 +446,17 @@ def gated_delta_conv1d_fwd_gpu[
 
                 if lookback_position >= 0:
                     input_value = Float32(
-                        qkv_input_ragged.raw_load(
-                            UInt32(sequence_start_flat_idx + lookback_position)
-                            * input_row_stride
-                            + input_channel_offset
+                        rebind[Scalar[work_dtype]](
+                            qkv_input_flat.load(
+                                (
+                                    UInt32(
+                                        sequence_start_flat_idx
+                                        + lookback_position
+                                    )
+                                    * input_row_stride
+                                    + input_channel_offset,
+                                )
+                            )
                         )
                     )
                 else:
@@ -302,31 +474,44 @@ def gated_delta_conv1d_fwd_gpu[
                 )
 
             if active:
-                conv_output_ragged.raw_store(
-                    UInt32(sequence_start_flat_idx + head_position)
-                    * output_row_stride
-                    + output_channel_offset,
-                    Scalar[work_dtype](conv_sum),
+                conv_output_flat.store(
+                    (
+                        UInt32(sequence_start_flat_idx + head_position)
+                        * output_row_stride
+                        + output_channel_offset,
+                    ),
+                    Scalar[work_dtype](_activate[APPLY_SILU](conv_sum)),
                 )
+
+        var writes_state = WRITE_STATE
+        var state_end = sequence_length
+        comptime if CAPTURE_INPUT:
+            if sequence_length > Int(window_row_len):
+                writes_state = True
+                state_end = sequence_length - Int(num_draft_tokens)
 
         # Safe in place: every old-window read precedes the write to its slot.
         # Never return here; this thread may own more tokens in its tile.
-        comptime if WRITE_STATE:
+        if writes_state:
             comptime for state_slot_j in range(KERNEL_SIZE_MINUS_ONE):
                 var source_position_in_sequence = (
-                    sequence_length - KERNEL_SIZE_MINUS_ONE + state_slot_j
+                    state_end - KERNEL_SIZE_MINUS_ONE + state_slot_j
                 )
 
                 var state_value: Scalar[state_dtype] = 0
                 if source_position_in_sequence >= 0:
                     state_value = Scalar[state_dtype](
-                        qkv_input_ragged.raw_load(
-                            UInt32(
-                                sequence_start_flat_idx
-                                + source_position_in_sequence
+                        rebind[Scalar[work_dtype]](
+                            qkv_input_flat.load(
+                                (
+                                    UInt32(
+                                        sequence_start_flat_idx
+                                        + source_position_in_sequence
+                                    )
+                                    * input_row_stride
+                                    + input_channel_offset,
+                                )
                             )
-                            * input_row_stride
-                            + input_channel_offset
                         )
                     )
                 else:
@@ -342,3 +527,5 @@ def gated_delta_conv1d_fwd_gpu[
                     conv_state.store(
                         (slot, conv_channel_idx, state_slot_j), state_value
                     )
+
+    pdl_exit()

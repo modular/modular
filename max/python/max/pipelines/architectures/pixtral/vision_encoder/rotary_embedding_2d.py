@@ -10,20 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Pixtral's 2D rotary embeddings."""
 
 from dataclasses import dataclass
 from functools import cached_property
 
 from max.dtype import DType
 from max.graph import DeviceRef, DimLike, TensorValue, TensorValueLike, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 
 @dataclass
 class RotaryEmbedding2D(Module):
-    """
-    RotaryEmbedding layer to calculate and apply the frequency tensor for complex exponentials.
+    """Rotary embedding layer for 2D patch positions.
+
+    Calculates and applies the frequency tensor for complex
+    exponentials over each patch's height and width indices.
     """
 
     dim: DimLike
@@ -48,12 +50,12 @@ class RotaryEmbedding2D(Module):
         self.max_patches_per_side = max_patches_per_side
 
     def freqs_cis_base(self) -> TensorValue:
-        """
-        Computes the frequency tensor for complex exponentials (cis)
-        for a given seq_len = num_patches in a block (image).
-        Tensor is scaled with theta parameter.
-        Required to apply Rotary Position Embedding (RoPE) to tensor.
-        See 'Roformer: Enhanced Transformer with Rotary Embedding'
+        """Builds the frequency tensor for the block's patches.
+
+        ``seq_len`` is the number of patches in a block, so one image. The
+        tensor is scaled by theta and cast to complex exponentials, which is
+        what applies rotary position embedding to a tensor. See 'Roformer:
+        Enhanced Transformer with Rotary Embedding'
         (arxiv.org/pdf/2104.09864).
 
         Returns:
@@ -125,6 +127,7 @@ class RotaryEmbedding2D(Module):
 
     @cached_property
     def freqs_cis(self) -> TensorValue:
+        """The rotary frequencies, computed once and cached."""
         self._freqs_cis = self.freqs_cis_base()
         return self._freqs_cis
 

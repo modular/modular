@@ -36,7 +36,12 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/SaveAndRestore.h"
+
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
 
 using namespace M;
 using namespace KGEN;
@@ -195,12 +200,53 @@ struct StructInfo {
 };
 } // namespace
 
-/// Module-level state shared across all worker threads in the CheckLifetimes
-/// pass. The declaration maps are immutable after construction; the counter
-/// uses atomic operations so no external lock is needed.
 namespace {
+/// The flattened bit layout of a struct type: one bit range per stored field,
+/// plus one trailing bit for the whole object.
+struct StructLayout {
+  struct Field {
+    StructFieldOp field;
+    unsigned startBit;
+    unsigned numBits;
+  };
+  /// Stored fields in declaration order.
+  SmallVector<Field> fields;
+  /// Total bits, including the whole-object bit.
+  unsigned numBits = 0;
+};
+
+/// Module-level state shared across all worker threads in the CheckLifetimes
+/// pass. The declaration maps are immutable after construction; struct layouts
+/// are filled in lazily under `layoutMutex`.
 struct WholeProgramState {
   WholeProgramState(Operation *module, std::vector<FnOp> &funcList);
+
+  /// Return the layout for `type`. The first caller runs `compute` to fill it
+  /// in; concurrent callers for the same type block until that finishes, so
+  /// each layout is computed once per pass. `compute` may request layouts of
+  /// other types: `std::call_once` is not reentrant, and a struct's fields
+  /// cannot reach the struct itself, so the containment graph is acyclic and
+  /// no thread can wait on a layout it is itself computing.
+  const StructLayout &
+  getOrComputeLayout(LIT::StructType type,
+                     llvm::function_ref<void(StructLayout &)> compute) const {
+    LayoutEntry *entry = nullptr;
+    {
+      std::shared_lock<std::shared_mutex> lock(layoutMutex);
+      auto it = layouts.find(type);
+      if (it != layouts.end())
+        entry = it->second.get();
+    }
+    if (!entry) {
+      std::unique_lock<std::shared_mutex> lock(layoutMutex);
+      std::unique_ptr<LayoutEntry> &slot = layouts[type];
+      if (!slot)
+        slot = std::make_unique<LayoutEntry>();
+      entry = slot.get();
+    }
+    std::call_once(entry->once, [&] { compute(entry->layout); });
+    return entry->layout;
+  }
 
   /// Immutable declaration maps, populated once before threading begins.
   DenseMap<SymbolRefAttr, StructInfo> structMap;
@@ -209,6 +255,18 @@ struct WholeProgramState {
 
   // This is the Deinitable.__deinit__ trait member function.
   FnOp deinitableDtor;
+
+private:
+  struct LayoutEntry {
+    std::once_flag once;
+    StructLayout layout;
+  };
+
+  /// Struct layouts computed lazily by the worker threads, so each struct type
+  /// is laid out once for the whole pass rather than once per thread. Entries
+  /// are never erased, so references into them stay valid.
+  mutable std::shared_mutex layoutMutex;
+  mutable DenseMap<LIT::StructType, std::unique_ptr<LayoutEntry>> layouts;
 };
 } // namespace
 
@@ -216,21 +274,15 @@ struct WholeProgramState {
 WholeProgramState::WholeProgramState(Operation *module,
                                      std::vector<FnOp> &funcList) {
   module->walk([&](Operation *op) {
-    // Collect functions and nested functions.
+    // Collect functions.
     if (auto funcOp = dyn_cast<FnOp>(op)) {
-      if (!funcOp.isOptionalSymbol())
-        funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
+      funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
 
       // We don't process external functions. They don't have a body to check.
       if (funcOp.isExternal())
         return;
 
-      // Only top-level functions are parallel work items. A nested function
-      // (an old closure) reads SSA values from the function it is nested in,
-      // so it is processed within that top-level ancestor's task (see
-      // runOnOperation) rather than concurrently with it.
-      if (!funcOp->getParentOfType<FnOp>())
-        funcList.emplace_back(funcOp);
+      funcList.emplace_back(funcOp);
 
       // Remember the Deinitable.__deinit__ member function.
       if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDeinit &&
@@ -316,10 +368,10 @@ struct TypeDeclInfo {
   /// Return the total number of flattened fields in the specified type.
   unsigned getNumFieldsInType(Type type) const;
 
-  /// Return the start bit for a field with the specified name in the specified
-  /// type.
-  unsigned getFieldIndex(LIT::StructType type, StringAttr fieldName) const;
-  int getFieldIndexOrInvalid(LIT::StructType type, StringAttr fieldName) const;
+  /// Return the layout of the stored field with the specified name in the
+  /// specified type, or nullopt when the type has no such field.
+  std::optional<StructLayout::Field> findField(LIT::StructType type,
+                                               StringAttr fieldName) const;
 
   /// Given a subfield bit index that indicates a stored field in the specified
   /// type, return the StructFieldOp of the accessed field, the first bit
@@ -366,23 +418,35 @@ struct TypeDeclInfo {
     return &evaluationContext;
   }
 
-  /// Shared, immutable module-level state (declaration maps + anonymous-origin
-  /// counter). Not owned here.
+  /// Create a ParameterEvaluator configured with this pass's evaluation
+  /// context. Always construct evaluators through these helpers.
+  ParameterEvaluator getParameterEvaluator() const {
+    ParameterEvaluator evaluator;
+    evaluator.setEvaluationContext(getEvaluationContext());
+    return evaluator;
+  }
+  ParameterEvaluator
+  getParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
+                        ArrayRef<TypedAttr> paramValues) const {
+    ParameterEvaluator evaluator(paramDecls, paramValues);
+    evaluator.setEvaluationContext(getEvaluationContext());
+    return evaluator;
+  }
+
+  /// Module-level state shared by all threads. Not owned here.
   const WholeProgramState *shared;
 
   /// Used for evaluating things like get_witness when we generate destructor
   /// calls.
   mutable LIT::LITSymTabEvaluationContext evaluationContext;
 
-  /// This keeps track of the number of fields in the struct specified by the
-  /// (fully flattened) symbol and parameters.
-  mutable DenseMap<LIT::StructType, unsigned> numFields;
+  /// Thread-local view of the shared layouts, to skip the lock on repeat
+  /// lookups.
+  mutable DenseMap<LIT::StructType, const StructLayout *> layoutCache;
 
-  /// A map from StructType and field name to index within the struct.  This
-  /// isn't the field number, this is the number of recursively flattened
-  /// fields until the start of the field.
-  mutable DenseMap<std::pair<LIT::StructType, StringAttr>, unsigned>
-      fieldIndices;
+  /// Return the layout of `structType`, computing and publishing it on first
+  /// use by any thread.
+  const StructLayout &getStructLayout(LIT::StructType structType) const;
 };
 
 /// Return true if the specified type is RegisterPassableTrivial - no copy,
@@ -469,10 +533,12 @@ static TraitType refineWithContextualWhereClauses(
     return curTrait;
 
   // Collect assumptions from signature metadata (see StructEmitter.cpp).
-  SmallVector<ConstraintAttr> assumptions =
+  SmallVector<ConstraintAttr> constraints =
       getConstraintsFromContext(fnContext);
-  if (assumptions.empty())
+  if (constraints.empty())
     return curTrait;
+  TypedAttr assumptions =
+      buildAssumptions(constraints, genericOfTraitType.getContext());
 
   TypedAttr paramRef = genericOfTraitType.getParam();
   TypedAttr lookupAttr = extractParamDeclRef(paramRef);
@@ -556,7 +622,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
       // type.
       auto selfParam = UpcastAttr::get(impDestroyTrait.getParams()[0].getType(),
                                        generic.getParam());
-      ParameterEvaluator evaluator(impDestroyTrait.getParams(), {selfParam});
+      ParameterEvaluator evaluator =
+          getParameterEvaluator(impDestroyTrait.getParams(), {selfParam});
       auto specSig = evaluator.getReboundType(delFn.getFuncTypeGenerator());
 
       // Okay, build the GetWitnessAttr.
@@ -584,22 +651,15 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         return TriBool::yes(); // Unconditional conformance.
 
       auto actualStructType = sugarCast<LIT::StructType>(structType);
-      ParameterEvaluator evaluator(info.decl.getParams(),
-                                   actualStructType.getParamValues());
-      evaluator.setEvaluationContext(getEvaluationContext());
+      ParameterEvaluator evaluator = getParameterEvaluator(
+          info.decl.getParams(), actualStructType.getParamValues());
       TypedAttr conformanceCondition =
           evaluator.getReboundAttribute(constraints[i].getProposition());
       conformanceCondition = getCanonicalAttr(conformanceCondition);
 
-      SmallVector<ConstraintAttr> assumptions =
-          getConstraintsFromContext(fnContext);
-      TypedAttr overallAssumption =
-          SIMDAttr::getScalarBool(structType.getContext(), true);
-      for (auto assumption : assumptions)
-        overallAssumption = ParamOperatorAttr::get(
-            POC::And, {overallAssumption, assumption.getProposition()});
-
-      return isPropositionImplied(conformanceCondition, overallAssumption);
+      TypedAttr assumptions = buildAssumptions(
+          getConstraintsFromContext(fnContext), structType.getContext());
+      return isPropositionImplied(conformanceCondition, assumptions);
     }
     return TriBool::no();
   };
@@ -617,7 +677,14 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     // NOT Deinitable. We can improve this error message in the future.
     if (!isDeinitable.isTrue()) {
       StringAttr message = info.decl.getLinearTypeErrorMsgAttr();
-      assert(message && "should have a message");
+      if (!message) {
+        bool conditional =
+            info.decl.getConformanceCondition("Deinitable").has_value();
+        message =
+            StringAttr::get(info.decl.getContext(),
+                            StructDeclOp::getDefaultLinearTypeErrorMsg(
+                                info.decl.getDeclName().strref(), conditional));
+      }
       return SpecialMemberInfo::unavailable(message);
     }
 
@@ -655,9 +722,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     // the __del__is_trivial witness to determine this.
     auto actualStructType = sugarCast<LIT::StructType>(type);
 
-    ParameterEvaluator evaluator(info.decl.getParams(),
-                                 actualStructType.getParamValues());
-    evaluator.setEvaluationContext(getEvaluationContext());
+    ParameterEvaluator evaluator = getParameterEvaluator(
+        info.decl.getParams(), actualStructType.getParamValues());
     isTrivialAttr = evaluator.getReboundAttribute(isTrivialAttr);
 
     // The type of the trivial witness is Bool which wraps an i1.  If we can
@@ -696,9 +762,9 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     auto newType =
         GeneratorType::get(info.decl.getSignature().getParamTypes(), fnType,
                            info.decl.getSignature().getParamListAttrs());
-    auto sym = cast<SymbolConstantAttr>(dtorAttr).getSymbol();
+    auto sym = FuncSymbolGenerator::dynCast(dtorAttr).getSymbol();
     return SpecialMemberInfo::available(
-        SymbolConstantAttr::get(sym, newType, {}));
+        FuncSymbolGenerator::getUnbound(sym, newType));
   };
 
   return getSpecialMemberForType(type, this, getDestructor, loc);
@@ -727,58 +793,60 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   auto structType = sugarDynCast<LIT::StructType>(type);
   if (!structType)
     return 1;
+  return getStructLayout(structType).numBits;
+}
 
-  // See if we've already looked this up, if so, just return the known value.
-  auto it = numFields.find(structType);
-  if (it != numFields.end())
-    return it->second;
+const StructLayout &
+TypeDeclInfo::getStructLayout(LIT::StructType structType) const {
+  if (auto it = layoutCache.find(structType); it != layoutCache.end())
+    return *it->second;
 
-  // If not, we compute it recursively.  Structs cannot be infinitely deep, so
-  // we can just do this recursively.
-  auto smIt = shared->structMap.find(structType.getSymbol());
-  assert(smIt != shared->structMap.end() && smIt->second.decl &&
-         "reference to struct that wasn't declared");
-  LIT::StructDeclOp decl = smIt->second.decl;
+  const StructLayout &layout =
+      shared->getOrComputeLayout(structType, [&](StructLayout &computed) {
+        // Structs cannot be infinitely deep, so we can compute this
+        // recursively.
+        auto smIt = shared->structMap.find(structType.getSymbol());
+        assert(smIt != shared->structMap.end() && smIt->second.decl &&
+               "reference to struct that wasn't declared");
+        LIT::StructDeclOp decl = smIt->second.decl;
 
-  // Initialize a parameter evaluator. We need to compute the resolved field
-  // types to recursively compute the number of fields.
-  ParameterEvaluator evaluator;
-  for (auto [decl, value] :
-       llvm::zip(decl.getInputParams(), structType.getParamValues()))
-    evaluator.setDeclBinding(decl, value);
+        // We need the resolved field types to recursively compute the number
+        // of fields.
+        ParameterEvaluator evaluator = getParameterEvaluator(
+            decl.getInputParams(), structType.getParamValues());
 
-  size_t totalFields = 0;
-  for (auto field : decl.getFieldDecls()) {
-    fieldIndices[{structType, field.getNameAttr()}] = totalFields;
-    totalFields +=
-        getNumFieldsInType(evaluator.getReboundType(field.getType()));
+        unsigned totalFields = 0;
+        for (auto field : decl.getFieldDecls()) {
+          unsigned numBits =
+              getNumFieldsInType(evaluator.getReboundType(field.getType()));
+          computed.fields.push_back({field, totalFields, numBits});
+          totalFields += numBits;
+        }
+
+        // We always track an extra bit per struct.  On the outer level of a
+        // value this tracks whether the object is fully constructed (not just
+        // field constructed).  On individual fields, it tracks whether the
+        // field itself is initialized or whether its subfields are
+        // initialized.  This also allows us to support (sub)fields that have
+        // zero members soundly.
+        computed.numBits = totalFields + 1;
+      });
+  layoutCache[structType] = &layout;
+  return layout;
+}
+
+/// Return the layout of the stored field with the specified name in the
+/// specified type, or nullopt when the type has no such field.
+std::optional<StructLayout::Field>
+TypeDeclInfo::findField(LIT::StructType type, StringAttr fieldName) const {
+  for (const StructLayout::Field &field : getStructLayout(type).fields) {
+    // `StructFieldOp` is a handle whose accessors are non-const, so compare
+    // through a copy rather than the stored field.
+    StructFieldOp fieldOp = field.field;
+    if (fieldOp.getNameAttr() == fieldName)
+      return field;
   }
-
-  // We always track an extra bit per struct.  On the outer level of a value
-  // this tracks whether the object is fully constructed (not just field
-  // constructed).  On individual fields, it tracks whether the field itself is
-  // initialized or whether its subfields are initialized.  This also allows us
-  // to support (sub)fields that have zero members soundly.
-  ++totalFields;
-
-  return numFields[structType] = totalFields;
-}
-
-/// Return the start bit for a field with the specified name in the specified
-/// type, or -1 if the field isn't found.
-int TypeDeclInfo::getFieldIndexOrInvalid(LIT::StructType type,
-                                         StringAttr fieldName) const {
-  auto it = fieldIndices.find({type, fieldName});
-  return it == fieldIndices.end() ? -1 : it->second;
-}
-
-/// Return the start bit for a field with the specified name in the specified
-/// type.
-unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
-                                     StringAttr fieldName) const {
-  int idx = getFieldIndexOrInvalid(type, fieldName);
-  assert(idx >= 0 && "invalid field name for struct type");
-  return unsigned(idx);
+  return std::nullopt;
 }
 
 /// Given a subfield bit index that indicates a stored field in the specified
@@ -787,19 +855,13 @@ unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
 std::tuple<StructFieldOp, unsigned, unsigned>
 TypeDeclInfo::getFieldContaining(LIT::StructType declRef,
                                  unsigned bitIndex) const {
-  LIT::StructDeclOp decl = getStructInfoForType(declRef).decl;
-
-  ParameterEvaluator evaluator(decl.getInputParams(), declRef.getParamValues());
-  // Scan to find the field that contains this.
-  unsigned startFieldIdx = 0;
-  for (auto field : decl.getFieldDecls()) {
-    // This range check is needed to handle zero-sized fields: they don't
-    // contain a field even if they start at the beginning of it.
-    Type reboundType = evaluator.getReboundType(field.getType());
-    unsigned numSubFields = getNumFieldsInType(reboundType);
-    if (startFieldIdx <= bitIndex && startFieldIdx + numSubFields > bitIndex)
-      return {field, startFieldIdx, numSubFields};
-    startFieldIdx += numSubFields;
+  for (const StructLayout::Field &layoutField :
+       getStructLayout(declRef).fields) {
+    // A field holds the bit iff the index falls in [startBit, startBit +
+    // numBits); the trailing whole-object bit belongs to no field.
+    if (layoutField.startBit <= bitIndex &&
+        layoutField.startBit + layoutField.numBits > bitIndex)
+      return {layoutField.field, layoutField.startBit, layoutField.numBits};
   }
 
   llvm_unreachable("invalid index into struct field numbering");
@@ -979,9 +1041,6 @@ struct ValueRef {
   ValueRef getWithoutBaseOffset(unsigned offset) const {
     assert(startBit >= offset && "not offset by this base");
     return ValueRef(valueId, startBit - offset, endBit - offset, isIndirect);
-  }
-  ValueRef getWithBaseOffset(unsigned offset) const {
-    return ValueRef(valueId, startBit + offset, endBit + offset, isIndirect);
   }
 
   /// Return true if this value ref is equal or a superset of the specified one.
@@ -1189,11 +1248,6 @@ ValueSet::ValueSet(PerThreadCache &perThreadCache, FnOp func,
 
   func.getBodyRegion().walk<mlir::WalkOrder::PreOrder>(
       [&](Operation *op) -> WalkResult {
-        // Skip looking at nested functions, they are handled as separate
-        // contexts.
-        if (isa<FnOp>(op))
-          return WalkResult::skip();
-
         // All the ops that define trackable values have a single result.
         if (op->getNumResults() == 1) {
           Value result = op->getResult(0);
@@ -1389,19 +1443,17 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
     auto containerType = sugarDynCast<LIT::StructType>(type);
     if (!containerType)
       return {valueRef, Type()};
-    int fieldOffset =
-        getTypeDeclInfo().getFieldIndexOrInvalid(containerType, fieldName);
-    if (fieldOffset == -1)
+    std::optional<StructLayout::Field> fieldLayout =
+        getTypeDeclInfo().findField(containerType, fieldName);
+    if (!fieldLayout)
       return {valueRef, Type()};
 
-    // Figure out the declared type of the field.
-    auto [fieldDecl, _, numFieldBits] =
-        getTypeDeclInfo().getFieldContaining(containerType, fieldOffset);
-    assert(fieldDecl.getNameAttr() == fieldName && "index/name mismatch");
-
-    // Refine the ValueRef and type.
-    return {valueRef.getSubfield(fieldOffset, numFieldBits),
-            fieldDecl.getType()};
+    // Refine the ValueRef and type. The field type is rebound at this
+    // instantiation so that a nested origin like `a.x.w` indexes the real
+    // layout rather than the declared one.
+    return {valueRef.getSubfield(fieldLayout->startBit, fieldLayout->numBits),
+            fieldLayout->field.getReboundType(
+                containerType, getTypeDeclInfo().getEvaluationContext())};
   }
 
   // If this is an interior origin like `a.field["name"]`, then the interior
@@ -1436,6 +1488,22 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
           cast<RefType>(entry.value.getType()).getElementType()};
 }
 
+/// Returns true if `gep` reaches its base through a rebind of a value that is
+/// tracked under a non-struct type, such as a conditional type `A if c else B`
+/// refined to one arm. Such a value is tracked as a single element, so the
+/// field offsets of the arm, and of the structs nested in it, are not known.
+static bool isFieldOfNonStructTrackedValue(RefStructGEROp gep) {
+  while (gep && gep.usesFieldAccess()) {
+    Value container = gep.getContainer();
+    Type trackedType = RefImmutOp::stripRebinds(container).getType();
+    if (auto trackedRef = dyn_cast<RefType>(trackedType))
+      if (!sugarDynCast<LIT::StructType>(trackedRef.getElementType()))
+        return true;
+    gep = RefImmutOp::stripRebinds(container).getDefiningOp<RefStructGEROp>();
+  }
+  return false;
+}
+
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
 ///
@@ -1461,7 +1529,10 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
   if (it != valueInfoIndex.end())
     return getFullValueRef(it->second);
 
-  // If this is a GER, check the base and focus in on a field of it.
+  // A union cast aliases the whole container, so track the container.
+  if (auto unionCast = value.getDefiningOp<RefUnionCastOp>())
+    return getDirectValueRef(unionCast.getContainer(), isDeref);
+
   if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
     // For index access, we can't determine field offset without concrete index.
     // Treat as opaque access to the full container.
@@ -1472,11 +1543,21 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
     if (!baseVal || !baseVal.isIndirect)
       return {};
 
+    // The container can be a rebind of a value that is tracked under a
+    // non-struct type, such as a conditional type `A if c else B` refined to
+    // one arm. That value is tracked as a single element, so the arm's field
+    // offsets don't apply to its bit range. Treat the access as one to the
+    // whole value, however deep in the chain of field accesses the rebind is.
+    if (isFieldOfNonStructTrackedValue(structGER))
+      return baseVal;
+
     // Figure out what subset of elements we have indexed to.
     auto containerType = structGER.getContainer().getType().getElementType();
-    unsigned fieldOffset = getTypeDeclInfo().getFieldIndex(
-        sugarCast<LIT::StructType>(containerType), structGER.getFieldAttr());
-    unsigned startBit = baseVal.startBit + fieldOffset;
+    std::optional<StructLayout::Field> fieldLayout =
+        getTypeDeclInfo().findField(sugarCast<LIT::StructType>(containerType),
+                                    structGER.getFieldAttr());
+    assert(fieldLayout && "invalid field name for struct type");
+    unsigned startBit = baseVal.startBit + fieldLayout->startBit;
     auto resultType = structGER.getType().getElementType();
     return ValueRef{baseVal.valueId, startBit,
                     startBit + getTypeDeclInfo().getNumFieldsInType(resultType),
@@ -1723,7 +1804,7 @@ public:
     // If we're going to explode, produce some debris to help debug.
     if (!(it != interiorOriginID.end() && it->second < nextInteriorOriginID)) {
       llvm::errs() << "\n-----\n";
-      o.dump();
+      llvm::errs() << o << "\n";
       llvm::errs() << "\n-----\n";
       dump();
       llvm::errs() << "\n-----\n";
@@ -1846,11 +1927,6 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
 
   // Scan the body region to find all the interior origins.
   func.getBodyRegion().walk([&](Operation *op) -> WalkResult {
-    // Skip looking at nested functions, they are handled as separate
-    // contexts.
-    if (isa<FnOp>(op))
-      return WalkResult::skip();
-
     // Interior origins can be found by scanning all the operation results
     // and arguments.  We can ignore any operands because they'll be using
     // the other things.
@@ -2258,7 +2334,8 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
         typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
     firstInvalidOffset -= fieldBitOffset;
     nextValidOffset -= fieldBitOffset;
-    type = fieldDecl.getReboundType(declRefType);
+    type = fieldDecl.getReboundType(declRefType,
+                                    typeDeclInfo.getEvaluationContext());
     diag << "." << fieldDecl.getName();
   }
 
@@ -2267,7 +2344,8 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
     auto declRefType = sugarCast<LIT::StructType>(type);
     auto [fieldDecl, startBit, numBits] =
         typeDeclInfo.getFieldContaining(declRefType, 0);
-    type = fieldDecl.getReboundType(declRefType);
+    type = fieldDecl.getReboundType(declRefType,
+                                    typeDeclInfo.getEvaluationContext());
     diag << "." << fieldDecl.getName();
   }
 
@@ -2581,6 +2659,8 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
     // interior origins.
     if (auto structGER = v.getDefiningOp<RefStructGEROp>())
       v = structGER.getOperand();
+    else if (auto unionCast = v.getDefiningOp<RefUnionCastOp>())
+      v = unionCast.getContainer();
     else if (auto rebind = v.getDefiningOp<RebindOp>())
       v = rebind.getOperand();
     else if (auto immut = v.getDefiningOp<RefImmutOp>())
@@ -2732,19 +2812,6 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   if (valueSet.domInfo.dominates(liftedDefiningOp, liftedOperandPt))
     return;
 
-  // TODO(remove legacy closures): Legacy closures can have operands defined
-  // outside the function that are referenced directly from within it.  For
-  // example:
-  //   ptr = ...
-  //   @__parameter
-  //   def inner():
-  //     use(ptr)
-  // This gets represented as a direct use of the operand but we mark the origin
-  // live on the function itself. This trips up the dominance check, so special
-  // case this.
-  if (isa<FnOp>(definingOp))
-    return;
-
   // Otherwise, it is valid for some other reference but was reinitialized since
   // this reference was formed.
   if (interiorOriginTracker.markErrorEmittedForInteriorOrigin(interiorID))
@@ -2781,7 +2848,7 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
 
 /// This function is called when an operation uses a #lit.any.origin origin.
 /// This happens when the operation accesses through (e.g.) an unbound
-/// UnsafePointer.  We don't know what objects may be touched by this access,
+/// Pointer.  We don't know what objects may be touched by this access,
 /// but we want to ensure (for usability sake) that any origin-tracked values
 /// are treated as a use, so they don't get destroyed too early.
 ///
@@ -3475,6 +3542,10 @@ public:
     (void)result;
   }
 
+  /// Tries to forward a move from a call-result temporary into its final
+  /// destination.
+  bool optimizeMove(LIT::CallOp moveCall);
+
   LLVM_DUMP_METHOD void dump() const;
 
   /// This is the builder used to insert any destructor calls.
@@ -3639,19 +3710,15 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   LIT::StructDeclOp structDecl =
       valueSet.getTypeDeclInfo().getStructInfoForType(valueType).decl;
 
-  // Initialize an evaluator so that we can resolve the field types.
-  ParameterEvaluator evaluator;
-  for (auto [decl, value] :
-       llvm::zip(structDecl.getParams(), valueType.getParamValues()))
-    evaluator.setDeclBinding(decl, value);
-
   assert(valueRef.isIndirect && "register values aren't field sensitive");
 
   unsigned nextBit = 0;
   for (StructFieldOp field : structDecl.getFieldDecls()) {
-    auto fieldVal = RefStructGEROp::create(builder, value, field);
+    auto fieldVal = RefStructGEROp::create(
+        builder, value, field,
+        valueSet.getTypeDeclInfo().getEvaluationContext());
     unsigned numBits = valueSet.getTypeDeclInfo().getNumFieldsInType(
-        evaluator.getReboundType(field.getType()));
+        fieldVal.getType().getElementType());
     destroyValueIfNeeded(fieldVal, valueRef.getSubfield(nextBit, numBits),
                          consumedValues, builder);
 
@@ -3680,6 +3747,32 @@ static Value getMutableRefForPossiblyImmutValue(Value value,
     return value;
 
   return RebindOp::create(builder, destType, value);
+}
+
+/// Attach a note at each `deinit self` method of `structDecl`, which are the
+/// ways a value of a linear struct can be explicitly destroyed.
+static void attachDeinitMethodNotes(InFlightDiagnostic &diag,
+                                    StructDeclOp structDecl) {
+  llvm::StringSet<> seen;
+  for (FnOp fn : structDecl.getFields().getOps<FnOp>()) {
+    StringAttr name = fn.getDeclName();
+    // `__deinit__` is the implicit destructor of a conditionally Deinitable
+    // struct, written or synthesized, and is unavailable whenever this note
+    // is emitted.
+    if (!name || fn.getIsStatic() || name.strref() == "__deinit__")
+      continue;
+    ArrayRef<ArgConvention> convs =
+        fn.getFuncTypeGenerator().getArgConventions();
+    if (convs.empty() || convs.front() != ArgConvention::DeinitMem)
+      continue;
+    // Overloads share a name; note only the first.
+    if (!seen.insert(name.strref()).second)
+      continue;
+    diag.attachNote(fn.getLoc())
+        << "call '" << name.strref() << (convs.size() > 1 ? "(...)" : "()")
+        << "' to explicitly destroy '" << structDecl.getDeclName().strref()
+        << "'";
+  }
 }
 
 /// Emit one destructor call for one entire value or field.
@@ -3715,6 +3808,15 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
 
     diag << " abandoned without being explicitly destroyed: "
          << dtorInfo.getMessageIfUnavailable().strref();
+
+    // If the user didn't provide a custom linear type error message, attach
+    // a note for each deinit method.
+    if (auto structType = sugarDynCast<LIT::StructType>(destroyedType)) {
+      StructDeclOp structDecl =
+          valueSet.getTypeDeclInfo().getStructInfoForType(structType).decl;
+      if (!structDecl.getLinearTypeErrorMsgAttr())
+        attachDeinitMethodNotes(diag, structDecl);
+    }
 
     // If the insertion point is on a mark_consumed op inserted as part of an
     // exception throw, then add a note explaining this is due to a thrown
@@ -3991,6 +4093,197 @@ static bool mightPointTo(Value p1, Value p2) {
   Value underlyingP1 = OriginTrackable::findUnderlyingValueFromField(p1);
   Value underlyingP2 = OriginTrackable::findUnderlyingValueFromField(p2);
   return !underlyingP1 || !underlyingP2 || underlyingP1 == underlyingP2;
+}
+
+// Return true if this is a direct call to the move constructor or a call
+// through a witness entry.
+static bool isCallToMoveConstructor(LIT::CallOp call, ValueSet &valueSet) {
+  TypeDeclInfo &typeDecls = valueSet.getTypeDeclInfo();
+  if (FnOp fn = typeDecls.getFuncForSymbol(call.getDirectCallee()))
+    return fn.getSpecialFunctionKind() == SpecialFunctionKind::kMoveCtor;
+
+  auto witness = dyn_cast<GetWitnessAttr>(call.getCallee());
+  return witness && witness.getWitnessName().getValue() == "__init__(move:$0$)";
+}
+
+/// Fold a move from a synthetic call-result temporary into its final
+/// destination. This handles the shape emitted for a potentially throwing
+/// call:
+///
+///   call(..., byref_result = tmp)
+///   <error propagation>
+///   move(tmp, final)
+///
+/// The final destination must be untouched from its declaration through the
+/// move. This ensures that writing the call result directly into it does not
+/// make an old value observable or require destruction on the error path.
+bool DestructorInserter::optimizeMove(LIT::CallOp moveCall) {
+  if (!isCallToMoveConstructor(moveCall, valueSet) ||
+      moveCall.getNumOperands() != 2)
+    return false;
+
+  // This logic is intentionally very conservative. We don't eliminate
+  // user-defined variables, and have conservative dataflow to avoid compile
+  // time explosion.
+  Value moveSource = moveCall.getOperand(0);
+  Value moveDest = moveCall.getOperand(1);
+  Value underlyingMoveSource = RefImmutOp::stripRebinds(moveSource);
+  auto tmpDecl = underlyingMoveSource.getDefiningOp<VarDeclOp>();
+  Value underlyingMoveDest = RefImmutOp::stripRebinds(moveDest);
+  auto destDecl = underlyingMoveDest.getDefiningOp<VarDeclOp>();
+  auto destArg = dyn_cast<BlockArgument>(underlyingMoveDest);
+  if (!tmpDecl || tmpDecl.getKind() != VarDeclKind::Synthesized ||
+      tmpDecl->getBlock() != moveCall->getBlock() || (!destDecl && !destArg) ||
+      (destDecl && (destDecl->getBlock() != moveCall->getBlock() ||
+                    !destDecl->isBeforeInBlock(moveCall))) ||
+      (destArg && destArg.getOwner() != moveCall->getBlock()))
+    return false;
+
+  // Function result slots are uninitialized storage, so the initializer can
+  // safely write into them. Other arguments contain a live value that must
+  // remain unchanged if the initializer raises. Constructors also use a
+  // ByRefResult `self` slot, but their error paths require the move operation
+  // to establish its lifetime state.
+  if (destArg) {
+    FnOp fn = moveCall->getParentOfType<FnOp>();
+    if (!fn ||
+        fn.getFuncTypeGenerator().getArgConvention(destArg.getArgNumber()) !=
+            ArgConvention::ByRefResult ||
+        fn.getSpecialFunctionKind() == SpecialFunctionKind::kInit)
+      return false;
+  }
+
+  LIT::CallOp initializer;
+  size_t initializerResultIndex = 0;
+  SmallVector<Operation *> errorPathConsumes;
+
+  // Rebinds preserve storage identity. Record them so they do not look like
+  // independent uses when finding the operation that initializes the
+  // temporary.
+  SmallPtrSet<Operation *, 4> sourceCasts;
+  for (Value value = moveSource; value != underlyingMoveSource;) {
+    Operation *cast = value.getDefiningOp();
+    assert(cast && cast->getNumOperands() == 1 && "expected rebind-like op");
+    sourceCasts.insert(cast);
+    value = cast->getOperand(0);
+  }
+
+  // Require exactly one initializer that writes the temporary as a result.
+  // Error propagation may consume it before the final move on the success
+  // path, but no other uses are safe to redirect.
+  for (OpOperand &use : tmpDecl.getResult().getUses()) {
+    Operation *user = use.getOwner();
+    if (sourceCasts.contains(user))
+      continue;
+    if (user == moveCall && use.getOperandNumber() == 0)
+      continue;
+    if (isa<LIT::OwnershipMarkConsumedOp>(user)) {
+      errorPathConsumes.push_back(user);
+      continue;
+    }
+
+    auto call = dyn_cast<LIT::CallOp>(user);
+    if (!call || initializer || !call.getDirectCallee())
+      return false;
+    FuncType signature = call.getCalleeType().getBody();
+    size_t operandIndex = use.getOperandNumber();
+    if (operandIndex >= signature.getNumArguments() ||
+        signature.getArgConvention(operandIndex) != ArgConvention::ByRefResult)
+      return false;
+    initializer = call;
+    initializerResultIndex = operandIndex;
+  }
+  if (!initializer || initializer->getBlock() != moveCall->getBlock() ||
+      !tmpDecl->isBeforeInBlock(initializer) ||
+      (destDecl && !destDecl->isBeforeInBlock(initializer)) ||
+      !initializer->isBeforeInBlock(moveCall))
+    return false;
+
+  // Preserve diagnostics for unused named assignments. Underscore-prefixed
+  // bindings and function result slots intentionally do not produce one.
+  bool hasUseAfterMove =
+      llvm::any_of(underlyingMoveDest.getUses(), [&](OpOperand &use) {
+        Operation *user = use.getOwner();
+        return user->getBlock() == moveCall->getBlock() &&
+               moveCall->isBeforeInBlock(user);
+      });
+  // The error path marks a forwarded result slot consumed. Do not forward
+  // into a result slot whose initialized value is used later.
+  if (destArg && hasUseAfterMove)
+    return false;
+  if (!hasUseAfterMove && destDecl && !destDecl.getName().starts_with("_"))
+    return false;
+
+  // Redirecting an error-path consume is valid only when it belongs to this
+  // initialization and move sequence.
+  for (Operation *consume : errorPathConsumes) {
+    Operation *containingOp = consume;
+    while (containingOp->getBlock() != moveCall->getBlock()) {
+      containingOp = containingOp->getParentOp();
+      if (!containingOp)
+        return false;
+    }
+    if (!initializer->isBeforeInBlock(containingOp) ||
+        !containingOp->isBeforeInBlock(moveCall))
+      return false;
+  }
+
+  // Reject any access to the destination before the move, including accesses
+  // nested in the error-propagation control flow.
+  SmallPtrSet<Operation *, 4> destCasts;
+  for (Value value = moveDest; value != underlyingMoveDest;) {
+    Operation *cast = value.getDefiningOp();
+    assert(cast && cast->getNumOperands() == 1 && "expected rebind-like op");
+    destCasts.insert(cast);
+    value = cast->getOperand(0);
+  }
+  for (auto iter = destDecl ? std::next(Block::iterator(destDecl))
+                            : moveCall->getBlock()->begin(),
+            end = Block::iterator(moveCall);
+       iter != end; ++iter) {
+    WalkResult result = iter->walk([&](Operation *nested) {
+      if (destCasts.contains(nested))
+        return WalkResult::advance();
+      if (llvm::any_of(nested->getOperands(), [&](Value operand) {
+            return mightPointTo(operand, moveDest);
+          }))
+        return WalkResult::interrupt();
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted())
+      return false;
+  }
+
+  // Retargeting the initializer changes the result storage's origin. Preserve
+  // the initializer's expected reference type while updating that origin.
+  auto tmpRefType = cast<RefType>(tmpDecl.getType());
+  Value initializerDest = underlyingMoveDest;
+  auto underlyingDestRefType = cast<RefType>(underlyingMoveDest.getType());
+  Type initializerDestType =
+      cast<RefType>(initializer.getOperand(initializerResultIndex).getType())
+          .getWithOrigin(underlyingDestRefType.getOrigin());
+  if (initializerDest.getType() != initializerDestType) {
+    ImplicitLocOpBuilder builder(initializer.getLoc(), initializer);
+    initializerDest =
+        RebindOp::create(builder, initializerDestType, initializerDest);
+  }
+  auto destRefType = cast<RefType>(initializerDest.getType());
+  TypedAttr tmpOrigin = tmpRefType.getOrigin();
+  SmallVector<TypedAttr> implicitOrigins(initializer.getImplicitOrigins());
+  bool replacedOrigin = false;
+  for (TypedAttr &origin : implicitOrigins)
+    if (origin == tmpOrigin) {
+      origin = destRefType.getOrigin();
+      replacedOrigin = true;
+    }
+  if (!replacedOrigin)
+    return false;
+  initializer.setImplicitOrigins(implicitOrigins);
+  initializer.setOperand(initializerResultIndex, initializerDest);
+  for (Operation *consume : errorPathConsumes)
+    consume->setOperand(0, initializerDest);
+  moveCall->dropAllReferences();
+  return true;
 }
 
 // Check to see if we can eliminate a temporary being passed as an owned
@@ -4472,6 +4765,11 @@ void DestructorInsertion::scanBlock(Block &block) {
     ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
                                  std::next(Block::iterator(&op)));
     DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    if (auto call = dyn_cast<LIT::CallOp>(op);
+        call && dtorInserter.optimizeMove(call)) {
+      opsToRemove.push_back(&op);
+      continue;
+    }
 
     assert((opEffects.results.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp ||
@@ -5299,7 +5597,8 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
     // struct Pair[T: Movable](Movable):
     //    var first: T
     // ```
-    Type fieldType = field.getReboundType(valueDRType);
+    Type fieldType = field.getReboundType(
+        valueDRType, valueSet.getTypeDeclInfo().getEvaluationContext());
     unsigned numBits = valueSet.getTypeDeclInfo().getNumFieldsInType(fieldType);
     // If this field has consumed bits, and if has trivial type, force it
     // back to being non-consumed.  This can allow the proper correctness
@@ -5442,7 +5741,9 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
 
     // Drill into the right field.
     for (StructFieldOp subfield : accessPath)
-      value = RefStructGEROp::create(dtorInserter.builder, value, subfield);
+      value = RefStructGEROp::create(
+          dtorInserter.builder, value, subfield,
+          valueSet.getTypeDeclInfo().getEvaluationContext());
   }
 
   // If this is a store to a subfield of a non-trivial value being destroyed,
@@ -5622,23 +5923,12 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     // that persists across all functions it processes; it is reset between
     // functions.
     PerThreadCache cache(std::move(typeDeclInfo));
-    // `functionVector` holds only top-level functions. Each task walks its
-    // function's nested functions and processes the whole subtree on one
-    // thread. A nested function (an old closure) reads SSA values from the
-    // function it is nested in, so keeping the subtree on a single thread
-    // avoids racing that function's own IR mutation (destructor insertion);
-    // distinct top-level functions are op-disjoint.
-    //
-    // FIXME(MOCO-3942): remove this code once old closures are removed -- every
-    // function is then op-disjoint and this becomes a plain per-function loop.
     M::parallelForEach(
         &getContext(), functionVector,
-        [&](PerThreadCache &cache, FnOp topFunc) {
-          topFunc.walk([&](FnOp func) {
-            if (failed(processFunction(func, cache)))
-              hadError = true;
-            cache.reset();
-          });
+        [&](PerThreadCache &cache, FnOp func) {
+          if (failed(processFunction(func, cache)))
+            hadError = true;
+          cache.reset();
         },
         cache);
 

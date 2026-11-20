@@ -418,12 +418,9 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         comptime if CompilationTarget.is_macos():
             assert self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
         var ptr = external_call[
-            "strerror", Pointer[c_char, MutUntrackedOrigin]
+            "strerror", Pointer[c_char, ImmUntrackedOrigin]
         ](self.value)
-        var string = StringSlice(
-            unsafe_from_utf8=CStringSpan(unsafe_from_ptr=ptr.as_imm())
-        )
-        string.write_to(writer)
+        CStringSpan(unsafe_from_ptr=ptr).write_to(writer)
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:

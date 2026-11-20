@@ -90,22 +90,10 @@ def test_grouped_blockwise_fp8_matmul_amd[
     var total_tokens = sum_rows + POISON
 
     print(
-        "== test_grouped_blockwise_fp8_matmul_amd c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " num_active=",
-        num_active,
-        " sum_rows=",
-        sum_rows,
-        " NxK=",
-        N,
-        "x",
-        K,
-        " via_dispatch=",
-        via_dispatch,
-        " static_grid_z=",
-        static_grid_z,
+        (
+            t"== test_grouped_blockwise_fp8_matmul_amd"
+            t" c_type={c_type} num_experts={num_experts} num_active={num_active} sum_rows={sum_rows} NxK={N}x{K} via_dispatch={via_dispatch} static_grid_z={static_grid_z}"
+        ),
         sep="",
     )
 
@@ -131,7 +119,7 @@ def test_grouped_blockwise_fp8_matmul_amd[
 
     # NaN-poison every A row outside the active range. 0x7F is a NaN in
     # E4M3 (OCP). A correct kernel never touches these rows.
-    var a_bytes = a_host.unsafe_ptr().bitcast[UInt8]()
+    var a_bytes = a_host.unsafe_ptr().unsafe_bitcast[UInt8]()
     for r in range(sum_rows, total_tokens):
         for kk in range(K):
             a_bytes[r * K + kk] = UInt8(0x7F)
@@ -198,7 +186,6 @@ def test_grouped_blockwise_fp8_matmul_amd[
             k_scale_granularity=BLOCK_SCALE_K,
             transpose_b=transpose_b,
             static_grid_z=static_grid_z,
-            target="gpu",
         ](
             c_my_dev,
             a_dev,
@@ -234,7 +221,7 @@ def test_grouped_blockwise_fp8_matmul_amd[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(
+        scales_granularity_mnk=Coord[Int, Int, Int](
             BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
         ),
     ](
@@ -372,12 +359,10 @@ def test_grouped_static_grid_z[
     var total_tokens = sum_rows
 
     print(
-        "== test_grouped_static_grid_z c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " sum_rows=",
-        sum_rows,
+        (
+            t"== test_grouped_static_grid_z"
+            t" c_type={c_type} num_experts={num_experts} sum_rows={sum_rows}"
+        ),
         sep="",
     )
 
@@ -543,16 +528,10 @@ def test_grouped_decode_grid_m_cap_capture_safety[
     var stale_max_tokens = 8
 
     print(
-        "== test_grouped_decode_grid_m_cap_capture_safety c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " sum_rows=",
-        sum_rows,
-        " true_max=",
-        true_max_tokens,
-        " stale_max=",
-        stale_max_tokens,
+        (
+            t"== test_grouped_decode_grid_m_cap_capture_safety"
+            t" c_type={c_type} num_experts={num_experts} sum_rows={sum_rows} true_max={true_max_tokens} stale_max={stale_max_tokens}"
+        ),
         sep="",
     )
 
@@ -677,7 +656,9 @@ def test_grouped_decode_grid_m_cap_capture_safety[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_N, BLOCK_SCALE_K
+        ),
     ](
         c_ref_dev,
         a_dev,
@@ -771,20 +752,10 @@ def test_grouped_grid_y_decode_bounded_bitidentity[
     var pad_rows = prod_max_tokens + 64
 
     print(
-        "== test_grouped_grid_y_decode_bounded_bitidentity c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " num_active=",
-        num_active,
-        " sum_rows=",
-        sum_rows,
-        " pad_rows=",
-        pad_rows,
-        " NxK=",
-        N,
-        "x",
-        K,
+        (
+            t"== test_grouped_grid_y_decode_bounded_bitidentity"
+            t" c_type={c_type} num_experts={num_experts} num_active={num_active} sum_rows={sum_rows} pad_rows={pad_rows} NxK={N}x{K}"
+        ),
         sep="",
     )
 
@@ -810,7 +781,7 @@ def test_grouped_grid_y_decode_bounded_bitidentity[
 
     # NaN-poison every A row outside the routed range (0x7F is a NaN in
     # E4M3); a correct launch never reads them.
-    var a_bytes = a_host.unsafe_ptr().bitcast[UInt8]()
+    var a_bytes = a_host.unsafe_ptr().unsafe_bitcast[UInt8]()
     for r in range(sum_rows, pad_rows):
         for kk in range(K):
             a_bytes[r * K + kk] = UInt8(0x7F)
@@ -903,15 +874,10 @@ def test_grouped_grid_y_decode_bounded_bitidentity[
     var grid_y_prod = ceildiv(min(prod_max_tokens, pad_rows), BM)
     var grid_y_decode = ceildiv(min(decode_max_tokens, pad_rows), BM)
     print(
-        "   grid=(x=",
-        ceildiv(N, 64),
-        ", y=",
-        grid_y_prod,
-        "/",
-        grid_y_decode,
-        ", z=",
-        num_active,
-        ")",
+        (
+            t"   grid=(x={ceildiv(N, 64)}, y={grid_y_prod}/{grid_y_decode},"
+            t" z={num_active})"
+        ),
         sep="",
     )
     assert_equal(

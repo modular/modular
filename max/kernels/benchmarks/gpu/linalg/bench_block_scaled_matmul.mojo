@@ -16,7 +16,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_int,
     get_defined_string,
-    align_of,
 )
 from max.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 import linalg.matmul.vendor.blas as vendor_blas
@@ -68,7 +67,6 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
-from linalg.utils import elementwise_compute_lambda_type
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.utils.numerics import isfinite
 from max.gpu.primitives import block
@@ -125,14 +123,14 @@ def _tune_config[
     ](
         scaling_kind=scaling_kind,
         mma_shape=(
-            get_defined_int["TUNE_BM", 128]() * cta_group,
-            get_defined_int["TUNE_BN", 128]() * cta_group,
-            32,
+            Int(get_defined_int["TUNE_BM", 128]() * cta_group),
+            Int(get_defined_int["TUNE_BN", 128]() * cta_group),
+            Int(32),
         ),
         cluster_shape=(
-            get_defined_int["TUNE_CLUSTER_DIM_X", 2](),
-            get_defined_int["TUNE_CLUSTER_DIM_Y", 1](),
-            get_defined_int["TUNE_CLUSTER_DIM_Z", 1](),
+            Int(get_defined_int["TUNE_CLUSTER_DIM_X", 2]()),
+            Int(get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()),
+            Int(get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()),
         ),
         block_swizzle_size=get_defined_int["TUNE_BLOCK_SWIZZLE_SIZE", 0](),
         raster_order=RasterOrder(
@@ -169,7 +167,7 @@ def _widen_e2m1_to_e4m3_gpu(
 
 
 def _widen_e2m1_to_e4m3_into(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     packed: DeviceBuffer[.uint8],
     widened: DeviceBuffer[.float8_e4m3fn],
     num_bytes: Int,
@@ -186,7 +184,7 @@ def _widen_e2m1_to_e4m3_into(
 
 
 def _widen_e2m1_to_e4m3(
-    ctx: DeviceContext, packed: DeviceBuffer[.uint8], num_bytes: Int
+    ctx: DeviceContext[], packed: DeviceBuffer[.uint8], num_bytes: Int
 ) raises -> DeviceBuffer[.float8_e4m3fn]:
     """Returns a new E4M3 buffer holding `2 * num_bytes` widened E2M1 values."""
     var widened = ctx.enqueue_create_buffer[.float8_e4m3fn](2 * num_bytes)
@@ -210,7 +208,7 @@ def _pow2_e4m3_scales_gpu(
 
 def _init_matched_operand[
     dtype: DType
-](ctx: DeviceContext, buf: DeviceBuffer[dtype], length: Int) raises:
+](ctx: DeviceContext[], buf: DeviceBuffer[dtype], length: Int) raises:
     """Fills an operand with uniformly random E2M1 values, in any format.
 
     Packed operands get random bytes, two E2M1 codes each; E4M3 operands get
@@ -246,7 +244,7 @@ def _init_matched_operand[
 
 def _init_matched_scales[
     dtype: DType
-](ctx: DeviceContext, buf: DeviceBuffer[dtype], length: Int) raises:
+](ctx: DeviceContext[], buf: DeviceBuffer[dtype], length: Int) raises:
     """Fills scales with powers of two drawn uniformly from {1, 2, 4, 8}.
 
     E8M0 scales already init to that set; E4M3 (NVFP4) scales are mapped to it
@@ -346,7 +344,7 @@ def verify_matmul[
     *,
     transpose_b: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     shape_c: Coord,
     shape_a: Coord,
     shape_b: Coord,
@@ -358,9 +356,9 @@ def verify_matmul[
     comptime assert shape_b.element_types[1].DTYPE.is_integral()
     comptime assert shape_c.element_types[0].DTYPE.is_integral()
     comptime assert shape_c.element_types[1].DTYPE.is_integral()
-    var c_size = Int(shape_c[0].value()) * Int(shape_c[1].value())
-    var a_size = Int(shape_a[0].value()) * Int(shape_a[1].value())
-    var b_size = Int(shape_b[0].value()) * Int(shape_b[1].value())
+    var c_size = Int(shape_c[0]) * Int(shape_c[1])
+    var a_size = Int(shape_a[0]) * Int(shape_a[1])
+    var b_size = Int(shape_b[0]) * Int(shape_b[1])
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(shape_a))
@@ -375,15 +373,15 @@ def verify_matmul[
     init_vector_launch[a_type](b_device, b_size, init_type, ctx)
 
     # M, N, K dimensions for scales calculation
-    var M = Int(shape_c[0].value())
-    var N = Int(shape_c[1].value())
+    var M = Int(shape_c[0])
+    var N = Int(shape_c[1])
     comptime K = shape_a.element_types[1].static_value * (
         2 if _is_packed_fp4_mode[micro_scaling_mode]() else 1
     )
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(shape_a[0]), SF_MN_GROUP_SIZE),
         Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -501,7 +499,7 @@ def verify_matmul[
 def _check_against_reference[
     c_type: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     output: DeviceBuffer[c_type],
     reference: DeviceBuffer[c_type],
     init_type: InitializationType,
@@ -679,7 +677,7 @@ def bench_matmul[
     epilogue: Bool = False,
     micro_scaling_mode: StaticString = "",
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     shape_c: Coord,
     shape_a: Coord,
@@ -701,21 +699,21 @@ def bench_matmul[
     # update: using 512 to be 2x the infinity cache on MI300x
     @inline(.always)
     def get_size(shape: Coord) -> Int:
-        return Int(shape[0].value()) * Int(shape[1].value())
+        return Int(shape[0]) * Int(shape[1])
 
     comptime scales_type = _scales_dtype[micro_scaling_mode]()
     comptime SF_VECTOR_SIZE = _sf_vector_size[micro_scaling_mode]()
 
     # M, N, K dimensions for scales calculation
-    var M = Int(shape_c[0].value())
-    var N = Int(shape_c[1].value())
+    var M = Int(shape_c[0])
+    var N = Int(shape_c[1])
     comptime K = shape_a.element_types[1].static_value * (
         2 if _is_packed_fp4_mode[micro_scaling_mode]() else 1
     )
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        ceildiv(Int(shape_a[0]), SF_MN_GROUP_SIZE),
         Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
         Idx[SF_ATOM_M[0]],
         Idx[SF_ATOM_M[1]],
@@ -768,7 +766,7 @@ def bench_matmul[
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     def run_vendor_blas(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         c: TileTensor[mut=True, .bfloat16, ...],
         a: TileTensor[dtype, ...],
         b: TileTensor[dtype, ...],
@@ -788,7 +786,7 @@ def bench_matmul[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_a, mut cb_b, mut cb_c, mut cb_a_scales, mut cb_b_scales, imm
     }:
@@ -802,28 +800,6 @@ def bench_matmul[
         var b_scales = TileTensor(
             cb_b_scales.offset_ptr(iteration), row_major(b_scales_shape)
         )
-
-        @inline(.always)
-        @__copy_capture(c)
-        def test_lambda_add_coords_prod[
-            _dtype: DType,
-            width: Int,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
-            _dtype, width
-        ]:
-            comptime assert (
-                idx.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            comptime assert c.flat_rank >= 2
-            var x = c.load[width=width](idx).cast[_dtype]()
-            var y = val * x
-            return y
-
-        comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
-            test_lambda_add_coords_prod
-        ) if epilogue else None
 
         comptime if use_vendor_blas:
             run_vendor_blas(ctx, c, a, b, a_scales, b_scales)
@@ -918,7 +894,7 @@ def create_matmul_bench[
     epilogue: Bool,
     micro_scaling_mode: StaticString = "",
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     m: MType,
     n: NType,
@@ -973,7 +949,7 @@ def _launch_tuned[
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_type, ...],
     b_scales: TileTensor[scales_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Launches the SM100 warp-specialized kernel at the `TUNE_*` config.
 
@@ -1003,7 +979,7 @@ def _launch_tuned[
 
 def verify_w4a8[
     N: Int, K: Int
-](ctx: DeviceContext, M: Int, init_type: InitializationType) raises:
+](ctx: DeviceContext[], M: Int, init_type: InitializationType) raises:
     """Checks the W4A8 kernel at the `TUNE_*` config on fresh buffers.
 
     Widening the weights to E4M3 is exact, so the W4A8 output is checked
@@ -1119,7 +1095,7 @@ def verify_w4a8[
 def bench_w4a8[
     N: Int, K: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     M: Int,
     init_type: InitializationType,
@@ -1199,7 +1175,7 @@ def bench_w4a8[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_a, mut cb_b, mut cb_c, mut cb_sfa, mut cb_sfb, imm}:
         _launch_tuned(
             TileTensor(cb_c.offset_ptr(iteration), row_major(shape_c)),
@@ -1261,7 +1237,7 @@ def bench_mxfp4_amd[
     epilogue: Bool = False,
     micro_scaling_mode: StaticString = "mxfp4_amd",
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     m: MType,
     n: NType,
@@ -1280,7 +1256,7 @@ def bench_mxfp4_amd[
     comptime N_VAL = NType.static_value
     comptime K_SCALES = K_ELEMS // 32
 
-    var M = Int(m.value())
+    var M = Int(m)
     var a_size = M * K_PACKED
     var b_size = N_VAL * K_PACKED
     var c_size = M * N_VAL
@@ -1313,7 +1289,7 @@ def bench_mxfp4_amd[
     # entry. The 2D scale tiles are passed through as-is.
     @inline(.always)
     def run_vendor_blas(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         c: TileTensor[mut=True, .float32, ...],
         a: TileTensor[.uint8, ...],
         b: TileTensor[.uint8, ...],
@@ -1337,7 +1313,7 @@ def bench_mxfp4_amd[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_a, mut cb_b, mut cb_c, mut cb_sfa, mut cb_sfb, imm}:
         var a_tt = TileTensor[mut=False](cb_a.offset_ptr(iteration), a_shape)
         var b_tt = TileTensor[mut=False](cb_b.offset_ptr(iteration), b_shape)

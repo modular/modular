@@ -22,27 +22,30 @@ from std.math import floor
 from std.sys import (
     CompilationTarget,
     bit_width_of,
-    is_amd_gpu,
-    is_apple_gpu,
     is_gpu,
-    is_nvidia_gpu,
     llvm_intrinsic,
     simd_width_of,
     size_of,
 )
-from std.sys._assembly import inlined_assembly
 from std.ffi import _external_call_const
-from std.sys.info import _is_sm_9x_or_newer, is_32bit
+from std.sys.info import is_32bit
 
 from std.algorithm import vectorize
 from std.bit import count_leading_zeros, count_trailing_zeros
-from std.builtin.dtype import _integral_type_of
+from std.builtin.dtype import (
+    _int_type_of_width,
+    _integral_type_of,
+    _uint_type_of_width,
+)
+from std.os import abort
 from std.simd import _modf, _simd_apply
 from std.collections import Span
+from std.complex import ComplexSIMD
 from . import pi, inf, isfinite, isinf, isnan, nan, nextafter
 
 from std.utils.numerics import FPUtils, isnan, nan
 from std.memory import bitcast
+from std.utils.fast_div import FastDiv
 from std.utils.static_tuple import StaticTuple
 
 from std._plugin import CurrentPlugin
@@ -114,28 +117,6 @@ def ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     return numerator.__ceildiv__(denominator)
 
 
-@inline(.always)
-def ceildiv[
-    T: CeilDivableRaising, //
-](numerator: T, denominator: T) raises -> T:
-    """Return the rounded-up result of dividing numerator by denominator, potentially raising.
-
-    Parameters:
-        T: A type that support floor division.
-
-    Args:
-        numerator: The numerator.
-        denominator: The denominator.
-
-    Returns:
-        The ceiling of dividing numerator by denominator.
-
-    Raises:
-        If the operation fails.
-    """
-    return numerator.__ceildiv__(denominator)
-
-
 # NOTE: this overload is needed because IntLiteral promotes to a runtime type
 # before overload resolution.
 @always_inline("builtin")
@@ -197,13 +178,36 @@ def _sqrt_int(x: Int) -> Int:
     return r
 
 
-@inline(.always)
-def _sqrt_nvvm(x: SIMD, out res: type_of(x)):
-    comptime assert x.dtype == .float32, "must be DType.float32"
-    res = {}
+comptime _UnaryMathPluginHookFnType = def[dtype: DType, width: SIMDLength, //](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.unary_math_fn`."""
 
-    comptime for i in range(x.length):
-        res[i] = _llvm_unary_fn["llvm.nvvm.sqrt.approx.ftz.f"](x[i])
+comptime _BinaryMathPluginHookFnType = def[dtype: DType, width: SIMDLength, //](
+    SIMD[dtype, width], SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.binary_math_fn`."""
+
+
+__enum _UnaryMathOp(ImplicitlyCopyable):
+    """A `std.math` function that `PluginHooks.unary_math_fn` can lower."""
+
+    case exp
+    case exp2
+    case log
+    case log2
+    case sqrt
+    case rsqrt
+    case recip
+    case sin
+    case cos
+    case tanh
+
+
+__enum _BinaryMathOp(ImplicitlyCopyable):
+    """A two-argument function that `PluginHooks.binary_math_fn` can lower."""
+
+    case pow
 
 
 @inline(.always)
@@ -234,24 +238,13 @@ def sqrt[
         comptime for i in range(width):
             res[i] = Scalar[dtype](_sqrt_int(Int(x[i])))
         return res
-    elif is_nvidia_gpu():
-        comptime if dtype in (DType.float16, DType.bfloat16):
-            return _sqrt_nvvm(x.cast[.float32]()).cast[dtype]()
-        comptime if dtype == .float64:
-            # NVIDIA has no approximate f64 sqrt (`sqrt.approx.d` does not
-            # exist); use the IEEE correctly-rounded hardware sqrt via the
-            # generic intrinsic, which lowers to `sqrt.rn.f64`.
-            return _llvm_unary_fn["llvm.sqrt"](x)
-        return _sqrt_nvvm(x)
-    elif is_apple_gpu():
-        # AIR has no bf16 overload of `air.sqrt`; Metal rejects it outright,
-        # so round-trip through f32. The other `air.*` math intrinsics in this
-        # file need the same treatment for the same reason.
-        comptime if dtype == .bfloat16:
-            return _llvm_unary_fn["llvm.air.sqrt"](x.cast[.float32]()).cast[
-                dtype
-            ]()
-        return _llvm_unary_fn["llvm.air.sqrt"](x)
+
+    if __is_run_in_comptime_interpreter:
+        return _llvm_unary_fn["llvm.sqrt"](x)
+
+    comptime hook = CurrentPlugin.unary_math_fn[.sqrt, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
 
     return _llvm_unary_fn["llvm.sqrt"](x)
 
@@ -259,20 +252,6 @@ def sqrt[
 # ===----------------------------------------------------------------------=== #
 # rsqrt
 # ===----------------------------------------------------------------------=== #
-
-
-@inline(.always)
-def _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
-    comptime assert x.dtype in (
-        DType.float32,
-        DType.float64,
-    ), "must be f32 or f64 type"
-
-    comptime instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype == .float32 else "llvm.nvvm.rsqrt.approx.d"
-    res = {}
-
-    comptime for i in range(x.length):
-        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @inline(.always)
@@ -295,24 +274,12 @@ def rsqrt[
         dtype.is_floating_point()
     ), "rsqrt requires floating point type"
 
-    comptime if is_nvidia_gpu():
-        comptime if dtype in (DType.float16, DType.bfloat16):
-            return _rsqrt_nvvm(x.cast[.float32]()).cast[dtype]()
+    if __is_run_in_comptime_interpreter:
+        return 1.0 / sqrt(x)
 
-        return _rsqrt_nvvm(x)
-    elif is_amd_gpu():
-        comptime if dtype in (DType.float16, DType.float32, DType.float64):
-            return _call_amdgcn_intrinsic[
-                String("llvm.amdgcn.rsq.", _get_amdgcn_type_suffix[dtype]())
-            ](x)
-
-        return rsqrt(x.cast[.float32]()).cast[dtype]()
-    elif is_apple_gpu():
-        comptime if dtype == .bfloat16:
-            return _llvm_unary_fn["llvm.air.rsqrt"](x.cast[.float32]()).cast[
-                dtype
-            ]()
-        return _llvm_unary_fn["llvm.air.rsqrt"](x)
+    comptime hook = CurrentPlugin.unary_math_fn[.rsqrt, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
 
     return 1.0 / sqrt(x)
 
@@ -320,20 +287,6 @@ def rsqrt[
 # ===----------------------------------------------------------------------=== #
 # recip
 # ===----------------------------------------------------------------------=== #
-
-
-@inline(.always)
-def _recip_nvvm(x: SIMD, out res: type_of(x)):
-    comptime assert x.dtype in (
-        DType.float32,
-        DType.float64,
-    ), "must be f32 or f64 type"
-
-    comptime instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype == .float32 else "llvm.nvvm.rcp.approx.ftz.d"
-    res = {}
-
-    comptime for i in range(x.length):
-        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @inline(.always)
@@ -356,18 +309,12 @@ def recip[
         dtype.is_floating_point()
     ), "recip requires floating point type"
 
-    comptime if is_nvidia_gpu():
-        comptime if dtype in (DType.float16, DType.bfloat16):
-            return _recip_nvvm(x.cast[.float32]()).cast[dtype]()
+    if __is_run_in_comptime_interpreter:
+        return 1.0 / x
 
-        return _recip_nvvm(x)
-    elif is_amd_gpu():
-        comptime if dtype in (DType.float16, DType.float32, DType.float64):
-            return _call_amdgcn_intrinsic[
-                String("llvm.amdgcn.rcp.", _get_amdgcn_type_suffix[dtype]())
-            ](x)
-
-        return recip(x.cast[.float32]()).cast[dtype]()
+    comptime hook = CurrentPlugin.unary_math_fn[.recip, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
 
     return 1.0 / x
 
@@ -396,39 +343,20 @@ def exp2[
         the input SIMD vector.
     """
 
-    comptime if is_nvidia_gpu():
-        comptime if dtype == .float16:
-            comptime if _is_sm_9x_or_newer():
-                return _call_ptx_intrinsic[
-                    scalar_instruction="ex2.approx.f16",
-                    vector2_instruction="ex2.approx.f16x2",
-                    scalar_constraints="=h,h",
-                    vector_constraints="=r,r",
-                ](x)
-            else:
-                return _call_ptx_intrinsic[
-                    instruction="ex2.approx.f16", constraints="=h,h"
-                ](x)
-        elif dtype == .bfloat16 and _is_sm_9x_or_newer():
-            return _call_ptx_intrinsic[
-                scalar_instruction="ex2.approx.ftz.bf16",
-                vector2_instruction="ex2.approx.ftz.bf16x2",
-                scalar_constraints="=h,h",
-                vector_constraints="=r,r",
-            ](x)
-        elif dtype == .float32:
-            return _call_ptx_intrinsic[
-                instruction="ex2.approx.ftz.f32", constraints="=f,f"
-            ](x)
+    if __is_run_in_comptime_interpreter:
+        return _exp2_impl(x)
 
-    comptime if is_amd_gpu() and dtype in (DType.float16, DType.float32):
-        return _call_amdgcn_intrinsic[
-            String("llvm.amdgcn.exp2.", _get_amdgcn_type_suffix[dtype]())
-        ](x)
+    comptime hook = CurrentPlugin.unary_math_fn[.exp2, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
 
-    comptime if is_apple_gpu() and dtype in (DType.float16, DType.float32):
-        return _llvm_unary_fn["llvm.air.exp2"](x)
+    return _exp2_impl(x)
 
+
+@inline(.always)
+def _exp2_impl[
+    dtype: DType, width: SIMDLength, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     comptime if dtype == .float32:
         return _exp2_float32(x._refine[.float32]())._refine[dtype]()
     elif dtype == .float64:
@@ -561,18 +489,6 @@ def ldexp[
 # ===----------------------------------------------------------------------=== #
 
 
-trait _Expable:
-    """Trait for types that support the exp function."""
-
-    def __exp__(self) -> Self:
-        """Computes the exponential of the input value.
-
-        Returns:
-            The exponential of the input value.
-        """
-        ...
-
-
 @inline(.always)
 def _exp_taylor[
     dtype: DType, width: SIMDLength, //
@@ -597,12 +513,6 @@ def _exp_taylor[
     return polynomial_evaluate[
         coefficients[:] if dtype == .float64 else coefficients[:8],
     ](x)
-
-
-comptime _ExpPluginHookFnType = def[dtype: DType, width: SIMDLength, //](
-    SIMD[dtype, width]
-) thin -> SIMD[dtype, width]
-"""Plugin-hook signature for `PluginHooks.exp_fn`; keep in sync with `exp`."""
 
 
 @inline(.always)
@@ -630,14 +540,25 @@ def exp[
         element in the input SIMD vector.
     """
 
-    comptime neg_ln2 = -0.69314718055966295651160180568695068359375
+    if __is_run_in_comptime_interpreter:
+        return _exp_impl(x)
 
-    comptime if CurrentPlugin.exp_fn:
-        return comptime (CurrentPlugin.exp_fn.value())(x)
+    comptime hook = CurrentPlugin.unary_math_fn[.exp, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
 
     comptime if is_gpu():
         comptime if dtype in (DType.float16, DType.float32):
             return exp2(x * log2e)
+
+    return _exp_impl(x)
+
+
+@inline(.always)
+def _exp_impl[
+    dtype: DType, width: SIMDLength, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
+    comptime neg_ln2 = -0.69314718055966295651160180568695068359375
 
     comptime if dtype not in (DType.float32, DType.float64):
         return exp(x.cast[.float32]()).cast[dtype]()
@@ -659,14 +580,11 @@ def exp[
 
 
 @inline(.always)
-def exp[T: _Expable](x: T) -> T:
-    """Computes the exponential of the input value.
-
-    Parameters:
-        T: The type of the input value.
+def exp(x: ComplexSIMD[...]) -> type_of(x):
+    """Computes the elementwise exponential of a complex value.
 
     Args:
-        x: The input value.
+        x: The input complex value.
 
     Returns:
         The exponential of the input value.
@@ -980,6 +898,11 @@ def log[
 
     _assert_float64_supported[dtype, "log"]()
 
+    if not __is_run_in_comptime_interpreter:
+        comptime hook = CurrentPlugin.unary_math_fn[.log, dtype, width]
+        comptime if hook:
+            return comptime (hook.value())(x)
+
     comptime if dtype == .float64:
         var r = _log_accurate(x)
         r = x.eq(inf[dtype]()).select(x, r)
@@ -990,9 +913,9 @@ def log[
     if __is_run_in_comptime_interpreter:
         return _log_base[27](x)
 
-    comptime if is_apple_gpu() and dtype == .float32:
-        # Apple GPUs read float32 subnormals as zero in comparisons and
-        # `frexp`, so reduce from the bits instead.
+    comptime if CurrentPlugin.flushes_subnormals[dtype]:
+        # Subnormals read as zero in comparisons and `frexp`, so reduce from
+        # the bits instead.
         var r = _log_accurate(x)
         r = x.eq(inf[dtype]()).select(x, r)
         var positive = x.gt(0) | (
@@ -1001,10 +924,6 @@ def log[
         return _is_zero_bits(x).select(
             -inf[dtype](), positive.select(r, nan[dtype]())
         )
-
-    comptime if is_nvidia_gpu() and dtype == .float32:
-        comptime ln2 = 0.69314718055966295651160180568695068359375
-        return ln2 * log2(x)
 
     return _log_base[27](x)
 
@@ -1037,15 +956,11 @@ def log2[
 
         return _log_base[2](x)
 
-    comptime if is_nvidia_gpu() and dtype == .float32:
-        return _call_ptx_intrinsic[
-            instruction="lg2.approx.ftz.f32", constraints="=f,f"
-        ](x)
-    elif is_amd_gpu() and dtype in (DType.float32, DType.float16):
-        return _call_amdgcn_intrinsic[
-            String("llvm.amdgcn.log.", _get_amdgcn_type_suffix[dtype]())
-        ](x)
-    elif size_of[dtype]() < size_of[DType.float32]():
+    comptime hook = CurrentPlugin.unary_math_fn[.log2, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
+
+    comptime if size_of[dtype]() < size_of[DType.float32]():
         return log2(x.cast[.float32]()).cast[dtype]()
 
     return _log_base[2](x)
@@ -1157,12 +1072,6 @@ def erf[
 # ===----------------------------------------------------------------------=== #
 
 
-comptime _TanhPluginHookFnType = def[dtype: DType, width: SIMDLength, //](
-    SIMD[dtype, width]
-) thin -> SIMD[dtype, width]
-"""Plugin-hook signature for `PluginHooks.tanh_fn`; keep in sync with `tanh`."""
-
-
 @inline(.always)
 def tanh[
     dtype: DType, width: SIMDLength, //
@@ -1180,38 +1089,20 @@ def tanh[
         The result of the elementwise tanh operation.
     """
 
-    comptime if CurrentPlugin.tanh_fn[dtype, width]:
-        return comptime (CurrentPlugin.tanh_fn[dtype, width].value())(x)
+    if __is_run_in_comptime_interpreter:
+        return _tanh_impl(x)
 
-    comptime if is_nvidia_gpu():
-        comptime instruction = "tanh.approx.f32"
+    comptime hook = CurrentPlugin.unary_math_fn[.tanh, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
 
-        comptime if dtype == .float16:
-            return _call_ptx_intrinsic[
-                scalar_instruction="tanh.approx.f16",
-                vector2_instruction="tanh.approx.f16x2",
-                scalar_constraints="=h,h",
-                vector_constraints="=r,r",
-            ](x)
+    return _tanh_impl(x)
 
-        elif dtype == .bfloat16:
-            comptime if _is_sm_9x_or_newer():
-                return _call_ptx_intrinsic[
-                    scalar_instruction="tanh.approx.bf16",
-                    vector2_instruction="tanh.approx.bf16x2",
-                    scalar_constraints="=h,h",
-                    vector_constraints="=r,r",
-                ](x)
-            else:
-                return _call_ptx_intrinsic[
-                    instruction="tanh.approx.f32", constraints="=f,f"
-                ](x.cast[.float32]()).cast[dtype]()
 
-        elif dtype == .float32:
-            return _call_ptx_intrinsic[
-                instruction="tanh.approx.f32", constraints="=f,f"
-            ](x)
-
+@inline(.always)
+def _tanh_impl[
+    dtype: DType, width: SIMDLength, //
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     comptime if dtype == .float64 and not is_gpu():
         # For float64 on CPU, use the expm1-based identity for full accuracy:
         #   tanh(x) = -expm1(-2|x|) / (expm1(-2|x|) + 2)
@@ -1519,12 +1410,9 @@ def mulhi(a: UInt32, b: UInt32) -> UInt32:
         The high 32 bits of the product a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.U32 PTX instruction.
-        On others, it performs multiplication using 64-bit arithmetic.
+        The product is computed in 64-bit arithmetic, which NVIDIA GPUs
+        compile to a single `mul.hi.u32` instruction.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic["llvm.umulh", UInt32, has_side_effect=False](a, b)
 
     var au64 = a.cast[.uint64]()
     var bu64 = b.cast[.uint64]()
@@ -1547,12 +1435,9 @@ def mulhi(a: Int32, b: Int32) -> Int32:
         The high 32 bits of the product a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.S32 PTX instruction.
-        On others, it performs multiplication using 64-bit arithmetic.
+        The product is computed in 64-bit arithmetic, which NVIDIA GPUs
+        compile to a single `mul.hi.s32` instruction.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic["llvm.smulh", Int32, has_side_effect=False](a, b)
 
     var ai64 = a.cast[.int64]()
     var bi64 = b.cast[.int64]()
@@ -1575,12 +1460,9 @@ def mulhi(a: UInt64, b: UInt64) -> UInt64:
         The high 64 bits of the product a * b.
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.U64 PTX instruction.
-        On others, it performs multiplication using 128-bit arithmetic.
+        The product is computed in 128-bit arithmetic, which NVIDIA GPUs
+        compile to a single `mul.hi.u64` instruction.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic["llvm.umulh", UInt64, has_side_effect=False](a, b)
 
     var au128 = a.cast[.uint128]()
     var bu128 = b.cast[.uint128]()
@@ -1603,12 +1485,9 @@ def mulhi(a: Int64, b: Int64) -> Int64:
         The high 64 bits of the product a * b.
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.S64 PTX instruction.
-        On others, it performs multiplication using 128-bit arithmetic.
+        The product is computed in 128-bit arithmetic, which NVIDIA GPUs
+        compile to a single `mul.hi.s64` instruction.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic["llvm.smulh", Int64, has_side_effect=False](a, b)
 
     var ai128 = a.cast[.int128]()
     var bi128 = b.cast[.int128]()
@@ -1635,17 +1514,9 @@ def mulwide(a: UInt32, b: UInt32) -> UInt64:
         The full 64-bit product of a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MUL.WIDE.U32 PTX instruction.
-        On others, it performs multiplication using 64-bit casts.
+        The product is computed in 64-bit arithmetic, which NVIDIA GPUs
+        compile to a single `mul.wide.u32` instruction.
     """
-
-    comptime if is_nvidia_gpu():
-        return inlined_assembly[
-            "mul.wide.u32 $0, $1, $2;",
-            UInt64,
-            constraints="=l,r,r",
-            has_side_effect=False,
-        ](a, b)
 
     var au64 = a.cast[.uint64]()
     var bu64 = b.cast[.uint64]()
@@ -1667,17 +1538,9 @@ def mulwide(a: Int32, b: Int32) -> Int64:
         The full 64-bit signed product of a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MUL.WIDE.S32 PTX instruction.
-        On others, it performs multiplication using 64-bit casts.
+        The product is computed in 64-bit arithmetic, which NVIDIA GPUs
+        compile to a single `mul.wide.s32` instruction.
     """
-
-    comptime if is_nvidia_gpu():
-        return inlined_assembly[
-            "mul.wide.s32 $0, $1, $2;",
-            Int64,
-            constraints="=l,r,r",
-            has_side_effect=False,
-        ](a, b)
 
     var ai64 = a.cast[.int64]()
     var bi64 = b.cast[.int64]()
@@ -1927,27 +1790,17 @@ def cos[
         The `cos` of the input.
     """
 
-    comptime if size_of[dtype]() < size_of[DType.float32]():
-        return cos(x.cast[.float32]()).cast[dtype]()
-
     if __is_run_in_comptime_interpreter:
         return _llvm_unary_fn["llvm.cos"](x)
 
-    comptime if is_nvidia_gpu() and dtype == .float32:
-        return _call_ptx_intrinsic[
-            instruction="cos.approx.ftz.f32", constraints="=f,f"
-        ](x)
-    elif is_apple_gpu():
-        comptime if dtype == .bfloat16:
-            return _llvm_unary_fn["llvm.air.cos"](x.cast[.float32]()).cast[
-                dtype
-            ]()
-        return _llvm_unary_fn["llvm.air.cos"](x)
-    else:
-        comptime assert (
-            not is_nvidia_gpu() or dtype != .float64
-        ), "DType.float64 is not supported for cos on NVIDIA GPU"
-        return _llvm_unary_fn["llvm.cos"](x)
+    comptime hook = CurrentPlugin.unary_math_fn[.cos, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
+
+    comptime if size_of[dtype]() < size_of[DType.float32]():
+        return cos(x.cast[.float32]()).cast[dtype]()
+
+    return _llvm_unary_fn["llvm.cos"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1974,27 +1827,17 @@ def sin[
         The `sin` of the input.
     """
 
-    comptime if size_of[dtype]() < size_of[DType.float32]():
-        return sin(x.cast[.float32]()).cast[dtype]()
-
     if __is_run_in_comptime_interpreter:
         return _llvm_unary_fn["llvm.sin"](x)
 
-    comptime if is_nvidia_gpu() and dtype == .float32:
-        return _call_ptx_intrinsic[
-            instruction="sin.approx.ftz.f32", constraints="=f,f"
-        ](x)
-    elif is_apple_gpu():
-        comptime if dtype == .bfloat16:
-            return _llvm_unary_fn["llvm.air.sin"](x.cast[.float32]()).cast[
-                dtype
-            ]()
-        return _llvm_unary_fn["llvm.air.sin"](x)
-    else:
-        comptime assert (
-            not is_nvidia_gpu() or dtype != .float64
-        ), "DType.float64 is not supported for sin on NVIDIA GPU"
-        return _llvm_unary_fn["llvm.sin"](x)
+    comptime hook = CurrentPlugin.unary_math_fn[.sin, dtype, width]
+    comptime if hook:
+        return comptime (hook.value())(x)
+
+    comptime if size_of[dtype]() < size_of[DType.float32]():
+        return sin(x.cast[.float32]()).cast[dtype]()
+
+    return _llvm_unary_fn["llvm.sin"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2024,13 +1867,8 @@ def tan[
 
     _assert_float64_supported[dtype, "tan"]()
 
-    comptime if dtype == .bfloat16 and is_apple_gpu():
-        # A float32 -> bfloat16 cast flushes subnormal results on Apple GPUs.
-        return rebind[type_of(x)](
-            _narrow_f32_to_bf16_bits(_tan_impl(x.cast[.float32]()))
-        )
-    elif bit_width_of[dtype]() < 32:
-        return _tan_impl(x.cast[.float32]()).cast[dtype]()
+    comptime if bit_width_of[dtype]() < 32:
+        return _narrow_from_f32[dtype](_tan_impl(x.cast[.float32]()))
     return _tan_impl(x)
 
 
@@ -2092,11 +1930,7 @@ def asinh[
     _assert_float64_supported[dtype, "asinh"]()
 
     comptime if bit_width_of[dtype]() < 32:
-        var r = _asinh_impl(x.cast[.float32]())
-        comptime if dtype == .bfloat16 and is_apple_gpu():
-            # `cast` flushes the subnormal results (asinh(x) == x) here.
-            return rebind[SIMD[dtype, width]](_narrow_f32_to_bf16_bits(r))
-        return r.cast[dtype]()
+        return _narrow_from_f32[dtype](_asinh_impl(x.cast[.float32]()))
     return _asinh_impl(x)
 
 
@@ -2131,11 +1965,7 @@ def atanh[
         # We promote the input to float32 and then cast back to the original
         # type. This is done to avoid precision issues that can occur when
         # using the lower-precision floating-point types.
-        var r = _atanh_impl(x.cast[.float32]())
-        comptime if is_apple_gpu() and dtype == .bfloat16:
-            # The `cast` flushes subnormal results to zero on Apple GPUs.
-            return rebind[type_of(x)](_narrow_f32_to_bf16_bits(r))
-        return r.cast[dtype]()
+        return _narrow_from_f32[dtype](_atanh_impl(x.cast[.float32]()))
     return _atanh_impl(x)
 
 
@@ -2248,10 +2078,7 @@ def expm1[
         # We promote the input to float32 and then cast back to the original
         # type. This is done to avoid precision issues that can occur when
         # using the lower-precision floating-point types.
-        var r = _expm1_accurate(x.cast[.float32]())
-        comptime if is_apple_gpu() and dtype == DType.bfloat16:
-            return rebind[type_of(x)](_narrow_f32_to_bf16_bits(r))
-        return r.cast[dtype]()
+        return _narrow_from_f32[dtype](_expm1_accurate(x.cast[.float32]()))
     return _expm1_accurate(x)
 
 
@@ -2322,16 +2149,11 @@ def log1p[
     _assert_float64_supported[dtype, "log1p"]()
 
     comptime if bit_width_of[dtype]() < 32:
-        var r32 = log1p(x.cast[.float32]())
-        comptime if dtype == .bfloat16 and is_apple_gpu():
-            # The float32 -> bfloat16 cast flushes subnormal results on Apple.
-            return rebind[type_of(x)](_narrow_f32_to_bf16_bits(r32))
-        return r32.cast[dtype]()
+        return _narrow_from_f32[dtype](log1p(x.cast[.float32]()))
     var r = _log1p_accurate(x)
     r = (x.eq(0) | x.eq(inf[dtype]()) | isnan(x)).select(x, r)
-    comptime if is_apple_gpu():
-        # log1p(x) rounds to x for subnormal x; Apple GPUs flush such
-        # operands to zero in arithmetic.
+    comptime if CurrentPlugin.flushes_subnormals[dtype]:
+        # log1p(x) rounds to x for subnormal x, which arithmetic would flush.
         r = _is_subnormal_bits(x).select(x, r)
     r = x.eq(-1).select(-inf[dtype](), r)
     return x.lt(-1).select(nan[dtype](), r)
@@ -2438,10 +2260,9 @@ def hypot[
     _assert_float64_supported[dtype, "hypot"]()
 
     comptime if bit_width_of[dtype]() < 32:
-        var r = _hypot_impl(arg0.cast[.float32](), arg1.cast[.float32]())
-        comptime if is_apple_gpu() and dtype == .bfloat16:
-            return rebind[SIMD[dtype, width]](_narrow_f32_to_bf16_bits(r))
-        return r.cast[dtype]()
+        return _narrow_from_f32[dtype](
+            _hypot_impl(arg0.cast[.float32](), arg1.cast[.float32]())
+        )
     return _hypot_impl(arg0, arg1)
 
 
@@ -2544,12 +2365,7 @@ def gamma[
     _assert_float64_supported[dtype, "gamma"]()
 
     comptime if bit_width_of[dtype]() < 32:
-        comptime if is_apple_gpu() and dtype == .bfloat16:
-            # The float32 -> bfloat16 cast flushes subnormal results there.
-            return rebind[type_of(x)](
-                _narrow_f32_to_bf16_bits(_gamma_impl(x.cast[.float32]()))
-            )
-        return _gamma_impl(x.cast[.float32]()).cast[dtype]()
+        return _narrow_from_f32[dtype](_gamma_impl(x.cast[.float32]()))
     return _gamma_impl(x)
 
 
@@ -2599,12 +2415,8 @@ def remainder[
             from_bits=y._to_bits_signed().cast[.int32]()
             << I32(bf16_to_f32_shift)
         )
-        var r = _remainder_impl(xw, yw)
-        comptime if is_apple_gpu():
-            # The result is exact in bfloat16 but may be subnormal, which the
-            # float32 -> bfloat16 cast flushes to zero on Apple GPUs.
-            return rebind[SIMD[dtype, width]](_narrow_f32_to_bf16_bits(r))
-        return r.cast[dtype]()
+        # The result is exact in bfloat16 but may be subnormal.
+        return _narrow_from_f32[dtype](_remainder_impl(xw, yw))
     elif bit_width_of[dtype]() < 32:
         return _remainder_impl(x.cast[.float32](), y.cast[.float32]()).cast[
             dtype
@@ -2677,14 +2489,10 @@ def j1[
 
     _assert_float64_supported[dtype, "j1"]()
 
-    comptime if is_apple_gpu() and dtype == .bfloat16:
-        return rebind[type_of(x)](
-            _narrow_f32_to_bf16_bits(
-                _j1y1_impl[is_y1=False](x.cast[.float32]())
-            )
-        )
     comptime if bit_width_of[dtype]() < 32:
-        return _j1y1_impl[is_y1=False](x.cast[.float32]()).cast[dtype]()
+        return _narrow_from_f32[dtype](
+            _j1y1_impl[is_y1=False](x.cast[.float32]())
+        )
     return _j1y1_impl[is_y1=False](x)
 
 
@@ -2802,10 +2610,9 @@ def scalb[
     _assert_float64_supported[dtype, "scalb"]()
 
     comptime if bit_width_of[dtype]() < 32:
-        var r = _scalb_impl(arg0.cast[.float32](), arg1.cast[.float32]())
-        comptime if is_apple_gpu() and dtype == .bfloat16:
-            return rebind[SIMD[dtype, width]](_narrow_f32_to_bf16_bits(r))
-        return r.cast[dtype]()
+        return _narrow_from_f32[dtype](
+            _scalb_impl(arg0.cast[.float32](), arg1.cast[.float32]())
+        )
     return _scalb_impl(arg0, arg1)
 
 
@@ -3205,139 +3012,6 @@ def _call_libm[
     return res
 
 
-def _call_ptx_intrinsic_scalar[
-    dtype: DType,
-    //,
-    *,
-    instruction: StaticString,
-    constraints: StaticString,
-](arg: Scalar[dtype]) -> Scalar[dtype]:
-    return inlined_assembly[
-        instruction + " $0, $1;",
-        Scalar[dtype],
-        constraints=constraints,
-        has_side_effect=False,
-    ](arg)
-
-
-def _call_ptx_intrinsic_scalar[
-    dtype: DType,
-    //,
-    *,
-    instruction: StaticString,
-    constraints: StaticString,
-](arg0: Scalar[dtype], arg1: Scalar[dtype]) -> Scalar[dtype]:
-    return inlined_assembly[
-        instruction + " $0, $1, $2;",
-        Scalar[dtype],
-        constraints=constraints,
-        has_side_effect=False,
-    ](arg0, arg1)
-
-
-def _call_ptx_intrinsic[
-    dtype: DType,
-    width: SIMDLength,
-    //,
-    *,
-    instruction: StaticString,
-    constraints: StaticString,
-](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    comptime if width == 1:
-        return _call_ptx_intrinsic_scalar[
-            instruction=instruction, constraints=constraints
-        ](arg[0])
-
-    var res = SIMD[dtype, width]()
-
-    comptime for i in range(width):
-        res[i] = _call_ptx_intrinsic_scalar[
-            instruction=instruction, constraints=constraints
-        ](arg[i])
-    return res
-
-
-def _call_ptx_intrinsic[
-    dtype: DType,
-    width: SIMDLength,
-    //,
-    *,
-    scalar_instruction: StaticString,
-    vector2_instruction: StaticString,
-    scalar_constraints: StaticString,
-    vector_constraints: StaticString,
-](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    comptime if width == 1:
-        return _call_ptx_intrinsic_scalar[
-            instruction=scalar_instruction, constraints=scalar_constraints
-        ](arg[0])
-
-    var res = SIMD[dtype, width]()
-
-    comptime for i in range(0, width, 2):
-        res = res.insert[offset=i](
-            inlined_assembly[
-                vector2_instruction + " $0, $1;",
-                SIMD[dtype, 2],
-                constraints=vector_constraints,
-                has_side_effect=False,
-            ](arg.slice[2, offset=i]())
-        )
-
-    return res
-
-
-def _call_ptx_intrinsic[
-    dtype: DType,
-    width: SIMDLength,
-    //,
-    *,
-    scalar_instruction: StaticString,
-    vector2_instruction: StaticString,
-    scalar_constraints: StaticString,
-    vector_constraints: StaticString,
-](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    comptime if width == 1:
-        return _call_ptx_intrinsic_scalar[
-            instruction=scalar_instruction, constraints=scalar_constraints
-        ](arg0[0], arg1[0])
-
-    var res = SIMD[dtype, width]()
-
-    comptime for i in range(0, width, 2):
-        res = res.insert[offset=i](
-            inlined_assembly[
-                vector2_instruction + " $0, $1; $2;",
-                SIMD[dtype, 2],
-                constraints=vector_constraints,
-                has_side_effect=False,
-            ](arg0.slice[2, offset=i](), arg1.slice[2, offset=i]())
-        )
-
-    return res
-
-
-@inline(.always)
-def _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
-    res = {}
-
-    comptime for i in range(x.length):
-        res[i] = _llvm_unary_fn[intrin](x[i])
-
-
-@inline(.always)
-def _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
-    comptime match dtype:
-        case .float16:
-            return "f16"
-        case .float32:
-            return "f32"
-        case .float64:
-            return "f64"
-        case _:
-            comptime assert False, "Extend to support additional dtypes."
-
-
 # ===----------------------------------------------------------------------=== #
 # Ceilable
 # ===----------------------------------------------------------------------=== #
@@ -3446,42 +3120,6 @@ trait CeilDivable:
 
         Returns:
             The ceiling of dividing numerator by denominator.
-        """
-        ...
-
-
-trait CeilDivableRaising:
-    """
-    The `CeilDivable` trait describes a type that define a floor division and
-    negation operation that can raise.
-
-    Types that conform to `CeilDivableRaising` will work with the `//` operator
-    as well as the `math.ceildiv` function.
-
-    For example:
-    ```mojo
-    from std.math import CeilDivableRaising
-
-    @fieldwise_init
-    struct Foo(CeilDivableRaising, ImplicitlyCopyable):
-        var x: Float64
-
-        def __ceildiv__(self, denominator: Self) raises -> Self:
-            return Self(self.x // denominator.x)
-    ```
-    """
-
-    def __ceildiv__(self, denominator: Self) raises -> Self:
-        """Return the rounded-up result of dividing self by denominator.
-
-        Args:
-            denominator: The denominator.
-
-        Returns:
-            The ceiling of dividing numerator by denominator.
-
-        Raises:
-            If the operation fails.
         """
         ...
 
@@ -3746,88 +3384,181 @@ def min[T: Copyable & Comparable & Deinitable](x: T, *ys: T) -> T:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Powable:
-    """
-    The `Powable` trait describes a type that defines a power operation (i.e.
-    exponentiation) with the same base and exponent types.
+def pow(base: SIMD, exp: SIMD[_, _]) -> type_of(base):
+    """Computes the `base` raised elementwise to the power of the `exp`.
 
-    Types that conform to `Powable` will work with the builtin `pow` function,
-    which will return the same type as the inputs.
+    For an integral `base`, a negative exponent aborts.
 
-    For example:
-    ```mojo
-    struct Rational(Powable):
-        var numerator: Float64
-        var denominator: Float64
-
-        def __init__(out self, numerator: Float64, denominator: Float64):
-            self.numerator = numerator
-            self.denominator = denominator
-
-        def __pow__(self, exp: Self)  -> Self:
-            var exp_value = exp.numerator / exp.denominator
-            return Self(pow(self.numerator, exp_value), pow(self.denominator, exp_value))
-    ```
-
-    You can now use the ** operator to exponentiate objects
-    inside generic functions:
-
-    ```mojo
-    def exponentiate[T: Powable](base: T, exp: T) -> T:
-        return base ** exp
-
-    var base = Rational(Float64(3.0), 5.0)
-    var exp = Rational(Float64(1.0), 2.0)
-    var res = exponentiate(base, exp)
-    ```
-
-    ```plaintext
-    raising to power
-    ```
-    """
-
-    # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
-    # associated types.
-    def __pow__(self, exp: Self) -> Self:
-        """Return the value raised to the power of the given exponent.
-
-        Args:
-            exp: The exponent value.
-
-        Returns:
-            The value of `self` raised to the power of `exp`.
-        """
-        ...
-
-
-def pow[T: Powable](base: T, exp: T) -> T:
-    """Computes the `base` raised to the power of the `exp`.
-
-    Parameters:
-        T: A type conforming to the `Powable` trait.
+    Constraints:
+        The `exp` must have the same dtype and width as the `base`, or be a
+        scalar. An integral `base` requires an integral `exp`.
 
     Args:
         base: The base of the power operation.
         exp: The exponent of the power operation.
 
     Returns:
-        The `base` raised to the power of the `exp`.
+        The `base` raised elementwise to the power of the `exp`.
     """
     return base.__pow__(exp)
 
 
-def pow(base: SIMD, exp: Int) -> type_of(base):
-    """Computes elementwise value of a SIMD vector raised to the power of the
-    given integer.
+def pow(base: SIMD, exp: FloatLiteral) -> type_of(base):
+    """Computes the `base` raised elementwise to the power of a float literal.
+
+    Constraints:
+        The `base` must be floating point.
 
     Args:
-        base: The first input argument.
-        exp: The second input argument.
+        base: The base of the power operation.
+        exp: The exponent, converted to the dtype of `base`.
 
     Returns:
-        The `base` elementwise raised raised to the power of `exp`.
+        The `base` raised elementwise to the power of the `exp`.
     """
     return base.__pow__(exp)
+
+
+def pow[
+    dtype: DType, width: SIMDLength, //
+](
+    base: SIMD[dtype, width],
+    exp: SIMD[dtype, width],
+    mod: SIMD[dtype, width],
+) -> SIMD[dtype, width] where dtype.is_integral():
+    """Computes `base` raised to the power of `exp`, modulo `mod`, elementwise.
+
+    For example, `pow(3, 4, 5)` is `1`, `pow(2, 3, -5)` is `-2`, and
+    `pow(3, -1, 7)` is `5`, because `3 * 5 % 7 == 1`.
+
+    Constraints:
+        The `dtype` must be an integral type of at most 64 bits.
+
+    Parameters:
+        dtype: The `dtype` of the inputs and the result.
+        width: The width of the inputs and the result.
+
+    Args:
+        base: The base of the power operation.
+        exp: The exponent of the power operation.
+        mod: The modulus.
+
+    Returns:
+        The `base` raised to the power of `exp`, modulo `mod`. Aborts if
+        `mod` is zero, or if `exp` is negative and `base` has no inverse
+        modulo `mod`.
+    """
+    comptime assert (
+        bit_width_of[dtype]() <= 64
+    ), "pow() with a modulus supports integers of at most 64 bits"
+
+    var result = SIMD[dtype, width]()
+    comptime for i in range(width):
+        result[i] = _pow_mod(base[i], exp[i], mod[i])
+    return result
+
+
+def _pow_mod[
+    dtype: DType
+](base: Scalar[dtype], exp: Scalar[dtype], mod: Scalar[dtype]) -> Scalar[dtype]:
+    # Follows CPython's `long_pow` for the semantics and Julia's `powermod` for
+    # the square-and-multiply loop and the sign of the result.
+    #
+    # The signed type twice as wide holds |x| of the most negative input, and
+    # its unsigned twin the extended Euclid coefficients for a 64-bit `mod`.
+    comptime wide = _int_type_of_width[2 * bit_width_of[dtype]()]()
+    comptime uwide = _uint_type_of_width[2 * bit_width_of[dtype]()]()
+
+    if mod == 0:
+        abort("pow() 3rd argument cannot be 0")
+
+    var m_abs = abs(mod.cast[wide]())
+    if m_abs == 1:
+        return 0
+    var m = m_abs.cast[.uint64]()
+
+    var b = abs(base.cast[wide]()).cast[.uint64]() % m
+    if base < 0 and b != 0:
+        b = m - b
+    if exp < 0:
+        b = _inverse_mod(b.cast[uwide](), m.cast[uwide]()).cast[.uint64]()
+    var e = abs(exp.cast[wide]()).cast[.uint64]()
+
+    var r: UInt64
+    # Products of residues below 2^32 fit in 64 bits; larger ones need a
+    # 128-bit `%`, which is a library call.
+    comptime is_64_bit = bit_width_of[dtype]() == 64
+    if is_64_bit and m > UInt32.MAX.cast[.uint64]():
+        r = _pow_mod_loop(
+            b.cast[.uint128](), e.cast[.uint128](), m.cast[.uint128]()
+        ).cast[.uint64]()
+    elif is_64_bit and not is_32bit() and e >= 1 << 34:
+        r = _pow_mod_reciprocal(b, e, m)
+    else:
+        r = _pow_mod_loop(b, e, m)
+
+    if mod < 0 and r != 0:
+        return (r.cast[wide]() - m_abs).cast[dtype]()
+    return r.cast[dtype]()
+
+
+def _pow_mod_loop[
+    dtype: DType
+](
+    var base: Scalar[dtype], var exp: Scalar[dtype], mod: Scalar[dtype]
+) -> Scalar[dtype]:
+    var result = Scalar[dtype](1)
+    while exp != 0:
+        if (exp & 1) != 0:
+            result = result * base % mod
+        exp >>= 1
+        if exp == 0:
+            break
+        base = base * base % mod
+    return result
+
+
+@inline(.never)
+def _pow_mod_reciprocal(base: UInt64, var exp: UInt64, mod: UInt64) -> UInt64:
+    # `FastDiv` divides by multiplying with a reciprocal of `mod`. Its setup is
+    # one 128-bit division, which exponents below about 2^34 don't repay.
+    comptime U = Scalar[FastDiv[DType.uint64].uint_type]
+    var m = FastDiv[DType.uint64](Int(mod))
+    var b = U(base)
+    var result = U(1)
+    while exp != 0:
+        if (exp & 1) != 0:
+            result = result * b % m
+        exp >>= 1
+        if exp == 0:
+            break
+        b = b * b % m
+    return result.cast[.uint64]()
+
+
+def _inverse_mod[
+    dtype: DType
+](a: Scalar[dtype], m: Scalar[dtype]) -> Scalar[dtype]:
+    # The extended Euclidean algorithm, keeping only the Bezout coefficient of
+    # `a`.
+    comptime signed = _int_type_of_width[bit_width_of[dtype]()]()
+    var t = Scalar[signed](0)
+    var new_t = Scalar[signed](1)
+    var r = m.cast[signed]()
+    var new_r = a.cast[signed]()
+    while new_r != 0:
+        var q = r // new_r
+        var next_t = t - q * new_t
+        t = new_t
+        new_t = next_t
+        var next_r = r - q * new_r
+        r = new_r
+        new_r = next_r
+    if r != 1:
+        abort("base is not invertible for the given modulus")
+    if t < 0:
+        t += m.cast[signed]()
+    return t.cast[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3917,25 +3648,15 @@ def round[T: Roundable, //](number: T, ndigits: Int) -> T:
 # Pure-Mojo libm implementations
 # ===----------------------------------------------------------------------=== #
 # These run unchanged on CPU and GPU, so they avoid the target-dependent
-# approximations above (`sqrt.approx`, `lg2.approx`, `ex2.approx` on NVIDIA)
-# and keep float32 paths free of float64 values, which Apple GPUs reject.
-# Algorithm provenance is documented with each implementation.
-# GPU backends contract a*b + c into fma where CPU code generation does not, so
-# CPU and GPU results may differ in the last ulp outside paths that use
-# explicit fma.
+# approximations the GPU plugins lower to (`sqrt.approx`, `lg2.approx`,
+# `ex2.approx` on NVIDIA) and keep float32 paths free of float64 values, which
+# Apple GPUs reject. Algorithm provenance is documented with each
+# implementation. GPU backends contract a*b + c into fma where CPU code
+# generation does not, so CPU and GPU results may differ in the last ulp
+# outside paths that use explicit fma. Apple GPUs may also flush subnormals and
+# carry no correct-rounding guarantee for sqrt.
 
 comptime _SQRT2 = 1.41421356237309504880168872420969807856967187537694
-
-# approximations (`sqrt.approx`, `lg2.approx`, `ex2.approx` on NVIDIA) and
-# keep float32 paths free of float64 values, which Apple GPUs reject.
-# Sources are cited per function. Compilers may contract a*b + c into an
-# fma depending on target and flags, so results can differ between targets
-# in the last ulp outside paths that use explicit fma. Apple GPUs may flush
-# subnormals and carry no correct-rounding guarantee for sqrt.
-# Sources are cited per function. Compilers may contract a*b + c into an fma
-# depending on target and flags, so results can differ between targets in the
-# last ulp outside paths that use explicit fma. Apple GPUs may flush subnormals
-# and carry no correct-rounding guarantee for sqrt.
 
 comptime _LN2 = 0.69314718055994530941723212145817656807550013436026
 
@@ -3990,8 +3711,8 @@ comptime _BESSEL_ASYMPTOTIC_MIN = 2.0
 
 @inline(.always)
 def _assert_float64_supported[dtype: DType, name: StaticString]():
-    comptime assert dtype != .float64 or not is_apple_gpu(), (
-        "`" + name + "` does not support float64 on Apple GPU"
+    comptime assert dtype != .float64 or CurrentPlugin.supports_float64, (
+        "`" + name + "` does not support float64 on this target"
     )
 
 
@@ -4269,8 +3990,9 @@ def _scale_down_bits[
     dtype: DType, width: SIMDLength, //, shift: Int
 ](y: SIMD[dtype, width]) -> type_of(y) where dtype.is_floating_point():
     """Returns `y * 2^-shift`, correctly rounded (to nearest even) even when
-    the result is subnormal, for finite normal `y`. Uses integer operations
-    only, so flush-to-zero targets keep subnormal results."""
+    the result is subnormal, for finite normal `y`, or for zero `y` when
+    `shift >= mantissa_width`. Uses integer operations only, so flush-to-zero
+    targets keep subnormal results."""
     comptime TInt = SIMD[_integral_type_of[dtype](), width]
     comptime mantissa_width = FPUtils[dtype].mantissa_width()
     comptime bits = bit_width_of[dtype]()
@@ -4304,9 +4026,13 @@ def _narrow_f32_to_bf16_bits[
     """Rounds float32 to bfloat16 (nearest even) from the bits, keeping
     subnormal results that a flush-to-zero `cast` would drop. NaN stays NaN."""
     var b = x.to_bits()
-    var rounded = (b + 0x7FFF + ((b >> 16) & 1)) >> 16
-    var r = isnan(x).select((b >> 16) | 0x40, rounded)
-    return SIMD[DType.bfloat16, width](from_bits=r.cast[DType.uint16]())
+    var rounded = ((b + 0x7FFF + ((b >> 16) & 1)) >> 16).cast[DType.uint16]()
+    var quiet_nan = ((b >> 16) | 0x40).cast[DType.uint16]()
+    # Narrow before selecting: selecting between the 32-bit values and then
+    # truncating drops the `>> 16` on Metal and yields garbage bits.
+    return SIMD[DType.bfloat16, width](
+        from_bits=isnan(x).select(quiet_nan, rounded)
+    )
 
 
 # Fraction bits of 2/pi, 64 per word, after one zero word so that a window may
@@ -4520,7 +4246,7 @@ def _remainder_lifted_impl[
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
     dtype, width
 ] where dtype.is_floating_point():
-    # Apple GPU variant of `_remainder_impl`.
+    # `_remainder_impl` for targets that flush subnormals.
     comptime T = SIMD[dtype, width]
     comptime I = SIMD[FPUtils[dtype].integral_type, width]
     comptime mant = FPUtils[dtype].mantissa_width()
@@ -4531,9 +4257,9 @@ def _remainder_lifted_impl[
     var invalid = isnan(x) | isnan(y) | isinf(x) | p_bits.eq(0)
 
     # The remainder is a multiple of the smaller ulp of |x| and |y|, so for a
-    # small |y| it can be subnormal, and targets that flush subnormals (Apple
-    # GPUs in float32) would lose it. Such a divisor is lifted by 2^(2 mant),
-    # which makes every operand and result of the reduction normal or zero:
+    # small |y| it can be subnormal, and targets that flush subnormals would
+    # lose it. Such a divisor is lifted by 2^(2 mant), which makes every
+    # operand and result of the reduction normal or zero:
     # |x| is reduced modulo the lifted 2|y| (a multiple of 2|y|, so the
     # remainder is unchanged), lifted itself, reduced again, and the result
     # is scaled back with integer operations. A divisor above the limit
@@ -4581,11 +4307,9 @@ def _remainder_lifted_impl[
 def _sqrt_ieee[
     dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> type_of(x):
-    # `sqrt` is `sqrt.approx.ftz` for float32 on NVIDIA. float64 needs no
-    # special case: its sqrt lowers to the IEEE round-to-nearest instruction.
-    comptime if is_nvidia_gpu() and dtype == .float32:
-        return _llvm_unary_fn["llvm.sqrt"](x)
-    return sqrt(x)
+    # A plugin may lower `sqrt` to an approximation, but `llvm.sqrt` is
+    # correctly rounded on every target.
+    return _llvm_unary_fn["llvm.sqrt"](x)
 
 
 @inline(.always)
@@ -4596,7 +4320,7 @@ def _remainder_impl[
 ] where dtype.is_floating_point():
     # Sun fdlibm e_remainder.c: reduce |x| modulo 2|y| exactly, then pick the
     # nearest multiple of |y| with ties to even.
-    comptime if is_apple_gpu():
+    comptime if CurrentPlugin.flushes_subnormals[dtype]:
         return _remainder_lifted_impl(x, y)
     comptime T = SIMD[dtype, width]
     comptime I = SIMD[FPUtils[dtype].integral_type, width]
@@ -4700,10 +4424,10 @@ def _hypot_impl[
     )
     var s = fma(a, a, b * b)
     var r = _sqrt_ieee(s) * up
-    comptime if is_apple_gpu():
-        # Apple GPUs flush a subnormal product to zero. The result is
-        # subnormal only when the exponent clamp is active, so scale it down
-        # with integer operations instead.
+    comptime if CurrentPlugin.flushes_subnormals[dtype]:
+        # A subnormal product would flush to zero. The result is subnormal
+        # only when the exponent clamp is active, so scale it down with
+        # integer operations instead.
         r = e.eq(I(1 - bias)).select(
             _scale_down_bits[bias - 1](_sqrt_ieee(s)), r
         )
@@ -4806,7 +4530,7 @@ def _scalbn_impl[
         k = hi.select(k - I(emax), lo.select(k - I(down_exp), k))
     k = k.clamp(I(emin), I(emax))
     var r = y * _pow2_impl[dtype, width](k)
-    comptime if is_apple_gpu():
+    comptime if CurrentPlugin.flushes_subnormals[dtype]:
         # The multiply above flushes a subnormal result. Rebuild those lanes
         # from a result scaled into the normal range, which `_scale_down_bits`
         # rounds once from its bits.
@@ -5233,7 +4957,7 @@ def _gamma_impl[
     var res = up.select(prod, quot)
     comptime for i in range(max_scalings):
         var apply = nscale.gt(Scalar[dtype](i))
-        comptime if is_apple_gpu():
+        comptime if CurrentPlugin.flushes_subnormals[dtype]:
             # Scaling down may produce a subnormal, which a multiply flushes.
             res = apply.select(
                 up.select(res * scale_up, _scale_down_bits[scale_log2](res)),
@@ -5366,48 +5090,6 @@ def _expm1_accurate[
     # NaN passes through; tiny inputs (including -0 and subnormals) return x
     # exactly. Apple GPUs compare subnormals as zero, which still selects x.
     return (isnan(x) | abs(x).lt(tiny)).select(x, res)
-
-
-def _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
-    """This computes the `atanh` of the inputs for float32. It uses the same
-    approximation used by Eigen library."""
-
-    comptime nan_val = nan[x.dtype]()
-    comptime inf_val = inf[x.dtype]()
-    comptime neg_inf_val = -inf[x.dtype]()
-
-    var is_neg = x.lt(0)
-    var x_abs = abs(x)
-    var x2 = x * x
-    var x3 = x2 * x
-
-    # When x is in the range [0, 0.5], we use a polynomial approximation.
-    # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
-    var p = polynomial_evaluate[
-        [
-            Scalar[x.dtype](0.3333373963832855224609375),
-            0.1997792422771453857421875,
-            0.14672131836414337158203125,
-            8.2311116158962249755859375e-2,
-            0.1819281280040740966796875,
-        ]
-    ](x2)
-    p = x3.fma(p, x)
-
-    # For |x| in the range (0.5, 1), we use the identity:
-    # atanh(x) = 0.5 * log((1 + x) / (1 - x))
-    var r = 0.5 * log((1.0 + x) / (1.0 - x))
-
-    # If x is 1, then the result is +infinity, and -infinity if x is -1.
-    # If |x| > 1, NaN is returned. Otherwise, if |x| > 0.5, we use the r
-    # approximation, otherwise we use the p polynomial approximation.
-    return x_abs.eq(1).select(
-        is_neg.select(neg_inf_val, inf_val),
-        x_abs.ge(1).select(
-            is_neg.select(nan_val, -nan_val),
-            x_abs.gt(0.5).select(r, p),
-        ),
-    )
 
 
 @inline(.never)
@@ -5769,11 +5451,13 @@ def _j1y1_impl[
         var j1_small = (0.5 + r / sd) * xs
 
         comptime if not is_y1:
-            comptime if is_apple_gpu():
+            comptime if CurrentPlugin.flushes_subnormals[dtype]:
                 # j1(x) = x/2 to float32 precision for |x| < 2^-125, where
-                # x/2 is subnormal. Apple flushes that, so halve x from its
+                # x/2 is subnormal and would flush, so halve x from its
                 # integer significand and round the result from its bits.
-                comptime assert dtype == .float32, "Apple GPUs lack float64"
+                comptime assert (
+                    dtype == .float32
+                ), "the subnormal-flushing `j1` path supports only float32"
                 comptime abs_mask = 0x7FFFFFFF
                 comptime two_pow_neg_125_bits = 0x01000000
                 comptime min_normal_bits = 0x00800000
@@ -6039,57 +5723,15 @@ def _log10_impl[
     return ((bits.lt(0) & ~is_zero) | isnan(x)).select(nan[dtype](), result)
 
 
-def _log1p_impl[
-    dtype: DType, width: SIMDLength, //
-](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
-    # This uses the approximation from cephes to compute log1p via the approximation
-    # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
-    # in the domain 1/sqrt(2) <= x < sqrt(2)
-
-    comptime P: List[Scalar[dtype]] = [
-        2.0039553499201281259648e1,
-        5.7112963590585538103336e1,
-        6.0949667980987787057556e1,
-        2.9911919328553073277375e1,
-        6.5787325942061044846969e0,
-        4.9854102823193375972212e-1,
-        4.5270000862445199635215e-5,
-    ]
-    comptime Q: List[Scalar[dtype]] = [
-        6.0118660497603843919306e1,
-        2.1642788614495947685003e2,
-        3.0909872225312059774938e2,
-        2.2176239823732856465394e2,
-        8.3047565967967209469434e1,
-        1.5062909083469192043167e1,
-    ]
-
-    # Sqrt(1/2)
-    comptime sqrt2_div_2 = 0.70710678118654752440
-    # Sqrt(2)
-    comptime sqrt2 = 1.41421356237309504880
-
-    var z = 1.0 + x
-    var log1x = log(z)
-
-    var in_domain_mask = z.lt(sqrt2_div_2) | z.gt(sqrt2)
-    if all(in_domain_mask):
-        return log1x
-
-    z = x * x
-    z = -0.5 * z + x * (
-        z * polynomial_evaluate[P](x) / polynomial_evaluate[Q](x)
-    )
-
-    return in_domain_mask.select(log1x, x + z)
-
-
 def _narrow_from_f32[
     width: SIMDLength, //, dtype: DType
 ](x: SIMD[.float32, width]) -> SIMD[dtype, width]:
     """Narrows a float32 result to a 16-bit `dtype`, keeping bfloat16
-    subnormals that Apple GPUs flush in a plain `cast`."""
-    comptime if is_apple_gpu() and dtype == .bfloat16:
+    subnormals that a plain `cast` flushes on targets that flush float32
+    subnormals (every bfloat16 subnormal is a float32 subnormal)."""
+    comptime if dtype == .bfloat16 and CurrentPlugin.flushes_subnormals[
+        .float32
+    ]:
         return _narrow_f32_to_bf16_bits(x)._refine[dtype]()
     return x.cast[dtype]()
 
@@ -6431,96 +6073,6 @@ def _log_accurate[
     return _log_combine(exponent, fraction, 0)
 
 
-def _cbrtf(x: Float32) -> Float32:
-    """Compute the cube root of a 32-bit floating-point number.
-
-    This function implements an efficient algorithm for computing the cube root (∛x)
-    of a single-precision floating-point value. The algorithm works by:
-
-    1. Extracting the binary exponent `e` from the input `x` such that x = 2^e * mantissa.
-    2. Normalizing the input by scaling `x` by 2^(-e) to obtain a mantissa in [0.5, 1).
-    3. Dividing the exponent `e` by 3 to obtain the cube root exponent, and computing the remainder.
-    4. Applying a correction factor based on the remainder to improve accuracy.
-    5. Reconstructing the result by scaling the cube root of the mantissa by 2^(e/3) and the correction factor.
-
-    Args:
-        x: Input value (Float32) for which to compute the cube root.
-
-    Returns:
-        The cube root of `x` as a Float32.
-    """
-    # Initialize correction factor q (may be adjusted based on exponent remainder)
-    var q = Float32(1.0)
-
-    # Extract exponent e such that x = 2^e * mantissa
-    # Add 1 to exponent for normalization purposes
-    var e = _ilogb(abs(x)) + 1  # Get binary exponent
-
-    # Normalize input: scale x by 2^(-e) to get mantissa in [0.5, 1)
-    var d = ldexp(x, -e)
-
-    # Compute exponent division by 3 with remainder
-    # We need to split e into: e = 3*qu + re where re ∈ {0, 1, 2}
-    # Add offset 6144 to ensure positive values for easier integer division
-    var t = Float32(e) + 6144.0
-    var qu = Int(t / 3.0)  # Quotient: e // 3
-    var re = Int(t - Float32(qu) * 3.0)  # Remainder: e % 3
-
-    comptime CBRT_2 = 1.2599210498948731647672106
-    comptime CBRT_4 = 1.5874010519681994747517056
-
-    # Apply correction factors based on remainder
-    # If e % 3 == 1: need to multiply by 2^(1/3) = cbrt(2)
-    if re == 1:
-        q = CBRT_2
-    # If e % 3 == 2: need to multiply by 2^(2/3) = cbrt(4)
-    elif re == 2:
-        q = CBRT_4
-
-    # Scale q by 2^(qu - 2048) to reconstruct proper exponent
-    # Subtract 2048 to compensate for the 6144 offset used earlier
-    q = ldexp(q, Int32(qu - 2048))
-
-    # Apply sign to correction factor (cube root preserves sign)
-    q = copysign(q, x)
-
-    # Work with absolute value for polynomial approximation
-    d = abs(d)
-
-    # Polynomial approximation for cbrt(d) where d ∈ [0.5, 1)
-    # Using Horner's method for efficient evaluation
-    var poly = polynomial_evaluate[
-        [
-            Scalar[x.dtype](2.2241256237030029296875),
-            -3.8095417022705078125,
-            5.898262500762939453125,
-            -5.532182216644287109375,
-            2.8208892345428466796875,
-            -0.601564466953277587890625,
-        ]
-    ](d)
-
-    # Newton-Raphson refinement step
-    # Formula: y_new = y - (y³ - d) / (3y²)
-    # Rearranged as: y_new = (2y³ + d) / (3y²)
-    var y = d * poly * poly  # d * (poly ** 2), where poly ≈ cbrt(d)
-
-    # Apply Newton iteration: y = y - (2/3) * y * (y*x - 1)
-    # This refines the approximation
-    y = y - (2.0 / 3.0) * y * (y * poly - 1.0)
-
-    # Multiply by the correction factor q to get final result
-    y = y * q
-
-    # Handle special cases
-    if isinf(x):
-        y = copysign(Float32.MAX, x)  # cbrt(±∞) = ±∞
-    if x == 0.0:
-        y = copysign(Float32(0.0), x)  # cbrt(±0) = ±0
-
-    return y
-
-
 @inline(.always)
 def _dd_add[
     dtype: DType, width: SIMDLength, //
@@ -6636,75 +6188,6 @@ def _dd_mul[
     var cross = ah * bl + al * bh
     var hi = fma(ah, bh, cross)
     return (hi, fma(ah, bh, -hi) + cross)
-
-
-def _ilogb[width: SIMDLength](x: SIMD[.float32, width]) -> SIMD[.int32, width]:
-    """Extract binary exponent from floating-point number.
-
-    Args:
-        x: Input floating-point value.
-
-    Returns:
-        Integer binary exponent of x.
-    """
-
-    @inline(.always)
-    def extract(x: SIMD[.float32, width]) -> SIMD[.int32, width]:
-        """Internal helper function to extract binary exponent from float.
-
-        Args:
-            x: Input floating-point value (assumed positive).
-
-        Returns:
-            Unbiased binary exponent as integer.
-        """
-        # Check if d is subnormal (very small, < 2^-64 ≈ 5.421010862427522e-20)
-        var is_subnormal_mask = x.lt(5.421010862427522e-20)
-        var d = is_subnormal_mask.select(
-            x * 1.8446744073709552e19,  # Scale by 2^64
-            x,
-        )
-
-        # Extract exponent bits from IEEE 754 representation
-        # Step 1: Reinterpret float as 32-bit integer
-        var bits = rebind[SIMD[.int32, width]](d._to_bits_signed())
-
-        # Step 2: Right shift by 23 to move exponent to lower bits
-        # This moves bits [30:23] to positions [7:0]
-        var exponent_bits = (bits >> 23) & 0xFF  # Mask to get 8 bits
-
-        # Step 3: Remove bias to get true exponent
-        # IEEE 754 bias for single precision is 127 (0x7f)
-        # If subnormal path was taken, also subtract 64 to compensate for scaling
-
-        return is_subnormal_mask.select(
-            exponent_bits - (64 + 0x7F),  # Remove bias and scaling offset
-            exponent_bits - 0x7F,  # Remove bias only
-        )
-
-    comptime FP_ILOGB0 = (-2147483647 - 1)
-    comptime FP_ILOGBNAN = 2147483647
-
-    # Extract the binary exponent from |x|
-    # For x = m × 2^e where m ∈ [1, 2), this returns e
-    var e = extract(abs(x))
-
-    comptime for i in range(width):
-        var d = x[i]
-
-        # Special case: ilogb(±0) returns FP_ILOGB0
-        if d == 0.0:
-            e[i] = FP_ILOGB0
-
-        # Special case: ilogb(NaN) returns FP_ILOGBNAN
-        if isnan(d):
-            e[i] = FP_ILOGBNAN
-
-        # Special case: ilogb(±∞) returns Int32.MAX
-        if isinf(d):
-            e[i] = Int32.MAX
-
-    return e
 
 
 @inline(.always)

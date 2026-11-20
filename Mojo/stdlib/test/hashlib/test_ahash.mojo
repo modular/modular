@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib._ahash import AHasher, hash_seeded, hash_seeded_bytes
+from std.hash._ahash import AHasher, hash_seeded, hash_seeded_bytes
 
 from std.memory import unsafe_memset_zero
 from test_utils import (
@@ -61,7 +61,7 @@ def test_hash_byte_array() raises:
 
 def test_avalanche() raises:
     # test that values which differ just in one bit,
-    # produce significatly different hash values
+    # produce significantly different hash values
     var data = Array[UInt8, 256](fill={})
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
@@ -202,7 +202,7 @@ def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
         var hasher = hasher0()
         hasher._update_with_simd(value)
-        return hasher^.finish()
+        return hasher.finish()
 
     assert_equal(hash(Float16(1.5)), 17170570249477226196)
     assert_equal(hash(Float32(1.5)), 13132675331935815936)

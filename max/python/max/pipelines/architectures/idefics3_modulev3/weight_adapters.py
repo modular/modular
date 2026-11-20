@@ -55,6 +55,7 @@ def convert_idefics3_language_model_state_dict(
 
     Args:
         state_dict: The raw Idefics3 checkpoint weights.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         Mapped weights for the V3 language model.
@@ -89,6 +90,7 @@ def convert_idefics3_vision_model_state_dict(
 
     Args:
         state_dict: The raw Idefics3 checkpoint weights.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         Mapped weights for the V3 vision model.
@@ -107,3 +109,23 @@ def convert_idefics3_vision_model_state_dict(
             vision_model_state_dict[vision_model_name] = weight.data()
 
     return vision_model_state_dict
+
+
+def convert_registered_state_dict(
+    state_dict: dict[str, Weights], **unused_kwargs
+) -> dict[str, WeightData]:
+    """Maps both towers into disjoint role namespaces."""
+    return {
+        **{
+            f"decoder.{name}": value
+            for name, value in convert_idefics3_language_model_state_dict(
+                state_dict
+            ).items()
+        },
+        **{
+            f"vision.{name}": value
+            for name, value in convert_idefics3_vision_model_state_dict(
+                state_dict
+            ).items()
+        },
+    }

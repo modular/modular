@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Interfaces for running models end to end: registry, configuration, and
-pipeline classes for text, embeddings, and pixel generation.
+"""Interfaces for running models end to end.
+
+They hold the registry, the configuration, and the pipeline classes for text,
+embeddings, and pixel generation.
 
 A pipeline wires a model family into an executable workflow. A
 :class:`~max.pipelines.lib.registry.SupportedArchitecture` registers the model in the
@@ -22,12 +24,14 @@ pipeline classes such as :class:`TextGenerationPipeline`,
 tokenization, weight loading, and generation.
 """
 
-from max.experimental.validation import EagerUsageValidator
 from max.pipelines.weights.hf_utils import download_weight_files
+from max.tensor.validation import EagerUsageValidator
 
 from .architectures import register_all_models
 from .diffusion.pipeline import PixelGenerationPipeline
 from .lib.auto_model import AutoModel, AutoTokenizer
+from .lib.auto_pipeline import AutoPipeline
+from .lib.auto_processor import AutoProcessor
 from .lib.config import (
     KVCacheConfig,
     LoRAConfig,
@@ -54,7 +58,7 @@ from .lib.interfaces import (
     ModelOutputs,
     PipelineModel,
 )
-from .lib.memory_estimation import MemoryEstimator
+from .lib.memory_plan import plan_memory
 from .lib.pipeline_runtime_config import (
     EagerValidatorMode,
     PipelineRuntimeConfig,
@@ -81,6 +85,8 @@ __all__ = [
     "ADAPTER_CONFIG_FILE",
     "PIPELINE_REGISTRY",
     "AutoModel",
+    "AutoPipeline",
+    "AutoProcessor",
     "AutoTokenizer",
     "EagerUsageValidator",
     "EagerValidatorMode",
@@ -90,7 +96,6 @@ __all__ = [
     "KVCacheConfig",
     "LoRAConfig",
     "MAXModelConfig",
-    "MemoryEstimator",
     "ModelInputs",
     "ModelOutputs",
     "PipelineArgs",
@@ -115,6 +120,7 @@ __all__ = [
     "eager_validator",
     "is_float4_encoding",
     "parse_supported_encoding_from_file_name",
+    "plan_memory",
     "supported_encoding_dtype",
     "supported_encoding_quantization",
     "supported_encoding_supported_devices",

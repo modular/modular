@@ -391,15 +391,15 @@ struct Report(Copyable, Defaultable):
             "-" * 80,
             "Benchmark Report (" + unit + ")",
             "-" * 80,
-            "Mean: " + String(self.mean(unit)),
-            "Total: " + String(self.duration(unit)),
-            "Iters: " + String(self.iters()),
+            String(t"Mean: {self.mean(unit)}"),
+            String(t"Total: {self.duration(unit)}"),
+            String(t"Iters: {self.iters()}"),
             "Warmup Total: "
             + String(
                 Float64(self.warmup_duration) / Float64(Unit._divisor(unit))
             ),
-            "Fastest Mean: " + String(self.min(unit)),
-            "Slowest Mean: " + String(self.max(unit)),
+            String(t"Fastest Mean: {self.min(unit)}"),
+            String(t"Slowest Mean: {self.max(unit)}"),
             "",
         ]
         return "\n".join(lines)

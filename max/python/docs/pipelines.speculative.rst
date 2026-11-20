@@ -17,21 +17,25 @@ Submodules
 .. autosummary::
    :nosignatures:
 
-   max.pipelines.speculative.adaptive_width
-   max.pipelines.speculative.block_driver
-   max.pipelines.speculative.depth_schedule
+   max.pipelines.speculative.cross_attention
+   max.pipelines.speculative.draft_contracts
    max.pipelines.speculative.driver
-   max.pipelines.speculative.spec_target
+   max.pipelines.speculative.eagle
+   max.pipelines.speculative.gated_delta_rollback
+   max.pipelines.speculative.spec_adapters
+   max.pipelines.speculative.spec_width_policy
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
-   pipelines.speculative.adaptive_width
-   pipelines.speculative.block_driver
-   pipelines.speculative.depth_schedule
+   pipelines.speculative.cross_attention
+   pipelines.speculative.draft_contracts
    pipelines.speculative.driver
-   pipelines.speculative.spec_target
+   pipelines.speculative.eagle
+   pipelines.speculative.gated_delta_rollback
+   pipelines.speculative.spec_adapters
+   pipelines.speculative.spec_width_policy
 
 Configuration
 -------------
@@ -45,7 +49,14 @@ Configuration
    SpeculativeMethod
    VerifyWidthRange
 
-Token merging
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   MAGIC_DRAFT_TOKEN_ID
+
+Draft weights
 -------------
 
 .. autosummary::
@@ -53,11 +64,18 @@ Token merging
    :toctree: generated
    :template: autosummary/class.rst
 
-   RaggedTokenMerger
+   DraftAliases
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   NO_ALIASES
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/function.rst
 
-   ragged_token_merger
+   validate_draft_state_dict

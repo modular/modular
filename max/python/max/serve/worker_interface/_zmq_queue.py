@@ -82,9 +82,7 @@ def generate_zmq_ipc_path() -> str:
 
 
 def _validate_zmq_address(address: str) -> None:
-    """
-    Check if a ZMQ address is valid.
-    """
+    """Checks whether a ZMQ address is valid."""
     # Check for supported protocols
     if not address.startswith(("tcp://", "ipc://", "inproc://")):
         raise ValueError(

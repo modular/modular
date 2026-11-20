@@ -19,11 +19,19 @@ from std.testing import (
     assert_raises,
     TestSuite,
 )
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 from test_utils import (
     CopyCounter,
     ExplicitDestroy,
+    MoveCounter,
     MoveOnly,
     ObservableMoveOnly,
+    Pinned,
+    PinnedExplicitDelOnly,
 )
 
 
@@ -412,6 +420,47 @@ def test_tuple_conditional_register_passable() raises:
     assert_false(conforms_to(Tuple[Bool, List[Int], Int], RegisterPassable))
 
 
+def test_tuple_trivial_lifecycle() raises:
+    assert_true(IsTriviallyCopyable[Tuple[Int, Float64, Bool]])
+    assert_true(IsTriviallyMovable[Tuple[Int, Float64, Bool]])
+    assert_true(IsTriviallyDeinitable[Tuple[Int, Float64, Bool]])
+    assert_true(IsTriviallyCopyable[Tuple[Tuple[Int, Int], Int]])
+    assert_true(IsTriviallyCopyable[Tuple[]])
+
+    assert_false(IsTriviallyCopyable[Tuple[Int, String]])
+    assert_false(IsTriviallyMovable[Tuple[Int, MoveCounter[Int]]])
+    assert_false(IsTriviallyDeinitable[Tuple[Int, List[Int]]])
+
+
+def test_tuple_trivial_copy_skips_element_copy() raises:
+    # A counter that claims a trivial copy is copied bitwise, so its own copy
+    # initializer never runs.
+    var t = (1, CopyCounter[trivial_copy=True]())
+    var c = t.copy()
+    assert_equal(c[1].copy_count, 0)
+
+
+def test_tuple_trivial_move_skips_element_move() raises:
+    var t = (1, MoveCounter[Int, trivial_move=True](7))
+    var before = t[1].move_count
+    var m = t^
+    assert_equal(m[1].move_count, before)
+    assert_equal(m[1].value, 7)
+
+
+def test_tuple_nontrivial_copy_calls_element_copy() raises:
+    var t = (1, CopyCounter[]())
+    var c = t.copy()
+    assert_equal(c[1].copy_count, 1)
+
+
+def test_tuple_nontrivial_move_calls_element_move() raises:
+    var t = (1, MoveCounter[Int](7))
+    var before = t[1].move_count
+    var m = t^
+    assert_equal(m[1].move_count, before + 1)
+
+
 # ===-------------------------------------------------------------------===#
 # consume_elements
 # ===-------------------------------------------------------------------===#
@@ -537,6 +586,67 @@ def test_tuple_deinit_with_heterogeneous() raises:
     t^.deinit_with(dispose)
     assert_equal(got_str, "hello")
     assert_equal(got_val, 42)
+
+
+def test_tuple_movable_is_conditional() raises:
+    comptime assert conforms_to(Tuple[Int, String], Movable)
+    comptime assert not conforms_to(Tuple[Pinned, Int], Movable)
+
+
+def test_tuple_pinned_default_init() raises:
+    var t = Tuple[Pinned, Pinned]()
+    assert_equal(t[0].data, 0)
+    assert_equal(t[1].data, 0)
+    assert_equal(t.first_of[Pinned]().data, 0)
+
+
+def test_tuple_init_with_pinned() raises:
+    comptime T = Tuple[Pinned, Pinned]
+    var t = T(init_with=lambda [i: Int]() -> T.Ts[i]: Pinned(i + 1))
+    assert_equal(t[0].data, 1)
+    assert_equal(t[1].data, 2)
+
+
+def test_tuple_init_with_pinned_linear() raises:
+    # Elements that are neither `Movable` nor `Deinitable` are built in place
+    # and torn down with `deinit_with()`.
+    comptime T = Tuple[PinnedExplicitDelOnly, PinnedExplicitDelOnly]
+    var t = T(
+        init_with=lambda [i: Int]() -> T.Ts[i]: PinnedExplicitDelOnly(i + 1)
+    )
+    var destroyed = List[Int]()
+
+    def dispose[idx: Int](var elt: PinnedExplicitDelOnly) {mut destroyed}:
+        destroyed.append(elt.data)
+        elt^.destroy()
+
+    t^.deinit_with(dispose)
+    assert_equal(destroyed, [1, 2])
+
+
+def test_tuple_init_with_heterogeneous() raises:
+    comptime T = Tuple[Int, String]
+
+    # For a heterogeneous tuple the element type is symbolic in `i`, so the
+    # closure states the evidence it needs to produce each element.
+    def make[i: Int]() -> T.Ts[i] where conforms_to(T.Ts[i], Movable):
+        comptime if i == 0:
+            return rebind_var[T.Ts[i]](42)
+        else:
+            return rebind_var[T.Ts[i]](String("hello"))
+
+    var t = T(init_with=make)
+    assert_equal(t[0], 42)
+    assert_equal(t[1], "hello")
+
+
+def test_tuple_init_with_no_moves() raises:
+    comptime T = Tuple[MoveCounter[Int], MoveCounter[Int]]
+
+    # Each element is constructed directly into the tuple's storage.
+    var t = T(init_with=lambda [i: Int]() -> T.Ts[i]: MoveCounter[Int](i))
+    assert_equal(t[0].move_count, 0)
+    assert_equal(t[1].move_count, 0)
 
 
 def main() raises:

@@ -10,42 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Structured-output bitmask wiring for the unified Kimi dflash pipeline.
+"""Structured-output bitmask wiring for the unified spec-decode inputs.
 
-The Kimi dflash graph must declare the constrained-decoding bitmask
-input triple (pinned_bitmask, wait_payload, device_bitmask_scratch) when
+A spec-decode graph declares the constrained-decoding bitmask input
+triple (pinned_bitmask, wait_payload, device_bitmask_scratch) when
 structured output is enabled, and the ``*Inputs.buffers`` ABI tail must
 pack the same triple so the buffer list lines up with the compiled graph
-signature. These tests fail without the bitmask wiring: the graph used
-to compile without bitmask inputs, silently serving structured-output
-requests unconstrained.
-
-The dflash Llama3 graph is deliberately still unwired, so it is covered
-here only by a guard that it keeps omitting the triple.
+signature.
 """
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any, cast
-
 import pytest
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.pipelines.architectures.unified_dflash_kimi_k25.model import (
-    UnifiedDflashKimiK25Inputs,
-)
-from max.pipelines.architectures.unified_dflash_kimi_k25.spec_adapters import (
-    DFlashKimiK25Target,
-)
-from max.pipelines.architectures.unified_dflash_kimi_k25.unified_dflash_kimi_k25 import (
-    UnifiedDflashKimiK25,
-    dflash_kimi_k25_input_spec,
-)
-from max.pipelines.architectures.unified_dflash_llama3.model import (
-    UnifiedDflashLlama3Inputs,
-)
+from max.graph import DeviceRef
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.lib.interfaces.pipeline_model import UnifiedSpecDecodeInputs
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
@@ -62,59 +41,6 @@ def _kv_params() -> MHAKVCacheParams:
         devices=[DeviceRef.GPU()],
         n_kv_heads=8,
     )
-
-
-def _is_bitmask_triple(
-    types: tuple[TensorType | BufferType, ...],
-) -> bool:
-    """Whether the last three input types are the bitmask triple."""
-    if len(types) < 3:
-        return False
-    pinned, wait, scratch = types[-3], types[-2], types[-1]
-    return (
-        isinstance(pinned, TensorType)
-        and pinned.dtype == DType.int32
-        and pinned.device == DeviceRef.CPU()
-        and isinstance(wait, BufferType)
-        and wait.dtype == DType.int64
-        and wait.device == DeviceRef.CPU()
-        and isinstance(scratch, BufferType)
-        and scratch.dtype == DType.int32
-        and scratch.device != DeviceRef.CPU()
-    )
-
-
-@pytest.mark.parametrize("enable_structured_output", [False, True])
-def test_dflash_kimi_k25_input_types_bitmask_triple(
-    enable_structured_output: bool,
-) -> None:
-    stub: Any = SimpleNamespace(
-        config=SimpleNamespace(
-            target=SimpleNamespace(
-                devices=[DeviceRef.GPU()],
-                data_parallel_degree=1,
-                hidden_size=128,
-            )
-        ),
-        _target=DFlashKimiK25Target(
-            cast(Any, SimpleNamespace(ep_manager=None))
-        ),
-        enable_structured_output=enable_structured_output,
-    )
-    kv_params = MultiKVCacheParams.from_params(
-        {"target": _kv_params(), "draft": _kv_params()}
-    )
-    # Built from the config alone: ``input_types`` reads ``self.input_spec``,
-    # which a duck-typed stand-in cannot supply. The driver forwards
-    # ``ep_input_types`` on, so the stand-in carries a real adapter.
-    types = build_spec_decode_input_types(
-        dflash_kimi_k25_input_spec(
-            stub.config, enable_structured_output=enable_structured_output
-        ),
-        kv_params=kv_params,
-        ep_input_types=UnifiedDflashKimiK25.ep_input_types(stub),
-    )
-    assert _is_bitmask_triple(types) == enable_structured_output
 
 
 def _tail_sentinels() -> dict[str, object]:
@@ -134,47 +60,6 @@ _BITMASK_SENTINELS = {
     "wait_payload": object(),
     "device_bitmask_scratch": object(),
 }
-
-
-@pytest.mark.parametrize("structured_output", [False, True])
-def test_dflash_kimi_k25_buffers_tail_packs_bitmask_triple(
-    structured_output: bool,
-) -> None:
-    inputs = UnifiedDflashKimiK25Inputs(
-        tokens=object(),  # type: ignore[arg-type]
-        input_row_offsets=object(),  # type: ignore[arg-type]
-        host_input_row_offsets=object(),  # type: ignore[arg-type]
-        return_n_logits=object(),  # type: ignore[arg-type]
-        data_parallel_splits=object(),  # type: ignore[arg-type]
-        signal_buffers=[],
-        batch_context_lengths=[],
-        structured_output=structured_output,
-        **_tail_sentinels(),  # type: ignore[arg-type]
-        **_BITMASK_SENTINELS,  # type: ignore[arg-type]
-    )
-    buffers = inputs.buffers
-    if structured_output:
-        assert buffers[-3:] == (
-            _BITMASK_SENTINELS["pinned_bitmask"],
-            _BITMASK_SENTINELS["wait_payload"],
-            _BITMASK_SENTINELS["device_bitmask_scratch"],
-        )
-    else:
-        assert not set(_BITMASK_SENTINELS.values()) & set(buffers)
-
-
-def test_dflash_llama3_buffers_omit_bitmask_triple() -> None:
-    """The Llama3 dflash graph declares no bitmask inputs, so its ABI
-    tail must omit the triple even when the pipeline binds one."""
-    inputs = UnifiedDflashLlama3Inputs(
-        tokens=object(),  # type: ignore[arg-type]
-        input_row_offsets=object(),  # type: ignore[arg-type]
-        return_n_logits=object(),  # type: ignore[arg-type]
-        structured_output=True,
-        **_tail_sentinels(),  # type: ignore[arg-type]
-        **_BITMASK_SENTINELS,  # type: ignore[arg-type]
-    )
-    assert not set(_BITMASK_SENTINELS.values()) & set(inputs.buffers)
 
 
 @pytest.mark.parametrize("include_in_thinking_phase", [False, True])

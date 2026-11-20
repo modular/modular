@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Benchmarks `argmax_gpu`, the top-k K=1 path it replaced, and the
-`algorithm.rowwise` reduction `ops.argmax` actually launches.
+"""Benchmarks the `algorithm.rowwise` reduction `ops.argmax` launches against
+the top-k K=1 path.
 
 All variants run in the same process so they see identical clocks, which
 matters on hosts where the SM clock cannot be pinned.
@@ -32,13 +32,12 @@ from std.benchmark import (
 from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import Coord, TileTensor, row_major
-from nn.argmaxmin_gpu import argmax_gpu
 from nn.topk import topk_gpu
 
 
 def bench_argmax[
     dtype: DType, out_idx_type: DType
-](ctx: DeviceContext, mut m: Bench, batch: Int, num_elements: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, batch: Int, num_elements: Int) raises:
     var in_host = ctx.enqueue_create_host_buffer[dtype](batch * num_elements)
     ctx.synchronize()
     for i in range(batch * num_elements):
@@ -58,23 +57,9 @@ def bench_argmax[
     var suffix = String("/N=", num_elements, "/batch=", batch, "/", dtype)
 
     @inline(.always)
-    def bench_streaming(mut b: Bencher) raises {imm}:
-        @inline(.always)
-        def launch(ctx: DeviceContext) raises {imm}:
-            argmax_gpu(ctx, in_tensor, out_tensor)
-
-        bencher_iter_custom(b, launch, ctx)
-
-    m.bench_function(
-        bench_streaming,
-        BenchId(String("argmax-streaming", suffix)),
-        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
-    )
-
-    @inline(.always)
     def bench_topk_k1(mut b: Bencher) raises {imm}:
         @inline(.always)
-        def launch(ctx: DeviceContext) raises {imm}:
+        def launch(ctx: DeviceContext[]) raises {imm}:
             topk_gpu[sampling=False, largest=True](
                 ctx, 1, in_tensor, vals_tensor, out_tensor
             )
@@ -91,7 +76,7 @@ def bench_argmax[
 
     @inline(.always)
     def launch_rowwise(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {mut out_tensor, imm}:
         @inline(.always)
         def input_fn[
@@ -103,11 +88,9 @@ def bench_argmax[
         def output_fn[
             width: SIMDLength
         ](coords: Coord, val: SIMD[.int64, width]) {var out_tensor}:
-            out_tensor.store[width=Int(width)](coords, val.cast[out_idx_type]())
+            out_tensor.store(coords, val.cast[out_idx_type]())
 
-        reduce_argmax[dtype, target="gpu", reduce_dim=1](
-            input_fn, output_fn, in_shape, ctx
-        )
+        reduce_argmax[dtype, reduce_dim=1](input_fn, output_fn, in_shape, ctx)
 
     @inline(.always)
     def bench_rowwise(mut b: Bencher) raises {imm}:

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -80,6 +80,53 @@ modular_py_test(
     ],
 )
 
+modular_py_library(
+    name = "grammar_fill_harness",
+    testonly = True,
+    srcs = ["_grammar_fill_harness.py"],
+    imports = ["."],
+    # Target-level visibility (the package default cannot list //max_private)
+    # so the MiniMax-M3 fill-cost test can share these helpers.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//max_private:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+    deps = [
+        "//max/python/max/_xgrammar",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_grammar_fill_cost",
+    # Brute-force mask checks over a 60k vocab at every position of each call.
+    size = "medium",
+    srcs = [
+        "test_tool_grammar_fill_cost.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    # Opt-in real-tokenizer mode: --test_env=TOOL_GRAMMAR_FILL_HF_CACHE=<hub>.
+    env_inherit = ["TOOL_GRAMMAR_FILL_HF_CACHE"],
+    deps = [
+        ":grammar_fill_harness",
+        "//max/python/max/_xgrammar",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/minimax_m2",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/inkling:grammar_harness",
+        requirement("transformers"),
+    ],
+)
+
 modular_py_test(
     name = "test_xgrammar_shim",
     size = "small",
@@ -90,6 +137,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     deps = [
+        ":grammar_fill_harness",
         "//max/python/max/_xgrammar",
         requirement("numpy"),
     ],
@@ -152,6 +200,40 @@ modular_py_test(
         requirement("jinja2"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_tokenizer_token_ids",
+    size = "medium",
+    srcs = [
+        "test_vision_tokenizer_token_ids.py",
+    ],
+    env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Runtime deps of the Hugging Face processors.
+        requirement("jinja2"),
+        requirement("torchvision"),
+    ],
+    # The BuildBuddy macOS workers have no HF_TOKEN, so the gated
+    # google/gemma-3-4b-it download fails with a 401. Skip the CI job rather
+    # than the platform; it still runs locally on a Mac with a token.
+    tags = [
+        "no-sandbox",
+        "requires-network",
+        "skip-ci-macos",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("torchvision"),
+        requirement("transformers"),
     ],
 )
 

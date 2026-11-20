@@ -22,6 +22,8 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#pragma GCC visibility push(default)
 #include "Support/MDialect/MDialect.h.inc"
+#pragma GCC visibility pop
 
 #endif // SUPPORT_MDIALECT_MDIALECT_H

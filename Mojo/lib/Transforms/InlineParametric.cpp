@@ -147,9 +147,9 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
   IRRewriter b{OpBuilder(call)};
-  AttrTypeMangler mangler(manglerCache);
-  bool needsMangling =
-      mangler.populate(b, nameUniquer, calleeDecls, topLevelGraph);
+  AttrTypeMangler mangler(manglerCache, b, nameUniquer, calleeDecls,
+                          topLevelGraph);
+  bool needsMangling = mangler.needsMangling();
 
   // Make sure to rebind the call operands based on the mangled types of the
   // callee's argument types.
@@ -235,17 +235,10 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     });
     cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
 
-    // At this point, the only nested ops that declares parameters in their
-    // scope are ParamDeclareRegionOp and HLCF::ComptimeForOp, whose
-    // declarations need special treatment.
+    // At this point, the only nested op that declares parameters in its scope
+    // is HLCF::ComptimeForOp, whose declaration needs special treatment.
     if (needsMangling) {
-      if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(cloned)) {
-        SmallVector<ParamDeclAttr> newInputDecls;
-        for (ParamDeclAttr decl : regionDecl.getInputParams())
-          newInputDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
-        regionDecl.setInputParams(newInputDecls);
-        newDecls.append(newInputDecls);
-      } else if (auto paramFor = dyn_cast<HLCF::ComptimeForOp>(cloned)) {
+      if (auto paramFor = dyn_cast<HLCF::ComptimeForOp>(cloned)) {
         ParamDeclAttr newDecl =
             mangler.mangleDecl(paramFor.getParamDecl(), needsMangling);
         paramFor.setParamDeclAttr(newDecl);
@@ -726,4 +719,10 @@ void InlineParametricPass::runOnOperation() {
        llvm::make_second_range(graph.nodes))
     state.fork([&] { inlineReadyFn(caller); });
   state.join();
+
+  // Keep the workers' new cache entries for the passes that follow. No worker
+  // reads `paramCache` any more, so writing to it is safe.
+  graph.paramCaches.consolidate(
+      [](ParameterCollector::Analysis &base,
+         const ParameterCollector::Analysis &layer) { layer.mergeInto(base); });
 }

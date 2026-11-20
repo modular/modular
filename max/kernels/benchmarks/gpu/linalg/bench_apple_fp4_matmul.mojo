@@ -35,7 +35,7 @@ from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.fp4_utils import NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
@@ -179,26 +179,12 @@ def _bench_fp4_shape(
     var matprealloc_sec = (perf_counter() - t3) / Float64(hot)
 
     print(
-        "  ",
-        m,
-        "x",
-        n,
-        "x",
-        k,
-        ":  adaptive",
-        adaptive_sec * 1000.0,
-        "ms (",
-        flops / (adaptive_sec * 1e12),
-        "TF/s) | fused",
-        fused_sec * 1000.0,
-        "ms | mat-alloc",
-        matalloc_sec * 1000.0,
-        "ms | mat-prealloc",
-        matprealloc_sec * 1000.0,
-        "ms | fused/mat-alloc",
-        fused_sec / matalloc_sec,
-        "| alloc-overhead-ms",
-        (matalloc_sec - matprealloc_sec) * 1000.0,
+        t"   {m} x {n} x {k} :  adaptive {adaptive_sec * 1000.0} ms ("
+        t" {flops / (adaptive_sec * 1e12)} TF/s) | fused"
+        t" {fused_sec * 1000.0} ms | mat-alloc {matalloc_sec * 1000.0} ms |"
+        t" mat-prealloc {matprealloc_sec * 1000.0} ms | fused/mat-alloc"
+        t" {fused_sec / matalloc_sec} | alloc-overhead-ms"
+        t" {(matalloc_sec - matprealloc_sec) * 1000.0}"
     )
 
     _ = act_host^
@@ -216,8 +202,8 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 required (compute_capability == 5)")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 required (compute_capability >= 5)")
         return
 
     print("== bench_apple_fp4_matmul (warmup=20, hot=20)")

@@ -51,14 +51,8 @@ def test[
     comptime K = expert_shape[1]
 
     print(
-        "Testing: experts=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " active=",
-        num_active_experts,
+        t"Testing: experts= {num_experts}  N= {N}  K= {K}  active="
+        t" {num_active_experts}"
     )
 
     var total_num_tokens = 0
@@ -205,21 +199,21 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 8),
+            expert_shape=(256, 8),
         ](1, [46], [0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 8),
+            expert_shape=(256, 8),
         ](1, [128], [0], ctx)
 
         test[
             .bfloat16,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 8),
+            expert_shape=(256, 8),
         ](3, [16, 32, 24], [0, 2, 1], ctx)
 
         # K=1..7: CUDA core path (stride < 16 bytes).
@@ -228,7 +222,7 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 num_experts=1,
-                expert_shape=Index(128, K),
+                expert_shape=(128, K),
             ](1, [64], [0], ctx)
 
         print("All small-K grouped matmul tests passed!")

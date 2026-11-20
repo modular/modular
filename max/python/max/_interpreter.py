@@ -139,7 +139,7 @@ def _is_interpretable_custom(op: _core.Operation) -> bool:
     :class:`~max.driver.Buffer` representation for, so every other type
     (chain, buffer, opaque, and anything added later) refuses by
     construction. An op with no resolvable
-    :class:`~max.experimental.custom.CustomOp` has no shape contract to
+    :class:`~max.functional.custom_op.CustomOp` has no shape contract to
     bind, so it compiles instead. So does one whose operands and results
     don't all agree on a device, since a binding runs on a single one.
     """
@@ -170,8 +170,10 @@ def can_execute(graph: Graph, max_ops: int | None = None) -> bool:
 
 
 def _describe(op: _core.Operation) -> str:
-    """Names an op by its MLIR name, which an op with no Python class lacks
-    from its type."""
+    """Names an op by its MLIR name.
+
+    An op with no Python class cannot take its name from its type.
+    """
     asm = op.asm(
         print_generic_op_form=True, skip_regions=True, assume_verified=True
     )
@@ -283,7 +285,6 @@ def _walk_ops(module: builtin.ModuleOp) -> Iterator[_core.Operation]:
     Returns:
         Generator of dispatchable operations in execution order.
     """
-
     # MO graphs have the structure:
     # builtin.module -> mo.graph -> Region 0 -> Block 0 -> operations
     # SSA form guarantees operations are already in valid execution order.

@@ -17,7 +17,8 @@ from __future__ import annotations
 import enum
 import functools
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 from max import tree
@@ -27,44 +28,54 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import (
+from max.graph import Module as GraphModule
+from max.nn._graph_ops.data_parallel import split_batch_replicated
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
     TensorParallelLatentAttentionWithRope,
 )
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
     TensorParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.comm.ep import EPBatchManager, EPConfig
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.moe import MoE, MoEQuantized
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import BatchContext, EPLBProfile
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.moe import MoE, MoEQuantized
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import (
-    ReturnHiddenStates,
-    ReturnLogits,
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
     forward_sequential_layers,
+    logits_outputs,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_batch_inputs,
     signal_inputs,
@@ -101,10 +112,15 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
       - DP attention + EP MoE: ``data_parallel_degree == num_devices``
       - TP attention + EP MoE: ``data_parallel_degree == 1``
       - TP attention + TP MoE: ``data_parallel_degree == 1``, no EP
-    ``DeepseekV3Config.__post_init__`` already enforces
-    ``data_parallel_degree in (1, num_devices)``.
     """
     num_devices = len(config.devices)
+    # The pipeline sets the degree after `DeepseekV3Config.__post_init__`
+    # has checked it, so check it again here.
+    if config.data_parallel_degree not in (1, num_devices):
+        raise ValueError(
+            f"data_parallel_degree for DeepseekV3 ({config.data_parallel_degree})"
+            f" must be 1 (TP attention) or the number of devices ({num_devices})."
+        )
     # TP+TP (data_parallel_degree == 1, no ep_config) is valid.
     # Only require EP when using data-parallel attention on multiple GPUs.
     # Skip EP validation in virtual device mode (compilation-only) since EP
@@ -159,7 +175,7 @@ def deepseek_logits_postprocess(
     emit_last_token_logits: bool = True,
     unpadded_vocab_size: int | None = None,
     vocab_size: int | None = None,
-) -> tuple[TensorValue, ...]:
+) -> DecoderOutputs:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
 
     Handles last-token gathering, DP-attention-specific allgather (needed
@@ -174,8 +190,7 @@ def deepseek_logits_postprocess(
     avoid an unused vocab-sized GEMM + collective per step.
 
     Returns:
-        ``([last_logits], [logits, offsets], [hidden_states])`` — the optional
-        segments are present only when the corresponding mode is active.
+        The named outputs; see :func:`~max.nn.legacy.transformer.logits_outputs`.
     """
     if is_data_parallel_attention:
         last_token_per_dev: list[TensorValue] = []
@@ -294,24 +309,24 @@ def deepseek_logits_postprocess(
     assert last_logits is not None or logits is not None, (
         "skipping last_logits requires VARIABLE/ALL logits to be emitted"
     )
-    ret_val: tuple[TensorValue, ...] = (
-        () if last_logits is None else (last_logits,)
+    return logits_outputs(
+        last_logits,
+        logits,
+        offsets,
+        return_hidden_states,
+        extract_hs(
+            return_hidden_states=return_hidden_states,
+            last_token_hs_distributed=last_token_distributed,
+            all_hs_distributed=h,
+            normalizer=norm_shards,
+            capture_hidden_states=capture_hidden_states,
+        ),
     )
-    if logits is not None and offsets is not None:
-        ret_val += (logits, offsets)
-
-    ret_val += extract_hs(
-        return_hidden_states=return_hidden_states,
-        last_token_hs_distributed=last_token_distributed,
-        all_hs_distributed=h,
-        normalizer=norm_shards,
-        capture_hidden_states=capture_hidden_states,
-    )
-
-    return ret_val
 
 
 class DeepseekV3DecoderLayer(Module):
+    """One DeepSeek-V3 decoder layer."""
+
     def __init__(
         self,
         rope: RotaryEmbedding,
@@ -355,9 +370,14 @@ class DeepseekV3DecoderLayer(Module):
         nvfp4_enabled = (
             config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = (
-            config.quant_config is not None and not config.quant_config.is_fp4
-        )
+        attn_quant_config = config.attn_quant_config
+        if (
+            attn_quant_config is None
+            and config.quant_config is not None
+            and not config.quant_config.is_fp4
+        ):
+            attn_quant_config = config.quant_config
+        use_fp8_mla = attn_quant_config is not None
 
         if (
             nvfp4_enabled
@@ -379,7 +399,7 @@ class DeepseekV3DecoderLayer(Module):
                 # handled by the EP MoE, so skip the attention all-reduce.
                 mla_kwargs["skip_allreduce"] = True
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = TensorParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
@@ -387,14 +407,14 @@ class DeepseekV3DecoderLayer(Module):
             case ParallelismMode.TP_TP:
                 mla_kwargs["skip_allreduce"] = False
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = TensorParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
                     mla_cls = TensorParallelLatentAttentionWithRope
             case ParallelismMode.DP_EP:
                 if use_fp8_mla:
-                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_kwargs["quant_config"] = attn_quant_config
                     mla_cls = DataParallelLatentAttentionWithRopeFp8
                 else:
                     mla_kwargs["dtype"] = DType.bfloat16
@@ -434,8 +454,7 @@ class DeepseekV3DecoderLayer(Module):
         )
 
     def _get_mlp(self, config: DeepseekV3Config, layer_idx: int) -> MLP | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
@@ -521,7 +540,7 @@ class DeepseekV3DecoderLayer(Module):
             )
             # ``config.dtype`` is the packed-weight / graph encoding dtype
             # (e.g. uint8 for ``float4_e2m1fnx2``). Unquantized dense MLPs use
-            # BF16 tensors; :class:`~max.nn.Linear` only switches to uint8 when
+            # BF16 tensors; :class:`~max.nn.legacy.Linear` only switches to uint8 when
             # ``quant_config.is_fp4`` is true.
             mlp_weight_dtype = (
                 config.dtype if dense_quant is not None else DType.bfloat16
@@ -566,6 +585,7 @@ class DeepseekV3DecoderLayer(Module):
         eplb_counter_buffers: list[BufferValue] | None = None,
         layer_idx_per_device: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
+        """Runs the layer over the hidden states."""
         num_devices = len(kv_collections)
 
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
@@ -716,7 +736,7 @@ def deepseekV3_input_tree(
         ),
         signals=signal_inputs(device_refs),
         kv=kv_params.get_symbolic_inputs(),
-        batch_context=OrderedDict(
+        batch_context=BatchContext(
             length=tuple(
                 TensorType(DType.int32, shape=[1], device=DeviceRef.CPU())
                 for _ in device_refs
@@ -727,7 +747,7 @@ def deepseekV3_input_tree(
         inputs["ep"] = EPBatchManager(ep_config).input_tree()
     if eplb_profile is not None:
         num_layers, n_experts = eplb_profile
-        inputs["eplb_profile"] = OrderedDict(
+        inputs["eplb_profile"] = EPLBProfile(
             expert_counts=tuple(
                 BufferType(DType.int64, shape=[n_experts], device=device)
                 for _ in range(num_layers)
@@ -855,7 +875,8 @@ class DeepseekV3(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
         eplb_counter_buffers_per_layer: list[list[BufferValue]] | None = None,
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         return self._process_hidden_states(
@@ -884,7 +905,7 @@ class DeepseekV3(Module):
         ep_inputs: list[Value[Any]] | None = None,
         eplb_counter_buffers_per_layer: list[list[BufferValue]]
         | None = None,  # (num_layers, num_devices)
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -968,8 +989,11 @@ class DeepseekV3(Module):
                 if eplb_counter_buffers_per_layer is not None
                 else []
             )
-            if self.config.ep_config is not None and getattr(
-                self.config.ep_config, "eplb_enabled", False
+            if self.config.ep_config is not None and (
+                getattr(self.config.ep_config, "eplb_enabled", False)
+                or getattr(
+                    self.config.ep_config, "eplb_count_expert_load", False
+                )
             ):
                 values.append(
                     [
@@ -1034,4 +1058,79 @@ class DeepseekV3(Module):
         self,
         kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, taken from the input tree."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph over the leaves of :meth:`input_tree`.
+
+        The leaves carry the config's KV cache parameters.
+
+        Adapts the flat graph inputs to :meth:`__call__`: splits off the
+        signal buffers, unflattens the KV cache, and stages the row offsets
+        on every device. The EP inputs, and the EPLB counters when profiling,
+        pass through as the trailing inputs.
+
+        Args:
+            *input_types: The graph's input types.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+        n_devices = len(self.config.devices)
+
+        def forward(
+            tokens: Value[Any],
+            row_offsets: Value[Any],
+            host_row_offsets: Value[Any],
+            return_n_logits: Value[Any],
+            data_parallel_splits: Value[Any],
+            *variadic_args: Value[Any],
+        ) -> DecoderOutputs:
+            remaining = iter(variadic_args)
+            signal_buffers = [next(remaining).buffer for _ in range(n_devices)]
+            kv_collections = tree.leaves(
+                self.config.kv_params.unflatten_kv_inputs(remaining),
+                leaf=KVCacheInputsPerDevice,
+            )
+            batch_context_lengths = [
+                next(remaining).tensor for _ in range(n_devices)
+            ]
+            return self(
+                tokens.tensor,
+                signal_buffers,
+                kv_collections,
+                return_n_logits.tensor,
+                list(
+                    ops.distributed_broadcast(
+                        row_offsets.tensor, signal_buffers
+                    )
+                ),
+                host_row_offsets.tensor,
+                data_parallel_splits.tensor,
+                batch_context_lengths,
+                list(remaining),
+            )
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
+        )

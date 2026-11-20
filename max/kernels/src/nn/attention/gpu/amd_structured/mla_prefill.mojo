@@ -13,22 +13,25 @@
 """MLA (Multi-Latent Attention) prefill kernel for gfx950.
 
 Double-buffered MLA prefill with K_rope support. Uses TileTensor
-throughout; no LayoutTensor in the public or internal API.
+throughout.
 
 Two-phase QK matmul per tile:
   Phase 1 (nope): Q[:,:depth] @ K^T
   Phase 2 (rope): Q[:,depth:q_depth] @ K_rope^T
 """
 
+from std.collections import OptionalReg
+from std.math import ceildiv, clamp, log2
 from std.math.uutils import ufloordiv
 from std.sys import align_of, simd_width_of
-from std.sys.intrinsics import readfirstlane
-from max.gpu import warp_id as get_warp_id
+from max.gpu.intrinsics import readfirstlane
+from max.gpu import lane_id, warp_id as get_warp_id
 from std.memory import bitcast, unsafe_stack_allocation
+from layout import TileTensor, row_major
 from layout.swizzle import Swizzle
 from nn.attention.mha_mask import CausalMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .attention import Attention
 from .iglp import _iglp_opt, AMDIGLPStrategy
@@ -39,10 +42,75 @@ from .mma import TiledMmaOp
 
 __extension Attention:
     @inline(.always)
+    def store_split_lse(
+        self,
+        lse_ptr: OptionalReg[MutPointer[Scalar[DType.float32], _]],
+        split_idx: Int,
+        num_splits: Int,
+        total_rows: Int,
+        row_base: Int,
+        empty: Bool,
+    ):
+        """Writes each query row's log2-sum-exp for one KV split.
+
+        The row stats are broadcast across the MFMA lane group, so lane
+        `l < MMA_M` owns row `l` of its M tile. `empty` marks a split with no
+        key tiles; the combine skips it.
+
+        Args:
+            lse_ptr: The `[num_splits, total_rows, num_heads]` stack of
+                log2-sum-exp planes, one per split.
+            split_idx: This CTA's KV split.
+            num_splits: Number of KV splits.
+            total_rows: Ragged query rows the stack covers.
+            row_base: Ragged row of this sequence's first query.
+            empty: Whether this split visited no key tiles.
+        """
+        # Required whenever `split_kv` is set; the launcher always passes it
+        # for a split launch. A device-side `__guard`/`abort` on it does not
+        # lower (the offload pass cannot prove the binding dominates), so this
+        # is the one place the split path unwraps the pointer.
+        var lse_tt = TileTensor(
+            lse_ptr.value(),
+            row_major((num_splits, total_rows, Self.num_heads)),
+        )
+        var lane = Int(lane_id())
+        if lane >= Self.mma_shape[0]:
+            return
+        comptime for m_mma in range(Self.num_m_mmas):
+            var row = (
+                Self.q_tile_idx() * Self.BM
+                + self.warp_row * Self.WM
+                + m_mma * Self.mma_shape[0]
+                + lane
+            )
+            if row < self.seq_len:
+                var row_lse = min_or_neg_inf[DType.float32]()
+                if not empty:
+                    row_lse = self.softmax.rowmax_tensor[m_mma, 0][0].cast[
+                        DType.float32
+                    ]() + log2(
+                        self.softmax.rowsum_tensor[m_mma, 0][0].cast[
+                            DType.float32
+                        ]()
+                    )
+                lse_tt[split_idx, row_base + row, Self.q_head_idx()] = row_lse
+
+    @inline(.always)
     def mla_prefill[
         k_rope_t: MHAOperand,
         //,
-    ](mut self, k_rope: k_rope_t):
+        split_kv: Bool = False,
+        split_min_keys: Int = 1024,
+    ](
+        mut self,
+        k_rope: k_rope_t,
+        split_idx: Int = 0,
+        num_splits: Int = 1,
+        lse_ptr: OptionalReg[MutPointer[Scalar[DType.float32], _]] = None,
+        lse_row_base: Int = 0,
+        lse_total_rows: Int = 0,
+    ):
         """Double-buffered gfx950 MLA prefill with K_rope support.
 
         Uses gfx950 double-buffered KVBuffer for K, V, and K_rope
@@ -50,6 +118,28 @@ __extension Attention:
         Two-phase QK matmul:
         Phase 1 (nope): Q[:,:depth] @ K^T  (KVBuffer path)
         Phase 2 (rope): Q[:,depth:q_depth] @ K_rope^T  (KVBuffer path)
+
+        With `split_kv`, the CTA visits only split `split_idx` of
+        `num_splits` contiguous slices of its key tiles, stores the
+        normalized fp32 partial output, and writes each row's log2-sum-exp
+        to split `split_idx` of the `lse_ptr` stack for the combine.
+
+        Parameters:
+            k_rope_t: The K_rope operand type (inferred).
+            split_kv: Whether this CTA computes one KV split.
+            split_min_keys: Key positions each split keeps. The launch sizes
+                `num_splits` from the K buffer's extent, which can exceed the
+                keys a sequence really holds, so a CTA drops the splits past
+                `ceil(num_tiles * BN / split_min_keys)` and they store nothing.
+
+        Args:
+            k_rope: The K_rope operand.
+            split_idx: This CTA's KV split.
+            num_splits: Number of KV splits.
+            lse_ptr: The `[num_splits, total_rows, num_heads]` stack of
+                log2-sum-exp planes (split_kv only; required then).
+            lse_row_base: Ragged row of this sequence's first query.
+            lse_total_rows: Ragged query rows the stack covers.
         """
         comptime cache_num_heads = 1
         comptime cache_depth = 576
@@ -89,6 +179,8 @@ __extension Attention:
             depth=Self.depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=True,
+            uniform_dma_offset=True,
+            uniform_row_math=True,
         ]
         var k_buffer = KBufT(
             self.k,
@@ -123,6 +215,8 @@ __extension Attention:
             depth=Self.output_depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
+            uniform_dma_offset=True,
+            uniform_row_math=True,
         ]
         var v_buffer = VBufT(
             self.v,
@@ -161,6 +255,8 @@ __extension Attention:
             transpose=True,
             cache_depth=cache_depth,
             head_dim_offset=cache_depth - rope_depth,
+            uniform_dma_offset=True,
+            uniform_row_math=True,
         ]
         var k_rope_buffer = KRopeBufT(
             k_rope,
@@ -175,6 +271,13 @@ __extension Attention:
         )
 
         comptime accum_type = get_accum_type[Self.k_t.dtype]()
+        # The fp8 P pre-scale `2^p_scale_log2` folds into the `exp2` argument
+        # (an integer argument shift, i.e. an exact power-of-two scale), leaving
+        # the row sum that many times too large for the epilogue to divide back
+        # out. `PRegisterBuffer._scale_p` then leaves P unscaled.
+        comptime p_scale_log2 = type_of(self.p_reg_buffer).p_scale_log2
+        comptime p_scale_in_exp = (Self.p_scale_in_exp and p_scale_log2 != 0)
+        comptime p_exp_bias_log2 = p_scale_log2 if p_scale_in_exp else 0
 
         # Phase 1: Q_nope @ K^T (depth // BK iterations)
         @inline(.always)
@@ -242,13 +345,46 @@ __extension Attention:
             )
         )
 
+        comptime if split_kv:
+            comptime assert (
+                Self.mask_t == CausalMask
+            ), "split-KV MLA prefill supports only the causal mask"
+            # The launch's split count comes from the K buffer's extent, so on
+            # a short context inside an over-sized buffer it can ask for more
+            # splits than the mask's key tiles support. Cap it by the real key
+            # count: every split keeps `split_min_keys`, and the splits past
+            # the cap find no tiles, store an empty plane and are skipped by
+            # the combine.
+            var key_bounded_splits = ceildiv(
+                num_tiles * Self.BN, split_min_keys
+            )
+            var splits = clamp(key_bounded_splits, 1, num_splits)
+            var tiles_per_split = ceildiv(num_tiles, splits)
+            var first_tile = split_idx * tiles_per_split
+            num_tiles = clamp(num_tiles - first_tile, 0, tiles_per_split)
+            start_col += UInt32(first_tile * Self.BN)
+            if num_tiles == 0:
+                self.store_split_lse(
+                    lse_ptr,
+                    split_idx,
+                    num_splits,
+                    lse_total_rows,
+                    lse_row_base,
+                    empty=True,
+                )
+                return
+
         # Advance KV iterators and mask tracking to start_col.
-        k_buffer.kv_cache_iter.tile_start_row = Int(start_col)
-        v_buffer.kv_cache_iter.tile_start_row = Int(start_col)
-        k_rope_buffer.kv_cache_iter.tile_start_row = (
+        k_buffer.kv_cache_iter.set_start_row(Int(start_col))
+        v_buffer.kv_cache_iter.set_start_row(Int(start_col))
+        k_rope_buffer.kv_cache_iter.set_start_row(
             Int(start_col) + self.cache_start_pos
         )
-        self.kv_start_row = start_col
+        # Pinned so the steady loop's per-tile classification stays wave-uniform.
+        comptime if Self.uniform_mask_row:
+            self.kv_start_row = UInt32(readfirstlane(Int32(start_col)))
+        else:
+            self.kv_start_row = start_col
         self.mask_warp_col += start_col
 
         var num_pairs = num_tiles // 2
@@ -270,25 +406,11 @@ __extension Attention:
             mut k_rope_buffer: KRopeBufT,
             mut v_buffer: VBufT,
         ):
-            # The pipeline prefetches one tile ahead even from the final
-            # tile. Past `num_keys` that would be a paged-cache OOB read, so
-            # re-read the last valid tile instead: the data is unused, but
-            # the DMA count (and the `vmcnt` waits below) stays the same.
-            if (
-                k_buffer.kv_cache_iter.tile_start_row
-                >= k_buffer.kv_cache_iter.end
-            ):
-                k_buffer.kv_cache_iter.tile_start_row -= Self.BN
-            if (
-                k_rope_buffer.kv_cache_iter.tile_start_row
-                >= k_rope_buffer.kv_cache_iter.end
-            ):
-                k_rope_buffer.kv_cache_iter.tile_start_row -= Self.BN
-            if (
-                v_buffer.kv_cache_iter.tile_start_row
-                >= v_buffer.kv_cache_iter.end
-            ):
-                v_buffer.kv_cache_iter.tile_start_row -= Self.BN
+            # The pipeline prefetches one tile ahead even from the final tile;
+            # re-read the last valid tile rather than read past `num_keys`.
+            k_buffer.kv_cache_iter.clamp_prefetch_tile()
+            k_rope_buffer.kv_cache_iter.clamp_prefetch_tile()
+            v_buffer.kv_cache_iter.clamp_prefetch_tile()
             _ = k_buffer.load_from_dram[next_slot]()
             _ = k_rope_buffer.load_from_dram[next_slot]()
             _ = v_buffer.load_from_dram[next_slot]()
@@ -299,12 +421,14 @@ __extension Attention:
         ]() {mut k_buffer, mut k_rope_buffer, mut self, mut v_buffer, imm}:
             comptime next_slot = 1 - slot
 
-            # Wait for K + K_rope loads to complete for this slot.
-            # V was issued last, so vmcnt=V.vm means K and K_rope are done.
-            comptime if has_next:
-                block_sync_lds_direct_load[vmcnt=v_buffer.vm_instrs_per_load]()
-            else:
-                block_sync_lds_direct_load[vmcnt=0]()
+            # One barrier per tile: this tile's K, K_rope and V were all issued
+            # by the previous tile's prefetch, so the only outstanding DMA here
+            # is this slot's and `vmcnt(0)` is the exact count. One full drain
+            # plus barrier then covers both the RAW on V and the WAR of the
+            # mid-tile prefetch into `next_slot`, which every wave reaches only
+            # after its previous tile's LDS reads (consumed by the PV MFMAs)
+            # have landed.
+            block_sync_lds_direct_load[vmcnt=0]()
             barrier()
 
             # IGroupLP: co-issue the softmax exp with the next tile's QK MMA to
@@ -339,19 +463,9 @@ __extension Attention:
             # Online softmax: deferred-scale variant that emits packed FMAs
             # (`v_pk_fma_f32 score, scale, neg_scaled_max`) instead of the
             # separate `v_pk_add (score - max)` + `v_pk_mul (* scale)` pair.
-            # Saves ~16 VALU ops per warp per tile and matches aiter's
-            # softmax inner loop.
-            self.online_softmax_step_0_pkfma[0]()
-            self.online_softmax_step_1_pkfma[0]()
-
-            # Wait for V loads from current slot before reading.
-            comptime if has_next:
-                block_sync_lds_direct_load[
-                    vmcnt=k_buffer.vm_instrs_per_load
-                    + k_rope_buffer.vm_instrs_per_load
-                    + v_buffer.vm_instrs_per_load
-                ]()
-            barrier()
+            # `arg_bias_log2` is the fp8 P pre-scale, folded into `exp2`.
+            self.online_softmax_step_0_pkfma[0, arg_bias_log2=p_exp_bias_log2]()
+            self.online_softmax_step_1_pkfma[0, arg_bias_log2=p_exp_bias_log2]()
 
             v_buffer.load_from_shared(slot)
 
@@ -367,6 +481,30 @@ __extension Attention:
         # Remainder: last odd tile from slot 0.
         if num_tiles % 2 != 0:
             process_tile[0, False]()
+
+        # P carries the `2^p_scale_log2` fp8 pre-scale inside its exp2
+        # argument, so the row sum is that many times too large. Divide it back
+        # out (an exact power of two) before the split-K LSE and the output
+        # denominator read it.
+        comptime if p_scale_in_exp:
+            comptime for m_mma in range(Self.num_m_mmas):
+                self.softmax.rowsum_tensor[
+                    m_mma, 0
+                ] = self.softmax.rowsum_tensor[m_mma, 0] * Scalar[
+                    Self.accum_type
+                ](
+                    1.0 / Float64(1 << p_scale_log2)
+                )
+
+        comptime if split_kv:
+            self.store_split_lse(
+                lse_ptr,
+                split_idx,
+                num_splits,
+                lse_total_rows,
+                lse_row_base,
+                empty=False,
+            )
 
         # Apply final softmax denominator and store.
         self.out_reg_buffer.apply_softmax_denominator[

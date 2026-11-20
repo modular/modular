@@ -361,7 +361,7 @@ struct TMemEngine(TensorEngine):
 Constructing a tile from an allocation:
 
 ```mojo
-comptime ACCUM_LAYOUT = TileLayout(
+comptime ACCUM_LAYOUT = Layout(
     shape=Coord(Idx[128], Idx[N]),
     stride=Coord(Idx[1], Idx[TMEM_NUM_LANES]),
 )

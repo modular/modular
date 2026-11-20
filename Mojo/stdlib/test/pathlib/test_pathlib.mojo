@@ -16,6 +16,7 @@ from std.pathlib import DIR_SEPARATOR, Path, cwd
 from std.tempfile import NamedTemporaryFile
 
 from std.reflection import source_location
+from std.sys import CompilationTarget
 from test_utils import check_write_to
 from std.testing import (
     assert_equal,
@@ -140,6 +141,17 @@ def test_home() raises:
 
     # Ensure other tests in this process aren't broken by changing the home dir.
     set_home(original_home)
+
+
+def test_devnull() raises:
+    comptime if CompilationTarget.is_linux() or CompilationTarget.is_macos():
+        var devnull = Path.devnull()
+        assert_equal(devnull, Path("/dev/null"))
+        assert_true(devnull.exists())
+
+        # Writes are discarded and reads return end of file.
+        devnull.write_text("discarded")
+        assert_equal(devnull.read_text(), "")
 
 
 def test_stat() raises:

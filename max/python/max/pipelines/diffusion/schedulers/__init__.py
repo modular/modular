@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Noise schedulers for diffusion pipelines, plus the factory that creates
-them from a model config.
+"""Noise schedulers for diffusion pipelines.
+
+The factory that creates them reads a model config.
 """
 
 from .scheduler_factory import SchedulerFactory

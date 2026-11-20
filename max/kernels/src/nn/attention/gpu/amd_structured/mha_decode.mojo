@@ -33,7 +33,7 @@ V always lives in slot 0.
 """
 
 from std.sys import get_defined_bool
-from std.sys.intrinsics import readfirstlane
+from max.gpu.intrinsics import readfirstlane
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
 from max.gpu import block_idx
@@ -56,10 +56,10 @@ __extension Attention:
     @inline(.always)
     def mha_decode(
         mut self,
-        exp_sum_ptr: UnsafePointer[
+        exp_sum_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
-        qk_max_ptr: UnsafePointer[
+        qk_max_ptr: MutPointer[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
         num_partitions: Int,
@@ -83,10 +83,14 @@ __extension Attention:
             readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
 
-        # Split-K: compute this partition's key range.
+        # Split-K: compute this partition's key range over the keys the mask
+        # can show this sequence (all of them unless it hides a prefix).
+        var first_key = self.decode_first_key()
         var start, end = get_start_and_end_for_partitions[Self.BN](
-            self.num_keys, num_partitions, block_idx.x
+            self.num_keys - first_key, num_partitions, block_idx.x
         )
+        start += first_key
+        end += first_key
 
         # Empty partitions (from power-of-two bucketing): reset to
         # rowsum=0/rowmax=-inf so the reduce masks them via `scale > 0`.
@@ -190,7 +194,9 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             VBufT.SmemParentType(
-                (self.v_smem_ptr + v_warp_smem_offset).as_unsafe_any_origin(),
+                self.v_smem_ptr.unsafe_offset(
+                    v_warp_smem_offset
+                ).as_unsafe_any_origin(),
                 VBufT._SmemParentLayout(),
             ),
             end,

@@ -273,7 +273,7 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
       its callee has been concretized into a symbol constant. The method should
       use the builder to create a new operation that invokes the callee.
     }], "void", "concretizeCallee", (ins "IRRewriter &":$b,
-                                         "SymbolConstantAttr":$callee), [{}], [{
+                                         "FuncSymbolGenerator":$callee), [{}], [{
       $_op.setCalleeAttr(callee);
     }]>
   ];
@@ -366,14 +366,14 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       Example:
 
       ```mlir
-      kgen.param.declare.region Fn = <A>() -> ()
+      kgen.generator @Fn<A: index>() -> ()
           constraints <[eq(A, 1), "A == 1"]> {
       }
       ```
 
       Here, the expression `eq(A, 1)` contains a use of the parameter `A` which
-      is declared inside the scope defined by the `kgen.param.declare.region`.
-      This use must be distinguished from the uses of parameters by the
+      is declared inside the scope defined by the `kgen.generator`. This use
+      must be distinguished from the uses of parameters by the
       operation at the scope that contains the operation (i.e. the scope in
       which `Fn` is declared).
     }], "void", "collectParameterUsesBelow",
@@ -546,8 +546,8 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
     /// Get the symbol backing the callee.
     SymbolRefAttr getCalleeSymbol() {
-      if (auto callee = dyn_cast<SymbolConstantAttr>($_op.getCallee()))
-        return callee.getSymbol();
+      if (auto generator = FuncSymbolGenerator::dynCast($_op.getCallee()))
+        return generator.getSymbol();
       return {};
     }
   }];

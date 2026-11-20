@@ -45,15 +45,8 @@ def test[
     ctx: DeviceContext,
 ) raises:
     print(
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts; q_dim",
-        q_dim,
-        "kv_dim",
-        kv_dim,
-        "R",
-        R,
+        t"{num_active_experts} active of {num_experts} experts; q_dim"
+        t" {q_dim} kv_dim {kv_dim} R {R}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):
@@ -132,11 +125,11 @@ def test[
         row_major(M, Idx[R]),
     )
     var p_plane_k = TileTensor(
-        p_dev_buffer.unsafe_ptr() + M * R,
+        p_dev_buffer.unsafe_ptr().unsafe_offset(M * R),
         row_major(M, Idx[R]),
     )
     var p_plane_v = TileTensor(
-        p_dev_buffer.unsafe_ptr() + 2 * M * R,
+        p_dev_buffer.unsafe_ptr().unsafe_offset(2 * M * R),
         row_major(M, Idx[R]),
     )
 

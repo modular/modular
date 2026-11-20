@@ -25,6 +25,7 @@ Contains:
 """
 
 from std.collections import Array, List
+from std.math import divmod
 
 from .config import PipelineConfig, ScheduleConfig, SchedulingStrategy
 from .dependency_graph import LoopBody, OpNode
@@ -108,10 +109,11 @@ def _construct_mma_blocks(
                     pre_ops.append(op)
                 case .GLOBAL_LOAD:
                     global_loads.append(op)
+                case _:
+                    pass
             op_idx += 1
 
-        var pos_in_partition = block_idx % bph
-        var partition_idx = block_idx // bph
+        var partition_idx, pos_in_partition = divmod(block_idx, bph)
         var pre_op_0 = pre_ops[0] if len(pre_ops) >= 1 else OpDesc.none()
         var pre_op_1 = pre_ops[1] if len(pre_ops) >= 2 else OpDesc.none()
         var gl0 = global_loads[0] if len(global_loads) >= 1 else OpDesc.none()
@@ -653,11 +655,11 @@ def _verify_block_completeness(program: PipelineProgram, num_blocks: Int):
     for i in range(num_blocks):
         debug_assert(
             program.blocks[i].mma.is_present(),
-            "verify_schedule: block " + String(i) + " has no MMA op",
+            String(t"verify_schedule: block {i} has no MMA op"),
         )
         debug_assert(
             program.blocks[i].mma.role == OpRole.COMPUTE,
-            "verify_schedule: block " + String(i) + " MMA op has wrong role",
+            String(t"verify_schedule: block {i} MMA op has wrong role"),
         )
 
 
@@ -697,12 +699,10 @@ def _verify_wait_count_bounds(
                     )
                 debug_assert(
                     wait_lgkm_first <= gl_lgkm,
-                    "verify_schedule: wait_lgkm_first ("
-                    + String(wait_lgkm_first)
-                    + ") > block 0 global lgkm ("
-                    + String(gl_lgkm)
-                    + ") in half "
-                    + String(half),
+                    String(
+                        t"verify_schedule: wait_lgkm_first ({wait_lgkm_first}) "
+                        t"> block 0 global lgkm ({gl_lgkm}) in half {half}"
+                    ),
                 )
 
     debug_assert(
@@ -735,12 +735,10 @@ def _verify_distribution_invariant(
             )
             debug_assert(
                 count == max_globals,
-                "verify_schedule: block "
-                + String(i)
-                + " has "
-                + String(count)
-                + " globals, expected "
-                + String(max_globals),
+                String(
+                    t"verify_schedule: block {i} has {count} globals, expected "
+                    t"{max_globals}"
+                ),
             )
 
 
@@ -768,22 +766,20 @@ def _verify_stage_consistency(program: PipelineProgram, config: PipelineConfig):
             if block.pre_op_0.is_present():
                 debug_assert(
                     block.pre_op_0.stage == expected_stage,
-                    "verify_schedule: block "
-                    + String(half * bph + b)
-                    + " pre_op_0 stage="
-                    + String(block.pre_op_0.stage)
-                    + " expected="
-                    + String(expected_stage),
+                    String(
+                        t"verify_schedule: block {half * bph + b} pre_op_0 "
+                        t"stage={block.pre_op_0.stage} expected="
+                        t"{expected_stage}"
+                    ),
                 )
             if block.pre_op_1.is_present():
                 debug_assert(
                     block.pre_op_1.stage == expected_stage,
-                    "verify_schedule: block "
-                    + String(half * bph + b)
-                    + " pre_op_1 stage="
-                    + String(block.pre_op_1.stage)
-                    + " expected="
-                    + String(expected_stage),
+                    String(
+                        t"verify_schedule: block {half * bph + b} pre_op_1 "
+                        t"stage={block.pre_op_1.stage} expected="
+                        t"{expected_stage}"
+                    ),
                 )
 
 
@@ -839,10 +835,10 @@ def _verify_completion_coverage(
                 has_completion = True
         debug_assert(
             has_completion,
-            "verify_schedule: half "
-            + String(half)
-            + " has no completion load (stage != half)"
-            + " — wait_vm would drain nothing, race condition",
+            String(
+                t"verify_schedule: half {half} has no completion load (stage !="
+                t" half) — wait_vm would drain nothing, race condition"
+            ),
         )
 
 
@@ -910,14 +906,13 @@ def _verify_warp_stagger_lds_safety(
                         continue
                     debug_assert(
                         fl.stage != gl.stage,
-                        "verify_schedule: cross-block LDS race — block "
-                        + String(base + i)
-                        + " prefetch writes stage "
-                        + String(gl.stage)
-                        + " which block "
-                        + String(base + i + 1)
-                        + " reads via fragment load. Use max_globals=0"
-                        + " or increase num_k_mmas to add latency.",
+                        String(
+                            t"verify_schedule: cross-block LDS race — block "
+                            t"{base + i} prefetch writes stage {gl.stage} which"
+                            t" block {base + i + 1} reads via fragment load. "
+                            t"Use max_globals=0 or increase num_k_mmas to add "
+                            t"latency."
+                        ),
                     )
 
 
@@ -969,10 +964,10 @@ def verify_schedule(
 
     debug_assert(
         len(program.blocks) == num_blocks,
-        "verify_schedule: expected "
-        + String(num_blocks)
-        + " blocks, got "
-        + String(len(program.blocks)),
+        String(
+            t"verify_schedule: expected {num_blocks} blocks, got "
+            t"{len(program.blocks)}"
+        ),
     )
 
     _verify_block_completeness(program, num_blocks)
@@ -1401,6 +1396,8 @@ def mma_block_interleave[
             case .COMPUTE:
                 mmas[n_m] = op
                 n_m += 1
+            case _:
+                pass
 
     # Track which M-tile rows and N-tile cols have been seen.
     var seen_m = Array[Int, N](fill=0)
@@ -1507,6 +1504,8 @@ def mma_block_interleave_list(
                 frag_b.append(op)
             case .COMPUTE:
                 mmas.append(op)
+            case _:
+                pass
 
     # Track which M-tile rows and N-tile cols have been seen.
     var seen_m = List[Bool]()

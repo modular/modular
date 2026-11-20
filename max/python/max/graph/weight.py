@@ -326,9 +326,9 @@ def stacked_qkv_sharding_strategy(
 def tensor_parallel_sharding_strategy(
     weight: Weight, i: int, num_devices: int
 ) -> TensorValue:
-    """Shards a :class:`~max.nn.Module` across multiple devices using tensor parallel.
+    """Shards a :class:`~max.nn.legacy.Module` across multiple devices using tensor parallel.
 
-    This strategy is designed for :class:`~max.nn.Module` that has multiple weights,
+    This strategy is designed for :class:`~max.nn.legacy.Module` that has multiple weights,
     for which a single weight sharding strategy is not sufficient.
 
     Args:
@@ -349,9 +349,9 @@ def tensor_parallel_sharding_strategy(
 def expert_parallel_sharding_strategy(
     weight: Weight, i: int, num_devices: int
 ) -> TensorValue:
-    """Shards a :class:`~max.nn.Module` across multiple devices using expert parallel.
+    """Shards a :class:`~max.nn.legacy.Module` across multiple devices using expert parallel.
 
-    This strategy is designed for :class:`~max.nn.Module` that has multiple weights,
+    This strategy is designed for :class:`~max.nn.legacy.Module` that has multiple weights,
     for which a single weight sharding strategy is not sufficient.
 
     Args:
@@ -516,7 +516,7 @@ class ShardingStrategy:
     def sharded_axis(self) -> int | None:
         """Axis being sharded, or ``None`` for replicate / placeholder strategies.
 
-        Lets consumers (notably :meth:`max.nn.Linear.shard`) decide whether
+        Lets consumers (notably :meth:`max.nn.legacy.Linear.shard`) decide whether
         the output dim, the input dim, or neither is being split, without
         enumerating every concrete strategy. Returns ``0`` for ``rowwise`` /
         ``stacked_qkv``, ``1`` for ``columnwise`` / ``head_aware_columnwise``,
@@ -654,13 +654,13 @@ class ShardingStrategy:
     def tensor_parallel(num_devices: int) -> ShardingStrategy:
         """Creates a tensor parallel sharding strategy.
 
-        This strategy is designed for :class:`~max.nn.Module` that has multiple weights, for
+        This strategy is designed for :class:`~max.nn.legacy.Module` that has multiple weights, for
         which a single weight sharding strategy is not sufficient. This strategy
         is a placeholder and should not be called directly. Modules are expected
         to implement their own tensor parallel sharding strategy.
 
         Args:
-            num_devices: The number of devices to shard the :class:`~max.nn.Module` across.
+            num_devices: The number of devices to shard the :class:`~max.nn.legacy.Module` across.
 
         Returns:
             A :class:`ShardingStrategy` instance configured for tensor parallel sharding.
@@ -673,13 +673,13 @@ class ShardingStrategy:
     def expert_parallel(num_devices: int) -> ShardingStrategy:
         """Creates an expert parallel sharding strategy.
 
-        This strategy is designed for :class:`~max.nn.Module` that has multiple weights,
+        This strategy is designed for :class:`~max.nn.legacy.Module` that has multiple weights,
         for which a single weight sharding strategy is not sufficient. This strategy
         is a placeholder and should not be called directly. Modules are expected
         to implement their own expert parallel sharding strategy.
 
         Args:
-            num_devices: The number of devices to shard the :class:`~max.nn.Module` across.
+            num_devices: The number of devices to shard the :class:`~max.nn.legacy.Module` across.
 
         Returns:
             A :class:`ShardingStrategy` instance configured for expert parallel sharding.

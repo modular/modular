@@ -26,7 +26,8 @@ import dataclasses
 
 import pytest
 from max.driver import CPU, Device
-from max.experimental.sharding import (
+from max.tensor import default_device
+from max.tensor.sharding import (
     ConversionError,
     DeviceMapping,
     DeviceMesh,
@@ -35,7 +36,6 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import default_device
 
 
 def cpu_devices(n: int) -> tuple[Device, ...]:

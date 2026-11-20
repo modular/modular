@@ -39,7 +39,9 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
 )
@@ -55,7 +57,10 @@ modular_py_library(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
     ],
 )
@@ -86,12 +91,22 @@ modular_py_test(
             # Own binary/test targets below.
             "precompile_mla_sparse.py",
             "test_mla_sparse_prefill_graph_gpu.py",
+            "test_mla_sparse_nvfp4_graph_gpu.py",
+            "test_mla_sparse_mixed_split_gpu.py",
+            "test_mla_dense_mixed_split_gpu.py",
+            "test_mla_indexer_mixed_split_gpu.py",
             "precompile_hadamard.py",
             "test_hadamard_transform.py",
             # Construction-only smoke; runs on CPU (own target below).
             "test_mla_prefill_decode_graph_construction.py",
             # Own target below.
             "test_indexer_prefix_sum.py",
+            # Needs four distinct GPUs; own target below.
+            "test_indexer_act_quant_multi_gpu.py",
+            # Own target below.
+            "test_mla_hisparse_decode_graph_gpu.py",
+            # Needs two distinct B200s; own target below.
+            "test_sparse_mla_pcp_scratch_gpu.py",
         ],
     ),
     env = {
@@ -109,7 +124,7 @@ modular_py_test(
     # Each sparse decode test compiles its own graphs (~120-220s each), so
     # split those CPU record actions to compile in parallel.
     precompile_shards = {
-        "test_mla_sparse_decode_graph_gpu.py": 5,
+        "test_mla_sparse_decode_graph_gpu.py": 6,
     },
     tags = [
         "gpu",
@@ -122,7 +137,10 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
@@ -132,6 +150,44 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mla_sparse_nvfp4_graph_gpu",
+    size = "large",
+    srcs = ["test_mla_sparse_nvfp4_graph_gpu.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        # The fallback-route cell prefills 16 query tokens over a 4096-row
+        # packed cache at 128 heads.
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    imports = ["."],
+    precompile_mefs = True,
+    precompile_shards = 48,
+    tags = ["gpu"],
+    deps = [
+        ":mla_sparse_test_utils",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -151,7 +207,12 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/mlir",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:mixed_step_split_ops",
     ],
 )
 
@@ -174,6 +235,64 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         requirement("numpy"),
+    ],
+)
+
+# `act_quant`'s scales mapping against the real quantization kernel. Needs
+# four distinct GPUs: the claim it checks only bites once `M` is sharded.
+modular_py_test(
+    name = "test_indexer_act_quant_multi_gpu",
+    size = "large",
+    srcs = ["test_indexer_act_quant_multi_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_4_gpus"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
+        requirement("numpy"),
+    ],
+)
+
+# Prefill context parallelism against DCP over two sparse MLA layers that
+# share the step's scratch caches. Two distinct B200s: the sparse prefill
+# kernel is SM100-only, and DCP needs a group of two.
+modular_py_test(
+    name = "test_sparse_mla_pcp_scratch_gpu",
+    size = "large",
+    srcs = ["test_sparse_mla_pcp_scratch_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -207,6 +326,18 @@ precompiled_mefs(
         "prefill_fp8_8h",
         "prefill_bf16_64h",
         "prefill_bf16_8h",
+        "prefill_bf16_fp8kv_64h",
+        "prefill_bf16_fp8kv_8h",
+        "prefill_bf16_fp8kv_32h",
+        "prefill_fp8_fp8kv_8h",
+        "prefill_fp8_fp8kv_16h",
+        "prefill_fp8_fp8kv_32h",
+        "prefill_fp8_fp8kv_64h",
+        # Packed NVFP4 latent cache, for the mixed-batch split test.
+        "prefill_nvfp4_8h",
+        # Wide sparse top-k, so a prefill view of a split runs more than one
+        # split-K partition.
+        "prefill_fp8_fp8kv_8h_topk256",
         # Disaggregated prefill_only variants for the auto-vs-prefill test.
         "prefill_only_fp8_128h",
         "prefill_only_fp8_8h",
@@ -238,10 +369,106 @@ modular_py_test(
         ":mla_sparse_graphs",
         "//max/python/max:tree",
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:mef_precompile",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# GPU consumer for the mixed-batch split: same MEFs, a decode row plus a
+# prefill row, so it runs beside the fresh-prefill target on the same data.
+modular_py_test(
+    name = "test_mla_sparse_mixed_split_gpu",
+    size = "large",
+    srcs = ["test_mla_sparse_mixed_split_gpu.py"],
+    data = [":mla_sparse_prefill_mefs"],
+    env = {
+        "MLA_MEF_RLOCATIONS": "$(rlocationpaths :mla_sparse_prefill_mefs)",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":mla_sparse_graphs",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:mef_precompile",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# GPU consumer for the dense arms' mixed-batch split: a decode row plus a
+# prefill row, each compared with the same row run alone. The graphs compile
+# in a CPU record action, so the GPU only runs them.
+modular_py_test(
+    name = "test_mla_dense_mixed_split_gpu",
+    size = "large",
+    srcs = ["test_mla_dense_mixed_split_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        ":mla_sparse_graphs",
+        ":mla_sparse_test_utils",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# GPU consumer for the indexer ops' mixed-batch split: one decode row and one
+# prefill row through both remap arms, each row compared with the same row run
+# alone. The graphs compile in a CPU record action, so the GPU only runs them.
+modular_py_test(
+    name = "test_mla_indexer_mixed_split_gpu",
+    size = "large",
+    srcs = ["test_mla_indexer_mixed_split_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        ":mla_sparse_test_utils",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -307,6 +534,46 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/tests/integration/test_common:mef_precompile",
         requirement("scipy"),
+        requirement("torch"),
+    ],
+)
+
+# The HiSparse hot-buffer claim: a sparse MLA decode reading cold rows
+# through the hot buffer is bit-identical to the same decode over a fully
+# resident cache. Two graphs, three steps; the compiles are precompiled on
+# CPU build actions, so the GPU run only executes.
+modular_py_test(
+    name = "test_mla_hisparse_decode_graph_gpu",
+    size = "large",
+    srcs = ["test_mla_hisparse_decode_graph_gpu.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        ":mla_sparse_test_utils",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
         requirement("torch"),
     ],
 )

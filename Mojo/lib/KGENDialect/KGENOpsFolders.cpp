@@ -18,6 +18,8 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/DebugStringHelper.h"
 
+#include <cstring>
+
 using namespace M;
 using namespace KGEN;
 
@@ -54,8 +56,10 @@ ErrorTreeOrSuccess
 ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
   auto ops = state.getReboundAttribute(getOperandsAttr());
-  auto callee = state.getReboundAttribute(getCalleeAttr());
-  auto calleeAttr = cast<SymbolConstantAttr>(callee);
+  auto callee =
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCalleeAttr()));
+  if (!callee || !callee.isFullyBound())
+    return ErrorTree(getLoc(), "cannot find callee");
 
   auto operandsAttr = cast<ParameterExprArrayAttr>(ops);
   SmallVector<Attribute> arguments(operandsAttr.size());
@@ -63,7 +67,7 @@ ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
     arguments[idx] = attr;
 
   ErrorTreeOr<TypedAttr> result = state.interpretGenerator(
-      calleeAttr, calleeAttr.getParamValues(), arguments, getLoc());
+      callee, callee.getParamValues(), arguments, getLoc());
 
   if (result.isError())
     return result.takeError();
@@ -324,9 +328,9 @@ ErrorTreeOrSuccess
 CallOp::parametric_interpret(ArrayRef<Attribute> operands,
                              ParametricInterpreterState &state) {
   auto callee =
-      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCallee()));
 
-  if (!callee)
+  if (!callee || !callee.isFullyBound())
     return ErrorTree(getLoc(), "cannot find callee");
 
   auto bodyOr = state.lookupParametricFunctionBody(callee.getSymbol());
@@ -352,8 +356,8 @@ CallOp::parametric_interpret(ArrayRef<Attribute> operands,
 LogicalResult CallParamOp::canonicalize(CallParamOp op,
                                         PatternRewriter &rewriter) {
   // If the condition is a known symbol, then replace this with a kgen.call.
-  auto callee = dyn_cast<SymbolConstantAttr>(op.getCallee());
-  if (!callee)
+  auto callee = FuncSymbolGenerator::dynCast(op.getCallee());
+  if (!callee || !callee.getType().isFullyBound())
     return failure();
 
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
@@ -370,8 +374,8 @@ ErrorTreeOrSuccess
 CallParamOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
   auto callee =
-      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
-  if (!callee)
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCallee()));
+  if (!callee || !callee.isFullyBound())
     return ErrorTree(getLoc(), "cannot find callee");
 
   auto bodyOr = state.lookupParametricFunctionBody(callee.getSymbol());
@@ -396,22 +400,35 @@ CallParamOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
                                            PatternRewriter &b) {
-  auto create = op.getCallee().getDefiningOp<CreateClosureOp>();
+  auto create = op.getCallee().getDefiningOp<CreateFuncPtrOp>();
   if (!create)
     return b.notifyMatchFailure(op.getLoc(), "callee op is not create closure");
   // Replace this with a direct call.
-  SmallVector<Value> args = llvm::to_vector(create.getCaptures());
-  llvm::append_range(args, op.getArguments());
   b.replaceOpWithNewOp<CallParamOp>(op, op.getResultTypes(), create.getCallee(),
-                                    args);
+                                    op.getArguments());
   return success();
+}
+
+/// Returns the callable reference held by a function pointer value, looking
+/// through a fully bound function symbol generator.
+static CallableSymbolAttrInterface getCallableSymbol(Attribute value) {
+  if (auto callable = dyn_cast_if_present<CallableSymbolAttrInterface>(value))
+    return callable;
+
+  // TODO: we won't be needing this function after fully migration (hopefully),
+  // the call-like ops should all take FuncType-d callee, and we will see a
+  // plain FuncSymbolAttr that implements `CallableSymbolAttrInterface`.
+  auto generator = FuncSymbolGenerator::dynCast(value);
+  if (generator && generator.isFullyBound())
+    return generator.getInstantiatedFuncSymbol();
+  return {};
 }
 
 /// CallIndirectOp cannot conform to CallOpInterface, but is very similar since
 /// we know the callee at elaboration time.
 ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
-  auto callable = dyn_cast<CallableSymbolAttrInterface>(operands[0]);
+  auto callable = getCallableSymbol(operands[0]);
   if (!callable)
     return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
 
@@ -428,7 +445,7 @@ ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  auto callable = dyn_cast<CallableSymbolAttrInterface>(operands[0]);
+  auto callable = getCallableSymbol(operands[0]);
   if (!callable)
     return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
 
@@ -448,25 +465,17 @@ CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// CreateClosureOp
+// CreateFuncPtrOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
+ErrorTreeOrSuccess CreateFuncPtrOp::interpret(ArrayRef<Attribute> operands,
                                               InterpreterState &state) {
-  // We have no representation for closing over runtime values.
-  if (!operands.empty())
-    return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
-
   return state.mapResults(getCallee());
 }
 
 ErrorTreeOrSuccess
-CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
+CreateFuncPtrOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
-  // We have no representation for closing over runtime values.
-  if (!operands.empty())
-    return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
-
   return state.mapResults(state.getReboundAttribute(getCallee()));
 }
 
@@ -475,12 +484,12 @@ CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 /// Compute cost of the given function.
-static ErrorTreeOrSuccess computeCost(SymbolConstantAttr func, Location loc,
+static ErrorTreeOrSuccess computeCost(SymbolRefAttr func, Location loc,
                                       InterpreterState &state, int64_t &loads,
                                       int64_t &stores,
                                       MutableArrayRef<int64_t> compute,
                                       size_t depth) {
-  ErrorOr<Region *> body = state.lookupFunctionBody(func.getSymbol());
+  ErrorOr<Region *> body = state.lookupFunctionBody(func);
 
   if (body.isError())
     return ErrorTree(loc, body.takeError());
@@ -501,8 +510,8 @@ static ErrorTreeOrSuccess computeCost(SymbolConstantAttr func, Location loc,
     constexpr size_t maxDepth = 2;
     if (auto call = dyn_cast<CallOp>(op)) {
       if (depth < maxDepth) {
-        auto result = computeCost(call.getCallee(), call.getLoc(), state, loads,
-                                  stores, compute, depth + 1);
+        auto result = computeCost(call.getCalleeSymbol(), call.getLoc(), state,
+                                  loads, stores, compute, depth + 1);
         if (result.isError()) {
           walkOutcome = result.takeError();
           return WalkResult::interrupt();
@@ -540,12 +549,12 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
   int64_t loads = 0, stores = 0;
   std::array<int64_t, getMaxEnumValForComputeKind() + 1> compute{};
-  auto callee = dyn_cast<SymbolConstantAttr>(getCallee());
+  auto callee = FuncSymbolGenerator::dynCast(getCallee());
   if (!callee)
     return ErrorTree(getLoc(), "callee is not concrete");
 
-  ErrorTreeOrSuccess result =
-      computeCost(callee, getLoc(), state, loads, stores, compute, /*depth=*/0);
+  ErrorTreeOrSuccess result = computeCost(callee.getSymbol(), getLoc(), state,
+                                          loads, stores, compute, /*depth=*/0);
   if (result.isError())
     return result;
 
@@ -570,13 +579,13 @@ CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
   int64_t loads = 0, stores = 0;
   std::array<int64_t, getMaxEnumValForComputeKind() + 1> compute{};
   auto callee =
-      dyn_cast<SymbolConstantAttr>(state.getReboundAttribute(getCallee()));
+      FuncSymbolGenerator::dynCast(state.getReboundAttribute(getCallee()));
 
   if (!callee)
     return ErrorTree(getLoc(), "callee is not found");
 
-  ErrorTreeOrSuccess result =
-      computeCost(callee, getLoc(), state, loads, stores, compute, /*depth=*/0);
+  ErrorTreeOrSuccess result = computeCost(callee.getSymbol(), getLoc(), state,
+                                          loads, stores, compute, /*depth=*/0);
   if (result.isError())
     return result;
 
@@ -712,6 +721,39 @@ SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
   (void)sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
                           &state, results);
   return state.mapResults(results);
+}
+
+//===----------------------------------------------------------------------===//
+// UntaggedUnionInitOp
+//===----------------------------------------------------------------------===//
+
+static ErrorTreeOrSuccess initializeUnion(Location loc, Attribute operand,
+                                          InterpreterState &state) {
+  auto pointer = cast<PointerAttr>(operand);
+  auto type = cast<UntaggedUnionType>(
+      cast<PointerType>(pointer.getType()).getElementType());
+  auto size = type.getTypeSize(state.getTarget());
+  if (!size)
+    return ErrorTree(loc, "cannot initialize unresolved untagged union field");
+  if (*size == 0)
+    return success();
+  auto memory = state.getWritableMemory(pointer.getAddr(), *size);
+  if (memory.isError())
+    return ErrorTree(loc, memory.takeError());
+  memset(*memory, 0, *size);
+  return success();
+}
+
+ErrorTreeOrSuccess UntaggedUnionInitOp::interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
+  return initializeUnion(getLoc(), operands.front(), state);
+}
+
+ErrorTreeOrSuccess
+UntaggedUnionInitOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                          ParametricInterpreterState &state) {
+  return initializeUnion(getLoc(), state.getReboundAttribute(operands.front()),
+                         state);
 }
 
 //===----------------------------------------------------------------------===//
@@ -871,6 +913,49 @@ StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
   }
 
   return ErrorTree(getLoc(), "can't interpret POP::StructCreateOp");
+}
+
+//===----------------------------------------------------------------------===//
+// StructConcatOp
+//===----------------------------------------------------------------------===//
+
+static StructAttr foldStructConcatConstant(StructType resultType,
+                                           ArrayRef<Attribute> operands) {
+  SmallVector<TypedAttr> values;
+  for (Attribute operand : operands) {
+    auto value = dyn_cast_if_present<StructAttr>(operand);
+    if (!value)
+      return {};
+    llvm::append_range(values, value.getValues());
+  }
+  return StructAttr::get(values, resultType);
+}
+
+OpFoldResult StructConcatOp::fold(FoldAdaptor adaptor) {
+  if (getNumOperands() == 1 && getStructs().front().getType() == getType()) {
+    if (Attribute operand = adaptor.getStructs().front())
+      return operand;
+    return getStructs().front();
+  }
+  if (!getType().getVariadicIfResolved())
+    return {};
+  return foldStructConcatConstant(getType(), adaptor.getOperands());
+}
+
+ErrorTreeOrSuccess StructConcatOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
+ErrorTreeOrSuccess
+StructConcatOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  auto resultType = cast<StructType>(state.getReboundType(getType()));
+  if (resultType.getVariadicIfResolved()) {
+    if (StructAttr cst = foldStructConcatConstant(resultType, operands))
+      return state.mapResults(cst);
+  }
+  return ErrorTree(getLoc(), "can't interpret KGEN::StructConcatOp");
 }
 
 //===----------------------------------------------------------------------===//

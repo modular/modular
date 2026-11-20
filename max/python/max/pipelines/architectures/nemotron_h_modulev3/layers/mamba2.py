@@ -14,31 +14,36 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Generic, TypeVar
 
+from max import functional as F
 from max import tree
+from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.state_space import (
+from max.nn import Module
+from max.nn._graph_ops.state_space import (
     causal_conv1d_varlen_fwd,
+    causal_conv1d_varlen_fwd_rows,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows,
 )
+from max.nn.common_layers.mesh_axis import TP
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from ..model_config import NemotronHConfig
 from .quantized import quantized_linear
-from .sharding import shard_axis
+from .sharding import shard_axis, shard_segments
 
 
 def _layer_rows(rows: Tensor, layer: Tensor) -> TensorValue:
-    """Row ``layer`` of a ``[num_layers, batch_size]`` table, as
-    ``[1, batch_size]``.
+    """Row ``layer`` of a ``[num_layers, batch_size]`` table.
 
+    The row keeps its leading dim so the slice fuses into the kernels' slot
+    input and is read in place rather than copied.
     The row keeps its leading dim so the slice fuses into the kernels' slot
     input and is read in place rather than copied.
     """
@@ -55,6 +60,7 @@ def _causal_conv1d(
     layer: Tensor,
     query_start_loc: Tensor,
     has_initial_state: Tensor,
+    update_state: Tensor,
 ) -> TensorValue:
     return causal_conv1d_varlen_fwd(
         x=TensorValue(x),
@@ -66,6 +72,7 @@ def _causal_conv1d(
         has_initial_state=TensorValue(has_initial_state),
         activation="silu",
         channels_last=True,
+        update_state=TensorValue(update_state),
     )
 
 
@@ -82,6 +89,8 @@ def _ssd_scan(
     layer: Tensor,
     query_start_loc: Tensor,
     has_initial_state: Tensor,
+    update_state: Tensor,
+    xbc: Tensor,
 ) -> TensorValue:
     return mamba2_ssd_chunk_scan_varlen_fwd_inplace(
         x=TensorValue(x),
@@ -95,11 +104,77 @@ def _ssd_scan(
         query_start_loc=TensorValue(query_start_loc),
         has_initial_state=TensorValue(has_initial_state),
         cache_indices=_layer_rows(rows, layer),
+        update_state=TensorValue(update_state),
+        xbc=TensorValue(xbc),
+    )
+
+
+def _causal_conv1d_rows(
+    x: Tensor,
+    weight: Tensor,
+    bias: Tensor,
+    pool: Tensor,
+    rows: Tensor,
+    layer: Tensor,
+    query_start_loc: Tensor,
+    has_initial_state: Tensor,
+    update_state: Tensor,
+    verify_width: Tensor,
+) -> TensorValue:
+    return causal_conv1d_varlen_fwd_rows(
+        x=TensorValue(x),
+        weight=TensorValue(weight),
+        bias=TensorValue(bias),
+        conv_states=BufferValue(pool),
+        query_start_loc=TensorValue(query_start_loc),
+        cache_indices=_layer_rows(rows, layer),
+        has_initial_state=TensorValue(has_initial_state),
+        activation="silu",
+        channels_last=True,
+        update_state=TensorValue(update_state),
+        verify_width=TensorValue(verify_width),
+    )
+
+
+def _ssd_scan_rows(
+    x: Tensor,
+    dt: Tensor,
+    A: Tensor,
+    B: Tensor,
+    C: Tensor,
+    D: Tensor,
+    dt_bias: Tensor,
+    pool: Tensor,
+    rows: Tensor,
+    layer: Tensor,
+    query_start_loc: Tensor,
+    has_initial_state: Tensor,
+    update_state: Tensor,
+    xbc: Tensor,
+    verify_width: Tensor,
+) -> TensorValue:
+    return mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows(
+        x=TensorValue(x),
+        dt=TensorValue(dt),
+        A=TensorValue(A),
+        B=TensorValue(B),
+        C=TensorValue(C),
+        D=TensorValue(D),
+        dt_bias=TensorValue(dt_bias),
+        ssm_pool=BufferValue(pool),
+        query_start_loc=TensorValue(query_start_loc),
+        has_initial_state=TensorValue(has_initial_state),
+        cache_indices=_layer_rows(rows, layer),
+        update_state=TensorValue(update_state),
+        xbc=TensorValue(xbc),
+        verify_width=TensorValue(verify_width),
     )
 
 
 causal_conv1d = F.functional(_causal_conv1d)
+causal_conv1d_rows = F.functional(_causal_conv1d_rows)
 ssd_scan = F.functional(_ssd_scan)
+ssd_scan_rows = F.functional(_ssd_scan_rows)
 
 
 @tree.dataclass(frozen=True)
@@ -125,48 +200,77 @@ _ReplayTensor = TypeVar("_ReplayTensor", Tensor, TensorValue)
 
 @tree.dataclass(frozen=True)
 class MambaReplayInputs(Generic[_ReplayTensor]):
-    """The verify pass's causal inputs to the two state updates.
+    """What a replay of one Mamba layer's state updates reads.
 
-    Stores token activations, never a full SSM state per verified token.
-    The original pre-verify state remains in the live Jenga leaves.
+    The verify's own activations and the two per-head weights of the scan,
+    never a full SSM state per verified token. The pre-verify state remains
+    in the live Jenga leaves.
     """
 
-    conv_input: _ReplayTensor
-    conv_weight: _ReplayTensor
-    conv_bias: _ReplayTensor
-    x: _ReplayTensor
-    dt: _ReplayTensor
+    projected: _ReplayTensor
+    """The verify's rows of the ``in_proj`` output: the conv input and ``dt``."""
+    convolved: _ReplayTensor
+    """The verify's rows of the conv output: the scan's ``x`` and ``B``."""
     A: _ReplayTensor
-    B: _ReplayTensor
-    C: _ReplayTensor
-    D: _ReplayTensor
     dt_bias: _ReplayTensor
 
 
 @tree.dataclass(frozen=True)
-class MambaReplayRows(Generic[_ReplayTensor]):
-    """The per-token inputs of one Mamba layer's two state updates.
+class MambaReplayCapture:
+    """The verify's rows of the two tensors a Mamba layer's replay reads.
 
-    The other inputs of a replay are the layer's weights, which
-    :meth:`NemotronHMamba2Mixer.replay_statics` returns, so a verify pass
-    carries only what depends on its tokens.
+    Every per-token replay input is a column slice of one of them, so a verify
+    copies two tensors per layer.
     """
 
-    conv_input: _ReplayTensor
-    x: _ReplayTensor
-    dt: _ReplayTensor
-    B: _ReplayTensor
-    C: _ReplayTensor
+    projected: Tensor
+    """The captured rows of the ``in_proj`` output."""
+    convolved: Tensor
+    """The captured rows of the convolution's output."""
 
 
 class CausalConv1d(
-    Module[[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]
+    Module[[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]
 ):
-    """A depthwise causal conv with SiLU whose window lives in a state pool."""
+    """A depthwise causal conv with SiLU whose window lives in a state pool.
 
-    def __init__(self, dim: int, kernel_size: int) -> None:
-        self.weight = Tensor.zeros([dim, kernel_size])
-        self.bias = Tensor.zeros([dim])
+    Each device convolves its own channels.
+    """
+
+    def __init__(
+        self, dim: int, kernel_size: int, segments: Sequence[int] = ()
+    ) -> None:
+        """Initializes the conv.
+
+        Args:
+            dim: The number of channels.
+            kernel_size: The window.
+            segments: The sizes of the parts the channels stack, each split
+                across devices, or none to split the channels as one part.
+        """
+        self.segments = tuple(segments)
+        # The checkpoint stores the depthwise window as [dim, 1, kernel];
+        # the graph reshapes it to the [dim, kernel] the conv kernel reads.
+        if self.segments:
+            # A plain split would give a device whole parts. The weights
+            # stay on the host, for the graph to cut each device's share.
+            self.weight = Tensor.zeros([dim, 1, kernel_size], device=CPU())
+            self.bias = Tensor.zeros([dim], device=CPU())
+        else:
+            self.weight = shard_axis(Tensor.zeros([dim, 1, kernel_size]))
+            self.bias = shard_axis(Tensor.zeros([dim]))
+
+    def placed(self, mesh: DeviceMesh) -> tuple[Tensor, Tensor]:
+        """Returns the weight and bias, each device holding its channels."""
+        weight = F.reshape(
+            self.weight, [int(self.weight.shape[0]), int(self.weight.shape[2])]
+        )
+        if not self.segments:
+            return weight, self.bias
+        return (
+            shard_segments(weight, self.segments, mesh),
+            shard_segments(self.bias, self.segments, mesh),
+        )
 
     def forward(
         self,
@@ -176,16 +280,46 @@ class CausalConv1d(
         layer: Tensor,
         query_start_loc: Tensor,
         has_initial_state: Tensor,
+        update_state: Tensor,
     ) -> Tensor:
+        """Runs the causal convolution over ``x``."""
+        weight, bias = self.placed(x.mesh)
         return causal_conv1d(
             x,
-            self.weight,
-            self.bias,
+            weight,
+            bias,
             pool,
             rows,
             layer,
             query_start_loc,
             has_initial_state,
+            update_state,
+        )
+
+    def verify(
+        self,
+        x: Tensor,
+        pool: Tensor,
+        rows: Tensor,
+        layer: Tensor,
+        query_start_loc: Tensor,
+        has_initial_state: Tensor,
+        update_state: Tensor,
+        verify_width: Tensor,
+    ) -> Tensor:
+        """Runs the convolution, committing prefill rows in place."""
+        weight, bias = self.placed(x.mesh)
+        return causal_conv1d_rows(
+            x,
+            weight,
+            bias,
+            pool,
+            rows,
+            layer,
+            query_start_loc,
+            has_initial_state,
+            update_state,
+            verify_width,
         )
 
 
@@ -201,6 +335,7 @@ class GatedGroupRMSNorm(Module[[Tensor, Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, y: Tensor, gate: Tensor) -> Tensor:
+        """Normalizes ``y`` and scales it by the gate."""
         return F.functional(gated_group_rmsnorm)(
             y,
             gate,
@@ -211,13 +346,15 @@ class GatedGroupRMSNorm(Module[[Tensor, Tensor], Tensor]):
 
 
 class NemotronHMamba2Mixer(
-    Module[[Tensor, MambaStateAccess, Tensor, Tensor], Tensor]
+    Module[[Tensor, MambaStateAccess, Tensor, Tensor, Tensor], Tensor]
 ):
     """Mamba-2 selective state-space mixer.
 
     Both kernels read a request's state from its pool rows and write the new
     state back in place, so prefill, chunked prefill and decode are the same
-    graph.
+    graph. A request whose ``update_state`` flag is false only reads its rows,
+    which lets a speculative verify run on the live state and leave it as it
+    was.
     """
 
     def __init__(self, config: NemotronHConfig, name: str) -> None:
@@ -235,13 +372,20 @@ class NemotronHMamba2Mixer(
         self.intermediate = config.mamba_intermediate_size
         self.conv_dim = config.conv_dim
 
-        # Each device runs its own heads and their groups.
-        # permute_mamba_for_tp lays out the fused in_proj and conv rows so
-        # that each device's share is one contiguous block.
-        self.in_proj = quantized_linear(config, f"{name}.in_proj")
-        self.conv1d = CausalConv1d(self.conv_dim, config.conv_kernel)
-        self.conv1d.weight = shard_axis(self.conv1d.weight)
-        self.conv1d.bias = shard_axis(self.conv1d.bias)
+        # Each device runs its own heads and their groups, so it takes its
+        # share of every part the fused in_proj and conv rows stack.
+        group_dim = self.n_groups * self.state_size
+        conv_parts = (self.intermediate, group_dim, group_dim)
+        self.in_proj = quantized_linear(
+            config,
+            f"{name}.in_proj",
+            row_segments=(self.intermediate, *conv_parts, self.num_heads),
+        )
+        self.conv1d = CausalConv1d(
+            self.conv_dim,
+            config.conv_kernel,
+            conv_parts if len(config.devices) > 1 else (),
+        )
         self.A_log = shard_axis(Tensor.zeros([self.num_heads]))
         self.D = shard_axis(Tensor.zeros([self.num_heads]))
         self.dt_bias = shard_axis(Tensor.zeros([self.num_heads]))
@@ -259,9 +403,11 @@ class NemotronHMamba2Mixer(
         state: MambaStateAccess,
         query_start_loc: Tensor,
         has_initial_state: Tensor,
+        update_state: Tensor,
     ) -> Tensor:
+        """Runs the Mamba-2 mixer over ``x``."""
         output, _ = self.forward_with_replay(
-            x, state, query_start_loc, has_initial_state
+            x, state, query_start_loc, has_initial_state, update_state
         )
         return output
 
@@ -273,26 +419,19 @@ class NemotronHMamba2Mixer(
         """
         return F.cast(F.negate(F.exp(F.cast(self.A_log, DType.float32))), dtype)
 
-    def replay_statics(
-        self, dtype: DType
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def replay_statics(self, dtype: DType) -> tuple[Tensor, Tensor]:
         """Returns the layer weights a replay of its state updates reads.
+
+        The conv window is the accepted inputs themselves, so only the scan
+        reads weights.
 
         Args:
             dtype: The activation dtype, which ``A`` is cast to.
 
         Returns:
-            ``(conv_weight, conv_bias, A, D, dt_bias)``, as the verify's
-            kernels read them.
+            ``(A, dt_bias)``, as the verify's scan reads them.
         """
-        A = self._decay(dtype)
-        return (
-            self.conv1d.weight,
-            self.conv1d.bias,
-            A,
-            self.D,
-            self.dt_bias,
-        )
+        return self._decay(dtype), self.dt_bias
 
     def forward_with_replay(
         self,
@@ -300,8 +439,10 @@ class NemotronHMamba2Mixer(
         state: MambaStateAccess,
         query_start_loc: Tensor,
         has_initial_state: Tensor,
+        update_state: Tensor,
         capture_rows: Tensor | None = None,
-    ) -> tuple[Tensor, MambaReplayRows[Tensor] | None]:
+        verify_width: Tensor | None = None,
+    ) -> tuple[Tensor, MambaReplayCapture | None]:
         """Returns the mixer output and the inputs needed to replay its state.
 
         Args:
@@ -309,65 +450,100 @@ class NemotronHMamba2Mixer(
             state: This layer's view of the state pools.
             query_start_loc: The ragged offsets of the sequences.
             has_initial_state: Whether each sequence resumes from its rows.
+            update_state: Whether each sequence writes its new state back to
+                its rows.
             capture_rows: The ``[captured]`` token rows to return the replay
                 inputs of, or ``None`` to return none.
+            verify_width: The verify's ``[K]`` width operand, which makes a
+                prefill row commit its state in place; required with
+                ``capture_rows``.
         """
+        assert (capture_rows is None) == (verify_width is None), (
+            "a verify passes both its capture rows and its verify width"
+        )
+        projected = self.in_proj(x)
         gate, xbc, dt = F.split(
-            self.in_proj(x),
+            projected,
             [self.intermediate, self.conv_dim, self.num_heads],
             axis=1,
         )
-        conv_input = xbc
-        xbc = self.conv1d(
-            xbc,
-            state.conv_pool,
-            state.conv_rows,
-            state.layer,
-            query_start_loc,
-            has_initial_state,
-        )
+        if verify_width is None:
+            xbc = self.conv1d(
+                xbc,
+                state.conv_pool,
+                state.conv_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+            )
+        else:
+            xbc = self.conv1d.verify(
+                xbc,
+                state.conv_pool,
+                state.conv_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+                verify_width,
+            )
         # The conv, scan and norm kernels have no sharding rules. Each
         # device runs them on its own heads, so their outputs stay split on
         # the channel axis like their inputs.
-        xbc = xbc.rebind_mapping(NamedMapping(xbc.mesh, (None, TP)))
+        convolved = xbc.rebind_mapping(NamedMapping(xbc.mesh, (None, TP)))
         group_dim = self.n_groups * self.state_size
         hidden, B, C = F.split(
-            xbc, [self.intermediate, group_dim, group_dim], axis=1
+            convolved, [self.intermediate, group_dim, group_dim], axis=1
         )
         # The kernel applies softplus to dt + dt_bias itself.
         A = self._decay(x.dtype)
         hidden = hidden.reshape([-1, self.num_heads, self.head_dim])
         B = B.reshape([-1, self.n_groups, self.state_size])
         C = C.reshape([-1, self.n_groups, self.state_size])
-        y = ssd_scan(
-            hidden,
-            dt,
-            A,
-            B,
-            C,
-            self.D,
-            self.dt_bias,
-            state.ssm_pool,
-            state.ssm_rows,
-            state.layer,
-            query_start_loc,
-            has_initial_state,
-        )
+        if verify_width is None:
+            y = ssd_scan(
+                hidden,
+                dt,
+                A,
+                B,
+                C,
+                self.D,
+                self.dt_bias,
+                state.ssm_pool,
+                state.ssm_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+                convolved,
+            )
+        else:
+            y = ssd_scan_rows(
+                hidden,
+                dt,
+                A,
+                B,
+                C,
+                self.D,
+                self.dt_bias,
+                state.ssm_pool,
+                state.ssm_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+                convolved,
+                verify_width,
+            )
         y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP, None)))
         y = self.norm(y.reshape([-1, self.intermediate]), gate)
         y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP)))
-        replay: MambaReplayRows[Tensor] | None = None
+        replay: MambaReplayCapture | None = None
         if capture_rows is not None:
-
-            def rows(t: Tensor) -> Tensor:
-                # Only the captured rows survive the layer, not every token's.
-                return F.gather(t, capture_rows, axis=0)
-
-            replay = MambaReplayRows(
-                conv_input=rows(conv_input),
-                x=rows(hidden),
-                dt=rows(dt),
-                B=rows(B),
-                C=rows(C),
+            # Only the captured rows survive the layer, not every token's.
+            replay = MambaReplayCapture(
+                projected=F.gather(projected, capture_rows, axis=0),
+                convolved=F.gather(convolved, capture_rows, axis=0),
             )
         return self.out_proj(y), replay

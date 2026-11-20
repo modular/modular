@@ -130,8 +130,13 @@ def _iter_call_payloads(
 
 @register("inkling")
 class InklingToolParser(StructuralTagToolParser):
-    """Parses Inkling tool calls, which reach this parser detokenized as
-    ``NAME<|content_invoke_tool_json|>{"name":...,"args":{...}}``.
+    """Parses Inkling tool calls.
+
+    They reach this parser detokenized as
+    ``NAME<|content_invoke_tool_json|>{"name":...,"args":{...}}``. Two hooks
+    depart from the base class: bodies are bounded by brace balancing because
+    there is no visible closing marker, and content deltas must drop the
+    trailing function name, which precedes ``CALL_BEGIN``.
 
     Two hooks depart from the base class: bodies are bounded by brace balancing
     because there is no visible closing marker, and content deltas must drop the
@@ -145,6 +150,7 @@ class InklingToolParser(StructuralTagToolParser):
     _declared_tool_names: tuple[str, ...] = ()
 
     def parse_complete(self, response: str) -> ParsedToolResponse:
+        """Parses a complete response into text and tool calls."""
         parsed = super().parse_complete(response)
         if parsed.content is None or not parsed.tool_calls:
             return parsed
@@ -158,6 +164,7 @@ class InklingToolParser(StructuralTagToolParser):
         )
 
     def reset(self) -> None:
+        """Clears the parser's pending call state."""
         super().reset()
         # The router resets before re-supplying schemas, so stale names must not
         # survive into a request that declares none.

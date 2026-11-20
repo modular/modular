@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""
-Vision processing utilities for Qwen2.5-VL.
+"""Vision processing utilities for Qwen2.5-VL.
 
 This module is adapted from:
 https://github.com/QwenLM/Qwen2.5-VL/blob/d2240f11656bfe404b9ba56db4e51cd09f522ff1/qwen-vl-utils/src/qwen_vl_utils/vision_process.py
@@ -84,8 +83,7 @@ def smart_resize(
     min_pixels: int = MIN_PIXELS,
     max_pixels: int = MAX_PIXELS,
 ) -> tuple[int, int]:
-    """
-    Rescales the image so that the following conditions are met:
+    """Rescales the image so that the following conditions are met.
 
     1. Both dimensions (height and width) are divisible by 'factor'.
 
@@ -111,6 +109,7 @@ def smart_resize(
 
 
 def to_rgb(pil_image: Image.Image) -> Image.Image:
+    """Converts the image to RGB when it is not already."""
     if pil_image.mode == "RGB":
         # ``convert("RGB")`` on an RGB image copies every pixel to produce an
         # identical image. On a 1920x1080 screenshot that copy is pure waste,
@@ -129,6 +128,7 @@ def to_rgb(pil_image: Image.Image) -> Image.Image:
 def fetch_image(
     ele: dict[str, Any], size_factor: int = IMAGE_FACTOR
 ) -> Image.Image:
+    """Loads one conversation entry's image and resizes it."""
     if "image" in ele:
         image = ele["image"]
         if isinstance(image, dict):
@@ -195,7 +195,7 @@ def smart_nframes(
     total_frames: int,
     video_fps: float,
 ) -> int:
-    """calculate the number of frames for video used for model inputs.
+    """Calculate the number of frames for video used for model inputs.
 
     Args:
         ele: a dict contains the configuration of video.
@@ -242,6 +242,7 @@ def smart_nframes(
 
 
 def is_decord_available() -> bool:
+    """Whether ``decord`` is installed."""
     import importlib.util
 
     return importlib.util.find_spec("decord") is not None
@@ -252,8 +253,7 @@ def calculate_video_frame_range(
     total_frames: int,
     video_fps: float,
 ) -> tuple[int, int, int]:
-    """
-    Calculate the start and end frame indices based on the given time range.
+    """Calculate the start and end frame indices based on the given time range.
 
     Args:
         ele: A dictionary containing optional 'video_start' and 'video_end' keys (in seconds).
@@ -310,7 +310,7 @@ def calculate_video_frame_range(
 def _read_video_decord(
     ele: dict[str, Any],
 ) -> tuple[npt.NDArray[np.integer[Any]], float]:
-    """read video using decord.VideoReader
+    """Read video using decord.VideoReader.
 
     Args:
         ele: a dict contains the configuration of video.
@@ -318,6 +318,7 @@ def _read_video_decord(
             - video: the path of video. support "file://", "http://", "https://" and local path.
             - video_start: the start time of video.
             - video_end: the end time of video.
+
     Returns:
         np.ndarray: the video tensor with shape (T, C, H, W).
     """
@@ -365,6 +366,7 @@ FORCE_QWENVL_VIDEO_READER = os.getenv("FORCE_QWENVL_VIDEO_READER", None)
 
 @lru_cache(maxsize=1)
 def get_video_reader_backend() -> str:
+    """The video reader to use, from the environment or the installed set."""
     if FORCE_QWENVL_VIDEO_READER is not None:
         video_reader_backend = FORCE_QWENVL_VIDEO_READER
     elif is_decord_available():
@@ -383,6 +385,7 @@ def get_video_reader_backend() -> str:
 def fetch_video(
     ele: dict[str, Any], image_factor: int = IMAGE_FACTOR
 ) -> tuple[npt.NDArray[np.float32] | list[Image.Image], float]:
+    """Loads one conversation entry's video and samples its frames."""
     if isinstance(ele["video"], str):
         video_reader_backend = get_video_reader_backend()
         video, sample_fps = VIDEO_READER_BACKENDS[video_reader_backend](ele)
@@ -460,6 +463,7 @@ def fetch_video(
 def extract_vision_info(
     conversations: list[dict[str, Any]] | list[list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
+    """Collects the image and video entries from the conversation."""
     vision_infos = []
     conversations_list: list[list[dict[str, Any]]]
     if isinstance(conversations[0], dict):
@@ -489,6 +493,7 @@ def process_vision_info(
     list[npt.NDArray[np.floating[Any]] | list[Image.Image]] | None,
     dict[str, Any] | None,
 ]:
+    """Resolves the conversation's images and videos into tensors."""
     vision_infos = extract_vision_info(conversations)
     ## Read images or videos
     image_inputs: list[Image.Image] | None = []

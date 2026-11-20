@@ -10,16 +10,30 @@ _DEPS = [
     "@mojo//:std",
 ]
 
+_EXTRA_DEPS = {
+    # The graph op's relu2 comes from nn.activations; the test builds the same.
+    "test_grouped_nvfp4_row_amax_quantization.mojo": ["//max:nn"],
+    # The reference rotates with nn.rope's rope_ragged.
+    "test_rope_block_scaled_quantization.mojo": ["//max:nn"],
+}
+
 _FP8_FP4_TESTS = [
     "test_scaled_matmul.mojo",
     "test_scaled_matmul_pathological_bscale.mojo",
     "test_scaled_fp8_quantization.mojo",
+    "test_scaled_fp8_quantization_pdl.mojo",
     "test_scaled_nvfp4_quantization.mojo",
     "test_nvfp4_block_scales_interleave.mojo",
     "test_scaled_mxfp8_quantization.mojo",
     "test_scaled_nvfp4_quantization_async.mojo",
     "test_nvfp4_quantization_near_zero.mojo",
     "test_grouped_nvfp4_quantization.mojo",
+    "test_grouped_nvfp4_quantization_pdl.mojo",
+    "test_grouped_nvfp4_row_amax_quantization.mojo",
+    "test_swiglu_block_scaled_quantization.mojo",
+    "test_swiglu_quantize_mxfp8_amd.mojo",
+    "test_rope_block_scaled_quantization.mojo",
+    "test_rms_norm_block_scaled_quantization.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -36,6 +50,12 @@ _EXTRA_CONSTRAINTS = {
     "test_scaled_fp8_quantization.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
+    }),
+    # PDL (griddepcontrol) needs SM90+.
+    "test_scaled_fp8_quantization_pdl.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_nvfp4_quantization.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
@@ -61,6 +81,28 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_grouped_nvfp4_quantization_pdl.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_grouped_nvfp4_row_amax_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_swiglu_block_scaled_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The fused SiTU + MXFP8 kernel is CDNA4 (MI355X) only.
+    "test_swiglu_quantize_mxfp8_amd.mojo": ["//:mi355_gpu"],
+    "test_rope_block_scaled_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_rms_norm_block_scaled_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 }
 
 [
@@ -73,7 +115,7 @@ _EXTRA_CONSTRAINTS = {
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
-        deps = _DEPS,
+        deps = _DEPS + _EXTRA_DEPS.get(src, []),
     )
     for src in _FP8_FP4_TESTS
 ]

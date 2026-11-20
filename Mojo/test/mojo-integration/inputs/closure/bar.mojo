@@ -18,13 +18,13 @@ def takeIt[F: def[width: Int](idx: Int) -> Int](impl: F):
 
 
 def emitLoad(x: Int):
-    var ptr = alloc[Int]({count = 1}).unsafe_leak()
-    ptr.store(x)
+    var ptr = alloc[Int]({length = 1}).unsafe_leak()
+    ptr.unsafe_store(x)
     var count = Int(0)
 
     @no_inline
     def foo[width: Int](idx: Int) {mut count, imm ptr} -> Int:
-        var vec = ptr.load[width=width](idx).cast[.int]()
+        var vec = ptr.unsafe_load[width=width](idx).cast[.int]()
         count = count + rebind[type_of(count)](vec)
         return count
 

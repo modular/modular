@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed, random_float64
 
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.sys import simd_width_of
 from linalg.gemv import (
@@ -32,7 +32,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from internal_utils import assert_almost_equal
 
 from layout import TileTensor, Coord, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 
 def run_matvec[
@@ -40,15 +40,15 @@ def run_matvec[
     b_type: DType,
     c_type: DType,
     accum_type: DType = .float32,
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+](M: Int, N: Int, K: Int, *, ctx: DeviceContext[]) raises:
     print("== run_matvec kernel")
-    print("dtypes: A=", a_type, " B=", b_type, " C=", c_type)
+    print(t"dtypes: A= {a_type}  B= {b_type}  C= {c_type}")
 
     var iterations = 100
-    var a_host = alloc[Scalar[a_type]](M * K)
-    var b_host = alloc[Scalar[b_type]](K * N)
-    var c_host = alloc[Scalar[c_type]](M * N)
-    var c_host_blas = alloc[Scalar[accum_type]](M * N)
+    var a_host = unsafe_alloc[Scalar[a_type]](M * K)
+    var b_host = unsafe_alloc[Scalar[b_type]](K * N)
+    var c_host = unsafe_alloc[Scalar[c_type]](M * N)
+    var c_host_blas = unsafe_alloc[Scalar[accum_type]](M * N)
 
     # using large inputs for FP8 ctype will cause saturation and cause all output values to be FP8 max value which can cause false positives.
     for i in range(M * K):
@@ -77,10 +77,11 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime WARPS_PER_BLOCK = 1024 // warp_size
 
     @inline(.always)
-    def run_func_gemv(ctx: DeviceContext) raises {imm}:
+    def run_func_gemv(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
         ctx.enqueue_function[kernel](
@@ -91,16 +92,16 @@ def run_matvec[
             Int32(N),
             Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     @inline(.always)
-    def run_func_gevm(ctx: DeviceContext) raises {imm}:
+    def run_func_gevm(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = gevm_kernel[
             c_type,
             a_type,
             b_type,
-            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=warp_size * WARPS_PER_BLOCK,
         ]
 
         ctx.enqueue_function[kernel](
@@ -110,8 +111,8 @@ def run_matvec[
             Int32(M),
             Int32(N),
             Int32(K),
-            grid_dim=ceildiv(N, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            grid_dim=ceildiv(N, warp_size),
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     var nstime: Float64
@@ -163,8 +164,8 @@ def run_matvec[
     print()
 
     # Compare results - convert both to float32 for comparison
-    var c_host_f32 = alloc[Float32](M * N)
-    var c_host_blas_f32 = alloc[Float32](M * N)
+    var c_host_f32 = unsafe_alloc[Float32](M * N)
+    var c_host_blas_f32 = unsafe_alloc[Float32](M * N)
 
     for i in range(M * N):
         c_host_f32[i] = c_host[i].cast[.float32]()
@@ -183,18 +184,18 @@ def run_matvec[
 
 
 def run_matvec_with_epilogue_fn(
-    M: Int, N: Int, K: Int, *, ctx: DeviceContext
+    M: Int, N: Int, K: Int, *, ctx: DeviceContext[]
 ) raises:
     comptime seed_val = 42
 
     var iterations = 100
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
+    var a_host = unsafe_alloc[Float32](M * K)
+    var b_host = unsafe_alloc[Float32](K * N)
 
     seed(seed_val)
 
-    var c_host = alloc[Float32](M * N)
-    var c_host_naive = alloc[Float32](M * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var c_host_naive = unsafe_alloc[Float32](M * N)
 
     randn(a_host, M * K)
     randn(b_host, K * N)
@@ -222,10 +223,11 @@ def run_matvec_with_epilogue_fn(
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val + SIMD[dtype, width](const_val)
 
-    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime WARPS_PER_BLOCK = 1024 // warp_size
 
     @inline(.always)
-    def run_func_gemv(ctx: DeviceContext) raises {mut c_device, imm}:
+    def run_func_gemv(ctx: DeviceContext[]) raises {mut c_device, imm}:
         comptime kernel = gemv_kernel_compute_fn[
             .float32, .float32, .float32, type_of(compute_fn)
         ]
@@ -236,19 +238,19 @@ def run_matvec_with_epilogue_fn(
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     @inline(.always)
-    def run_func_gevm(ctx: DeviceContext) raises {mut c_device, imm}:
+    def run_func_gevm(ctx: DeviceContext[]) raises {mut c_device, imm}:
         comptime kernel = gevm_kernel_compute_fn[
             .float32,
             .float32,
             .float32,
             type_of(compute_fn),
-            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=warp_size * WARPS_PER_BLOCK,
         ]
         ctx.enqueue_function[kernel](
             c_device,
@@ -257,9 +259,9 @@ def run_matvec_with_epilogue_fn(
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
-            grid_dim=ceildiv(N, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            host_args=(compute_fn,),
+            grid_dim=ceildiv(N, warp_size),
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     ctx.enqueue_copy(c_device, c_host)
@@ -298,7 +300,7 @@ def run_matvec_with_epilogue_fn(
     var b_nd = TileTensor(b_device, row_major(K, N)).as_imm()
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive_compute_fn[
             .float32,
             .float32,
@@ -319,7 +321,7 @@ def run_matvec_with_epilogue_fn(
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -357,7 +359,7 @@ def run_split_k_gemm[
     tile_m: Int = 1,
     num_threads: Int = 128,
     weight_non_temporal: Bool = True,
-](*, ctx: DeviceContext) raises:
+](*, ctx: DeviceContext[]) raises:
     comptime c_type = DType.float32
     comptime simd_width = simd_width_of[c_type, target=ctx.target]()
     comptime check_bounds_n = N % tile_n != 0
@@ -370,8 +372,8 @@ def run_split_k_gemm[
 
     seed(seed_val)
 
-    var a_host = alloc[Scalar[a_type]](M * K)
-    var w_host = alloc[Scalar[b_type]](N * K)
+    var a_host = unsafe_alloc[Scalar[a_type]](M * K)
+    var w_host = unsafe_alloc[Scalar[b_type]](N * K)
     comptime if a_type == .float32:
         randn(a_host, M * K)
     else:
@@ -385,8 +387,8 @@ def run_split_k_gemm[
 
     var row_stride = N + row_pad
     var c_elems = M * row_stride
-    var c_host = alloc[Float32](c_elems)
-    var c_expected = alloc[Float32](c_elems)
+    var c_host = unsafe_alloc[Float32](c_elems)
+    var c_expected = unsafe_alloc[Float32](c_elems)
     for i in range(c_elems):
         c_host[i] = 0
         c_expected[i] = 0
@@ -441,7 +443,7 @@ def run_split_k_gemm[
             Int32(M),
             Int32(N),
             Int32(K),
-            host_arg=compute_fn,
+            host_args=(compute_fn,),
             grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )
@@ -479,14 +481,8 @@ def run_split_k_gemm[
     ctx.synchronize()
 
     print(
-        "== run_split_k_gemm with_epilogue=",
-        with_epilogue,
-        " M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"== run_split_k_gemm with_epilogue= {with_epilogue}  M= {M}  N= {N} "
+        t" K= {K}"
     )
 
     # Host reference: out[m, n] = sum_k a[m, k] * w[n, k] (+ const_val with the

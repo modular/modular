@@ -24,10 +24,10 @@ def use_any[*Ts: AnyType](*args: *Ts): pass
 # ===----------------------------------------------------------------------=== #
 
 struct MyList[T: AnyType](Movable where False):
-    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
+        self.data = Pointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
         pass # Explicit deinit so it isn't considered trivial and elided.
@@ -178,7 +178,7 @@ def test_vardecl_store_handling(list: MyList[Int]):
     p = Pointer(to=list[])
     _ = p
 
-def test_bad_io_concrete[attr: StringLiteral](ptr: UnsafePointer[Int, _]) -> Int:
+def test_bad_io_concrete[attr: StringLiteral](ptr: Pointer[Int, _]) -> Int:
     var str = String()
     # expected-error @+1 {{interior origin name must be a string literal, it cannot be parametric when used}}
     ref r = ptr._get_ref_with_unsafe_interior_origin[attr](str)
@@ -238,31 +238,15 @@ def test_nested_fn1():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
-    inner()
-
-def test_nested_fn2():
-    var base = MyList[Int]()
-    var p = Pointer(to=base[])
-
-    @__copy_capture(p)
-    @__parameter
-    def inner():
-        _ = p == p  # Should be fine.
-        # expected-error @+1 {{incorrect invalidation of interior origin in closure 'base["element"]'}}
-        base.mutate()
     inner()
 
 def test_nested_fn3():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
 
     base.mutate() # expected-note {{origin was invalidated here}}
@@ -272,16 +256,12 @@ def test_nested_fn4():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
 
     base.mutate()
-    _ = base[] # attempt to refresh.
-    # FIXME: This should be an error; we should make sure we have the same
-    # version of the reference as when the closure was created.
-    inner()
+    _ = base[] # expected-note {{origin was defined here, after the reference was formed}}
+    inner() # expected-error {{use of invalidated interior reference 'base["element"]'}}
 
 def test_loop_iteration(var list: List[Int]):
     # The mutate method should invalidate the active iterator.

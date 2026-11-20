@@ -41,7 +41,7 @@ struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: OptionalPointer[Int, MutUntrackedOrigin]
+    var storage: Optional[Pointer[Int, MutUntrackedOrigin]]
 
     def __init__(out self):
         self.storage = {}
@@ -401,12 +401,12 @@ struct RaisingTask[type: Movable, origins: OriginSet](
 
         if has_error:
             var err = self._error_alloc.unsafe_ptr().unsafe_take_pointee()
-            dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
-            dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
+            dealloc(self._error_alloc^.unsafe_with_layout({length = 1}))
+            dealloc(self._result_alloc^.unsafe_with_layout({length = 1}))
             raise err^
         result = self._result_alloc.unsafe_ptr().unsafe_take_pointee()
-        dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
-        dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
+        dealloc(self._error_alloc^.unsafe_with_layout({length = 1}))
+        dealloc(self._result_alloc^.unsafe_with_layout({length = 1}))
 
     @inline(.always)
     def __await__(deinit self, out result: Self.type) raises:

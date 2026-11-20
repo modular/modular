@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/Compiler/Target/TargetBackend.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Support/Configuration.h"
 #include "Target/TargetTraits.h"
 
@@ -139,5 +140,8 @@ TargetBackendRegistry::lookup(const llvm::Triple &triple) const {
     return Error(e.getError());
   return result;
 }
+
+void TargetBackend::preprocessGenerator(GeneratorOp, GeneratorOp,
+                                        FuncSymbolAttr, mlir::ModuleOp) const {}
 
 } // namespace M::KGEN

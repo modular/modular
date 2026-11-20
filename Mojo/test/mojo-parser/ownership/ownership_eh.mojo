@@ -145,18 +145,18 @@ def finally_may_raise() raises:
         # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error__, %__error__){{.*}}*, "move"
         # CHECK-NEXT: lit.var.lifetime.end %__try_error__
         # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
-        # CHECK-NEXT: %__finally_error__ = lit.var.decl
+        # CHECK-NEXT: [[FINALLY_ERROR:%.*]] = lit.var.decl
         # CHECK-NEXT: lit.try
         # CHECK-NEXT:   [[RESULT:%.*]] = lit.var.decl
-        # CHECK-NEXT:   lifetime.start %__finally_error__
+        # CHECK-NEXT:   lifetime.start [[FINALLY_ERROR]]
         # CHECK-NEXT:   lifetime.start [[RESULT]]
-        # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__finally_error__, [[RESULT]])
+        # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}([[FINALLY_ERROR]], [[RESULT]])
         # CHECK-NEXT:   if [[IS_ERR]]
         # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%__error__)
         # CHECK-NEXT:     mark_consumed [[RESULT]]
         # CHECK:      } except {
-        # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
-        # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
+        # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}([[FINALLY_ERROR]], %__error__){{.*}}*, "move"
+        # CHECK-NEXT:   lit.var.lifetime.end [[FINALLY_ERROR]]
         # CHECK:      else
         # CHECK-NEXT:   lit.try.yield
         # CHECK-NEXT: }
@@ -182,39 +182,63 @@ struct ThrowingExit(Movable where False):
 
 # CHECK-LABEL: lit.fn @"context_mgr_exit_raises
 def context_mgr_exit_raises() raises:
-    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "move"
-    # CHECK-NEXT: lit.var.lifetime.end %__with_error__
-    # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
-    # CHECK-NEXT: %__finally_error__ = lit.var.decl
+    # CHECK:      lit.ownership.mark_initialized %__with_exc_value__
+    # CHECK:      } except {
+    # CHECK:        lit.ref.store {{.*}}, %__with_exc__
+    # CHECK-NEXT:   lit.ownership.mark_consumed %__with_exc_value__
+    # CHECK-NEXT:   lit.var.lifetime.end %__with_exc_value__
+    # CHECK-NEXT:   lit.var.lifetime.start %__with_exc_value__
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__inner_error__, %__with_exc_value__){{.*}}*, "move"
+    # CHECK:      [[FINALLY_ERROR:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.try
     # CHECK-NEXT:   [[DID_ERR:%.*]] = lit.ref.load %__with_exc__
     # CHECK-NEXT:   lifetime.end %__with_exc__
     # CHECK-NEXT:   hlcf.if [[DID_ERR]]
-    # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %$CONTEXTMGR
+    # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %__call_result_tmp__
+    # CHECK-NEXT:     [[ERR:%.*]] = lit.ref.immut %__with_exc_value__
     # CHECK-NEXT:     [[BOOL:%.*]] = lit.var.decl
-    # CHECK-NEXT:     lit.var.lifetime.start %__finally_error__
+    # CHECK-NEXT:     lit.var.lifetime.start [[FINALLY_ERROR]]
     # CHECK-NEXT:     lit.var.lifetime.start [[BOOL]]
-    # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], %__finally_error__, [[BOOL]])
-    # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%$CONTEXTMGR)
-    # CHECK-NEXT:     lit.var.lifetime.end %$CONTEXTMGR
+    # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], [[ERR]], [[FINALLY_ERROR]], [[BOOL]])
+    # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%__call_result_tmp__)
+    # CHECK-NEXT:     lit.var.lifetime.end %__call_result_tmp__ :
     # CHECK-NEXT:     if [[IS_ERR]]
-    # CHECK-NEXT:       call {{.*}}__deinit__{{.*}}(%__error__)
+    # CHECK-NEXT:       call {{.*}}Error::@"__deinit__{{.*}}(%__with_exc_value__)
+    # CHECK-NEXT:       lit.var.lifetime.end %__with_exc_value__
     # CHECK-NEXT:       mark_consumed [[BOOL]]
     # CHECK-NEXT:       lit.var.lifetime.end [[BOOL]]
-    # CHECK:          else
-    # CHECK-NEXT:       lit.var.lifetime.end [[BOOL]]
-    # CHECK-NEXT:       mark_consumed %__finally_error__
-    # CHECK-NEXT:       lit.var.lifetime.end %__finally_error__
+    # CHECK-NEXT:       lit.try.raise
+    # CHECK-NEXT:     } else {
+    # CHECK-NEXT:       mark_consumed [[FINALLY_ERROR]]
+    # CHECK-NEXT:       lit.var.lifetime.end [[FINALLY_ERROR]]
     # CHECK-NEXT:       yield
-    # CHECK:        else
-    # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT:     }
+    # CHECK-NEXT:     [[RES:%.*]] = lit.ref.load [[BOOL]]
+    # CHECK-NEXT:     lit.var.lifetime.end [[BOOL]]
+    # CHECK-NEXT:     [[KEEP:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[RES]])
+    # CHECK-NEXT:     hlcf.if [[KEEP]] {
+    # CHECK-NEXT:       call {{.*}}Error::@"__deinit__{{.*}}(%__with_exc_value__)
+    # CHECK-NEXT:       lit.var.lifetime.end %__with_exc_value__
+    # CHECK-NEXT:       hlcf.yield
+    # CHECK-NEXT:     } else {
+    # CHECK-NEXT:       lit.var.lifetime.start [[FINALLY_ERROR]]
+    # CHECK-NEXT:       lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_exc_value__, [[FINALLY_ERROR]]){{.*}}*, "move"
+    # CHECK-NEXT:       lit.var.lifetime.end %__with_exc_value__
+    # CHECK-NEXT:       lit.try.raise
+    # CHECK-NEXT:     }
+    # CHECK-NEXT:     hlcf.yield
+    # CHECK-NEXT:   } else {
+    # CHECK-NEXT:     mark_consumed %__with_exc_value__
+    # CHECK-NEXT:     lit.var.lifetime.end %__with_exc_value__
+    # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %__call_result_tmp__
+    # CHECK:          lit.call {{.*}}__exit__{{.*}}([[IMM]], [[FINALLY_ERROR]],
+    # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%__call_result_tmp__)
     # CHECK:      } except {
-    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
-    # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}([[FINALLY_ERROR]], %__error__){{.*}}*, "move"
+    # CHECK-NEXT:   lit.var.lifetime.end [[FINALLY_ERROR]]
     # CHECK:      else
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: }
-    # CHECK-NEXT: lit.error_return [[TRUE]]
     with ThrowingExit():
         raise Error()
 
@@ -285,8 +309,9 @@ def testErrorReturn() raises:
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__deinit__
         var x = (
+            # expected-warning @+1 {{assignment to 'x' was never used}}
             ctx.read()
-        )  # expected-warning {{assignment to 'x' was never used}}
+        )
         input = "hello"
     # CHECK: except
     use(input)
@@ -459,3 +484,77 @@ def doesnt_actually_raise() raises Never:
 def test_doesnt_actually_raise() -> Int:
     doesnt_actually_raise()
     return 42
+
+
+def make_string() raises Int -> String:
+    return ""
+
+
+# CHECK-LABEL: lit.fn @"raising_result_temporary
+# CHECK: [[VALUE:%.*]] = lit.var.decl "value" var : !lit.ref<!String
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: lit.call {{.*}}make_string{{.*}}(%__call_error_tmp__, [[VALUE]])
+# CHECK-NOT: @"__init__(move
+# CHECK: lit.call {{.*}}String::@"__len__
+def raising_result_temporary() raises Float32:
+    var value = make_string()
+    _ = value.__len__()
+
+
+# CHECK-LABEL: lit.fn @"unused_raising_result
+# CHECK: [[VALUE:%.*]] = lit.var.decl "_value"
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: lit.call {{.*}}make_string{{.*}}(%__call_error_tmp__, [[VALUE]])
+# CHECK-NOT: @"__init__(move
+def unused_raising_result() raises Float32:
+    var _value = make_string()
+
+
+# CHECK-LABEL: lit.fn @"return_raising_call_result
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: lit.call {{.*}}make_string{{.*}}(%__error__, %__result__)
+# CHECK-NOT: @"__init__(move
+def return_raising_call_result() raises Int -> String:
+    return make_string()
+
+
+# CHECK-LABEL: lit.fn @"return_taken_pointee
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: unsafe_take_pointee
+def return_taken_pointee[T: Movable & Deinitable](
+    mut value: T,
+) raises Int -> T:
+    return Pointer(to=value).unsafe_take_pointee()
+
+
+struct GenericIterator[T: Copyable & Deinitable](Iterator, Movable):
+    comptime Element = Self.T
+
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+    def __iter__(var self) -> Self:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.T:
+        return self.value.copy()
+
+
+# CHECK-LABEL: lit.fn @"unused_generic_for_result
+# CHECK: [[ELEMENT:%.*]] = lit.var.decl "_element"
+# CHECK-NOT: %__call_result_tmp___0 = lit.var.decl
+# CHECK: lit.call {{.*}}@"__next__{{.*}}({{.*}}, {{.*}}, [[ELEMENT]])
+def unused_generic_for_result[T: Copyable & Deinitable](var value: T) raises:
+    for _element in GenericIterator[T](value^):
+        pass
+
+
+# CHECK-LABEL: lit.fn @"live_destination_keeps_raising_result_temporary
+# CHECK: %__call_result_tmp__ = lit.var.decl
+def live_destination_keeps_raising_result_temporary() raises Float32:
+    # expected-warning @+1 {{assignment to 'value' was never used}}
+    var value = String("old value")
+    value = make_string()
+    _ = value.__len__()

@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""The paged KV cache."""
+
 from __future__ import annotations
 
 from ._common import PrefixCacheHits
@@ -18,6 +21,7 @@ from .cache_manager import BlockCount, ByteCount, PagedKVCacheManager
 from .cache_manager_interface import PagedKVCacheManagerInterface
 from .dummy_cache_manager import DummyKVCache
 from .jenga_cache_manager import JengaKVCacheManager
+from .null_cache_manager import NullKVCache
 from .transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -33,6 +37,7 @@ __all__ = [
     "JengaKVCacheManager",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
+    "NullKVCache",
     "PagedKVCacheManager",
     "PagedKVCacheManagerInterface",
     "PrefixCacheHits",

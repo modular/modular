@@ -37,9 +37,22 @@ only on full success. Progress lines go to stderr.
 
 from __future__ import annotations
 
-import json
 import logging
+import os
+
+# Must be set before `huggingface_hub` is imported: it reads this into a
+# module-level constant at import time. The Xet backend's Rust downloader
+# writes straight to the same `.incomplete` path that `_chmod_and_move`
+# renames from, and the two race on large shards (reproduced as a
+# `FileNotFoundError` on `shutil.move`, same two blobs every time regardless
+# of our own thread count). Disabling Xet falls back to the plain HTTP
+# downloader, which doesn't have this race.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
+import csv
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 import click
@@ -54,6 +67,24 @@ for _noisy in ("httpx", "httpcore", "urllib3", "huggingface_hub"):
 
 def _log(msg: str) -> None:
     click.echo(msg, err=True)
+
+
+def _snapshot_download_with_retry(repo: str, revision: str | None) -> str:
+    """Retries past a transient download failure, as a backstop on top of
+    disabling Xet above.
+    """
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            return snapshot_download(repo, revision=revision)
+        except (FileNotFoundError, PermissionError):
+            if attempt == attempts:
+                raise
+            _log(
+                f"  Retrying after a download error"
+                f" (attempt {attempt}/{attempts})..."
+            )
+    raise AssertionError("unreachable")
 
 
 def _manifest_files(snapshot: Path) -> dict[str, int] | None:
@@ -133,12 +164,69 @@ def _snapshot_incomplete_reason(path: str) -> str | None:
     return None
 
 
+_HF_REPO_LOCK_RELPATH = (
+    "CloudInfra/services/huggingface-cache-populator/hf-repo-lock.tsv"
+)
+
+
+def _locked_revision(repo: str) -> str | None:
+    """The revision ``hf-repo-lock.tsv`` pins for the repo, if any.
+
+    The cache-populator DaemonSet on CI's GPU nodes prunes any on-disk
+    revision that isn't in this file every ``cleanup_interval_seconds``
+    (30s, see ``huggingface-cache-populator/main.py``). Downloading an
+    unpinned repo without passing this exact revision lands in a directory
+    the populator doesn't protect, and it gets swept out from under the
+    in-progress download.
+    """
+    for base in Path(__file__).resolve().parents:
+        candidate = base / _HF_REPO_LOCK_RELPATH
+        if candidate.is_file():
+            with candidate.open() as lock_file:
+                for row in csv.DictReader(lock_file, dialect="excel-tab"):
+                    if row["hf_repo"] == repo:
+                        return row["revision"]
+            return None
+    return None
+
+
 def _pinned_revision(repo: str) -> str | None:
-    """The revision the local cache pins for the repo, if it has one."""
+    """The revision to download, preferring the lockfile's pin (see
+    ``_locked_revision``) over whatever the local cache happens to hold.
+    """
+    if revision := _locked_revision(repo):
+        return revision
     try:
         return Path(snapshot_download(repo, local_files_only=True)).name
     except LocalEntryNotFoundError:
         return None
+
+
+def _point_main_ref(snapshot: Path) -> None:
+    """Point the repo's ``refs/main`` at ``snapshot``'s revision.
+
+    A download by commit SHA writes no ref, so a later offline lookup of the
+    default revision (the servers' drafter lookups, ``_cache_path``) treats
+    the repo as missing until the cache populator writes the ref. Do the same
+    thing the populator does (``ensure_main_ref`` in
+    ``huggingface-cache-populator/main.py``): each repo is pinned to exactly
+    one revision, so on CI nodes ``main`` is that revision.
+    """
+    if snapshot.parent.name != "snapshots":
+        raise ValueError(f"{snapshot} is not a <repo>/snapshots/<rev> path")
+    ref = snapshot.parent.parent / "refs" / "main"
+    if ref.is_file() and ref.read_text() == snapshot.name:
+        return
+    ref.parent.mkdir(parents=True, exist_ok=True)
+    # Readers resolve ``main`` through this file at any time, so replace it
+    # whole. HF compares the contents verbatim: no trailing newline. Jobs in
+    # other pods share this cache and can reuse a PID, so the temp name must
+    # be unique on disk, and readable by them like the populator's refs.
+    fd, tmp = tempfile.mkstemp(dir=ref.parent, prefix=f"{ref.name}.")
+    with os.fdopen(fd, "w") as tmp_file:
+        tmp_file.write(snapshot.name)
+    os.chmod(tmp, 0o666)
+    os.replace(tmp, ref)
 
 
 def _cache_path(repo: str) -> str | None:
@@ -203,7 +291,10 @@ def _ensure(repo: str, *, allow_canonicalize: bool) -> str:
             _log("  Canonical name matches the input.")
 
     _log(f"  Downloading '{resolved}' from Hugging Face...")
-    path = snapshot_download(resolved, revision=_pinned_revision(resolved))
+    revision = _pinned_revision(resolved)
+    path = _snapshot_download_with_retry(resolved, revision)
+    if revision is not None:
+        _point_main_ref(Path(path))
     _log(f"  Cached '{resolved}' to {path}")
     return resolved
 

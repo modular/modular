@@ -17,7 +17,7 @@ from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import TileTensorMHAOperand
-from nn.attention.gpu.mla import flare_mla_prefill
+from nn.attention.gpu.mla import SM100MLA, flare_mla_prefill
 from std.testing import assert_almost_equal
 
 
@@ -35,29 +35,11 @@ def test_prefill[
     use_causal_mask: Bool = True,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_prefill",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "k_rope_type:",
-        k_rope_type,
-        "sf_dtype:",
-        sf_dtype,
-        "depth:",
-        depth,
-        "kv_depth:",
-        kv_depth,
-        "cache_depth:",
-        cache_depth,
-        "cache_num_heads:",
-        cache_num_heads,
-        "scale_block_size:",
-        scale_block_size,
+        t"test_mla_prefill batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} k_rope_type:"
+        t" {k_rope_type} sf_dtype: {sf_dtype} depth: {depth} kv_depth:"
+        t" {kv_depth} cache_depth: {cache_depth} cache_num_heads:"
+        t" {cache_num_heads} scale_block_size: {scale_block_size}"
     )
 
     comptime assert (
@@ -223,7 +205,7 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
-    flare_mla_prefill[rank=q_device.rank](
+    flare_mla_prefill[rank=q_device.rank, kernels=SM100MLA](
         output_device,
         q_device,
         k_device,

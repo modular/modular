@@ -10,8 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides networking support.
+"""Provides networking: IP and socket addresses, and TCP sockets.
 
-This package currently contains only internal building blocks, its public
-types are not yet available.
+Examples:
+
+```mojo
+from std.net import SocketAddrV4, TCPListener, TCPStream
+
+def main() raises:
+    var listener = TCPListener(bind=.v4(SocketAddrV4(.localhost, 0)))
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    client.write_all("ping".as_bytes())
+    var buffer = List[Byte](length=4, fill=0)
+    var n = server.read(buffer)
+```
 """
+
+from .addr import (
+    IpAddr,
+    Ipv4Addr,
+    Ipv6Addr,
+    SocketAddr,
+    SocketAddrV4,
+    SocketAddrV6,
+)
+from .tcp import TCPListener, TCPSocket, TCPStream

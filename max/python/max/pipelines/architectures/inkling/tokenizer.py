@@ -21,6 +21,7 @@ from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
     resolve_single_special_token,
+    resolve_token_id_bound,
 )
 from max.pipelines.modeling.types import TokenIds
 from transformers import AutoTokenizer
@@ -38,8 +39,18 @@ TOOL_CALL_JSON_MARKER = "<|content_invoke_tool_json|>"
 
 
 class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
-    """Tokenizer for Inkling, whose own ``AutoProcessor`` class is not shipped
-    with the checkpoint, so :class:`InklingProcessor` takes its place.
+    """Tokenizer for Inkling.
+
+    The checkpoint does not ship its own ``AutoProcessor``, so
+    :class:`InklingProcessor` takes its place. The tokenizer also exposes
+    Inkling's reasoning-delimiter ids, satisfying the
+    ``ReasoningPipelineTokenizer`` protocol that
+    ``OverlapTextGenerationPipeline`` requires of any architecture that names a
+    reasoning parser. ``skipped_special_token_ids`` opts the streaming
+    detokenizer into a per-id filter so ``<|content_invoke_tool_json|>``
+    survives decode for the tool parser. Only that marker: a request without
+    ``tools`` runs no tool parser, so anything else kept here leaks verbatim
+    into ``message.content``.
 
     Also exposes Inkling's reasoning-delimiter ids, satisfying the
     ``ReasoningPipelineTokenizer`` protocol that
@@ -76,6 +87,9 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         huggingface_config = pipeline_config.model.huggingface_config
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         self.enable_prefix_caching = (

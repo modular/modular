@@ -71,16 +71,8 @@ def test_mxfp4_grouped_matmul[
         max_tokens = max(max_tokens, num_tokens_by_expert[i])
 
     print(
-        "  grouped matmul: num_experts=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " num_active=",
-        num_active_experts,
-        " total_tokens=",
-        total_tokens,
+        t"  grouped matmul: num_experts= {num_experts}  N= {N}  K= {K} "
+        t" num_active= {num_active_experts}  total_tokens= {total_tokens}"
     )
 
     # --- Host allocations ---
@@ -159,23 +151,23 @@ def test_mxfp4_grouped_matmul[
             continue
 
         var a_expert_tt = TileTensor(
-            a_dev.unsafe_ptr() + token_start * packed_K,
+            a_dev.unsafe_ptr().unsafe_offset(token_start * packed_K),
             row_major(num_tokens, Idx[packed_K]),
         )
         var b_expert_tt = TileTensor(
-            b_dev.unsafe_ptr() + expert_id * N * packed_K,
+            b_dev.unsafe_ptr().unsafe_offset(expert_id * N * packed_K),
             row_major[N, packed_K](),
         ).as_imm()
         var sfa_expert_tt = TileTensor(
-            a_scales_dev.unsafe_ptr() + token_start * scale_K,
+            a_scales_dev.unsafe_ptr().unsafe_offset(token_start * scale_K),
             row_major(num_tokens, Idx[scale_K]),
         ).as_imm()
         var sfb_expert_tt = TileTensor(
-            b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
+            b_scales_dev.unsafe_ptr().unsafe_offset(expert_id * N * scale_K),
             row_major[N, scale_K](),
         ).as_imm()
         var c_expert_tt = TileTensor(
-            c_ref_dev.unsafe_ptr() + token_start * N,
+            c_ref_dev.unsafe_ptr().unsafe_offset(token_start * N),
             row_major(num_tokens, Idx[N]),
         )
 

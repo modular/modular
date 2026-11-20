@@ -18,7 +18,7 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-from max.experimental.sharding import (
+from max.tensor.sharding import (
     Partial,
     Replicated,
     Sharded,
@@ -69,7 +69,7 @@ class TestSharded:
         }
 
     def test_is_placement_subclass(self) -> None:
-        from max.experimental.sharding import Placement
+        from max.tensor.sharding import Placement
 
         assert isinstance(Sharded(0), Placement)
 
@@ -106,7 +106,7 @@ class TestPlacementCrossType:
         assert Replicated() != 42
 
     def test_all_are_placement_instances(self) -> None:
-        from max.experimental.sharding import Placement
+        from max.tensor.sharding import Placement
 
         assert isinstance(Replicated(), Placement)
         assert isinstance(Sharded(0), Placement)

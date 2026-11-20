@@ -172,7 +172,7 @@ def run_mla_prefill_v2[
     cache_seq_len: Int,
     batch_size: Int,
     bench: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run `MlaPrefillV2` over `CacheBustingBuffer`-backed Q/K/V/O.
 
@@ -244,19 +244,19 @@ def run_mla_prefill_v2[
         # `compile_function`'s cache. ----
         comptime _kernel = MlaPrefillV2[_config]
         var _q0 = TileTensor(
-            cb_q.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_q.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
                 Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_QK]
             ),
         )
         var _o0 = TileTensor(
-            cb_o.offset_ptr(0).bitcast[Scalar[out_type]](),
+            cb_o.offset_ptr(0).unsafe_bitcast[Scalar[out_type]](),
             row_major(
                 Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_NOPE]
             ),
         )
         var _k0 = TileTensor(
-            cb_k.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_k.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
                 Int32(batch_size),
                 Int32(cache_seq_len),
@@ -267,7 +267,7 @@ def run_mla_prefill_v2[
         var _knope0 = TileTensorMHAOperand(_k0.as_imm().as_unsafe_any_origin())
         var _krope0 = TileTensorMHAOperand(_k0.as_imm().as_unsafe_any_origin())
         var _v0 = TileTensor(
-            cb_v.offset_ptr(0).bitcast[Scalar[qkv_type]](),
+            cb_v.offset_ptr(0).unsafe_bitcast[Scalar[qkv_type]](),
             row_major(
                 Int32(batch_size),
                 Int32(cache_seq_len),
@@ -348,17 +348,19 @@ def run_mla_prefill_v2[
             imm,
         }:
             @inline(.always)
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
-                var q_ptr = cb_q.offset_ptr(iteration).bitcast[
+            def _kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
+                var q_ptr = cb_q.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var k_ptr = cb_k.offset_ptr(iteration).bitcast[
+                var k_ptr = cb_k.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var v_ptr = cb_v.offset_ptr(iteration).bitcast[
+                var v_ptr = cb_v.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()
-                var o_ptr = cb_o.offset_ptr(iteration).bitcast[
+                var o_ptr = cb_o.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[out_type]
                 ]()
 
@@ -576,12 +578,8 @@ def main() raises:
     print("  q_block_size:", cfg.q_block_size)
     print("  cache_busting:", cfg.cache_busting)
     print(
-        "  seq_len:     ",
-        seq_len,
-        " cache_seq_len:",
-        cache_seq_len,
-        " batch_size:",
-        batch_size,
+        t"  seq_len:      {seq_len}  cache_seq_len: {cache_seq_len} "
+        t" batch_size: {batch_size}"
     )
 
     var m = Bench()

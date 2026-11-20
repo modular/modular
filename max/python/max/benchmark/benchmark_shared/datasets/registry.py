@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Registry mapping dataset names to their implementing classes."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

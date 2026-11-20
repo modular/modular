@@ -44,11 +44,10 @@ private:
   /// LLVM's float→double promotion. This ensures raw bits are placed in GPRs
   /// for va_arg struct reads. On x86-64, floats go in XMM registers and
   /// must NOT be bitcast.
-  void
-  applyARM64VariadicFloatBitcast(SmallVectorImpl<Value> &callArgs,
-                                 const SignatureClassification &sigClass,
-                                 size_t numFixedArgs, Location loc,
-                                 ConversionPatternRewriter &rewriter) const {
+  void applyARM64VariadicFloatBitcast(SmallVectorImpl<Value> &callArgs,
+                                      const SignatureClassification &sigClass,
+                                      size_t numFixedArgs, Location loc,
+                                      DirectRewriter &rewriter) const {
     unsigned varStart = sigClass.getLLVMParamIndex(numFixedArgs);
     for (unsigned i = varStart; i < callArgs.size(); ++i) {
       if (auto floatTy = dyn_cast<FloatType>(callArgs[i].getType())) {
@@ -62,30 +61,6 @@ private:
     }
   }
 
-  /// Seed per-parameter attribute lists with the op's POP-level argAttrs.
-  /// ABI coercion can change the parameter list: sret prepends a hidden
-  /// pointer, two-register args expand to two parameters, etc. The original
-  /// argAttrs from the POP op use POP-level indexing, so we seed the
-  /// LLVM-indexed list with user-provided attrs at the correct positions.
-  /// Only positions within [0, paramAttrs.size()) are filled, so variadic
-  /// callers can pass a list sized for fixed params only.
-  void seedUserArgAttrs(MutableArrayRef<mlir::NamedAttrList> paramAttrs,
-                        mlir::ArrayAttr argAttrs,
-                        const SignatureClassification &sigClass) const {
-    if (!argAttrs)
-      return;
-    size_t numArgs = std::min<size_t>(argAttrs.size(), sigClass.args.size());
-    for (size_t popIdx = 0; popIdx < numArgs; ++popIdx) {
-      unsigned paramIdx = sigClass.getLLVMParamIndex(popIdx);
-      if (paramIdx >= paramAttrs.size())
-        break;
-      if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[popIdx])) {
-        for (auto namedAttr : dict)
-          paramAttrs[paramIdx].set(namedAttr.getName(), namedAttr.getValue());
-      }
-    }
-  }
-
   /// Build the final LLVM-level per-parameter argAttrs that we expect on the
   /// declaration: user-provided attrs remapped to LLVM indices, plus the sret
   /// and byval overlays applied by the lowering. Returns null if no attrs
@@ -95,21 +70,15 @@ private:
   mlir::ArrayAttr buildLLVMArgAttrs(mlir::ArrayAttr argAttrs,
                                     const SignatureClassification &sigClass,
                                     ExternalCallOp op, size_t numFixedArgs,
-                                    ConversionPatternRewriter &rewriter) const {
+                                    DirectRewriter &rewriter) const {
     SmallVector<Type> llvmArgTypes;
     for (Type t : op.getOperandTypes())
       llvmArgTypes.push_back(getTypeConverter()->convertType(t));
     Type llvmRetType;
     if (!op.getResults().empty())
       llvmRetType = getTypeConverter()->convertType(op.getResult().getType());
-    SmallVector<mlir::NamedAttrList> abiAttrs =
-        sigClass.getParamAttrs(llvmArgTypes, llvmRetType, numFixedArgs);
-
-    SmallVector<mlir::NamedAttrList> paramAttrs(abiAttrs.size());
-    seedUserArgAttrs(paramAttrs, argAttrs, sigClass);
-    for (auto [attrs, abi] : llvm::zip_equal(paramAttrs, abiAttrs))
-      for (mlir::NamedAttribute attr : abi)
-        attrs.set(attr.getName(), attr.getValue());
+    SmallVector<mlir::NamedAttrList> paramAttrs = sigClass.getParamAttrs(
+        llvmArgTypes, llvmRetType, argAttrs, numFixedArgs);
 
     bool anySet = llvm::any_of(paramAttrs, [](const mlir::NamedAttrList &nal) {
       return !nal.empty();
@@ -182,9 +151,9 @@ public:
   /// identity (no coercion needed), the same code path runs — identity
   /// classifications simply produce pass-through behavior identical to
   /// standard LLVM type conversion.
-  LogicalResult
-  matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(ExternalCallOp op,
+                                ExternalCallOpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
     Location loc = op.getLoc();
     const llvm::Triple &triple = getTypeConverter()->getTarget().getTriple();
     CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
@@ -212,15 +181,17 @@ public:
     }
 
     // Classify arguments/return and build the coerced LLVM signature + args.
-    // op.getOperandTypes() holds POP-level types for classification; the
-    // adaptor operands hold the already-converted LLVM values for coercion.
+    // The op's types are the POP-level types for classification; the adaptor
+    // operands hold the already-converted LLVM values for coercion.
+    Type returnType;
     Type llvmReturnType;
-    if (!op.getResults().empty())
-      llvmReturnType =
-          getTypeConverter()->convertType(op.getResult().getType());
-    auto prep = cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
-                                 llvmReturnType, loc, rewriter, numFixedArgs,
-                                 isVariadic);
+    if (!op.getResults().empty()) {
+      returnType = op.getResult().getType();
+      llvmReturnType = getTypeConverter()->convertType(returnType);
+    }
+    auto prep =
+        cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
+                         returnType, loc, rewriter, numFixedArgs, isVariadic);
     const SignatureClassification &sigClass = prep.classification;
     const LLVM::LLVMFunctionType &signature = prep.signature;
 
@@ -240,8 +211,20 @@ public:
         buildLLVMArgAttrs(argAttrs, sigClass, op, numFixedArgs, rewriter);
     // resAttrs are dropped when sret is active (no LLVM-level return value).
     mlir::ArrayAttr expectedResAttrs;
-    if (resAttrs && !sigClass.ret.useSRet)
-      expectedResAttrs = rewriter.getArrayAttr(resAttrs);
+    if (!sigClass.ret.useSRet) {
+      NamedAttrList attrs =
+          resAttrs ? NamedAttrList(resAttrs) : NamedAttrList();
+      // As for a struct argument, the padding of a struct result is not
+      // defined.
+      if (isa_and_nonnull<LLVM::LLVMStructType>(llvmReturnType))
+        attrs.erase(LLVM::LLVMDialect::getNoUndefAttrName());
+      assert(sigClass.getResultAttrs(getContext()).empty() &&
+             "Not expecting call-side result attrs");
+      if (!attrs.empty()) {
+        expectedResAttrs =
+            rewriter.getArrayAttr({attrs.getDictionary(getContext())});
+      }
+    }
 
     // Step 5: Lookup existing function (unified path - no early return!)
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());

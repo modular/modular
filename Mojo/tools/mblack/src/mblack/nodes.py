@@ -64,6 +64,7 @@ STATEMENT: Final = {
     syms.funcdef,
     syms.classdef,
     syms.match_stmt,
+    syms.guard_stmt,
     syms.case_block,
     syms.var_stmt,
     syms.comptime_stmt,
@@ -104,6 +105,7 @@ VARARGS_PARENTS: Final = {
     syms.metaparams,
     syms.trailer,  # single argument to call
     syms.typedargslist,
+    syms.typeconv,
     syms.varargslist,  # lambdas
 }
 UNPACKING_PARENTS: Final = {
@@ -404,6 +406,10 @@ def whitespace(
                     f"Cannot format: unknown argument convention"
                     f" '{prev.value}' before '{v}'"
                 )
+            return NO
+
+    elif p.type == syms.typeconv:
+        if prev and prev.type in STARS:
             return NO
 
     elif p.type in TYPED_NAMES:
@@ -802,6 +808,7 @@ def is_one_sequence_between(
             commas += 1
             if leaf.parent and leaf.parent.type in {
                 syms.arglist,
+                syms.enum_case_payload,
                 syms.typedargslist,
             }:
                 commas += 1

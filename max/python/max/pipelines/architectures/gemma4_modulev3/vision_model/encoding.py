@@ -15,13 +15,13 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.tensor import Tensor
 
 from ..layers.rms_norm import Gemma4RMSNorm
 from .attention import Gemma4VisionAttention
@@ -60,6 +60,7 @@ class Gemma4VisionEncoderLayer(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seq_len: Tensor,
     ) -> Tensor:
+        """Runs the layer's attention, then its MLP."""
         residual = hidden_states
         h = self.input_layernorm(hidden_states)
         h = self.self_attn(h, freqs_cis, cu_seqlens, max_seq_len)
@@ -91,6 +92,7 @@ class Gemma4VisionEncoder(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seq_len: Tensor,
     ) -> Tensor:
+        """Runs the encoder stack over the patch embeddings."""
         for layer in self.layers:
             hidden_state = layer(
                 hidden_state, freqs_cis, cu_seqlens, max_seq_len

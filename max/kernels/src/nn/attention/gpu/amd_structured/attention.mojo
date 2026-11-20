@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Attention struct for gfx950 MHA/MLA kernels (prefill + decode).
 
-TileTensor-only API: no LayoutTensor in struct fields, constructor
-parameters, method signatures, or internal bridges. Mask application is
+TileTensor-only API in struct fields, constructor parameters, and
+method signatures. Mask application is
 delegated to `MaskTileOp` (see `mask_op.mojo`), which uses
 TileTensor.vectorize with local SIMD read/modify/write for per-element edits.
 
@@ -29,15 +29,15 @@ from std.math.uutils import udivmod
 from std.memory import bitcast, unsafe_stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import align_of, simd_width_of
-from std.sys.intrinsics import readfirstlane
+from max.gpu.intrinsics import readfirstlane
 from max.gpu import block_idx, lane_id, thread_idx
 from layout import TileTensor
 from layout import row_major
 from layout.swizzle import Swizzle
-from layout.tile_layout import (
+from layout.layout import (
     ComptimeInt,
     Idx,
-    Layout as TileLayout,
+    Layout,
 )
 from layout.coord import Coord
 from structured_kernels.amd_tile_io import RegTileEpilogue, RegTileWriter
@@ -45,7 +45,6 @@ from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
-from std.utils import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .softmax import Softmax
@@ -54,7 +53,7 @@ from .buffers import (
     PRegisterBuffer,
     QRegisterBuffer,
 )
-from .config import AMDStructuredConfig
+from .config import AMDStructuredConfig, mla_decode_dma_warp
 from .mask_op import MaskTileOp
 from .mma import TiledMmaOp
 from .utils import get_warp_coords
@@ -91,6 +90,17 @@ struct Attention[
     # Default 1 = single-token decode (query_rows == group), byte-identical.
     # gfx950 decode only.
     q_seq_len: Int = 1,
+    # Folds the fp8 P pre-scale (`2**p_scale_log2`, see `PRegisterBuffer`) into
+    # the softmax `exp2` argument. The caller must pass the same power of two as
+    # `arg_bias_log2` to `online_softmax_step_0_pkfma` and divide it out of the
+    # row sum before `apply_softmax_denominator`.
+    p_scale_in_exp: Bool = False,
+    # Sums each row's P values with packed adds (see `Softmax.packed_row_sum`).
+    packed_row_sum: Bool = False,
+    # Classifies each key tile in wave-uniform 32-bit math (see `mask_status`)
+    # and keeps the tile's `kv_start_row` in an SGPR. Requires a mask whose tile
+    # status depends only on tile coordinates, such as `CausalMask`.
+    uniform_mask_row: Bool = False,
 ]:
     """Holds the per-warp register, SMEM, and softmax state for a gfx950 MHA/MLA attention tile.
 
@@ -129,6 +139,13 @@ struct Attention[
             speculative decode (defaults to 1, single-token decode). The
             tile's HEIGHT, which `mha_decoding` pads above the tokens a
             sequence carries; those arrive as the runtime `seq_len`.
+        p_scale_in_exp: Fold the fp8 P pre-scale into the softmax `exp2`
+            argument instead of multiplying P before the cast (defaults to
+            False).
+        packed_row_sum: Sum each row's P values with packed adds and a
+            log-depth tree, reordering the fp32 sum (defaults to False).
+        uniform_mask_row: Classify key tiles in wave-uniform 32-bit math and
+            keep `kv_start_row` wave-uniform (defaults to False).
     """
 
     # Block/warp dimensions from MHAConfig.
@@ -166,6 +183,13 @@ struct Attention[
     # head(row) = row % H. The fold invariant `query_rows % heads_inner == 0`
     # is asserted in `__init__` (comptime asserts must live in a function body).
     comptime heads_inner = Self._fold_heads if Self._fold_active else Self.group
+    # Multi-tile S>1 fold: the folded rows span more than one grid.y M-tile
+    # (query_rows > BM). Only this path compiles the tile-offset row math
+    # (valid_rows clamp, absolute stat-write and mask rows) below; single-tile
+    # folds and every non-fold path keep the tile-local forms, byte-identical.
+    comptime _fold_multi_tile = (
+        Self._fold_active and Self.q_seq_len > 1 and Self.query_rows > Self.BM
+    )
 
     comptime accum_type = get_accum_type[Self.q_type]()
 
@@ -296,6 +320,7 @@ struct Attention[
         num_stages=Self._p_buffer_stages,
         p_swizzle=Self._p_swizzle,
         raw_fp8_cast=Self._raw_fp8_cast,
+        p_scale_in_exp=Self.p_scale_in_exp,
     ]
 
     # --- TileTensor layouts for Q, output, and KV tiles ---
@@ -324,7 +349,7 @@ struct Attention[
     comptime _q_stride0 = (
         Self.num_heads * Self.q_depth
     ) if Self._token_strided_rows else Self.q_depth
-    comptime QTileLayout = TileLayout[
+    comptime QTileLayout = Layout[
         Coord[Int64, ComptimeInt[Self.q_depth]].element_types,
         Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
@@ -332,13 +357,13 @@ struct Attention[
     comptime _output_stride0 = (
         Self.num_heads * Self.output_depth
     ) if Self._token_strided_rows else Self.output_depth
-    comptime OutputTileLayout = TileLayout[
+    comptime OutputTileLayout = Layout[
         Coord[Int64, ComptimeInt[Self.output_depth]].element_types,
         Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime _kv_stride0 = Self.kv_num_heads * Self.depth
-    comptime KvTileLayout = TileLayout[
+    comptime KvTileLayout = Layout[
         Coord[Int64, ComptimeInt[Self.depth]].element_types,
         Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]
@@ -364,6 +389,22 @@ struct Attention[
     # For depth%BK==0, _bk_smem=BK → ceildiv(depth,BK) blocks = depth/BK,
     # so this reduces to BN × depth.
     comptime _k_smem_blocks = ceildiv(Self.depth, Self._bk_smem)
+    # MLA decode with a DMA producer warp: K (= V) streams through two stages.
+    comptime mla_dma_warp = (
+        Self.mla_kv_alias
+        and Self.token_gen
+        and mla_decode_dma_warp[
+            Self.q_type,
+            Self.k_t,
+            Self.mask_t,
+            Self.BM,
+            Self.BN,
+            Self.WM,
+            Self.WN,
+            Self.depth,
+            Self.q_seq_len,
+        ]()
+    )
     comptime _k_smem_size = Self.BN * (
         Self._k_smem_blocks
         * Self._bk_smem if Self.amd_structured_config.full_kv else Self.BK
@@ -371,6 +412,7 @@ struct Attention[
         2 if (
             Self.amd_structured_config.double_buffer
             or Self.amd_structured_config.double_buffer_k_only
+            or Self.mla_dma_warp
         ) else 1
     )
     # V SMEM must cover the wider of K depth and output depth: MLA prefill has
@@ -420,10 +462,10 @@ struct Attention[
     var out_reg_buffer: Self.OutputRegisterBufferType
     var p_reg_buffer: Self.PRegisterBufferType
 
-    var k_smem_ptr: UnsafePointer[
+    var k_smem_ptr: MutPointer[
         Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
-    var v_smem_ptr: UnsafePointer[
+    var v_smem_ptr: MutPointer[
         Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
@@ -431,7 +473,7 @@ struct Attention[
     # in-flight K ds_reads. Overlaying scratch onto K SMEM is unsafe in
     # `mla_kv_alias` mode (V reads from K's SMEM, so there's no later
     # V DMA to overwrite the corruption).
-    var warp_scratch_ptr: UnsafePointer[
+    var warp_scratch_ptr: MutPointer[
         Scalar[Self.accum_type], MutUntrackedOrigin, address_space=.SHARED
     ]
 
@@ -453,9 +495,12 @@ struct Attention[
     var warp_col: Int
 
     var mask_block_row: UInt32
-    # Mask offsets: `mask_warp_row = warp_row * WM` is a cache (never mutated).
-    # `mask_warp_col` starts at `warp_col * WN` but is advanced by `BN` each
-    # K-tile (see `mask_advance`) so it tracks the current K-tile column.
+    # Mask offsets: `mask_warp_row` is a cache (never mutated) —
+    # `warp_row * WM` on a single-tile launch, absolute
+    # (`q_tile_idx() * BM + warp_row * WM`) on the multi-tile fold (see
+    # `__init__`). `mask_warp_col` starts at `warp_col * WN` but is advanced
+    # by `BN` each K-tile (see `mask_advance`) so it tracks the current
+    # K-tile column.
     var mask_warp_row: UInt32
     var mask_warp_col: UInt32
     var kv_start_row: UInt32
@@ -475,6 +520,7 @@ struct Attention[
         Self.num_warps_n,
         Self.mma_shape[0],
         Self.use_exp2,
+        packed_row_sum=Self.packed_row_sum,
     ]
 
     comptime _warp_scratch_layout = row_major[
@@ -542,13 +588,13 @@ struct Attention[
     @inline(.always)
     def __init__(
         out self,
-        output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
-        q: UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin],
+        output_ptr: MutPointer[Scalar[Self.output_type], MutAnyOrigin],
+        q: ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
         sink_weights: OptionalReg[
-            UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin]
+            ImmPointer[Scalar[Self.q_type], ImmutAnyOrigin]
         ],
         batch_idx: Int,
         scale: Float32,
@@ -616,7 +662,7 @@ struct Attention[
             address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
-        self.v_smem_ptr = self.k_smem_ptr.bitcast[
+        self.v_smem_ptr = self.k_smem_ptr.unsafe_bitcast[
             Scalar[Self.v_t.dtype]
         ]() if Self.amd_structured_config.shared_kv else unsafe_stack_allocation[
             Self._v_smem_size,
@@ -650,7 +696,17 @@ struct Attention[
         # `query_rows` and prefill its per-tile `min(BM, ...)`.
         var valid_rows: UInt32
         comptime if Self._fold_active and Self.q_seq_len > 1:
-            valid_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
+            comptime if Self._fold_multi_tile:
+                # The tile's slice of the H*seq_len live rows — 0 for a
+                # fully-dead tile (a 0-row view maps to num_records=0, so the
+                # Q read and the output store clamp to nothing).
+                var live_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
+                var tile_base_row = UInt32(Self.q_tile_idx()) * UInt32(Self.BM)
+                valid_rows = min(
+                    UInt32(Self.BM), live_rows - min(live_rows, tile_base_row)
+                )
+            else:
+                valid_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
         elif Self.token_gen and Self.mla_mode:
             # The bound is relative to this head tile, so cap it at the rows
             # the tile owns; otherwise a partial last tile (24 heads at BM=16)
@@ -673,7 +729,7 @@ struct Attention[
         ]()
 
         var q_tile = TileTensor[Self.q_type, Self.QTileLayout, ImmutAnyOrigin](
-            ptr=q + Int(q_offset),
+            ptr=q.unsafe_offset(Int(q_offset)),
             layout=Self.QTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -687,7 +743,7 @@ struct Attention[
         self.output_tile = TileTensor[
             Self.output_type, Self.OutputTileLayout, MutAnyOrigin
         ](
-            ptr=output_ptr + Int(output_offset),
+            ptr=output_ptr.unsafe_offset(Int(output_offset)),
             layout=Self.OutputTileLayout(
                 Coord(
                     Int64(valid_rows),
@@ -703,7 +759,16 @@ struct Attention[
 
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
         self.warp_row, self.warp_col = get_warp_coords[Self.BN, Self.WN]()
-        self.mask_warp_row = UInt32(self.warp_row * Self.WM)
+        comptime if Self._fold_multi_tile:
+            # Absolute warp row so the mask's per-token decompositions
+            # (token = row // H, head = row % H) see the tile offset — a
+            # tile-local row would mask tile 1's tokens as 0..S/2-1 and
+            # silently drop the newest keys.
+            self.mask_warp_row = UInt32(
+                self.q_tile_idx() * Self.BM + self.warp_row * Self.WM
+            )
+        else:
+            self.mask_warp_row = UInt32(self.warp_row * Self.WM)
         self.mask_warp_col = UInt32(self.warp_col * Self.WN)
 
         self.batch_idx = batch_idx
@@ -726,7 +791,12 @@ struct Attention[
         self.seq_len = seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos
-        self.cache_start_pos = cache_start_pos
+        comptime if Self.uniform_mask_row:
+            # Pinned: it is loaded per lane from the cache offsets, and the
+            # per-tile mask classification must stay wave-uniform to be SALU.
+            self.cache_start_pos = Int(readfirstlane(Int32(cache_start_pos)))
+        else:
+            self.cache_start_pos = cache_start_pos
         self.kv_start_row = 0
 
         comptime if Self.sink:
@@ -781,26 +851,85 @@ struct Attention[
             # (windowed/chunked); Causal/Null skip it. `fold_seq_len` is 1 off
             # the fold path, so non-MLA decode is byte-identical to the
             # single-token span.
+            comptime if Self._fold_active and not Self.mla_mode:
+                # The runtime query length: a sequence shorter than the tile's
+                # S slots must not push the span base below key 0.
+                return self.mask.status(
+                    UInt32(self.batch_idx),
+                    (Int(self.num_keys - self.seq_len), Int(kv_tile_start_row)),
+                    (Int(self.seq_len), Int(Self.BN)),
+                )
             comptime fold_seq_len = (
                 Self.query_rows // Self.heads_inner
             ) if Self._fold_active else 1
             return self.mask.status(
                 UInt32(self.batch_idx),
-                Index[dtype=DType.uint32](
-                    self.num_keys - fold_seq_len,
-                    Int(kv_tile_start_row),
-                ),
-                Index[dtype=DType.uint32](fold_seq_len, Self.BN),
+                (Int(self.num_keys - fold_seq_len), Int(kv_tile_start_row)),
+                (Int(fold_seq_len), Int(Self.BN)),
             )
         else:
+            comptime if Self.uniform_mask_row:
+                # `CausalMask.status`'s corner test in 32-bit: gfx9 SALU has
+                # 32-bit compares but no `s_cmp_lt/gt_i64`, so the 64-bit form
+                # can only run on VALU.
+                comptime assert (
+                    Self.mask_t == CausalMask
+                ), "uniform_mask_row supports only the causal mask"
+                var q_row = Int32(self.mask_block_row) + Int32(self.start_pos)
+                var kv_row = Int32(kv_tile_start_row) + Int32(
+                    self.cache_start_pos
+                )
+                # The same two corner bits as `CausalMask.status`: the first
+                # query row is before the tile's last key (partial), and the
+                # last query row is before the tile's first key (fully masked).
+                var min_q_lt_max_k = UInt8(q_row + 1 < kv_row + Int32(Self.BN))
+                var max_q_lt_min_k = UInt8(q_row + Int32(Self.BM) <= kv_row)
+                return TileMaskStatus(min_q_lt_max_k + (max_q_lt_min_k << 1))
             return self.mask.status(
                 UInt32(self.batch_idx),
-                Index[dtype=DType.uint32](
+                (
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype=DType.uint32](Self.BM, Self.BN),
+                (Int(Self.BM), Int(Self.BN)),
             )
+
+    @inline(.always)
+    def decode_first_key(self) -> Int:
+        """Returns the first key a decode CTA must visit.
+
+        A mask that fully hides a prefix of the keys and opts in through
+        `supports_decode_token_fold` (windowed) names it through `start_column`
+        for the earliest query row of the decode step, so split-K partitions
+        only the visible range. Every other mask starts at key 0.
+
+        Returns:
+            The first visible key position, tile-aligned by the mask.
+        """
+        comptime if not Self.mask_t.supports_decode_token_fold:
+            return 0
+        else:
+            comptime if Self._fold_active and not Self.mla_mode:
+                comptime span = Self.query_rows // Self.heads_inner
+                var first_row = max(self.num_keys - self.seq_len, 0)
+                return min(
+                    Int(
+                        self.mask.start_column[
+                            span, Self.BN, Self.k_t.page_size
+                        ](UInt32(self.batch_idx), UInt32(first_row))
+                    ),
+                    self.num_keys,
+                )
+            else:
+                return min(
+                    Int(
+                        self.mask.start_column[1, Self.BN, Self.k_t.page_size](
+                            UInt32(self.batch_idx),
+                            UInt32(max(self.num_keys - 1, 0)),
+                        )
+                    ),
+                    self.num_keys,
+                )
 
     @inline(.always)
     def mask_advance(mut self):
@@ -898,7 +1027,14 @@ struct Attention[
             self.scale_p_reg[stage]()
         var num_rows = self.get_num_rows()
         self.mask_apply[stage](self.kv_start_row, num_rows, not_last_iter)
-        self.kv_start_row += UInt32(Self.BN)
+        comptime if Self.uniform_mask_row:
+            # Pin the counter so the next tile's classification and row clamp
+            # stay in SALU.
+            self.kv_start_row = UInt32(
+                readfirstlane(Int32(self.kv_start_row + UInt32(Self.BN)))
+            )
+        else:
+            self.kv_start_row += UInt32(Self.BN)
 
     # --- Softmax ---
 
@@ -1016,12 +1152,15 @@ struct Attention[
         self.softmax.update_sum()
 
     @inline(.always)
-    def online_softmax_step_0_pkfma[stage: Int, mask: Bool = True](mut self):
+    def online_softmax_step_0_pkfma[
+        stage: Int, mask: Bool = True, arg_bias_log2: Int = 0
+    ](mut self):
         """Step 0 deferred-scale variant that emits `v_pk_fma_f32`.
 
         Like `_fma`, but uses `Softmax.exp_pkfma` which folds the
         `score * scale - max * scale` into a single packed FMA per score
-        pair (matches aiter's softmax inner loop). Has the small FMA
+        pair (the same fold the fastest open-source ROCm decode kernels
+        use in their softmax inner loop). Has the small FMA
         precision gap noted on `exp_pkfma`; safe under the FP8 tolerance
         envelope where the row-sum normalization absorbs it.
 
@@ -1029,6 +1168,9 @@ struct Attention[
             stage: The P register buffer stage to operate on.
             mask: Whether to apply the attention mask (without score scaling)
                 before max and exp (defaults to `True`).
+            arg_bias_log2: Exponent bias handed to `exp_pkfma`, pre-scaling P
+                by `2**arg_bias_log2` instead of a separate multiply before
+                the fp8 cast (defaults to 0).
         """
         comptime if mask:
             self.apply_mask[stage, scale=False]()
@@ -1039,20 +1181,28 @@ struct Attention[
         self.softmax.calculate_qk_max[unscale_seed=True](
             score_tile, warp_scratch, self._seed_inv_scale()
         )
-        self.softmax.exp_pkfma[start=0, stride=2](score_tile, self.scale)
+        self.softmax.exp_pkfma[start=0, stride=2, arg_bias_log2=arg_bias_log2](
+            score_tile, self.scale
+        )
 
     @inline(.always)
-    def online_softmax_step_1_pkfma[stage: Int](mut self):
+    def online_softmax_step_1_pkfma[
+        stage: Int, arg_bias_log2: Int = 0
+    ](mut self,):
         """Step 1 pkfma counterpart of `_fma` step 1.
 
         Parameters:
             stage: The P register buffer stage to operate on.
+            arg_bias_log2: Exponent bias handed to `exp_pkfma`; see
+                `online_softmax_step_0_pkfma` (defaults to 0).
         """
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.exp_pkfma[start=1, stride=2](score_tile, self.scale)
+        self.softmax.exp_pkfma[start=1, stride=2, arg_bias_log2=arg_bias_log2](
+            score_tile, self.scale
+        )
         self.softmax.scale_rowmax(self.scale)
         self.softmax.calculate_qk_sum(score_tile, warp_scratch)
         self.softmax.calculate_correction()
@@ -1202,8 +1352,8 @@ struct Attention[
     def store_partition_info(
         self,
         num_partitions: Int,
-        exp_sum_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
-        qk_max_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
+        exp_sum_ptr: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
+        qk_max_ptr: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
     ):
         """Write softmax stats for split-K reduction (decode only).
 
@@ -1258,11 +1408,24 @@ struct Attention[
             var live_rows = Int(Self.heads_inner) * Int(self.seq_len)
             var head_base = block_idx.y * Self._fold_head_base_stride
             comptime for m_mma in range(Self.num_m_mmas):
-                var r = (
-                    self.warp_row * Self.WM
-                    + m_mma * Self.mma_shape[0]
-                    + lane_row
-                )
+                # Multi-tile fold: `r` is the ABSOLUTE folded row (tile
+                # offset included) — the (token, head) decomposition and the
+                # live-row test key on it. Single-tile folds keep the
+                # tile-local form, byte-identical.
+                var r: Int
+                comptime if Self._fold_multi_tile:
+                    r = (
+                        Self.q_tile_idx() * Self.BM
+                        + self.warp_row * Self.WM
+                        + m_mma * Self.mma_shape[0]
+                        + lane_row
+                    )
+                else:
+                    r = (
+                        self.warp_row * Self.WM
+                        + m_mma * Self.mma_shape[0]
+                        + lane_row
+                    )
                 var token: Int
                 var head: Int
                 token, head = udivmod(r, Self.heads_inner)

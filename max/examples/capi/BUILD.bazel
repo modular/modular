@@ -6,10 +6,11 @@ modular_cc_binary(
     name = "example",
     testonly = True,
     srcs = ["example.c"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -17,10 +18,11 @@ modular_cc_binary(
     name = "graph_capture",
     testonly = True,
     srcs = ["graph_capture.c"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -65,11 +67,11 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
     ],
 )
 
@@ -77,9 +79,10 @@ modular_cc_binary(
     name = "weights_example",
     testonly = True,
     srcs = ["weights_example.c"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -105,9 +108,10 @@ modular_cc_binary(
     name = "safetensors_example",
     testonly = True,
     srcs = ["safetensors_example.c"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     deps = [
         "//max:CAPI.headers",
-        "//max/lib/max_license:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 

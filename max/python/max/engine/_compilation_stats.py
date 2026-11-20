@@ -16,7 +16,7 @@ The engine instruments ``InferenceSession.compile()`` and
 ``InferenceSession.init_all()`` to push elapsed wall-clock time into any
 ``CompilationStats`` accumulators active on the contextvar stack. The public
 collector context manager and the high-level logging timer live in
-``max.experimental.nn._compilation_timer``; this module hosts the data and
+``max.nn._compilation_timer``; this module hosts the data and
 the engine-side recording helpers so the engine API can record phase
 timings without pulling in higher-level dependencies.
 """

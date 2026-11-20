@@ -17,7 +17,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 from linalg.arch.cpu.apple_amx_intrinsics import *
 from std.testing import *

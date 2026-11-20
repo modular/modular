@@ -10,21 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Registers GPT-OSS with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import GptOssBatchProcessor
-from .memory_planner import GptOssMemoryPlanner
-from .model import GptOssModel
+from .decoder import GptOssDecoder
 from .model_config import GptOssConfig
+from .tokenizer import GptOssTokenizer
 
 gpt_oss_arch = SupportedArchitecture(
     name="GptOssForCausalLM",
@@ -35,10 +31,9 @@ gpt_oss_arch = SupportedArchitecture(
     ],
     default_encoding=GptOssConfig.DEFAULT_ENCODING,
     supported_encodings=GptOssConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=GptOssModel,
-    batching=GptOssBatchProcessor,
+    modules={GraphRole.DECODER: GptOssDecoder},
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
+    tokenizer=GptOssTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
@@ -46,7 +41,6 @@ gpt_oss_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=GptOssConfig,
-    memory_planner=GptOssMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

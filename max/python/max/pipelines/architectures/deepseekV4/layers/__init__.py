@@ -31,6 +31,7 @@ from .moe import (
     DeepseekV4Expert,
     DeepseekV4Gate,
     DeepseekV4MoE,
+    DeepseekV4SharedExpert,
     sqrt_softplus,
 )
 from .quantization import fp4_qat_quantize, fp8_qat_quantize
@@ -51,6 +52,7 @@ __all__ = [
     "DeepseekV4Indexer",
     "DeepseekV4MoE",
     "DeepseekV4RotaryEmbedding",
+    "DeepseekV4SharedExpert",
     "LayerIndex",
     "RaggedRows",
     "WindowRows",

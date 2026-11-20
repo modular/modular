@@ -22,6 +22,8 @@
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
 
+#include <atomic>
+
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
@@ -34,7 +36,7 @@ struct ImplNodeBase {
       : inst(inst), paramGraph(std::move(graph)) {}
 
   ImplNodeBase(Region &scope) : paramGraph(scope) {}
-  virtual ~ImplNodeBase() = default;
+  virtual ~ImplNodeBase() { delete errorPtr.load(std::memory_order_relaxed); }
 
   /// Initialize the fields of the node if created with the single-argument
   /// constructor above.
@@ -42,18 +44,42 @@ struct ImplNodeBase {
 
   virtual void setToError(ErrorTree &&err) = 0;
 
+  /// Records the node's first error. A node is reachable from more than one
+  /// elaboration path (concurrent tasks, or a suspended node resumed after a
+  /// blocker errored), so a second error is expected; the first one is the
+  /// root cause, so keep it.
+  void setFirstError(ErrorTree &&err) {
+    ErrorTree *published = new ErrorTree(std::move(err));
+    ErrorTree *expected = nullptr;
+    if (!errorPtr.compare_exchange_strong(expected, published,
+                                          std::memory_order_release)) {
+      // Lost the race to another path's error; ours is not the root cause.
+      delete published;
+    }
+  }
+  /// Whether the node has recorded an error. Safe against a concurrent
+  /// `setFirstError`.
+  bool recordedError() const {
+    return errorPtr.load(std::memory_order_acquire) != nullptr;
+  }
+  /// Copies the node's error, or nullopt. Safe against a concurrent
+  /// `setFirstError`.
+  std::optional<ErrorTree> copyError() const {
+    if (ErrorTree *err = errorPtr.load(std::memory_order_acquire))
+      return err->copy();
+    return std::nullopt;
+  }
+
   /// This op represents a concrete instantiation of a generator.
   InstantiatedOpInterface inst;
 
   /// Keep track of the nested parameter scopes within this symbol.
   ParameterUseDefGraph paramGraph;
 
-  /// An error contained by this node. This allows us to delay error handling in
-  /// cases where an error is recoverable.
-  std::optional<ErrorTree> error;
-  /// An atomic indicating whether an error is present. This can be used to
-  /// check for an error when the ImplNode is shared.
-  std::atomic<bool> hasError = false;
+  /// The first error recorded by this node, published with release ordering.
+  /// A node is processed by more than one task over its life, so it is only
+  /// touched through `setFirstError`/`recordedError`/`copyError`.
+  std::atomic<ErrorTree *> errorPtr = nullptr;
 
   /// The elaborator will asynchronously dispatch elaboration of generator
   /// instantiations with no result parameters in separate tasks, deferring
@@ -196,7 +222,7 @@ public:
   // Both carry a `kTransparentThunkCalleeExprAttr` attribute holding a
   // parametric expression that resolves - once the thunk's paramDecls are
   // substituted with the callsite's paramValues - to a fully-bound
-  // `SymbolConstantAttr` for the wrapped function. Substitution may involve
+  // `FuncSymbolGenerator` for the wrapped function. Substitution may involve
   // parameter operators (e.g. `GetWitnessAttr` for closures), so resolution
   // must run through an evaluation context.
 
@@ -207,14 +233,14 @@ public:
   /// concrete subclass's hooks. Returns:
   ///   - `nullopt`: `generator` is not a transparent thunk; nothing to do.
   ///   - error: rebinding produced an error; the caller should propagate it.
-  ///   - null `SymbolConstantAttr`: rebinding is not yet ready (a
+  ///   - null `FuncSymbolGenerator`: rebinding is not yet ready (a
   ///     sub-dependency is still being elaborated); the caller should
   ///     skip/retry.
-  ///   - non-null `SymbolConstantAttr`: the fully resolved wrapped callee.
+  ///   - non-null `FuncSymbolGenerator`: the fully resolved wrapped callee.
   ///     Nested thunks are peeled, so this is never itself a thunk.
-  std::optional<ErrorTreeOr<SymbolConstantAttr>>
+  std::optional<ErrorTreeOr<FuncSymbolGenerator>>
   resolveTransparentThunkCallee(GeneratorOp generator,
-                                SymbolConstantAttr symbol, Location loc);
+                                FuncSymbolGenerator symbol, Location loc);
 
 protected:
   /// Evaluate an apply-like operator.
@@ -234,8 +260,6 @@ protected:
   FailureOr<TypedAttr> evaluateIsStructTypeAttr(IsStructTypeAttr attr);
   FailureOr<TypedAttr> evaluateFnTypeIsCABIAttr(FnTypeIsCABIAttr attr);
   FailureOr<TypedAttr> evaluateGetBaseTypeNameAttr(GetBaseTypeNameAttr attr);
-  FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
-      CompileOffloadClosureAttr compileOffloadClosureAttr);
   FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
 
   /// Evaluate the mangled name of a function, including evaluating any explicit
@@ -255,6 +279,15 @@ protected:
 
   /// The contextual location of an error.
   std::optional<Location> errorLoc;
+
+  /// While set, unfolded materialization errors are held here instead of
+  /// emitted, and count only if the expression being concretized does not fold.
+  /// Thread-local rather than a member: the evaluator can be freed before
+  /// concretization returns.
+  // TODO(MOCO-4110): Return errors up the evaluator stack instead, so that a
+  // parent that folds without an operand's value drops only that operand's
+  // error. Holding the first error can blame an operand a parent dropped.
+  static std::optional<ErrorTree> *&pendingUnfoldedError();
 
   EnvAttr env;
 
@@ -282,7 +315,7 @@ private:
   virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
 
   virtual ErrorOr<CrossDeviceFunction>
-  compileAsm(MLIRContext *ctx, GeneratorOp, SymbolConstantAttr, StringAttr,
+  compileAsm(MLIRContext *ctx, GeneratorOp, FuncSymbolAttr, StringAttr,
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) = 0;
 
   virtual ImplNodeBase *getParentNode() = 0;
@@ -292,20 +325,25 @@ private:
 // Utils
 //===----------------------------------------------------------------------===//
 
-SymbolConstantAttr extractSymbolConstantAttr(TypedAttr attr);
+/// Returns the function reference `attr` denotes, or null if it is not one.
+/// Accepts a `FuncSymbolGenerator` or a function literal.
+FuncSymbolGenerator extractFuncSymbolGenerator(TypedAttr attr);
+
+/// Return true if `symbol` binds any of its input parameters directly to
+/// `#kgen.unknown`.
+bool hasUnresolvedParamValue(FuncSymbolGenerator symbol);
 
 /// Decomposed view of a `compile_offload` op's `func` attribute. Populated by
-/// `extractOffloadFunc` when the func resolves to a fully-bound
-/// `SymbolConstantAttr` referencing a valid generator in the supplied symbol
-/// table.
+/// `extractOffloadFunc` when the func resolves to a fully-bound function
+/// reference to a valid generator in the supplied symbol table.
 struct OffloadFunc {
-  SymbolConstantAttr symbol;
+  FuncSymbolGenerator symbol;
   GeneratorOp generator;
 };
 
 /// Decompose a `compile_offload` op's `func` attribute. Returns an error if
-/// the func does not resolve to a `SymbolConstantAttr`, is not fully bound,
-/// or does not reference a valid generator in `symtab`.
+/// the func does not resolve to a function reference, is not fully bound, or
+/// does not reference a valid generator in `symtab`.
 ErrorTreeOr<OffloadFunc> extractOffloadFunc(CompileOffloadOp op,
                                             mlir::SymbolTable &symtab);
 

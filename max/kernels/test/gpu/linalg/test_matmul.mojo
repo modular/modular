@@ -14,7 +14,6 @@
 # to build this file if running into linking issues with large PTX kernels.
 
 from std.sys import (
-    align_of,
     bit_width_of,
     simd_width_of,
     size_of,
@@ -36,12 +35,9 @@ from std.utils.index import Index
 
 comptime epilogue_func_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
-](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
-    dtype, width
-]
+](IndexList[2], IndexList[2], SIMD[dtype, width]) thin -> SIMD[dtype, width]
 
 
-@__parameter
 @inline(.always)
 def epilogue_test_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -79,14 +75,13 @@ def test[
     dtype: DType,
     /,
     *,
+    N: Int,
+    K: Int,
     transpose_b: Bool = False,
     arange_a: Bool = False,
     arange_b: Bool = False,
     lambda_fn: Optional[epilogue_func_type] = None,
     config: Optional[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
-    M: Optional[Int] = None,
-    N: Optional[Int] = None,
-    K: Optional[Int] = None,
 ](
     ctx: DeviceContext,
     m: Int,
@@ -95,10 +90,6 @@ def test[
     rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
-    comptime assert Bool(N) and Bool(
-        K
-    ), "This test currently requires static N and K."
-
     print(m, "x", n, "x", k)
 
     var a_size = m * k
@@ -113,22 +104,22 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(m, Idx[K.value()]),
+        row_major(m, Idx[K]),
     )
     var b_host = TileTensor(
         b_host_ptr,
         row_major(
-            Idx[N.value() if transpose_b else K.value()],
-            Idx[K.value() if transpose_b else N.value()],
+            Idx[N if transpose_b else K],
+            Idx[K if transpose_b else N],
         ),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
     var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
 
     # Device allocations
@@ -139,22 +130,22 @@ def test[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(m, Idx[K.value()]),
+        row_major(m, Idx[K]),
     )
     var b_device = TileTensor(
         b_device_buffer,
         row_major(
-            Idx[N.value() if transpose_b else K.value()],
-            Idx[K.value() if transpose_b else N.value()],
+            Idx[N if transpose_b else K],
+            Idx[K if transpose_b else N],
         ),
     )
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
     var c_device_ref = TileTensor(
         c_device_ref_buffer,
-        row_major(m, Idx[N.value()]),
+        row_major(m, Idx[N]),
     )
 
     # Initialize matmul operands
@@ -177,42 +168,23 @@ def test[
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
     ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_device, m, n)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
-        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var update_val: SIMD[_dtype, width] = val
-
-        comptime if case .Some(func) = lambda_fn:
-            var il = rebind[IndexList[2]](coord_to_index_list(idx))
-            update_val = func(il, (m, n), update_val)
-        c_device.store[alignment=alignment * size_of[dtype]()](
-            idx, rebind[SIMD[dtype, width]](update_val)
-        )
-
     comptime if case .Some(func) = lambda_fn:
+
+        def compute_fn[
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) {var m, var n} -> SIMD[
+            _dtype, width
+        ]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            return func(
+                IndexList[2](Int(idx[0]), Int(idx[1])),
+                (m, n),
+                val,
+            )
+
         comptime if case .Some(cfg) = config:
-
-            def compute_fn[
-                _dtype: DType, width: SIMDLength, *, alignment: Int
-            ](idx: Coord, val: SIMD[_dtype, width]) {var m, var n} -> SIMD[
-                _dtype, width
-            ]:
-                comptime assert (
-                    idx.rank == 2
-                ), "the matmul epilogue contract is rank 2"
-                return func(
-                    IndexList[2](Int(idx[0].value()), Int(idx[1].value())),
-                    (m, n),
-                    val,
-                )
-
             multistage_gemm[
                 transpose_b=transpose_b,
                 config=cfg,
@@ -227,11 +199,11 @@ def test[
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=epilogue_fn,
             ](
                 c_device,
                 a_device,
                 b_device,
+                compute_fn,
                 ctx,
             )
     else:
@@ -285,7 +257,7 @@ def test[
         )
 
     comptime if lambda_fn:
-        elementwise[pack_size, target="gpu"](
+        elementwise[pack_size](
             func,
             (m, n),
             ctx,
@@ -342,6 +314,11 @@ def main() raises:
         test[.float32, N=Int(4096), K=Int(11008)](ctx, 23, 4096, 11008)
         test[.float32, N=Int(4096), K=Int(12288)](ctx, 67, 4096, 12288)
         test[.float32, N=Int(4096), K=Int(4096)](ctx, 555, 4096, 4096)
+        # The split-K outlier rows, one M per row.
+        for m in [1, 37, 67, 131]:
+            test[.float32, transpose_b=True, N=Int(512), K=Int(5120)](
+                ctx, m, 512, 5120
+            )
 
         print("===> bfloat16-float32 mma")
         test[
@@ -354,8 +331,8 @@ def main() raises:
                 .bfloat16,
                 transpose_b=True,
             ](
-                block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=Index(16, 128, 64),
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
                 num_pipeline_stages=3,
             ),
             N=Int(128),
@@ -373,6 +350,16 @@ def main() raises:
         ](ctx, 1024, 5120, 3072)
         test[.bfloat16, N=Int(3072), K=Int(32768)](ctx, 1024, 3072, 32768)
         test[.bfloat16, N=Int(3072), K=Int(3072)](ctx, 1024, 3072, 3072)
+        # On SM100 these (N, K) take the SM100 GEMM at M 1 instead of GEMV.
+        test[.bfloat16, transpose_b=True, N=Int(32768), K=Int(1280)](
+            ctx, 1, 32768, 1280
+        )
+        test[.bfloat16, transpose_b=True, N=Int(4096), K=Int(1280)](
+            ctx, 1, 4096, 1280
+        )
+        test[.bfloat16, transpose_b=True, N=Int(4096), K=Int(1280)](
+            ctx, 3, 4096, 1280
+        )
 
         comptime if ctx.target.is_nvidia_gpu():
             test[
@@ -384,8 +371,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(16, 64, 64),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(16), Int(64), Int(64)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=2,
@@ -402,8 +389,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(32, 64, 32),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(32), Int(64), Int(32)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=4,
@@ -441,8 +428,8 @@ def main() raises:
                 .bfloat16,
                 transpose_b=True,
             ](
-                block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=Index(16, 128, 64),
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
                 num_pipeline_stages=3,
             ),
             N=Int(128),
@@ -539,3 +526,81 @@ def main() raises:
         test[.bfloat16, transpose_b=True, N=Int(514), K=Int(4096)](
             ctx, 32, 514, 4096
         )
+
+        print("===> bfloat16 small N")
+        test[.bfloat16, transpose_b=True, N=Int(32), K=Int(5120)](
+            ctx, 3, 32, 5120
+        )
+        test[.bfloat16, transpose_b=True, N=Int(128), K=Int(512)](
+            ctx, 5, 128, 512
+        )
+        # GLM-5.3-Flash's KDA low-rank (N 128) and TP4 per-rank beta (N 16)
+        # projections at speculative-verify M: every row, ragged M included.
+        for m in [2, 3, 4, 7, 8, 16, 17, 20, 24, 25, 28, 33, 40, 61, 64]:
+            test[.bfloat16, transpose_b=True, N=Int(128), K=Int(4096)](
+                ctx, m, 128, 4096
+            )
+        for m in [2, 3, 4, 5, 16, 33, 64]:
+            test[.bfloat16, transpose_b=True, N=Int(16), K=Int(4096)](
+                ctx, m, 16, 4096
+            )
+        # GLM-5.3's o_proj (N 6144, K 16384) and shared-expert down projection
+        # (N 6144, K 2048) at DP8 MTP5 verify M: every row's edges, ragged M
+        # included, and the shapes the rows leave to the heuristic.
+        for m in [16, 17, 23, 31, 32, 64, 65, 79, 80, 81, 95, 96, 97]:
+            test[.bfloat16, transpose_b=True, N=Int(6144), K=Int(16384)](
+                ctx, m, 6144, 16384
+            )
+            test[.bfloat16, transpose_b=True, N=Int(6144), K=Int(2048)](
+                ctx, m, 6144, 2048
+            )
+        for m in [20, 72, 90]:
+            test[
+                .bfloat16,
+                transpose_b=True,
+                lambda_fn=epilogue_test_fn,
+                N=Int(6144),
+                K=Int(16384),
+            ](ctx, m, 6144, 16384)
+        # GLM-5.3's q_b (N 16384, K 2048) and fused q_a + kv_a (N 2624,
+        # K 6144) projections: the 25-31 row band and its neighbors.
+        for m in [24, 25, 30, 31, 32]:
+            test[.bfloat16, transpose_b=True, N=Int(16384), K=Int(2048)](
+                ctx, m, 16384, 2048
+            )
+            test[.bfloat16, transpose_b=True, N=Int(2624), K=Int(6144)](
+                ctx, m, 2624, 6144
+            )
+        test[
+            .bfloat16,
+            transpose_b=True,
+            lambda_fn=epilogue_test_fn,
+            N=Int(2624),
+            K=Int(6144),
+        ](ctx, 30, 2624, 6144)
+        # GLM-5.3's MoE router gate (N 256, K 6144): the split-K row's edges,
+        # ragged M included, and the first M past it.
+        for m in [1, 2, 31, 33, 72, 97, 144, 192, 193]:
+            test[.bfloat16, transpose_b=True, N=Int(256), K=Int(6144)](
+                ctx, m, 256, 6144
+            )
+        test[
+            .bfloat16,
+            transpose_b=True,
+            lambda_fn=epilogue_test_fn,
+            N=Int(256),
+            K=Int(6144),
+        ](ctx, 72, 256, 6144)
+        # GLM-5.3's indexer key projection (N 128, K 6144): the split-K row's
+        # edges, ragged M included, and the first M past it.
+        for m in [1, 2, 31, 33, 72, 97, 144, 192, 256, 257]:
+            test[.bfloat16, transpose_b=True, N=Int(128), K=Int(6144)](
+                ctx, m, 128, 6144
+            )
+        test[
+            .bfloat16,
+            transpose_b=True,
+            lambda_fn=epilogue_test_fn,
+            N=Int(128),
+            K=Int(6144),
+        ](ctx, 72, 128, 6144)

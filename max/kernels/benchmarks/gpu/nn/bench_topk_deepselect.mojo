@@ -100,7 +100,7 @@ def _fill_normal_kernel[
 
 def _fill_normal[
     dtype: DType
-](ctx: DeviceContext, buf: DeviceBuffer[dtype], n: Int, seed: UInt64) raises:
+](ctx: DeviceContext[], buf: DeviceBuffer[dtype], n: Int, seed: UInt64) raises:
     var layout = row_major(n)
     var tt = TileTensor(buf, layout)
     comptime kernel = _fill_normal_kernel[dtype, type_of(layout)]
@@ -114,9 +114,9 @@ def _fill_normal[
 
 
 def _measure[
-    FuncType: def(DeviceContext) raises -> None
+    FuncType: def(DeviceContext[]) raises -> None
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     launch: FuncType,
     flush: DeviceBuffer[.uint8],
     iters: Int,
@@ -138,7 +138,7 @@ def _measure[
 def _verify[
     dtype: DType, idx_type: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     in_buf: DeviceBuffer[dtype],
     idxs_buf: DeviceBuffer[idx_type],
     vals_buf: Optional[DeviceBuffer[dtype]],
@@ -203,32 +203,15 @@ def _report(
     check: String,
 ):
     print(
-        "RESULT kernel=",
-        kernel,
-        " dtype=",
-        dtype,
-        " idx=",
-        idx_type,
-        " rows=",
-        rows,
-        " N=",
-        N,
-        " K=",
-        K,
-        " mean_us=",
-        mean_us,
-        " tbs=",
-        Float64(num_bytes) / mean_us / 1.0e6,
-        " check=",
-        check,
-        sep="",
+        t"RESULT"
+        t" kernel={kernel} dtype={dtype} idx={idx_type} rows={rows} N={N} K={K} mean_us={mean_us} tbs={Float64(num_bytes) / mean_us / 1.0e6} check={check}"
     )
 
 
 def bench_topk_gpu[
     dtype: DType, idx_type: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     flush: DeviceBuffer[.uint8],
     rows: Int,
     N: Int,
@@ -246,7 +229,7 @@ def bench_topk_gpu[
     ctx.synchronize()
 
     @inline(.always)
-    def launch(c: DeviceContext) raises {imm}:
+    def launch(c: DeviceContext[]) raises {imm}:
         topk_gpu[sampling=False, largest=True](c, K, in_tt, vals_tt, idxs_tt)
 
     var mean_us = _measure(ctx, launch, flush, iters)
@@ -271,7 +254,7 @@ def bench_topk_gpu[
 
 
 def bench_bitonic(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     flush: DeviceBuffer[.uint8],
     rows: Int,
     N: Int,
@@ -285,7 +268,7 @@ def bench_bitonic(
     ctx.synchronize()
 
     @inline(.always)
-    def launch(c: DeviceContext) raises {imm}:
+    def launch(c: DeviceContext[]) raises {imm}:
         persistent_topk_block_split[ordered=False, deterministic=False](
             c,
             rebind[ImmPointer[Float32, ImmutAnyOrigin]](in_buf.unsafe_ptr()),
@@ -310,7 +293,7 @@ def bench_bitonic(
 def _run_shape[
     dtype: DType, idx_type: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     flush: DeviceBuffer[.uint8],
     kernel: String,
     rows: Int,
@@ -328,7 +311,7 @@ def _run_shape[
 def _sweep[
     dtype: DType, idx_type: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     flush: DeviceBuffer[.uint8],
     kernel: String,
     sweep: String,

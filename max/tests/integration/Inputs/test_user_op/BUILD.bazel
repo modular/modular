@@ -13,6 +13,9 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:extensibility",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
         "@mojo//:std",
     ],
 )

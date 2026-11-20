@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests alias-scoped raw-buffer DMA into LDS."""
+"""Tests alias-scoped raw-buffer DMA into LDS, and the LDS reads back out of
+it: a fragment a lane wide (BF16 8, float8 16) and the dword (float8 4) the
+staged E8M0 scale rows are read with."""
 
 from max.gpu import lane_id, WARP_SIZE
 from max.gpu.host import DeviceContext
@@ -26,9 +28,11 @@ from structured_kernels.amd_tile_io import _load_from_lds, _load_to_lds
 def _copy_through_lds[
     dtype: DType,
     width: Int,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], src_origin],
+    dst: MutPointer[Scalar[dtype], dst_origin],
     valid_elements: Int32,
 ):
     var smem = unsafe_stack_allocation[
@@ -46,7 +50,7 @@ def _copy_through_lds[
         smem,
     )
     s_waitcnt[vmcnt=0]()
-    var values = _load_from_lds[width=width](smem + offset)
+    var values = _load_from_lds[width=width](smem.unsafe_offset(offset))
     comptime for i in range(width):
         dst[offset + i] = values[i]
 
@@ -56,7 +60,8 @@ def _value[dtype: DType](index: Int) -> Scalar[dtype]:
 
 
 def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
-    comptime count = WARP_SIZE * width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime count = warp_size * width
     var host_in = ctx.enqueue_create_host_buffer[dtype](count)
     var host_out = ctx.enqueue_create_host_buffer[dtype](count)
     for i in range(count):
@@ -66,12 +71,14 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
     var dev_out = ctx.enqueue_create_buffer[dtype](count)
     ctx.enqueue_copy(dev_in, host_in)
 
-    ctx.enqueue_function[_copy_through_lds[dtype, width]](
+    ctx.enqueue_function[
+        _copy_through_lds[dtype, width, origin_of(dev_in), origin_of(dev_out)]
+    ](
         dev_in,
         dev_out,
         Int32(count),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.enqueue_copy(host_out, dev_out)
     ctx.synchronize()
@@ -83,12 +90,14 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
 
     comptime valid_elements = count // 2
     dev_out.enqueue_fill(Scalar[dtype](7))
-    ctx.enqueue_function[_copy_through_lds[dtype, width]](
+    ctx.enqueue_function[
+        _copy_through_lds[dtype, width, origin_of(dev_in), origin_of(dev_out)]
+    ](
         dev_in,
         dev_out,
         Int32(valid_elements),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.enqueue_copy(host_out, dev_out)
     ctx.synchronize()
@@ -108,4 +117,5 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
 def main() raises:
     with DeviceContext() as ctx:
         _run_case[.bfloat16, 8](ctx)
+        _run_case[.float8_e4m3fn, 4](ctx)
         _run_case[.float8_e4m3fn, 16](ctx)

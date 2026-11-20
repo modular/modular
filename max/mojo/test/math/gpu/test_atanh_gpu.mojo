@@ -15,10 +15,10 @@ from std.math import atanh, frexp, inf, isinf, isnan, nan, nextafter
 from std.math.math import _call_libm, _frexp_bits
 from std.memory import bitcast
 from std.sys import simd_width_of
-from std.sys.info import bit_width_of, default_accelerator
+from std.sys.info import bit_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from std.utils.numerics import FPUtils
 from std.testing import assert_equal, assert_true, TestSuite
 
@@ -108,11 +108,11 @@ def _check[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, atanh(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     comptime name = "atanh"
     var worst_gpu = 0
@@ -240,13 +240,13 @@ def _check_frexp_bits[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var frac_ptr, var exp_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         var fe = _frexp_bits(val)
         frac_ptr.unsafe_store[width=simd_width](idx, fe[0])
         exp_ptr.unsafe_store[width=simd_width](idx, fe[1])
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     with frac_device.map_to_host() as frac_host:
         with exp_device.map_to_host() as exp_host:
@@ -330,11 +330,11 @@ def _check_subnormals[
     def func[
         simd_width: Int, alignment: Int = 1
     ](idx0: Coord) {var out_ptr, var in_ptr}:
-        var idx = Int(idx0[0].value())
+        var idx = Int(idx0[0])
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, atanh(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(length):

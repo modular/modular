@@ -553,7 +553,7 @@ hand with a skin tone are each one grapheme, even though each is built
 from several joined code points:
 
 ```mojo
-def show(label: StaticString, s: StringSlice):
+def show(label: StaticString, s: StringSpan):
     print(
         label,
         "bytes=", s.byte_length(),

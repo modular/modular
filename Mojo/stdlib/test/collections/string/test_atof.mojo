@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections.string._parsing_numbers.parsing_floats import (
+    scan_short_decimal,
+)
 from std.math import inf, isinf, isnan
 from std.memory import bitcast
 
@@ -34,6 +37,59 @@ def test_scientific_notation() raises:
     assert_equal(atof("1.23E2"), 123.0)
     assert_equal(atof("1.23E+2"), 123.0)
     assert_equal(atof("1.23E-2"), 0.0123)
+
+
+def test_short_decimal_scan_bounds() raises:
+    var empty = ""
+    assert_true(not scan_short_decimal(empty.as_bytes(), 0).ok)
+    var text = "1234567"
+    assert_true(not scan_short_decimal(text.as_bytes(), text.byte_length()).ok)
+
+
+def test_short_mantissa_with_long_exponent() raises:
+    # The long exponent makes these inputs reach the word scanner in atof.
+    assert_equal(atof("1234567e00000001"), 12345670.0)
+    assert_equal(atof("12345.6e00000001"), 123456.0)
+    assert_equal(atof("0.00001e00000001"), 0.0001)
+    assert_equal(atof(".5e0000000000001"), 5.0)
+    assert_equal(atof("5.e0000000000001"), 50.0)
+    assert_equal(atof("1.5e+00000000003"), 1500.0)
+    assert_equal(atof("1.5e-00000000300"), 1.5e-300)
+    with assert_raises(contains="Invalid character(s)"):
+        _ = atof("1.2.3e0000000001")
+    with assert_raises(contains="Invalid character(s)"):
+        _ = atof("1/2e000000000001")
+
+
+def test_short_decimal_scan_paths() raises:
+    """Test the word-scan paths of `scan_short_decimal`.
+
+    `atof` reaches the scanner only for inputs of sixteen bytes or more,
+    and only after its sign was stripped, so the fraction paths and the
+    digit-budget edges are pinned through `atof` and the sign handling
+    through a direct call.
+    """
+    # The digits and point fill the first word, so the general path
+    # reads the fraction from the next one.
+    assert_equal(atof("1234567.8e000001"), 12345678.0)
+    # Two-word fraction: the first fraction word is all digits
+    # (count == 8) and the second holds seven more (more == 7).
+    assert_equal(atof("0.123456789012345e1"), 1.23456789012345)
+    # Exactly nineteen digits, the budget edge: the mantissa
+    # 1234567890123456789 still fits a UInt64.
+    assert_equal(atof("1234567.890123456789"), 1234567.890123456789)
+    # Twenty-two digits: the two-word fraction wraps the UInt64 mantissa,
+    # the budget check discards it, and `DecimalParts` re-reads the digits.
+    assert_equal(atof("1234567.890123456789012"), 1234567.890123456789012)
+
+    var signed = scan_short_decimal("-12345.6".as_bytes(), 0)
+    assert_true(signed.ok and signed.negative)
+    assert_equal(signed.mantissa, UInt64(123456))
+    assert_equal(signed.exponent, -1)
+    assert_equal(signed.end, 8)
+    assert_equal(signed.int_digits, 5)
+    assert_equal(signed.frac_digits, 1)
+    assert_equal(signed.terminator, Byte(0))
 
 
 def test_nan_and_inf() raises:

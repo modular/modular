@@ -32,7 +32,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
     tcgen05_fence_after,
 )
-from max.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.primitives.warp import vote
 from max.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
@@ -104,10 +104,12 @@ def depth512_correction[
     var row: UInt32 = tid % 128
     var m_row = row % UInt32(BM)
 
+    # `tmem_addr` passed in by register (read once post-`cluster_sync` in the
+    # kernel prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O))
     var o_hi_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O_hi))
 
-    var correction_smem = smem.correction_smem() + m_row
+    var correction_smem = smem.correction_smem().unsafe_offset(m_row)
 
     var pipeline_c = mbars.consumer_c()
     var pipeline_o_lo = mbars.consumer_o_lo()
@@ -243,7 +245,7 @@ def depth512_correction[
         pipeline_c.wait()
         var c_scalar: Scalar[accum_type] = correction_smem[0]
 
-        var change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+        var change = vote[.uint32](c_scalar < 1.0) != 0
 
         comptime if config.split_o:
             # Phase 1: rescale O_lo (all 128 threads, o_cols cols each).

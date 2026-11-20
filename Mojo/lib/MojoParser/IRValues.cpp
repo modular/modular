@@ -559,7 +559,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type, ExprDest &&dest,
     // {} turns into a dict with PythonObject.
 
     // Convert MySet[*(0, 0)] to MySet[?] so we can infer the parameter(s).
-    type = type.getWithUnknownParametersReplaced(emitter.shared);
+    type = type.extractAndRelinkParamRef(emitter.shared);
     if (operands.values.empty()) {
       auto getEmptyList = [&]() -> AnyValue {
         return InitializerUValue::create(InitializerUValue::kListLiteral,
@@ -656,12 +656,14 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 
   // Otherwise, handle defaulting.
   switch (syntax) {
-  case Syntax::kSliceLiteral:
-    // TODO: This could get more aggressive, looking through implicit
-    // conversions etc.
-    emitter.emitError(get().callExpr->getLoc(),
-                      "cannot emit slice expression without a contextual type");
-    return {};
+  case Syntax::kSliceLiteral: {
+    ASTType defaultType = getDefaultType(emitter.shared);
+    if (!defaultType)
+      return {};
+    CallOperands operands =
+        getOperandsForInferredType(defaultType, std::move(dest), emitter);
+    return emitter.emitConstructorCall(defaultType, std::move(operands));
+  }
   case Syntax::kListLiteral: {
     if (get().empty()) {
       emitter.emitError(get().callExpr->getLoc(),

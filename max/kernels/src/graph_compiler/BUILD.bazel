@@ -28,3 +28,13 @@ pkg_files(
     },
     tags = ["manual"],
 )
+
+filegroup(
+    name = "mojodoc_json",
+    srcs = [
+        "//max/kernels/src/graph_compiler/" + lib + ":" + lib + ".docs"
+        for lib in _GRAPH_COMPILER_LIBS
+    ],
+    output_group = "mojodoc_json",
+    tags = ["manual"],
+)

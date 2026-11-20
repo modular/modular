@@ -110,7 +110,7 @@ def test_shard_and_stack_dtypes(
         outputs = ops.shard_and_stack(
             [inp.tensor for inp in graph.inputs], devices
         )
-        graph.output(*outputs)
+        graph.output(outputs)
 
     # Compile and execute
     model = session.load(graph)
@@ -181,7 +181,7 @@ def test_shard_and_stack_various_axes(
         outputs = ops.shard_and_stack(
             [inp.tensor for inp in graph.inputs], devices, axis
         )
-        graph.output(*outputs)
+        graph.output(outputs)
 
     # Compile and execute
     model = session.load(graph)

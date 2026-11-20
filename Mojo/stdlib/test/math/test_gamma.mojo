@@ -15,8 +15,6 @@ from std.math import gamma, inf, isfinite, isinf, isnan, nan
 from std.math.math import (
     _call_libm,
     _gamma_max_scalings,
-    _narrow_f32_to_bf16_bits,
-    _scale_down_bits,
 )
 from std.sys import CompilationTarget
 from std.testing import assert_equal, assert_true, assert_raises, TestSuite
@@ -143,7 +141,7 @@ def _check_exact[
             String(t"gamma({x}) = {got}, exact = {want}"),
         )
         var got_v = gamma(SIMD[dtype, 4](x))
-        comptime for k in range(4):
+        for k in range(4):
             assert_equal(got_v[k], got, String(t"SIMD gamma({x})"))
 
 
@@ -179,11 +177,11 @@ def _max_ulp[
     var i = 0
     while i < n:
         var v = SIMD[dtype, width]()
-        comptime for k in range(width):
+        for k in range(width):
             v[k] = Scalar[dtype](lo + (hi - lo) * Float64(i + k) / Float64(n))
         var got = gamma(v)
         var want = _call_libm["tgamma"](v)
-        comptime for k in range(width):
+        for k in range(width):
             worst = max(
                 worst,
                 _gamma_ulp_distance(got[k], want[k], String(t"gamma({v[k]})")),
@@ -252,51 +250,6 @@ def test_gamma_max_scalings() raises:
     assert_equal(_gamma_max_scalings(50, 64), 3)
     assert_equal(_gamma_max_scalings(190, 1000), 1)
     assert_equal(_gamma_max_scalings(35, 64), 2)
-
-
-def test_scale_down_bits() raises:
-    var seed = UInt32(12345)
-    for i in range(1000):
-        seed = seed * 1664525 + 1013904223
-        var mantissa = (seed >> 9) & 0x7FFFFF
-        if i % 2 == 0:
-            # Force an exact rounding tie: a one followed by zeros below
-            # the bit that survives the shift.
-            var k = UInt32(1 + i % 23)
-            mantissa = (mantissa >> k << k) | (1 << (k - 1))
-        var exponent = UInt32(1 + i % 90)
-        var bits = (exponent << 23) | mantissa
-        if i % 4 >= 2:
-            bits |= 0x80000000
-        var y = Float32(from_bits=bits)
-        var want = Float32(Float64(y) * 2.0**-64)
-        assert_equal(
-            _scale_down_bits[64](y)._to_bits_signed(),
-            want._to_bits_signed(),
-            String(y),
-        )
-
-
-def test_narrow_f32_to_bf16_bits() raises:
-    var seed = UInt32(777)
-    for i in range(1000):
-        seed = seed * 1664525 + 1013904223
-        var bits = seed
-        if i % 3 == 0:
-            # Subnormal float32 inputs.
-            bits &= 0x807FFFFF
-        elif i % 3 == 1:
-            # Exact ties in the discarded low half.
-            bits = (bits & 0xFFFF0000) | 0x8000
-        var x = Float32(from_bits=bits)
-        if isnan(x):
-            continue
-        assert_equal(
-            _narrow_f32_to_bf16_bits(x)._to_bits_signed(),
-            x.cast[DType.bfloat16]()._to_bits_signed(),
-            String(x),
-        )
-    assert_true(isnan(_narrow_f32_to_bf16_bits(nan[DType.float32]())))
 
 
 def _check_gamma_oracle[dtype: DType]() raises:

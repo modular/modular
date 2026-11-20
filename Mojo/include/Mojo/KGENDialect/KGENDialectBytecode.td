@@ -76,7 +76,8 @@ def StructType : DialectType<(type
   TypedAttr:$elementTypesVariadic,
   TypedAttr:$isMemoryOnly,
   TypedAttr:$minAlignment,
-  Bool:$isParamPack
+  Bool:$isParamPack,
+  EnumAttr<"::M::KGEN::StructDomain">:$domain
 )>;
 
 def StructInstanceType : DialectType<(type
@@ -90,6 +91,10 @@ def StructInstanceType : DialectType<(type
 }
 
 def WrappedVariantType : DialectType<(type
+  TypedAttr:$variadic
+)>;
+
+def WrappedUntaggedUnionType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
@@ -131,6 +136,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     MLIRDeferredType,
     NeverType,
     SIMDType,
+    WrappedUntaggedUnionType,
   ];
 }
 
@@ -216,12 +222,6 @@ def SingletonAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def UnboundAttr : DialectAttribute<(attr
-  Type:$type
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def NoneAttr : DialectAttribute<(attr)>;
 
 def ParamDeclRefAttr : DialectAttribute<(attr
@@ -245,11 +245,16 @@ def WrappedTypeParamAttr : DialectAttribute<(attr
 
 def BindParamsAttr : DialectAttribute<(attr
   ConcreteAttribute<"TypedAttr">:$generator,
-  TypedAttrArray:$paramValues,
+  ConcreteAttribute<"ParamsBindingArrayAttr">:$params,
   ConcreteOptionalAttribute<"DenseBoolArrayAttr">:$discharged
 )> {
   let cBuilder = "BindParamsAttr::getFromBytecode($_args)";
 }
+
+def ParamsBindingArrayAttr : DialectAttribute<(attr
+  ConcreteAttribute<"DenseBoolArrayAttr">:$boundMask,
+  TypedAttrArray:$boundValues
+)>;
 
 def TypeGeneratorRefAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
@@ -270,14 +275,6 @@ def DTypeConstantAttr : DialectAttribute<(attr
   Custom<"KGENDType">:$dType
 )>;
 
-def SymbolConstantAttr : DialectAttribute<(attr
-  ConcreteAttribute<"SymbolRefAttr">:$symbol,
-  TypedAttrArray:$paramValues,
-  ConcreteType<"GeneratorType">:$type
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def FuncSymbolAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
@@ -285,7 +282,7 @@ def FuncSymbolAttr : DialectAttribute<(attr
 )>;
 
 def FuncPtrBitcastAttr : DialectAttribute<(attr
-  ConcreteAttribute<"SymbolConstantAttr">:$callee,
+  ConcreteAttribute<"FuncSymbolAttr">:$callee,
   ConcreteType<"FuncTypeGeneratorType">:$type
 )>;
 
@@ -385,8 +382,13 @@ def VariantAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def UntaggedUnionAttr : DialectAttribute<(attr
+  TypedAttrArray:$fragments,
+  ConcreteType<"UntaggedUnionType">:$type
+)>;
+
 def LinkDependencyArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"FlatSymbolRefAttr">:$value
+  ConcreteAttrArray<"SymbolRefAttr">:$value
 )>;
 
 def PreservedAttr : DialectAttribute<(attr
@@ -456,12 +458,6 @@ def ExtensionAttr : DialectAttribute<(attr
   Type:$type,
   TypedAttr:$anchor,
   TypedAttrArray:$extensions
-)>;
-
-def CompileOffloadClosureAttr : DialectAttribute<(attr
-  TypedAttr:$target,
-  TypedAttr:$func,
-  Type:$type
 )>;
 
 def GetLinkageNameAttr : DialectAttribute<(attr
@@ -626,7 +622,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamListGetAttr,
     ParamListConcatAttr,
     UnknownAttr,
-    UnboundAttr,
     NoneAttr,
     ParamDeclRefAttr,
     ParamIndexRefAttr,
@@ -635,7 +630,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     TypeGeneratorRefAttr,
     TypeInstanceRefAttr,
     DTypeConstantAttr,
-    SymbolConstantAttr,
     FuncSymbolAttr,
     QuoteAttr,
     GeneratorAttr,
@@ -664,7 +658,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     TypeConformsToTraitAttr,
     DowncastAttr,
     ExtensionAttr,
-    CompileOffloadClosureAttr,
     GetLinkageNameAttr,
     GetSourceNameAttr,
     GetFunctionParameterCountAttr,
@@ -699,7 +692,9 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     AnnotationAttr,
     GetNumAnnotationsAttr,
     GetAnnotationValueAttr,
-    GetAnnotationTypeAttr
+    GetAnnotationTypeAttr,
+    UntaggedUnionAttr,
+    ParamsBindingArrayAttr
   ];
 }
 

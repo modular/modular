@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Nemotron OpenCode dataset: its row structs and the request sampler."""
+
 from __future__ import annotations
 
 import logging
@@ -66,16 +68,22 @@ _MAX_STREAM_ROWS_PER_REQUEST = 50
 
 
 class MessageContentPart(msgspec.Struct):
+    """One text part of a message's content."""
+
     type: str = ""
     text: str = ""
 
 
 class Message(msgspec.Struct):
+    """One message, either plain text or a list of content parts."""
+
     role: str = ""
     content: str | list[MessageContentPart] | None = None
 
 
 class AnthropicTool(msgspec.Struct):
+    """A tool definition in Anthropic's schema."""
+
     id: str = ""
     description: str = ""
     # ``inputSchema`` is either ``{"jsonSchema": {...}}`` (Anthropic's wrapper)
@@ -85,6 +93,8 @@ class AnthropicTool(msgspec.Struct):
 
 
 class NemotronOpenCodeRow(msgspec.Struct):
+    """One row of the OpenCode dataset."""
+
     messages: list[Message] | None = None
     tools: list[AnthropicTool] | None = None
 
@@ -174,6 +184,7 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         self.last_loaded_tool_schemas = []
 
     def fetch(self) -> None:
+        """Does nothing; rows stream from Hugging Face on demand."""
         # Streaming download happens lazily inside ``_iter_rows``; there is no
         # single file to materialise up front and we deliberately avoid eager
         # downloads since each subset is multiple GB.
@@ -343,6 +354,7 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             min_prompt_len: Floor on tokenised prompt length.
             min_output_len: Floor on tokenised completion length (ignored when
                 ``output_lengths`` is provided).
+            **kwargs: Accepted for interface compatibility; unused.
         """
         if num_requests <= 0:
             self.last_loaded_tool_schemas = []

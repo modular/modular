@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Pixtral checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ MISTRAL_SAFETENSOR_MAP = {
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
+    """Renames the checkpoint's tensors to the module tree's."""
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
     for weight_name, value in state_dict.items():
@@ -35,3 +37,22 @@ def convert_safetensor_state_dict(
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
     return new_state_dict
+
+
+def convert_registered_state_dict(
+    state_dict: dict[str, Weights], **kwargs: object
+) -> dict[str, WeightData]:
+    """Separates the checkpoint into the registered text and vision roles."""
+    converted = convert_safetensor_state_dict(state_dict, **kwargs)
+    result: dict[str, WeightData] = {}
+    for name, value in converted.items():
+        if name.startswith("language_model."):
+            result["decoder." + name] = value
+        elif name.startswith("vision_encoder."):
+            name = name.removeprefix("vision_encoder.")
+            if name == "patch_conv.weight":
+                name = "patch_conv"
+            result["vision." + name] = value
+        elif name.startswith("multi_modal_projector."):
+            result["vision." + name] = value
+    return result

@@ -32,6 +32,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from max.pipelines.architectures.glm5_1.chat_template import (
+    _QUADRATIC_TOOL_RESULT_BLOCK,
+    _SORTED_ID_TOOL_RESULT_BLOCK,
     linearize_tool_results,
     order_tool_results,
 )
@@ -168,7 +170,20 @@ _CASES: dict[str, list[TextGenerationRequestMessage]] = {
         _result("g"),
         _user("Now run the tests."),
     ],
+    # Call ids whose sorted order differs from their call order, so an
+    # ordering that sorted them lexicographically would diverge; and a subset
+    # whose missing ids sit before and between the matches.
+    "non_lexicographic_call_order": _turn(["c", "a"], ["a", "c"]),
+    "subset_skipping_ids": _turn(["d", "b", "c", "a"], ["c", "a"]),
+    # Ids that differ only by case are distinct under the template's
+    # case-sensitive `unique` and `sort`.
+    "case_distinct_ids": _turn(["a", "A"], ["A", "a"]),
 }
+
+_LEGACY = _OFFICIAL.replace(
+    _SORTED_ID_TOOL_RESULT_BLOCK, _QUADRATIC_TOOL_RESULT_BLOCK
+)
+assert _LEGACY != _OFFICIAL
 
 
 @pytest.mark.parametrize("case", sorted(_CASES))
@@ -254,6 +269,33 @@ def test_a_changed_template_is_not_patched() -> None:
     assert linearize_tool_results("{{ messages }}") is None
 
 
+def test_a_repeated_or_mixed_block_is_not_patched() -> None:
+    """A block twice, or one of each generation, is left alone."""
+    twice = _OFFICIAL.replace(
+        _SORTED_ID_TOOL_RESULT_BLOCK,
+        _SORTED_ID_TOOL_RESULT_BLOCK * 2,
+    )
+    assert linearize_tool_results(twice) is None
+    both = _OFFICIAL + _QUADRATIC_TOOL_RESULT_BLOCK
+    assert linearize_tool_results(both) is None
+    assert linearize_tool_results(both + _SORTED_ID_TOOL_RESULT_BLOCK) is None
+    assert linearize_tool_results(both + _QUADRATIC_TOOL_RESULT_BLOCK) is None
+
+
+def test_matches_the_legacy_template() -> None:
+    """The pre-change checkpoint template also patches and renders the same.
+
+    Quants and older checkpoints still ship the quadratic block, so the
+    linear render must match that revision too.
+    """
+    patched = linearize_tool_results(_LEGACY)
+    assert patched is not None
+    for case in sorted(_CASES):
+        expected = _render(_LEGACY, _CASES[case])
+        actual = _render(patched, order_tool_results(_CASES[case]))
+        assert actual == expected
+
+
 def _glm_tokenizer(tmp_path: Path, chat_template: str | None) -> GlmTokenizer:
     """A GlmTokenizer over a tiny offline vocabulary.
 
@@ -299,7 +341,7 @@ def test_tokenizer_renders_like_the_official_template(
     assert tokenizer.delegate.chat_template == _patched()
     messages = _CASES["reversed"]
     actual = tokenizer.apply_chat_template(messages, _TYPED_TOOLS)
-    assert actual == _render(_OFFICIAL, messages, clear_thinking=True)
+    assert actual == _render(_OFFICIAL, messages)
 
 
 def test_tokenizer_warns_when_it_cannot_patch(

@@ -135,20 +135,22 @@ struct GreeterAmbient[T: AnyType](
     pass
 
 
-# --- Deinitable: struct becomes linear, same message per spelling --
+# --- Deinitable: struct becomes linear, no destructor per spelling --
+# The default abandonment message for each spelling is checked in
+# explicit_destroy_errors.mojo.
 
 # CHECK-LABEL: lit.struct.decl @IDLiteral
-# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK-NOT: __deinit__
 struct IDLiteral(Deinitable where False):
     pass
 
 # CHECK-LABEL: lit.struct.decl @IDNot
-# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK-NOT: __deinit__
 struct IDNot(not Deinitable):
     pass
 
 # CHECK-LABEL: lit.struct.decl @IDArith
-# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK-NOT: __deinit__
 struct IDArith[n: Int](Deinitable where not (n > 0)) where n > 0:
     pass
 

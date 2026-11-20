@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import Coord, DefaultEngine, Idx, TileTensor, row_major
+from layout import DefaultEngine, Idx, TileTensor, row_major
 from nn.roi_align import roi_align_nhwc
 from nn.roi_align_gpu import roi_align_gpu
 from std.testing import assert_almost_equal
@@ -46,9 +46,9 @@ def test_roi_align_gpu[
     var input_host = ctx.enqueue_create_host_buffer[dtype](in_layout.product())
     ctx.synchronize()
     var input = TileTensor(input_host, in_layout)
+    var input_flat = input.reshape(row_major(in_layout.product()))
     for i in range(in_layout.product()):
-        var idx = input.layout(i)
-        input.raw_store(idx, Scalar[dtype](i))
+        input_flat[input.layout(i)] = Scalar[dtype](i)
 
     # Host rois: a spread of boxes. The first ROI starts at -1 (x0 = y0 = -1
     # for ri = 0), which exercises the negative-start clamp (y = max(y, 0));
@@ -118,10 +118,9 @@ def test_roi_align_gpu[
         print(output_cpu)
 
     for i in range(out_layout.product()):
-        var idx = output.layout(i)
         assert_almost_equal(
-            output.raw_load(idx),
-            output_cpu.raw_load(idx),
+            output[i],
+            output_cpu[i],
             atol=1e-4,
             rtol=1e-4,
             msg=String("roi_align mismatch at flat index ", i),

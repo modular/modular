@@ -4,6 +4,13 @@ lit.fn @my_abort() -> !kgen.never {
   hlcf.unreachable
 }
 
+// An empty fallthrough message is the default and is not printed.
+// CHECK-LABEL: lit.fn @empty_fallthrough_message
+// CHECK-NEXT: hlcf.unreachable{{$}}
+lit.fn @empty_fallthrough_message() {
+  hlcf.unreachable <fallthroughError = "">
+}
+
 // CHECK-LABEL: lit.struct.decl @SomeStruct
 lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.fn @dead_returns
@@ -29,8 +36,14 @@ lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.fn @calls_unreachable_in_deinit
   lit.fn @calls_unreachable_in_deinit[mut *"self"](%self: !lit.ref<!lit.struct<@SomeStruct>, mut *"self"> deinit_mem) -> !kgen.none {
     // CHECK: lit.call tail @my_abort()
-    // CHECK: hlcf.unreachable {isAfterUnreachableCall = true}
+    // CHECK: hlcf.unreachable{{$}}
     %0 = lit.call tail @my_abort() : !lit.generator<() -> !kgen.never>
+    %true = kgen.param.constant: scalar<bool> = <true>
+    hlcf.if %true {
+      hlcf.unreachable <isAfterUnreachableCall = true>
+    } else {
+      hlcf.yield
+    }
     lit.end_fn
   }
 }
@@ -246,11 +259,19 @@ lit.fn @throwing_calls(
   // CHECK-NEXT:   mark_consumed %err
   // CHECK-NEXT:   yield
   // CHECK-NEXT: }
-  lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+  %is_err = lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+  hlcf.if %is_err {
+    lit.ownership.mark_consumed %result : !lit.ref<none, mut lt>
+    lit.raise
+    hlcf.yield
+  } else {
+    lit.ownership.mark_consumed %err : !lit.ref<@Error, mut elt>
+    hlcf.yield
+  }
 
   %error = lit.var.decl "error" synth : !lit.ref<@Error, mut tlt>
   // CHECK: lit.try "try0" {
-  lit.try %error : !lit.ref<@Error, mut tlt> {
+  lit.try {
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
     // CHECK-NEXT: hlcf.if [[IS_ERR]]
     // CHECK-NEXT:   mark_consumed %result
@@ -259,7 +280,15 @@ lit.fn @throwing_calls(
     // CHECK-NEXT:   mark_consumed %error
     // CHECK-NEXT:   yield
     // CHECK-NEXT: }
-    lit.call_indirect %f[mut tlt, mut lt](%error, %result) :  !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    %is_err1 = lit.call_indirect %f[mut tlt, mut lt](%error, %result) :  !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    hlcf.if %is_err1 {
+      lit.ownership.mark_consumed %result : !lit.ref<none, mut lt>
+      lit.raise
+      hlcf.yield
+    } else {
+      lit.ownership.mark_consumed %error : !lit.ref<@Error, mut tlt>
+      hlcf.yield
+    }
     lit.try.yield
   } except {
     lit.try.yield
@@ -306,7 +335,7 @@ lit.fn @suppressed_try() {
     lit.try.yield
   } finally {
     lit.try.yield
-  } {"suppressWarnings" = true}
+  } <suppressWarnings = true>
   // CHECK: hlcf.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
   index.constant 0
@@ -372,7 +401,15 @@ lit.fn @if_else_raise[mut elt, mut lt](%cond: !kgen.scalar<bool>,
     lit.return %0 : !kgen.scalar<bool>
     hlcf.yield
   } else {
-    lit.call @throwing_func[mut elt, mut lt](%error, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    %is_err = lit.call @throwing_func[mut elt, mut lt](%error, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    hlcf.if %is_err {
+      lit.ownership.mark_consumed %result : !lit.ref<none, mut lt>
+      lit.raise
+      hlcf.yield
+    } else {
+      lit.ownership.mark_consumed %error : !lit.ref<@Error, mut elt>
+      hlcf.yield
+    }
     lit.raise
     hlcf.yield
   }
@@ -464,7 +501,15 @@ lit.fn @nested_try_inner_catch() {
     %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
     %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
     // CHECK: lit.call @throwing_func
-    lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    %is_err = lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    hlcf.if %is_err {
+      lit.ownership.mark_consumed %result : !lit.ref<none, mut lt>
+      lit.raise
+      hlcf.yield
+    } else {
+      lit.ownership.mark_consumed %err : !lit.ref<@Error, mut elt>
+      hlcf.yield
+    }
     // CHECK-NEXT: hlcf.if
     // CHECK-NEXT:   lit.ownership.mark_consumed %result
     // CHECK-NEXT:   lit.try.raise
@@ -685,7 +730,7 @@ lit.fn @try_in_loop(%arg0: !kgen.scalar<bool>) {
       lit.try.yield
     } finally {
       lit.try.yield
-    } {"suppressWarnings" = true}
+    } <suppressWarnings = true>
     // CHECK: hlcf.continue
     lit.loop.continue
   } else {
@@ -876,6 +921,60 @@ lit.fn @self_recursive_arg_diff(%a: index) -> !kgen.none {
   lit.end_fn
 }
 
+// #7016: Should not warn "self recursive call will cause an infinite loop"
+lit.fn @self_recursive_in_loop(%c: !kgen.scalar<bool>) -> !kgen.none {
+  lit.loop {
+    hlcf.if %c {
+      lit.break
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    // No warning.
+    lit.call @self_recursive_in_loop(%c) : !lit.generator<("c": !kgen.scalar<bool>) -> !kgen.none>
+    lit.loop.continue
+  } else {
+    lit.loop.yield
+  }
+  // expected-warning @+1 {{self recursive call will cause an infinite loop}}
+  lit.call @self_recursive_in_loop(%c) : !lit.generator<("c": !kgen.scalar<bool>) -> !kgen.none>
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
+}
+
+// #7016: Should not warn "self recursive call will cause an infinite loop" even when 
+// breaking out of outer loop
+lit.fn @self_recursive_labeled_break(%c: !kgen.scalar<bool>) -> !kgen.none {
+  lit.loop {
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      lit.loop.break.else
+    }
+    lit.loop {
+      hlcf.if %c {
+        hlcf.break "_loop_0"
+      } else {
+        hlcf.yield
+      }
+      lit.loop.continue
+    } else {
+      lit.loop.yield
+    }
+    // No warning: breaking out of "_loop_0" makes this call conditional.
+    lit.call @self_recursive_labeled_break(%c) : !lit.generator<("c": !kgen.scalar<bool>) -> !kgen.none>
+    lit.loop.continue
+  } else {
+    lit.loop.yield
+  }
+  // expected-warning @+1 {{self recursive call will cause an infinite loop}}
+  lit.call @self_recursive_labeled_break(%c) : !lit.generator<("c": !kgen.scalar<bool>) -> !kgen.none>
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
+}
+
 // CHECK-LABEL: lit.fn @elif
 // CHECK-NEXT: %idx0 = index.constant 0
 // CHECK-NEXT: %idx1 = index.constant 1
@@ -1050,14 +1149,6 @@ lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
 // CHECK-LABEL: lit.fn @mangle_params_finally_3
 lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
   lit.try {
-    // CHECK: lit.fn nested()
-    lit.fn nested() -> !kgen.none {
-      // CHECK-NEXT: %[[NONE:.*]] = kgen.param.constant: none
-      %none_0 = kgen.param.constant: none = <#kgen.none>
-      // CHECK-NEXT: hlcf.return %[[NONE:.*]]
-      lit.return %none_0 : !kgen.none
-      lit.end_fn
-    }
     // CHECK: hlcf.if
     hlcf.if %c {
       %none_0 = kgen.param.constant: none = <#kgen.none>
@@ -1198,7 +1289,15 @@ lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> !kgen.scalar<bool
     // CHECK:   lit.error_return
     // CHECK: else
     // CHECK:   hlcf.yield
-    lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    %is_err = lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>>
+    hlcf.if %is_err {
+      lit.ownership.mark_consumed %result : !lit.ref<none, mut lt>
+      lit.raise
+      hlcf.yield
+    } else {
+      lit.ownership.mark_consumed %err : !lit.ref<@Error, mut elt>
+      hlcf.yield
+    }
     hlcf.comptime.if paramb {
       // CHECK: %[[THEN_RETURN:.*]] = kgen.param.constant: scalar<bool> = <false>
       // CHECK: hlcf.return %[[THEN_RETURN]]

@@ -20,10 +20,13 @@ must match the CPU path, so duplicates cannot make GPU threads race on a slot.
 """
 
 from std.testing import TestSuite, assert_equal
-from std.utils import IndexList
 
-from builtin_kernels.gather_scatter import SqueezeShape, UnsqueezeShape
-from extensibility import IOSpec, ManagedTensorSlice, StaticTensorSpec
+from builtin_kernels.gather_scatter import (
+    _squeeze_shape,
+    _unsqueeze_shape,
+    squeeze_shape_gpu,
+    unsqueeze_shape_gpu,
+)
 from max.gpu.host import DeviceContext
 
 comptime shape_dtype = DType.int64
@@ -36,21 +39,22 @@ def _invalid_indices(pattern: Int, count: Int, index_rank: Int) -> List[Int]:
     """Returns `count` indices that are duplicated or out of `index_rank`."""
     var indices = List[Int]()
     for k in range(count):
-        if pattern == 0:
-            # All point at dim 0.
-            indices.append(0)
-        elif pattern == 1:
-            # The last dim, spelled positively and negatively.
-            indices.append(index_rank - 1 if k % 2 == 0 else -1)
-        elif pattern == 2:
-            indices.append(index_rank + k)
-        elif pattern == 3:
-            indices.append(-index_rank - 1 - k)
-        else:
-            # One valid index, then far out of range in both directions.
-            indices.append(
-                0 if k == 0 else (1000000 if k % 2 == 1 else -1000000)
-            )
+        match pattern:
+            case 0:
+                # All point at dim 0.
+                indices.append(0)
+            case 1:
+                # The last dim, spelled positively and negatively.
+                indices.append(index_rank - 1 if k % 2 == 0 else -1)
+            case 2:
+                indices.append(index_rank + k)
+            case 3:
+                indices.append(-index_rank - 1 - k)
+            case _:
+                # One valid index, then far out of range in both directions.
+                indices.append(
+                    0 if k == 0 else (1000000 if k % 2 == 1 else -1000000)
+                )
     return indices^
 
 
@@ -78,54 +82,63 @@ def run_case[
     ctx.enqueue_copy(idx_dev, idx_host)
     out_dev.enqueue_fill(CANARY)
 
-    comptime in_spec = StaticTensorSpec[shape_dtype, 1].get_unknown()
-    comptime idx_spec = StaticTensorSpec[indices_type, 1].get_unknown()
-    var input = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=in_spec](
-        in_dev.unsafe_ptr(), IndexList[1](rank)
-    )
-    var shape_indices = ManagedTensorSlice[
-        io_spec=IOSpec.Input, static_spec=idx_spec
-    ](idx_dev.unsafe_ptr(), IndexList[1](num_indices))
     # The output starts `PAD` slots into the buffer so a write at a negative
     # position lands on a canary.
-    var output = ManagedTensorSlice[io_spec=IOSpec.Output, static_spec=in_spec](
-        out_dev.unsafe_ptr() + PAD, IndexList[1](out_rank)
+    var out_ptr = (
+        out_dev.unsafe_ptr()
+        .unsafe_offset(PAD)
+        .unsafe_origin_cast[MutAnyOrigin]()
     )
-
+    var in_ptr = in_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var idx_ptr = idx_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
     comptime if squeeze:
-        SqueezeShape.execute[
-            target="gpu", dtype=shape_dtype, indices_type=indices_type
-        ](output, input, shape_indices, ctx)
+        squeeze_shape_gpu(
+            out_ptr,
+            1,
+            in_ptr,
+            1,
+            idx_ptr,
+            1,
+            rank,
+            num_indices,
+            ctx,
+        )
     else:
-        UnsqueezeShape.execute[
-            target="gpu", dtype=shape_dtype, indices_type=indices_type
-        ](output, input, shape_indices, ctx)
+        unsqueeze_shape_gpu(
+            out_ptr,
+            1,
+            in_ptr,
+            1,
+            idx_ptr,
+            1,
+            rank,
+            num_indices,
+            ctx,
+        )
 
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
+    # The helpers take untracked pointers, so keep the device inputs alive
+    # until the kernel has run.
+    _ = in_dev^
+    _ = idx_dev^
     var ref_host = ctx.enqueue_create_host_buffer[shape_dtype](
         out_rank + 2 * PAD
     )
     ctx.synchronize()
     for t in range(out_rank + 2 * PAD):
         ref_host[t] = CANARY
-    var ref_input = ManagedTensorSlice[
-        io_spec=IOSpec.Input, static_spec=in_spec
-    ](in_host.unsafe_ptr(), IndexList[1](rank))
-    var ref_indices = ManagedTensorSlice[
-        io_spec=IOSpec.Input, static_spec=idx_spec
-    ](idx_host.unsafe_ptr(), IndexList[1](num_indices))
-    var ref_output = ManagedTensorSlice[
-        io_spec=IOSpec.Output, static_spec=in_spec
-    ](ref_host.unsafe_ptr() + PAD, IndexList[1](out_rank))
+    var ref_out = (
+        ref_host.unsafe_ptr()
+        .unsafe_offset(PAD)
+        .unsafe_origin_cast[MutAnyOrigin]()
+    )
+    var ref_in = in_host.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var ref_idx = idx_host.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
     comptime if squeeze:
-        SqueezeShape.execute[
-            target="cpu", dtype=shape_dtype, indices_type=indices_type
-        ](ref_output, ref_input, ref_indices, ctx)
+        _squeeze_shape(ref_out, 1, ref_in, 1, ref_idx, 1, rank, num_indices)
     else:
-        UnsqueezeShape.execute[
-            target="cpu", dtype=shape_dtype, indices_type=indices_type
-        ](ref_output, ref_input, ref_indices, ctx)
+        _unsqueeze_shape(ref_out, 1, ref_in, 1, ref_idx, 1, rank, num_indices)
 
     var label = String(t"squeeze={squeeze} rank={rank} n={num_indices}")
     for t in range(PAD):

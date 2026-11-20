@@ -13,10 +13,11 @@
 
 """Name-remapping checks for the DeepseekV3 ModuleV3 weight adapters.
 
-The adapter picks a naming scheme from the checkpoint's own scale entries, then
-has to land every leaf on the matching module parameter -- so the assertions
-here are the parameter names the quantized layers expose (see
-``max/tests/tests/nn/module_v3/quant_layers``).
+The quantized layers name their parameters as the checkpoint does (see
+``max/tests/tests/nn/module_v3/quant_layers``), so the adapter remaps prefixes,
+drops what MAX doesn't load, and strips ``.weight`` only from bf16 raw-tensor
+MLA projections; the assertions here are the parameter names the layers
+expose.
 """
 
 from __future__ import annotations
@@ -52,8 +53,8 @@ def _convert(state_dict: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def test_nvfp4_projection_leaves_land_on_the_quantized_weight() -> None:
-    """Each modelopt scale entry maps onto its ``NVFP4Tensor`` leaf."""
+def test_nvfp4_projection_keeps_the_checkpoint_names() -> None:
+    """Each modelopt entry keeps its name, which ``NVFP4Tensor`` exposes."""
     converted = _convert(
         {
             "model.layers.0.mlp.experts.0.gate_proj.weight": _weight(
@@ -71,12 +72,12 @@ def test_nvfp4_projection_leaves_land_on_the_quantized_weight() -> None:
         }
     )
 
-    prefix = "language_model.layers.0.mlp.experts.0.gate_proj.weight"
+    proj = "language_model.layers.0.mlp.experts.0.gate_proj"
     assert set(converted) == {
-        f"{prefix}.data",
-        f"{prefix}.weight_scale",
-        f"{prefix}.weight_scale_2",
-        f"{prefix}.input_scale",
+        f"{proj}.weight",
+        f"{proj}.weight_scale",
+        f"{proj}.weight_scale_2",
+        f"{proj}.input_scale",
     }
 
 
@@ -99,9 +100,9 @@ def test_nvfp4_quantizes_o_proj_but_not_the_latent_projections() -> None:
     )
 
     assert set(converted) == {
-        "language_model.layers.0.self_attn.o_proj.weight.data",
-        "language_model.layers.0.self_attn.o_proj.weight.weight_scale",
-        "language_model.layers.0.self_attn.o_proj.weight.weight_scale_2",
+        "language_model.layers.0.self_attn.o_proj.weight",
+        "language_model.layers.0.self_attn.o_proj.weight_scale",
+        "language_model.layers.0.self_attn.o_proj.weight_scale_2",
         # Raw-tensor MLA projections drop the ``.weight`` suffix entirely.
         "language_model.layers.0.self_attn.q_a_proj",
         "language_model.layers.0.self_attn.kv_b_proj",
@@ -131,12 +132,17 @@ def test_nvfp4_applies_the_shared_bf16_renames() -> None:
 
 
 def test_nvfp4_drops_kv_cache_scales_and_mtp_layer() -> None:
-    """modelopt emits KV-cache scales and an MTP layer that MAX doesn't load."""
+    """modelopt emits KV-cache scales and an MTP layer that MAX doesn't load.
+
+    An MTP layer kept in FP8 doesn't make the checkpoint FP8: the bf16 MLA
+    projections still drop ``.weight``.
+    """
     converted = _convert(
         {
             "model.layers.0.self_attn.o_proj.weight_scale_2": _weight(
                 DType.float32
             ),
+            "model.layers.0.self_attn.q_a_proj.weight": _weight(DType.bfloat16),
             "model.layers.0.self_attn.k_proj.k_scale": _weight(DType.float32),
             "model.layers.0.self_attn.v_proj.v_scale": _weight(DType.float32),
             f"model.layers.{_MTP_LAYER}.mlp.experts.0.gate_proj.weight": _weight(
@@ -145,18 +151,33 @@ def test_nvfp4_drops_kv_cache_scales_and_mtp_layer() -> None:
             f"model.layers.{_MTP_LAYER}.input_layernorm.weight": _weight(
                 DType.bfloat16
             ),
+            f"model.layers.{_MTP_LAYER}.self_attn.q_a_proj.weight_scale_inv": (
+                _weight(DType.float32)
+            ),
         }
     )
 
     assert set(converted) == {
-        "language_model.layers.0.self_attn.o_proj.weight.weight_scale_2"
+        "language_model.layers.0.self_attn.o_proj.weight_scale_2",
+        "language_model.layers.0.self_attn.q_a_proj",
     }
 
 
-def test_scale_entries_pick_the_naming_scheme() -> None:
-    """``weight_scale_2`` selects NVFP4; ``weight_scale_inv`` selects FP8."""
+def test_fp8_latent_projections_keep_the_checkpoint_names() -> None:
+    """An FP8 checkpoint quantizes the MLA projections, so they keep ``.weight``.
+
+    A bf16 latent projection is a plain tensor at ``<proj>`` and drops the
+    suffix; a quantized one keys its packed data ``weight``, beside
+    ``weight_scale_inv``, as an expert projection does.
+    """
     fp8 = _convert(
         {
+            "model.layers.0.self_attn.q_a_proj.weight": _weight(
+                DType.float8_e4m3fn
+            ),
+            "model.layers.0.self_attn.q_a_proj.weight_scale_inv": _weight(
+                DType.float32
+            ),
             "model.layers.0.mlp.experts.0.gate_proj.weight": _weight(
                 DType.float8_e4m3fn
             ),
@@ -165,14 +186,21 @@ def test_scale_entries_pick_the_naming_scheme() -> None:
             ),
         }
     )
-    prefix = "language_model.layers.0.mlp.experts.0.gate_proj.weight"
-    assert set(fp8) == {f"{prefix}.data", f"{prefix}.weight_scale_inv"}
+    attn = "language_model.layers.0.self_attn.q_a_proj"
+    expert = "language_model.layers.0.mlp.experts.0.gate_proj"
+    assert set(fp8) == {
+        f"{attn}.weight",
+        f"{attn}.weight_scale_inv",
+        f"{expert}.weight",
+        f"{expert}.weight_scale_inv",
+    }
 
     bf16 = _convert(
         {
+            "model.layers.0.self_attn.q_a_proj.weight": _weight(DType.bfloat16),
             "model.layers.0.mlp.experts.0.gate_proj.weight": _weight(
                 DType.bfloat16
             ),
         }
     )
-    assert set(bf16) == {prefix}
+    assert set(bf16) == {attn, f"{expert}.weight"}

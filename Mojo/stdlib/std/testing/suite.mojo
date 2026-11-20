@@ -85,14 +85,22 @@ struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
 
     var _value: Int
 
+    # TODO: Rename to `pass`. It is a keyword, so the declaration needs
+    # backticks, but uses such as `TestResult.pass` do not.
     comptime PASS = Self(0)
     """The test passed."""
 
-    comptime FAIL = Self(1)
+    comptime fail = Self(1)
     """The test failed."""
 
-    comptime SKIP = Self(2)
+    comptime skip = Self(2)
     """The test was skipped."""
+
+    comptime FAIL = Self.fail
+    """Alias for `fail`."""
+
+    comptime SKIP = Self.skip
+    """Alias for `skip`."""
 
     comptime _enum_case_names = ParameterList.of[
         "PASS".value,
@@ -101,7 +109,7 @@ struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -394,8 +402,9 @@ struct _Test(Copyable):
     var name: StaticString
 
 
-@explicit_destroy("TestSuite must be destroyed via `run()`")
-struct TestSuite(not Deinitable, Movable):
+struct TestSuite(
+    not Deinitable else "TestSuite must be destroyed via `run()`", Movable
+):
     """A suite of tests to run.
 
     You can automatically collect and register test functions starting with
@@ -591,10 +600,9 @@ struct TestSuite(not Deinitable, Movable):
     def _should_skip(self, test: _Test) -> Bool:
         if test.name in self.skip_list:
             return True
-        if not self.allow_list:
+        __guard case .Some(allow_list) = self.allow_list else:
             return False
-        # SAFETY: We know that `self.allow_list` is not `None` here.
-        return test.name not in self.allow_list.unsafe_value()
+        return test.name not in allow_list
 
     def _validate_skip_list(self) raises:
         # TODO: _Test doesn't conform to Equatable, so we can't use

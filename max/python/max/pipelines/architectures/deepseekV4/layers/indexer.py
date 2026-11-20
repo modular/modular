@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """The DeepSeek-V4 lightning indexer.
 
 Reference: ``inference/model.py`` class ``Indexer``. Only ``compress_ratio == 4``
@@ -59,9 +58,9 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kernels import indexer_score_ragged, top_k_per_row
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn._graph_ops import indexer_score_ragged, top_k_per_row
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import DeepseekV4Config
 from .compressor import DeepseekV4Compressor
@@ -98,8 +97,7 @@ class DeepseekV4Indexer(Module):
         )
         # The reference pins this one to bf16 explicitly
         # (``dtype=torch.bfloat16`` on the ColumnParallelLinear), which for this
-        # checkpoint is what ``config.dtype`` already is; ``wo_a`` in the block
-        # is declared the same way and followed the config there too.
+        # checkpoint is what ``config.dtype`` already is.
         self.weights_proj = Linear(
             config.hidden_size, self.n_heads, config.dtype, device
         )
@@ -108,8 +106,10 @@ class DeepseekV4Indexer(Module):
         )
 
     def shard_heads(self, num_devices: int) -> None:
-        """Declares the reference's tensor-parallel split: ``wq_b`` and
-        ``weights_proj`` per head. The compressor is shared and stays whole.
+        """Splits ``wq_b`` and ``weights_proj`` per head.
+
+        That is the reference's tensor-parallel split; the compressor is shared
+        and stays whole.
         """
         if self.n_heads % num_devices:
             raise ValueError(
@@ -130,6 +130,7 @@ class DeepseekV4Indexer(Module):
         indexers: Sequence[DeepseekV4Indexer],
         scores: Sequence[TensorValue],
         valid: Sequence[TensorValue],
+        live: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
         """:meth:`select` on every device over the all-reduced scores.
@@ -140,8 +141,10 @@ class DeepseekV4Indexer(Module):
         """
         reduced = ops.allreduce.sum(list(scores), signal_buffers)
         return [
-            indexer.select(score, v)
-            for indexer, score, v in zip(indexers, reduced, valid, strict=True)
+            indexer.select(score, v, n)
+            for indexer, score, v, n in zip(
+                indexers, reduced, valid, live, strict=True
+            )
         ]
 
     def __call__(
@@ -175,7 +178,12 @@ class DeepseekV4Indexer(Module):
             ``[T, k]`` int32 candidate numbers (rows of ``candidates``), with
             ``-1`` in unusable slots. ``k = min(index_topk, n)``.
         """
-        return self.select(self.score(x, qr, freqs_cis, candidates), valid)
+        live = ops.squeeze(
+            ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
+        )
+        return self.select(
+            self.score(x, qr, freqs_cis, candidates), valid, live
+        )
 
     def score(
         self,
@@ -257,28 +265,27 @@ class DeepseekV4Indexer(Module):
         return q, weights
 
     def select(
-        self, index_score: TensorValue, valid: TensorValue
+        self, index_score: TensorValue, valid: TensorValue, live: TensorValue
     ) -> TensorValue:
         """The top-k of :meth:`score`'s ``[T, n]`` under ``valid``.
 
-        Returns what :meth:`__call__` returns.
+        ``live`` is ``[T]`` int64, the count of ``valid``'s true columns
+        (:meth:`~.csa.CompressedStream.live`). Returns what :meth:`__call__`
+        returns.
         """
         n = int(index_score.shape[1])
 
         # Rule 1: an entry that had not closed by the query cannot be selected.
+        # Neither can a NaN score, which the top-k does not accept.
         index_score = ops.where(
-            valid,
+            valid & ~ops.is_nan(index_score),
             index_score,
             float("-inf"),
         )
 
         k = min(self.index_topk, n)
         # Until more than ``k`` entries have closed a query selects all of
-        # them, so it asks for no more picks than it has candidates: the
-        # same picks in the same order, without the kernel's padding rounds.
-        live = ops.squeeze(
-            ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
-        )
+        # them, so it asks for no more picks than it has candidates.
         picks = ops.min(live, k)
         topk_scores, topk_idxs = top_k_per_row(index_score, picks, k)
         topk_idxs = ops.cast(topk_idxs, DType.int32)

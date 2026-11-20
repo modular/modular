@@ -127,10 +127,10 @@ def _mxfp6_matmul_ref[
         var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
-                a_ptr.load[width=8](a_base + chunk * 8)
+                a_ptr.unsafe_load[width=8](a_base + chunk * 8)
             )
             fb = fb.insert[offset=chunk * 8](
-                b_ptr.load[width=8](b_base + chunk * 8)
+                b_ptr.unsafe_load[width=8](b_base + chunk * 8)
             )
 
         var av = decode_fp6_to_f32[fmt](unpack_fp6_x32(fa)) * a_scale
@@ -264,25 +264,9 @@ def _test_case[
     comptime fmt_name = "E2M3" if fmt == FP6Format.E2M3 else "E3M2"
 
     print(
-        "  ",
-        fmt_name,
-        name,
-        " M=",
-        M_static,
-        " N=",
-        N_static,
-        " K=",
-        K_static,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " b_prefetch=",
-        b_prefetch,
+        t"   {fmt_name} {name}  M= {M_static}  N= {N_static}  K= {K_static} "
+        t" BM= {BM}  BN= {BN}  BK_ELEMS= {BK_ELEMS}  WN= {WN}  b_prefetch="
+        t" {b_prefetch}"
     )
 
     # Scale buffers stay uint8 throughout (E8M0 is byte-equivalent) so
@@ -356,8 +340,8 @@ def _test_case[
     ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
         a_d.unsafe_ptr(),
         b_d.unsafe_ptr(),
-        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        sfb_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         c_ref_d.unsafe_ptr(),
         mag_d.unsafe_ptr(),
         Int32(M_static),
@@ -375,11 +359,11 @@ def _test_case[
     # kernel reads the underlying bytes through `PreshuffledScaleLoader`, so
     # the TileTensor layout is unused.
     var sfa_tt = TileTensor(
-        sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
     ).as_imm()
     var sfb_tt = TileTensor(
-        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
     ).as_imm()
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
@@ -451,16 +435,8 @@ def _test_case[
         if abs(got - want) > rel_tol * Float64(mag_h[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N_static,
-                    ",",
-                    i % N_static,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_h[i]),
+                    t"      [ {i // N_static} , {i % N_static} ] got= {got} "
+                    t" want= {want}  mag= {Float64(mag_h[i])}"
                 )
             mismatches += 1
 

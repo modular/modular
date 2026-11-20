@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Turns Qwen2.5-VL pixel values into the vision graph's inputs."""
 
 from __future__ import annotations
 
@@ -27,13 +28,15 @@ def mrope_pos_ids_3d_inner(
     w: int,
     spatial_merge_size: int,
 ) -> npt.NDArray[np.int32]:
-    """Calculate the rope index based on the image's height and width in LLM using NumPy.
-    This is used in the vision transformer to calculate the rotary position embeddings.
-    Converted the original implementation from torch to numpy. Implementation can be found here:
+    """Builds the rotary position ids for one image's height and width.
+
+    The vision transformer reads them to place each patch's rotary
+    embedding. This is a NumPy port of the torch implementation in sglang:
+
     https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/utils.py#L92
 
-    Note: Qwen2.5VL benchmark results show that lru_cache results in nearly 7.5K cache hits while only adding an additional 85KB of additional memory usage.
-    This scenario had a cache size of 14, which indicates that even if the cache was full in the worst case, we would only expect it to take up around 6MB of memory.
+    ``lru_cache`` carries 7.5K hits for a cache of size 14, at 85KB of
+    extra memory, so a full cache costs about 6MB.
 
     Args:
         h: Height of the image
@@ -77,15 +80,21 @@ def mrope_pos_ids_3d_inner(
 def mrope_pos_ids_3d(
     grid_thw: npt.NDArray[np.integer[Any]], spatial_merge_size: int
 ) -> npt.NDArray[np.int32]:
-    """Calculate the rope index based on image and video's temporal, height, and width in LLM using NumPy.
-    This is used in the vision transformer to calculate the rotary position embeddings.
-    Converted the original implementation from torch to numpy. Original implementation from:
+    """Builds the rotary position ids for each image or video's t, h and w.
+
+    The vision transformer reads them to place each patch's rotary
+    embedding. This is a NumPy port of the torch implementation in vLLM:
+
     https://github.com/vllm-project/vllm/blob/9fce7bee745230d61c60ad467966790553b0ba48/vllm/model_executor/models/qwen3_vl.py#L409
+
     Args:
-        grid_thw: Array of shape [num_images, 3] with (t, h, w) for each image/video
-        spatial_merge_size: Factor for downscaling spatial dimensions
+        grid_thw: Array of shape [num_images, 3] with (t, h, w) for each
+            image or video.
+        spatial_merge_size: Factor for downscaling spatial dimensions.
+
     Returns:
-        pos_ids: Array of shape [seq_len, 2] with (h, w) for each position, dtype=int32
+        pos_ids: Array of shape [seq_len, 2] with (h, w) for each position,
+            dtype=int32.
     """
     pos_ids_list = []
     for t, h, w in grid_thw:
@@ -109,16 +118,20 @@ def get_window_index(
     patch_size: int,
     spatial_merge_unit: int,
 ) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]]]:
-    """Computes the indices of patches within windows, handles padding for uneven divisions,
-    and computes cumulative window sequence lengths for the attention mechanism.
+    """Computes which patches fall in which attention window.
+
+    Windows that do not divide the patch grid evenly are padded, and the
+    cumulative window sequence lengths the attention reads come back with
+    the indices.
 
     Args:
-
         grid_thw: spatial and temporal coordinated of patches in images.
-        window_size: Size of attention window. For example, a window size of 112x112 corresponds to 8x8 patches of size 14.
+        window_size: Size of attention window. For example, a window size of
+            112x112 corresponds to 8x8 patches of size 14.
         spatial_merge_size: number of patches to merge together.
         patch_size: Size of each patch in the image.
-        spatial_merge_unit:
+        spatial_merge_unit: Number of patches one merged token spans, the
+            square of ``spatial_merge_size``.
     """
     window_index = []
     cu_window_seqlens = [0]  # Total number of patches in prev. windows.
@@ -193,15 +206,20 @@ def get_seqlens(
     int,
     int,
 ]:
-    """Generate attention masks for visual tokens using seq_length and cu_seqlens.
-    cu_seqlens is used when the block is in fullatt_block_indexes.
+    """Builds the attention masks for the visual tokens.
+
+    The full-attention mask applies where the block is in
+    ``fullatt_block_indexes``; the windowed mask applies everywhere else.
 
     Args:
-        grid_thw: number of patches in spatial and temporal dims in images. Shape = [n_images, 3]
-        cu_window_seqlens: cumulative window sequence lengths for the attention mechanism. Shape = [n_windows]
+        grid_thw: number of patches in spatial and temporal dims in images.
+            Shape = [n_images, 3].
+        cu_win_seqlens: cumulative window sequence lengths for the attention
+            mechanism. Shape = [n_windows].
 
     Returns:
-        Tuple of (attention_mask_full, attention_mask_window, cu_seqlens, cu_window_seqlens_unique)
+        Tuple of (attention_mask_full, attention_mask_window, cu_seqlens,
+            cu_window_seqlens_unique).
     """
     cu_window_seqlens = np.array(cu_win_seqlens, dtype=np.uint32)
     # 1. Remove consecutive duplicates (equivalent to torch.unique_consecutive)

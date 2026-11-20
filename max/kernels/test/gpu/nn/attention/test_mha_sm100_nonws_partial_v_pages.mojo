@@ -32,7 +32,7 @@ non-finite bf16. The poison launch fills every SM's shared memory with bf16
 NaN first, making the failure deterministic.
 """
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
 from max.gpu import block_dim, thread_idx
@@ -64,7 +64,7 @@ comptime poison_bytes = 227 * 1024
 comptime poison_elems = poison_bytes // size_of[dtype]()
 comptime poison_threads = 1024
 # Several times the SM count, so every SM takes at least one block.
-comptime poison_blocks = 4 * DeviceContext.default_device_info.sm_count
+comptime poison_blocks = 4 * DeviceContext[].default_device_info.sm_count
 comptime reps = 10
 
 
@@ -199,13 +199,10 @@ def main() raises:
                 grid_dim=(poison_blocks, 1),
                 block_dim=(poison_threads, 1),
                 shared_mem_bytes=poison_bytes,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(poison_bytes)
-                ),
             )
             flash_attention[ragged=True](
                 TileTensor(
-                    test_dev.unsafe_ptr() + r * qo_size,
+                    test_dev.unsafe_ptr().unsafe_offset(r * qo_size),
                     row_major(
                         Int64(valid_length), Idx[num_q_heads], Idx[head_size]
                     ),
@@ -269,7 +266,7 @@ def main() raises:
 
         print("nan_count =", nan_count, " max-abs diff =", max_abs_diff)
         if nan_count > 0:
-            raise Error("NaN x" + String(nan_count))
+            raise Error(t"NaN x{nan_count}")
         if max_abs_diff > 0.02:
-            raise Error("max-abs diff too large: " + String(max_abs_diff))
+            raise Error(t"max-abs diff too large: {max_abs_diff}")
         print("PASSED")

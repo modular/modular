@@ -21,6 +21,7 @@ tensors instead of building a Graph.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -47,16 +48,15 @@ from conftest import (
     TEXT_VOCAB_SIZE,
     TorchGemma4TextModel,
 )
+from max import functional as F
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
     create_empty_indices,
@@ -69,6 +69,9 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4TextConfig,
     Gemma4VisionConfig,
 )
+from max.pipelines.architectures.gemma4.weight_adapters import (
+    GEMMA4_WEIGHT_RULES,
+)
 from max.pipelines.architectures.gemma4_modulev3.gemma4 import Gemma4TextModel
 from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
     Gemma4Attention,
@@ -76,9 +79,9 @@ from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
 from max.pipelines.architectures.gemma4_modulev3.layers.transformer_block import (
     Gemma4TransformerBlock,
 )
-from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
-    convert_language_state_dict_for_module,
-)
+from max.pipelines.lib import WeightRenaming, WeightTransform
+from max.tensor import Tensor, default_dtype
+from max.tensor.sharding import DeviceMesh
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
@@ -321,6 +324,35 @@ def test_four_norms_per_layer(small_model: Gemma4TextModel) -> None:
         for norm_name in norm_names:
             key = f"layers.{i}.{norm_name}.weight"
             assert key in names, f"Missing {key}"
+
+
+def _ffn_scaling(model: Gemma4TextModel) -> set[tuple[float, float]]:
+    """The (MLP up scale, post-FFN norm eps) pairs across layers."""
+    pairs: set[tuple[float, float]] = set()
+    for layer in model.layers:
+        assert isinstance(layer, Gemma4TransformerBlock)
+        assert isinstance(layer.mlp, MLP)
+        assert layer.pre_feedforward_layernorm.eps == TEXT_RMS_NORM_EPS
+        pairs.add((layer.mlp.up_scale, layer.post_feedforward_layernorm.eps))
+    return pairs
+
+
+def test_bfloat16_leaves_ffn_unscaled(small_model: Gemma4TextModel) -> None:
+    """Without float16 activations the FFN loss scale is off."""
+    assert _ffn_scaling(small_model) == {(1.0, TEXT_RMS_NORM_EPS)}
+
+
+def test_float16_scales_ffn_and_post_ffn_eps() -> None:
+    """Float16 divides the up projection by the loss scale and the post-FFN
+    norm's eps by its square."""
+    config = _make_model_config(
+        [DeviceRef.CPU()],
+        num_hidden_layers=2,
+        layer_types=TEXT_LAYER_TYPES[:2],
+    )
+    model = _build_lazy_model(dataclasses.replace(config, dtype=DType.float16))
+    s = config.text_config.ffn_fp16_loss_scale
+    assert _ffn_scaling(model) == {(1.0 / s, TEXT_RMS_NORM_EPS / s**2)}
 
 
 def test_v_proj_only_on_sliding_layers(small_model: Gemma4TextModel) -> None:
@@ -585,6 +617,7 @@ _EXEC_N_GLOBAL_KV_HEADS = 1
 
 def _make_small_model_config(
     devices: list[DeviceRef],
+    dtype: DType = MAX_DTYPE,
 ) -> Gemma4ForConditionalGenerationConfig:
     """Build a small Gemma4 config suitable for execution tests."""
     sliding_layers = sum(
@@ -593,7 +626,7 @@ def _make_small_model_config(
     global_layers = sum(1 for t in _EXEC_LAYER_TYPES if t == "full_attention")
 
     sliding_kv = MHAKVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=dtype,
         n_kv_heads=_EXEC_N_KV_HEADS,
         head_dim=_EXEC_HEAD_DIM,
         num_layers=sliding_layers,
@@ -601,7 +634,7 @@ def _make_small_model_config(
         page_size=128,
     )
     global_kv = MHAKVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=dtype,
         n_kv_heads=_EXEC_N_GLOBAL_KV_HEADS,
         head_dim=_EXEC_GLOBAL_HEAD_DIM,
         num_layers=global_layers,
@@ -613,7 +646,7 @@ def _make_small_model_config(
     )
 
     text_kv = MHAKVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=dtype,
         n_kv_heads=_EXEC_N_KV_HEADS,
         head_dim=_EXEC_HEAD_DIM,
         num_layers=_EXEC_NUM_LAYERS,
@@ -642,7 +675,7 @@ def _make_small_model_config(
         attn_logit_softcapping=None,
         rope_local_base_freq=TEXT_SLIDING_WINDOW_ROPE_THETA,
         sliding_window_pattern=-1,
-        dtype=MAX_DTYPE,
+        dtype=dtype,
         devices=devices,
         interleaved_rope_weights=False,
         kv_params=text_kv,
@@ -660,7 +693,7 @@ def _make_small_model_config(
 
     return Gemma4ForConditionalGenerationConfig(
         devices=devices,
-        dtype=MAX_DTYPE,
+        dtype=dtype,
         kv_params=kv_params,
         text_config=text_config,
         vision_config=_make_vision_config(),
@@ -696,6 +729,7 @@ def _stub_attention(model: Gemma4TextModel) -> None:
 
 def _build_shared_weights(
     max_model: Gemma4TextModel,
+    torch_dtype: torch.dtype = TORCH_DTYPE,
 ) -> dict[str, torch.Tensor]:
     """Generate random weights shared between the MAX and torch models.
 
@@ -707,28 +741,30 @@ def _build_shared_weights(
 
     for key, param in max_model.parameters:
         shape = tuple(int(d) for d in param.shape)
-        w[key] = torch.randn(shape, dtype=TORCH_DTYPE)
+        w[key] = torch.randn(shape, dtype=torch_dtype)
 
     # Set layer scalars to a non-trivial value.
     for key in w:
         if key.endswith(".layer_scalar"):
-            w[key] = torch.tensor([2.0], dtype=TORCH_DTYPE)
+            w[key] = torch.tensor([2.0], dtype=torch_dtype)
 
     return w
 
 
 def _build_eager_stubbed_model(
     device: Accelerator,
+    dtype: DType = MAX_DTYPE,
+    torch_dtype: torch.dtype = TORCH_DTYPE,
 ) -> tuple[Gemma4TextModel, dict[str, torch.Tensor]]:
     """Build the small model eagerly on GPU, stub attention, load weights."""
     mesh = DeviceMesh((device,), (1,), ("tp",))
-    config = _make_small_model_config([DeviceRef.GPU()])
+    config = _make_small_model_config([DeviceRef.GPU()], dtype)
     config.text_config.return_logits = ReturnLogits.ALL
-    with default_dtype(MAX_DTYPE):
+    with default_dtype(dtype):
         model = Gemma4TextModel(config, mesh)
     _stub_attention(model)
 
-    shared_weights = _build_shared_weights(model)
+    shared_weights = _build_shared_weights(model, torch_dtype)
     # Load first, then transfer: for single-device (non-distributed)
     # parameters load_state_dict adopts the source tensor's device, so the
     # CPU torch weights would otherwise stay on host.
@@ -771,7 +807,14 @@ def _to_torch(t: Tensor) -> torch.Tensor:
     [1],
     ids=["single_token"],
 )
-def test_text_model_execution_matches_torch(seq_len: int) -> None:
+@pytest.mark.parametrize(
+    ("dtype", "torch_dtype"),
+    [(DType.bfloat16, torch.bfloat16), (DType.float16, torch.float16)],
+    ids=["bfloat16", "float16"],
+)
+def test_text_model_execution_matches_torch(
+    seq_len: int, dtype: DType, torch_dtype: torch.dtype
+) -> None:
     """Execute the text model eagerly and compare against the torch reference.
 
     Uses identity attention stubs so the test exercises: scaled embedding,
@@ -783,7 +826,9 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
     compared, plus the LAST_TOKEN gather path via the first output.
     """
     device = Accelerator(0)
-    max_model, shared_weights = _build_eager_stubbed_model(device)
+    max_model, shared_weights = _build_eager_stubbed_model(
+        device, dtype, torch_dtype
+    )
 
     torch_model = TorchGemma4TextModel(
         vocab_size=_EXEC_VOCAB,
@@ -802,10 +847,10 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
     tokens = torch.randint(0, _EXEC_VOCAB, (seq_len,), dtype=torch.int64)
 
     # -- Run torch reference (embed → layers → norm → tied head) --
-    torch_model = torch_model.to(TORCH_DTYPE)
+    torch_model = torch_model.to(torch_dtype)
     with torch.no_grad():
         torch_hidden = torch_model(tokens)
-    embed_w = shared_weights["embed_tokens.weight"].to(TORCH_DTYPE)
+    embed_w = shared_weights["embed_tokens.weight"].to(torch_dtype)
     # Match the module's logit path: cast to float32, then softcap
     # (cap * tanh(logits / cap)).
     torch_logits = (torch_hidden @ embed_w.T).float()
@@ -951,7 +996,7 @@ def _small_checkpoint() -> dict[str, torch.Tensor]:
 
 
 def test_checkpoint_key_conversion_matches_module_tree() -> None:
-    """The language converter's output keys must exactly cover the module.
+    """The ModuleV3 rules' language keys must exactly cover the module.
 
     ``Module.compile(weights=...)`` silently ignores unmatched entries, so
     without this a misnamed checkpoint key would leave a parameter serving
@@ -967,7 +1012,9 @@ def test_checkpoint_key_conversion_matches_module_tree() -> None:
         },
     )
     converted = set(
-        convert_language_state_dict_for_module(dict(weights.items()))
+        WeightTransform(
+            [*GEMMA4_WEIGHT_RULES, WeightRenaming.prefix("language_model.")]
+        )(dict(weights.items()))
     )
 
     config = _make_small_model_config([DeviceRef.CPU()])
@@ -976,6 +1023,6 @@ def test_checkpoint_key_conversion_matches_module_tree() -> None:
         model = Gemma4TextModel(config, mesh)
 
     # The eager module tree nests the text model under ``language_model.``
-    # (see Gemma4 in gemma4.py); the converter re-adds that prefix.
+    # (see Gemma4 in gemma4.py); the decoder entry's prefix rule adds it.
     expected = {f"language_model.{name}" for name in _param_names(model)}
     assert converted == expected

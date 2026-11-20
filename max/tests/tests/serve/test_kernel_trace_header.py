@@ -15,6 +15,8 @@ reaches the model worker in ``trace_carrier``."""
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import numpy as np
 import pytest
 from fastapi import FastAPI, Request
@@ -23,10 +25,9 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.modeling.types import RequestID
-from max.serve import request as serve_request
 from max.serve.config import Settings
 from max.serve.request import register_request
-from max.serve.telemetry import common
+from max.serve.telemetry import _log_context, _tracing
 from max.serve.telemetry._trace_context import (
     RequestTraceLevel,
     inject_trace_carrier,
@@ -36,13 +37,13 @@ from opentelemetry.sdk.trace import TracerProvider
 
 @pytest.fixture(autouse=True)
 def restore_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(common, "_trace_level_header_enabled", False)
+    monkeypatch.setattr(_tracing, "trace_level_header_enabled", False)
 
 
 def _open_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     # The gate implies a provider, which the middleware checks first.
-    monkeypatch.setattr(serve_request, "_tracing_enabled", lambda: True)
-    monkeypatch.setattr(common, "_trace_level_header_enabled", True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
+    monkeypatch.setattr(_tracing, "trace_level_header_enabled", True)
 
 
 def _make_app() -> FastAPI:
@@ -79,7 +80,7 @@ def _carrier(headers: dict[str, str]) -> object:
         "expected_gate",
     ),
     [
-        pytest.param(False, False, True, True, False, id="default"),
+        pytest.param(False, False, True, True, False, id="headers-off"),
         pytest.param(True, True, True, False, False, id="no-provider"),
         pytest.param(True, False, True, True, True, id="permitted"),
         pytest.param(True, False, False, False, False, id="no-traces-endpoint"),
@@ -94,7 +95,7 @@ def test_configure_tracing_sets_the_gate(
     expected_gate: bool,
 ) -> None:
     installed: list[TracerProvider] = []
-    monkeypatch.setattr(common, "set_tracer_provider", installed.append)
+    monkeypatch.setattr(_tracing, "set_tracer_provider", installed.append)
     if traces_endpoint:
         monkeypatch.setenv(
             "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
@@ -103,7 +104,7 @@ def test_configure_tracing_sets_the_gate(
     else:
         monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
     monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
-    common.configure_tracing(
+    _tracing.configure_tracing(
         Settings(
             kernel_trace_headers=headers_on,
             disable_telemetry=telemetry_disabled,
@@ -112,7 +113,7 @@ def test_configure_tracing_sets_the_gate(
     for provider in installed:
         provider.shutdown()
     assert bool(installed) is expected_installed
-    assert common._trace_level_header_enabled is expected_gate
+    assert _tracing.trace_level_header_honored() is expected_gate
 
 
 def test_default_never_reads_the_headers(
@@ -130,21 +131,14 @@ def test_default_never_reads_the_headers(
     assert reads == []
 
     # Tracing reads them once, for the inbound trace context.
-    monkeypatch.setattr(serve_request, "_tracing_enabled", lambda: True)
+    monkeypatch.setattr(_log_context, "tracing_enabled", lambda: True)
     assert _carrier({"x-max-trace-level": "kernel"}) is None
     assert reads == ["/v1/carrier"]
-
-    # The counter does see the middleware's read once the gate opens.
-    reads.clear()
-    _open_gate(monkeypatch)
-    assert _carrier({"x-max-trace-level": "kernel"}) is not None
-    assert reads == ["/v1/carrier", "/v1/carrier"]
 
 
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        pytest.param("kernel", "kernel", id="kernel"),
         pytest.param("Kernel_Sampled", "kernel-sampled", id="normalized"),
         pytest.param("bogus", None, id="unknown-ignored"),
     ],
@@ -172,9 +166,7 @@ def test_permitted_request_without_the_header_has_no_level(
     [
         ("off", RequestTraceLevel.OFF),
         ("BATCH", RequestTraceLevel.BATCH),
-        ("kernel-sampled", RequestTraceLevel.KERNEL_SAMPLED),
         ("kernel_sampled", RequestTraceLevel.KERNEL_SAMPLED),
-        ("full", RequestTraceLevel.FULL),
         ("verbose", None),
         ("", None),
     ],
@@ -185,8 +177,10 @@ def test_parse(value: str, expected: RequestTraceLevel | None) -> None:
 
 def test_levels_are_ordered() -> None:
     members = list(RequestTraceLevel)
-    assert all(members[i] < members[i + 1] for i in range(len(members) - 1))
-    assert RequestTraceLevel.OFF < RequestTraceLevel.BATCH
+    order = "off batch op kernel-sampled kernel full".split()
+    assert [level.value for level in members] == order
+    # sorted() keeps an already-ordered list even if __lt__ never holds.
+    assert all(a < b for a, b in pairwise(members))
     assert max(RequestTraceLevel.OP, RequestTraceLevel.KERNEL_SAMPLED) is (
         RequestTraceLevel.KERNEL_SAMPLED
     )

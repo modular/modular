@@ -19,7 +19,7 @@ from collections.abc import Iterable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.graph.weight import ShardingStrategy
-from max.nn.moe import MoEGate
+from max.nn.legacy.moe import MoEGate
 
 
 class Step3p5MoEGate(MoEGate):

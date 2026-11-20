@@ -11,27 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Telemetry settings shared by the API and worker processes."""
+
 from __future__ import annotations
 
-import atexit
 import json
 import logging
 import logging.handlers
 import os
 import platform
-import signal
 import uuid
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from contextvars import ContextVar
 from time import time
-from types import FrameType
-from typing import TYPE_CHECKING
-from urllib.parse import urlparse
 
 import requests
-from max.profiler import set_gpu_profiling_state
-from max.serve.config import KernelTraceLevel, Settings
+from max.serve.config import Settings
+from max.serve.telemetry import _log_context
+
+# Bound by name: the tracing-off formatter reads it on every line.
+from max.serve.telemetry._log_context import request_id_ctx as _request_id_ctx
 from max.serve.telemetry.metrics import (
     HISTOGRAM_SHADOW_SUFFIX,
     configure_histogram_shadow_emission,
@@ -42,15 +41,10 @@ from max.support._telemetry import (
     drop_metrics_matching,
     log_spaced_buckets,
 )
-from opentelemetry import trace
 from opentelemetry._logs import set_logger_provider
-from opentelemetry.context import Context as OtelContext
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
-)
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-    OTLPSpanExporter,
 )
 from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
@@ -71,17 +65,12 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanLimits, TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
-from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
-if TYPE_CHECKING:
-    # For annotations only: the CLI imports this module early.
-    from max.pipelines.context import TextContext
-    from max.pipelines.request import RequestID
-
 otelBaseUrl = "https://telemetry.modular.com:443"
+
+# Non-empty so the SDK skips OTEL_EXPORTER_OTLP_*HEADERS; it sends this anyway.
+_MODULAR_OTLP_HEADERS = {"Content-Type": "application/x-protobuf"}
 
 
 def _operator_set_endpoint(signal_var: str) -> bool:
@@ -107,65 +96,6 @@ def _telemetry_disabled(settings: Settings) -> bool:
     if os.environ.get("OTEL_SDK_DISABLED", "").lower().strip() == "true":
         return True
     return settings.disable_telemetry
-
-
-request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
-    "max.serve.request_trace_ctx", default=None
-)
-"""The OTel context holding the current request's HTTP server span (or None),
-which continues the inbound W3C traceparent where there is one. For a probe it
-is the inbound context itself, and with tracing off it is None. Set by the
-``request_session`` middleware, so it is already populated by the time
-TextContext is constructed in llm.py — ``call_next`` runs the route in a child
-task, which inherits a copy of the context set here."""
-
-_request_id_ctx: ContextVar[str | None] = ContextVar(
-    "max.serve.request_id_ctx", default=None
-)
-"""The HTTP request's ID. ``/v1/completions`` and ``/v1/embeddings`` take one
-pipeline request per prompt, whose ``RequestID`` and ``max.request_id`` span
-attribute append ``_<index>`` to this."""
-
-_batch_id_ctx: ContextVar[int | None] = ContextVar(
-    "max.serve.batch_id_ctx", default=None
-)
-"""The ID of the forward pass the text-generation scheduler is executing, or
-None. It is set around ``pipeline.execute`` only when tracing is enabled; the
-API process and the disaggregated workers never set it."""
-
-
-_trace_level_header_enabled = False
-"""Whether per-request trace levels are honored in this process: the API
-server reads the ``x-max-trace-level`` header and the model worker may arm
-captures. Set by :func:`configure_tracing` when it installs a provider and
-``kernel_trace_headers`` is on. Read it through the module: that call
-rebinds it."""
-
-
-def _tracing_enabled() -> bool:
-    """Whether a real TracerProvider is installed, vs. the OTel no-op default."""
-    return not isinstance(
-        trace.get_tracer_provider(), trace.ProxyTracerProvider
-    )
-
-
-def _capture_request_context(
-    request_id: str, inbound: OtelContext, server_span: trace.Span | None
-) -> None:
-    """Sets the ambient correlation IDs for the request being handled.
-
-    ``request_session`` calls this, through ``start_server_span``, before
-    ``call_next``, so the downstream task's context copy carries them onto
-    every route's records. The span is not made current: the OTLP log handler
-    would stamp its trace ID, the caller's where a traceparent arrived, onto
-    records sent to Modular.
-    """
-    _request_id_ctx.set(request_id)
-    request_trace_ctx.set(
-        trace.set_span_in_context(server_span, inbound)
-        if server_span is not None
-        else inbound
-    )
 
 
 def _getCloudProvider() -> str:
@@ -234,9 +164,15 @@ HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = log_spaced_buckets(
 
 # Batch size (number of requests in a batch), from a single request up to the
 # largest batch the scheduler forms.
-HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = log_spaced_buckets(
-    1.0, 512.0, 1.5
+HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = (
+    0.0,
+    *(float(size) for size in range(1, 21)),  # Tracks exactly for 1-20
+    # [2:] drops the ladder's leading 0.0 and its 20.0, already present.
+    *log_spaced_buckets(20.0, 512.0, 1.05)[2:],  # 5% steps from 21 - 512
 )
+
+# Per-request retries a cap of a few bounds, such as connector lookup re-asks.
+HISTOGRAM_RETRY_BUCKETS: tuple[float, ...] = (0.0, 1.0, 2.0, 3.0, 4.0)
 
 # Mean speculative-decode acceptance length per batch. Because it is an average
 # it takes fractional values, so use fine 0.25-wide buckets from 0 to 16 tokens
@@ -282,84 +218,101 @@ HISTOGRAM_PIXELS_BUCKETS: tuple[float, ...] = log_spaced_buckets(
 # (test_all_histograms_have_explicit_buckets) enforces that.
 HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     # Latency / time (ms)
-    "maxserve.request_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.input_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.output_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.time_to_first_token": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.response_queue_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.model_load_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.itl": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.api_pre_tokenize": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.api_submit": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.mw_queue_wait": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.decode_admission_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.decode_send_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.dispatch_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.prefill_span": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.reply_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.prefill_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.ce_pool_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.decode_postprocess_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.early_sync_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.di.handoff_to_first_token_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.structured_output.grammar_build_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.vision.image_admission_decode_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.media.resolve_time": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.nixl_read_latency_max": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
-    "maxserve.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.request_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.input_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.output_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.time_to_first_token": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.time_to_first_token_by_prompt_length": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.cache.connector_cordon_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.response_queue_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.model_load_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.itl": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.batch.execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.scheduler.batch_step_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.batch.creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.api_pre_tokenize": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.api_submit": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.mw_queue_wait": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.decode_admission_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.decode_send_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.dispatch_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.prefill_span": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.reply_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.prefill_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.ce_pool_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.decode_postprocess_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.early_sync_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.di.handoff_to_first_token_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.structured_output.grammar_build_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.vision.image_admission_decode_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.media.resolve_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.nixl_read_latency_max": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.hinted_lookup_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.hinted_attach_wait_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.peer_writeback_hold_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     # Percentages
-    "maxserve.dp_active_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.dp_context_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.request_prefix_coverage": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.used_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.used_host_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.cache.used_disk_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.spec_decode.acceptance_rate_per_position": HISTOGRAM_PERCENT_BUCKETS,
-    "maxserve.vision.cache_hit_rate": HISTOGRAM_PERCENT_BUCKETS,
+    "max.dp_active_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
+    "max.dp_context_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.request_prefix_coverage": HISTOGRAM_PERCENT_BUCKETS,
+    "max.prefix_coverage_per_request": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.used_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.used_host_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "max.cache.used_disk_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "max.spec_decode.acceptance_rate_per_position": HISTOGRAM_PERCENT_BUCKETS,
+    "max.vision.cache_hit_rate": HISTOGRAM_PERCENT_BUCKETS,
     # Generic counts (tokens / occupancy)
-    "maxserve.input_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.output_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_input_tokens": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_context_tokens": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_terminated_reqs": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.batch_pending_reqs": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.requests_awaiting_admission": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
-    "maxserve.di.ce_preempted_tg_pending_count": HISTOGRAM_COUNT_BUCKETS,
+    "max.input_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "max.request.cached_input_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.request.uncached_input_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.output_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.input_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.context_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.terminated_reqs": HISTOGRAM_COUNT_BUCKETS,
+    "max.batch.pending_reqs": HISTOGRAM_COUNT_BUCKETS,
+    "max.requests_awaiting_admission": HISTOGRAM_COUNT_BUCKETS,
+    "max.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
+    "max.di.ce_preempted_tg_pending_count": HISTOGRAM_COUNT_BUCKETS,
+    "max.cache.connector_lookup_shrink_depth": HISTOGRAM_COUNT_BUCKETS,
     # Batch size
-    "maxserve.batch_size": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.batch.size": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Real tool inventories sit in the low tens; 512 clears all of them.
-    "maxserve.tool_call.tools_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.tool_call.tools_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # MiniMax-M3's video processor samples up to 512 frames per clip
     # (see max_private/minimax_m3/vision_processor.py); this bucket set's
     # upper bound (512) matches exactly.
-    "maxserve.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Media items of one kind on a single request; the same ladder as batch
     # size, since both count per-request work items.
-    "maxserve.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Exact through 20 passes, where a cordon that costs a pass or two lives.
+    "max.cache.connector_cordon_passes": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.cache.connector_lookup_reasks_per_request": HISTOGRAM_RETRY_BUCKETS,
+    "max.cache.connector_lookup_hand_backs_per_request": (
+        HISTOGRAM_RETRY_BUCKETS
+    ),
     # Throughput (tokens/s)
-    "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
-    "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    "max.batch.prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    "max.batch.generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     # Encoded media payload bytes
-    "maxserve.media.item_size": HISTOGRAM_BYTES_BUCKETS,
+    "max.media.item_size": HISTOGRAM_BYTES_BUCKETS,
     # Image pixel counts
-    "maxserve.media.image_size": HISTOGRAM_PIXELS_BUCKETS,
+    "max.media.image_size": HISTOGRAM_PIXELS_BUCKETS,
     # Transfer throughput (GiB/s)
-    "maxserve.dkv.nixl_read_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
-    "maxserve.dkv.nixl_write_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
+    "max.dkv.nixl_read_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
+    "max.dkv.nixl_write_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
     # Acceptance length (tokens)
-    "maxserve.spec_decode.avg_acceptance_length": HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS,
+    "max.spec_decode.avg_acceptance_length": HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS,
 }
 
 
 def get_log_level(settings: Settings) -> int | str | None:
+    """Returns the log level exported over OTLP."""
     otlp_level: int | str | None = (
         logging.getLevelName(settings.logs_otlp_level)
         if settings.logs_otlp_level
@@ -388,32 +341,11 @@ class PrefixFormatter(logging.Formatter):
         self.base_formatter = base_formatter
 
     def format(self, record: logging.LogRecord) -> str:
+        """Formats the record with the prefix in front of it."""
         # Format the message using the base formatter
         formatted_message = self.base_formatter.format(record)
         # Add the prefix to the message
         return f"{self.prefix} {formatted_message}"
-
-
-def _correlation_fields() -> dict[str, str | int]:
-    """Returns the ambient request and batch correlation IDs for a log line.
-
-    ``dd.trace_id`` is the key Datadog's correlator reads, as 32 hex digits.
-    No span ID: for a probe, ``request_trace_ctx`` holds the caller's context,
-    so one would attach MAX's logs to the caller's span.
-    """
-    fields: dict[str, str | int] = {}
-    request_id = _request_id_ctx.get()
-    if request_id is not None:
-        fields["request_id"] = request_id
-    batch_id = _batch_id_ctx.get()
-    if batch_id is not None:
-        fields["batch_id"] = batch_id
-    context = request_trace_ctx.get()
-    if context is not None:
-        span_context = trace.get_current_span(context).get_span_context()
-        if span_context.is_valid:
-            fields["dd.trace_id"] = trace.format_trace_id(span_context.trace_id)
-    return fields
 
 
 class _CorrelatedJsonFormatter(jsonlogger.JsonFormatter):
@@ -432,7 +364,7 @@ class _CorrelatedJsonFormatter(jsonlogger.JsonFormatter):
         message_dict: dict[str, object],
     ) -> None:
         super().add_fields(log_record, record, message_dict)
-        log_record.update(_correlation_fields())
+        log_record.update(_log_context.correlation_fields())
 
 
 class _RequestIdJsonFormatter(jsonlogger.JsonFormatter):
@@ -450,18 +382,31 @@ class _RequestIdJsonFormatter(jsonlogger.JsonFormatter):
             log_record["request_id"] = request_id
 
 
+def _log_exporter() -> OTLPLogExporter:
+    return OTLPLogExporter(
+        endpoint=otelBaseUrl + "/v1/logs", headers=_MODULAR_OTLP_HEADERS
+    )
+
+
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
 # Note that the color is not propagated to subprocesses. eg: ModelWorker
 def configure_logging(
-    settings: Settings, color: str | None = None, silent: bool = True
+    settings: Settings,
+    color: str | None = None,
+    silent: bool = True,
+    *,
+    sets_request_ids: bool = True,
 ) -> None:
+    """Configures logging for the API and worker processes."""
     # Structured logs carry request_id; only traced requests capture the
     # trace context, so without tracing there is no dd.trace_id field.
-    correlate = _tracing_enabled()
-    json_formatter = (
+    correlate = _log_context.tracing_enabled()
+    json_formatter: type[jsonlogger.JsonFormatter] = (
         _CorrelatedJsonFormatter if correlate else _RequestIdJsonFormatter
     )
+    if not (correlate or sets_request_ids):
+        json_formatter = jsonlogger.JsonFormatter
     trace_id_field = " %(dd.trace_id)s" if correlate else ""
     otlp_level = get_log_level(settings)
     egress_enabled = not _telemetry_disabled(settings)
@@ -514,7 +459,7 @@ def configure_logging(
         console_formatter: logging.Formatter
         if settings.structured_logging:
             console_formatter = json_formatter(
-                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{trace_id_field}{color_terminator}",
+                f"{color_code}%(levelname)s: %(message)s %(request_id)s{trace_id_field}{color_terminator}",
                 timestamp=True,
             )
         else:
@@ -546,7 +491,7 @@ def configure_logging(
         file_formatter: logging.Formatter
         if settings.structured_logging:
             file_formatter = json_formatter(
-                f"%(levelname)s %(message)s %(request_id)s %(batch_id)s{trace_id_field}",
+                f"%(levelname)s %(message)s %(request_id)s{trace_id_field}",
                 timestamp=True,
             )
         else:
@@ -570,7 +515,7 @@ def configure_logging(
         # Create an OTEL handler
         logger_provider = LoggerProvider(logs_resource)
         set_logger_provider(logger_provider)
-        exporter = OTLPLogExporter(endpoint=otelBaseUrl + "/v1/logs")
+        exporter = _log_exporter()
         logger_provider.add_log_record_processor(
             BatchLogRecordProcessor(exporter)
         )
@@ -699,10 +644,13 @@ def _metric_exporter() -> OTLPMetricExporter:
     """Builds the metric exporter, falling back to Modular's collector."""
     if _operator_set_endpoint("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"):
         return OTLPMetricExporter()
-    return OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+    return OTLPMetricExporter(
+        endpoint=otelBaseUrl + "/v1/metrics", headers=_MODULAR_OTLP_HEADERS
+    )
 
 
 def configure_metrics(settings: Settings) -> None:
+    """Configures the metric exporters from the settings."""
     egress_enabled = not _telemetry_disabled(settings)
     configure_histogram_shadow_emission(bool(settings.otlp_metrics_endpoint))
 
@@ -739,282 +687,6 @@ def configure_metrics(settings: Settings) -> None:
         logger.info("Metrics initialized.")
 
 
-_HTTP_PROTOBUF = "http/protobuf"
-_GRPC = "grpc"
-
-
-def _traces_protocol() -> str:
-    """Returns the OTLP protocol to export spans over.
-
-    Reads OTel's own ``OTEL_EXPORTER_OTLP_PROTOCOL`` convention, so an
-    operator configures MAX Serve the way they configure anything else
-    speaking OTLP, and the traces-specific variable wins over the generic
-    one. Unset leaves MAX Serve on ``http/protobuf``, which is the only
-    protocol it has ever spoken. ``http/json`` is in the specification but
-    has no exporter in the Python SDK, so it is rejected with everything
-    else unrecognised.
-    """
-    configured = os.environ.get(
-        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
-    ) or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL")
-    protocol = (configured or _HTTP_PROTOBUF).strip().lower()
-    if protocol in (_GRPC, _HTTP_PROTOBUF):
-        return protocol
-    logging.getLogger(__name__).warning(
-        "Unsupported OTLP traces protocol %r; exporting over %s.",
-        protocol,
-        _HTTP_PROTOBUF,
-    )
-    return _HTTP_PROTOBUF
-
-
-def _tls_by_omission() -> str | None:
-    """Returns the traces endpoint that gRPC will dial over TLS unasked.
-
-    The SDK infers a plaintext channel only from an explicit ``http://``
-    scheme, and ``urlparse`` reads a bare ``agent:4317`` as a URL whose
-    scheme is the hostname — so the obvious in-cluster spelling is dialled
-    over TLS and fails against a plaintext collector. An operator who set
-    the insecure variable chose their transport, so leave them alone.
-    """
-    if os.environ.get("OTEL_EXPORTER_OTLP_TRACES_INSECURE") or os.environ.get(
-        "OTEL_EXPORTER_OTLP_INSECURE"
-    ):
-        return None
-    endpoint = os.environ.get(
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
-    ) or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if not endpoint or urlparse(endpoint).scheme in ("http", "https"):
-        return None
-    return endpoint
-
-
-def _grpc_span_exporter() -> SpanExporter:
-    """Builds the gRPC span exporter, tolerating an HTTP-shaped environment.
-
-    The imports are function-local, against the repository's top-level
-    import rule, because they cost approximately 0.6s of cold start and 7MB
-    of resident memory. Every import of this module pays that, while only a
-    deployment that asks for gRPC needs it.
-    """
-    from grpc import Compression
-    from opentelemetry.exporter.otlp.proto.grpc.exporter import (
-        InvalidCompressionValueException,
-    )
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-        OTLPSpanExporter as OTLPGrpcSpanExporter,
-    )
-
-    logger = logging.getLogger(__name__)
-    endpoint = _tls_by_omission()
-    if endpoint is not None:
-        logger.warning(
-            "OTLP traces endpoint %r has no http:// or https:// scheme, so "
-            "spans will be exported over TLS. Write it as http://%s for a "
-            "plaintext collector, or set OTEL_EXPORTER_OTLP_TRACES_INSECURE.",
-            endpoint,
-            endpoint,
-        )
-
-    try:
-        return OTLPGrpcSpanExporter()
-    except InvalidCompressionValueException:
-        # gRPC accepts only gzip, where HTTP also takes none and deflate.
-        # The generic variable is shared with metrics and logs, which stay
-        # on HTTP, so a setting that is valid for them must not take the
-        # server down when traces move to gRPC.
-        logger.warning(
-            "OTLP traces compression %r is unavailable over gRPC, which "
-            "accepts only gzip; exporting spans uncompressed.",
-            os.environ.get("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
-            or os.environ.get("OTEL_EXPORTER_OTLP_COMPRESSION"),
-        )
-        return OTLPGrpcSpanExporter(compression=Compression.NoCompression)
-
-
-def _span_exporter() -> SpanExporter:
-    """Builds the span exporter, leaving the endpoint to the SDK."""
-    if _traces_protocol() == _GRPC:
-        return _grpc_span_exporter()
-    return OTLPSpanExporter()
-
-
-def configure_tracing(settings: Settings, max_links: int | None = None) -> None:
-    """Installs the process's tracer provider if it is to export spans.
-
-    Args:
-        settings: Server settings.
-        max_links: A per-span link limit to use in place of the SDK's.
-    """
-    global _trace_level_header_enabled
-    _trace_level_header_enabled = False
-    # Spans cost work on every request, so only the traces-specific variable
-    # turns them on: the generic endpoint may be set for metrics alone.
-    telemetry_on = not _telemetry_disabled(settings)
-    export_spans = telemetry_on and bool(
-        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-    )
-    if export_spans:
-        provider = TracerProvider(
-            resource=logs_resource,
-            span_limits=(
-                SpanLimits(max_links=max_links)
-                if max_links is not None
-                else None
-            ),
-        )
-        exporter = _span_exporter()
-        provider.add_span_processor(BatchSpanProcessor(exporter))
-        set_tracer_provider(provider)
-        _trace_level_header_enabled = settings.kernel_trace_headers
-
-    logger = logging.getLogger()
-    if export_spans:
-        logger.info("Tracing initialized.")
-    elif not telemetry_on:
-        logger.info("Tracing disabled.")
-    elif os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        # The generic endpoint turned traces on before, so say why they stop.
-        logger.warning(
-            "OTEL_EXPORTER_OTLP_ENDPOINT is set but spans need"
-            " OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; not exporting traces."
-        )
-    else:
-        logger.info(
-            "Tracing off; set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to export"
-            " spans."
-        )
-
-
-_kernel_trace_level = KernelTraceLevel.OFF
-
-
-def batch_spans_enabled() -> bool:
-    """Returns whether ``max.batch`` spans should be emitted; that is, the model
-    worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
-    return _kernel_trace_level >= KernelTraceLevel.BATCH
-
-
-def _sampled_link(parent: OtelContext) -> trace.Link | None:
-    """Returns a link to the span in ``parent``, or None when it has none or
-    it is not sampled, since an unsampled span is never exported.
-
-    Args:
-        parent: A request's context, as extracted from its trace carrier.
-    """
-    span_context = trace.get_current_span(parent).get_span_context()
-    if span_context.is_valid and span_context.trace_flags.sampled:
-        return trace.Link(span_context)
-    return None
-
-
-class _BatchLinks:
-    """The links from the scheduler's ``max.batch`` spans to their members'
-    sampled request spans, kept from admission until each request leaves.
-
-    Args:
-        link_every_member: Whether every member is linked, as at global level
-            ``batch`` or higher, rather than only traced members.
-        max_links: The most links one ``max.batch`` span keeps.
-    """
-
-    def __init__(self, link_every_member: bool, max_links: int) -> None:
-        self._link_every_member = link_every_member
-        self._max_links = max_links
-        self._links: dict[RequestID, trace.Link] = {}
-
-    def admit(
-        self, request_id: RequestID, parent: OtelContext | None, traced: bool
-    ) -> None:
-        """Keeps a link to a new request's span if its passes link to it.
-
-        Args:
-            request_id: The request.
-            parent: The request's context, from its trace carrier.
-            traced: Whether the request is traced.
-        """
-        if parent is None or not (traced or self._link_every_member):
-            return
-        if (link := _sampled_link(parent)) is not None:
-            self._links[request_id] = link
-
-    def for_pass(
-        self,
-        batch: Sequence[TextContext],
-        is_traced: Callable[[RequestID], bool] | None,
-    ) -> list[trace.Link]:
-        """Returns a pass's links, and over the cap keeps traced members'
-        first, so the requests that asked for the pass's capture can find it.
-
-        Args:
-            batch: The pass's requests.
-            is_traced: Says whether a request is traced, as the scheduler's
-                kernel capture does, or None without a capture.
-        """
-        members = [
-            ctx.request_id for ctx in batch if ctx.request_id in self._links
-        ]
-        if len(members) > self._max_links and is_traced is not None:
-            members.sort(key=lambda r: not is_traced(r))
-        return [self._links[r] for r in members[: self._max_links]]
-
-    def drop_untraced(self, request_ids: Iterable[RequestID]) -> None:
-        """Drops the links of running requests that are no longer traced,
-        which only traced requests have below global level ``batch``."""
-        if not self._link_every_member:
-            for request_id in request_ids:
-                self._links.pop(request_id, None)
-
-    def drop(self, request_id: RequestID) -> None:
-        """Drops the link of a request that has left."""
-        self._links.pop(request_id, None)
-
-
-def _exit_on_sigterm(signum: int, frame: FrameType | None) -> None:
-    """Raises ``SystemExit`` so that SIGTERM runs the process's exit hooks.
-
-    The profiler plugin writes the libkineto trace from an exit hook, which
-    SIGTERM's default action skips.
-    """
-    raise SystemExit(128 + signum)
-
-
-def configure_kernel_tracing(settings: Settings) -> None:
-    """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
-
-    Must be called in the model worker process before ``InferenceSession``
-    is constructed so that the libkineto auto-start picks up the enabled
-    flag. Also records the level read by :func:`batch_spans_enabled`, so it
-    must run before the scheduler is built. At ``kernel`` level it installs
-    a SIGTERM handler, so it must run on the main thread.
-
-    Args:
-        settings: Server settings carrying ``kernel_trace_level``.
-    """
-    global _kernel_trace_level
-    level = settings.kernel_trace_level
-    _kernel_trace_level = level
-    if level < KernelTraceLevel.OP:
-        return
-
-    if level == KernelTraceLevel.KERNEL:
-        # Full libkineto kernel timeline: enable detailed NVTX tracing and
-        # the libkineto auto-start that fires on InferenceSession construction.
-        set_gpu_profiling_state("detailed")
-        os.environ.setdefault("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "true")
-        signal.signal(signal.SIGTERM, _exit_on_sigterm)
-        # Once exit starts, SIGTERM must not interrupt the trace write.
-        # Finalization resets a Python handler to SIG_DFL but keeps SIG_IGN.
-        atexit.register(signal.signal, signal.SIGTERM, signal.SIG_IGN)
-    else:
-        # OP level: op-level NVTX user-annotation ranges only.
-        set_gpu_profiling_state("on")
-
-    logging.getLogger("max.serve").info(
-        "Kernel tracing initialized: level=%s", level.value
-    )
-
-
 def _string_attrs(pairs: Mapping[str, object]) -> list[dict[str, object]]:
     """Renders a mapping as OTLP string-valued key/value attributes."""
     return [
@@ -1026,6 +698,7 @@ def _string_attrs(pairs: Mapping[str, object]) -> list[dict[str, object]]:
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
 def send_telemetry_log(model_name: str) -> None:
+    """Sends a startup telemetry log for a model."""
     attrs = logs_resource.attributes
     body = {
         "resourceLogs": [

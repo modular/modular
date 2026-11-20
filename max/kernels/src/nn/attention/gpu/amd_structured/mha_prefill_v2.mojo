@@ -104,21 +104,18 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from max.gpu.sync import s_waitcnt
 from std.sys._assembly import inlined_assembly
-from std.sys.intrinsics import (
-    likely,
-    llvm_intrinsic,
-    readfirstlane,
-)
+from std.sys.intrinsics import likely, llvm_intrinsic
+from max.gpu.intrinsics import readfirstlane
 from std.utils import StaticTuple
 
 from layout import TensorEngine, TensorLayout, TileTensor
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
-from layout.tile_layout import (
+from layout.layout import (
     ComptimeInt,
     Idx,
-    Layout as TileLayout,
+    Layout,
     col_major,
     row_major,
 )
@@ -243,7 +240,6 @@ struct MhaPrefillV2[config: MhaConfigV2]:
 
     comptime NUM_THREADS = Self.NUM_WARPS * 64
     comptime BM = Self.NUM_WARPS * Self.Q_BLOCK_SIZE
-    comptime D_FRAG_PER_LANE = (Self.DEPTH * Self.Q_BLOCK_SIZE) // 64
 
     # MHA MMA operator (single source of truth for the MFMA shape, SMEM
     # sub-block geometry, register-tile layouts, and SMEM→register
@@ -417,13 +413,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     # slicing the input 4D / 3D tensors down to a per-(batch, head)
     # plane. Layout VALUES are constructed at the call site because the
     # `seq_len` / `num_keys` dim is runtime.
-    comptime _QPerHeadLayoutT = TileLayout[
+    comptime _QPerHeadLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._Q_ROW_STRIDE], ComptimeInt[1]].element_types,
-    ]
-    comptime _KVPerHeadLayoutT = TileLayout[
-        Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
-        Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
     # Per-tile K/V layout (valid_rows x DEPTH) used by the DMA loaders.
     # `dim[0]` is a RUNTIME row count (Int32): KV_BLOCK for a full tile,
@@ -434,7 +426,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     # into adjacent device memory (the FLUX i2i NullMask corruption). The
     # stride matches `_KV_ROW_STRIDE` (NUM_KV_HEADS * DEPTH); strides and
     # DEPTH stay comptime so only the per-tile row count costs a register.
-    comptime _KvPerTileLayoutT = TileLayout[
+    comptime _KvPerTileLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
@@ -1350,7 +1342,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         scale: Float32,
         num_keys: Int32,
         start_pos: Int32,
-        sink_weights_ptr: UnsafePointer[Scalar[q_dtype], ImmutAnyOrigin],
+        sink_weights_ptr: ImmPointer[Scalar[q_dtype], ImmutAnyOrigin],
     ):
         """Multi-block 8-warp MHA forward (inference-only).
 
@@ -1557,10 +1549,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # `NullMask` keeps the full iteration count and `status` always
         # returns `NO_MASK`, so per-tile mask work is comptime-elided.
         comptime if mask_t == CausalMask:
-            max_num_tiles_local = (
-                max_num_tiles_calc if max_num_tiles_calc
-                < num_tiles else num_tiles
-            )
+            max_num_tiles_local = min(max_num_tiles_calc, num_tiles)
         elif mask_t == NullMask:
             # #87603: the software pipeline processes K tiles in even
             # pairs (main loop advances `j` by 2; epilogue drains 4). An
@@ -2261,15 +2250,15 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         cross_attention: Bool = False,
         sink: Bool = False,
     ](
-        q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
+        q_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],
         k: k_t,
         v: v_t,
-        output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+        output_ptr: MutPointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
-        kv_input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
-        sink_weights_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
+        input_row_offsets_ptr: ImmPointer[UInt32, ImmutAnyOrigin],
+        kv_input_row_offsets_ptr: ImmPointer[UInt32, ImmutAnyOrigin],
+        sink_weights_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry: per-sequence setup + `run`.
 
@@ -2361,8 +2350,12 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         var ragged_layout = row_major(
             1, seq_len, Self.config.num_heads, Self.config.depth
         )
-        var q_tt = TileTensor(q_ptr + q_batch_offset, ragged_layout)
-        var o_tt = TileTensor(output_ptr + q_batch_offset, ragged_layout)
+        var q_tt = TileTensor(
+            q_ptr.unsafe_offset(q_batch_offset), ragged_layout
+        )
+        var o_tt = TileTensor(
+            output_ptr.unsafe_offset(q_batch_offset), ragged_layout
+        )
 
         Self.run[
             k_t,
@@ -2401,23 +2394,23 @@ def mha_prefill_v2_ragged[
     cross_attention: Bool = False,
     sink: Bool = False,
     compile_options: StaticString = (
-        DeviceContext.target.default_compile_options()
+        DeviceContext[].target.default_compile_options()
     ),
 ](
-    q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
-    output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
-    kv_input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+    input_row_offsets_ptr: ImmPointer[UInt32, ImmutAnyOrigin],
+    kv_input_row_offsets_ptr: ImmPointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,
-    sink_weights_ptr: UnsafePointer[
+    sink_weights_ptr: ImmPointer[
         Scalar[qkv_dtype], ImmutAnyOrigin
-    ] = UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin].unsafe_dangling(),
+    ] = ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin].unsafe_dangling(),
 ) raises:
     """Host launcher for ragged `MhaPrefillV2` prefill.
 
@@ -2521,7 +2514,7 @@ def mha_prefill_v2[
     config: MhaConfigV2,
     sink: Bool = False,
     compile_options: StaticString = (
-        DeviceContext.target.default_compile_options()
+        DeviceContext[].target.default_compile_options()
     ),
 ](
     q: TileTensor[mut=False, ...],
@@ -2533,9 +2526,9 @@ def mha_prefill_v2[
     num_keys: Int,
     start_pos: Int,
     ctx: DeviceContext,
-    sink_weights_ptr: UnsafePointer[
+    sink_weights_ptr: ImmPointer[Scalar[q.dtype], ImmutAnyOrigin] = ImmPointer[
         Scalar[q.dtype], ImmutAnyOrigin
-    ] = UnsafePointer[Scalar[q.dtype], ImmutAnyOrigin].unsafe_dangling(),
+    ].unsafe_dangling(),
 ) raises:
     """Host launcher for `MhaPrefillV2`.
 

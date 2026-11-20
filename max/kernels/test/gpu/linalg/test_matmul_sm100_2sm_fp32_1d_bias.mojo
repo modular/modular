@@ -17,6 +17,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -28,7 +29,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul_with_1d_bias[
@@ -39,9 +39,9 @@ def test_blackwell_matmul_with_1d_bias[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -53,9 +53,9 @@ def test_blackwell_matmul_with_1d_bias[
     num_clc_pipeline_stages: Int = 2,
     swapAB: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"[1D bias] in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
@@ -77,15 +77,15 @@ def test_blackwell_matmul_with_1d_bias[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
-    var bias_host_ptr = alloc[Scalar[c_type]](N)
+    var bias_host_ptr = unsafe_alloc[Scalar[c_type]](N)
     var bias_host = TileTensor(bias_host_ptr, bias_shape)
 
     # Device allocations
@@ -110,8 +110,10 @@ def test_blackwell_matmul_with_1d_bias[
     ctx.enqueue_copy(bias_device, bias_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -177,11 +179,11 @@ def test_blackwell_matmul_with_1d_bias[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    bias_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_host_ref_ptr.unsafe_free()
+    bias_host_ptr.unsafe_free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -211,8 +213,8 @@ def main() raises:
                     112,
                     128,
                 ]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
@@ -220,7 +222,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=4,
@@ -237,7 +239,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=0,
@@ -258,7 +260,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                        cluster_shape=(8, 2, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=2,
@@ -275,7 +277,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=1,
@@ -289,8 +291,8 @@ def main() raises:
             # AB_swapped + 1D bias (2SM)
             comptime for bm in [64, 128]:
                 comptime for bn in [16, 32, 64, 80, 112, 128]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
@@ -298,7 +300,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=4,
@@ -316,7 +318,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=0,
@@ -334,8 +336,8 @@ def main() raises:
             # Edge cases: small/odd M with swapAB (transpose bias path, 2SM)
             comptime for bm in [64, 128]:
                 comptime for bn in [16, 64, 128]:
-                    comptime block_tile_shape = Index(bm, bn, BK)
-                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+                    comptime block_tile_shape = (bm, bn, BK)
+                    comptime umma_shape = (2 * bm, 2 * bn, MMA_K)
 
                     # M=3: odd, smaller than warp size
                     test_blackwell_matmul_with_1d_bias[
@@ -344,7 +346,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=4,
@@ -363,7 +365,7 @@ def main() raises:
                         dtype,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cluster_shape=(4, 2, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=0,
@@ -377,8 +379,8 @@ def main() raises:
 
             # Non-swapAB with M=1 (single-row, non-transpose bias path, 2SM)
             comptime for bn in [16, 64, 128]:
-                comptime block_tile_shape = Index(128, bn, BK)
-                comptime umma_shape = Index(256, 2 * bn, MMA_K)
+                comptime block_tile_shape = (128, bn, BK)
+                comptime umma_shape = (256, 2 * bn, MMA_K)
 
                 test_blackwell_matmul_with_1d_bias[
                     dtype,
@@ -386,7 +388,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=(4, 4, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     block_swizzle_size=4,

@@ -20,6 +20,7 @@ from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
 from numpy.typing import NDArray
 
 # 4 -> 6 on height and 4 -> 2 on width both produce exact .5 coordinates, so
@@ -28,32 +29,33 @@ from numpy.typing import NDArray
 INPUT_SHAPE = [1, 2, 4, 4]
 OUTPUT_SHAPE = [1, 2, 6, 2]
 
-HALF_PIXEL, ALIGN_CORNERS, ASYMMETRIC, HALF_PIXEL_1D = range(4)
-HALF_DOWN, HALF_UP, FLOOR, CEIL = range(4)
-
 
 def _source_index(
-    out: int, in_dim: int, out_dim: int, coord_mode: int, round_mode: int
+    out: int,
+    in_dim: int,
+    out_dim: int,
+    coord_mode: CoordinateTransformMode,
+    round_mode: RoundMode,
 ) -> int:
     """Replays the kernel's float32 arithmetic for one output coordinate."""
     f32 = np.float32
     scale = f32(np.float64(out_dim) / np.float64(in_dim))
-    if coord_mode == HALF_PIXEL or (
-        coord_mode == HALF_PIXEL_1D and out_dim != 1
+    if coord_mode == CoordinateTransformMode.HALF_PIXEL or (
+        coord_mode == CoordinateTransformMode.HALF_PIXEL_1D and out_dim != 1
     ):
         coord = (f32(out) + f32(0.5)) / scale - f32(0.5)
-    elif coord_mode == ALIGN_CORNERS and out_dim != 1:
+    elif coord_mode == CoordinateTransformMode.ALIGN_CORNERS and out_dim != 1:
         coord = f32(out) * f32(np.float64(in_dim - 1) / np.float64(out_dim - 1))
-    elif coord_mode == ASYMMETRIC:
+    elif coord_mode == CoordinateTransformMode.ASYMMETRIC:
         coord = f32(out) / scale
     else:
         coord = f32(0)
 
-    if round_mode == HALF_DOWN:
+    if round_mode == RoundMode.HALF_DOWN:
         rounded = np.ceil(coord - f32(0.5))
-    elif round_mode == HALF_UP:
+    elif round_mode == RoundMode.HALF_UP:
         rounded = np.floor(coord + f32(0.5))
-    elif round_mode == FLOOR:
+    elif round_mode == RoundMode.FLOOR:
         rounded = np.floor(coord)
     else:
         rounded = np.ceil(coord)
@@ -63,8 +65,8 @@ def _source_index(
 def _expected(
     data: NDArray[np.float32],
     out_shape: list[int],
-    coord_mode: int,
-    round_mode: int,
+    coord_mode: CoordinateTransformMode,
+    round_mode: RoundMode,
 ) -> NDArray[np.float32]:
     in_shape = data.shape
     rows = [
@@ -83,8 +85,8 @@ def _check(
     device: DeviceRef,
     in_shape: list[int],
     out_shape: list[int],
-    coord_mode: int,
-    round_mode: int,
+    coord_mode: CoordinateTransformMode,
+    round_mode: RoundMode,
 ) -> None:
     if device.device_type == "gpu" and accelerator_count() == 0:
         pytest.skip("No GPU available")
@@ -114,13 +116,13 @@ def _check(
 
 
 @pytest.mark.parametrize("device", [DeviceRef.CPU(), DeviceRef.GPU()])
-@pytest.mark.parametrize("coord_mode", range(4))
-@pytest.mark.parametrize("round_mode", range(4))
+@pytest.mark.parametrize("coord_mode", list(CoordinateTransformMode))
+@pytest.mark.parametrize("round_mode", list(RoundMode))
 def test_resize_nearest(
     session: InferenceSession,
     device: DeviceRef,
-    coord_mode: int,
-    round_mode: int,
+    coord_mode: CoordinateTransformMode,
+    round_mode: RoundMode,
 ) -> None:
     _check(session, device, INPUT_SHAPE, OUTPUT_SHAPE, coord_mode, round_mode)
 
@@ -128,14 +130,20 @@ def test_resize_nearest(
 @pytest.mark.parametrize("device", [DeviceRef.CPU(), DeviceRef.GPU()])
 @pytest.mark.parametrize(
     "coord_mode, round_mode",
-    [(HALF_PIXEL, HALF_DOWN), (HALF_PIXEL, FLOOR)]
-    + [(ALIGN_CORNERS, HALF_UP), (ASYMMETRIC, CEIL)],
+    [
+        (CoordinateTransformMode.HALF_PIXEL, RoundMode.HALF_DOWN),
+        (CoordinateTransformMode.HALF_PIXEL, RoundMode.FLOOR),
+    ]
+    + [
+        (CoordinateTransformMode.ALIGN_CORNERS, RoundMode.HALF_UP),
+        (CoordinateTransformMode.ASYMMETRIC, RoundMode.CEIL),
+    ],
 )
 def test_resize_nearest_full_vectors(
     session: InferenceSession,
     device: DeviceRef,
-    coord_mode: int,
-    round_mode: int,
+    coord_mode: CoordinateTransformMode,
+    round_mode: RoundMode,
 ) -> None:
     """The output width is a multiple of the kernel's vector width."""
     _check(session, device, [1, 2, 3, 5], [1, 2, 7, 16], coord_mode, round_mode)

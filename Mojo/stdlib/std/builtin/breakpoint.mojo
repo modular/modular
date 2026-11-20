@@ -17,6 +17,18 @@ from std.sys import breakpointhook
 
 @inline(.nodebug)
 def breakpoint():
-    """Cause an execution trap with the intention of requesting the attention
-    of a debugger."""
+    """Triggers a debugger breakpoint at the call site.
+
+    Execution stops here and control passes to the attached debugger, so the
+    program state can be inspected at this point. If no debugger is
+    attached, the process terminates with a trap signal.
+
+    For example:
+
+    ```mojo
+    def process(value: Int):
+        if value < 0:
+            breakpoint()  # stop and inspect why the value is negative
+    ```
+    """
     breakpointhook()

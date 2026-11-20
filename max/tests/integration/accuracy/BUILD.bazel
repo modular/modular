@@ -65,8 +65,8 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:debugging_utils",
         requirement("transformers"),
@@ -150,6 +150,9 @@ modular_py_binary(
     ] + ALL_ARCHITECTURES,
 )
 
+# FLUX.2-dev does not fit this target's budget. Run its image entries through
+# the black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2 and
+# black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2 targets below.
 modular_py_test(
     #a generic test that can be used with parameters
     name = "test_verify_pipelines",
@@ -184,49 +187,50 @@ modular_py_test(
     ],
 )
 
-modular_py_test(
-    name = "allenai/OLMo-1B-hf-float32",
-    size = "large",
-    srcs = ["test_verify_pipelines.py"],
-    args = [
-        "--pipeline=allenai/OLMo-1B-hf-float32",
-        "--devices=cpu",
-        "--override-pipeline-golden-location",
-        "allenai/OLMo-1B-hf-float32:$(rootpath @torch_olmo-1b-hf_golden.tar.gz//file:downloaded)",
-    ],
-    data = [
-        "//max/tests/integration/architectures/llama3/testdata",
-        "@nvshmem_prebuilt//:host",
-        "@torch_olmo-1b-hf_golden.tar.gz//file:downloaded",
-    ],
-    env = {
-        "HF_HUB_OFFLINE": "1",  #needed to run locally
-        # PIPELINES_TESTDATA is required by the Llama3 scripts.
-        "PIPELINES_TESTDATA": (
-            "max/tests/integration/architectures/llama3/testdata"
-        ),
-        # required by models that use Expert Parallelism.
-        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
-    },
-    main = "test_verify_pipelines.py",
-    # SDLC-3497: MAX OLMo is not yet transformers v5 compatible; the v4
-    # wheel hack that masked this on main was removed in this branch.
-    # "manual" excludes it from automated runs; re-enable once OLMo MAX
-    # is fixed for transformers >=5 (tracked separately).
-    tags = [
-        "manual",
-        "skip-external-ci",
-    ],  # skip-external-ci: QUA-61
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//:asan": ["@platforms//:incompatible"],  # FIXME MODELS-1202: Disabled due to asan timeout
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":verify_pipelines",
-        requirement("click"),
-    ],
-)
+# FLUX.2-dev's weights take about 110 GB of device memory, more than
+# test_verify_pipelines requests, so its image entries get their own targets.
+# Every other model keeps the smaller budget and shares a GPU.
+#
+# The repo caps an enormous test at 2700s (.bazelrc), but text to image takes
+# about 2700s on B200, and verify_pipelines allows each attempt the entry's
+# 3600s plus one retry after a flake. Run these targets with
+# --test_timeout=-1,-1,-1,7500 so they end in a verdict, not a TIMEOUT.
+[
+    modular_py_test(
+        name = pipeline,
+        size = "enormous",
+        srcs = ["test_verify_pipelines.py"],
+        args = [
+            "--pipeline",
+            pipeline,
+            "--devices",
+            "gpu",
+        ],
+        env = {
+            # FLUX.2-dev is gated, so it loads from the runner's cache.
+            "HF_HUB_OFFLINE": "1",
+        },
+        exec_properties = {
+            "test.resources:gpu-memory": "160",
+        },
+        gpu_constraints = ["//:has_gpu"],
+        main = "test_verify_pipelines.py",
+        tags = [
+            "gpu",
+            "manual",
+            "no-sandbox",
+            "requires-network",
+        ],
+        deps = [
+            ":verify_pipelines",
+            requirement("click"),
+        ],
+    )
+    for pipeline in [
+        "black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2",
+        "black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2",
+    ]
+]
 
 modular_py_binary(
     name = "check_logit_flakes",

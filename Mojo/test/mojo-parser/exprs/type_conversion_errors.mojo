@@ -57,7 +57,7 @@ struct WrapsMadeFromPack[*Ts: AnyType](Movable where False):
 
     @implicit
     def __init__(out self, *args: * Self.Ts):
-        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, Ts]' value to 'MadeFromPack[Ts]'}}
+        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, *Ts]' value to 'MadeFromPack[*Ts]'}}
         self.data = args
 
 
@@ -182,6 +182,58 @@ def stripping_raises():
     var fp4: def(
         *args: *TypeList.splat[1, Int]()
     ) raises ImplicitFromInt thin = fn_raises_int
+
+
+comptime IntPair = TypeList.splat[2, Int]()
+
+
+def test_pack_then_keyword_only():
+    def pack_tag(*args: *IntPair, tag: Int):
+        pass
+
+    def pack_only(*args: *IntPair):
+        pass
+
+    def kw_second(a: Int, *, b: Int):
+        pass
+
+    def wrong_name(a: Int, b: Int, *, label: Int):
+        pass
+
+    # expected-error @+1 {{cannot implicitly convert 'def pack_tag(*args: *IntPair, *, tag: Int) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    var fp1: def(*args: *IntPair) thin = pack_tag
+
+    # expected-error @+1 {{cannot implicitly convert 'def pack_only(*args: *IntPair) thin -> None' value to 'def(*args: *IntPair, *, tag: Int) thin -> None'}}
+    var fp2: def(*args: *IntPair, tag: Int) thin = pack_only
+
+    # The pack passes its elements by position.
+    # expected-error @+1 {{cannot implicitly convert 'def kw_second(a: Int, *, b: Int) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    var fp3: def(*args: *IntPair) thin = kw_second
+
+    # expected-error @+1 {{cannot implicitly convert 'def wrong_name(a: Int, b: Int, *, label: Int) thin -> None' value to 'def(*args: *IntPair, *, tag: Int) thin -> None'}}
+    var fp4: def(*args: *IntPair, tag: Int) thin = wrong_name
+
+
+def test_pack_element_convention():
+    def two_mut(mut a: Int, mut b: Int):
+        pass
+
+    def mut_pack(mut *args: *IntPair):
+        pass
+
+    # A `mut` argument cannot get an element of a pack that is not `mut`.
+    # expected-error @+1 {{cannot implicitly convert 'def two_mut(mut a: Int, mut b: Int) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    var fp1: def(*args: *IntPair) thin = two_mut
+
+    # TODO(MOCO-5418): The conversion thunk cannot pass the elements of a `mut`
+    # pack to `mut` arguments yet, because they have the same origin.
+    # expected-error @+1 {{cannot implicitly convert 'def two_mut(mut a: Int, mut b: Int) thin -> None' value to 'def(mut *args: *IntPair) thin -> None'}}
+    var fp3: def(mut *args: *IntPair) thin = two_mut
+
+    # The element conventions of the two packs must be the same.
+    # expected-error @+2 {{cannot implicitly convert 'def mut_pack(mut *args: *IntPair) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    # expected-note @+1 {{of the first type is 'LITMutOrigin' but the second type is 'LITImmOrigin'}}
+    var fp2: def(*args: *IntPair) thin = mut_pack
 
 struct SimplePair(Copyable):
     var left: Int

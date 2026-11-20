@@ -62,7 +62,6 @@ class Mistral3Tokenizer(TextTokenizer):
         pipeline_config: PipelineConfig | None = None,
     ) -> None:
         """Load chat template from chat_template.json file and set it on the tokenizer."""
-
         if revision is None:
             # Prefer revision from pipeline config when not explicitly provided.
             model_cfg = getattr(pipeline_config, "model", None)

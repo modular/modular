@@ -26,8 +26,9 @@ modular_py_library(
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        requirement("requests"),
         requirement("lm-eval"),
+        requirement("pillow"),
+        requirement("requests"),
     ],
 )
 
@@ -184,4 +185,10 @@ modular_py_test(
         ":smoke_test_github_matrix",
         requirement("click"),
     ],
+)
+
+modular_py_test(
+    name = "test_eval_metrics",
+    srcs = ["test_eval_metrics.py"],
+    deps = [":eval_runner"],
 )

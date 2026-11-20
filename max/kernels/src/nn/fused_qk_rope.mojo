@@ -14,7 +14,7 @@
 
 from std.collections import OptionalReg
 from std.math import gcd
-from std.sys.info import CompilationTarget, align_of, simd_width_of
+from std.sys.info import align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
@@ -178,7 +178,7 @@ def rope_q_proj[
         output.store[alignment=alignment](idx_dyn, res_inter)
     else:
         comptime if has_nope_prefix:
-            if Int(idx[rank - 1].value()) >= rope_dim:
+            if Int(idx[rank - 1]) >= rope_dim:
                 var val_pass = q_proj.load[width=width, alignment=alignment](
                     idx_dyn
                 )
@@ -193,9 +193,7 @@ def rope_q_proj[
         else:
             split_size = head_size
 
-        var indices = get_safetensors_idx(
-            Int(idx[rank - 1].value()), split_size
-        )
+        var indices = get_safetensors_idx(Int(idx[rank - 1]), split_size)
         var pos_re = idx_dyn
         var pos_im = idx_dyn
         pos_re.replace_dynamic[rank - 1](Int64(indices[0]))
@@ -309,7 +307,6 @@ def fused_qk_rope_ragged[
     cache_t: KVCacheT,
     *,
     interleaved: Bool,
-    target: StaticString,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
         Trait=CoordLike
     ](),
@@ -351,7 +348,6 @@ def fused_qk_rope_ragged[
         cache_t: The KV cache type used to store and load key cache entries.
         interleaved: Whether the RoPE weights use interleaved real and
             imaginary layout.
-        target: The compilation target string for the kernel.
         mrope_types: The coordinate element types for multimodal RoPE
             sections (defaults to a single `CoordLike` type).
         mrope_section: Optional section boundaries splitting the head
@@ -374,6 +370,7 @@ def fused_qk_rope_ragged[
         output: Output tensor for Q with RoPE applied, same shape as `q_proj`.
         context: Device context for GPU execution.
     """
+
     comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
     comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
     comptime assert output.flat_rank == 3, "output must be rank 3"
@@ -385,7 +382,9 @@ def fused_qk_rope_ragged[
     comptime num_q_heads = Int(q_proj.static_shape[1])
     comptime num_k_heads = kv_params.num_heads
     comptime q_head_size = Int(q_proj.static_shape[2])
-    comptime k_head_size = kv_params.head_size
+    # The key's width, not the row pitch: a split cache's row also holds
+    # the value.
+    comptime k_head_size = kv_params.k_head_size()
     var batch_size = input_row_offsets.dim[0]() - 1
 
     # Add rope dimension parameters
@@ -399,11 +398,9 @@ def fused_qk_rope_ragged[
     comptime assert freqs_cis.LayoutType._shape_types[
         1
     ].is_static_value, "Need static shape for freqs_cis"
-    comptime assert rope_dim <= q_head_size and rope_dim <= k_head_size, (
-        "rope_dim must be smaller or equal to head size, but got rope_dim = "
-        + String(rope_dim)
-        + " and head_size = "
-        + String(k_head_size)
+    comptime assert rope_dim <= q_head_size and rope_dim <= k_head_size, String(
+        t"rope_dim must be smaller or equal to head size, but got rope_dim ="
+        t" {rope_dim} and head_size = {k_head_size}"
     )
     comptime has_nope_prefix = has_nope and not interleaved
     comptime if has_nope and not interleaved:
@@ -425,7 +422,7 @@ def fused_qk_rope_ragged[
         comptime if width == 1:
             return
         else:
-            var global_token_idx = Int(idx[0].value())
+            var global_token_idx = Int(idx[0])
 
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -433,8 +430,8 @@ def fused_qk_rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_idx = Int(idx[1].value())
-            var head_dim_idx = Int(idx[2].value())
+            var head_idx = Int(idx[1])
+            var head_dim_idx = Int(idx[2])
 
             # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
@@ -448,7 +445,7 @@ def fused_qk_rope_ragged[
                     var section_idx = 0
 
                     comptime for i in range(len(sections)):
-                        comptime val = Int(sections[i].value())
+                        comptime val = Int(sections[i])
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -461,7 +458,7 @@ def fused_qk_rope_ragged[
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
-            comptime _alignment = 1 if is_cpu[target]() else align_of[
+            comptime _alignment = 1 if context.target.is_cpu() else align_of[
                 SIMD[freq_dtype, width]
             ]()
 
@@ -529,23 +526,18 @@ def fused_qk_rope_ragged[
         num_q_heads + num_k_heads,  # concat q and k along head dim
         q_head_size,
     )
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=context.target]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     comptime if case .Some(sections) = mrope_section:
         comptime for i in range(len(sections)):
             comptime assert (
-                Int(sections[i].value()) % kernel_simd_width == 0
+                Int(sections[i]) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     elementwise[
         simd_width=kernel_simd_width,
-        target=target,
         _trace_description="fused_qk_rope_ragged",
     ](rope_fn, launch_shape, context)

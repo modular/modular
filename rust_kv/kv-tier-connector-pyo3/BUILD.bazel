@@ -3,8 +3,8 @@ load("//rust_kv:test_compat.bzl", "GPU_PLATFORM")
 
 package(default_visibility = ["//rust_kv:consumers"])
 
-# NOTE: pyo3 itself is injected by `modular_pyo3_extension` through the
-# `rules_rust_pyo3` toolchain, so it must not be listed in `deps`.
+# NOTE: pyo3 itself is injected by `modular_pyo3_extension` through a
+# toolchain, so it must not be listed in `deps`.
 modular_pyo3_extension(
     name = "_kv_tier_connector_pyo3_so",
     srcs = glob(["src/**/*.rs"]),

@@ -22,6 +22,14 @@ Adapter management
    LoRAConfig
    LoRAManagerV3
    LoRAModel
+   LoRATargetModule
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   get_lora_manager
 
 LoRA types
 ----------
@@ -45,3 +53,4 @@ LoRA types
    ADAPTER_CONFIG_FILE
    LORA_REQUEST_ENDPOINT
    LORA_RESPONSE_ENDPOINT
+   NUM_ROUTING_INPUTS

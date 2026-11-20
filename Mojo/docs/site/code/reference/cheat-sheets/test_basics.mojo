@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/basics.mdx
 """Tests for the Mojo "Basics" cheat-sheet card.
 
 The module docstring itself exercises the Comments & docstrings panel.
@@ -45,6 +46,16 @@ def sign(x: Int) -> String:
         return "zero"
     else:
         return "negative"
+
+
+def describe(x: Int) -> String:
+    match x:
+        case 2:
+            return "is exactly two"
+        case _ if x.is_power_of_two():
+            return "power of two"
+        case _:
+            return "not power of two"
 
 
 @fieldwise_init
@@ -96,7 +107,7 @@ def test_conversions() raises:
 
 def test_operators() raises:
     assert_equal(2**10, 1024)
-    assert_equal(pow(2, 10), 1024)
+    # assert_equal(pow(2, 10), 1024) # Removed from sheet. SIMD only. 3 Nov 26
     assert_equal(7 // 2, 3)
     assert_equal(7 % 2, 1)
     var a = 1
@@ -127,6 +138,10 @@ def test_control_flow() raises:
     assert_equal(sign(5), "positive")
     assert_equal(sign(0), "zero")
     assert_equal(sign(-5), "negative")
+    # 2 also satisfies the power-of-two guard, so this pins first-match order.
+    assert_equal(describe(2), "is exactly two")
+    assert_equal(describe(8), "power of two")
+    assert_equal(describe(6), "not power of two")
     var x = 3
     var kind = "even" if x % 2 == 0 else "odd"
     assert_equal(kind, "odd")

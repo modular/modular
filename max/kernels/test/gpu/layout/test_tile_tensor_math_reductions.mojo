@@ -11,20 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from layout import TileTensor, coord, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.math import max, sum
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
-def mixed_dtype_reductions(
-    src: TileTensor[.float16, type_of(row_major[12]()), ImmutAnyOrigin],
-    dst: TileTensor[.float32, type_of(row_major[16]()), MutAnyOrigin],
+def mixed_dtype_reductions[
+    src_origin: ImmOrigin, dst_origin: MutOrigin
+](
+    src: TileTensor[.float16, type_of(row_major[12]()), src_origin],
+    dst: TileTensor[.float32, type_of(row_major[16]()), dst_origin],
 ):
-    var inp = TileTensor(src.unsafe_ptr(), Layout(coord[2, 3], coord[1, 4]))
-    var summed = TileTensor(dst.unsafe_ptr(), Layout(coord[3], coord[2]))
-    var maxima = TileTensor(dst.unsafe_ptr() + 6, Layout(coord[3], coord[2]))
+    var inp = src.reshape(Layout(coord[2, 3], coord[1, 4]))
+    var summed = dst.reshape(Layout(coord[3], coord[2]))
+    var maxima = dst.slice[6:12]().reshape(Layout(coord[3], coord[2]))
     sum[0](inp, summed)
     max[0](inp, maxima)
     var rows_sum = sum[1](inp)
@@ -34,21 +36,20 @@ def mixed_dtype_reductions(
         dst[14 + i] = rows_max[i].cast[.float32]()
 
 
-def vector_reductions(
-    src: TileTensor[.float32, type_of(row_major[25]()), ImmutAnyOrigin],
-    dst: TileTensor[.float32, type_of(row_major[76]()), MutAnyOrigin],
+def vector_reductions[
+    src_origin: ImmOrigin, dst_origin: MutOrigin
+](
+    src: TileTensor[.float32, type_of(row_major[25]()), src_origin],
+    dst: TileTensor[.float32, type_of(row_major[76]()), dst_origin],
 ):
     # Scalar-aligned SIMD cells need not have vector-aligned base addresses.
-    var inp = TileTensor(src.unsafe_ptr() + 1, row_major[2, 12]()).vectorize[
-        1, 4
-    ]()
+    var inp = src.slice[1:25]().reshape(row_major[2, 12]()).vectorize[1, 4]()
     var rows_sum = (
-        TileTensor(dst.unsafe_ptr(), row_major[2, 9]())
-        .vectorize[1, 4]()
-        .slice[:, 0]()
+        dst.reshape(row_major[2, 9]()).vectorize[1, 4]().slice[:, 0]()
     )
     var rows_max = (
-        TileTensor(dst.unsafe_ptr() + 18, row_major[2, 9]())
+        dst.slice[18:36]()
+        .reshape(row_major[2, 9]())
         .vectorize[1, 4]()
         .slice[:, 0]()
     )
@@ -79,9 +80,13 @@ def main() raises:
                 mixed_src.host_tensor()[i + 4 * j] = Float16(-10 + 3 * i + j)
         mixed_src.to_device()
         mixed_dst.to_device()
-        ctx.enqueue_function[mixed_dtype_reductions](
-            mixed_src.device_tensor().as_imm().as_unsafe_any_origin(),
-            mixed_dst.device_tensor().as_unsafe_any_origin(),
+        ctx.enqueue_function[
+            mixed_dtype_reductions[
+                src_origin=origin_of(mixed_src), dst_origin=origin_of(mixed_dst)
+            ]
+        ](
+            mixed_src.device_tensor().as_imm(),
+            mixed_dst.device_tensor(),
             grid_dim=1,
             block_dim=1,
         )
@@ -103,9 +108,13 @@ def main() raises:
         _ = vec_dst.host_tensor().fill(-77)
         vec_src.to_device()
         vec_dst.to_device()
-        ctx.enqueue_function[vector_reductions](
-            vec_src.device_tensor().as_imm().as_unsafe_any_origin(),
-            vec_dst.device_tensor().as_unsafe_any_origin(),
+        ctx.enqueue_function[
+            vector_reductions[
+                src_origin=origin_of(vec_src), dst_origin=origin_of(vec_dst)
+            ]
+        ](
+            vec_src.device_tensor().as_imm(),
+            vec_dst.device_tensor(),
             grid_dim=1,
             block_dim=1,
         )

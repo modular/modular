@@ -84,12 +84,6 @@ def transfer_routine_sender(
         f"[Sender] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
     )
 
-    # Check that the transfer speed is at least 1 GB/s.
-    # Note: this alone does not guarantee CUDA IPC is used — d2h→h2d can also
-    # exceed 1 GB/s. The cuMemcpyDtoDAsync_v2 log assertion in the test
-    # is the authoritative check for transport selection.
-    assert bw > 1.0, f"Transfer speed is too low: {bw:.2f} GB/s"
-
     # Verify sender buffer is unchanged
     result = blocks.to_numpy()
     for i in range(total_num_pages):
@@ -154,14 +148,7 @@ def transfer_routine_receiver(
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="Checks the CUDA IPC transport"
 )
-def test_send_recv_basic(
-    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # TODO(GEX-4348): VMM-allocated KV buffers are not CUDA-IPC exportable, so
-    # UCX falls back to TCP under the default memory manager. Drop this once
-    # they are.
-    monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM", "0")
-
+def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
     sender_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
@@ -171,8 +158,11 @@ def test_send_recv_basic(
     receiver_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
 
     # Transfer parameters
+    # The test checks the data and the transport, not the speed, so a small
+    # payload is sufficient. A large host allocation can stall for seconds on
+    # a busy host.
     GB = 1024 * 1024 * 1024
-    total_bytes = int(1 * GB)
+    total_bytes = 64 * 1024 * 1024
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]
@@ -223,6 +213,6 @@ def test_send_recv_basic(
                 print(line)
         print("-" * 80)
 
-    # Verify CUDA IPC transport is selected. The bw > 1 GB/s check alone is
-    # insufficient since d2h->h2d paths can also exceed 1 GB/s.
+    # Check the transport, not the speed. One transfer on a shared host can be
+    # slow, also over CUDA IPC.
     assert "UCX  DEBUG cuMemcpyDtoDAsync_v2" in out

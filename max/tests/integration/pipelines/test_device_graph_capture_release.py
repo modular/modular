@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -54,7 +55,7 @@ def _gk(batch_size: int) -> MultiAttnKey:
     )
 
 
-def _mock_kv_params() -> SimpleNamespace:
+def _mock_kv_params(num_draft_tokens_per_step: int = 0) -> SimpleNamespace:
     """A minimal KVCacheParams stand-in exposing the dispatch resolver API."""
     return SimpleNamespace(
         devices=[DeviceRef.CPU()],
@@ -63,7 +64,7 @@ def _mock_kv_params() -> SimpleNamespace:
         num_q_heads_per_device=1,
         is_fp8_kv_dtype=False,
         data_parallel_degree=1,
-        num_draft_tokens_per_step=0,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
         graph_capture_probe_cache_lengths=lambda max_cache_length, q: [1],
         resolve_attn_key=lambda batch_size, q, cache_length: MHAAttnKey(
             batch_size=batch_size, max_prompt_length=q, num_partitions=1
@@ -208,3 +209,47 @@ def test_release_graph_drops_entry_and_forwards_to_model(
     runner.release_graph(target)
     assert set(runner.graph_entries) == {_gk(2)}
     assert len(model.released_graph_keys) == 2
+
+
+class OutputTrackingModel(OutputAllocatingModel):
+    """Captures return host arrays wrapped as buffers, tracked by weakref."""
+
+    def __init__(self, num_outputs: int) -> None:
+        super().__init__(output_bytes=1)
+        self._num_outputs = num_outputs
+        self._previous_outputs: list[weakref.ref[np.ndarray]] = []
+        self.live_at_capture: list[int] = []
+
+    def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
+        del graph_key, buffers
+        self.live_at_capture.append(
+            sum(ref() is not None for ref in self._previous_outputs)
+        )
+        arrays = [np.zeros(4, dtype=np.int64) for _ in range(self._num_outputs)]
+        self._previous_outputs = [weakref.ref(array) for array in arrays]
+        return [Buffer.from_numpy(array) for array in arrays]
+
+
+@pytest.mark.parametrize(
+    "num_speculative_tokens, num_outputs", [(0, 1), (2, 3)]
+)
+def test_warmup_pre_ready_frees_outputs_before_next_capture(
+    num_speculative_tokens: int, num_outputs: int
+) -> None:
+    # A captured graph's outputs live in its working memory, so any owning
+    # handle still alive when the next capture starts forces that capture to
+    # allocate a second working-memory block instead of reusing the first.
+    model = OutputTrackingModel(num_outputs)
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, model),
+        kv_params=cast(KVCacheParams, _mock_kv_params(num_speculative_tokens)),
+        warmup_model_inputs=_warmup_model_inputs,
+        max_cache_length_upper_bound=1,
+        max_batch_size=3,
+        num_speculative_tokens=num_speculative_tokens,
+    )
+
+    runner.warmup_pre_ready()
+
+    assert len(runner.graph_entries) == 3
+    assert model.live_at_capture == [0, 0, 0]

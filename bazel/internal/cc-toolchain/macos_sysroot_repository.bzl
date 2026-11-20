@@ -52,6 +52,7 @@ _INCLUDES = [
     "System/Library/Frameworks/ImageIO.framework/**",
     "System/Library/Frameworks/Foundation.framework/**",
     "System/Library/Frameworks/IOKit.framework/**",
+    "System/Library/Frameworks/IOSurface.framework/**",
     "System/Library/Frameworks/Metal.framework/**",
     "System/Library/Frameworks/Security.framework/**",
     "System/Library/Frameworks/SystemConfiguration.framework/**",

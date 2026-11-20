@@ -81,10 +81,12 @@ Attribute AttrTypeMangler::mangleRefsIn(Attribute attr, bool &hasRefs) {
   return mangleRefsInImpl(attr, hasRefs);
 }
 
-bool AttrTypeMangler::populate(Builder &b, NameUniquer &uniquer,
-                               const llvm::SetVector<StringAttr> &calleeDecls,
-                               const ParameterUseDefGraph &topLevelGraph) {
-  VerboseCompilerTimeTraceScope traceScope("AttrTypeMangler::populate");
+AttrTypeMangler::AttrTypeMangler(Cache &manglerCache, Builder &b,
+                                 NameUniquer &uniquer,
+                                 const llvm::SetVector<StringAttr> &calleeDecls,
+                                 const ParameterUseDefGraph &topLevelGraph)
+    : manglerCache(manglerCache) {
+  VerboseCompilerTimeTraceScope traceScope("AttrTypeMangler::AttrTypeMangler");
 
   // `curScope` contains all declarations visible in the scope of the call,
   // including those defined in higher scopes. When the function is inlined,
@@ -101,16 +103,11 @@ bool AttrTypeMangler::populate(Builder &b, NameUniquer &uniquer,
     uniquer.updateWith(decl);
   }
 
-  if (mangleIdx.empty())
-    return false;
-
   for (size_t i : mangleIdx) {
     StringAttr decl = calleeDecls[i];
     auto mangled = uniquer.mangle(decl);
     mangledDecls.try_emplace(decl, mangled);
   }
-
-  return true;
 }
 
 ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,

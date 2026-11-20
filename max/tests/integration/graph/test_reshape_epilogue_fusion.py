@@ -116,32 +116,3 @@ def test_matmul_reshape_add_inner_dynamic(session: InferenceSession) -> None:
     )
     # ones @ ones (K=2) = 2 everywhere; reshape [2, 4] -> [4, 2]; + ones = 3.
     np.testing.assert_allclose(out, np.full((4, 2), 3.0), rtol=1e-5, atol=1e-5)
-
-
-def test_reduce_max_reshape_add_non_accumulating(
-    session: InferenceSession,
-) -> None:
-    """Reshape fused into a NON-accumulating fused-output epilogue: `reduce.max`
-    never touches the output pointer during its own compute, isolating the
-    reshape store-index path from accumulator concerns. Stands in for
-    `imposter-reshape-add-epilogue-fusion.mlir`'s signature-only imposter
-    kernel, which has no real-op counterpart.
-    """
-    with Graph(
-        "reduce_max_reshape_add",
-        input_types=[
-            TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
-            TensorType(DType.float32, [4], device=DeviceRef.CPU()),
-        ],
-    ) as graph:
-        x, bias = (v.tensor for v in graph.inputs)
-        reduced = ops.max(x, axis=0)  # [1, 4]
-        graph.output(ops.reshape(reduced, [4]) + bias)
-
-    x_np = np.random.randn(2, 4).astype(np.float32)
-    bias_np = np.random.randn(4).astype(np.float32)
-    (out,) = run_and_verify_fusion(
-        session, graph, x_np, bias_np, fused=r"mo\.reduce\.max.*mo\.add"
-    )
-    ref = np.max(x_np, axis=0).reshape(4) + bias_np
-    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)

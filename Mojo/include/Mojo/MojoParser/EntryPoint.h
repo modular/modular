@@ -14,9 +14,10 @@
 #ifndef KGEN_MOJOPARSER_ENTRYPOINT_H
 #define KGEN_MOJOPARSER_ENTRYPOINT_H
 
+#include "Mojo/MojoParser/ModuleSpec.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include <filesystem>
+#include "Support/SymbolExport.h"
 
 namespace llvm {
 class SourceMgr;
@@ -25,15 +26,13 @@ class SourceMgr;
 namespace mlir {
 class TimingScope;
 } // namespace mlir
-namespace M {
-class AutoFixItHandler;
-} // namespace M
 
 namespace M::AsyncRT {
 class CPUDevice;
 } // namespace M::AsyncRT
 namespace M::KGEN {
 class CompilationOptions;
+struct FrontendOptions;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -54,56 +53,6 @@ class SharedState;
 llvm::SMLoc findStartOfNextToken(SharedState &shared, StringRef string);
 
 //===----------------------------------------------------------------------===//
-// ParserConfig
-//===----------------------------------------------------------------------===//
-
-/// This class provides the various configurations used to parse a Mojo file.
-struct ParserConfig {
-  ParserConfig(MLIRContext *context, const CompilationOptions &options)
-      : context(context), options(options) {}
-
-  /// The MLIR context to use when parsing the file.
-  MLIRContext *context;
-
-  /// The compilation options to use when parsing the file.
-  const CompilationOptions &options;
-
-  /// When non-null, this handler collects and applies fix-its automatically.
-  AutoFixItHandler *autoFixItHandler = nullptr;
-
-  /// When non-empty, this prefix is stripped from filenames used for
-  /// diagnostics & debugging.
-  std::string stripFilePrefix;
-
-  /// When true, this prints diagnostics through MLIR (so MLIR features like
-  /// -verify-diagnostics may be used). When false, this prints them through
-  /// SourceMgr to get ranges and fixit hints.
-  bool useMLIRDiagnostics = false;
-
-  /// If true, this will diagnose missing pieces of documentation strings.
-  bool diagnoseMissingDocStrings = false;
-
-  /// If true, ignore any already-compiled `foo.mojoc` that appear in its import
-  /// search paths. Doing so results in Mojo source packages named `foo/` being
-  /// found instead, and those source packages being parsed anew.
-  bool disablePrebuiltPackages = false;
-
-  /// If true, auto-import the builtin package.
-  bool useBuiltinModule = true;
-
-  /// An optional listener that is used to inspect certain events of the parser.
-  /// For simplicity it is a single item, but it could evolve into a list of
-  /// listeners.
-  ParserListener *parserListener = nullptr;
-
-  /// Maximum number of notes to print per compiler error or warning.
-  int maxNotesPerDiagnostic = 10;
-
-  /// Base library path prefix for generated documentation links.
-  std::string docsBasePath;
-};
-
-//===----------------------------------------------------------------------===//
 // Driver Entry Points
 //===----------------------------------------------------------------------===//
 
@@ -111,21 +60,28 @@ struct ParserConfig {
 ///
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
-OwningOpRef<ModuleOp>
+MODULAR_CXX_EXPORT OwningOpRef<ModuleOp>
 importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
-               ParserConfig &config, mlir::TimingScope &ts,
+               MLIRContext *mlirContext, const CompilationOptions &options,
+               const FrontendOptions &frontendOptions, mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Parse the directory at the given path as a Mojo package. Returns a module op
 /// that contains the package, represented as a `lit.package` op, as well as the
 /// package op itself.
 ///
+/// `importPath`, when not empty, is the absolute path the package will be
+/// imported by once precompiled (namespace components, then its output name),
+/// and self-imports spelled that way resolve to the package being parsed.
+///
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
 importMojoPackage(ContextRef context, StringRef path, StringRef packageName,
-                  llvm::SourceMgr &sourceMgr, ParserConfig &config,
-                  mlir::TimingScope &ts,
+                  const KGEN::LIT::ImportPath &importPath,
+                  llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
+                  const CompilationOptions &options,
+                  const FrontendOptions &frontendOptions, mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Clone the module containing the given decl, and prepare it for compilation.
@@ -211,6 +167,10 @@ public:
   /// Notify the listener that a new `let` or `var` declaration has been
   /// resolved by the parser.
   virtual void onVariableDecl(ASTDecl *decl, llvm::SMLoc identifierLoc);
+
+  /// Notify the listener that a declaration has been replaced with a
+  /// declaration that represents the same source binding.
+  virtual void onDeclReplaced(ASTDecl *oldDecl, ASTDecl *newDecl);
 
   /// Notify the listener that a new reference has been resolved by the parser,
   /// i.e. its declarations are known.

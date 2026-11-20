@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.nn.moe import SigmoidTopKRouter
+from max.nn.legacy.moe import SigmoidTopKRouter
 
 
 class HYV3TopKRouter(SigmoidTopKRouter):

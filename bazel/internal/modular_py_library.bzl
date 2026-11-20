@@ -14,6 +14,7 @@ def modular_py_library(
         test_docstring_examples = False,
         docstring_example_deps = [],
         docstring_example_shard_count = None,
+        docstring_example_dirs = None,
         docstring_example_test_rule = modular_py_test,
         tags = [],
         **kwargs):
@@ -32,6 +33,10 @@ def modular_py_library(
         docstring_example_deps: Extra runtime deps the examples import but the
             library itself cannot depend on (e.g. engine, which depends on
             graph). Ignored unless test_docstring_examples is True.
+        docstring_example_dirs: Package-relative directories to collect
+            examples from, for a library whose sources sit in subdirectories
+            of a package that also holds unrelated libraries. Defaults to the
+            whole package directory.
         docstring_example_shard_count: Shards for the docstring-example test.
             Each example compiles its own graph and CI clamps every test to
             800s, so set this for packages with many examples. Sharding is
@@ -65,7 +70,7 @@ def modular_py_library(
             data = kwargs.get("data", []),
             ignore_extra_deps = ignore_extra_deps,
             ignore_unresolved_imports = ignore_unresolved_imports,
-            target_compatible_with = select({
+            target_compatible_with = kwargs.get("target_compatible_with", []) + select({
                 # No point in running these, causes "error replanting symlinks" failures
                 "//:asan": ["@platforms//:incompatible"],
                 "//:ubsan": ["@platforms//:incompatible"],
@@ -99,6 +104,14 @@ def modular_py_library(
             if Label(dep).package.startswith(native.package_name() + "/")
         ]
 
+        if docstring_example_dirs:
+            collect_dirs = [
+                native.package_name() + "/" + d
+                for d in docstring_example_dirs
+            ]
+        else:
+            collect_dirs = [native.package_name()]
+
         # Every example is a throwaway graph, so eager packages compile only
         # what the interpreter refuses instead of background-compiling them all.
         eager_env = {} if docstring_example_test_rule == modular_py_test else {
@@ -116,8 +129,7 @@ def modular_py_library(
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
             } | eager_env,
-            args = [
-                native.package_name(),
+            args = collect_dirs + [
                 "-p",
                 "sybil_collect",
                 "--import-mode=importlib",

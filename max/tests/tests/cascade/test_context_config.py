@@ -21,12 +21,15 @@ runs the dummy text-gen pipeline end to end over multi-process workers.
 from __future__ import annotations
 
 import os
+import sys
+import types
 
 import pytest
 from max.experimental.cascade import (
     ChatMessage,
     GenAIRequest,
     GenAITextChunk,
+    LocalRuntime,
     TextGenOptions,
     Worker,
     worker_method,
@@ -41,7 +44,10 @@ from max.experimental.cascade.deployment.context_config import (
     HttpContextFactory,
     Transport,
 )
-from max.experimental.cascade.deployment.routing import HybridRuntime
+from max.experimental.cascade.deployment.routing import (
+    HybridRuntime,
+    RoundRobinPool,
+)
 from max.experimental.cascade.grpc_runtime import (
     GrpcRuntimeClient,
     SubprocGrpcRuntimeClient,
@@ -56,10 +62,10 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
 
 
 class _PidWorker(Worker):
-    """CPU worker that reports the OS PID of the process it runs in."""
+    """Worker that reports the OS PID of the process it runs in."""
 
-    def __init__(self) -> None:
-        super().__init__(deploy_hints=["cpu"])
+    def __init__(self, hint: str = "cpu") -> None:
+        super().__init__(deploy_hints=[hint])
 
     @worker_method()
     async def pid(self) -> int:
@@ -72,9 +78,17 @@ def test_default_config() -> None:
     config = ContextConfig()
     assert config.transport == "http"
     assert config.local_cpu_workers == 2
-    assert config.local_gpu_workers == 0
+    assert config.local_gpu_workers is None
     assert config.remote_cpu_workers == ()
     assert config.remote_gpu_workers == ()
+
+
+def test_default_context_pools() -> None:
+    """The default context has only a subprocess-backed ``cpu`` pool."""
+    runtime = ContextConfig().build_context()
+    assert isinstance(runtime, HybridRuntime)
+    assert set(runtime._runtimes) == {"cpu"}
+    assert isinstance(runtime._runtimes["cpu"], RoundRobinPool)
 
 
 def test_transport_factories_registered() -> None:
@@ -115,12 +129,82 @@ def test_build_context_pools_by_device() -> None:
     assert set(runtime._runtimes) == {"cpu", "gpu"}
 
 
-def test_build_context_requires_a_worker() -> None:
-    """A config with no workers at all is rejected."""
+@pytest.mark.asyncio
+async def test_zero_workers_run_every_worker_in_process() -> None:
+    """With no CPU workers, cpu and gpu workers run here."""
+    config = ContextConfig(transport="grpc", local_cpu_workers=0)
+    async with config.open_context() as runtime, _pipeline_method_scope():
+        assert isinstance(runtime, HybridRuntime)
+        assert set(runtime._runtimes) == {"cpu", "gpu"}
+        assert isinstance(runtime._runtimes["cpu"], LocalRuntime)
+        assert runtime._runtimes["gpu"] is runtime._runtimes["cpu"]
+        for hint in ("cpu", "gpu"):
+            proxy = await runtime.deploy(_PidWorker(hint))
+            assert await (await proxy.pid()) == os.getpid()
+
+
+def test_zero_local_workers_with_remote_workers_use_remote_pools() -> None:
     config = ContextConfig(
-        transport="grpc", local_cpu_workers=0, local_gpu_workers=0
+        transport="grpc",
+        local_cpu_workers=0,
+        local_gpu_workers=0,
+        remote_cpu_workers=("a:1",),
+        remote_gpu_workers=("b:1",),
     )
-    with pytest.raises(ValueError, match="at least one"):
+    runtime = config.build_context()
+    assert isinstance(runtime, HybridRuntime)
+    assert set(runtime._runtimes) == {"cpu", "gpu"}
+    for pool in runtime._runtimes.values():
+        assert isinstance(pool, RoundRobinPool)
+
+
+@pytest.mark.asyncio
+async def test_rust_pool_runs_rust_workers_in_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``rust_pool`` adds a ``rust`` pool built from ``local_rust_runtime``."""
+    stub = types.ModuleType("local_rust_runtime")
+    monkeypatch.setattr(stub, "RustRuntime", LocalRuntime, raising=False)
+    monkeypatch.setitem(sys.modules, "local_rust_runtime", stub)
+    config = ContextConfig(local_cpu_workers=0)
+    async with (
+        config.open_context(rust_pool=True) as runtime,
+        _pipeline_method_scope(),
+    ):
+        assert isinstance(runtime, HybridRuntime)
+        assert set(runtime._runtimes) == {"cpu", "gpu", "rust"}
+        rust_pool = runtime._runtimes["rust"]
+        assert isinstance(rust_pool, LocalRuntime)
+        assert rust_pool is not runtime._runtimes["cpu"]
+        proxy = await runtime.deploy(_PidWorker("rust"))
+        assert await (await proxy.pid()) == os.getpid()
+        mixed = _PidWorker("gpu")
+        mixed.deploy_hints.append("rust")
+        await runtime.deploy(mixed)
+        assert list(rust_pool._workers) == ["_PidWorker-0", "_PidWorker-1"]
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        ContextConfig(),
+        ContextConfig(local_cpu_workers=0, remote_cpu_workers=("a:1",)),
+    ],
+)
+def test_rust_pool_requires_zero_cpu_workers(config: ContextConfig) -> None:
+    with pytest.raises(ValueError, match="--cascade-local-cpu-workers 0"):
+        config.build_context(rust_pool=True)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        ContextConfig(local_cpu_workers=0, local_gpu_workers=1),
+        ContextConfig(local_cpu_workers=0, remote_gpu_workers=("b:1",)),
+    ],
+)
+def test_no_cpu_workers_rejects_gpu_workers(config: ContextConfig) -> None:
+    with pytest.raises(ValueError, match="GPU workers can't run"):
         config.build_context()
 
 

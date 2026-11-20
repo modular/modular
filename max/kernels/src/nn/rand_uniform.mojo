@@ -14,27 +14,23 @@
 
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
-from layout import TileTensor
+from layout import TileTensor, row_major
 from std.random import Random
-from extensibility import _dot_prod
 
-from std.utils import IndexList
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord
 
 
 def random_uniform[
     dtype: DType,
-    rank: Int,
     //,
-    target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
 ](
-    shape: IndexList[rank],
+    shape: Coord,
     lower_bound: Scalar[dtype],
     upper_bound: Scalar[dtype],
-    seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin],
+    seed_ptr: ImmPointer[UInt64, ImmutAnyOrigin],
     ctx: DeviceContext,
     output_fn: OutputFn,
 ) raises:
@@ -44,8 +40,6 @@ def random_uniform[
 
     Parameters:
         dtype: The data type to generate.
-        rank: The rank of the underlying buffer.
-        target: The target to run on.
         OutputFn: The type of the function which stores the generated values.
 
     Args:
@@ -61,16 +55,16 @@ def random_uniform[
     if lower_bound > upper_bound:
         raise Error("lower_bound must be less than upper_bound")
 
-    var strides = shape.get_row_major_strides()
+    # Row-major layout over `shape`: `layout(idx)` is the element's flat index,
+    # which is what seeds the Philox counter below.
+    var layout = row_major(shape)
     var delta = Float32(upper_bound - lower_bound)
 
     @inline(.always)
     def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert width <= 4
 
-        var offset = _dot_prod(
-            rebind[type_of(strides)](coord_to_index_list(idx)), strides
-        )
+        var offset = Int(layout(idx))
 
         var seed_value = seed_ptr[0]
 
@@ -81,12 +75,10 @@ def random_uniform[
 
         output_fn[width=width](idx, values.cast[dtype]().slice[width]())
 
-    elementwise[simd_width=4, target=target](generate, Coord(shape), ctx)
+    elementwise[simd_width=4](generate, shape, ctx)
 
 
-def keyed_uniform[
-    target: StaticString,
-](
+def keyed_uniform(
     output: TileTensor[mut=True, .float32, ...],
     seed: TileTensor[mut=False, .uint64, ...],
     ctx: DeviceContext,
@@ -100,9 +92,6 @@ def keyed_uniform[
     a row's draw never depends on how many rows share the launch or on where
     it sits among them. Speculative decoding keys its accept coin per
     (request, draft position) this way.
-
-    Parameters:
-        target: The target to run on.
 
     Args:
         output: The drawn values, one per row.
@@ -119,15 +108,12 @@ def keyed_uniform[
     if Int(seed.dim(0)) != rows:
         raise Error("keyed_uniform needs exactly one seed per output row")
 
-    var out_ptr = output.ptr
-    var seed_ptr = seed.ptr
-
     @inline(.always)
     def draw[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert width == 1, "each row keys its own Philox stream"
 
-        var row = Int(idx[0].value())
-        var generator = Random(seed=seed_ptr[row])
-        out_ptr[row] = generator.step_uniform()[0]
+        var row = Int(idx[0])
+        var generator = Random(seed=rebind[UInt64](seed.load((row,))))
+        output.store((row,), generator.step_uniform()[0])
 
-    elementwise[simd_width=1, target=target](draw, (rows,), ctx)
+    elementwise[simd_width=1](draw, (rows,), ctx)

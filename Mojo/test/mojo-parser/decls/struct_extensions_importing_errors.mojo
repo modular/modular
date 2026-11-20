@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -I %S/inputs %s -mlir-print-debuginfo -split-input-file -verify-diagnostics
+# RUN: %parse-mojo-isolated --disable-builtins -I %S/inputs %s -mlir-print-debuginfo -split-input-file -verify-diagnostics
 
 # @expected-note @below {{conflicts with this previous declaration}}
 from struct_package_for_conflict import PlainStruct

@@ -21,8 +21,8 @@ from __future__ import annotations
 from typing import Any
 
 from max import tree
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
+from max.tensor import Tensor
 
 
 def _to_graph_value(value: Any) -> Any:

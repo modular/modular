@@ -53,10 +53,11 @@ from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import TileTensorMHAOperand
-from nn.attention.gpu.mla import flare_mla_prefill
+from nn.attention.gpu.mla import SM100MLA, flare_mla_prefill
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
 
@@ -103,19 +104,9 @@ def run_test_paged_prefill_blockscale[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     print(
-        "test_mla_prefill_blockscale_paged",
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_keys:",
-        num_keys,
-        " page_size:",
-        page_size,
-        " qkv_type:",
-        qkv_type,
-        " k_rope_type:",
-        k_rope_type,
+        t"test_mla_prefill_blockscale_paged  batch_size: {batch_size}  seq_len:"
+        t" {seq_len}  num_keys: {num_keys}  page_size: {page_size}  qkv_type:"
+        t" {qkv_type}  k_rope_type: {k_rope_type}"
     )
 
     comptime scale = Float32(0.125)
@@ -129,10 +120,10 @@ def run_test_paged_prefill_blockscale[
     var v_size = k_size
     var o_size = batch_size * seq_len * num_heads * kv_depth
 
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_ptr = unsafe_alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = unsafe_alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = unsafe_alloc[Scalar[qkv_type]](v_size)
+    var output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
 
     randn[qkv_type](q_ptr, q_size)
     randn[qkv_type](k_ptr, k_size)
@@ -141,8 +132,8 @@ def run_test_paged_prefill_blockscale[
     # ------------------------------------------------------------------
     # Step 2: Build the row-offset tables.
     # ------------------------------------------------------------------
-    var input_row_offsets_host = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets_host = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
+    var cache_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
     for i in range(batch_size):
         input_row_offsets_host[i] = UInt32(i * seq_len)
         cache_row_offsets_host[i] = UInt32(i * num_keys)
@@ -163,10 +154,10 @@ def run_test_paged_prefill_blockscale[
     var block_elems = paged_block_elems(total_pages, page_size, CACHE_DEPTH)
     var scales_elems = paged_scale_block_elems(total_pages, page_size)
 
-    var blocks_host = alloc[Scalar[k_rope_type]](block_elems)
-    var scales_host = alloc[Float32](scales_elems)
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var blocks_host = unsafe_alloc[Scalar[k_rope_type]](block_elems)
+    var scales_host = unsafe_alloc[Float32](scales_elems)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
 
     fill_paged_blocks_uniform[k_rope_type](
         blocks_host, batch_size, num_keys, page_size
@@ -308,7 +299,7 @@ def run_test_paged_prefill_blockscale[
     # ------------------------------------------------------------------
     print("  Launching MLA prefill kernel (paged FP8 K_rope)...")
 
-    flare_mla_prefill[rank=3](
+    flare_mla_prefill[rank=3, kernels=SM100MLA](
         output_device,
         q_device,
         k_device,
@@ -339,14 +330,14 @@ def run_test_paged_prefill_blockscale[
     # ``out_bf16 = fp8_val.cast[float32]() * scale``.
     # ------------------------------------------------------------------
     var ref_size = batch_size * num_keys * num_heads * depth
-    var k_ref_host = alloc[Scalar[qkv_type]](ref_size)
-    var v_ref_host = alloc[Scalar[qkv_type]](ref_size)
-    var output_ref_host = alloc[Scalar[output_type]](
+    var k_ref_host = unsafe_alloc[Scalar[qkv_type]](ref_size)
+    var v_ref_host = unsafe_alloc[Scalar[qkv_type]](ref_size)
+    var output_ref_host = unsafe_alloc[Scalar[output_type]](
         batch_size * seq_len * num_heads * depth
     )
 
     # Dequantized rope window per batch (reused).
-    var k_rope_one_batch = alloc[Scalar[qkv_type]](num_keys * ROPE_DEPTH)
+    var k_rope_one_batch = unsafe_alloc[Scalar[qkv_type]](num_keys * ROPE_DEPTH)
 
     for b in range(batch_size):
         extract_dequantized_k_rope_for_batch[k_rope_type, qkv_type](
@@ -457,12 +448,12 @@ def run_test_paged_prefill_blockscale[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    var actual = output_ptr.load(
+                    var actual = output_ptr.unsafe_load(
                         (b * seq_len + s) * num_heads * kv_depth
                         + h * kv_depth
                         + d
                     ).cast[.float64]()
-                    var expect = output_ref_host.load(
+                    var expect = output_ref_host.unsafe_load(
                         ((b * seq_len + s) * num_heads + h) * depth + d
                     ).cast[.float64]()
                     var abs_err = abs(actual - expect)
@@ -470,18 +461,8 @@ def run_test_paged_prefill_blockscale[
                         max_abs_err = abs_err
                     if abs_err > atol:
                         print(
-                            "mismatch at b=",
-                            b,
-                            " s=",
-                            s,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " actual=",
-                            actual,
-                            " expect=",
-                            expect,
+                            t"mismatch at b= {b}  s= {s}  h= {h}  d= {d} "
+                            t" actual= {actual}  expect= {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
@@ -490,20 +471,20 @@ def run_test_paged_prefill_blockscale[
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    k_ref_host.free()
-    v_ref_host.free()
-    output_ref_host.free()
-    k_rope_one_batch.free()
-    blocks_host.free()
-    scales_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    input_row_offsets_host.free()
-    cache_row_offsets_host.free()
+    q_ptr.unsafe_free()
+    k_ptr.unsafe_free()
+    v_ptr.unsafe_free()
+    output_ptr.unsafe_free()
+    k_ref_host.unsafe_free()
+    v_ref_host.unsafe_free()
+    output_ref_host.unsafe_free()
+    k_rope_one_batch.unsafe_free()
+    blocks_host.unsafe_free()
+    scales_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    input_row_offsets_host.unsafe_free()
+    cache_row_offsets_host.unsafe_free()
 
     _ = q_device_buf
     _ = k_device_buf

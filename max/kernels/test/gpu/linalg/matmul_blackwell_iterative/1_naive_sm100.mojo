@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.sys import argv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from max.gpu import block_dim, block_idx, thread_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import ComptimeInt, RowMajorLayout, TileTensor, row_major
 from layout._fillers import random
@@ -36,21 +36,23 @@ def kernel_1[
     M: Int,
     N: Int,
     K: Int,
-    transpose_b: Bool = True,
-    BLOCKSIZE: Int = 32,
 ](
     c: TileTensor[
         .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
     ],
     a: TileTensor[
-        .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[K]], MutAnyOrigin
+        .bfloat16,
+        RowMajorLayout[ComptimeInt[M], ComptimeInt[K]],
+        ImmutAnyOrigin,
     ],
     b: TileTensor[
-        .bfloat16, RowMajorLayout[ComptimeInt[K], ComptimeInt[N]], MutAnyOrigin
+        .bfloat16,
+        RowMajorLayout[ComptimeInt[K], ComptimeInt[N]],
+        ImmutAnyOrigin,
     ],
 ):
-    var row = Int(block_dim.y * block_idx.y + thread_idx.y)
-    var col = Int(block_dim.x * block_idx.x + thread_idx.x)
+    var row = global_idx.y
+    var col = global_idx.x
 
     if row < M and col < N:
         # Still accumulate in float32 for precision
@@ -71,7 +73,7 @@ def test_kernel_1[
     transpose_b: Bool = True,
     benchmark: Bool = False,
     prob_shape: IndexList[3] = (1, 1, 1),
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     comptime M = prob_shape[0]
     comptime N = prob_shape[1]
     comptime K = prob_shape[2]
@@ -101,10 +103,8 @@ def test_kernel_1[
     b.to_device()
     b_vendor.to_device()
 
-    comptime kernel = kernel_1[
-        M, N, K, transpose_b=transpose_b, BLOCKSIZE=BLOCKSIZE
-    ]
-    # Use 1D thread block for memory coalescing
+    comptime kernel = kernel_1[M, N, K]
+    # Use 2D thread block for memory coalescing
     comptime BLOCKSIZE = 32
 
     ctx.enqueue_function[kernel](
@@ -122,7 +122,7 @@ def test_kernel_1[
         comptime num_warmup = 20
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut a, mut b, mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut a, mut b, mut c, imm}:
             ctx.enqueue_function[kernel](
                 c.device_tensor(),
                 a.device_tensor(),
@@ -169,7 +169,7 @@ def test_kernel_1[
                     c_host_ref[m, n],
                     atol=1e-2,
                     rtol=5e-2,
-                    msg=String(m) + ", " + String(n),
+                    msg=String(t"{m}, {n}"),
                 )
         print("TEST PASSED")
 
@@ -182,7 +182,7 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 transpose_b=True,
-                prob_shape=IndexList[3](4096, 4096, 4096),
+                prob_shape=(4096, 4096, 4096),
                 benchmark=True,
             ](ctx)
             return
@@ -194,5 +194,5 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             transpose_b=True,
-            prob_shape=IndexList[3](4096, 4096, 4096),
+            prob_shape=(4096, 4096, 4096),
         ](ctx)

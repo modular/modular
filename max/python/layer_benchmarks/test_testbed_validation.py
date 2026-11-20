@@ -22,7 +22,7 @@ import pytest
 import torch
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import RMSNorm
+from max.nn.legacy import RMSNorm
 from testbed.correctness import print_correctness_report
 from testbed.harness import dict_to_dataclass
 from testbed.harnesses.rms_norm import (
@@ -106,6 +106,7 @@ class _SampleParams:
 
 
 def test_dict_to_dataclass_valid() -> None:
+    """Checks that the required fields alone build the dataclass."""
     result = dict_to_dataclass(
         _SampleParams, {"required_a": 42, "required_b": "hello"}
     )
@@ -116,6 +117,7 @@ def test_dict_to_dataclass_valid() -> None:
 
 
 def test_dict_to_dataclass_with_optional() -> None:
+    """Checks that a supplied optional value overrides the field default."""
     result = dict_to_dataclass(
         _SampleParams,
         {"required_a": 1, "required_b": "x", "optional_c": 9.9},
@@ -125,11 +127,13 @@ def test_dict_to_dataclass_with_optional() -> None:
 
 
 def test_dict_to_dataclass_missing_required() -> None:
+    """Checks that a missing required field raises ``TypeError`` naming it."""
     with pytest.raises(TypeError, match=r"missing required fields.*required_b"):
         dict_to_dataclass(_SampleParams, {"required_a": 42})
 
 
 def test_dict_to_dataclass_extra_keys() -> None:
+    """Checks that an unknown key raises ``TypeError``."""
     with pytest.raises(TypeError, match=r"unexpected fields.*unknown"):
         dict_to_dataclass(
             _SampleParams,

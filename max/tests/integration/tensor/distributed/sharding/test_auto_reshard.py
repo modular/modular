@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for :func:`max.experimental.sharding.auto_reshard` and the picker."""
+"""Tests for :func:`max.tensor.sharding.auto_reshard` and the picker."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from typing import Any, NamedTuple
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.sharding import (
+from max.tensor.sharding import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
     AxisAssignment,
@@ -36,11 +36,11 @@ from max.experimental.sharding import (
     Transition,
     auto_reshard,
 )
-from max.experimental.sharding._auto_reshard import (
+from max.tensor.sharding._auto_reshard import (
     _AUTO_RESHARD_POLICY,
     pick_reshard_action,
 )
-from max.experimental.sharding.action import Action
+from max.tensor.sharding.action import Action
 
 
 def policy() -> tuple[frozenset[Transition], str]:

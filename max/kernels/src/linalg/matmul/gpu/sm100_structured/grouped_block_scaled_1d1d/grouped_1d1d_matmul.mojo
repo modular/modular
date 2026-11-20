@@ -35,7 +35,8 @@ from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from max.gpu.host import DeviceContext, Dim, FuncAttribute
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.host.nvidia import ClusterAttributeLaunchConfig
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
@@ -62,7 +63,6 @@ from .grouped_1d1d_matmul_kernel import (
     SwiGLUOutput,
 )
 from ..structured_kernels.row_scales import NullRowScales, RowScales
-from std.memory import UnsafePointer
 
 
 def grouped_matmul_block_scaled[
@@ -93,6 +93,7 @@ def grouped_matmul_block_scaled[
     swiglu_use_inplace: Bool = False,
     swiglu_inplace_token_per_lane: Bool = False,
     RowScalesT: RowScales = NullRowScales,
+    grid_scale: Int = 1,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -153,6 +154,8 @@ def grouped_matmul_block_scaled[
             for MXFP8. Defaults to `False`.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`.
+        grid_scale: CTAs launched per SM. The scheduler strides the tile list
+            by the grid, so this only decides how many CTAs share the walk.
 
     Args:
         c_device: Output tensor (total_tokens, N).
@@ -182,7 +185,7 @@ def grouped_matmul_block_scaled[
     # expert slots are all published but hold no tokens. C's extent is
     # deliberately not tested -- a zero-element C is legitimate wherever the
     # local output store has been elided.
-    if num_active_experts == 0 or Int(a_device.layout.shape[0]().value()) == 0:
+    if num_active_experts == 0 or Int(a_device.dim[0]()) == 0:
         return
 
     comptime assert transpose_b, "Only support transposed B"
@@ -211,8 +214,6 @@ def grouped_matmul_block_scaled[
         1,
         2,
     ), "Only support cta_group == 1 or 2"
-
-    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
 
     comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
@@ -251,25 +252,21 @@ def grouped_matmul_block_scaled[
     )
     comptime K = type_of(a_device).static_shape[1] * (2 if a_packed_fp4 else 1)
     comptime K_WEIGHT_BYTES = type_of(_b_device).static_shape[2]
-    comptime assert K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1) == K, (
-        "activations and weights must span the same number of K elements, but"
-        " got "
-        + String(K)
-        + " and "
-        + String(K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1))
+    comptime assert K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1) == K, String(
+        t"activations and weights must span the same number of K elements, "
+        t"but got {K} and {K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1)}"
     )
-    comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 elements"
-        + " but got K = "
-        + String(K)
+    comptime assert K % 16 == 0, String(
+        t"Due to TMA limitations, K must be a multiple of 16 elements but "
+        t"got K = {K}"
     )
     # `cuTensorMapEncodeTiled` rejects an ALIGN16B packed-FP4 descriptor whose
     # innermost extent is not a multiple of 128. The descriptor helper only
     # `debug_assert`s that, which is compiled out at the default assert level,
     # so gate it here where K is comptime.
-    comptime assert not (a_packed_fp4 or b_packed_fp4) or K % 128 == 0, (
-        "packed FP4 requires K to be a multiple of 128 elements but got K = "
-        + String(K)
+    comptime assert not (a_packed_fp4 or b_packed_fp4) or K % 128 == 0, String(
+        t"packed FP4 requires K to be a multiple of 128 elements but got K "
+        t"= {K}"
     )
 
     # Reshape B from (num_experts, N, K bytes) to (num_experts * N, K bytes)
@@ -318,11 +315,7 @@ def grouped_matmul_block_scaled[
         transpose_b,
         config=config,
         static_N=expert_n,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         pdl_level=pdl_level,
         fuse_swiglu=fuse_swiglu,
         SwiGLUOutputT=SwiGLUOutputT,
@@ -344,9 +337,6 @@ def grouped_matmul_block_scaled[
     # Shared memory size calculation
     comptime SmemType = KernelType.SmemType
     comptime smem_size = size_of[SmemType]()
-
-    # B200 SMEM limit
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     comptime g1_m128_m = (
         64 if not config.AB_swapped else config.output_tile_shape[0]
@@ -424,9 +414,7 @@ def grouped_matmul_block_scaled[
 
     # _b_scales: 6D -> 4D uint16 (1, num_experts*N_groups, K_groups, sf_atom_u16)
     # Global view always uses sf_atom_u16 (full atom); TMA tile may be smaller.
-    var sfb_dim0 = Int(_b_scales.layout.shape[0]().value()) * Int(
-        _b_scales.layout.shape[1]().value()
-    )
+    var sfb_dim0 = Int(_b_scales.dim[0]()) * Int(_b_scales.dim[1]())
     var sfb_4d_shape = Coord(
         Idx[1],
         Int64(sfb_dim0),
@@ -456,7 +444,7 @@ def grouped_matmul_block_scaled[
     comptime kernel = matmul_kernel.run
 
     var grid_dim = (
-        B200.sm_count,
+        B200.sm_count * grid_scale,
         1,
         1,
     )
@@ -469,7 +457,7 @@ def grouped_matmul_block_scaled[
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
-    # LayoutType (from _IntTupleToCoordLike) than the kernel's GMEMLayout1D.
+    # LayoutType (from the shape types) than the kernel's GMEMLayout1D.
     from structured_kernels.tile_types import GMEMLayout1D
 
     def _to_1d[
@@ -481,7 +469,7 @@ def grouped_matmul_block_scaled[
         Engine=t.Engine,
         address_space=t.address_space,
     ]:
-        var shape = Coord(Int64(t.layout.shape[0]().value()))
+        var shape = Coord(Int64(t.dim[0]()))
         var stride = Coord(Idx[1])
         return {
             t._unsafe_storage_cast[
@@ -563,24 +551,21 @@ def grouped_matmul_block_scaled[
             Int32(num_active_experts),
             UInt32(K),
             # AB_swapped: SFB data comes from a_scales.
-            rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
-                a_scales.ptr
-            ),
-            Int32(Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS),
-            Int32(Int(a_scales.layout.shape[1]().value())),
+            rebind[ImmPointer[Scalar[sfa_dtype], ImmutAnyOrigin]](a_scales.ptr),
+            Int32(Int(a_scales.dim[1]()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(a_scales.dim[1]())),
             swiglu_out,
             trace_buf,
             row_scales,
-            grid_dim=grid_dim,
-            block_dim=block_threads,
-            cluster_dim=Dim(
-                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            execution_config=ClusterAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=block_threads,
+                cluster_dim=Dim(
+                    cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                ),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
             ),
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
-            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         var a_tma_op = create_tma_tile[
@@ -642,22 +627,21 @@ def grouped_matmul_block_scaled[
             Int32(num_active_experts),
             UInt32(K),
             # Non-swapped: SFB data comes from _b_scales.
-            rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
                 _b_scales.ptr
             ),
-            Int32(Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS),
-            Int32(Int(_b_scales.layout.shape[2]().value())),
+            Int32(Int(_b_scales.dim[2]()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(_b_scales.dim[2]())),
             swiglu_out,
             trace_buf,
             row_scales,
-            grid_dim=grid_dim,
-            block_dim=block_threads,
-            cluster_dim=Dim(
-                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            execution_config=ClusterAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=block_threads,
+                cluster_dim=Dim(
+                    cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                ),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
             ),
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
-            attributes=pdl_launch_attributes(pdl_level),
         )

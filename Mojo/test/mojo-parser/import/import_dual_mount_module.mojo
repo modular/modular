@@ -20,7 +20,7 @@
 # value from the other, so this only type-checks if the two are one type.
 
 # RUN: %parse-mojo-isolated -verify-diagnostics \
-# RUN:   -I=%S/inputs/dual_mount/lib -I=%S/inputs/dual_mount/lib/mylib %s
+# RUN:   -I%S/inputs/dual_mount/lib -I%S/inputs/dual_mount/lib/mylib %s
 
 # expected-note @below {{'mylib.utils' is the name used in error messages and debug info}}
 from mylib.utils import Thing

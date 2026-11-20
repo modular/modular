@@ -49,8 +49,9 @@ def tma_swizzle_multicast_load_kernel[
     desc_shape: Coord,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
+    dst_origin: MutOrigin,
 ](
-    dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
+    dst: TileTensor[dtype, type_of(layout), dst_origin],
     tma_tile: TMATensorTile[dtype, subcluster_tile_shape, desc_shape],
 ):
     comptime cluster_tileM = type_of(cluster_tile_layout).static_shape[0]
@@ -59,8 +60,8 @@ def tma_swizzle_multicast_load_kernel[
         dtype
     ]()
 
-    comptime subcluster_tileM = Int(subcluster_tile_shape[0].value())
-    comptime subcluster_tileN = Int(subcluster_tile_shape[1].value())
+    comptime subcluster_tileM = Int(subcluster_tile_shape[0])
+    comptime subcluster_tileN = Int(subcluster_tile_shape[1])
 
     var block_rank = block_rank_in_cluster()
     var rank_m, rank_n = divmod(Int(block_rank), CLUSTER_N)
@@ -132,10 +133,10 @@ def test_tma_multicast_swizzle[
     CLUSTER_N: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext) raises:
-    comptime shapeM = Int(shape[0].value())
-    comptime shapeN = Int(shape[1].value())
-    comptime tileM = Int(cluster_tile_shape[0].value())
-    comptime tileN = Int(cluster_tile_shape[1].value())
+    comptime shapeM = Int(shape[0])
+    comptime shapeN = Int(shape[1])
+    comptime tileM = Int(cluster_tile_shape[0])
+    comptime tileN = Int(cluster_tile_shape[1])
     comptime subcluster_tile_shape = coord[
         tileM // CLUSTER_M, tileN // CLUSTER_N
     ]
@@ -175,6 +176,7 @@ def test_tma_multicast_swizzle[
         desc_shape=type_of(tma_tensor).desc_shape,
         CLUSTER_M=CLUSTER_M,
         CLUSTER_N=CLUSTER_N,
+        dst_origin=origin_of(dst),
     ]
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
@@ -190,10 +192,10 @@ def test_tma_multicast_swizzle[
     ctx.synchronize()
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
     comptime descM = Int(
-        type_of(tma_tensor).desc_shape.element_types[0].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[0].static_value
     )
     comptime descN = Int(
-        type_of(tma_tensor).desc_shape.element_types[1].static_value.value()
+        type_of(tma_tensor).desc_shape.element_types[1].static_value
     )
     comptime desc_tile_size = descM * descN
 

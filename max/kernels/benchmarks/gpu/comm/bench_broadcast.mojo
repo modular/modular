@@ -40,6 +40,7 @@ from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
+    default_accelerator,
     get_gpu_target,
 )
 from layout import TileTensor, row_major
@@ -88,7 +89,7 @@ def bench_broadcast[
     use_vendor_ccl: Bool = False,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     num_bytes: Int,
     root: Int,
     max_num_blocks: Optional[Int],
@@ -213,10 +214,10 @@ def bench_broadcast[
 
     @inline(.always)
     def bench_iter(
-        mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bencher: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
         @inline(.always)
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn(ctx_inner: DeviceContext[], cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
                 cb_in.offset_ptr(cache_iter), row_major(length)
             ).as_imm()
@@ -260,17 +261,8 @@ def bench_broadcast[
     # See: https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md
     var busbw = gbps
     print(
-        "|",
-        name,
-        "| slowest mean time",
-        max_time,
-        "ms |",
-        "algbw:",
-        gbps,
-        "GB/s |",
-        "busbw:",
-        busbw,
-        "GB/s |",
+        t"| {name} | slowest mean time {max_time} ms | algbw: {gbps} GB/s |"
+        t" busbw: {busbw} GB/s |"
     )
 
     # Zero output and signal buffers, then run one more broadcast for verification.
@@ -356,7 +348,7 @@ def main() raises:
     assert_true(root >= 0 and root < num_gpus, "root must be in [0, num_gpus)")
 
     # Create GPU context.
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 
@@ -364,10 +356,14 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    bench_broadcast[
-        dtype=dtype,
-        ngpus=num_gpus,
-        use_multimem=use_multimem,
-        cache_busting=cache_busting,
-        use_vendor_ccl=use_vendor_ccl,
-    ](m, ctx, num_bytes, root, max_num_blocks)
+    # multimem is NVLink multicast (SM90+); AMD has no equivalent.
+    comptime if use_multimem and default_accelerator().is_amd_gpu():
+        print("multimem is not supported on AMD GPUs, skipping benchmark.")
+    else:
+        bench_broadcast[
+            dtype=dtype,
+            ngpus=num_gpus,
+            use_multimem=use_multimem,
+            cache_busting=cache_busting,
+            use_vendor_ccl=use_vendor_ccl,
+        ](m, ctx, num_bytes, root, max_num_blocks)

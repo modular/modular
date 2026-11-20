@@ -13,7 +13,7 @@
 """Covers the fused-epilogue closures inside the CPU conv wrappers.
 
 `conv_nhwc_direct` and `conv_transposed_cpu` each build an internal
-`elementwise_epilogue_type` closure around the caller's SIMD epilogue. Those
+`ConvEpilogueFn` closure around the caller's SIMD epilogue. Those
 two closures are reached only through op registration, so no other Mojo test
 elaborates them; `test_conv_epilogue.mojo` calls `ConvDirectNHWC` directly and
 bypasses both wrappers.
@@ -22,15 +22,8 @@ bypasses both wrappers.
 from std.math import isclose
 from std.random import rand
 
-from layout import (
-    Coord,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    lt_to_tt,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
+from max.gpu.host import DeviceContext
 from nn.conv.conv import ConvInfoStatic, conv_nhwc_direct
 from nn.conv.conv_transpose import conv_transposed_cpu
 from nn.conv.conv_utils import append_shape, extend_shape
@@ -54,7 +47,7 @@ def test_conv_nhwc_direct_fused() raises:
     var dilation = Index(1, 1)
 
     var output_dims = IndexList[rank](1)
-    comptime for i in range(rank):
+    for i in range(rank):
         output_dims[i] = input_dims[i] - filter_dims[i] + 1
 
     var input_size = N * input_dims[0] * input_dims[1] * C
@@ -69,29 +62,22 @@ def test_conv_nhwc_direct_fused() raises:
     var plain_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var fused_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
-    comptime layout_in = Layout.row_major[rank + 2]()
-    comptime layout_f = Layout.row_major[rank + 2]()
-
-    var input_lt = LayoutTensor[dtype, layout_in](
-        input_ptr,
-        RuntimeLayout[layout_in].row_major(extend_shape(input_dims, N, C)),
+    var input_tt = TileTensor(
+        input_ptr, row_major(extend_shape(Coord(input_dims), N, C))
     )
-    var filter_lt = LayoutTensor[dtype, layout_f](
-        filter_ptr,
-        RuntimeLayout[layout_f].row_major(extend_shape(filter_dims, C, F)),
+    var filter_tt = TileTensor(
+        filter_ptr, row_major(extend_shape(Coord(filter_dims), C, F))
     )
-    var plain_lt = LayoutTensor[dtype, layout_in](
-        plain_ptr,
-        RuntimeLayout[layout_in].row_major(extend_shape(output_dims, N, F)),
+    var plain_tt = TileTensor(
+        plain_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
-    var fused_lt = LayoutTensor[dtype, layout_in](
-        fused_ptr,
-        RuntimeLayout[layout_in].row_major(extend_shape(output_dims, N, F)),
+    var fused_tt = TileTensor(
+        fused_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
 
     comptime conv_attr = ConvInfoStatic[rank]()
 
-    var out_ptr = fused_lt.ptr
+    var out_ptr = fused_tt.ptr
     var col_stride = F
     var row_stride = output_dims[1] * F
     var plane_stride = output_dims[0] * row_stride
@@ -99,28 +85,24 @@ def test_conv_nhwc_direct_fused() raises:
     # Scale each computed element, so a coordinate the wrapper's internal
     # closure mis-translates lands on the wrong element and fails the compare.
     @inline(.always)
-    @__copy_capture(out_ptr, col_stride, row_stride, plane_stride)
     def scale_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]) {
+        var out_ptr, var col_stride, var row_stride, var plane_stride
+    }:
         comptime assert coords.rank == 4
         var flat = (
-            Int(coords[0].value()) * plane_stride
-            + Int(coords[1].value()) * row_stride
-            + Int(coords[2].value()) * col_stride
-            + Int(coords[3].value())
+            Int(coords[0]) * plane_stride
+            + Int(coords[1]) * row_stride
+            + Int(coords[2]) * col_stride
+            + Int(coords[3])
         )
-        (out_ptr + flat).store(val.cast[dtype]() * SCALE)
-
-    var input_tt = lt_to_tt(input_lt)
-    var filter_tt = lt_to_tt(filter_lt)
-    var plain_tt = lt_to_tt(plain_lt)
-    var fused_tt = lt_to_tt(fused_lt)
+        (out_ptr.unsafe_offset(flat)).unsafe_store(val.cast[dtype]() * SCALE)
 
     @inline(.always)
     def null_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         pass
 
     conv_nhwc_direct[
@@ -130,17 +112,17 @@ def test_conv_nhwc_direct_fused() raises:
         False,
         conv_attr,
         False,
-        null_epilogue,
     ](
         input_tt,
         filter_tt,
         plain_tt,
-        stride,
-        dilation,
-        Index(0, 0),
-        Index(0, 0),
-        Index(0, 0),
+        Coord(stride),
+        Coord(dilation),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
         1,
+        null_epilogue,
     )
 
     conv_nhwc_direct[
@@ -150,23 +132,64 @@ def test_conv_nhwc_direct_fused() raises:
         False,
         conv_attr,
         True,
-        scale_epilogue,
     ](
         input_tt,
         filter_tt,
         fused_tt,
-        stride,
-        dilation,
-        Index(0, 0),
-        Index(0, 0),
-        Index(0, 0),
+        Coord(stride),
+        Coord(dilation),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
         1,
+        scale_epilogue,
     )
 
     for i in range(output_size):
         if not isclose(fused_ptr[i], plain_ptr[i] * SCALE):
             print("FAIL at", i, fused_ptr[i], plain_ptr[i] * SCALE)
             raise Error("conv_nhwc_direct fused epilogue mismatch")
+
+    # The layout overload gets no output buffer, so the epilogue is the only
+    # writer of `layout_ptr`.
+    var layout_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var layout_out_ptr = TileTensor(layout_ptr, plain_tt.layout).unsafe_ptr()
+
+    @inline(.always)
+    def layout_epilogue[
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]) {
+        var layout_out_ptr, var col_stride, var row_stride, var plane_stride
+    }:
+        comptime assert coords.rank == 4
+        var flat = (
+            Int(coords[0]) * plane_stride
+            + Int(coords[1]) * row_stride
+            + Int(coords[2]) * col_stride
+            + Int(coords[3])
+        )
+        (layout_out_ptr.unsafe_offset(flat)).unsafe_store(
+            val.cast[dtype]() * SCALE
+        )
+
+    conv_nhwc_direct[dtype, dtype, dtype, False, conv_attr](
+        input_tt,
+        filter_tt,
+        plain_tt.layout,
+        Coord(stride),
+        Coord(dilation),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
+        1,
+        layout_epilogue,
+        DeviceContext.CPU(api="cpu"),
+    )
+
+    for i in range(output_size):
+        if not isclose(layout_ptr[i], plain_ptr[i] * SCALE):
+            print("FAIL at", i, layout_ptr[i], plain_ptr[i] * SCALE)
+            raise Error("conv_nhwc_direct layout epilogue mismatch")
     print("PASS")
 
 
@@ -183,7 +206,7 @@ def test_conv_transposed_cpu_fused() raises:
     var dilation = Index(1, 1)
 
     var output_dims = IndexList[rank](1)
-    comptime for i in range(rank):
+    for i in range(rank):
         output_dims[i] = (
             (input_dims[i] - 1) * stride[i]
             + dilation[i] * (filter_dims[i] - 1)
@@ -203,16 +226,16 @@ def test_conv_transposed_cpu_fused() raises:
     var fused_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
     var input_tt = TileTensor(
-        input_ptr, row_major(Coord(extend_shape(input_dims, N, C)))
+        input_ptr, row_major(extend_shape(Coord(input_dims), N, C))
     )
     var filter_tt = TileTensor(
-        filter_ptr, row_major(Coord(append_shape(filter_dims, F, C)))
+        filter_ptr, row_major(append_shape(Coord(filter_dims), F, C))
     )
     var plain_tt = TileTensor(
-        plain_ptr, row_major(Coord(extend_shape(output_dims, N, F)))
+        plain_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
     var fused_tt = TileTensor(
-        fused_ptr, row_major(Coord(extend_shape(output_dims, N, F)))
+        fused_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
 
     var out_ptr = fused_tt.ptr
@@ -221,45 +244,48 @@ def test_conv_transposed_cpu_fused() raises:
     var plane_stride = output_dims[0] * row_stride
 
     @inline(.always)
-    @__copy_capture(out_ptr, col_stride, row_stride, plane_stride)
     def scale_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]) {
+        var out_ptr, var col_stride, var row_stride, var plane_stride
+    }:
         comptime assert coords.rank == 4
         var flat = (
-            Int(coords[0].value()) * plane_stride
-            + Int(coords[1].value()) * row_stride
-            + Int(coords[2].value()) * col_stride
-            + Int(coords[3].value())
+            Int(coords[0]) * plane_stride
+            + Int(coords[1]) * row_stride
+            + Int(coords[2]) * col_stride
+            + Int(coords[3])
         )
-        (out_ptr + flat).store(val.cast[dtype]() * SCALE)
+        (out_ptr.unsafe_offset(flat)).unsafe_store(val.cast[dtype]() * SCALE)
 
     @inline(.always)
     def null_epilogue[
         _dtype: DType, _width: SIMDLength, _alignment: Int = 1
-    ](coords: Coord, val: SIMD[_dtype, _width]) capturing:
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         pass
 
-    conv_transposed_cpu[False, False, False, null_epilogue](
+    conv_transposed_cpu[False, False, False](
         plain_tt,
         input_tt,
         filter_tt,
-        stride,
-        dilation,
-        Index(0, 0),
-        Index(0, 0),
-        Index(0, 0),
+        Coord(stride),
+        Coord(dilation),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
+        null_epilogue,
     )
 
-    conv_transposed_cpu[False, False, True, scale_epilogue](
+    conv_transposed_cpu[False, False, True](
         fused_tt,
         input_tt,
         filter_tt,
-        stride,
-        dilation,
-        Index(0, 0),
-        Index(0, 0),
-        Index(0, 0),
+        Coord(stride),
+        Coord(dilation),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
+        scale_epilogue,
     )
 
     for i in range(output_size):

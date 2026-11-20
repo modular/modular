@@ -79,6 +79,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include <cassert>
 #include <chrono>
@@ -761,7 +762,7 @@ struct TimeTraceThreadProfiler {
 //===----------------------------------------------------------------------===//
 
 /// This class represents the profiler context for a specific thread.
-struct ThreadProfilerContext {
+struct MODULAR_CXX_EXPORT ThreadProfilerContext {
   ~ThreadProfilerContext();
 
   /// Return the profiler instance for this thread, or nullptr if profiling
@@ -882,7 +883,7 @@ private:
 
 /// This class represents the main time trace profiler, of which only one should
 /// ever be active at a given time.
-struct TimeTraceProfiler {
+struct MODULAR_CXX_EXPORT TimeTraceProfiler {
   /// Initialize the time trace profiler. This should be constructed from the
   /// main thread.
   /// `runtimeProfilingTypeMask` defaults to fully enabled, but can be set at

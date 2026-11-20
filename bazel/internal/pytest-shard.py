@@ -75,7 +75,6 @@ def filter_items_by_shard(
     rest: list[nodes.Node] = []
 
     for item in items:
-        print(item.name)
         for mark in item.iter_markers():
             if mark.name == "unique_shard":
                 unique.append(item)

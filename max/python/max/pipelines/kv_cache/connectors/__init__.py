@@ -32,7 +32,6 @@ from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
-    connector_type,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
@@ -64,6 +63,7 @@ def create_connector(
     inherits ``rust_tiered``'s CUDA/HIP requirement.
 
     Args:
+        leaves: Leaf ids and the KV cache group each one belongs to.
         devices: Devices for the KV cache tensors (all participating devices).
         replica_kv_memory: Per-replica offload-ready KV memory units, one
             mapping per DP replica, keyed by the leaf ids ``params.leaves()``
@@ -80,7 +80,7 @@ def create_connector(
         A connector instance implementing the KVConnector protocol.
     """
     cfg = params.kv_connector_config
-    connector = connector_type(cfg)
+    connector = cfg.type
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector

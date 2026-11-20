@@ -365,6 +365,7 @@ class GlmToolParser(StructuralTagToolParser):
         }
 
     def reset(self) -> None:
+        """Drop the incremental parsing state for the next response."""
         super().reset()
         self._active_params_schema = None
         self._active_defs = {}

@@ -62,7 +62,6 @@ def LIT_FnOp : LITOp<"fn", [
   let arguments = (ins
     OptionalAttr<SymbolNameAttr>:$sym_name,
     OptionalAttr<StrAttr>:$sym_visibility,
-    OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$params,
@@ -104,7 +103,11 @@ def LIT_FnOp : LITOp<"fn", [
     DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
     DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     OptionalAttr<AnyAttr>:$thunkKey,
-    UnitAttr:$noDocRequired
+    UnitAttr:$noDocRequired,
+    // The signature with the parameters of the enclosing struct, trait or
+    // extension prepended. Set once the signature is resolved, and only for
+    // functions that have such a parent.
+    OptionalAttr<TypeAttrOf<LIT_FnTypeGeneratorType>>:$resolvedFullSignature
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -112,7 +115,6 @@ def LIT_FnOp : LITOp<"fn", [
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
     Block *getBody() { return &getFunctionBody().back(); }
     Region *getCallableRegion() { return &getBodyRegion(); }
-    bool isOptionalSymbol() { return getParamDecl().has_value(); }
 
     /// Returns the result type of the MLIR function (not the user defined
     /// result type).  This is guaranteed to be present.
@@ -124,20 +126,27 @@ def LIT_FnOp : LITOp<"fn", [
     Type getUserResultType();
 
     /// Return a reference for this function, optionally bound to a set of
-    /// parameter bindings.
+    /// parameter bindings with one entry per input of the full signature.
     TypedAttr getBoundReference(ParameterEvaluationContext &evalContext,
-                                ParameterExprArrayAttr bindings = {});
-    SymbolConstantAttr
+                                ParamsBindingArrayAttr bindings = {});
+    FuncSymbolGenerator
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
-                      ParameterExprArrayAttr bindings = {});
+                      ParamsBindingArrayAttr bindings = {});
+    /// Like the above, from a dense list where a null value leaves that input
+    /// unbound. Missing trailing values are unbound.
+    FuncSymbolGenerator
+    getBoundSymbolRef(ParameterEvaluationContext &evalContext,
+                      ArrayRef<TypedAttr> bindings);
 
     /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
-    /// function. `dischargedBodyConstraints` is an optional bitmask over the
-    /// function's body constraints: a set bit drops the matching constraint
-    /// from the result type. Empty (the default) retains all body constraints.
+    /// function, bound to `bindings` with one entry per input of the full
+    /// signature. A null `bindings` returns the unbound generator.
+    /// `dischargedBodyConstraints` is an optional bitmask over the function's
+    /// body constraints: a set bit drops the matching constraint from the
+    /// result type. Empty (the default) retains all body constraints.
     TypedAttr
     getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
-                            ParameterExprArrayAttr bindings = {},
+                            ParamsBindingArrayAttr bindings = {},
                             const llvm::BitVector &dischargedBodyConstraints =
                                 llvm::BitVector());
 
@@ -281,9 +290,9 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
   let summary = "Bind params onto an SSA value with function generator type.";
   let description = [{
     The `lit.bind_params` operation binds compile-time parameters onto an SSA
-    value whose type is a function generator type. Partial and out-of-order
-    parameter binding is allowed by specifying the unbound positions with
-    `#kgen.unbound`.
+    value whose type is a function generator type. `params` holds one entry
+    per generator input. Partial and out-of-order parameter binding is allowed
+    by leaving inputs unbound in `params`, which prints them as `?`.
 
     This is the SSA-value counterpart of `#kgen.bind_params`. All input
     parameters must be fully bound before the result can be used with
@@ -303,7 +312,7 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
 
   let arguments = (ins
     LIT_FnTypeGeneratorType:$generator,
-    KGEN_ParameterExprArrayAttr:$paramValues,
+    KGEN_ParamsBindingArrayAttr:$params,
     OptionalAttr<DenseBoolArrayAttr>:$discharged
   );
   let results = (outs LIT_FnTypeGeneratorType:$result);
@@ -312,14 +321,12 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
-    /// Derive the result type from the generator and parameter values.
-    /// Parameter values are normalized to the generator's input arity: missing
-    /// trailing values are treated as unbound and extra trailing values are
-    /// ignored. `discharged` is an optional bitmask over the generator's body
+    /// Derive the result type from the generator and the bound parameters.
+    /// `discharged` is an optional bitmask over the generator's body
     /// constraints: a set bit drops the matching constraint from the result
     /// type. Null (the default) retains all body constraints.
     static Type inferResultType(FnTypeGeneratorType generator,
-                                ArrayRef<TypedAttr> paramValues,
+                                ParamsBindingArrayAttr params,
                                 DenseBoolArrayAttr discharged = {});
   }];
 }
@@ -361,7 +368,8 @@ def LIT_FileModuleOp : LITOp<"file_module", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>
   ];
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let assemblyFormat =
+      "$sym_name $bodyRegion prop-dict attr-dict-with-keyword";
   let skipDefaultBuilders = 1;
 }
 
@@ -382,11 +390,19 @@ def LIT_PackageOp : LITOp<"package", [
     If the package was precompiled it may also contain:
     - The set of link dependencies for this package, `dependencies`.
 
+    A package marked `namespace` models a namespace: plain directories
+    spanning import roots, which group the packages within them but are not a
+    package themselves.
+
     Example:
 
     ```mlir
     lit.package @foo {
       lit.file_module @bar {
+      }
+    }
+    lit.package namespace @ns {
+      lit.package @baz {
       }
     }
     ```
@@ -398,7 +414,8 @@ def LIT_PackageOp : LITOp<"package", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // References to the dependencies of this package.
     OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
-    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules
+    OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules,
+    UnitAttr:$isNamespace
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -410,7 +427,10 @@ def LIT_PackageOp : LITOp<"package", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>
   ];
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let assemblyFormat = [{
+    (`namespace` $isNamespace^)? $sym_name $bodyRegion prop-dict
+    attr-dict-with-keyword
+  }];
   let hasVerifier = 1;
 }
 
@@ -463,8 +483,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     UnitAttr:$synthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$moveInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$copyInit,
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
@@ -497,10 +517,11 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let assemblyFormat = [{
     $sym_name ``
     custom<StructParameterSpec>($params, $signature, $canonicalTrait) ``
-    custom<TypeConvention>($convention) attr-dict-with-keyword
+    custom<TypeConvention>($convention)
     (`\n` `move` custom<Symbol>($moveInit)^ ``)?
     (`\n` `copy` custom<Symbol>($copyInit)^ ``)?
-    custom<OptionalDecorators>($decorators) $fields
+    custom<OptionalDecorators>($decorators) $fields prop-dict
+    attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -529,8 +550,27 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     /// Return the `@__annotation` values selected by `fieldIndex`.
     ArrayAttr getSelectedAnnotations(int64_t fieldIndex);
 
-    /// Get a bound reference to the struct type.
-    StructType bindReference(ArrayRef<TypedAttr> paramValues = {});
+    /// Return the default linear type error message (for when the user didn't
+    /// write a custom message). `conditional` determines whether the struct may
+    /// conditionally conform to `Deinitable`.
+    static std::string getDefaultLinearTypeErrorMsg(StringRef structName,
+                                                    bool conditional);
+
+    /// Return the source constraint under which the struct conforms to the
+    /// trait named `traitName` (trivially true when always conforms), or
+    /// std::nullopt when it never conforms.
+    std::optional<ConstraintAttr> getConformanceCondition(StringRef traitName);
+
+    /// Get a type expression after binding the parameter value to the struct
+    /// decl.
+    TypedAttr bindReference(ParameterEvaluationContext *evalCtx,
+                            ParamsBindingArrayAttr paramValues = {});
+
+    /// Get a fully bound struct type with the given parameter values.
+    /// The method assume that the provided parameter values will lead to a
+    /// fully bound struct type.
+    StructType bindAllReferences(ParameterEvaluationContext *evalCtx,
+                                 ArrayRef<TypedAttr> paramValues = {});
 
     /// Get whether this struct is compiler generated.
     bool isSynthetic();
@@ -581,7 +621,8 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     // library wraps as `reflect[T].field_annotation[field, index]`.
     DefaultValuedAttr<ArrayAttr, "{}">:$annotations
   );
-  let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
+  let assemblyFormat =
+      "custom<KeywordAsString>($name) `:` $type prop-dict attr-dict";
 
   let builders = [
     OpBuilder<(ins "StringAttr":$name, "Type":$type)>,
@@ -592,7 +633,7 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     /// Given a struct base value type that may have bound parameters,
     /// substitute those bound parameters into our type and return the result.
     Type getReboundType(StructType structSelfType,
-                        ParameterEvaluationContext *ctx = nullptr);
+                        ParameterEvaluationContext *ctx);
   }];
 }
 
@@ -629,7 +670,7 @@ def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let assemblyFormat = [{
-    custom<KeywordAsString>($name) (`:` $payloadTypes^)? attr-dict
+    custom<KeywordAsString>($name) (`:` $payloadTypes^)? prop-dict attr-dict
   }];
 
   let hasVerifier = 1;
@@ -763,7 +804,7 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
   let assemblyFormat = [{
     $sym_name ``
     custom<StructParameterSpec>($params, $signature)
-    attr-dict-with-keyword $fields
+    $fields prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -833,7 +874,8 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
   let assemblyFormat = [{
     $sym_name ``
     custom<StructParameterSpec>($params, $signature, $canonicalTrait)
-    custom<TypeConvention>($convention) attr-dict-with-keyword $fields
+    custom<TypeConvention>($convention) $fields prop-dict
+    attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -920,22 +962,21 @@ def LIT_TryOp : LITOp<"try",
 
   let arguments = (ins
     OptionalAttr<StrAttr>:$label,
-    Optional<LIT_RefType>:$err,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$suppressWarnings);
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
                         SizedRegion<1>:$elseRegion,
                         VariadicRegion<SizedRegion<1>>:$finallyRegions);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    ($label^)? ($err^ `:` type($err))? (`->` type($results)^)? $tryRegion
+    ($label^)? (`->` type($results)^)? $tryRegion
     `except` custom<RegionWithArgs>($exceptRegion)
     `else` custom<RegionWithArgs>($elseRegion)
-    (`finally` $finallyRegions^)? attr-dict
+    (`finally` $finallyRegions^)? prop-dict attr-dict
   }];
 
   let builders = [
-    OpBuilder<(ins "Value":$err, CArg<"bool", "false">:$suppressWarnings),
-      [{ build($_builder, $_state, {}, /*label=*/{}, err, suppressWarnings, 1); }]>,
+    OpBuilder<(ins CArg<"bool", "false">:$suppressWarnings),
+      [{ build($_builder, $_state, {}, /*label=*/{}, suppressWarnings, 1); }]>,
   ];
 
   let extraClassDeclaration = [{
@@ -1035,7 +1076,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     UnitAttr:$hasDocHiddenDecorator
   );
   let assemblyFormat = [{
-    custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
+    custom<AliasDeclOpValue>($paramDecl, $value) prop-dict attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -1104,7 +1145,8 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   let builders = [
     OpBuilder<(ins "Type":$elementType, "StringRef":$name,
                    "StringRef":$originName,
-                   "VarDeclKind":$kind)>
+                   "VarDeclKind":$kind,
+                   CArg<"TypedAttr", "{}">:$addressSpace)>
   ];
   let extraClassDeclaration = [{
     bool isSynthetic();
@@ -1488,8 +1530,8 @@ def LIT_ImportOp : LITOp<"import", [NoRegionArguments, SymbolName,
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    $sym_name `path` $modulePath
-    attr-dict-with-keyword $bodyRegion
+    $sym_name `path` $modulePath $bodyRegion prop-dict
+    attr-dict-with-keyword
   }];
 
   let skipDefaultBuilders = 1;
@@ -1662,7 +1704,8 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
 
 class RefImmutType<string lhs, string rhs> : TypesMatchWith<
     "reference with mutability removed", lhs, rhs,
-    "llvm::cast<RefType>($_self).getWithMutability(false)">;
+    "llvm::isa<RefType>($_self) ? "
+    "llvm::cast<RefType>($_self).getWithMutability(false) : Type()">;
 
 def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
   let summary = "Drop mutability from a reference";
@@ -1730,7 +1773,8 @@ def LIT_RefUpcastOp : LITOp<"ref.upcast", [Pure]> {
 // Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
 class RefPointerType<string lhs, string rhs> : TypesMatchWith<
     "reference as pointer type", lhs, rhs,
-    "llvm::cast<RefType>($_self).getAsPointerType()">;
+    "llvm::isa<RefType>($_self) ? "
+    "llvm::cast<RefType>($_self).getAsPointerType() : Type()">;
 
 def LIT_RefToPointerOp : LITOp<"ref.to_pointer",
                               [RefPointerType<"ref", "ptr">]> {
@@ -1758,27 +1802,30 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   let summary = "Create an immortal reference from a pointer value";
   let description = [{
     This op converts a raw pointer to a reference with specified mutability and
-    origin.  When `startsUninit` is true, the reference is assumed to be
-    uninitialized but needs to be initialized before exit.  When false it is
-    assumed to be initialized and must be initialized on exit.
+    origin. `startUninit` and `endUninit` describe the referent's liveness
+    immediately before and after the operation, respectively. This represents
+    all four transitions: initialization, ownership transfer, and the two
+    no-op liveness states. The parser uses this for
+    `__get_address_as_uninit_lvalue` and `__get_address_as_owned_value`.
 
     ```mlir
     lit.ref.from_pointer %0, startUninit=true : !lit.ref<mut @Foo, life>
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, UnitAttr:$startUninit,
+  let arguments = (ins PointerType:$ptr, StrAttr:$name, UnitAttr:$startUninit,
                        UnitAttr:$endUninit);
   let results = (outs LIT_RefType:$ref);
   let assemblyFormat = [{
-    $ptr (`start_uninit` $startUninit^)? (`end_uninit` $endUninit^)?
+    $ptr $name (`start_uninit` $startUninit^)? (`end_uninit` $endUninit^)?
     `:` type($ref) attr-dict
   }];
 
   let builders = [
     // Create with a pointer and origin, to infer result type.
     OpBuilder<(ins "Value":$pointer, "TypedAttr":$origin,
-                   "bool":$startsUninit, "bool":$endsUninit)>,
+                   "StringAttr":$name, "bool":$startsUninit,
+                   "bool":$endsUninit)>,
   ];
 }
 
@@ -1797,7 +1844,7 @@ def LIT_RefFromPointerREPLOp : LITOp<"ref.from_pointer.repl",
 
   let arguments = (ins PointerType:$ptr, StrAttr:$name);
   let results = (outs LIT_RefType:$ref);
-  let assemblyFormat = "$ptr `:` type($ref) attr-dict";
+  let assemblyFormat = "$ptr $name `:` type($ref) attr-dict";
 }
 
 
@@ -1864,6 +1911,27 @@ def LIT_RefFromKgenPtrOp : LITOp<"ref.from_kgen_ptr", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// RefUnionCastOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefUnionCastOp : LITOp<"ref.union.cast", [Pure, InferTypeOpAdaptor]> {
+  let summary = "Cast a reference to untagged union storage to one member";
+  let description = [{
+    Casts a reference to the union into a reference to one member, at offset
+    zero. The result aliases the whole union and keeps the union's origin and
+    address space. The caller guarantees that the member is active before
+    accessing it.
+  }];
+  let arguments = (ins LIT_RefType:$container, AttrOfType<Index>:$index);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = [{
+    $container `[` custom<IndexParamValue>($index) `]` attr-dict
+    `:` type($container) `->` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 
@@ -1922,7 +1990,8 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
 
   let builders = [
     // Infer the result type based on the result of lookup (field name access).
-    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>,
+    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field,
+                   "ParameterEvaluationContext *":$ctx)>,
     // Build with index access.
     OpBuilder<(ins "Type":$resultType, "TypedAttr":$index, "Value":$container)>,
     // Build with explicit field name and result type (for compatibility).
@@ -1943,7 +2012,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     /// specified field, maintaining origin and mutability, and rebinding any
     /// generics from the base type through the field type.
     static RefType getFieldType(RefType structRefTy, StructFieldOp field,
-                               ParameterEvaluationContext *ctx = nullptr);
+                               ParameterEvaluationContext *ctx);
 
     /// Given a reference to a struct, return the reference type to the
     /// specified field, maintaining origin and mutability, assuming the type
@@ -2004,23 +2073,17 @@ def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"dest", "value">]>
 // MemcpyOp
 //===----------------------------------------------------------------------===//
 
-// Checks that all reference element types match.
-class EqualPointeeTypes<list<string> names> :
-    AllMatchSameOperatorTrait<
-        names, "llvm::cast<RefType>($_self.getType()).getElementType()",
-        "element types"
-    >;
-
-def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
+def LIT_MemcpyOp : LITOp<"memcpy"> {
   let summary = "memcpy operation";
   let description = [{
     Performs an in-memory copy operation between the source reference and
     destination reference. The source reference may either be mutable or
     immutable; the destination reference must be mutable. Unlike regular
     memcpy, this op doesn't work on bytes - it does a whole-value copy of the
-    references' element type. The two references may have differing address
-    space qualifiers. The destination is considered 'initialized' by this
-    operation.
+    references' element type. The element types must be canonically equal, so
+    they may differ in type sugar such as aliases. The two references may have
+    differing address space qualifiers. The destination is considered
+    'initialized' by this operation.
 
     Example:
 
@@ -2034,6 +2097,7 @@ def LIT_MemcpyOp : LITOp<"memcpy", [EqualPointeeTypes<["src", "dst"]>]> {
   let arguments = (ins LIT_RefType:$src, LIT_RefType:$dst);
   let results = (outs);
   let assemblyFormat = "$src `,` $dst attr-dict `:` type($src) `->` type($dst)";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2124,6 +2188,47 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
   let assemblyFormat = [{
     $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// RefPackConcatOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefPackConcatOp : LITOp<"ref.pack.concat", [Pure]> {
+  let summary = "concatenate reference packs";
+  let description = [{
+    The `lit.ref.pack.concat` operation makes one reference pack from the
+    elements of its operands, in sequence. The operation must have one or more
+    operands.
+
+    All operands have the same element type, address space and origin as the
+    result.
+
+    The variadic element list of the result is the `#kgen.param_list.concat` of
+    the lists of the operands. An element list can be parametric. With one
+    operand, the result can also have the list of the operand, because a
+    `#kgen.param_list.concat` of one parametric list does not fold.
+
+    Example:
+
+    ```mlir
+    %0 = lit.ref.pack.concat(%a, %b)
+      : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+        !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+     -> !lit.ref.pack<:param_list<!kgen.type>
+          #kgen.param_list.concat<#kgen.param_list<[index], Ts>
+            : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+    ```
+  }];
+
+  let arguments = (ins Variadic<LIT_RefPackType>:$packs);
+  let results = (outs LIT_RefPackType:$result);
+  let assemblyFormat = [{
+    `(` $packs `)` attr-dict `:` type($packs) `->` type($result)
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

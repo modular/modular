@@ -20,12 +20,19 @@ from __future__ import annotations
 
 import itertools
 import math
+from collections import OrderedDict
+from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.graph_groups import (
+    VisionEmbeddings,
+    VisionRows,
+    vision_outputs,
+)
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from ..model_config import InklingVisionConfig
 
@@ -112,9 +119,11 @@ def plan_folds(config: InklingVisionConfig) -> list[tuple[int, int, int]]:
 def fold_timespace_to_depth(
     x: TensorValue, t_fold: int, hw_fold: int
 ) -> TensorValue:
-    """Merges a ``t_fold x hw_fold x hw_fold`` neighborhood of
-    ``[patches, t, h, w, c]`` into the channels, ordered frame, row, column,
-    channel."""
+    """Folds a spatiotemporal neighborhood into the channels.
+
+    ``t_fold x hw_fold x hw_fold`` of ``[patches, t, h, w, c]`` moves into the
+    channel axis, ordered frame, row, column, channel.
+    """
     if t_fold == 1 and hw_fold == 1:
         return x
     patches = x.shape[0]
@@ -154,11 +163,16 @@ class InklingVisionModel(Module):
         config: InklingVisionConfig,
         dtype: DType,
         device: DeviceRef,
+        *,
+        image_mean: Sequence[float],
+        image_std: Sequence[float],
     ) -> None:
         super().__init__()
         self.config = config
         self.dtype = dtype
         self.device = device
+        self.image_mean = tuple(image_mean)
+        self.image_std = tuple(image_std)
         self.folds = plan_folds(config)
 
         linears = []
@@ -198,8 +212,37 @@ class InklingVisionModel(Module):
             else None
         )
 
-    def __call__(self, patches: TensorValue) -> TensorValue:
-        x = patches.cast(self.dtype)
+    def normalize(self, pixels: TensorValue) -> TensorValue:
+        """Turns raw pixels into the tower's input frames.
+
+        ``[patches, patch, patch, channels]`` becomes ``[patches,
+        temporal_patch_size, patch, patch, channels]``. The scale runs in
+        float32 in the reference's order, then the one image frame is repeated
+        across the temporal axis.
+
+        Normalizes in float32 in the reference's order, then repeats the one
+        image frame across the temporal axis.
+        """
+        f32 = DType.float32
+        x = (
+            pixels.cast(f32) * ops.constant(1.0 / 255.0, f32, self.device)
+            - ops.constant(self.image_mean, f32, self.device)
+        ) / ops.constant(self.image_std, f32, self.device)
+        frames = ops.unsqueeze(x.cast(self.dtype), 1)
+        return ops.broadcast_to(
+            frames,
+            [
+                pixels.shape[0],
+                self.config.temporal_patch_size,
+                *pixels.shape[1:],
+            ],
+        )
+
+    def __call__(
+        self, patches: TensorValue
+    ) -> OrderedDict[str, VisionEmbeddings]:
+        """Runs the vision tower over the patches."""
+        x = self.normalize(patches)
         for index, (t_fold, hw_fold, _) in enumerate(self.folds):
             x = fold_timespace_to_depth(x, t_fold, hw_fold)
             x = self.linears[index](x)
@@ -207,16 +250,21 @@ class InklingVisionModel(Module):
                 x = ops.gelu(self.norms[index](x))
         if self.final_norm is not None:
             x = self.final_norm(x)
-        return x.reshape([x.shape[0], self.config.decoder_dmodel])
+        return vision_outputs(
+            (x.reshape([x.shape[0], self.config.decoder_dmodel]),)
+        )
+
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Groups the raw patches as rows the vision batcher concatenates."""
+        return OrderedDict(patches=VisionRows(pixels=self.input_types()[0]))
 
     def input_types(self) -> tuple[TensorType, ...]:
         """One block of raw patches, as the image processor emits them."""
         return (
             TensorType(
-                DType.float32,
+                DType.int32,
                 shape=[
                     "total_patches",
-                    self.config.temporal_patch_size,
                     self.config.patch_size,
                     self.config.patch_size,
                     self.config.n_channels,

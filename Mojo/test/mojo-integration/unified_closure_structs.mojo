@@ -16,7 +16,7 @@
 from std.sys import argv
 
 
-# COM: Test the capturing effect is propagated through to trait methods
+# COM: A struct with state conforms to a closure trait through `__call__`.
 trait DefinesClosure(def(z: Int) -> Int):
     pass
 
@@ -150,7 +150,7 @@ comptime _chained_fn_trait0[
     FOO: DType, cw: Int
 ] = ImplicitlyCopyable & Deinitable & (def() -> SIMD[FOO, cw])
 
-comptime _chained_fn_trait1[BAR: DType] = _chained_fn_trait0[BAR, 4]
+comptime _chained_fn_trait1 = _chained_fn_trait0[_, 4]
 
 
 @fieldwise_init
@@ -236,7 +236,7 @@ def testShadowingNestedClosureParam():
 
 
 def main() raises:
-    var y: Int = atol(argv()[1])
+    _ = atol(argv()[1])  # y
     var one = atol(argv()[2])
     var four = atol(argv()[3])
 

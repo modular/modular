@@ -48,7 +48,9 @@ FailureOr<TypedAttr> ParamListReduceAttr::evaluateWithContext(
     IntegerAttr vaIdx =
         IntegerAttr::get(IndexType::get(paramList.getContext()), i);
     GeneratorAttr spGen = reducer.getSpecializedGenerator(
-        {reducedVal, paramList, vaIdx}, &context);
+        ParamsBindingArrayAttr::get(getContext(),
+                                    {reducedVal, paramList, vaIdx}),
+        &context);
     if (!spGen)
       return TypedAttr();
     // This should never happen, we should have verified VariadicMapAttr.
@@ -78,7 +80,8 @@ FailureOr<TypedAttr> ParamListTabulateAttr::evaluateWithContext(
   values.reserve(n);
   for (int64_t i = 0; i < n; ++i) {
     IntegerAttr idxAttr = IntegerAttr::get(IndexType::get(getContext()), i);
-    GeneratorAttr spGen = genAttr.getSpecializedGenerator({idxAttr}, &context);
+    GeneratorAttr spGen = genAttr.getSpecializedGenerator(
+        ParamsBindingArrayAttr::get(getContext(), {idxAttr}), &context);
     if (!spGen)
       return TypedAttr();
     if (!spGen.isFullyBound())
@@ -97,8 +100,8 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
   // Returns nullopt when `handle` has no matching conformance.
   auto simplifyFrom =
       [&](ResolvedStructHandle handle) -> std::optional<FailureOr<TypedAttr>> {
-    Operation *conformanceOp =
-        context.resolveConformanceForStruct(handle, getTraitSymbol());
+    Operation *conformanceOp = context.resolveConformanceForStruct(
+        handle, getTraitSymbol(), getWitnessName());
     if (!conformanceOp)
       return std::nullopt;
 
@@ -153,6 +156,60 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
+/// Returns the message for a constant shift amount outside the bit width of
+/// the shifted operand, if `op` is such a shift.
+static std::optional<std::string>
+getShiftOutOfRangeMessage(ParamOperatorAttr op, TargetInfoAttr target) {
+  if (op.getOpcode() != POC::Shr && op.getOpcode() != POC::Shl)
+    return std::nullopt;
+  ArrayRef<TypedAttr> operands = op.getOperands();
+  if (operands.size() != 2)
+    return std::nullopt;
+  auto lhsType = sugarDynCast<SIMDType>(operands[0].getType());
+  auto rhs = sugarDynCast<SIMDAttr>(operands[1]);
+  if (!lhsType || !rhs)
+    return std::nullopt;
+  std::optional<KGENDType> dtype = lhsType.getResolvedDType();
+  if (!dtype)
+    return std::nullopt;
+  int64_t width = dtype->getWidthInBits(target);
+  if (width <= 0)
+    return std::nullopt;
+  for (const DTypeValue &lane : rhs.getValues()) {
+    const APSInt &amount = lane.getData();
+    if (amount.isNegative() || amount.uge(width)) {
+      SmallVector<char, 16> amountStr;
+      amount.toString(amountStr);
+      return "shift amount " + std::string(amountStr.data(), amountStr.size()) +
+             " is outside the valid range 0.." + std::to_string(width - 1) +
+             " for " + getTypeAsString(operands[0].getType()).str();
+    }
+  }
+  return std::nullopt;
+}
+
+/// An operator whose operands are all constants and that still did not fold
+/// never will.
+static void diagnoseUnfoldedOperator(ParamOperatorAttr op,
+                                     ParameterEvaluationContext &context) {
+  if (!context.isMaterializationContext())
+    return;
+  // An operand that still evaluates with context is not yet a value, and
+  // checking for that is cheaper than `isSimpleConstant`.
+  ArrayRef<TypedAttr> operands = op.getOperands();
+  if (llvm::any_of(operands, llvm::IsaPred<ContextuallyEvaluatedAttrInterface>))
+    return;
+  if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant))
+    return;
+  if (std::optional<std::string> message =
+          getShiftOutOfRangeMessage(op, context.getTargetInfo()))
+    return context.emitMaterializationError(*message,
+                                            MaterializationErrorKind::Unfolded);
+  context.emitMaterializationError("could not simplify operator " +
+                                       getParamAsString(op),
+                                   MaterializationErrorKind::Unfolded);
+}
+
 // FIXME(MOCO-4110): The reason why we need to extend
 // `ParamOperatorAttr::evaluateWithContext` here is because
 // `ContextuallyEvaluatedAttrInterface` is **NOT** always created with a
@@ -188,16 +245,39 @@ FailureOr<TypedAttr> ParamOperatorAttr::evaluateWithContext(
           ParamOperatorAttr::getRebind(evaluated, operands[i].getType());
     }
   }
-  if (changed)
-    return ParamOperatorAttr::get(getOpcode(), operands, getType());
+  if (changed) {
+    TypedAttr result = ParamOperatorAttr::get(getOpcode(), operands, getType());
+    if (auto op = dyn_cast<ParamOperatorAttr>(result))
+      diagnoseUnfoldedOperator(op, context);
+    return result;
+  }
 
   // Can not be further folded.
+  diagnoseUnfoldedOperator(*this, context);
   return failure();
 }
 
 //===----------------------------------------------------------------------===//
 // ParamIdenticalAttr
 //===----------------------------------------------------------------------===//
+
+/// An identity whose operands are all constants and that is still undecided
+/// never will be. The caller has checked that the operands are constants.
+static void diagnoseUndecidedIdentity(ParamIdenticalAttr attr,
+                                      ParameterEvaluationContext &context) {
+  if (!context.isMaterializationContext())
+    return;
+  ArrayRef<TypedAttr> operands = attr.getOperands();
+  std::string operandList;
+  llvm::raw_string_ostream os(operandList);
+  llvm::interleave(
+      operands.drop_back(), os,
+      [&](TypedAttr operand) { os << getParamAsString(operand); }, ", ");
+  os << " and " << getParamAsString(operands.back());
+  context.emitMaterializationError("could not prove whether " + operandList +
+                                       " are the same value",
+                                   MaterializationErrorKind::Unfolded);
+}
 
 FailureOr<TypedAttr> ParamIdenticalAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
@@ -218,10 +298,16 @@ FailureOr<TypedAttr> ParamIdenticalAttr::evaluateWithContext(
   // distinct keys rather than requiring them all to match.
   DenseSet<Attribute> keys;
   bool sawResidual = false;
+  bool allConstant = true;
   for (TypedAttr operand : getOperands()) {
     TypedAttr canonical = getCanonicalAttr(operand);
     PreparedConstant prepared(canonical, target);
-    if (!ParameterAttr::isSimpleConstant(canonical) || prepared.hasUnknown()) {
+    if (!ParameterAttr::isSimpleConstant(canonical)) {
+      sawResidual = true;
+      allConstant = false;
+      continue;
+    }
+    if (prepared.hasUnknown()) {
       sawResidual = true;
       continue;
     }
@@ -234,8 +320,11 @@ FailureOr<TypedAttr> ParamIdenticalAttr::evaluateWithContext(
 
   // An operand with no key never collapses into another, so it leaves the class
   // residual however the rest of them compare.
-  if (sawResidual)
+  if (sawResidual) {
+    if (allConstant)
+      diagnoseUndecidedIdentity(*this, context);
     return failure();
+  }
 
   assert(!keys.empty() && "an identity class holds at least two operands");
   return TypedAttr(SIMDAttr::getScalarBool(getContext(), true));
@@ -269,6 +358,32 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
                         [&](ParameterEvaluator &evaluator) {
                           result = simplify(resolved.decl, evaluator);
                         });
+  auto doesConforms = [](FailureOr<TypedAttr> result) {
+    return succeeded(result) && KGEN::isTriviallyTrueProposition(*result);
+  };
+
+  if (doesConforms(result))
+    return result;
+
+  if (auto extension =
+          sugarDynCast<ExtensionAttr>(SugarAttr::strip(getTypeValue()))) {
+    for (TypedAttr ext : extension.getExtensions()) {
+      FailureOr<ResolvedStructHandle> extResolvedOr =
+          context.resolveStructOp(ext, /*acceptAsync=*/false);
+      if (failed(extResolvedOr))
+        continue;
+      FailureOr<TypedAttr> extResult = failure();
+      context.withEvaluator(resolved.decl.getInputParams(),
+                            resolved.paramValues,
+                            [&](ParameterEvaluator &evaluator) {
+                              extResult = simplify(resolved.decl, evaluator);
+                            });
+      // We just need one extension that provides the conformance (this should
+      // mirror how GetWitnessAttr is folded).
+      if (doesConforms(extResult))
+        return extResult;
+    }
+  }
   return result;
 }
 
@@ -295,7 +410,7 @@ computeStructFieldOffset(ArrayRef<Type> fieldTypes, int64_t fieldIndex,
     std::optional<int64_t> curFieldAlign =
         DataLayoutInterface::getTypeABIAlign(target, fieldTypes[i]);
     std::optional<int64_t> curFieldSize =
-        DataLayoutInterface::getTypeAllocSize(target, fieldTypes[i]);
+        getStructFieldSize(target, fieldTypes[i]);
     if (!curFieldAlign || !curFieldSize) {
       emitError("could not determine size or alignment for field type");
       return failure();
@@ -520,7 +635,7 @@ FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
 namespace {
 /// Resolve a function-valued `TypedAttr` to its defining op via the
 /// evaluation context. Returns null if the value is not a direct function
-/// reference (`#kgen.symbol.constant<@...>`).
+/// reference (a `FuncSymbolGenerator`).
 ///
 /// The returned `FuncInterface` op is `lit.fn` when resolved through the
 /// parser or LIT symbol-table contexts, or `kgen.generator` when resolved
@@ -531,9 +646,9 @@ namespace {
 /// param list cast accordingly.
 FuncInterface resolveFuncDecl(TypedAttr funcValue,
                               ParameterEvaluationContext &context) {
-  // Mojo function values reach reflection as `#kgen.symbol.constant<@func>`.
+  // Mojo function values reach reflection as a `FuncSymbolGenerator`.
   // Closure literals are not yet supported.
-  auto symbol = dyn_cast<SymbolConstantAttr>(funcValue);
+  auto symbol = FuncSymbolGenerator::dynCast(funcValue);
   if (!symbol)
     return nullptr;
   return context.resolveFunctionDecl(symbol.getSymbol());

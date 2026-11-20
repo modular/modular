@@ -60,6 +60,12 @@ bmojo /path/to/file.mojo
 bd //Mojo/tools/mojo -- /path/to/file.mojo
 ```
 
+A standalone run is only worth it while iterating on kernel sources under
+`max/kernels/src`. With nothing changed, or only the test file changed,
+`./bazelw test` is within a second or two of it, and a bazel pass is the only
+one you may report (see the root `AGENTS.md`). If `mojo` itself is missing or a
+dangling symlink, re-run the install.
+
 For kernel development (editing `max/kernels/src`), run
 `./bazelw run //:install-kernel-dev` so that `mojo file.mojo` picks up live
 source edits. It ships the same compiler, runtime, and standard library as
@@ -77,7 +83,17 @@ Two things about that mode cost a lane real time:
 - **Invoke mojo as `mojo -I $PWD/max/mojo file.mojo`.** `//:install-kernel-dev`
   strips the prebuilt `max` package without adding `max/mojo` to the import
   path, so a plain `mojo file.mojo` fails with `unable to locate module 'max'`
-  and nothing compiles at all.
+  and nothing compiles at all. Nearly every GPU test imports `max.*`, directly
+  or through `layout`. The `MODULAR_MOJO_MAX_IMPORT_PATH` environment variable
+  does the same job, but it *replaces* the configured import path rather than
+  extending it, so pass the whole list:
+
+  ```bash
+  export MODULAR_MOJO_MAX_IMPORT_PATH="$(sed -n 's/^import_path = //p' \
+    .derived/modular.cfg | tr -d ';'),$PWD/max/mojo"
+  mojo max/kernels/test/gpu/linalg/test_matmul_sm100_blockwise_fp8_smoke.mojo
+  ```
+
 - **The two install modes do not compose.** Running `//:install` again
   mid-session re-arms the shadowing this mode exists to avoid: the next `mojo`
   run reads the freshly built `nn.mojoc` and can pass against pre-edit code.
@@ -190,6 +206,11 @@ mojo format ./
 - AMD GPU support through ROCm
 - Tests can be run on specific hardware using remote configs
 - GPU kernels use device contexts and memory management
+- Every stream, memory, event, graph, sync or device-attribute operation goes
+  through `DeviceContext`. A kernel, test or benchmark never opens `libcuda`
+  or `libamdhip64` or calls a `cu*` or `hip*` function directly, and never
+  copies such a call from a neighboring file. An operation `DeviceContext`
+  lacks is a Driver-team ticket, not a vendor bridge.
 
 ### CPU Optimizations
 

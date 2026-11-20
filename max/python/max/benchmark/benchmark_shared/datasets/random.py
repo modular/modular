@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Random and synthetic datasets, including the ShareGPT prompt sampler."""
+
 from __future__ import annotations
 
 import json
@@ -91,8 +93,11 @@ def log_request_actual_length_percentiles(
 
 
 class RandomBenchmarkDataset(LocalBenchmarkDataset):
+    """Random dataset that draws prompts and lengths from pools."""
+
     @property
     def use_synthetic_tokens(self) -> bool:
+        """Reports whether prompts are built from synthetic tokens."""
         # Overridden in SyntheticBenchmarkDataset
         return False
 
@@ -295,6 +300,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         Args:
             tokenizer: Tokenizer to encode prompts.
+            pool: Pool that encodes the prompts in parallel.
             max_num_unique_sys_prompt: Number of unique system prompts to load.
             num_requests: Number of user prompts to load.
 
@@ -680,6 +686,8 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
 
 class SyntheticBenchmarkDataset(RandomBenchmarkDataset):
+    """Random dataset whose prompts are synthetic token sequences."""
+
     @override
     @property
     def use_synthetic_tokens(self) -> bool:

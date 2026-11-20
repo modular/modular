@@ -18,10 +18,14 @@ from std.testing import assert_true
 
 
 def strided_load_kernel[
-    *, dtype: DType = .uint32, width: SIMDLength = 1
+    *,
+    dtype: DType = .uint32,
+    width: SIMDLength = 1,
+    output_origin: MutOrigin,
+    ptr_origin: ImmOrigin,
 ](
-    output: MutPointer[SIMD[dtype, width], MutAnyOrigin],
-    ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin, address_space=.GENERIC],
+    output: MutPointer[SIMD[dtype, width], output_origin],
+    ptr: ImmPointer[Scalar[dtype], ptr_origin, address_space=.GENERIC],
     stride: Int,
 ):
     output[] = strided_load[width](ptr, stride)
@@ -30,7 +34,14 @@ def strided_load_kernel[
 def test_strided_load() raises:
     assert_true(
         "@llvm.masked.gather"
-        in _compile_code[strided_load_kernel[width=4], emission_kind="llvm"]()
+        in _compile_code[
+            strided_load_kernel[
+                width=4,
+                output_origin=MutUntrackedOrigin,
+                ptr_origin=ImmUntrackedOrigin,
+            ],
+            emission_kind="llvm",
+        ]()
     )
 
 

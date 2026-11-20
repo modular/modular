@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -30,7 +30,7 @@ mojo_test(
 # Tests programmatic Metal GPU frame capture. The test handles non-Metal
 # contexts gracefully, so it is not restricted to the Apple GPU toolchain.
 # It does need a GPU build, though: `DeviceContext` resolves
-# `GPUInfo.from_name[_accelerator_arch()]()` at compile time, which fails the
+# `get_gpu_info()` at compile time, which fails the
 # "Unknown GPU architecture" constraint on CPU-only platforms (e.g. Graviton).
 # `//:has_gpu` keeps it vendor-agnostic while excluding CPU-only build configs.
 mojo_test(
@@ -72,6 +72,80 @@ mojo_test(
     ],
 )
 
+# Under the HAL `DeviceContext`, `test_device_view` loads the CPU plugin for
+# its CPU peer and the GPU vendor's plugin through `MODULAR_DRIVER_PLUGINS`.
+[
+    config_setting(
+        name = "hal_" + vendor,
+        constraint_values = ["//:" + vendor],
+        flag_values = {"//:hal_device_context": "true"},
+    )
+    for vendor in [
+        "nvidia_gpu",
+        "amd_gpu",
+        "apple_gpu",
+    ]
+]
+
+mojo_test(
+    name = "test_device_view.mojo.test",
+    srcs = ["test_device_view.mojo"],
+    data = select({
+        ":hal_nvidia_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:CUDAPlugin.so",
+        ],
+        ":hal_amd_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:HIPPlugin.so",
+        ],
+        ":hal_apple_gpu": [
+            "//Target:CPUPlugin.so",
+            "//Target:MetalPlugin.so",
+        ],
+        "//conditions:default": [],
+    }),
+    env = select({
+        ":hal_nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        ":hal_amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        ":hal_apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so);CPU@$(rootpath //Target:CPUPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# Kernel profiling ranges compile in only with a profiling define and only for
+# NVIDIA and AMD GPUs, the two vendors with a range library.
+mojo_test(
+    name = "test_tracing_missing_library.mojo.test",
+    srcs = ["test_tracing_missing_library.mojo"],
+    copts = [
+        "-D",
+        "MODULAR_ENABLE_GPU_PROFILING_DETAILED=1",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:amd_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 # Real by-value GPU launch test for `Coord`'s `DevicePassable` conformance.
 # Vendor-agnostic: `//:has_gpu` excludes CPU-only build configs (where
 # `DeviceContext` fails the compile-time GPU-arch constraint) without pinning
@@ -92,6 +166,25 @@ mojo_test(
     name = "test_launch_attribute.mojo.test",
     srcs = ["test_launch_attribute.mojo"],
     deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_device_arg_acceptor.mojo.test",
+    srcs = ["test_device_arg_acceptor.mojo"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+lit_tests(
+    name = "lit",
+    size = "small",
+    srcs = ["test_device_arg_acceptor_size_mismatch_fail.mojo"],
+    mojo_deps = [
         "//max:max_mojo",
         "@mojo//:std",
     ],

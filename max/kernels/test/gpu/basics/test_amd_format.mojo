@@ -26,12 +26,12 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.data = Array[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         var data_ptr: Pointer[
             UInt8, origin_of(self.data)
         ] = self.data.unsafe_ptr()
         for i, byte in enumerate(string.bytes()):
-            (data_ptr + self.pos)[i] = byte
+            data_ptr.unsafe_offset(self.pos)[i] = byte
         self.pos += string.byte_length()
 
 

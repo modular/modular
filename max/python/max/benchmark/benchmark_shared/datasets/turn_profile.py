@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Per-turn input and output length profiles."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

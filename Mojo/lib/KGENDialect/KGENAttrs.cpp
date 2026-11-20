@@ -78,6 +78,24 @@ void KGENDialect::registerAttributes() {
 #define GET_ATTRDEF_LIST
 #include "Mojo/KGENDialect/KGENAttrs.cpp.inc"
       >();
+
+  // Deduplicated compound expressions. A compound attribute is omitted when a
+  // label on it would be noise or mark nothing visible: references and
+  // constants are cheap to reprint; SugarAttr and type references print the
+  // same as the form they wrap; ParamListAttr splats its elements into the
+  // parent without delimiters, so a label would appear to mark only the first
+  // element.
+  registerNonTrivialParamAttrs<
+      ParamOperatorAttr, ParamIdenticalAttr, BindParamsAttr,
+      CastFromBuiltinAttr, CastToBuiltinAttr, TypeConformsToTraitAttr,
+      UpcastAttr, DowncastAttr, ExtensionAttr, QuoteAttr, GeneratorAttr,
+      FuncPtrBitcastAttr, GetWitnessAttr, ParamListReduceAttr,
+      ParamListTabulateAttr, ParamListSizeAttr, ParamListGetAttr,
+      ParamListConcatAttr, GetTypeNameAttr, GetBaseTypeNameAttr,
+      StructFieldTypesAttr, StructFieldNamesAttr, StructFieldIndexByNameAttr,
+      StructFieldTypeByNameAttr, StructFieldOffsetByIndexAttr,
+      StructFieldOffsetByNameAttr, GetNumAnnotationsAttr,
+      GetAnnotationValueAttr, GetAnnotationTypeAttr>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -154,9 +172,7 @@ EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 //===----------------------------------------------------------------------===//
 
 bool QuoteAttr::isConstant() const {
-  // Should we consider enclosed index ref constant within quoted attr? probably
-  // does not matter.
-  return ParameterAttr::isSimpleConstant(getQuotedParam());
+  return !EscapingReferenceFinder::check(*this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -203,13 +219,15 @@ OptionalParseResult ParamListType::parseValue(AsmParser &p,
   return p.parseRSquare();
 }
 
-LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   auto variadic = ::dyn_cast<ParamListAttr>(value);
   if (!variadic)
     return failure();
   p << '[';
-  llvm::interleaveComma(variadic.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(variadic.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << ']';
   return success();
 }
@@ -489,12 +507,6 @@ bool UnknownAttr::isConstant() const { return !isParameterizedType(getType()); }
 bool SingletonAttr::isConstant() const {
   return !isParameterizedType(getType());
 }
-
-//===----------------------------------------------------------------------===//
-// UnboundAttr
-//===----------------------------------------------------------------------===//
-
-bool UnboundAttr::isConstant() const { return !isParameterizedType(getType()); }
 
 //===----------------------------------------------------------------------===//
 // NoneAttr
@@ -907,20 +919,6 @@ GetWitnessAttr::simplify(ConformanceOp witnessTable,
 }
 
 //===----------------------------------------------------------------------===//
-// CompileOffloadClosureAttr
-//===----------------------------------------------------------------------===//
-
-bool CompileOffloadClosureAttr::isConstant() const { return false; }
-
-LogicalResult CompileOffloadClosureAttr::verify(
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
-    TypedAttr func, Type type) {
-  if (!::isa<TargetType>(target.getType()))
-    return emitError() << "target operand must be of `!kgen.target` type";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // GetLinkageNameAttr
 //===----------------------------------------------------------------------===//
 
@@ -1109,28 +1107,83 @@ Type GetBaseTypeNameAttr::getType() const {
 bool GetBaseTypeNameAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// ParamsBindingArrayAttr
+//===----------------------------------------------------------------------===//
+
+ParamsBindingArrayAttr
+ParamsBindingArrayAttr::get(MLIRContext *context, size_t numParams,
+                            ArrayRef<TypedAttr> paramValues) {
+  assert(paramValues.size() <= numParams &&
+         "more parameter values than generator inputs");
+  // Missing trailing values are unbound.
+  SmallVector<TypedAttr> boundValues;
+  SmallVector<bool> boundBits(numParams, false);
+  for (auto [idx, value] : llvm::enumerate(paramValues)) {
+    if (!value)
+      continue;
+    boundBits[idx] = true;
+    boundValues.push_back(value);
+  }
+  return get(context, Builder(context).getDenseBoolArrayAttr(boundBits),
+             boundValues);
+}
+
+SmallVector<TypedAttr> ParamsBindingArrayAttr::getDenseBindingArray() const {
+  SmallVector<TypedAttr> result;
+  result.reserve(size());
+  const TypedAttr *next = getBoundValues().begin();
+  for (bool isBound : getBoundMask().asArrayRef())
+    result.push_back(isBound ? *next++ : TypedAttr());
+  return result;
+}
+
+LogicalResult
+ParamsBindingArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               DenseBoolArrayAttr boundMask,
+                               ArrayRef<TypedAttr> boundValues) {
+  if (!boundMask)
+    return emitError() << "bound mask must be non-null";
+  if (llvm::is_contained(boundValues, TypedAttr()))
+    return emitError() << "bound values must be non-null";
+  size_t numBound = llvm::count(boundMask.asArrayRef(), true);
+  if (numBound != boundValues.size())
+    return emitError() << "bound mask sets " << numBound << " inputs but has "
+                       << boundValues.size() << " bound values";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
-/// Merge two lists of parameter bindings into a single binding list.
-/// Holes in a binding list are represented by UnboundAttrs.
-static SmallVector<TypedAttr>
-mergeParamBindings(ArrayRef<TypedAttr> prevBindings,
-                   ArrayRef<TypedAttr> newBindings) {
-  SmallVector<TypedAttr> mergedBindings;
-  auto newIt = newBindings.begin();
-  for (TypedAttr prevParam : prevBindings) {
-    // If there was a hole here, and we still have new bindings left, fill it
-    // with the next new binding. Otherwise, keep whatever was in the previous
-    // binding.
-    if (::isa<UnboundAttr>(prevParam) && newIt != newBindings.end())
-      mergedBindings.push_back(*newIt++);
-    else
-      mergedBindings.push_back(prevParam);
+/// Fill the unbound inputs of `prevBindings` in order with `newBindings`,
+/// which has one entry per unbound input of `prevBindings`. An input that
+/// `newBindings` leaves unbound stays unbound.
+static ParamsBindingArrayAttr
+mergeParamBindings(MLIRContext *context, ParamsBindingArrayAttr prevBindings,
+                   ParamsBindingArrayAttr newBindings) {
+  ArrayRef<bool> prevMask = prevBindings.getBoundMask().asArrayRef();
+  ArrayRef<bool> newMask = newBindings.getBoundMask().asArrayRef();
+  assert(newMask.size() == static_cast<size_t>(llvm::count(prevMask, false)) &&
+         "new bindings must have one entry per unbound input");
+
+  SmallVector<bool> mergedMask;
+  SmallVector<TypedAttr> mergedValues;
+  mergedMask.reserve(prevMask.size());
+  auto prevValue = prevBindings.getBoundValues().begin();
+  auto newValue = newBindings.getBoundValues().begin();
+  auto newBit = newMask.begin();
+  for (bool prevBound : prevMask) {
+    bool bound = prevBound || *newBit++;
+    mergedMask.push_back(bound);
+    if (prevBound)
+      mergedValues.push_back(*prevValue++);
+    else if (bound)
+      mergedValues.push_back(*newValue++);
   }
-  // If we still have new bindings left, add them to the end.
-  mergedBindings.append(newIt, newBindings.end());
-  return mergedBindings;
+  return ParamsBindingArrayAttr::get(
+      context, Builder(context).getDenseBoolArrayAttr(mergedMask),
+      mergedValues);
 }
 
 /// Merge an outer residual-indexed discharge mask into an inner
@@ -1170,9 +1223,9 @@ static DenseBoolArrayAttr mergeDischargedConstraints(
 }
 
 BindParamsAttr BindParamsAttr::getFromBytecode(TypedAttr generator,
-                                               ArrayRef<TypedAttr> paramValues,
+                                               ParamsBindingArrayAttr params,
                                                DenseBoolArrayAttr discharged) {
-  return Base::get(generator.getContext(), generator, paramValues, discharged);
+  return Base::get(generator.getContext(), generator, params, discharged);
 }
 
 static bool isEagerlyInstantiatable(GeneratorType generator) {
@@ -1180,23 +1233,6 @@ static bool isEagerlyInstantiatable(GeneratorType generator) {
   // it might contain implicit origins that must be used within a generator.
   return !sugarIsa<FuncType>(generator.getBody()) &&
          !sugarIsa<FuncLiteralType>(generator.getBody());
-}
-
-static SmallVector<TypedAttr>
-normalizeBindParamsValues(GeneratorType genType,
-                          ArrayRef<TypedAttr> paramValues) {
-  ArrayRef<Type> inputParamTypes = genType.getInputParamTypes();
-  if (paramValues.size() == inputParamTypes.size())
-    return SmallVector<TypedAttr>(paramValues);
-
-  SmallVector<TypedAttr> normalizedParamValues;
-  ArrayRef<TypedAttr> prefixParamValues =
-      paramValues.take_front(inputParamTypes.size());
-  normalizedParamValues.append(prefixParamValues.begin(),
-                               prefixParamValues.end());
-  for (Type type : inputParamTypes.drop_front(normalizedParamValues.size()))
-    normalizedParamValues.push_back(UnboundAttr::get(type));
-  return normalizedParamValues;
 }
 
 static llvm::BitVector
@@ -1224,25 +1260,24 @@ DenseBoolArrayAttr KGEN::getDenseBoolArrayAttr(MLIRContext *context,
 }
 
 static Type
-inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+inferBindParamsResultType(GeneratorType genType, ParamsBindingArrayAttr params,
                           DenseBoolArrayAttr discharged,
                           ParameterEvaluationContext *evaluationContext) {
-  auto genType = sugarCast<GeneratorType>(generator.getType());
+  assert(params.size() == genType.getInputParamTypes().size() &&
+         "params must cover every generator input");
 
   // Binding no parameters and discharging no constraints is a no-op: the
   // specialized generator is the generator itself.
   GeneratorType specializedType;
-  if (paramValues.empty() && (!discharged || discharged.empty())) {
+  if (params.getBoundValues().empty() && (!discharged || discharged.empty())) {
     specializedType = genType;
   } else {
-    SmallVector<TypedAttr> normalizedParamValues =
-        normalizeBindParamsValues(genType, paramValues);
     llvm::BitVector dischargedBodyConstraints =
         denseBoolArrayAttrToBitVector(discharged);
     std::optional<PartiallySpecializedInputParams> specializationOpt =
         PartiallySpecializedInputParams::from(
-            genType.getInputParamTypes(), normalizedParamValues,
-            evaluationContext, /*emitErrorFn=*/{}, dischargedBodyConstraints);
+            genType.getInputParamTypes(), params, evaluationContext,
+            /*emitErrorFn=*/{}, dischargedBodyConstraints);
     assert(specializationOpt && "Failed to specialize generator");
     specializedType =
         genType.getSpecializedGenerator(*specializationOpt, /*emitErrorFn=*/{});
@@ -1263,49 +1298,90 @@ inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
   return specializedType;
 }
 
+/// Returns true if the result of `bindParams` is a partially specialized
+/// version of its body generator (in contrast to a nested generator).
+static bool isCurriedBinding(BindParamsAttr bindParams) {
+  auto genType = sugarCast<GeneratorType>(bindParams.getGenerator().getType());
+  if (!bindParams.getParams().isFullyBound())
+    return true;
+
+  PogListAttr metadata = genType.getParamListAttrs();
+  size_t numConstraints = metadata ? metadata.getBodyConstraints().size() : 0;
+  DenseBoolArrayAttr discharged = bindParams.getDischarged();
+  size_t numDischarged =
+      discharged ? llvm::count(discharged.asArrayRef(), true) : 0;
+  return numDischarged != numConstraints || !isEagerlyInstantiatable(genType);
+}
+
 Type BindParamsAttr::inferResultType(
-    TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+    GeneratorType genType, ParamsBindingArrayAttr params,
     DenseBoolArrayAttr discharged,
     ParameterEvaluationContext *evaluationContext) {
-  return inferBindParamsResultType(generator, paramValues, discharged,
+  return inferBindParamsResultType(genType, params, discharged,
                                    evaluationContext);
 }
 
 Type BindParamsAttr::inferResultType(
-    TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+    GeneratorType genType, ParamsBindingArrayAttr params,
     ParameterEvaluationContext *evaluationContext) {
-  return inferResultType(generator, paramValues, /*discharged=*/{},
-                         evaluationContext);
+  return inferResultType(genType, params, /*discharged=*/{}, evaluationContext);
 }
 
 Type BindParamsAttr::getType() const {
-  return inferResultType(getGenerator(), getParamValues(), getDischarged(),
-                         /*evaluationContext=*/nullptr);
+  return inferBindParamsResultType(
+      sugarCast<GeneratorType>(getGenerator().getType()), getParams(),
+      getDischarged(),
+      /*evaluationContext=*/nullptr);
+}
+
+/// Strips top-level sugar, including rebinds between canonically equal types,
+/// which canonicalization would remove. The result may differ from `value` in
+/// type sugar, so it is only suitable for deciding whether a fold applies.
+static TypedAttr stripSugarAndSugarRebinds(TypedAttr value) {
+  while (true) {
+    value = SugarAttr::strip(value);
+    auto rebind = dyn_cast<ParamOperatorAttr>(value);
+    // FIXME(MOCO-5297): Recognize sugar-only rebinds structurally.
+    if (!rebind || rebind.getOpcode() != POC::Rebind ||
+        !isEqualCanon(rebind.getOperand(0).getType(), rebind.getType()))
+      return value;
+    value = rebind.getOperand(0);
+  }
 }
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues,
+                              ParamsBindingArrayAttr params,
                               DenseBoolArrayAttr discharged,
                               ParameterEvaluationContext *evaluationContext) {
-  Type type = inferBindParamsResultType(generator, paramValues, discharged,
-                                        evaluationContext);
+  auto genType = sugarCast<GeneratorType>(generator.getType());
+  assert(params.size() == genType.getInputParamTypes().size() &&
+         "params must cover every generator input");
+  Type type =
+      inferBindParamsResultType(genType, params, discharged, evaluationContext);
 
   // No bindings to apply: the generator already has the requested type.
-  if (paramValues.empty() && (!discharged || discharged.empty()) &&
+  if (params.getBoundValues().empty() && (!discharged || discharged.empty()) &&
       isEqualCanon(generator.getType(), type))
     return generator;
 
-  // If the generator is itself a BindParamsAttr, flatten the new bindings into
-  // the existing ones.
-  if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
-    SmallVector<TypedAttr> mergedParamValues =
-        mergeParamBindings(bindParams.getParamValues(), paramValues);
+  // Look through sugar so the fold decision here agrees with the one made on
+  // the canonical form, which may run without an evaluation context. Results
+  // are rebound to `type` to restore the requested sugar.
+  TypedAttr strippedGenerator = stripSugarAndSugarRebinds(generator);
+
+  // If the generator is a curried BindParamsAttr, flatten the new bindings into
+  // the existing ones. A non-curried one has instantiated its body, so the
+  // new bindings belong to that body instead.
+  auto bindParams = dyn_cast<BindParamsAttr>(strippedGenerator);
+  if (bindParams && isCurriedBinding(bindParams)) {
+    ParamsBindingArrayAttr mergedParams =
+        mergeParamBindings(context, bindParams.getParams(), params);
     DenseBoolArrayAttr innerMask = bindParams.getDischarged();
     DenseBoolArrayAttr mergedMask;
     if (innerMask || discharged) {
-      auto genType =
+      auto innerGenType =
           sugarCast<GeneratorType>(bindParams.getGenerator().getType());
-      PogListAttr metadata = genType.getParamListAttrs();
+      PogListAttr metadata = innerGenType.getParamListAttrs();
       size_t origBodyCount =
           metadata ? metadata.getBodyConstraints().size() : 0;
       mergedMask = mergeDischargedConstraints(generator.getContext(), innerMask,
@@ -1313,25 +1389,27 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     }
     TypedAttr flattened =
         BindParamsAttr::get(bindParams.getContext(), bindParams.getGenerator(),
-                            mergedParamValues, mergedMask, evaluationContext);
-    assert((!flattened || isEqualCanon(flattened.getType(), type)) &&
+                            mergedParams, mergedMask, evaluationContext);
+    if (!flattened)
+      return {};
+    assert(isEqualCanon(flattened.getType(), type) &&
            "bind_params simplification must preserve the requested type");
-    return flattened;
+    return ParamOperatorAttr::getRebind(flattened, type);
   }
 
   // If the generator is a GeneratorAttr, specialize it directly. A null nested
   // evaluation propagates upwards as a null result.
-  if (auto genAttr = sugarDynCast<GeneratorAttr>(generator)) {
+  if (auto genAttr = dyn_cast<GeneratorAttr>(strippedGenerator)) {
+    // TODO: We allow `FuncSymbolGenerator` without eval context since graph
+    // compiler is relying on this.
     assert(
-        evaluationContext &&
+        (evaluationContext || FuncSymbolGenerator::dynCast(genAttr)) &&
         "A foldable BindParamsAttr must be created with an evaluation context");
-    SmallVector<TypedAttr> partialParamValues = normalizeBindParamsValues(
-        cast<GeneratorType>(genAttr.getType()), paramValues);
     llvm::BitVector dischargedBodyConstraints =
         denseBoolArrayAttrToBitVector(discharged);
     std::optional<PartiallySpecializedInputParams> specializationOpt =
         PartiallySpecializedInputParams::from(
-            genAttr.getInputParamTypes(), partialParamValues, evaluationContext,
+            genAttr.getInputParamTypes(), params, evaluationContext,
             /*emitErrorFn=*/{}, dischargedBodyConstraints);
     if (!specializationOpt)
       return {};
@@ -1341,49 +1419,21 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       return {};
 
     if (isEqualCanon(specializedGenerator.getType(), type))
-      return specializedGenerator;
+      return ParamOperatorAttr::getRebind(specializedGenerator, type);
 
     if (specializedGenerator.isFullyBound()) {
       TypedAttr instantiatedValue = specializedGenerator.getInstantiatedValue();
       if (instantiatedValue && isEqualCanon(instantiatedValue.getType(), type))
-        return instantiatedValue;
+        return ParamOperatorAttr::getRebind(instantiatedValue, type);
     }
 
     llvm_unreachable("requested bind_params type is inconsistent with the "
                      "specialized generator");
   }
 
-  // If the generator is a SymbolConstantAttr, fold the parameter values into it
-  // directly (this will be cleaned up once we remove param bindings from
-  // SymbolConstantAttr).
-  if (auto symbolConstant = sugarDynCast<SymbolConstantAttr>(generator)) {
-    [[maybe_unused]] bool hasUnboundParameters =
-        symbolConstant.getParamValues().empty();
-    hasUnboundParameters |=
-        llvm::any_of(symbolConstant.getParamValues(),
-                     [](TypedAttr value) { return ::isa<UnboundAttr>(value); });
-    assert(hasUnboundParameters &&
-           "cannot have already bound all the input parameters, because we'd "
-           "end up with a nongeneric signature that would fail verification");
-
-    if (symbolConstant.getParamValues().empty())
-      return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                     ::cast<FuncTypeGeneratorType>(type),
-                                     paramValues);
-
-    // We have to interleave the new values wherever there's an unbound thing so
-    // we preserve the order.
-    SmallVector<TypedAttr> mergedParamValues =
-        mergeParamBindings(symbolConstant.getParamValues(), paramValues);
-
-    return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                   ::cast<FuncTypeGeneratorType>(type),
-                                   mergedParamValues);
-  }
-
   // No simplification applies. Build the BindParamsAttr directly.
   TypedAttr result =
-      Base::get(generator.getContext(), generator, paramValues, discharged);
+      Base::get(generator.getContext(), generator, params, discharged);
 
   // The inferred type could be more concrete as a evaluation context is used
   // for folding. When the trivially inferred type does not agree, simply
@@ -1397,54 +1447,46 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                               ArrayRef<TypedAttr> paramValues,
+                              DenseBoolArrayAttr discharged,
+                              ParameterEvaluationContext *evaluationContext) {
+  auto params = ParamsBindingArrayAttr::get(
+      context,
+      sugarCast<GeneratorType>(generator.getType()).getInputParamTypes().size(),
+      paramValues);
+  return get(context, generator, params, discharged, evaluationContext);
+}
+
+TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues,
                               ParameterEvaluationContext *evaluationContext) {
   return get(context, generator, paramValues, /*discharged=*/{},
              evaluationContext);
 }
 
-static LogicalResult
-verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
-                       DenseBoolArrayAttr discharged);
-
 TypedAttr
 BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            MLIRContext *context, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues,
+                           ParamsBindingArrayAttr params,
                            DenseBoolArrayAttr discharged,
                            ParameterEvaluationContext *evaluationContext) {
-  if (failed(verifyBindParamsInputs(emitError, generator, paramValues,
-                                    discharged)))
+  if (failed(verify(emitError, generator, params, discharged)))
     return {};
-  return get(context, generator, paramValues, discharged, evaluationContext);
-}
-
-TypedAttr
-BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                           MLIRContext *context, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues,
-                           ParameterEvaluationContext *evaluationContext) {
-  if (failed(verifyBindParamsInputs(emitError, generator, paramValues,
-                                    /*discharged=*/{})))
-    return {};
-  return get(context, generator, paramValues, evaluationContext);
+  return get(context, generator, params, discharged, evaluationContext);
 }
 
 bool BindParamsAttr::isConstant() const { return false; }
 
+/// Verify that `generator` has a generator type, and that `discharged` matches
+/// its body constraints.
 static LogicalResult
-verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
-                       DenseBoolArrayAttr discharged) {
+verifyGeneratorAndDischarged(function_ref<InFlightDiagnostic()> emitError,
+                             TypedAttr generator,
+                             DenseBoolArrayAttr discharged) {
   auto genType = sugarDynCast<GeneratorType>(generator.getType());
   if (!genType)
     return emitError()
            << "bind_params generator operand must have a GeneratorType, got "
            << generator.getType();
-
-  if (paramValues.size() > genType.getInputParamTypes().size())
-    return emitError()
-           << "bind_params has more parameters than the generator expects";
 
   if (!discharged || discharged.empty())
     return success();
@@ -1470,9 +1512,17 @@ verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult
 BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+                       TypedAttr generator, ParamsBindingArrayAttr params,
                        DenseBoolArrayAttr discharged) {
-  return verifyBindParamsInputs(emitError, generator, paramValues, discharged);
+  if (failed(verifyGeneratorAndDischarged(emitError, generator, discharged)))
+    return failure();
+  size_t numInputs =
+      sugarCast<GeneratorType>(generator.getType()).getInputParamTypes().size();
+  if (params.size() != numInputs)
+    return emitError() << "bind_params binds " << params.size()
+                       << " parameters but the generator has " << numInputs
+                       << " inputs";
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1624,7 +1674,7 @@ bool DTypeConstantAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
-// SymbolConstantAttr
+// Function symbol helpers
 //===----------------------------------------------------------------------===//
 
 static FuncTypeGeneratorType
@@ -1668,141 +1718,46 @@ getSymbolSignature(FuncInterface func, ArrayRef<Operation *> symbolOps) {
       genMetadata, argListAttrs);
 }
 
-/// This symbol is a constant its bindings are constants.
-bool SymbolConstantAttr::isConstant() const {
-  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
-         !isParameterizedType(getType());
-}
-
-LogicalResult
-SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
-                                     Location loc) const {
-  VerboseCompilerTimeTraceScope traceScope(
-      "SymbolConstantAttr::verifySymbolUses");
-
-  Operation *module = evaluationContext.module;
-  mlir::LockedSymbolTableCollection &symtab = evaluationContext.symtab;
-
-  // Build the signature of the referenced symbol.
-  SymbolRefAttr symbol = getSymbol();
-  SmallVector<Operation *> symbolOps;
-  {
-    VerboseCompilerTimeTraceScope traceScope("lookupSymbolIn");
-    if (failed(symtab.lookupSymbolIn(module, symbol, symbolOps))) {
-      return emitError(loc)
-             << symbol << " does not reference a KGEN declaration";
-    }
-  }
-
-  // The leaf symbol must refer to a function.
-  auto func = ::dyn_cast<FuncInterface>(symbolOps.back());
-  if (!func)
-    return emitError(loc) << symbol << " does not reference a KGEN function";
-
-  // Everything else must be a declaration.
-  for (Operation *op : llvm::drop_end(symbolOps)) {
-    if (!::isa<DeclInterface>(op)) {
-      return emitError(loc)
-             << "symbol @" << ::cast<mlir::SymbolOpInterface>(op).getName()
-             << " does not reference a KGEN declaration";
-    }
-  }
-
-  FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
-  if (getParamValues().empty() ||
-      !llvm::all_of(getParamValues(), llvm::IsaPred<UnboundAttr>)) {
-    // If all the provided bindings are unbound, use the original generator.
-    //
-    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
-    // type dependencies, which results in `getSpecializedGenerator` being
-    // computed in a wrong way.
-    //
-    // E.g.,
-    //
-    // def takeClosure[
-    //     origins: OriginSet,
-    //     //,
-    //     f: def() capturing[origins] -> None,
-    // ]():
-    //     pass
-    //
-    // where
-    //
-    // `f: def() capturing[origins]` will be replaced to
-    // `f: def() capturing[  ?    ]`. This will make the type dependency on
-    // `origins` unrecoverable.
-    declSignature = declSignature.getSpecializedGenerator(
-        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
-  } else if (getParamValues().size() !=
-             declSignature.getInputParamTypes().size()) {
-    return mlir::emitError(loc)
-           << "generator type expects "
-           << declSignature.getInputParamTypes().size()
-           << " parameters but got bindings for " << getParamValues().size();
-  }
-
-  if (!declSignature)
-    return failure();
-
-  // Parameter types match exactly.  We could support higher order rebinding
-  // if there is a need.
-  return verifyDeclSignaturesMatch("symbol use", getType(), loc,
-                                   symbol.getLeafReference(), declSignature,
-                                   func->getLoc());
-}
-
 //===----------------------------------------------------------------------===//
 // FuncPtrBitcastAttr
 //===----------------------------------------------------------------------===//
 
 LogicalResult
 FuncPtrBitcastAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                           SymbolConstantAttr callee,
-                           FuncTypeGeneratorType type) {
-  FuncTypeGeneratorType symbolType = callee.getType();
-  if (!isEqualCanon(symbolType.getWithBody(type.getBody()), type))
+                           FuncSymbolAttr callee, FuncTypeGeneratorType type) {
+  // The callee is already instantiated, so only its function type body may be
+  // re-presented.
+  if (!type.isFullyBound())
     return emitError()
            << "func_ptr_bitcast must only change the function type body";
   return success();
 }
 
-bool FuncPtrBitcastAttr::isConstant() const {
-  return getSymbolConstant().isConstant();
+SymbolRefAttr FuncPtrBitcastAttr::getSymbol() const {
+  return getCallee().getSymbol();
 }
 
-ParseResult parseFuncPtrBitcastCallee(AsmParser &p,
-                                      SymbolConstantAttr &callee) {
+ArrayRef<TypedAttr> FuncPtrBitcastAttr::getParamValues() const {
+  return getCallee().getParamValues();
+}
+
+bool FuncPtrBitcastAttr::isConstant() const {
+  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
+         getCallee().isConstant();
+}
+
+ParseResult parseFuncPtrBitcastCallee(AsmParser &p, FuncSymbolAttr &callee) {
   Attribute attr;
   if (p.parseAttribute(attr))
     return failure();
-  callee = dyn_cast<SymbolConstantAttr>(attr);
+  callee = dyn_cast<FuncSymbolAttr>(attr);
   if (!callee)
-    return p.emitError(p.getCurrentLocation(), "expected symbol constant");
+    return p.emitError(p.getCurrentLocation(), "expected function symbol");
   return success();
 }
 
-void printFuncPtrBitcastCallee(AsmPrinter &p, SymbolConstantAttr callee) {
+void printFuncPtrBitcastCallee(AsmPrinter &p, FuncSymbolAttr callee) {
   p.printAttribute(callee);
-}
-
-ParseResult parseColonTypeSymbolConstant(AsmParser &p,
-                                         SymbolConstantAttr &value) {
-  mlir::SMLoc loc = p.getCurrentLocation();
-
-  TypedAttr typedAttr;
-  if (parseColonTypeParamValue(p, typedAttr))
-    return failure();
-
-  if (auto symbol = mlir::dyn_cast<SymbolConstantAttr>(typedAttr)) {
-    value = symbol;
-    return success();
-  }
-
-  return p.emitError(loc) << "symbol constant expected, got" << typedAttr;
-}
-
-void printColonTypeSymbolConstant(AsmPrinter &p, SymbolConstantAttr value) {
-  printColonTypeParamValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1852,12 +1807,19 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
     UnboundIdxRefRemapper() = default;
 
     Attribute tryReplace(Attribute attr, size_t depth) {
-      auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
-      if (!indexRef || indexRef.getDepth() < depth)
+      if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
+        if (indexRef.getDepth() < depth)
+          return nullptr;
+        // This is a escaped ref. bind it!
+        Type mappedType = Base::replace(indexRef.getType());
+        return ParamDeclRefAttr::get("#" + std::to_string(indexRef.getIndex()),
+                                     mappedType);
+      }
+      auto ref = dyn_cast<IndexRefAttrInterface>(attr);
+      if (!ref || ref.getDepth() <= depth)
         return nullptr;
-      // This is a escaped ref. bind it!
-      Type mappedType = Base::replace(indexRef.getType());
-      return ParamDeclRefAttr::get("#" + std::to_string(indexRef.getIndex()),
+      Type mappedType = Base::replace(cast<TypedAttr>(attr).getType());
+      return ParamDeclRefAttr::get("#origin" + std::to_string(ref.getIndex()),
                                    mappedType);
     }
     Type tryReplace(Type t, size_t) { return {}; }
@@ -1870,17 +1832,18 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   SmallVector<TypedAttr> boundParams = remapper.replace(getParamValues());
   auto declSignature =
       getSymbolSignature(func, symbolOps)
-          .getSpecializedGenerator(boundParams, &evaluationContext,
-                                   [&] { return emitError(loc); });
+          .getSpecializedGenerator(
+              ParamsBindingArrayAttr::get(getContext(), boundParams),
+              &evaluationContext, [&] { return emitError(loc); });
 
   if (!declSignature)
     return failure();
 
-  // Parameter types match exactly.  We could support higher order rebinding
-  // if there is a need.
-  return verifyFuncTypesMatch("symbol use", remapper.replace(getType()), loc,
-                              symbol.getLeafReference(),
-                              declSignature.getBody(), func->getLoc());
+  auto useSignature = FuncTypeGeneratorType::get(
+      /*inputParamTypes=*/{}, remapper.replace(getType()), /*genMetadata=*/{});
+  return verifyDeclSignaturesMatch("symbol use", useSignature, loc,
+                                   symbol.getLeafReference(), declSignature,
+                                   func->getLoc());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1948,12 +1911,12 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  if (paramBindings.empty())
+  if (paramBindings.size() == 0)
     return *this;
-
+  assert(paramBindings.size() == getInputParamTypes().size());
   std::optional<PartiallySpecializedInputParams> specializationOpt =
       PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
                                             evaluationContext, emitErrorFn);
@@ -1964,7 +1927,7 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return getSpecializedGenerator(
       paramBindings, evaluationContext,
@@ -1976,6 +1939,103 @@ TypedAttr GeneratorAttr::getInstantiatedValue() {
   IndexDepthAdjuster adjuster(-1);
   TypedAttr body = adjuster.replace(getBody());
   return body;
+}
+
+//===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+static bool isFuncSymbolGenerator(TypedAttr attr) {
+  auto gen = sugarDynCast<GeneratorAttr>(attr);
+  return gen && sugarIsa<FuncSymbolAttr>(gen.getBody());
+}
+
+FuncSymbolGenerator::FuncSymbolGenerator(TypedAttr attr) {
+  assert((!attr || isFuncSymbolGenerator(attr)) &&
+         "expected a GeneratorAttr wrapping a FuncSymbolAttr");
+  if (attr)
+    storage = sugarCast<GeneratorAttr>(attr);
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
+                                             FuncSymbolAttr funcSymbol,
+                                             Attribute metadata) {
+  return FuncSymbolGenerator(
+      GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
+  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  assert(type.getInputParamTypes().empty());
+  return getParamLess(FlatSymbolRefAttr::get(func.getSymNameAttr()),
+                      type.getBody(), type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::getParamLess(SymbolRefAttr symbol,
+                                                      FuncType type,
+                                                      Attribute metadata) {
+  auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
+  return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
+}
+
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(SymbolRefAttr symbol,
+                                FuncTypeGeneratorType type) {
+  // Simply forward the parameters.
+  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
+  SmallVector<TypedAttr> bodyValues;
+  for (auto [i, paramType] : llvm::enumerate(inputParamTypes))
+    bodyValues.push_back(ParamIndexRefAttr::get(i, paramType));
+
+  return get(inputParamTypes,
+             FuncSymbolAttr::get(symbol, type.getBody(), bodyValues),
+             type.getParamListAttrs());
+}
+
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(StringAttr name, FuncTypeGeneratorType type) {
+  return getUnbound(FlatSymbolRefAttr::get(name), type);
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
+  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
+  if (!typedAttr)
+    return {};
+  if (isFuncSymbolGenerator(typedAttr))
+    return FuncSymbolGenerator(typedAttr);
+  return {};
+}
+
+FuncTypeGeneratorType FuncSymbolGenerator::getType() const {
+  return ::cast<FuncTypeGeneratorType>(storage.getType());
+}
+
+ArrayRef<Type> FuncSymbolGenerator::getInputParamTypes() const {
+  return storage.getInputParamTypes();
+}
+
+bool FuncSymbolGenerator::isFullyBound() { return storage.isFullyBound(); }
+
+FuncSymbolAttr FuncSymbolGenerator::getFuncSymbol() const {
+  return sugarCast<FuncSymbolAttr>(storage.getBody());
+}
+
+SymbolRefAttr FuncSymbolGenerator::getSymbol() const {
+  return getFuncSymbol().getSymbol();
+}
+
+FuncSymbolAttr FuncSymbolGenerator::getInstantiatedFuncSymbol() {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return sugarCast<FuncSymbolAttr>(storage.getInstantiatedValue());
+}
+
+FuncType FuncSymbolGenerator::getInstantiatedType() {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return getType().getInstantiatedBody();
+}
+
+ArrayRef<TypedAttr> FuncSymbolGenerator::getParamValues() {
+  return getInstantiatedFuncSymbol().getParamValues();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2203,13 +2263,15 @@ OptionalParseResult StructType::parseValue(AsmParser &p,
   return p.parseRBrace();
 }
 
-LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value,
+                                     KGENParamPrinter &printer) const {
   auto structAttr = ::dyn_cast<StructAttr>(value);
   if (!structAttr)
     return failure();
   p << "{ ";
-  llvm::interleaveComma(structAttr.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(structAttr.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << " }";
   return mlir::success();
 }
@@ -2287,6 +2349,35 @@ StructExtractAttr StructExtractAttr::getFromBytecode(TypedAttr structValue,
                                                      TypedAttr fieldIdx,
                                                      Type resultType) {
   return Base::get(resultType.getContext(), structValue, fieldIdx, resultType);
+}
+
+//===----------------------------------------------------------------------===//
+// UntaggedUnionAttr
+//===----------------------------------------------------------------------===//
+
+bool UntaggedUnionAttr::isConstant() const {
+  return !isParameterizedType(getType()) &&
+         llvm::all_of(getFragments(), [](TypedAttr fragment) {
+           return ParameterAttr::isSimpleConstant(fragment);
+         });
+}
+
+LogicalResult
+UntaggedUnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          ArrayRef<TypedAttr> fragments,
+                          UntaggedUnionType type) {
+  for (TypedAttr fragment : fragments) {
+    if (isa<IntegerAttr>(fragment) && fragment.getType().isInteger(8))
+      continue;
+    if (isa<PointerType, FuncType>(fragment.getType()))
+      continue;
+    if (auto generator = dyn_cast<GeneratorType>(fragment.getType());
+        generator && isa<FuncType>(generator.getBody()))
+      continue;
+    return emitError()
+           << "union fragments must be bytes, pointers or function symbols";
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2708,8 +2799,9 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode)
                          << " operand 1 should be a !kgen.target";
     }
-    if (!::isa<IndexType>(type))
-      return emitError() << stringifyEnum(opcode) << " should return index";
+    if (type != SIMDType::getScalarIndexType(type.getContext()))
+      return emitError() << stringifyEnum(opcode)
+                         << " should return !kgen.scalar<index>";
     break;
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
@@ -2820,7 +2912,7 @@ LogicalResult ParamOperatorAttr::verify(
                << "'function_get_arg_types' operand paramindexref's type "
                   "should be a paramref or signature, but got: "
                << mlirType;
-    } else if (::isa<SymbolConstantAttr>(operand)) {
+    } else if (FuncSymbolGenerator::dynCast(operand)) {
       // Do nothing, is fine.
     } else {
       return emitError()
@@ -3116,7 +3208,7 @@ static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands,
   // The fold covers the flatten, dedup, sort and True/False handling below for
   // a scalar-bool AND, and also merges identity classes.
   if (isScalarOf<KGENDType::kBool>(resultType))
-    return foldBoolConjunction(operands, resultType);
+    return foldBoolConjunction(operands);
   return simplifyAssocOp(
       POC::And, operands, true,
       std::make_tuple(
@@ -3966,15 +4058,24 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
+/// Narrows a data layout query's type operand to a type constant, or returns
+/// null. Extensions, casts and rebinds only change a type value's trait view,
+/// so its layout is the wrapped type's; without stripping them a closure
+/// whose type is extended never folds.
+static TypeParamAttr getLayoutTypeConstant(TypedAttr type) {
+  return sugarDynCast<TypeParamAttr>(
+      stripIdentityWrappers(SugarAttr::strip(type)));
+}
+
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
                                    Type &resultType) {
-  Builder b(operands[0].getContext());
+  auto indexTy = SIMDType::getScalarIndexType(operands[0].getContext());
   if (!resultType)
-    resultType = b.getIndexType();
+    resultType = indexTy;
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -3985,18 +4086,18 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  return b.getIndexAttr(*size);
+  return SIMDAttr::get(uint64_t(*size), indexTy);
 }
 
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
                                     Type &resultType) {
-  Builder b(operands[0].getContext());
+  auto indexTy = SIMDType::getScalarIndexType(operands[0].getContext());
   if (!resultType)
-    resultType = b.getIndexType();
+    resultType = indexTy;
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -4005,7 +4106,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  return b.getIndexAttr(*size);
+  return SIMDAttr::get(uint64_t(*size), indexTy);
 }
 
 // We want data_to_str to maintain a simple invariant without sugar getting in
@@ -4055,7 +4156,7 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
     if (failed((*op)->fold(attrs, results)))
       return {};
     assert(results.size() == 1 && "expected one operation result");
-    if (auto result = results.front().dyn_cast<Attribute>())
+    if (auto result = llvm::dyn_cast_if_present<Attribute>(results.front()))
       return cast<TypedAttr>(result);
     // If the fold hook returned an operation, just look up the corresponding
     // input.
@@ -4071,9 +4172,6 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   TypedAttr input = operands.front();
   if (input.getType() == resultType)
     return input;
-  // Fold rebinds of an unbound.
-  if (isa<UnboundAttr>(input))
-    return UnboundAttr::get(resultType);
   if (isa<UnknownAttr>(input))
     return UnknownAttr::get(resultType);
 
@@ -4311,8 +4409,8 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
     mlirType = typeConstAttr.getMlirType();
   } else if (auto paramIndexRef = sugarDynCast<ParamIndexRefAttr>(operand)) {
     mlirType = paramIndexRef.getType();
-  } else if (auto symConstAttr = sugarDynCast<SymbolConstantAttr>(operand)) {
-    mlirType = symConstAttr.getType();
+  } else if (auto symbol = FuncSymbolGenerator::dynCast(operand)) {
+    mlirType = symbol.getType();
   } else {
     return {};
   }
@@ -4338,23 +4436,37 @@ constexpr POC migratedPOCs[] = {
     POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod,      POC::EQ,
     POC::LT,        POC::LE};
 
-TypedAttr KGEN::foldBoolConjunction(ArrayRef<TypedAttr> conjuncts,
-                                    Type boolType) {
+TypedAttr KGEN::foldBoolConjunction(ArrayRef<TypedAttr> conjuncts) {
+  assert(!conjuncts.empty() && "conjunction has no conjuncts");
+  MLIRContext *ctx = conjuncts.front().getContext();
+
+  // A scalar-bool AND only exists in folded form, so conjoining onto an
+  // assumption set only costs the new clauses' inserts, not a refold of the
+  // whole set.
+  // TODO: Seed from the largest scalar-bool AND once the fold is
+  // order-independent. Today `conforms_to` slots on one type value that jointly
+  // prove a packed bound keep whichever form was inserted first.
   SmallVector<TypedAttr> clauses;
+  auto seed = dyn_cast<ParamOperatorAttr>(getCanonicalAttr(conjuncts.front()));
+  if (seed && seed.getOpcode() == POC::And &&
+      isScalarOf<KGENDType::kBool>(seed.getType())) {
+    llvm::append_range(clauses, seed.getOperands());
+    conjuncts = conjuncts.drop_front();
+  }
   for (TypedAttr conjunct : conjuncts) {
     if (insertClause(clauses, getCanonicalAttr(conjunct)) ==
         ClauseInsertResult::Contradiction)
-      return SIMDAttr::getScalarBool(boolType.getContext(), false);
+      return SIMDAttr::getScalarBool(ctx, false);
   }
   if (clauses.empty())
-    return SIMDAttr::getScalarBool(boolType.getContext(), true);
+    return SIMDAttr::getScalarBool(ctx, true);
   if (clauses.size() == 1)
     return clauses[0];
   llvm::stable_sort(clauses, ParameterAttr::compare);
   // `Base::get`, not `get`: the latter folds through `simplifyAnd`, which
   // calls back here on the same clauses.
-  return ParamOperatorAttr::Base::get(boolType.getContext(), POC::And, clauses,
-                                      boolType);
+  return ParamOperatorAttr::Base::get(ctx, POC::And, clauses,
+                                      SIMDType::getScalarBoolType(ctx));
 }
 
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
@@ -4596,7 +4708,9 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
   Type resultType;
   if (opcode == POC::Cond)
     resultType = operandsIn[1].getType();
-  else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
+  else if (opcode == POC::GetSizeOf || opcode == POC::GetAlignOf)
+    resultType = SIMDType::getScalarIndexType(operandsIn.front().getContext());
+  else
     resultType = operandsIn.front().getType();
   // Raise error if operands do not have the same type for certain POCs.
   if (!llvm::is_contained({POC::Apply, POC::ApplyResultSlot, POC::DataToStr,
@@ -4706,12 +4820,6 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
   return false;
 }
 
-ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
-  // If this operator didn't fold, then it's a problem.
-  // TODO: we could diagnose WHY it isn't folding more nicely now.
-  return Error("could not simplify operator " + getParamAsString(*this));
-}
-
 //===----------------------------------------------------------------------===//
 // ParamIdenticalAttr
 //===----------------------------------------------------------------------===//
@@ -4747,6 +4855,26 @@ static std::optional<bool> decideParamIdentical(IdentityOperand &lhs,
     if (lhs.hasUnknown() || rhs.hasUnknown())
       return std::nullopt;
     return true;
+  }
+
+  // We support upcast on param list too, look through those: as long as each
+  // element of a parameter list is the same, the list is identical. We need to
+  // peel off the list here since the upcast will be sunk into the constant
+  // param list during canonicalization.
+  auto lList = dyn_cast<ParamListAttr>(lhs.getCanonical());
+  auto rList = dyn_cast<ParamListAttr>(rhs.getCanonical());
+  if (lList && rList && lList.getValues().size() == rList.getValues().size()) {
+    bool allSame = true;
+    for (auto [l, r] : llvm::zip_equal(lList.getValues(), rList.getValues())) {
+      IdentityOperand lhsOperand(l), rhsOperand(r);
+      std::optional<bool> same = decideParamIdentical(lhsOperand, rhsOperand);
+      if (same && !*same)
+        return false;
+      allSame &= same.value_or(false);
+    }
+    if (allSame)
+      return true;
+    return std::nullopt;
   }
 
   // Folding to False is a lot harder:
@@ -4910,18 +5038,6 @@ ParamIdenticalAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 bool ParamIdenticalAttr::isConstant() const { return false; }
-
-ErrorOrSuccess ParamIdenticalAttr::validateForElaborator() const {
-  ArrayRef<TypedAttr> operands = getOperands();
-  std::string operandList;
-  llvm::raw_string_ostream os(operandList);
-  llvm::interleave(
-      operands.drop_back(), os,
-      [&](TypedAttr operand) { os << getParamAsString(operand); }, ", ");
-  os << " and " << getParamAsString(operands.back());
-  return Error("could not prove whether " + operandList +
-               " are the same value");
-}
 
 //===----------------------------------------------------------------------===//
 // MLIROpAttr
@@ -5412,9 +5528,9 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
     if ((int)*shouldElide >= (int)kind)
       return canonical;
 
-  // We will /never/ use the type sugar in the expanded form of opaque
-  // sugar kinds, so we can strip it all away to simplify things.
-  if (kind <= SugarKind::Preserved)
+  // We want nested aliases in types to survive, but all other opaque
+  // sugar kinds can be stripped to simplify things.
+  if (kind <= SugarKind::Preserved && !isa<TypeParamAttr>(expanded))
     expanded = ParamOperatorAttr::getRebind(canonical, sugared.getType());
 
   return Base::get(sugared.getContext(), kind, memberName, sugared, expanded,
@@ -5423,6 +5539,21 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
 
 Type SugarAttr::getMemberAliasType() const {
   return ParamType::get(getSugared());
+}
+
+ParamDeclRefAttr SugarAttr::getAliasDeclRef() const {
+  switch (getKind()) {
+  case SugarKind::Alias:
+    return dyn_cast<ParamDeclRefAttr>(getSugared());
+  case SugarKind::Preserved:
+    // `BindParamsAttr::get` may rebind the application to the requested type.
+    if (auto bindParams = dyn_cast<BindParamsAttr>(
+            ParamOperatorAttr::stripRebind(getSugared())))
+      return dyn_cast<ParamDeclRefAttr>(bindParams.getGenerator());
+    return {};
+  default:
+    return {};
+  }
 }
 
 TypedAttr SugarAttr::getMemberAlias(Type type, StringAttr memberName,
@@ -5480,6 +5611,11 @@ bool SugarAttr::hasTopLevelSugar(Type type) {
 }
 
 static Attribute getLocalCanonical(Attribute attr) {
+  // A failed expression emission is a null attribute; there is nothing to
+  // canonicalize.
+  if (!attr)
+    return {};
+
   // SugarAttr maintains its canonical form directly so we don't need to walk.
   if (auto sugar = dyn_cast<SugarAttr>(attr))
     return sugar.getCanonical();
@@ -5510,14 +5646,26 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     // Walking is repeated for the same value many times; cache across calls.
     using Base =
         std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
-    CanonicalCache<const void *> *cache = getCache(value.getContext());
-    if (cache) {
-      if (const void *hit = cache->lookup(value.getAsOpaquePointer()))
-        return Base::getFromOpaquePointer(hit);
-    }
+    MLIRContext *context = value.getContext();
+    return Base::getFromOpaquePointer(CompilerCaches::getOrCompute(
+        context, &CompilerCaches::canonical, value.getAsOpaquePointer(), [&] {
+          Base result = rebuildUncached(value, depth);
+          // A canonical form is its own canonical form.
+          if (result != Base(value))
+            CompilerCaches::insert(context, &CompilerCaches::canonical,
+                                   result.getAsOpaquePointer(),
+                                   result.getAsOpaquePointer());
+          return result.getAsOpaquePointer();
+        }));
+  }
 
-    // Otherwise, recursively walk and rebuild the attribute with
-    // canonicalized subelements.
+  /// Recursively walks `value` and rebuilds it with canonicalized subelements.
+  /// Does not consult the cache; only `doReplace` calls it.
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  rebuildUncached(T value, size_t depth) {
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
     bool changed = false;
@@ -5529,20 +5677,8 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     value.walkImmediateSubElements(
         [&](Attribute attr) { walkFn(attr, newAttrs); },
         [&](Type type) { walkFn(type, newTypes); });
-    Base result =
-        changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
-                : Base(value);
-    if (cache && result) {
-      cache->insert(value.getAsOpaquePointer(), result.getAsOpaquePointer());
-      if (changed)
-        cache->insert(result.getAsOpaquePointer(), result.getAsOpaquePointer());
-    }
-    return result;
-  }
-
-  static CanonicalCache<const void *> *getCache(MLIRContext *context) {
-    CompilerCaches *caches = CompilerCaches::get(context);
-    return caches ? &caches->canonical : nullptr;
+    return changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
+                   : Base(value);
   }
 
   friend class ParameterReplacer<Canonicalizer>;
@@ -6091,7 +6227,8 @@ OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
   return result;
 }
 
-LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
   auto simd = ::dyn_cast<SIMDAttr>(value);
   if (!simd)
     return failure();

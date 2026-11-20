@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, ValidationInfo, model_validator
 
 from .base_model import MAXBaseModel
 
@@ -73,7 +73,26 @@ def _deep_merge(
     return merged
 
 
-class ConfigFileModel(MAXBaseModel):
+class ConfigModel(MAXBaseModel):
+    """Base class for config models that never load a file themselves.
+
+    Sub-configs nested inside a :class:`ConfigFileModel` root inherit from
+    this class. A nested model's ``config_file`` field cannot work: the
+    ``_load_config_file`` validator skips loading when the model is
+    validated as a field (``info.field_name`` is set), so a nested
+    ``config_file`` would only ever store a path. Giving sub-configs no
+    file fields also keeps a cyclopts ``Parameter(name="*")`` flattening
+    from registering duplicate ``--config-file`` flags.
+    """
+
+    # Config models receive values from text sources (environment variables,
+    # CLI arguments, quoted YAML strings) that rely on Pydantic's lax coercion
+    # (e.g. "123" -> int, "1.5" -> float).  Override the strict=True default
+    # inherited from MAXBaseModel so these conversions continue to work.
+    model_config = ConfigDict(strict=False)
+
+
+class ConfigFileModel(ConfigModel):
     """Base class for models that can load configuration from a file.
 
     This class provides functionality for Pydantic-based config classes to load
@@ -93,12 +112,6 @@ class ConfigFileModel(MAXBaseModel):
         ```
     """
 
-    # Config models receive values from text sources (environment variables,
-    # CLI arguments, quoted YAML strings) that rely on Pydantic's lax coercion
-    # (e.g. "123" -> int, "1.5" -> float).  Override the strict=True default
-    # inherited from MAXBaseModel so these conversions continue to work.
-    model_config = ConfigDict(strict=False)
-
     config_file: str | None = None
     """Path to the configuration file."""
 
@@ -113,6 +126,25 @@ class ConfigFileModel(MAXBaseModel):
     """
 
     @model_validator(mode="before")
+    @classmethod
+    def _load_config_file(
+        cls, data: dict[str, Any], info: ValidationInfo
+    ) -> dict[str, Any]:
+        # Construction already merged the file. Merging it again on assignment
+        # would bring file keys back into dict fields the CLI replaced.
+        if info.field_name is not None:
+            return data
+        return cls.load_config_file(data)
+
+    @classmethod
+    def _current_field_name(cls, key: str) -> str:
+        """Returns the field a config file key sets, after any rename.
+
+        Subclasses that rename fields override this so a stray top-level key
+        under an old name is still caught.
+        """
+        return key
+
     @classmethod
     def load_config_file(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Load configuration from YAML file if config_file is provided.
@@ -141,6 +173,7 @@ class ConfigFileModel(MAXBaseModel):
         Args:
             data: Dictionary of data to validate, may contain 'config_file' key.
                   This dict already contains CLI args and env vars merged by cyclopts.
+
         Returns:
             Dictionary with config file values merged in if config_file was provided.
         """
@@ -154,10 +187,26 @@ class ConfigFileModel(MAXBaseModel):
                     f"Configuration file must contain a mapping at the root, got {type(loaded_data)}"
                 )
 
-            explicit_section_name = data.get("section_name")
-            if explicit_section_name is not None:
-                # Caller explicitly requested a section.
-                section_data = loaded_data.get(explicit_section_name)
+            section_name = data.get("section_name")
+            # Field defaults are not applied yet in a "before" validator. A file
+            # without the class's default section is read as a flat config.
+            if section_name is None:
+                default = cls.model_fields["section_name"].default
+                if default is not None and default in loaded_data:
+                    if dropped := sorted(
+                        k
+                        for k in loaded_data
+                        if k != default
+                        and cls._current_field_name(k) in cls.model_fields
+                    ):
+                        raise ValueError(
+                            f"Top-level keys {dropped} would be ignored because "
+                            f"section '{default}' is read. Move them into the "
+                            "section."
+                        )
+                    section_name = default
+            if section_name is not None:
+                section_data = loaded_data.get(section_name)
                 if section_data is None:
                     available_sections = [
                         key
@@ -165,12 +214,12 @@ class ConfigFileModel(MAXBaseModel):
                         if isinstance(value, dict)
                     ]
                     raise KeyError(
-                        f"Section '{explicit_section_name}' not found in configuration file. "
+                        f"Section '{section_name}' not found in configuration file. "
                         f"Available sections: {available_sections}."
                     )
                 if not isinstance(section_data, dict):
                     raise TypeError(
-                        f"Section '{explicit_section_name}' must be a mapping, got {type(section_data)}"
+                        f"Section '{section_name}' must be a mapping, got {type(section_data)}"
                     )
                 loaded_data = section_data
 

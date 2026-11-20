@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Common text-generation pipeline backed by real MAX workers.
 
-Chains a :class:`MAXTokenizer`, a :class:`MAXModelWorker`, and a
+Chains a :class:`MAXTokenizer`, a :class:`ModelWorker`, and a
 :class:`ChatParserWorker` so a single :class:`PipelineConfig` drives
 tokenization, decoding, and response parsing through the cascade runtime.
 Because the config already names the model's tool and reasoning parsers, the
@@ -34,7 +34,9 @@ from max.experimental.cascade.pipelines.chat_parser import (
     ChatParserConfig,
     ChatParserWorker,
 )
-from max.experimental.cascade.workers.max_model_worker import MAXModelWorker
+from max.experimental.cascade.workers.max_model_worker import (
+    make_model_worker,
+)
 from max.experimental.cascade.workers.max_tokenizer import (
     make_tokenizer_worker,
 )
@@ -94,6 +96,7 @@ class CommonTextGenPipeline(GenAIPipeline):
         self,
         config: PipelineConfig,
         tokenizer_impl: str | None = None,
+        model_worker_impl: str | None = None,
     ) -> None:
         """Build the pipeline for *config*.
 
@@ -104,11 +107,14 @@ class CommonTextGenPipeline(GenAIPipeline):
             tokenizer_impl: Import path (``"module.path:ClassName"``) of the
                 ``TokenizerWorker`` subclass to construct, or ``None`` to use
                 the HuggingFace tokenizer.
+            model_worker_impl: Import path (``"module.path:ClassName"``) of
+                the ``ModelWorker`` subclass to construct, or ``None`` to use
+                the MAX Serve model worker.
         """
         self.tokenizer = make_tokenizer_worker(
             config.model.model_path, tokenizer_impl
         )
-        self.model = MAXModelWorker(config)
+        self.model = make_model_worker(config, model_worker_impl)
         self.parser = ChatParserWorker(chat_parser_config(config))
 
     def supported_input_modalities(self) -> set[Modality]:

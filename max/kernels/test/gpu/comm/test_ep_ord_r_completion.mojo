@@ -15,7 +15,7 @@
 Rank-level completion lets a fused consumer acquire ONCE per source rank
 instead of checking each expert's word. That is only sound if the elected
 producer's single system-scope release carries every other producer's state --
-which the `ACQUIRE_RELEASE` election chain establishes. This test runs the
+which the `acquire_release` election chain establishes. This test runs the
 protocol across REAL peer-mapped memory on two GPUs, both directions:
 
   - producers on the SOURCE GPU write payload markers and per-expert count
@@ -49,10 +49,10 @@ comptime N_GENERATIONS = 8
 
 
 def producer_kernel(
-    peer_recv_count: UnsafePointer[UInt64, MutUntrackedOrigin],
-    peer_payload: UnsafePointer[UInt64, MutUntrackedOrigin],
-    rank_completion_counter: UnsafePointer[Int32, MutUntrackedOrigin],
-    tickets: UnsafePointer[Int32, MutUntrackedOrigin],
+    peer_recv_count: MutPointer[UInt64, MutUntrackedOrigin],
+    peer_payload: MutPointer[UInt64, MutUntrackedOrigin],
+    rank_completion_counter: MutPointer[Int32, MutUntrackedOrigin],
+    tickets: MutPointer[Int32, MutUntrackedOrigin],
     generation: UInt64,
 ):
     """One single-thread block per expert on the SOURCE GPU (peer writes).
@@ -72,7 +72,7 @@ def producer_kernel(
         )
 
     if thread_idx.x == 0:
-        var ptrs = Array[UnsafePointer[UInt64, MutUntrackedOrigin], 1](
+        var ptrs = Array[MutPointer[UInt64, MutUntrackedOrigin], 1](
             fill=peer_recv_count
         )
         # The 1-entry peer array already points AT the peer, so index 0 is
@@ -94,9 +94,9 @@ def producer_kernel(
 
 
 def consumer_kernel(
-    recv_count: UnsafePointer[UInt64, MutUntrackedOrigin],
-    payload: UnsafePointer[UInt64, MutUntrackedOrigin],
-    result: UnsafePointer[Int32, MutUntrackedOrigin],
+    recv_count: MutPointer[UInt64, MutUntrackedOrigin],
+    payload: MutPointer[UInt64, MutUntrackedOrigin],
+    result: MutPointer[Int32, MutUntrackedOrigin],
     generation: UInt64,
 ):
     """Destination GPU: one system-scope ACQUIRE on the rank flag only."""
@@ -105,12 +105,12 @@ def consumer_kernel(
 
     # Spin exactly as the fused activation gate does: sentinel until the
     # elected producer's release lands from the peer GPU.
-    var flag = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](
-        recv_count + RANK_FLAG_OFFSET
+    var flag = Atomic[UInt64].load[ordering=.acquire](
+        recv_count.unsafe_offset(RANK_FLAG_OFFSET)
     )
     while flag == SENTINEL:
-        flag = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](
-            recv_count + RANK_FLAG_OFFSET
+        flag = Atomic[UInt64].load[ordering=.acquire](
+            recv_count.unsafe_offset(RANK_FLAG_OFFSET)
         )
 
     var bad: Int32 = 0
@@ -132,8 +132,8 @@ def consumer_kernel(
     # Destination-restore rule (frozen protocol): the CONSUMER restores the
     # sentinel after consuming the dispatch, so a stale flag can never satisfy
     # the next generation's wait.
-    Atomic[UInt64].store[ordering=Ordering.RELEASE](
-        recv_count + RANK_FLAG_OFFSET, SENTINEL
+    Atomic[UInt64].store[ordering=.release](
+        recv_count.unsafe_offset(RANK_FLAG_OFFSET), SENTINEL
     )
 
 

@@ -33,7 +33,7 @@ struct AddressSpace(
     """Address space of the pointer.
 
     This type represents memory address spaces for both CPU and GPU targets.
-    On CPUs, typically only GENERIC is used. On GPUs (NVIDIA/AMD), various
+    On CPUs, typically only `generic` is used. On GPUs (NVIDIA/AMD), various
     address spaces provide access to different memory regions with different
     performance characteristics.
     """
@@ -41,7 +41,7 @@ struct AddressSpace(
     var _value: SIMDLength
 
     # CPU address space
-    comptime GENERIC = AddressSpace(
+    comptime generic = AddressSpace(
         __mlir_attr[`#lit.struct<{_mlir_value = 0}> : `, SIMDLength]
     )
     """Generic address space. Used for CPU memory and default GPU memory."""
@@ -49,21 +49,36 @@ struct AddressSpace(
     # GPU address spaces
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
     # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
+    # TODO: Rename to `global`. It is a keyword, so the declaration needs
+    # backticks, but uses such as `AddressSpace.global` do not.
     comptime GLOBAL = AddressSpace(
         __mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDLength]
     )
     # Address space numbers are required to align with LLVM IR.
     """Global GPU memory address space."""
-    comptime SHARED = AddressSpace(3)
+    comptime shared = AddressSpace(3)
     """Shared GPU memory address space (per thread block/workgroup)."""
-    comptime CONSTANT = AddressSpace(4)
+    comptime constant = AddressSpace(4)
     """Constant GPU memory address space (read-only)."""
-    comptime LOCAL = AddressSpace(5)
+    comptime local = AddressSpace(5)
     """Local GPU memory address space (per thread, private)."""
-    comptime SHARED_CLUSTER = AddressSpace(7)
+    comptime shared_cluster = AddressSpace(7)
     """Shared cluster GPU memory address space (NVIDIA-specific)."""
-    comptime BUFFER_RESOURCE = AddressSpace(8)
+    comptime buffer_resource = AddressSpace(8)
     """Buffer resource GPU memory address space (AMD-specific)."""
+
+    comptime GENERIC = Self.generic
+    """Alias for `generic`."""
+    comptime SHARED = Self.shared
+    """Alias for `shared`."""
+    comptime CONSTANT = Self.constant
+    """Alias for `constant`."""
+    comptime LOCAL = Self.local
+    """Alias for `local`."""
+    comptime SHARED_CLUSTER = Self.shared_cluster
+    """Alias for `shared_cluster`."""
+    comptime BUFFER_RESOURCE = Self.buffer_resource
+    """Alias for `buffer_resource`."""
 
     comptime _enum_case_names = ParameterList.of[
         "GENERIC".value,
@@ -75,7 +90,7 @@ struct AddressSpace(
         "BUFFER_RESOURCE".value,
     ].values
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
     comptime _enum_is_exhaustive = False
 
@@ -110,7 +125,7 @@ struct AddressSpace(
     def __getattr_param__[name: StaticString]() -> AddressSpace:
         """Resolves a target-specific named address space.
 
-        The address spaces above (`GENERIC`, `GLOBAL`, `SHARED`, ...) are the
+        The address spaces above (`generic`, `GLOBAL`, `shared`, ...) are the
         built-in GPU set. Accessing any *other* name as `AddressSpace.<NAME>`
         routes here, which consults the active `PluginHooks` backend. This
         keeps the set of valid names open and target-extensible — for example

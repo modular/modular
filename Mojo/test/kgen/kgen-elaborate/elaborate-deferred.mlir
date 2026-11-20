@@ -8,7 +8,7 @@ kgen.generator @select_pred<*"cmp`2x": scalar<bool>>() -> !kgen.deferred {
   } else {
     %0 = kgen.param.constant: !kgen.deferred = <#kgen<deferred #index.cmp_predicate<sgt>>>
     hlcf.return %0 : !kgen.deferred
-  } {elseIsolated, thenIsolated}
+  } <elseIsolated, thenIsolated>
   hlcf.unreachable
 }
 
@@ -21,7 +21,7 @@ kgen.generator @select_pred<*"cmp`2x": scalar<bool>>() -> !kgen.deferred {
 // CHECK-NEXT: pop.store %[[CMP_RESULT]], %arg2 : !kgen.pointer<i1>
 kgen.generator @test_select_pred<cmp: scalar<bool>>(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1> byref_result) throws -> i1 {
   %0 = kgen.param.constant: i1 = <0>
-  kgen.param.declare select_pred: <scalar<bool>>() -> !kgen.deferred = <@select_pred>
+  kgen.param.declare select_pred: <scalar<bool>>() -> !kgen.deferred = <@select_pred<:scalar<bool> *(0,0)>>
   kgen.param.apply *"(lifted)apply_0" = [() -> !kgen.deferred: bind_params(:<scalar<bool>>() -> !kgen.deferred select_pred, cmp)]()
   %1 = kgen.deferred "index.cmp"(%arg0, %arg1 : index, index) {pred = #kgen.param.decl.ref<"(lifted)apply_0"> : !kgen.deferred} : i1
   pop.store %1, %arg2 : !kgen.pointer<i1>
@@ -66,7 +66,7 @@ kgen.generator @select_pred_concat<*"pred`2x": struct<(pointer<none>, index)>>()
 
 // CHECK-LABEL: @"test_elaborate_deferred_op_concat,pred
 kgen.generator @test_elaborate_deferred_op_concat<pred: struct<(pointer<none>, index)>>(%arg0: index, %arg1: index) -> i1 {
-  kgen.param.declare *"get_pred": <struct<(pointer<none>, index)>>() -> !kgen.deferred = <@select_pred_concat>
+  kgen.param.declare *"get_pred": <struct<(pointer<none>, index)>>() -> !kgen.deferred = <@select_pred_concat<:struct<(pointer<none>, index)> *(0,0)>>
   kgen.param.apply *"(lifted)apply_0" = [() -> !kgen.deferred: bind_params(:<struct<(pointer<none>, index)>>() -> !kgen.deferred *"get_pred", pred)]()
   // CHECK: %[[CMP_RESULT:.*]] = index.cmp ne(%arg0, %arg1)
   %0 = kgen.deferred "index.cmp"(%arg0, %arg1 : index, index) {pred = #kgen.param.decl.ref<"(lifted)apply_0"> : !kgen.deferred} : i1
@@ -96,3 +96,24 @@ kgen.generator export @test(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1>
   hlcf.return
 }
 
+
+// -----
+
+// A metadata value that is not a typed attribute reaches the elaborator
+// wrapped in `#kgen.deferred`; the wrapper is stripped so the function's
+// `fnAttrs` dictionary holds the concrete attribute.
+// CHECK-LABEL: @deferred_fn_attr
+// CHECK-SAME: <fnAttrs = {my.meta = [1, 2]}>
+kgen.generator @deferred_fn_attr() <fnAttrs = ["my.meta", #kgen<deferred [1, 2]> : !kgen.deferred]> {
+  hlcf.return
+}
+
+// -----
+
+// The same wrapper reaches the elaborator through a per-argument metadata
+// array, which takes the second call site of the same helper.
+// CHECK-LABEL: @deferred_fn_arg_attr
+// CHECK-SAME: <fnArgAttrs = [{my.meta = [1, 2]}]>
+kgen.generator @deferred_fn_arg_attr(%arg0: index) <fnArgAttrs = [["my.meta", #kgen<deferred [1, 2]> : !kgen.deferred]]> {
+  hlcf.return
+}

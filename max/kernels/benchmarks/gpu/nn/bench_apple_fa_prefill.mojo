@@ -204,22 +204,8 @@ def _bench_prefill[
 
     comptime label = "mha_gpu_naive" if naive else "fa_prefill_apple"
     print(
-        " ",
-        label,
-        _mask_label[mask_t](),
-        " b=",
-        batch,
-        "seq=",
-        seq,
-        "d=",
-        depth,
-        "sg=",
-        eff_sg,
-        ": avg",
-        avg_sec * 1000.0,
-        "ms,",
-        tflops,
-        "TFLOPS",
+        t"  {label} {_mask_label[mask_t]()}  b= {batch} seq= {seq} d="
+        t" {depth} sg= {eff_sg} : avg {avg_sec * 1000.0} ms, {tflops} TFLOPS"
     )
 
     # Keep buffers alive until timing is done.
@@ -236,8 +222,8 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
-        print("SKIP: Apple M5 required (compute_capability == 5)")
+    if ctx.compute_capability() < 5:
+        print("SKIP: Apple M5 required (compute_capability >= 5)")
         return
 
     comptime qkv = DType.bfloat16
@@ -250,12 +236,8 @@ def main() raises:
     comptime nsg = get_defined_int["num_simdgroups", 4]()
 
     print(
-        (
-            "== bench_apple_fa_prefill (warmup=10, hot=20, per-iter sync;"
-            " sg default="
-        ),
-        nsg,
-        "; env overrides honored)",
+        t"== bench_apple_fa_prefill (warmup=10, hot=20, per-iter sync; sg"
+        t" default= {nsg} ; env overrides honored)"
     )
 
     comptime if user_seq > 0:

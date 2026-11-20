@@ -39,8 +39,8 @@ comptime N = 2112
 comptime K = 14336
 comptime M = 8
 comptime config = MatmulConfig[dtype, dtype, dtype, True](
-    cluster_shape=Index(1, 1, 1),
-    mma_shape=Index(128, 16, 16),
+    cluster_shape=(Int(1), Int(1), Int(1)),
+    mma_shape=(Int(128), Int(16), Int(16)),
     cta_group=1,
     AB_swapped=True,
     k_group_size=2,
@@ -69,7 +69,7 @@ def _run(
 
 def _untracked(
     buf: DeviceBuffer[dtype],
-) -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
+) -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
     # vendor BLAS takes a mutable output tensor; the caller keeps every
     # buffer alive past the call.
     return (

@@ -18,7 +18,6 @@
 #ifndef KGEN_MOJOPARSER_CLOSUREEMITTER_H
 #define KGEN_MOJOPARSER_CLOSUREEMITTER_H
 
-#include "ExprNodes.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/LITDialect/LITOps.h"
@@ -26,7 +25,13 @@
 #include "StructEmitter.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
+#include <cstdint>
+
 namespace M::KGEN::LIT {
+class OpASTDecl;
+class TraitASTDecl;
+enum class CaptureConvention : uint8_t;
+
 // Naming schemes used for emitting closure related-struct.
 inline constexpr llvm::StringLiteral kClosurePrefix = "closure$";
 inline constexpr llvm::StringLiteral kClosureInflatedPrefix = "inflated$";
@@ -39,13 +44,18 @@ public:
   ClosureEmitter(SharedState &shared);
 
   /// Return true if \p type provably conforms to \p traitDecl.
-  static bool provenConformsToTrait(ASTType type, ASTDecl *traitDecl,
+  static bool provenConformsToTrait(ASTType type, TraitASTDecl &traitDecl,
                                     SharedState &shared,
-                                    ArrayRef<ConstraintAttr> callerAssumptions);
+                                    TypedAttr callerAssumptions);
 
   struct PromotedClosureSelfArg {
     Type type;
     ArgConvention convention;
+  };
+
+  struct PromotedClosure {
+    DefASTDecl *functionDecl;
+    ASTDecl *valueDecl;
   };
 
   /// Move `nestedFnDecl` into `storageStructDecl` as a method and wire its
@@ -59,24 +69,22 @@ public:
                         ArrayRef<CaptureConvention> captureConventions,
                         ArrayRef<Type> selfBoundFieldTypes, Location location);
 
-  /// Promote a closure decl into `targetParent`. nullptr → nearest FileModuleOp
-  /// (thin/stateless promotions).
-  DefASTDecl *
+  /// Promote a closure decl into `targetParent`. nullptr → nearest
+  /// FileModuleASTDecl (thin/stateless promotions).
+  PromotedClosure
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
-                 ASTDecl *targetParent = nullptr);
+                 OpASTDecl *targetParent = nullptr);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
-  DefASTDecl *
+  PromotedClosure
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
-                 ASTDecl *targetParent = nullptr);
+                 OpASTDecl *targetParent = nullptr);
 
-  Value emitClosure(ASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,
+  Value emitClosure(ModuleASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,
                     ArrayRef<Capture> captures, Location location,
                     bool isCopyable, ArrayRef<ParamDeclRefAttr> paramCaptures);
   static ASTDecl *addCaptureValue(SharedState &shared, DefASTDecl &closure,
@@ -122,7 +130,7 @@ public:
     bool isEmpty() const { return closureMethod == ClosureMethod::NONE; }
     ClosureMethod getClosureMethod() const { return closureMethod; }
 
-    TraitDeclOp getTrait(SharedState &shared) const;
+    TraitASTDecl &getTrait(SharedState &shared) const;
 
     FnTypeGeneratorType getSignature() const { return signature; }
 
@@ -160,7 +168,7 @@ private:
 
   /// Construct the closure struct, lift the nested function into a method, and
   /// emit witness tables for all closure parents.
-  Closure liftClosure(ASTDecl &moduleDecl, SMLoc smLoc,
+  Closure liftClosure(ModuleASTDecl &moduleDecl, SMLoc smLoc,
                       SmallVector<ClosureParent> &closureParents,
                       SymbolRefAttr parentSymbolRef,
                       SmallVector<StructDefFieldAttr> &&fieldDecls,
@@ -186,10 +194,10 @@ private:
                             StringAttr fnName, SpecialFunctionKind specialFnID,
                             InlineLevel inlineLevel);
   struct DevicePassablePopulators {
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isEncodable;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> toDeviceType;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> typeName;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> isConvertible;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> isEncodable;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> toDeviceType;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> typeName;
     llvm::function_ref<TypedAttr()> deviceType;
   };
   /// Add DevicePassable conformance using callbacks that populate each

@@ -1,0 +1,16 @@
+diff --git a/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td b/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td
+index 98131340437f..e44dec19fd22 100644
+--- a/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td
++++ b/llvm/lib/Target/NVPTX/NVPTXInstrInfo.td
+@@ -1627,9 +1627,9 @@ defm SETP_i16 : ISETP<I16RT>;
+ defm SETP_i32 : ISETP<I32RT>;
+ defm SETP_i64 : ISETP<I64RT>;
+ 
+-defm SETP_f32 : FSETP<F32RT>;
++defm SETP_f32 : FSETP<F32RT, allow_ftz = false>;
+ defm SETP_f64 : FSETP<F64RT, allow_ftz = false>;
+-defm SETP_f16 : FSETP<F16RT, preds = [allowFP16Math]>;
++defm SETP_f16 : FSETP<F16RT, allow_ftz = false, preds = [allowFP16Math]>;
+ defm SETP_bf16 : FSETP<BF16RT, allow_ftz = false, preds = [hasBF16Math, SM90]>;
+ 
+ def SETP_f16x2 : BasicFlagsNVPTXInst<(outs B1:$p, B1:$q),

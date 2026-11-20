@@ -46,7 +46,7 @@ comptime K = get_defined_int["K", 2048]()
 comptime K_SCALES = K // SF_VECTOR_SIZE
 
 
-def bench_shape(ctx: DeviceContext, mut m: Bench, M: Int) raises:
+def bench_shape(ctx: DeviceContext[], mut m: Bench, M: Int) raises:
     """Build cache-busted operands for `M` rows and register the entry."""
     comptime assert (
         K % SF_VECTOR_SIZE == 0
@@ -69,18 +69,18 @@ def bench_shape(ctx: DeviceContext, mut m: Bench, M: Int) raises:
 
     @inline(.always)
     def launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_a, mut cb_b, mut cb_asf, mut cb_bsf, mut c, imm}:
         var a = TileTensor(cb_a.offset_ptr(iteration), row_major(M, Idx[K]))
         var asf = TileTensor(
-            cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
+            cb_asf.offset_ptr(iteration).unsafe_bitcast[Scalar[SCALE_DTYPE]](),
             row_major(M, Idx[K_SCALES]),
         )
         var b = TileTensor(
             cb_b.offset_ptr(iteration), row_major(Idx[N], Idx[K])
         )
         var bsf = TileTensor(
-            cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
+            cb_bsf.offset_ptr(iteration).unsafe_bitcast[Scalar[SCALE_DTYPE]](),
             row_major(Idx[N], Idx[K_SCALES]),
         )
 

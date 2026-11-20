@@ -45,6 +45,161 @@ def test_kv_cache_metrics_add_sums_dkv_health_fields() -> None:
     assert total.dkv_degraded
 
 
+def test_kv_cache_metrics_add_folds_the_dkv_settle_fields() -> None:
+    """The settle depth and finished count sum, the age and the halt take the max.
+
+    Two settle workers' oldest jobs are still one job's wait each, so adding
+    them would report a wait neither saw, and two halts are still one flag.
+    """
+    halted = KVCacheMetrics(
+        dkv_settle_queue_depth=3,
+        dkv_settle_queue_oldest_age_ms=250.0,
+        dkv_settle_jobs_finished=10,
+        dkv_owner_releases_halted=1,
+    )
+    draining = KVCacheMetrics(
+        dkv_settle_queue_depth=4,
+        dkv_settle_queue_oldest_age_ms=40.0,
+        dkv_settle_jobs_finished=7,
+        dkv_owner_releases_halted=0,
+    )
+
+    for total in (halted + draining, draining + halted):
+        assert total.dkv_settle_queue_depth == 7
+        assert total.dkv_settle_queue_oldest_age_ms == 250.0
+        assert total.dkv_settle_jobs_finished == 17
+        assert total.dkv_owner_releases_halted == 1
+
+    # two halts up are still one flag, not a count of them
+    assert (halted + halted).dkv_owner_releases_halted == 1
+    assert KVCacheMetrics().dkv_settle_queue_oldest_age_ms == 0.0
+
+
+def test_kv_cache_metrics_add_sums_the_dkv_orphan_fields() -> None:
+    """The orphan queue's outcome counts and its depth each sum."""
+    first = KVCacheMetrics(
+        dkv_orphan_cleanups_reissued=1,
+        dkv_orphan_cleanups_abandoned=2,
+        dkv_orphan_cleanups_dropped=3,
+        dkv_orphan_cleanups_refused=4,
+        dkv_orphan_cleanups_expired=5,
+        dkv_orphan_queue_depth=6,
+    )
+    second = KVCacheMetrics(
+        dkv_orphan_cleanups_reissued=10,
+        dkv_orphan_cleanups_abandoned=20,
+        dkv_orphan_cleanups_dropped=30,
+        dkv_orphan_cleanups_refused=40,
+        dkv_orphan_cleanups_expired=50,
+        dkv_orphan_queue_depth=60,
+    )
+
+    total = first + second
+
+    assert total.dkv_orphan_cleanups_reissued == 11
+    assert total.dkv_orphan_cleanups_abandoned == 22
+    assert total.dkv_orphan_cleanups_dropped == 33
+    assert total.dkv_orphan_cleanups_refused == 44
+    assert total.dkv_orphan_cleanups_expired == 55
+    assert total.dkv_orphan_queue_depth == 66
+
+
+def test_kv_cache_metrics_add_sums_the_dkv_hint_loss_fields() -> None:
+    """The hint denominator and the blocks lost to hints and short pulls sum
+    across replicas, the per-reason blocks label by label."""
+    first = KVCacheMetrics(
+        dkv_hints_received=3,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 10},
+        dkv_own_run_blocks_short_of_hint=1,
+        dkv_peer_blocks_short_of_hint=2,
+        dkv_hint_blocks_unserved=3,
+    )
+    second = KVCacheMetrics(
+        dkv_hints_received=30,
+        dkv_hint_blocks_forgone_by_reason={"chain_mismatch": 5, "gapped": 4},
+        dkv_own_run_blocks_short_of_hint=10,
+        dkv_peer_blocks_short_of_hint=20,
+        dkv_hint_blocks_unserved=30,
+    )
+
+    total = first + second
+
+    assert total.dkv_hints_received == 33
+    assert total.dkv_hint_blocks_forgone_by_reason == {
+        "chain_mismatch": 15,
+        "gapped": 4,
+    }
+    assert total.dkv_own_run_blocks_short_of_hint == 11
+    assert total.dkv_peer_blocks_short_of_hint == 22
+    assert total.dkv_hint_blocks_unserved == 33
+
+
+def test_kv_cache_metrics_add_sums_the_dkv_attach_wait_fields() -> None:
+    """The peer attach wait's counts and time sum across replicas."""
+    first = KVCacheMetrics(
+        dkv_hinted_attach_waits=1,
+        dkv_hinted_attach_wait_ms_total=10.0,
+        dkv_hinted_attach_wait_timeouts=1,
+    )
+    second = KVCacheMetrics(
+        dkv_hinted_attach_waits=3,
+        dkv_hinted_attach_wait_ms_total=30.0,
+        dkv_hinted_attach_wait_timeouts=0,
+    )
+
+    total = first + second
+
+    assert total.dkv_hinted_attach_waits == 4
+    assert total.dkv_hinted_attach_wait_ms_total == 40.0
+    assert total.dkv_hinted_attach_wait_timeouts == 1
+
+
+def test_kv_cache_metrics_add_sums_the_connector_lookup_drop_fields() -> None:
+    """Dropped lookups and the samples behind their histograms sum across
+    replicas, key by key."""
+    first = KVCacheMetrics(
+        connector_lookup_drops={
+            ("release", "offered", False): 1,
+            ("timeout", "unseen", True): 2,
+        },
+        connector_lookup_dropped_blocks={("release", False): 7},
+        connector_lookup_shrink_depths={1: 2},
+        connector_lookup_shrink_cap_blocks=3,
+        connector_lookup_reasks_per_request={2: 1},
+        connector_lookup_hand_backs_per_request={1: 4},
+    )
+    second = KVCacheMetrics(
+        connector_lookup_drops={
+            ("release", "offered", False): 10,
+            ("release", "offered", True): 3,
+        },
+        connector_lookup_dropped_blocks={
+            ("release", False): 5,
+            ("release", True): 9,
+        },
+        connector_lookup_shrink_depths={1: 1, 6: 1},
+        connector_lookup_shrink_cap_blocks=30,
+        connector_lookup_reasks_per_request={1: 2},
+        connector_lookup_hand_backs_per_request={1: 1},
+    )
+
+    total = first + second
+
+    assert total.connector_lookup_drops == {
+        ("release", "offered", False): 11,
+        ("timeout", "unseen", True): 2,
+        ("release", "offered", True): 3,
+    }
+    assert total.connector_lookup_dropped_blocks == {
+        ("release", False): 12,
+        ("release", True): 9,
+    }
+    assert total.connector_lookup_shrink_depths == {1: 3, 6: 1}
+    assert total.connector_lookup_shrink_cap_blocks == 33
+    assert total.connector_lookup_reasks_per_request == {2: 1, 1: 2}
+    assert total.connector_lookup_hand_backs_per_request == {1: 5}
+
+
 def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
     """device_blocks_served and cross_replica_{blocks,bytes}_copied sum
     across replicas (CENG-845 G0/G0-DP tier-attribution counters)."""

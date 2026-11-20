@@ -236,6 +236,11 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     return {false, true};
+
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
+    llvm_unreachable("LowerArgConventions splits pack arguments");
   }
 }
 
@@ -408,10 +413,10 @@ void Graph::doRewrite(const Node *node) {
     // Finally, update the callee signature.
     functionType = FunctionType::get(func.getContext(), call->getOperandTypes(),
                                      call->getResultTypes());
-    FuncTypeGeneratorType calleeSignature = FuncTypeGeneratorType::get(
-        {}, functionType, convs, sigBase.getFnEffects());
-    call.setCalleeAttr(
-        SymbolConstantAttr::get(call.getCalleeSymbol(), calleeSignature));
+    auto calleeSignature =
+        FuncType::get(functionType, convs, sigBase.getFnEffects());
+    call.setCalleeAttr(FuncSymbolGenerator::getParamLess(call.getCalleeSymbol(),
+                                                         calleeSignature));
   }
 }
 

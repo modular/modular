@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph 3: Fused denoise step component for Flux2Executor."""
 
 from __future__ import annotations
@@ -32,8 +31,8 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import load_weights
-from max.nn.comm import Signals
-from max.nn.layer import Module
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
@@ -88,6 +87,7 @@ class DenoiseStep(Module):
         *,
         signal_buffers: list[BufferValue] | None = None,
     ) -> TensorValue:
+        """Runs the transformer and the Euler step together."""
         # Concat image latents for img2img (no-op when img_seq=0).
         latents_concat = ops.concat([latents, image_latents], axis=1)
         latent_image_ids_concat = ops.concat(
@@ -136,6 +136,7 @@ class DenoiseStep(Module):
         return updated
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         in_channels = self.transformer.in_channels
         joint_attention_dim = self.transformer.joint_attention_dim
         return (

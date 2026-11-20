@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Laguna architecture: a decoder-only MoE model that extends the
-Llama 3 architecture.
+"""The Laguna architecture.
+
+A decoder-only MoE model that extends the Llama 3 architecture.
 """
 
 # The ``laguna`` model_type is registered as a local ``AutoConfig`` shim in

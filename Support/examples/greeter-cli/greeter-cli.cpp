@@ -36,16 +36,12 @@
 
 using namespace M;
 
-// Create the `llvm::opt::OptTable` class that LLVMOption needs for
-// option parsing.
+// Define `options::Table`, the `llvm::opt::OptTable` that LLVMOption needs for
+// option parsing, and `options::helpTexts()`, the help text that TableGen
+// generated.
 #define DRIVER_OPTIONS_PATH "DriverOptions.inc"
+#include "DriverOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct DriverOptTable : public llvm::opt::OptTable {
-  DriverOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 int main(int argc, char **argv) {
   // First, set up LLVM.
@@ -81,18 +77,16 @@ int main(int argc, char **argv) {
   //    parsing to those subcommands.
   // 4. If it's anything else, we'll behave as if the user invoked
   //    `greeter-cli hi [arguments]`.
-  DriverOptTable options;
+  options::Table optTable;
   llvm::opt::InputArgList args(arguments.begin(), arguments.end());
   unsigned index = 0;
-  std::unique_ptr<llvm::opt::Arg> firstArg = options.ParseOneArg(args, index);
+  std::unique_ptr<llvm::opt::Arg> firstArg = optTable.ParseOneArg(args, index);
   switch (firstArg->getOption().getID()) {
   case options::OPT_help:
     // 1: The first argument is `--help`, so print the help text string that we
     //    generated with TableGen, and exit successfully.
     return State(programName, ArrayRef(arguments).slice(1))
-        .printHelp(
-#include "DriverOptionsHelpText.inc"
-        );
+        .printHelp(options::helpTexts().help);
   case options::OPT_busy:
     // 2: The first argument is `--busy`, so print this message and exit. Note
     //    that we're too "busy" to check if any of the following arguments may

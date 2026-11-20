@@ -14,7 +14,7 @@
 from std.sys.info import size_of
 
 from std.compile import compile_info
-from std.hashlib import hash
+from std.hash import hash
 from std.memory import MaybeUninit
 from std.traits import (
     IsTriviallyCopyable,
@@ -101,7 +101,7 @@ def test_array_int() raises:
 
     def test_init_fill_scalars[*dts: DType, sizes: List[Int]]() raises {imm}:
         comptime for current_size in range(len(sizes)):
-            comptime for current_type in range(dts.size):
+            comptime for current_type in range(dts.length):
                 test_init_fill[sizes[current_size]](
                     Scalar[dts[current_type]].MAX
                 )
@@ -119,6 +119,37 @@ def test_array_int() raises:
     ]()
 
     test_init_fill[2048](Int64.MAX)
+
+
+def test_array_getitem_slice() raises:
+    var arr: Array[Int, 5] = [1, 2, 3, 4, 5]
+
+    var middle = arr[1:4]
+    assert_equal(len(middle), 3)
+    assert_equal(middle[0], 2)
+    assert_equal(middle[1], 3)
+    assert_equal(middle[2], 4)
+
+    var prefix = arr[:2]
+    assert_equal(len(prefix), 2)
+    assert_equal(prefix[0], 1)
+    assert_equal(prefix[1], 2)
+
+    var suffix = arr[3:]
+    assert_equal(len(suffix), 2)
+    assert_equal(suffix[0], 4)
+    assert_equal(suffix[1], 5)
+
+    var full = arr[:]
+    assert_equal(len(full), 5)
+    assert_true(full == Span(arr))
+
+    assert_equal(len(arr[2:2]), 0)
+
+    # The span is a mutable view when the array is mutable.
+    var mutable = arr[1:3]
+    mutable[0] = 20
+    assert_equal(arr[1], 20)
 
 
 def test_array_fill_with() raises:
@@ -166,6 +197,43 @@ def test_array_fill_with_crosses_batch_boundary() raises:
     var arr = Array[Int, size](fill_with=lambda (i: Int) -> Int: i + 1)
     for i in range(size):
         assert_equal(arr[i], i + 1)
+
+
+def test_array_fill_with_non_raising_closure_constructs_in_place() raises:
+    var squares = Array[MoveCounter[Int], 3](
+        fill_with=lambda (i: Int) -> MoveCounter[Int]: MoveCounter(i * i)
+    )
+    for i in range(3):
+        assert_equal(squares[i].move_count, 0)
+
+
+def test_array_fill_with_raising_closure() raises:
+    var squares = Array[Int, 3](fill_with=lambda (i: Int) raises -> Int: i * i)
+    for i in range(3):
+        assert_equal(squares[i], i * i)
+
+
+def destroyed_by_fill_with(fail_at: Int) raises -> List[Int]:
+    var destructor_recorder = List[Int]()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
+
+    def fill(i: Int) raises FillError {imm} -> DelRecorder[ptr.origin]:
+        if i == fail_at:
+            raise FillError(i)
+        return DelRecorder(i, ptr)
+
+    try:
+        _ = Array[DelRecorder[ptr.origin], 4](fill_with=fill)
+    except e:
+        assert_equal(e.index, fail_at)
+    return destructor_recorder^
+
+
+def test_array_fill_with_raises_destroys_written_elements() raises:
+    assert_equal(destroyed_by_fill_with(fail_at=0), List[Int]())
+    assert_equal(destroyed_by_fill_with(fail_at=2), [0, 1])
+    assert_equal(destroyed_by_fill_with(fail_at=3), [0, 1, 2])
+    assert_equal(destroyed_by_fill_with(fail_at=4), [0, 1, 2, 3])
 
 
 def test_array_String() raises:
@@ -467,7 +535,7 @@ def test_array_batched_copy_and_move_llvm_ir() raises:
     # runtime loop, unlike the 4-element case above which unrolls at compile
     # time. A callsite marker is expected for the live loop, so this checks
     # only the range attribute.
-    def _test(ir: StringSlice) raises:
+    def _test(ir: StringSpan) raises:
         assert_true("initializes((0, 512))" in ir)
 
     var move_info = compile_info[
@@ -481,7 +549,7 @@ def test_array_batched_copy_and_move_llvm_ir() raises:
 
 
 def test_array_copy_and_move_llvm_ir() raises:
-    def _test(ir: StringSlice) raises:
+    def _test(ir: StringSpan) raises:
         assert_true("initializes((0, 16))" in ir)
         assert_false('asm sideeffect "nop"' in ir)
 
@@ -534,6 +602,11 @@ def _test_array_iter_bounds[
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(Optional(0), upper)
+
+
+@fieldwise_init
+struct FillError(Movable):
+    var index: Int
 
 
 struct NonWritable(Copyable):

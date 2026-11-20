@@ -13,7 +13,7 @@
 """DP dynamic-batch tests on simulated CPU mesh — inherits from _dp_dynamic."""
 
 from max.driver import CPU
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from module._dp_dynamic import DPDynamicTests
 

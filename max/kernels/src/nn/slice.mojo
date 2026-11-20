@@ -18,8 +18,8 @@ from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
-from std.sys.info import CompilationTarget, simd_width_of
+from layout.layout import Layout
+from std.sys.info import simd_width_of
 
 from std.utils._select import _select_register_value as select
 from std.utils.index import IndexList
@@ -200,7 +200,6 @@ def copy_to_slice[
     start_type: DType,
     end_type: DType,
     step_type: DType,
-    target: StaticString = "cpu",
 ](
     buffer: TileTensor[mut=True, dtype, ...],
     in_slice: TileTensor[mut=False, dtype, ...],
@@ -240,11 +239,9 @@ def copy_to_slice[
 
     @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        buffer_slice_view.store[width=simd_width](
-            idx, in_slice.load[width=simd_width](idx)
-        )
+        buffer_slice_view.store(idx, in_slice.load[width=simd_width](idx))
 
-    elementwise[1, target=target, _trace_description="slice_copy"](
+    elementwise[1, _trace_description="slice_copy"](
         copy,
         buffer_slice_view.layout.shape_coord(),
         context,
@@ -266,7 +263,7 @@ def slice_as_copy[
     start: TileTensor[mut=False, index_type, ...],
     end: TileTensor[mut=False, index_type, ...],
     step: TileTensor[mut=False, index_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     """Copies a slice of `tensor` into `output` using the given start, end, and step indices.
 
@@ -289,7 +286,7 @@ def slice_as_copy[
     # Copy lambda sliced view into output buffer.
     @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store[width=simd_width](idx, sliced.load[width=simd_width](idx))
+        output.store(idx, sliced.load[width=simd_width](idx))
 
     # Invoke copy.
     elementwise[1](copy, output.layout.shape_coord(), ctx)
@@ -378,7 +375,6 @@ def slice_shape[
 def sliced_add[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     c: TileTensor[mut=True, dtype, ...],
     a: TileTensor[mut=False, dtype, ...],
@@ -406,32 +402,22 @@ def sliced_add[
     def _sliced_add[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var out_val: SIMD[dtype, width]
 
-        if Int(idx[0].value()) >= batch_end_idx:
+        if Int(idx[0]) >= batch_end_idx:
             out_val = a.load[width](idx)
         else:
             var a_val = a.load[width](idx)
             var b_val = b.load[width](idx)
             out_val = a_val + b_val
 
-        c.store[width](idx, out_val)
+        c.store(idx, out_val)
 
-    comptime if target == "gpu":
-        comptime compile_target = ctx.target
-        comptime simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
-        elementwise[
-            simd_width,
-            target=target,
-            _trace_description="slice_add",
-        ](
-            _sliced_add,
-            c.layout.shape_coord(),
-            ctx,
-        )
-    else:
-        comptime compile_target = CompilationTarget.current()
-        comptime simd_width = simd_width_of[dtype, target=compile_target]()
-
-        elementwise[simd_width, target=target](
-            _sliced_add, c.layout.shape_coord(), ctx
-        )
+    elementwise[
+        simd_width,
+        _trace_description="slice_add",
+    ](
+        _sliced_add,
+        c.layout.shape_coord(),
+        ctx,
+    )

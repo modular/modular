@@ -100,6 +100,7 @@ Outputs:
 
 import std.math
 from max.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
     lane_id,
@@ -107,15 +108,37 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.primitives import warp
+from max.gpu.primitives.grid_controls import (
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 from max.gpu.sync import barrier
 from std.math import ceildiv, fma, rsqrt
 from std.memory import unsafe_stack_allocation
-from layout import TensorEngine, TensorLayout, TileTensor
+from std.utils.static_tuple import StaticTuple
+from layout import Idx, TensorEngine, TensorLayout, TileTensor, row_major
 
 
 comptime _SharedF32 = Pointer[
     Float32, MutUntrackedOrigin, address_space=.SHARED
 ]
+
+
+@always_inline
+def pdl_enter():
+    """Waits for the grid before this one, before the kernel reads any operand.
+
+    Every operand of these kernels (the conv output, the decay and beta, the
+    offsets, the slot indices) can be the preceding grid's output, so nothing
+    is read ahead of the wait. The launch carries `pdl_launch_attributes`.
+    """
+    wait_on_dependent_grids()
+
+
+@always_inline
+def pdl_exit():
+    """Releases the dependent grid once this thread has issued its stores."""
+    launch_dependent_grids()
 
 
 @always_inline
@@ -221,6 +244,11 @@ def _gated_delta_token_step[
 # ===----------------------------------------------------------------------=== #
 
 
+# Without a declared block size, the AMD backend assumes 1024 threads and
+# spills the 128-float state column to scratch.
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(VALUE_HEAD_DIM))
+)
 def gated_delta_recurrence_fwd_gpu[
     work_dtype: DType,  # for qkv/decay/beta/recurrence_output (fp32)
     state_dtype: DType,  # for the recurrent_state pool (bf16)
@@ -325,6 +353,8 @@ def gated_delta_recurrence_fwd_gpu[
         KEY_HEAD_DIM == VALUE_HEAD_DIM
     ), "gated_delta_recurrence_fwd_gpu requires KEY_HEAD_DIM == VALUE_HEAD_DIM"
 
+    pdl_enter()
+
     var tid = thread_idx.x
     var block = block_idx.x
 
@@ -340,7 +370,7 @@ def gated_delta_recurrence_fwd_gpu[
 
     # Read the pool slot for this batch item exactly once. The caller
     # (`GatedDeltaNetStateCache.claim`) guarantees `slot < max_slots`.
-    var slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
+    var slot = Int(slot_idx[batch_item_idx])
 
     var q_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
@@ -363,12 +393,8 @@ def gated_delta_recurrence_fwd_gpu[
             recurrent_state.load[width=1]((slot, value_head_idx, kd, tid))
         )
 
-    var sequence_start_flat_idx = Int(
-        input_row_offsets.load[width=1]((batch_item_idx,))
-    )
-    var sequence_end_flat_idx = Int(
-        input_row_offsets.load[width=1]((batch_item_idx + 1,))
-    )
+    var sequence_start_flat_idx = Int(input_row_offsets[batch_item_idx])
+    var sequence_end_flat_idx = Int(input_row_offsets[batch_item_idx + 1])
 
     var query_channel = key_head_idx * KEY_HEAD_DIM + tid
     var key_channel = _key_dim + key_head_idx * KEY_HEAD_DIM + tid
@@ -407,12 +433,14 @@ def gated_delta_recurrence_fwd_gpu[
     # ── Write final state column back into pool[slot, ...] ──────────────────
     # Reread the slot, so the compiler cannot reuse the load-time address of
     # each state row and keep all KEY_HEAD_DIM of them live across the loop.
-    var final_slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
+    var final_slot = Int(slot_idx[batch_item_idx])
     comptime for kd in range(KEY_HEAD_DIM):
         recurrent_state.store(
             (final_slot, value_head_idx, kd, tid),
             Scalar[state_dtype](state_col[kd]),
         )
+
+    pdl_exit()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -421,10 +449,12 @@ def gated_delta_recurrence_fwd_gpu[
 #
 # A verify advances the recurrence over every drafted position, but only the
 # accepted prefix may be kept. `gated_delta_recurrence_verify_ring_gpu` runs
-# the verify from the live pool without writing it back and records, per
-# token, the decay, the raw key and the delta factor its update consumed.
+# the verify from the live pool and records, per token of a row the ring
+# holds, the decay, the raw key and the delta factor its update consumed.
 # `gated_delta_state_fold_gpu` then applies the accepted records to the live
-# pool, for every layer in one launch.
+# pool, for every layer in one launch. A row longer than one token and its
+# drafts records nothing; the verify commits its state at the row's last real
+# token, so the caller plans no fold for it.
 #
 # The ring is addressed like the state pool, a `[rows, ...]` buffer plus a
 # per-request row index. A ring row is `[num_key_heads, RING_LEN,
@@ -489,11 +519,14 @@ def gated_delta_recurrence_verify_ring_gpu[
     ring_LT: TensorLayout,
     ring_slot_idx_LT: TensorLayout,
     Engine: TensorEngine,
+    RECORDS_ONLY: Bool = False,
+    SKIP_LONG_ROWS: Bool = False,
 ](
     batch_size: Int32,
     num_value_heads: Int32,
     num_key_heads: Int32,
     key_dim: Int32,
+    num_draft_tokens: Int32,
     recurrence_output: TileTensor[
         work_dtype, recurrence_output_LT, MutUntrackedOrigin, Engine=Engine
     ],
@@ -520,17 +553,33 @@ def gated_delta_recurrence_verify_ring_gpu[
         .uint32, ring_slot_idx_LT, ImmUntrackedOrigin, Engine=Engine
     ],
 ):
-    """GPU kernel: runs the gated delta recurrence over a verify window and
-    records a ring instead of writing the state back.
+    """GPU kernel: runs the gated delta recurrence over a verify window,
+    recording a ring for the rows the window holds.
 
     Produces the same `recurrence_output` as `gated_delta_recurrence_fwd_gpu`
-    and leaves `recurrent_state` unchanged. Each token writes the record
-    `gated_delta_state_fold_gpu` needs to advance the state over it.
+    and leaves `recurrent_state` unchanged. Each token of a recorded row
+    writes the record `gated_delta_state_fold_gpu` needs to advance the state
+    over it.
 
-    A row longer than `RING_LEN` records nothing and writes its state back
-    as `gated_delta_recurrence_fwd_gpu` does, committing the whole row. The
-    fold skips a row whose count exceeds `RING_LEN`, so a caller folds such a
-    row with its full length.
+    A row longer than one token and its drafts records nothing and commits
+    itself: the walk stores the state it holds at the row's last real token,
+    the one before the `num_draft_tokens` drafts every verify window ends
+    with, so the fold the caller plans for such a row is zero. The op
+    rejects a draft width of `RING_LEN` or more, so a long row always has
+    that token. Committing inside the walk leaves the state column live no
+    further than the loop carries it; an exit writeback held it to the exit
+    and cost the recording path about 30% of its time in spills
+    (MXSERV-555).
+
+    With `RECORDS_ONLY` the commit is compiled out and a longer row trips
+    the kernel's safe assert instead. The op launches it when every row is
+    one token and its drafts, which keeps the commit's conditional store off
+    the decode verify's hot loop.
+
+    With `SKIP_LONG_ROWS` a longer row writes zeros over its outputs and
+    nothing else, and the other rows run the `RECORDS_ONLY` code. A caller
+    that runs the long rows through a chunked forward launches it, so no
+    state is written.
 
     Parameters:
         work_dtype: `DType` of the per-token input and output tensors.
@@ -551,16 +600,22 @@ def gated_delta_recurrence_verify_ring_gpu[
         ring_LT: `TensorLayout` for `ring`.
         ring_slot_idx_LT: `TensorLayout` for `ring_slot_idx`.
         Engine: Engine shared by all tile operands.
-
+        RECORDS_ONLY: Compile-time contract that every row is one token and
+            its drafts; the long-row commit is compiled out.
+        SKIP_LONG_ROWS: Compile-time: a longer row is the caller's; its
+            outputs are zeroed and its state is left alone.
     Args:
         batch_size: Number of sequences in the ragged batch.
         num_value_heads: Number of value heads (`nv`).
         num_key_heads: Number of key heads (`nk`).
         key_dim: `num_key_heads * key_head_dim`.
+        num_draft_tokens: Draft width `K` the verify rides every row with;
+            only a longer row reads it.
         recurrence_output: `[total_seq_len, value_dim]` readout, written for
             every token of the window.
         recurrent_state: `[max_slots, nv, KEY_HEAD_DIM, VALUE_HEAD_DIM]` dense
-            live pool, written only for a row longer than `RING_LEN`.
+            live pool, written once for a longer row, at that row's last real
+            token.
         slot_idx: `[batch_size]` live pool row per batch item.
         qkv_conv_output: `[total_seq_len, conv_dim]` conv output.
         decay_per_token: `[total_seq_len, nv]` per-token decay.
@@ -578,6 +633,8 @@ def gated_delta_recurrence_verify_ring_gpu[
         " VALUE_HEAD_DIM"
     )
 
+    pdl_enter()
+
     var tid = thread_idx.x
     var block = block_idx.x
 
@@ -591,8 +648,25 @@ def gated_delta_recurrence_verify_ring_gpu[
     # One value head per GQA group writes the shared raw key.
     var writes_ring_key = group_head == 0
 
-    var slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
-    var ring_row = Int(ring_slot_idx.load[width=1]((batch_item_idx,)))
+    comptime if SKIP_LONG_ROWS:
+        var row_start = Int(input_row_offsets[batch_item_idx])
+        var row_length = Int(input_row_offsets[batch_item_idx + 1]) - row_start
+        if row_length > Int(num_draft_tokens) + 1:
+            # Zeros keep a quantized consumer's scales finite; the chunk op
+            # writes the long rows over them.
+            for position in range(row_length):
+                recurrence_output.store(
+                    (
+                        row_start + position,
+                        value_head_idx * VALUE_HEAD_DIM + tid,
+                    ),
+                    Scalar[work_dtype](0),
+                )
+            return
+    comptime records_only = RECORDS_ONLY or SKIP_LONG_ROWS
+
+    var slot = Int(slot_idx[batch_item_idx])
+    var ring_row = Int(ring_slot_idx[batch_item_idx])
 
     var q_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
@@ -621,15 +695,37 @@ def gated_delta_recurrence_verify_ring_gpu[
         group_size, group_head
     )
 
-    var sequence_start_flat_idx = Int(
-        input_row_offsets.load[width=1]((batch_item_idx,))
-    )
+    var sequence_start_flat_idx = Int(input_row_offsets[batch_item_idx])
     var sequence_length = (
-        Int(input_row_offsets.load[width=1]((batch_item_idx + 1,)))
-        - sequence_start_flat_idx
+        Int(input_row_offsets[batch_item_idx + 1]) - sequence_start_flat_idx
     )
     # Block-uniform, since a CTA covers one batch item.
-    var records = sequence_length <= RING_LEN
+    var records = sequence_length <= Int(num_draft_tokens) + 1
+    # A row the window cannot hold commits at its last real token, the one
+    # before the drafts every verify window ends with.
+    var commit_position = sequence_length - Int(num_draft_tokens) - 1
+    comptime if records_only:
+        debug_assert[assert_mode="safe"](
+            records,
+            "gated_delta_recurrence_verify_ring_gpu[RECORDS_ONLY]: row ",
+            batch_item_idx,
+            " has ",
+            sequence_length,
+            " tokens, exceeding the window of ",
+            Int(num_draft_tokens) + 1,
+        )
+    else:
+        if not records:
+            debug_assert[assert_mode="safe"](
+                commit_position >= 0,
+                "gated_delta_recurrence_verify_ring_gpu: row ",
+                batch_item_idx,
+                " has ",
+                sequence_length,
+                " tokens but carries ",
+                Int(num_draft_tokens),
+                " drafts, so it has no real token to commit before them",
+            )
 
     var query_channel = key_head_idx * KEY_HEAD_DIM + tid
     var key_channel = _key_dim + key_head_idx * KEY_HEAD_DIM + tid
@@ -668,6 +764,14 @@ def gated_delta_recurrence_verify_ring_gpu[
             Scalar[work_dtype](output_value),
         )
 
+        comptime if not records_only:
+            if not records and position == commit_position:
+                comptime for kd in range(KEY_HEAD_DIM):
+                    recurrent_state.store(
+                        (slot, value_head_idx, kd, tid),
+                        Scalar[state_dtype](state_col[kd]),
+                    )
+
         if records:
             ring.store(
                 (ring_row, key_head_idx, position, ring_delta_offset),
@@ -684,19 +788,7 @@ def gated_delta_recurrence_verify_ring_gpu[
                     Scalar[ring_dtype](k_value),
                 )
 
-    # TODO(MXSERV-555): this writeback keeps state_col live to the exit, which
-    # costs the recording path about 5% in spills even though no row the
-    # graph builds reaches it. An early-return split spills more. If the
-    # verify shows up in a profile, launch rows longer than the ring on a
-    # separate kernel, which needs the host row offsets as an operand.
-    if not records:
-        # Reread the slot; see `gated_delta_recurrence_fwd_gpu`.
-        var final_slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
-        comptime for kd in range(KEY_HEAD_DIM):
-            recurrent_state.store(
-                (final_slot, value_head_idx, kd, tid),
-                Scalar[state_dtype](state_col[kd]),
-            )
+    pdl_exit()
 
 
 def gated_delta_state_fold_gpu[
@@ -738,9 +830,9 @@ def gated_delta_state_fold_gpu[
     coordinate.
 
     A row is not read or written when `num_accepted[b]` is zero, or when it
-    exceeds `RING_LEN`, which names a row the verify was too long to record
-    and committed itself. Rows that alias, as padding requests do on the null
-    block, race, and nothing reads such a row.
+    exceeds `RING_LEN`: a count past `RING_LEN` cannot be folded (the ring
+    holds no more) and is skipped. Rows that alias, as padding requests do
+    on the null block, race, and nothing reads such a row.
 
     Parameters:
         state_dtype: `DType` of the `recurrent_state` pool.
@@ -757,7 +849,6 @@ def gated_delta_state_fold_gpu[
         Engine: Engine shared by all tile operands.
         KEY_DIM_TILE: Key-dim elements a thread holds in registers at once.
             Must divide `KEY_HEAD_DIM`.
-
     Args:
         batch_size: Number of sequences the verify covered.
         num_layers: Number of layers, each with its own pool row.
@@ -781,6 +872,8 @@ def gated_delta_state_fold_gpu[
         KEY_HEAD_DIM % KEY_DIM_TILE == 0
     ), "gated_delta_state_fold_gpu requires KEY_DIM_TILE to divide KEY_HEAD_DIM"
 
+    pdl_enter()
+
     var tid = thread_idx.x
     var block = block_idx.x
 
@@ -790,7 +883,7 @@ def gated_delta_state_fold_gpu[
     if batch_item_idx >= _batch_size:
         return
 
-    var accepted = Int(num_accepted.load[width=1]((batch_item_idx,)))
+    var accepted = Int(num_accepted[batch_item_idx])
     if accepted <= 0 or accepted > RING_LEN:
         return
 
@@ -798,8 +891,8 @@ def gated_delta_state_fold_gpu[
     var key_head_idx = value_head_idx // group_size
     var group_head = value_head_idx % group_size
 
-    var slot = Int(row_ids.load[width=1]((layer_idx, batch_item_idx)))
-    var ring_row = Int(ring_row_ids.load[width=1]((layer_idx, batch_item_idx)))
+    var slot = Int(row_ids[layer_idx, batch_item_idx])
+    var ring_row = Int(ring_row_ids[layer_idx, batch_item_idx])
     var ring_delta_offset = (
         _ring_delta_offset[KEY_HEAD_DIM, VALUE_HEAD_DIM](group_head) + tid
     )
@@ -836,16 +929,18 @@ def gated_delta_state_fold_gpu[
                 )
             )
 
-    # The pool is dense, so a row's offset is a runtime base plus a
-    # compile-time stride per key-dim row. Indexing through the layout
-    # instead multiplies each row by a runtime stride and costs registers.
-    comptime pool_stride_head = KEY_HEAD_DIM * VALUE_HEAD_DIM
-    comptime pool_stride_kd = VALUE_HEAD_DIM
-    var pool_base_offset = (
-        slot * (_num_value_heads * pool_stride_head)
-        + value_head_idx * pool_stride_head
-        + tid
+    # The pool is dense, so a head's state is a runtime base plus
+    # compile-time strides per key-dim row. Indexing through the pool's own
+    # layout instead multiplies each row by a runtime stride and costs
+    # registers.
+    var pool_heads = recurrent_state.reshape(
+        row_major(
+            Int(recurrent_state.dim[0]()) * _num_value_heads,
+            Idx[KEY_HEAD_DIM],
+            Idx[VALUE_HEAD_DIM],
+        )
     )
+    var pool_head = slot * _num_value_heads + value_head_idx
 
     # The update is elementwise in the key dim, so the column is processed
     # in register-sized tiles. Each tile applies every record, so the state
@@ -856,8 +951,8 @@ def gated_delta_state_fold_gpu[
         var state_tile = SIMD[.float32, KEY_DIM_TILE](0.0)
         comptime for i in range(KEY_DIM_TILE):
             state_tile[i] = Float32(
-                recurrent_state.raw_load(
-                    pool_base_offset + (tile_base + i) * pool_stride_kd
+                rebind[Scalar[state_dtype]](
+                    pool_heads.load((pool_head, Idx[tile_base + i], tid))
                 )
             )
 
@@ -875,7 +970,9 @@ def gated_delta_state_fold_gpu[
                     )
 
         comptime for i in range(KEY_DIM_TILE):
-            recurrent_state.raw_store(
-                pool_base_offset + (tile_base + i) * pool_stride_kd,
+            pool_heads.store(
+                (pool_head, Idx[tile_base + i], tid),
                 Scalar[state_dtype](state_tile[i]),
             )
+
+    pdl_exit()

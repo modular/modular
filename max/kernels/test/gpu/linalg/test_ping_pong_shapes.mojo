@@ -94,16 +94,8 @@ def test_shape[
                 if errors <= 5:
                     var row, col = divmod(i, N)
                     print(
-                        "  Mismatch at row",
-                        row,
-                        "col",
-                        col,
-                        ": actual=",
-                        actual,
-                        "expected=",
-                        expected,
-                        "rel_err=",
-                        rel_err,
+                        t"  Mismatch at row {row} col {col} : actual="
+                        t" {actual} expected= {expected} rel_err= {rel_err}"
                     )
 
         assert_true(errors == 0, msg=String(t"Test failed:{errors} errors"))

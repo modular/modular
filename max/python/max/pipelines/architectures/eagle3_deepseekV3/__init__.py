@@ -10,26 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""DeepseekV3 + Eagle3 speculator pipeline."""
+"""Eagle3 drafts for a DeepseekV3 target."""
 
-from .arch import (
-    eagle3_deepseekV3_speculator,
-    eagle3_mha_deepseekV3_speculator,
-)
+from .arch import eagle3_deepseekV3_draft_arch, eagle3_mha_deepseekV3_draft_arch
 from .eagle3_draft import Eagle3DeepseekV3
-from .mha_pipeline import Eagle3MHADeepseekV3Inputs, Eagle3MHADeepseekV3Model
-from .model import Eagle3DeepseekV3Inputs, Eagle3DeepseekV3Model
-from .unified_eagle import Eagle3DeepseekV3Unified
-from .weight_adapters import convert_eagle3_draft_state_dict
+from .model import (
+    Eagle3DeepseekV3DraftArchConfig,
+    Eagle3DeepseekV3DraftConfig,
+    Eagle3MHADeepseekV3DraftArchConfig,
+)
 
 __all__ = [
     "Eagle3DeepseekV3",
-    "Eagle3DeepseekV3Inputs",
-    "Eagle3DeepseekV3Model",
-    "Eagle3DeepseekV3Unified",
-    "Eagle3MHADeepseekV3Inputs",
-    "Eagle3MHADeepseekV3Model",
-    "convert_eagle3_draft_state_dict",
-    "eagle3_deepseekV3_speculator",
-    "eagle3_mha_deepseekV3_speculator",
+    "Eagle3DeepseekV3DraftArchConfig",
+    "Eagle3DeepseekV3DraftConfig",
+    "Eagle3MHADeepseekV3DraftArchConfig",
+    "eagle3_deepseekV3_draft_arch",
+    "eagle3_mha_deepseekV3_draft_arch",
 ]

@@ -23,6 +23,7 @@ from collections.abc import Set as AbstractSet
 from itertools import pairwise
 from typing import TYPE_CHECKING, TypeGuard
 
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     PixelGenAggregates,
@@ -32,6 +33,7 @@ from max.benchmark.benchmark_shared.metrics import (
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
+    interactivity_from_per_request_durations,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncOutput,
@@ -160,20 +162,37 @@ def _aggregate_gpu_stats(
         )
 
     bytes_per_mib = 1024 * 1024
+    saw_memory_stats = False
     utilization_by_device: dict[str, float] = {}
     for device_name in all_devices:
         present = [s[device_name] for s in gpu_metrics if device_name in s]
-        peak_gpu_memory_mib.append(
-            max(stats.memory.used_bytes for stats in present) / bytes_per_mib
-        )
-        available_gpu_memory_mib.append(
-            min(stats.memory.free_bytes for stats in present) / bytes_per_mib
-        )
+        # Some drivers report no memory info (for example, NVML on DGX
+        # Spark), only utilization and clocks. Leave those devices out of
+        # the memory series. Counting them as zero would skew it. As a
+        # result, the memory lists and gpu_utilization aren't index-aligned
+        # by device when only some devices report memory.
+        memory_present = [
+            m for m in (stats.memory for stats in present) if m is not None
+        ]
+        if memory_present:
+            peak_gpu_memory_mib.append(
+                max(m.used_bytes for m in memory_present) / bytes_per_mib
+            )
+            available_gpu_memory_mib.append(
+                min(m.free_bytes for m in memory_present) / bytes_per_mib
+            )
+            saw_memory_stats = True
         utilization = statistics.mean(
             stats.utilization.gpu_usage_percent for stats in present
         )
         gpu_utilization.append(utilization)
         utilization_by_device[device_name] = utilization
+
+    if not saw_memory_stats:
+        logger.warning(
+            "Skipping GPU memory metrics: this driver doesn't report GPU "
+            "memory info"
+        )
 
     # One entry per device, so the reported mean GPU utilization (mean of this
     # list) is the mean across every device the source reports. A Prometheus
@@ -302,7 +321,15 @@ def calculate_metrics(
     reject_outliers: bool = False,
     record_request_text: bool = False,
     all_outputs: Sequence[RequestFuncOutput] | None = None,
+    goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
 ) -> BenchmarkResult:
+    """Computes serving metrics from the finished requests.
+
+    ``num_gpus`` is the number of GPUs the server used; it derives
+    ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
+    result. ``None`` leaves both unreported.
+    """
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -311,6 +338,15 @@ def calculate_metrics(
     step_tpots: list[float] = []
     ttfts: list[float] = []
     latencies: list[float] = []
+    # Content-bounded per-request inter-token latency,
+    # ``sum(itl) / (output_len - 1)``: first content chunk to last content
+    # chunk, TTFT excluded -- the latency basis of ``interactivity_tok_s``.
+    content_itls: list[float] = []
+    # Content-bounded per-request e2e latency,
+    # ``(ttft + sum(itl)) / output_len``: request start to last content
+    # chunk, TTFT included -- the latency basis of
+    # ``e2e_normalized_interactivity_tok_s``.
+    e2e_norm_latencies: list[float] = []
     input_throughputs: list[float] = []
     output_throughputs: list[float] = []
     per_turn_cached_token_rates: list[float] = []
@@ -327,6 +363,7 @@ def calculate_metrics(
     tool_call_responses = 0
     image_requests = 0
     lora_requests = 0
+    good_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -401,6 +438,14 @@ def calculate_metrics(
         )
         if tpot is not None:
             tpots.append(tpot)
+        # ``ttft`` stays 0.0 when the endpoint reports no per-request TTFT;
+        # treat that as missing so a TTFT target is not met for free.
+        if goodput_targets is not None and goodput_targets.is_met(
+            ttft_s=o.ttft if o.ttft > 0 else None,
+            tpot_s=tpot,
+            latency_s=o.latency,
+        ):
+            good_requests += 1
         step_tpots += o.tpot
         itls += o.itl
         ttfts.append(o.ttft)
@@ -430,6 +475,10 @@ def calculate_metrics(
         if (o.latency - o.ttft) > 0:
             output_throughputs.append((output_len - 1) / (o.latency - o.ttft))
         latencies.append(o.latency)
+        if output_len > 1:
+            content_itls.append(sum(o.itl) / (output_len - 1))
+        if output_len > 0:
+            e2e_norm_latencies.append((o.ttft + sum(o.itl)) / output_len)
         if o.server_token_stats.prompt_tokens:
             per_turn_cached_token_rates.append(
                 o.server_token_stats.cached_tokens
@@ -553,6 +602,54 @@ def calculate_metrics(
         else None
     )
 
+    # Interactivity, from the unrejected per-request series: the published
+    # figures apply no outlier rejection, so they must not inherit the
+    # steady-state path's. ``tpots`` here is still the raw series; the
+    # rejection block below rebinds it for ``tpot_ms``. Like the other
+    # per-request metrics these cover the measured (skip-trimmed) requests,
+    # while the per-GPU throughput below spans all successful requests.
+    interactivity = interactivity_from_per_request_durations(content_itls)
+    full_response_interactivity = interactivity_from_per_request_durations(
+        tpots
+    )
+    e2e_interactivity = interactivity_from_per_request_durations(
+        e2e_norm_latencies
+    )
+
+    # Per-GPU total token throughput over the whole run: first submit to last
+    # complete across every successful request, ignoring the skip trim and the
+    # steady-state window, to match the untrimmed tput_per_gpu that agentic
+    # serving benchmarks publish. ``None`` when the GPU count is unknown (see
+    # ``BenchmarkResult.num_gpus``).
+    per_gpu_requests: list[RequestFuncOutput] = (
+        [o for o in all_outputs if o.success and not o.cancelled]
+        if all_outputs is not None
+        else [o for o, _ in successful]
+    )
+    full_span = measured_window_duration(
+        per_gpu_requests, fallback=measured_duration
+    )
+    # Per request, so one request with server usage cannot zero out the
+    # client counts of the requests without it.
+    full_input = sum(
+        o.server_token_stats.prompt_tokens
+        if o.server_token_stats.prompt_tokens is not None
+        else o.prompt_len
+        for o in per_gpu_requests
+    )
+    counted_output_lens = {id(o): output_len for o, output_len in successful}
+    full_output = sum(
+        counted_output_lens[id(o)]
+        if id(o) in counted_output_lens
+        else compute_output_len(tokenizer, o)
+        for o in per_gpu_requests
+    )
+    total_tokens_per_second_per_gpu = (
+        (full_input + full_output) / full_span / num_gpus
+        if num_gpus and per_gpu_requests and full_span > 0
+        else None
+    )
+
     # Per-request outlier rejection via Iglewicz-Hoaglin modified z-score.
     # Applied independently to each latency series so one noisy metric
     # doesn't mask a clean one. Only active when the caller opts in
@@ -576,6 +673,18 @@ def calculate_metrics(
         failures=failures,
         request_throughput=measured_count / measured_duration,
         excluded_successful=total_successful - measured_count,
+        # Over the same requests and window as ``request_throughput``, so
+        # the two rates compare directly. Taken before outlier rejection,
+        # which drops samples from the latency series, not requests.
+        goodput_ttft_ms=goodput_targets.ttft_ms if goodput_targets else None,
+        goodput_tpot_ms=goodput_targets.tpot_ms if goodput_targets else None,
+        goodput_e2el_ms=goodput_targets.e2el_ms if goodput_targets else None,
+        request_goodput=good_requests / measured_duration
+        if goodput_targets and measured
+        else None,
+        goodput_attainment=good_requests / measured_count
+        if goodput_targets and measured
+        else None,
         # A metric is ``None`` when it has no samples (empty data list),
         # rather than a NaN-filled placeholder: NaN serializes to JSON
         # ``null`` (both via ``model_dump_json`` and BigQuery ingest),
@@ -650,6 +759,10 @@ def calculate_metrics(
         itl_ms=StandardPercentileMetrics(itls, scale_factor=1000.0, unit="ms")
         if itls
         else None,
+        interactivity_tok_s=interactivity,
+        full_response_interactivity_tok_s=full_response_interactivity,
+        e2e_normalized_interactivity_tok_s=e2e_interactivity,
+        total_tokens_per_second_per_gpu=total_tokens_per_second_per_gpu,
         max_input=max_input,
         max_output=max_output,
         max_total=max_total,
@@ -669,6 +782,7 @@ def calculate_metrics(
     return BenchmarkResult(
         task_type="text",
         max_concurrency=max_concurrency or len(outputs),
+        num_gpus=num_gpus,
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
@@ -689,6 +803,7 @@ def calculate_pixel_generation_metrics(
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
     gpu_device_groups: Mapping[str, str] | None = None,
 ) -> BenchmarkResult:
+    """Computes pixel generation metrics from the finished requests."""
     completed = 0
     failures = 0
     latencies: list[float] = []
@@ -814,6 +929,33 @@ def _session_sort_key(sid: str) -> tuple[int, int, str]:
         return (1, 0, sid)
 
 
+def run_cache_hit_rate(
+    outputs: Sequence[BaseRequestFuncOutput],
+) -> float | None:
+    """Prefix-cache hit rate over every completed request of a run.
+
+    Unlike ``global_cached_token_rate`` this keeps the requests that the
+    head/tail trim and steady-state detection drop, so it covers the same
+    window as the server's own counters.
+
+    Args:
+        outputs: The run's request outputs.
+
+    Returns:
+        Cached prompt tokens over prompt tokens, or None when no request's
+        usage carried cached-token counts.
+    """
+    cached = prompt = 0
+    for o in outputs:
+        if not isinstance(o, RequestFuncOutput) or not o.success:
+            continue
+        stats = o.server_token_stats
+        if stats.cached_tokens_reported and stats.prompt_tokens:
+            cached += stats.cached_tokens
+            prompt += stats.prompt_tokens
+    return cached / prompt if prompt else None
+
+
 def build_text_generation_result(
     *,
     outputs: Sequence[BaseRequestFuncOutput],
@@ -832,21 +974,30 @@ def build_text_generation_result(
     record_request_text: bool = False,
     gpu_device_groups: Mapping[str, str] | None = None,
     outputs_by_session: Mapping[str, Sequence[RequestFuncOutput]] | None = None,
+    steady_state_filtering: bool = True,
+    goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
     Uses a single reported metric set selected by the following strategy:
 
-    - Run MAD-based steady-state detection (``detect_steady_state``).
+    - Exclude failed requests from the metrics when at least one request
+      succeeded. They stay in ``request_records``. A run where nothing
+      succeeded keeps them, so it still reports and fails on its failures.
+    - Run MAD-based steady-state detection (``detect_steady_state``),
+      unless ``steady_state_filtering`` is ``False``.
     - If detection succeeds: compute metrics over the detected steady-state
       window with ``skip_first=0``, ``skip_last=0``, and per-request
       outlier rejection via the Iglewicz-Hoaglin modified z-score
       (``reject_outliers=True``). Duration is the wall-clock span of the
       window (first submit to last complete of the window requests).
-    - If detection is skipped (concurrency==1) or fails: fall back to the
-      full-run path with the caller-supplied head/tail trim and no outlier
-      rejection. This guarantees identical behavior to the previous
-      implementation for non-steady-state runs.
+    - If detection is disabled, skipped (concurrency==1) or fails: fall back
+      to the full-run path with the caller-supplied head/tail trim and no
+      outlier rejection. This guarantees identical behavior to the previous
+      implementation for non-steady-state runs. When disabled,
+      ``steady_state_mode`` is ``"disabled"`` and the other detection
+      diagnostics are ``None``.
 
     Lightweight detection diagnostics (``steady_state_detected``,
     ``steady_state_window_count``, ``steady_state_mode``,
@@ -857,6 +1008,14 @@ def build_text_generation_result(
     Per-request server token stats are attached grouped by session (numeric
     session ids in integer order) when ``outputs_by_session`` is given, else
     as one flat list in output order.
+
+    With ``goodput_targets``, the result also reports ``request_goodput`` and
+    ``goodput_attainment`` over the same requests and duration as
+    ``request_throughput``.
+
+    ``num_gpus`` (the number of GPUs the server used) derives
+    ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
+    result; ``None`` leaves both unreported.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -864,23 +1023,45 @@ def build_text_generation_result(
             " in text-generation benchmark flow."
         )
 
-    steady = detect_steady_state(outputs, max_concurrency=max_concurrency)
+    # FIXME (CENG-1381): Failed requests are excluded so that replies the server
+    # ends without any text don't fail the run. Remove this once those replies
+    # stop being reported as failures, so real failures count again.
+    failed = [o for o in outputs if not o.success and not o.cancelled]
+    metric_outputs: Sequence[RequestFuncOutput] = outputs
+    if failed and any(o.success and not o.cancelled for o in outputs):
+        logger.warning(
+            "Excluding %d failed requests from metrics; they remain in"
+            " request_records.",
+            len(failed),
+        )
+        metric_outputs = [o for o in outputs if o.success or o.cancelled]
+
+    steady = (
+        detect_steady_state(metric_outputs, max_concurrency=max_concurrency)
+        if steady_state_filtering
+        else None
+    )
 
     # Persist detection mode for downstream consumers; None when detection
     # was skipped (concurrency=1) so the default "full" isn't mistaken for
     # a real result.
-    mode: str | None = (
-        steady.mode if (steady.detected or steady.warning is not None) else None
-    )
+    mode: str | None
+    if steady is None:
+        mode = "disabled"
+    elif steady.detected or steady.warning is not None:
+        mode = steady.mode
+    else:
+        mode = None
 
-    num_outliers_rejected = 0
+    num_outliers_rejected: int | None = 0 if steady is not None else None
 
-    if steady.detected:
+    if steady is not None and steady.detected:
         # Build the steady-state sub-list and compute its wall-clock span.
+        # The window's indices are positions in the list the detector saw.
         ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
             out
-            for i, out in enumerate(outputs)
+            for i, out in enumerate(metric_outputs)
             if i in ss_index_set and out.success and not out.cancelled
         ]
         ss_valid = [
@@ -939,6 +1120,8 @@ def build_text_generation_result(
             reject_outliers=True,
             record_request_text=record_request_text,
             all_outputs=outputs,
+            goodput_targets=goodput_targets,
+            num_gpus=num_gpus,
         )
 
         # Diagnostic: number of per-request TTFT outliers rejected in the
@@ -954,25 +1137,28 @@ def build_text_generation_result(
         )
 
     else:
-        # Detection did not run or did not converge. Only surface this at
-        # WARNING level when the run actually produced successful requests.
-        # When there are none (a serving/run failure, e.g. the "0 of 10000
-        # valid" case in PERF-2615), the steady-state detector is the wrong
-        # messenger: the failure is already reflected in the failure count and
-        # the reported metrics, so a "too few valid requests" warning is
-        # misleading noise on top of an already-failed run. Genuine cases with
-        # some successful-but-unusable requests still warn.
-        n_success = sum(1 for o in outputs if o.success and not o.cancelled)
-        if steady.warning and n_success > 0:
-            logger.warning(f"Steady-state detection: {steady.warning}")
-        elif n_success == 0:
-            logger.info(
-                "Steady-state detection skipped: run produced no successful"
-                " requests; reporting full-run metrics over all outputs."
-            )
+        # Detection was disabled, did not run, or did not converge. Only
+        # surface a failed detection at WARNING level when the run actually
+        # produced successful requests. When there are none (a serving/run
+        # failure, e.g. the "0 of 10000 valid" case in PERF-2615), the
+        # steady-state detector is the wrong messenger: the failure is already
+        # reflected in the failure count and the reported metrics, so a "too
+        # few valid requests" warning is misleading noise on top of an
+        # already-failed run. Genuine cases with some successful-but-unusable
+        # requests still warn.
+        if steady is not None:
+            n_success = sum(1 for o in outputs if o.success and not o.cancelled)
+            if steady.warning and n_success > 0:
+                logger.warning(f"Steady-state detection: {steady.warning}")
+            elif n_success == 0:
+                logger.info(
+                    "Steady-state detection skipped: run produced no"
+                    " successful requests; reporting full-run metrics over"
+                    " all outputs."
+                )
 
         text_metrics = calculate_metrics(
-            outputs=outputs,
+            outputs=metric_outputs,
             dur_s=benchmark_duration,
             tokenizer=tokenizer,
             gpu_metrics=gpu_metrics,
@@ -987,6 +1173,9 @@ def build_text_generation_result(
             kv_block_size=kv_block_size,
             reject_outliers=False,
             record_request_text=record_request_text,
+            all_outputs=outputs,
+            goodput_targets=goodput_targets,
+            num_gpus=num_gpus,
         )
 
     for warn in text_metrics.confidence_warnings():
@@ -1009,10 +1198,12 @@ def build_text_generation_result(
         update={
             "session_server_stats": session_server_stats,
             "aggregate_server_stats": aggregate_server_stats,
-            "steady_state_detected": steady.detected,
-            "steady_state_window_count": steady.steady_state_count,
+            "steady_state_detected": steady.detected if steady else None,
+            "steady_state_window_count": (
+                steady.steady_state_count if steady else None
+            ),
             "steady_state_mode": mode,
-            "steady_state_warning": steady.warning,
+            "steady_state_warning": steady.warning if steady else None,
             "num_outliers_rejected": num_outliers_rejected,
             "spec_decode_stats": spec_decode_stats,
             "task_type": "text",

@@ -30,6 +30,7 @@ import std.os
 from std.format._utils import _FlushingWriteBuffer
 from std.pathlib import Path
 from std.random import random_ui64
+from std.utils._nicheable import _FieldNicheable
 
 from std.collections import Span
 
@@ -93,7 +94,7 @@ def _get_default_tempdir() raises -> String:
     raise Error("No usable temporary directory found")
 
 
-def _try_to_create_file(dir: StringSlice) -> Bool:
+def _try_to_create_file(dir: StringSpan) -> Bool:
     for _ in range(TMP_MAX):
         var name = _get_random_name()
         # TODO use os.join when it exists
@@ -172,7 +173,11 @@ def mkdtemp(
     rmdir(temp_dir)
     ```
     """
-    var final_dir = Path(dir.value()) if dir else Path(_get_default_tempdir())
+    var final_dir: Path
+    if case .Some(dir) = dir:
+        final_dir = Path(dir)
+    else:
+        final_dir = Path(_get_default_tempdir())
 
     for _ in range(TMP_MAX):
         var dir_name = final_dir / (prefix + _get_random_name() + suffix)
@@ -228,7 +233,7 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
                 std.os.remove(curr_path)
             except e:
                 if not ignore_errors:
-                    raise e^
+                    raise e
             continue
         if std.os.path.isdir(curr_path):
             try:
@@ -241,13 +246,14 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
         std.os.rmdir(path)
     except e:
         if not ignore_errors:
-            raise e^
+            raise e
 
 
 struct TemporaryDirectory:
     """Temporary directory that cleans up automatically.
 
-    Creates a directory that's deleted when the context exits:
+    For example, this creates a directory that's deleted when the context ends:
+
     ```mojo
     from std.tempfile import TemporaryDirectory
     import std.os
@@ -262,8 +268,18 @@ struct TemporaryDirectory:
         print(std.os.path.exists(temp_path))  # False - cleaned up
     ```
 
-    The directory and all its contents are removed on exit, even if an error occurs.
-    Set `ignore_cleanup_errors=True` to suppress cleanup failures.
+    The directory and all its contents are removed on exit, even if an error
+    occurs inside the context. Such an error is discarded as long as cleanup
+    succeeds. Set `ignore_cleanup_errors=True` to suppress cleanup failures;
+    errors raised inside the context are then discarded even when the directory
+    can't be fully removed. Use `try` inside the context when you need to
+    handle or report an error.
+
+    The directory name is built as `prefix` followed by 8 random characters and
+    `suffix`. The random characters come from `std.random`, so every run of the
+    program generates the same sequence of names, skipping any names already in
+    use. Call `seed()` from `std.random` first when you need different names
+    across runs.
     """
 
     var name: String
@@ -328,7 +344,7 @@ struct TemporaryDirectory:
             return False
 
 
-struct NamedTemporaryFile(Movable):
+struct NamedTemporaryFile(Movable, _FieldNicheable):
     """Temporary file with automatic cleanup.
 
     Creates a file that's deleted when closed (by default):
@@ -345,6 +361,10 @@ struct NamedTemporaryFile(Movable):
 
     Set `delete=False` to keep the file after closing.
     Use `mode="r"` for reading, `mode="w"` for writing, `mode="rw"` for both.
+
+    A `NamedTemporaryFile` always refers to an open file. `close()` consumes
+    it. Use `Optional[NamedTemporaryFile]`, which is the same size as
+    `NamedTemporaryFile`, for a file that may not be open.
     """
 
     var _file_handle: FileHandle
@@ -383,7 +403,11 @@ struct NamedTemporaryFile(Movable):
             If the operation fails.
         """
 
-        var final_dir = dir.value() if dir else _get_default_tempdir()
+        var final_dir: String
+        if case .Some(dir) = dir:
+            final_dir = dir
+        else:
+            final_dir = _get_default_tempdir()
 
         self._delete = delete
         self.name = ""
@@ -413,17 +437,23 @@ struct NamedTemporaryFile(Movable):
             raise Error("Failed to create temporary file")
 
     def __deinit__(deinit self):
-        """Closes the file handle."""
+        """Closes the file and deletes it if `delete` is set, ignoring any
+        error."""
         try:
-            self.close()
+            self._file_handle^.close()
         except:
             pass
+        if self._delete:
+            try:
+                std.os.remove(self.name)
+            except:
+                pass
 
-    def close(mut self) raises:
-        """Closes the file handle.
+    def close(deinit self) raises:
+        """Closes the file, consuming it, and deletes it if `delete` is set.
 
         Raises:
-            If the operation fails.
+            If closing or deleting the file fails.
 
         Example:
 
@@ -432,20 +462,24 @@ struct NamedTemporaryFile(Movable):
         import std.os
 
         var temp_file = NamedTemporaryFile() # delete=True by default
+        var name = temp_file.name
         temp_file.write("Temporary data")
-        temp_file.close() # File is deleted if delete=True
-        print(std.os.path.exists(temp_file.name)) # False
+        temp_file^.close() # File is deleted if delete=True
+        print(std.os.path.exists(name)) # False
 
         temp_file = NamedTemporaryFile(delete=False)
+        name = temp_file.name
         temp_file.write("Temporary data")
-        temp_file.close() # File is not deleted
-        print(std.os.path.exists(temp_file.name)) # True
-        std.os.remove(temp_file.name) # Clean up manually
+        temp_file^.close() # File is not deleted
+        print(std.os.path.exists(name)) # True
+        std.os.remove(name) # Clean up manually
         ```
         """
-        self._file_handle.close()
+        self._file_handle^.close()
         if self._delete:
             std.os.remove(self.name)
+
+    comptime _KgenNichedFieldName = "_file_handle".value
 
     def read(self, size: Int = -1) raises -> String:
         """Reads the data from the file.

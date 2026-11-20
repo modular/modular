@@ -42,11 +42,12 @@ from std.testing import assert_almost_equal
 
 from max.gpu.host import DeviceContext
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.gpu.mla import flare_mla_prefill
+from nn.attention.gpu.mla import MLAKernels, flare_mla_prefill
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import TileTensorMHAOperand
 
@@ -82,7 +83,7 @@ def paged_block_elems(
 ) -> Int:
     """Number of scalar elements in the paged block array.
 
-    Block shape (matching ``test_mla_decode_paged_variable.mojo``):
+    Block shape (matching ``_mla_paged_variable_shell.mojo``):
     ``[total_pages, kv_dim2=1, NUM_LAYERS=1, page_size, KV_NUM_HEADS=1,
     head_size]``.
     """
@@ -147,7 +148,7 @@ def fill_paged_blocks_uniform[
     var block_elems = paged_block_elems(total_pages, page_size, head_size)
 
     # Random bf16 → cast to kv_type.
-    var blocks_bf16 = alloc[BFloat16](block_elems)
+    var blocks_bf16 = unsafe_alloc[BFloat16](block_elems)
     randn[.bfloat16](
         blocks_bf16,
         block_elems,
@@ -156,7 +157,7 @@ def fill_paged_blocks_uniform[
     )
     for i in range(block_elems):
         blocks_host[i] = blocks_bf16[i].cast[kv_type]()
-    blocks_bf16.free()
+    blocks_bf16.unsafe_free()
 
     # Tail zero-fill in last page of each batch.
     var pstride = page_stride(page_size, head_size)
@@ -310,7 +311,7 @@ def fill_scattered_paged_blocks_and_lut[
 
     var pstride = page_stride(page_size, head_size)
     var tstride = token_stride(head_size)
-    var real_page_bf16 = alloc[BFloat16](page_size * head_size)
+    var real_page_bf16 = unsafe_alloc[BFloat16](page_size * head_size)
     for p in range(num_pages_per_batch):
         var phys = (num_pages_per_batch - 1 - p) * scatter_pool_factor + 1
         randn[.bfloat16](
@@ -333,7 +334,7 @@ def fill_scattered_paged_blocks_and_lut[
         lookup_table_host[p] = UInt32(phys)
     for p in range(num_pages_per_batch, max_pages_per_batch):
         lookup_table_host[p] = UInt32(0)
-    real_page_bf16.free()
+    real_page_bf16.unsafe_free()
 
 
 def extract_k_rope_for_batch_via_lut[
@@ -395,6 +396,8 @@ def run_test_paged_prefill[
     # parameter existed. >1 = scatter pages across a `scatter_pool_factor`x
     # pool (`fill_scattered_paged_blocks_and_lut`); requires batch_size=1.
     scatter_pool_factor: Int = 1,
+    *,
+    kernels: MLAKernels,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     """Runs one paged-KV MLA-prefill shape and asserts the output matches
     naive MHA.
@@ -402,7 +405,8 @@ def run_test_paged_prefill[
     Drives the plain bf16 ``flare_mla_prefill`` path (``KVCacheT`` for
     K_rope, dispatched to ``mla_sm100_prefill_generic`` on B200). Shared by
     the generic-paged test (DeepSeek ``v_head_dim == qk_nope_head_dim``) and
-    the CENG-282 vhead test (decoupled ``v_head_dim``).
+    the CENG-282 vhead test (decoupled ``v_head_dim``). ``kernels`` names
+    the vendor's MLA kernels, so each test binary reaches only its own.
 
     ``nope_depth`` is the K-nope / Q@K' contraction width; ``v_depth`` is the
     V / output width. ``v_depth < 0`` (default) means ``v_depth ==
@@ -431,36 +435,15 @@ def run_test_paged_prefill[
 
     comptime if diagnostic_bands:
         print(
-            "  [repro] depth(q):",
-            depth,
-            " nope_depth(Knope):",
-            nope_depth,
-            " v_depth(V/out):",
-            v_dim,
-            " num_heads:",
-            num_heads,
-            " seq_len:",
-            seq_len,
-            " num_keys:",
-            num_keys,
-            " page_size:",
-            page_size,
+            t"  [repro] depth(q): {depth}  nope_depth(Knope): {nope_depth} "
+            t" v_depth(V/out): {v_dim}  num_heads: {num_heads}  seq_len:"
+            t" {seq_len}  num_keys: {num_keys}  page_size: {page_size}"
         )
     else:
         print(
-            "test_mla_prefill_paged",
-            " batch_size:",
-            batch_size,
-            " seq_len:",
-            seq_len,
-            " num_keys:",
-            num_keys,
-            " page_size:",
-            page_size,
-            " qkv_type:",
-            qkv_type,
-            " k_rope_type:",
-            k_rope_type,
+            t"test_mla_prefill_paged  batch_size: {batch_size}  seq_len:"
+            t" {seq_len}  num_keys: {num_keys}  page_size: {page_size} "
+            t" qkv_type: {qkv_type}  k_rope_type: {k_rope_type}"
         )
 
     comptime scale = Float32(0.125)
@@ -477,10 +460,10 @@ def run_test_paged_prefill[
     var v_size = batch_size * num_keys * num_heads * v_dim
     var o_size = batch_size * seq_len * num_heads * v_dim
 
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_ptr = unsafe_alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = unsafe_alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = unsafe_alloc[Scalar[qkv_type]](v_size)
+    var output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
 
     randn[qkv_type](q_ptr, q_size)
     randn[qkv_type](k_ptr, k_size)
@@ -489,8 +472,8 @@ def run_test_paged_prefill[
     # ------------------------------------------------------------------
     # Step 2: Row-offset tables.
     # ------------------------------------------------------------------
-    var input_row_offsets_host = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets_host = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
+    var cache_row_offsets_host = unsafe_alloc[UInt32](batch_size + 1)
     for i in range(batch_size):
         input_row_offsets_host[i] = UInt32(i * seq_len)
         cache_row_offsets_host[i] = UInt32(i * num_keys)
@@ -527,9 +510,9 @@ def run_test_paged_prefill[
     var lut_size = batch_size * max_pages_per_batch
     var block_elems = paged_block_elems(total_pages, page_size, CACHE_DEPTH)
 
-    var blocks_host = alloc[Scalar[k_rope_type]](block_elems)
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    var lookup_table_host = alloc[UInt32](lut_size)
+    var blocks_host = unsafe_alloc[Scalar[k_rope_type]](block_elems)
+    var cache_lengths_host = unsafe_alloc[UInt32](batch_size)
+    var lookup_table_host = unsafe_alloc[UInt32](lut_size)
 
     comptime if scatter_pool_factor == 1:
         fill_paged_blocks_uniform[k_rope_type](
@@ -677,7 +660,7 @@ def run_test_paged_prefill[
     # ------------------------------------------------------------------
     print("  Launching MLA prefill kernel (paged K_rope)...")
 
-    flare_mla_prefill[rank=3](
+    flare_mla_prefill[rank=3, kernels=kernels](
         output_device,
         q_device,
         k_device,
@@ -702,13 +685,15 @@ def run_test_paged_prefill[
     # K_ref = [nope | rope]; V_ref = [realV (v_dim) | zeros].
     # ------------------------------------------------------------------
     var ref_size = batch_size * num_keys * num_heads * depth
-    var k_ref_host = alloc[Scalar[qkv_type]](ref_size)
-    var v_ref_host = alloc[Scalar[qkv_type]](ref_size)
-    var output_ref_host = alloc[Scalar[output_type]](
+    var k_ref_host = unsafe_alloc[Scalar[qkv_type]](ref_size)
+    var v_ref_host = unsafe_alloc[Scalar[qkv_type]](ref_size)
+    var output_ref_host = unsafe_alloc[Scalar[output_type]](
         batch_size * seq_len * num_heads * depth
     )
 
-    var k_rope_one_batch = alloc[Scalar[k_rope_type]](num_keys * ROPE_DEPTH)
+    var k_rope_one_batch = unsafe_alloc[Scalar[k_rope_type]](
+        num_keys * ROPE_DEPTH
+    )
 
     for b in range(batch_size):
         comptime if scatter_pool_factor == 1:
@@ -838,12 +823,12 @@ def run_test_paged_prefill[
             for s in range(seq_len):
                 for h in range(num_heads):
                     for d in range(v_dim):
-                        var actual = output_ptr.load(
+                        var actual = output_ptr.unsafe_load(
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
                         ).cast[.float64]()
-                        var expect = output_ref_host.load(
+                        var expect = output_ref_host.unsafe_load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
                         ).cast[.float64]()
                         var abs_err = abs(actual - expect)
@@ -859,29 +844,13 @@ def run_test_paged_prefill[
                             n_mismatch += 1
                             if n_mismatch <= 8:
                                 print(
-                                    "    mismatch b=",
-                                    b,
-                                    " s=",
-                                    s,
-                                    " h=",
-                                    h,
-                                    " d=",
-                                    d,
-                                    " actual=",
-                                    actual,
-                                    " expect=",
-                                    expect,
+                                    t"    mismatch b= {b}  s= {s}  h= {h}  d="
+                                    t" {d}  actual= {actual}  expect= {expect}"
                                 )
 
         print(
-            "    max_abs_err:",
-            max_abs_err,
-            " max_err[d<nope]:",
-            max_err_lo,
-            " max_err[d>=nope]:",
-            max_err_hi,
-            " n_mismatch(>atol):",
-            n_mismatch,
+            t"    max_abs_err: {max_abs_err}  max_err[d<nope]: {max_err_lo} "
+            t" max_err[d>=nope]: {max_err_hi}  n_mismatch(>atol): {n_mismatch}"
         )
 
         # Second pass: assert (raises -> non-zero exit on failure).
@@ -889,12 +858,12 @@ def run_test_paged_prefill[
             for s in range(seq_len):
                 for h in range(num_heads):
                     for d in range(v_dim):
-                        var actual = output_ptr.load(
+                        var actual = output_ptr.unsafe_load(
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
                         ).cast[.float64]()
-                        var expect = output_ref_host.load(
+                        var expect = output_ref_host.unsafe_load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
                         ).cast[.float64]()
                         assert_almost_equal(
@@ -907,12 +876,12 @@ def run_test_paged_prefill[
             for s in range(seq_len):
                 for h in range(num_heads):
                     for d in range(v_dim):
-                        var actual = output_ptr.load(
+                        var actual = output_ptr.unsafe_load(
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
                         ).cast[.float64]()
-                        var expect = output_ref_host.load(
+                        var expect = output_ref_host.unsafe_load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
                         ).cast[.float64]()
                         var abs_err = abs(actual - expect)
@@ -920,18 +889,8 @@ def run_test_paged_prefill[
                             max_abs_err = abs_err
                         if abs_err > atol:
                             print(
-                                "mismatch at b=",
-                                b,
-                                " s=",
-                                s,
-                                " h=",
-                                h,
-                                " d=",
-                                d,
-                                " actual=",
-                                actual,
-                                " expect=",
-                                expect,
+                                t"mismatch at b= {b}  s= {s}  h= {h}  d= {d} "
+                                t" actual= {actual}  expect= {expect}"
                             )
                         assert_almost_equal(
                             actual, expect, atol=atol, rtol=rtol
@@ -942,19 +901,19 @@ def run_test_paged_prefill[
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    k_ref_host.free()
-    v_ref_host.free()
-    output_ref_host.free()
-    k_rope_one_batch.free()
-    blocks_host.free()
-    cache_lengths_host.free()
-    lookup_table_host.free()
-    input_row_offsets_host.free()
-    cache_row_offsets_host.free()
+    q_ptr.unsafe_free()
+    k_ptr.unsafe_free()
+    v_ptr.unsafe_free()
+    output_ptr.unsafe_free()
+    k_ref_host.unsafe_free()
+    v_ref_host.unsafe_free()
+    output_ref_host.unsafe_free()
+    k_rope_one_batch.unsafe_free()
+    blocks_host.unsafe_free()
+    cache_lengths_host.unsafe_free()
+    lookup_table_host.unsafe_free()
+    input_row_offsets_host.unsafe_free()
+    cache_row_offsets_host.unsafe_free()
 
     _ = q_device_buf
     _ = k_device_buf

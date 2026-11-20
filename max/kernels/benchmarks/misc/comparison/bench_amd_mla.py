@@ -53,11 +53,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
-    flare_mla_decode_ragged,
-    flare_mla_prefill_ragged,
-)
+from max.nn._graph_ops import flare_mla_decode_ragged, flare_mla_prefill_ragged
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     MLAKVCacheParams,
     PagedCacheValues,

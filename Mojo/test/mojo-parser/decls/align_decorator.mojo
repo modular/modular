@@ -17,14 +17,14 @@
 
 
 # CHECK-LABEL: lit.struct.decl @AlignedStruct
-# CHECK-SAME: minAlignment = 64 : index
+# CHECK: } <{{.*}}minAlignment = 64 : index
 @align(64)
 struct AlignedStruct(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @CacheLineAligned
-# CHECK-SAME: minAlignment = 128 : index
+# CHECK: } <{{.*}}minAlignment = 128 : index
 @align(128)
 struct CacheLineAligned(Movable where False):
     var data: Int
@@ -33,7 +33,7 @@ struct CacheLineAligned(Movable where False):
 # Test that @align works with other decorators
 # CHECK-LABEL: lit.struct.decl @AlignedRegisterPassable
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: minAlignment = 32 : index
+# CHECK: } <{{.*}}minAlignment = 32 : index
 @align(32)
 struct AlignedRegisterPassable(TrivialRegisterPassable):
     var value: __mlir_type.index
@@ -41,28 +41,28 @@ struct AlignedRegisterPassable(TrivialRegisterPassable):
 
 # Test minimum alignment (power of 2) - @align(1) is valid for parametric alignment fallback
 # CHECK-LABEL: lit.struct.decl @MinAlign
-# CHECK-SAME: minAlignment = 1 : index
+# CHECK: } <{{.*}}minAlignment = 1 : index
 @align(1)
 struct MinAlign(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @Align2
-# CHECK-SAME: minAlignment = 2 : index
+# CHECK: } <{{.*}}minAlignment = 2 : index
 @align(2)
 struct Align2(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @Align4
-# CHECK-SAME: minAlignment = 4 : index
+# CHECK: } <{{.*}}minAlignment = 4 : index
 @align(4)
 struct Align4(Movable where False):
     var x: Int
 
 
 # CHECK-LABEL: lit.struct.decl @LargeAlign
-# CHECK-SAME: minAlignment = 4096 : index
+# CHECK: } <{{.*}}minAlignment = 4096 : index
 @align(4096)
 struct LargeAlign(Movable where False):
     var x: Int
@@ -70,7 +70,7 @@ struct LargeAlign(Movable where False):
 
 # Test @align on empty struct (no fields)
 # CHECK-LABEL: lit.struct.decl @AlignedEmpty
-# CHECK-SAME: minAlignment = 64 : index
+# CHECK: } <{{.*}}minAlignment = 64 : index
 @align(64)
 struct AlignedEmpty(Movable where False):
     pass
@@ -78,7 +78,7 @@ struct AlignedEmpty(Movable where False):
 
 # Test hex literal for alignment value (0x40 == 64)
 # CHECK-LABEL: lit.struct.decl @HexAligned
-# CHECK-SAME: minAlignment = 64 : index
+# CHECK: } <{{.*}}minAlignment = 64 : index
 @align(0x40)
 struct HexAligned(Movable where False):
     var x: Int
@@ -86,7 +86,7 @@ struct HexAligned(Movable where False):
 
 # CHECK-LABEL: lit.struct.decl @ReversedDecoratorOrder
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: minAlignment = 32 : index
+# CHECK: } <{{.*}}minAlignment = 32 : index
 @align(32)
 struct ReversedDecoratorOrder(TrivialRegisterPassable):
     var value: __mlir_type.index

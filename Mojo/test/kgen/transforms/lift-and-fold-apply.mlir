@@ -8,7 +8,7 @@ kgen.generator @pass(%arg0: index) -> index {
 // printed too.
 // CHECK-LABEL: kgen.generator @take_and_pass
 // CHECK-SAME: !pop.array<*[[L0:"[^"]*"]], index>
-// CHECK-SAME: attributes {funcTypeGenerator = !kgen.generator<<index>() -> !pop.array<apply(:(index) -> index @pass, *(0,0)), index>>}
+// CHECK-SAME: signature !kgen.generator<<index>() -> !pop.array<apply(:(index) -> index @pass, *(0,0)), index>>
 kgen.generator @take_and_pass<N>() -> !pop.array<apply(:(index) -> index @pass, N), index> {
   // CHECK-NEXT: apply *[[L0]] = [(index) -> index: @pass](N)
   hlcf.unreachable
@@ -31,14 +31,6 @@ kgen.generator @lift_apply() {
   // CHECK: call @take_and_pass<*[[L2]]>() : () -> !pop.array<*[[L3]], index>
   %0 = kgen.call @take_and_pass<apply(:(index) -> index @pass, p1)>() : ()
     -> !pop.array<apply(:(index) -> index @pass, apply(:(index) -> index @pass, p1)), index>
-
-  // CHECK: region F = <p2>
-  kgen.param.declare.region F = <p2>() {
-    // CHECK: apply *[[L4:.*]] = [(index) -> index: @pass](p2)
-    // CHECK: constant = <*[[L4]]>
-    kgen.param.constant = <apply(:(index) -> index @pass, p2)>
-    hlcf.return
-  }
 
   hlcf.return
 }

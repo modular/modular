@@ -125,7 +125,7 @@ def test_cumsum_gpu(session: InferenceSession, dtype: DType) -> None:
                 )
                 assert out.device == DeviceRef.GPU()
                 outputs.append(out)
-        graph.output(*outputs)
+        graph.output(outputs)
     assert "mo.transfer" not in str(graph)
 
     model = session.load(graph)

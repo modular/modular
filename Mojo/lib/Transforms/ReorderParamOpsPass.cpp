@@ -137,7 +137,7 @@ void ReorderParamOps::runOnOperation() {
 
   std::vector<GeneratorOp> work;
   llvm::append_range(work, getOperation().getOps<GeneratorOp>());
-  parallelForEach(&getContext(), work, workFunc, paramCache);
+  paramCache.parallelForEach(&getContext(), work, workFunc);
 
   if (disableVerifier) {
     // This effectively disable the verifier, because MLIR assumes that

@@ -132,6 +132,7 @@ class TransformerConfig:
 
     @property
     def hidden_size(self) -> int:
+        """The attention heads' combined width."""
         return self.num_attention_heads * self.attention_head_dim
 
     @staticmethod
@@ -192,6 +193,7 @@ class LanguageModelConfig:
 
     @property
     def rope_theta(self) -> float:
+        """The RoPE theta the language model rotates by."""
         return 1_000_000.0
 
     @property

@@ -33,17 +33,15 @@ from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
-    IntTuple,
-    Layout,
-    LayoutTensor,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tensor_engine import DefaultEngine
-from layout.layout_tensor import copy_local_to_shared
+from layout.tile_io import copy_local_to_shared
 from layout.swizzle import Swizzle
-from layout.tensor_core_async import tile_layout_k_major
+from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -70,7 +68,6 @@ from nn.attention.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 from std.utils import StaticTuple
 
@@ -335,7 +332,7 @@ def _apply_mask[
 
                         comptime if masked:
                             p = mask.mask(
-                                IndexList[4, element_type=.uint32](
+                                (
                                     Int(position.prompt_idx),
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
@@ -349,29 +346,25 @@ def _apply_mask[
                         comptime if mask_t.apply_log2e_after_mask:
                             p *= log2e
 
-                        var bound: IndexList[2, element_type=.uint32]
+                        var bound: Coord[Int, Int]
 
                         comptime if decoding:
-                            bound = IndexList[2, element_type=.uint32](
+                            bound = (
                                 Int(position.num_keys),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
+                                (Int(score_row), Int(score_col)),
                                 bound,
                                 p,
                             )
                         elif masked:
-                            bound = IndexList[2, element_type=.uint32](
+                            bound = (
                                 Int(position.seq_len),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
+                                (Int(score_row), Int(score_col)),
                                 bound,
                                 p,
                             )
@@ -433,21 +426,15 @@ def produce[
         BN=kv_sub_tile_rows(BN, KVLUTType.page_size),
         BK=padded_depth,
     ],
-    q_smem: UnsafePointer[mut=True, Scalar[qkv_type], _, address_space=.SHARED],
-    kv_smem: UnsafePointer[
-        mut=True, Scalar[qkv_type], _, address_space=.SHARED
-    ],
-    produced_mbar_kv: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
-    consumed_mbar_kv: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=.SHARED
-    ],
+    q_smem: MutPointer[Scalar[qkv_type], _, address_space=.SHARED],
+    kv_smem: MutPointer[Scalar[qkv_type], _, address_space=.SHARED],
+    produced_mbar_kv: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
+    consumed_mbar_kv: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     produced_mbar_q: Optional[
-        UnsafePointer[SharedMemBarrier, MutAnyOrigin, address_space=.SHARED]
+        MutPointer[SharedMemBarrier, MutAnyOrigin, address_space=.SHARED]
     ],
     consumed_mbar_q: Optional[
-        UnsafePointer[SharedMemBarrier, MutAnyOrigin, address_space=.SHARED]
+        MutPointer[SharedMemBarrier, MutAnyOrigin, address_space=.SHARED]
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -558,9 +545,9 @@ def produce[
     ]
     comptime persistent = SchedulerType.may_advance
 
-    comptime q_smem_layout_consumer = tile_layout_k_major[
-        qkv_type, BM, padded_depth, swizzle_mode=swizzle_mode
-    ]()
+    comptime q_smem_layout_consumer = tile_layout_k_major_typed[
+        qkv_type, BM, padded_depth, swizzle_mode
+    ]
 
     comptime q_size = q_smem_layout_consumer.size()
     comptime q_smem_size = (2 * q_size if persistent else q_size)
@@ -590,7 +577,7 @@ def produce[
             address_space=.SHARED,
             linear_idx_type=.int32,
         ](
-            q_smem + UInt32(q_size) * q_idx + offset,
+            q_smem.unsafe_offset(UInt32(q_size) * q_idx).unsafe_offset(offset),
             row_major(q_tile_shape),
         )
 
@@ -655,7 +642,7 @@ def produce[
         comptime if is_k_side:
             paged_rows.tma_copy_k[needs_partial=False](
                 tma_op,
-                kv_smem + UInt32(stage_sz) * write_idx,
+                kv_smem.unsafe_offset(UInt32(stage_sz) * write_idx),
                 p_mbar,
                 kv_head_idx=kv_head_idx,
                 elect=e,
@@ -663,7 +650,7 @@ def produce[
         else:
             paged_rows.tma_copy_v[needs_partial=False](
                 tma_op,
-                kv_smem + UInt32(stage_sz) * write_idx,
+                kv_smem.unsafe_offset(UInt32(stage_sz) * write_idx),
                 p_mbar,
                 kv_head_idx=kv_head_idx,
                 elect=e,
@@ -708,7 +695,7 @@ def produce[
         comptime if is_k_side:
             paged_rows.tma_copy_k[needs_partial=True](
                 tma_op,
-                kv_smem + UInt32(stage_sz) * write_idx,
+                kv_smem.unsafe_offset(UInt32(stage_sz) * write_idx),
                 p_mbar,
                 kv_head_idx=kv_head_idx,
                 elect=e,
@@ -717,7 +704,7 @@ def produce[
         else:
             paged_rows.tma_copy_v[needs_partial=True](
                 tma_op,
-                kv_smem + UInt32(stage_sz) * write_idx,
+                kv_smem.unsafe_offset(UInt32(stage_sz) * write_idx),
                 p_mbar,
                 kv_head_idx=kv_head_idx,
                 elect=e,
@@ -772,7 +759,7 @@ def produce[
 
         comptime for d_idx in range(ceildiv(depth, swizzle_granularity)):
             comptime d: Int = d_idx * swizzle_granularity
-            comptime smem_offset = q_smem_layout_consumer(IntTuple(0, d))
+            comptime smem_offset = Int(q_smem_layout_consumer(coord[0, d]))
 
             q_tma_op.async_copy_4d(
                 q_producer(q_idx, UInt32(smem_offset)),
@@ -878,10 +865,11 @@ def produce[
                 ](tile_summary, tile_state, q_idx_old)
                 # FIXME: persistent kernel that uses a counter
                 # must signal somehow
-                if not docontinue:
+                if case .Some(seq_info) = docontinue:
+                    position = get_position(seq_info)
+                else:
                     break
                 ref pq_mbar = produced_mbar_q.unsafe_value()[q_idx_old]
-                position = get_position(docontinue.value())
                 pq_mbar.expect_bytes(
                     Int32(q_copy_rows * padded_depth * size_of[qkv_type]())
                 )
@@ -1020,12 +1008,9 @@ def produce[
 
 
 @inline(.always)
-@inline(.always)
 def output_reg_to_smem[
     output_type: DType,
     accum_type: DType,
-    num_m_mmas: Int,
-    o_frag_size: Int,
     //,
     BM: Int,
     BN: Int,
@@ -1036,26 +1021,16 @@ def output_reg_to_smem[
     tid: UInt32,
     local_warp_group_idx: UInt32,
     warp_y: UInt32,
-    q_smem: UnsafePointer[
+    q_smem: MutPointer[
         Scalar[output_type], MutAnyOrigin, address_space=.SHARED
     ],
-    # Legacy register view: consumed by the register-A WGMMA/stmatrix path
-    # (`output_reg_to_smem_st_matrix` bridges via `_LocalTT`/`_SharedMemTT`)
-    # and by `copy_local_to_shared`'s fp32->half downcast, which has no
-    # TileTensor-native equivalent yet.
-    output_reg_tile: LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas, o_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
+    output_reg_tile: TileTensor[
+        mut=True, dtype=accum_type, address_space=.LOCAL, ...
     ],
-    # Returned legacy smem view feeds the masked-dst `copy_sram_to_dram`,
-    # whose TileTensor counterpart does not support masking or downcast.
-) -> LayoutTensor[
+) -> _SharedMemTT[
     output_type,
-    Layout.row_major(BM, padded_depth),
-    MutAnyOrigin,
-    address_space=.SHARED,
+    row_major[BM, padded_depth](),
+    Engine=DefaultEngine[element_width=1],
 ]:
     """Stores the output accumulator registers from local memory into shared memory.
 
@@ -1066,9 +1041,6 @@ def output_reg_to_smem[
     Parameters:
         output_type: DType of the values written to shared memory.
         accum_type: DType of the accumulator values held in registers.
-        num_m_mmas: Number of MMA tiles in the M dimension of the output
-            register tile.
-        o_frag_size: Number of elements per output fragment per MMA tile.
         BM: Block size in the query-row (M) dimension of the output tile.
         BN: Block size in the key/value (N) dimension of the output warp tile.
         padded_depth: Head dimension padded to the MMA alignment boundary.
@@ -1086,38 +1058,39 @@ def output_reg_to_smem[
             BM-row output block.
         q_smem: Base pointer to shared memory where the output tile is stored.
         output_reg_tile: Local register tile holding the accumulator output
-            fragments.
+            fragments, shaped `num_m_mmas x o_frag_size`.
+
+    Returns:
+        The `BM x padded_depth` shared-memory view the output was stored to.
     """
-    # Legacy smem view: bridges to `_LocalTT`/`_SharedMemTT` stmatrix call and
-    # is returned to the caller's masked `copy_sram_to_dram` (no TileTensor
-    # equivalents for those paths yet).
-    var accum_smem_tile = LayoutTensor[
-        output_type,
-        Layout.row_major(BM, padded_depth),
-        address_space=.SHARED,
-    ](q_smem)
-    comptime use_stmatrix = accum_type == DType.float32 and padded_depth % 16 == 0 and size_of[
+    comptime num_m_mmas = output_reg_tile.LayoutType.static_shape[0]
+    comptime o_frag_size = output_reg_tile.LayoutType.static_shape[1]
+    comptime reg_layout = row_major[num_m_mmas, o_frag_size]()
+    comptime smem_layout = row_major[BM, padded_depth]()
+    var accum_smem_tile = _SharedMemTT[
+        output_type, smem_layout, Engine=DefaultEngine[element_width=1]
+    ](q_smem, smem_layout)
+    comptime use_stmatrix = accum_type == .float32 and padded_depth % 16 == 0 and size_of[
         output_type
     ]() == 2 and o_frag_size % 8 == 0
 
     comptime if use_stmatrix:
         var warp_group_thread_idx = tid % UInt32(WARPGROUP_SIZE)
-        comptime reg_layout = row_major[num_m_mmas, o_frag_size]()
-        comptime smem_layout = row_major[BM, padded_depth]()
         output_reg_to_smem_st_matrix[BM, swizzle, num_consumer](
             warp_group_thread_idx,
             local_warp_group_idx,
-            _LocalTT[accum_type, reg_layout](output_reg_tile.ptr, reg_layout),
-            _SharedMemTT[output_type, smem_layout](
-                accum_smem_tile.ptr, smem_layout
+            _LocalTT[accum_type, reg_layout](
+                output_reg_tile.ptr.unsafe_origin_cast[MutAnyOrigin](),
+                reg_layout,
             ),
+            accum_smem_tile,
         )
     else:
-        comptime mma_thread_layout = Layout.row_major(8, 4)
+        comptime mma_thread_layout = row_major[8, 4]()
         var accum_smem_warp_tile = accum_smem_tile.tile[16, BN](
-            Int(warp_y), Int(0)
+            (Int(warp_y), 0)
         )
-        copy_local_to_shared[thread_layout=mma_thread_layout, swizzle=swizzle](
+        copy_local_to_shared[mma_thread_layout, swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )

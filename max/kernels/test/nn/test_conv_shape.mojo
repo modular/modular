@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.conv.conv import conv_shape
 from std.testing import assert_equal
 from std.utils.index import IndexList
@@ -45,13 +45,15 @@ def check_shape[
     var error_message = String()
     try:
         result = rebind[IndexList[rank]](
-            conv_shape(
-                input_tt.as_imm(),
-                filter_tt.as_imm(),
-                strides_tt.as_imm(),
-                dilations_tt.as_imm(),
-                paddings_tt.as_imm(),
-                Int64(groups),
+            coord_to_index_list(
+                conv_shape(
+                    input_tt.as_imm(),
+                    filter_tt.as_imm(),
+                    strides_tt.as_imm(),
+                    dilations_tt.as_imm(),
+                    paddings_tt.as_imm(),
+                    Int64(groups),
+                )
             )
         )
     except e:

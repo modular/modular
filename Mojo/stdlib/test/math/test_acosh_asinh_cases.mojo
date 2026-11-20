@@ -15,7 +15,7 @@
 # checked against correctly rounded results from mpmath.
 
 from std.math import acosh, asinh, inf, isinf, isnan, nan
-from std.math.math import _call_libm, _log_accurate, _narrow_f32_to_bf16_bits
+from std.math.math import _call_libm, _log_accurate
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from std.utils.numerics import FPUtils, max_finite
 
@@ -256,23 +256,6 @@ def test_float32_sweep() raises:
     assert_true(worst_acosh <= 2, String(t"acosh max ulp = {worst_acosh}"))
     assert_true(worst_asinh <= 2, String(t"asinh max ulp = {worst_asinh}"))
     print("float32 sweep max ulp: acosh", worst_acosh, "asinh", worst_asinh)
-
-
-def test_narrow_f32_to_bf16_bits() raises:
-    """Matches the exact `cast` on CPU, including rounding ties, subnormal
-    results, and infinities."""
-    var low_bits: List[Int] = [0, 1, 0x7FFF, 0x8000, 0x8001, 0xFFFF]
-    for high in range(0, 0x10000, 7):
-        for low in low_bits:
-            var x = Float32(from_bits=UInt32((high << 16) | low))
-            if isnan(x):
-                continue
-            assert_equal(
-                FPUtils[.bfloat16].bitcast_to_uint(_narrow_f32_to_bf16_bits(x)),
-                FPUtils[.bfloat16].bitcast_to_uint(x.cast[.bfloat16]()),
-                String(t"bits = {high}, {low}"),
-            )
-    assert_true(isnan(_narrow_f32_to_bf16_bits(nan[DType.float32]())))
 
 
 def main() raises:

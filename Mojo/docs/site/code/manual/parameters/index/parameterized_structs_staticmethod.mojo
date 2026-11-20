@@ -21,14 +21,14 @@ struct ParameterizedArray[T: Copyable & Deinitable](
 
     def __init__(out self, var *elements: Self.T):
         self._size = len(elements)
-        self._data = alloc[Self.T]({count = self._size}).into_thin()
+        self._data = alloc[Self.T]({length = self._size}).into_thin()
         var ptr = self._data.unsafe_ptr()
         for i in range(self._size):
             ptr.unsafe_offset(i).unsafe_write(elements[i].copy())
 
     def __init__(out self, *, count: Int, value: Self.T):
         self._size = count
-        self._data = alloc[Self.T]({count = count}).into_thin()
+        self._data = alloc[Self.T]({length = count}).into_thin()
         var ptr = self._data.unsafe_ptr()
         for i in range(self._size):
             ptr.unsafe_offset(i).unsafe_write(copy=value)
@@ -37,7 +37,7 @@ struct ParameterizedArray[T: Copyable & Deinitable](
         var ptr = self._data.unsafe_ptr()
         for i in range(self._size):
             ptr.unsafe_offset(i).unsafe_deinit_pointee()
-        dealloc(self._data^.unsafe_with_layout({count = self._size}))
+        dealloc(self._data^.unsafe_with_layout({length = self._size}))
 
     def __getitem__(self, i: Int) raises -> ref[self] Self.T:
         if i < self._size:

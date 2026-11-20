@@ -49,8 +49,9 @@ _stub_doc_cache = {}
 
 
 def _attr_doc_from_definition(modname: str, attrname: str) -> list[str] | None:
-    """Return the attribute docstring of *attrname* from its defining
-    module, or ``None`` when *modname* defines it itself.
+    """Returns the attribute docstring of *attrname* from its defining module.
+
+    Returns ``None`` when *modname* defines the attribute itself.
     """
     definition = find_definition(modname, attrname)
     if definition is None or definition.module == modname:
@@ -67,8 +68,9 @@ def _attr_doc_from_definition(modname: str, attrname: str) -> list[str] | None:
 
 
 def _stub_docstring(module_name: str, qualname: str) -> str | None:
-    """Return the docstring recorded for *qualname* in the module's
-    ``.pyi`` stub, or ``None`` when the stub does not document it.
+    """Returns the docstring that the module's ``.pyi`` stub records.
+
+    Returns ``None`` when the stub does not document *qualname*.
     """
     cache_key = (module_name, qualname)
     if cache_key in _stub_doc_cache:
@@ -225,8 +227,9 @@ def _wrap_consume_inline_attribute(
 
 @functools.cache
 def _pyi_analyzer(module_name: str) -> ModuleAnalyzer | None:
-    """Return a ``ModuleAnalyzer`` built from the ``.pyi`` stub for
-    *module_name*, or ``None`` if no stub exists.
+    """Returns a ``ModuleAnalyzer`` built from the module's ``.pyi`` stub.
+
+    Returns ``None`` when the module has no stub.
     """
     pyi_path = find_pyi_stub(module_name)
     if not pyi_path:
@@ -282,6 +285,12 @@ def _make_get_attribute_comment_with_pyi(
 
 
 def setup(app: Sphinx) -> None:
+    """Installs the hooks that recover docstrings Sphinx would miss.
+
+    The hooks wrap the autodoc and napoleon methods that read docstrings, so
+    a name documented through a re-exporting package still reports the
+    docstring that its defining module records.
+    """
     # DataDocumenter.get_module_comment reports the attribute docstring
     # recorded next to the assignment in the documented module only.
     # Pages document aliases like ``max.engine.GPUProfilingMode`` through

@@ -18,16 +18,35 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from typing import Protocol, TypeVar, overload
 
 from max.driver import accelerator_api
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType
+from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType, TensorValue
+from typing_extensions import Self
+
+
+class _Invertible(Protocol):
+    """A tensor that ``1.0 / tensor`` inverts, such as a ModuleV3 tensor."""
+
+    def __rtruediv__(self, lhs: float, /) -> Self: ...
+
+
+_InvertibleT = TypeVar("_InvertibleT", bound=_Invertible)
 
 NVFP4_BLOCK_SIZE = 16
 """Inputs covered by one NVFP4 weight block scale."""
 
 MXFP4_BLOCK_SIZE = 32
 """Inputs covered by one MXFP4 weight block scale."""
+
+DISABLE_FUSED_SWIGLU_NVFP4_ENV = "MAX_DISABLE_FUSED_SWIGLU_NVFP4"
+"""Environment variable that, set to ``1``, leaves
+:attr:`QuantConfig.can_use_fused_swiglu` false wherever a config is built, so
+the routed experts keep the unfused gate/up, SwiGLU and requantize chain."""
+
+_MXFP8_BLOCK_SIZE = 32
+"""Inputs covered by one MXFP8 weight block scale."""
 
 
 class ScaleGranularity(Enum):
@@ -111,6 +130,26 @@ class QuantFormat(Enum):
     absmax/127. Weights are RTN-quantized at load (no pre-quantized checkpoint).
     Apple M5 only: routes to the int8 widening-MMA GEMM
     (``int8_matmul.mojo``)."""
+
+
+class WeightSource(Enum):
+    """Where a quantized weight's bytes come from.
+
+    Orthogonal to :class:`QuantFormat`. The format says what a weight *is*
+    once quantized -- its grid, scales and byte layout. The source says how
+    it got that way, which decides only what the checkpoint holds and who
+    does the quantizing.
+
+    Keeping them apart matters because they are read by different code for
+    different reasons. A kernel asks about the format; a weight loader asks
+    about the source.
+    """
+
+    CHECKPOINT = "checkpoint"
+    """Pre-quantized on disk: the checkpoint holds packed data and scales."""
+
+    QUANTIZE = "quantize"
+    """Native precision on disk, quantized on the fly at first use."""
 
 
 @dataclass
@@ -215,7 +254,7 @@ class QuantConfig:
     .. code-block:: python
 
         from max.dtype import DType
-        from max.nn import QuantConfig, QuantFormat
+        from max.nn.quant_config import QuantConfig, QuantFormat
         from max.nn.quant_config import (
             InputScaleSpec,
             ScaleGranularity,
@@ -302,9 +341,30 @@ class QuantConfig:
     Note that scales in the 5D TCGEN-interleaved layout are typically flattened
     to 2D ``[M, K//16]`` in the checkpoint."""
 
+    compressed_tensors_global_scales: bool = False
+    """Whether the checkpoint stores the NVFP4 per-tensor scales as
+    compressed-tensors does (NVFP4 only).
+
+    compressed-tensors stores ``weight_global_scale`` and
+    ``input_global_scale``, the reciprocals of modelopt's ``weight_scale_2``
+    and ``input_scale``. Layers declare the stored tensors and invert them in
+    the graph, so the matmuls see modelopt's scales either way."""
+
     _mxfp6_element_format: str = "e2m3"
+
+    source: WeightSource = WeightSource.CHECKPOINT
+    """Where the weight's bytes come from. See :class:`WeightSource`."""
     """Which OCP FP6 encoding an MXFP6 checkpoint holds. Read through
     :attr:`mxfp6_format`, which rejects the question for non-MXFP6 configs."""
+
+    report_error: bool = False
+    """Whether on-the-fly quantizers print their quantization error.
+
+    Only ModuleV3 quantizers read it, and only when ``source`` is
+    :attr:`WeightSource.QUANTIZE`. The graph then also dequantizes each
+    quantized weight and prints its error against the native-precision
+    source, named after the weight.
+    """
 
     @classmethod
     def blockscaled_fp8(
@@ -402,6 +462,53 @@ class QuantConfig:
         )
 
     @classmethod
+    def mxfp8(
+        cls,
+        *,
+        mlp_quantized_layers: Iterable[int],
+        attn_quantized_layers: Iterable[int] = (),
+        embedding_output_dtype: DType | None = None,
+        bias_dtype: DType | None = None,
+        can_use_fused_mlp: bool = False,
+    ) -> QuantConfig:
+        """Builds an OCP MXFP8 config with dynamic MXFP8 activations.
+
+        Weights are unpacked E4M3 values with one E8M0 scale per 32 inputs.
+        Unlike NVFP4 there is no per-tensor second scale level: MXFP8 is pure
+        block scaling, so nothing rescales the matmul output.
+
+        Args:
+            mlp_quantized_layers: Layer indices whose MLPs are quantized.
+            attn_quantized_layers: Layer indices whose attention projections
+                are quantized.
+            embedding_output_dtype: The dtype of the embedding output.
+            bias_dtype: The dtype of the bias weights.
+            can_use_fused_mlp: Whether the fused MLP path may be used.
+
+        Returns:
+            The config.
+        """
+        return cls(
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
+                dtype=DType.float8_e8m0fnu,
+                block_size=(1, _MXFP8_BLOCK_SIZE),
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                dtype=DType.float8_e8m0fnu,
+                block_size=(1, _MXFP8_BLOCK_SIZE),
+            ),
+            mlp_quantized_layers=set(mlp_quantized_layers),
+            attn_quantized_layers=set(attn_quantized_layers),
+            embedding_output_dtype=embedding_output_dtype,
+            bias_dtype=bias_dtype,
+            format=QuantFormat.MXFP8,
+            can_use_fused_mlp=can_use_fused_mlp,
+        )
+
+    @classmethod
     def nvfp4(
         cls,
         *,
@@ -411,8 +518,9 @@ class QuantConfig:
         bias_dtype: DType | None = None,
         shared_experts_weight_dtype: DType | None = None,
         can_use_fused_mlp: bool = False,
+        compressed_tensors_global_scales: bool = False,
     ) -> QuantConfig:
-        """Builds a modelopt NVFP4 config.
+        """Builds an NVFP4 config.
 
         Weights are packed E2M1 codes with one E4M3 scale per 16 inputs and a
         float32 per-tensor scale. The activation's per-tensor scale is static,
@@ -428,6 +536,9 @@ class QuantConfig:
             shared_experts_weight_dtype: The weight dtype of the MoE shared
                 experts, when it differs from the routed experts'.
             can_use_fused_mlp: Whether the fused MLP path may be used.
+            compressed_tensors_global_scales: Whether the checkpoint stores
+                the per-tensor scales as compressed-tensors' global scales
+                rather than as modelopt's.
 
         Returns:
             The config.
@@ -451,6 +562,7 @@ class QuantConfig:
             shared_experts_weight_dtype=shared_experts_weight_dtype,
             format=QuantFormat.NVFP4,
             can_use_fused_mlp=can_use_fused_mlp,
+            compressed_tensors_global_scales=compressed_tensors_global_scales,
         )
 
     @property
@@ -503,6 +615,45 @@ class QuantConfig:
     def is_dynamic(self) -> bool:
         """``True`` if this input scale is dynamic."""
         return self.input_scale.origin == ScaleOrigin.DYNAMIC
+
+    @property
+    def quantizes_on_load(self) -> bool:
+        """Whether weights arrive in native precision and are quantized here.
+
+        The format says what weights become; this says whether the
+        checkpoint already holds them that way.
+        """
+        return self.source is WeightSource.QUANTIZE
+
+    @overload
+    def per_tensor_scale(self, stored: None) -> None: ...
+
+    @overload
+    def per_tensor_scale(self, stored: TensorValue) -> TensorValue: ...
+
+    @overload
+    def per_tensor_scale(self, stored: _InvertibleT) -> _InvertibleT: ...
+
+    def per_tensor_scale(
+        self, stored: TensorValue | _Invertible | None
+    ) -> TensorValue | _Invertible | None:
+        """Returns an NVFP4 per-tensor scale as the quantized ops take it.
+
+        That is modelopt's ``input_scale`` or ``weight_scale_2``. A
+        checkpoint with :attr:`compressed_tensors_global_scales` stores the
+        reciprocal, which this inverts in the graph. Pass a stack of scales
+        rather than each scale, so the graph divides once per stack.
+
+        Args:
+            stored: The scale or stack of scales as the checkpoint stores
+                them, or ``None``.
+
+        Returns:
+            The scales the quantized ops take, or ``None``.
+        """
+        if stored is None or not self.compressed_tensors_global_scales:
+            return stored
+        return 1.0 / stored
 
     @property
     def is_nvfp4(self) -> bool:
@@ -663,8 +814,7 @@ def _nvmxf4f8_scales_type(
     scales_dtype: DType,
     sf_vector_size: int,
 ) -> TensorType:
-    """Returns the TensorType of the NVFP4/MXFP4/MXFP8 scales tensor on NVIDIA
-    GPUs."""
+    """Returns the NVFP4/MXFP4/MXFP8 scales ``TensorType`` on NVIDIA GPUs."""
     # Nvidia NVFP4/MXFP4/MXFP8 format requires the scales tensor to be in a
     # 128x4 tiled layout. The follow constant needs to be in sync with those
     # defined in `max/kernels/src/linalg/fp4_utils.mojo`.

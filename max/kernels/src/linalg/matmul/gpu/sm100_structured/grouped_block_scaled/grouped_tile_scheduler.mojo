@@ -38,6 +38,7 @@ from std.math.uutils import ufloordiv
 from max.gpu import block_idx, grid_dim
 from max.gpu.primitives.cluster import elect_one_sync
 from max.gpu.memory import fence_async_view_proxy
+from algorithm.bisect import bisect_right
 from layout import TensorEngine
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
@@ -299,16 +300,13 @@ struct GroupedWorkIterator[
             return GroupedWorkInfo()
 
         # Binary search for group
-        var lo: UInt32 = 0
-        var hi: UInt32 = self.num_groups
-
-        while lo < hi:
-            var mid = (lo + hi) / 2
-            if linear_idx < self.cumulative_tiles[Int(mid + 1)]:
-                hi = mid
-            else:
-                lo = mid + 1
-        var group_idx = lo
+        var group_idx = UInt32(
+            bisect_right(
+                Int(self.num_groups),
+                linear_idx,
+                lambda (g: Int) {self} -> UInt32: self.cumulative_tiles[g + 1],
+            )
+        )
 
         # Local tile index within group
         var local_idx = linear_idx - self.cumulative_tiles[Int(group_idx)]
@@ -643,7 +641,9 @@ struct GroupedCLCWorkIterator[
 
         The CLC response contains: (linear_idx, 0, 0, is_valid).
         """
-        var response_ptr = self.clc_response + self.consumer_state.index()
+        var response_ptr = self.clc_response.unsafe_offset(
+            self.consumer_state.index()
+        )
         # Read the 128-bit response and extract linear_idx (first 32 bits)
         var response = response_ptr[].cast[.uint32]()
         return response
@@ -681,15 +681,13 @@ struct GroupedCLCWorkIterator[
             return GroupedWorkInfo()
 
         # Binary search for group
-        var lo: UInt32 = 0
-        var hi: UInt32 = self.num_groups
-        while lo < hi:
-            var mid = (lo + hi) / 2
-            if linear_idx < self.cumulative_tiles[Int(mid + 1)]:
-                hi = mid
-            else:
-                lo = mid + 1
-        var group_idx = lo
+        var group_idx = UInt32(
+            bisect_right(
+                Int(self.num_groups),
+                linear_idx,
+                lambda (g: Int) {self} -> UInt32: self.cumulative_tiles[g + 1],
+            )
+        )
 
         # Local tile index within group
         var local_idx = linear_idx - self.cumulative_tiles[Int(group_idx)]
@@ -918,7 +916,9 @@ struct GroupedCLCSchedulerIterator[
         # signals the barriers. Without this, all 32 threads would each do
         # arrive_cluster(), causing 32 arrivals on barriers expecting only 1.
         if elect_one_sync():
-            var response_ptr = self.clc_response + self.producer_state.index()
+            var response_ptr = self.clc_response.unsafe_offset(
+                self.producer_state.index()
+            )
             response_ptr[] = UInt128(Int(next_linear_idx))
 
             comptime for cta in range(Self.cta_group):
@@ -967,15 +967,13 @@ struct GroupedCLCSchedulerIterator[
         if linear_idx >= self.total_tiles:
             return GroupedWorkInfo()
 
-        var lo: UInt32 = 0
-        var hi: UInt32 = self.num_groups
-        while lo < hi:
-            var mid = (lo + hi) / 2
-            if linear_idx < self.cumulative_tiles[Int(mid + 1)]:
-                hi = mid
-            else:
-                lo = mid + 1
-        var group_idx = lo
+        var group_idx = UInt32(
+            bisect_right(
+                Int(self.num_groups),
+                linear_idx,
+                lambda (g: Int) {self} -> UInt32: self.cumulative_tiles[g + 1],
+            )
+        )
 
         var local_idx = linear_idx - self.cumulative_tiles[Int(group_idx)]
         var m = self.problem_m[Int(group_idx)]

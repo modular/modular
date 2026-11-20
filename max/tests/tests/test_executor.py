@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.executor."""
+"""Tests for max.tensor.executor."""
 
 from __future__ import annotations
 
@@ -23,9 +23,10 @@ import pytest
 from max import _interpreter, engine
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental import executor as executor_module
-from max.experimental.compile_pool import ProcessCompilePool, pool
-from max.experimental.executor import (
+from max.graph import Graph, TensorType, ops
+from max.tensor import executor as executor_module
+from max.tensor.compile_pool import ProcessCompilePool, pool
+from max.tensor.executor import (
     CompilingExecutor,
     CompositeExecutor,
     Executor,
@@ -38,7 +39,6 @@ from max.experimental.executor import (
     default_executor,
     set_default_executor,
 )
-from max.graph import Graph, TensorType, ops
 
 _KERNEL_FAILURE = "simulated kernel failure"
 

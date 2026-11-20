@@ -21,16 +21,16 @@
 
 include "llvm/Option/OptParser.td"
 
-// This mix-in record is used to specify the order in which option groups,
-// options, and their aliases appear in documentation.
-// * Option groups are sorted in ascending index order.
-// * Within each option group, options are sorted in ascending index order.
-// * Among an option's aliases, aliases are sorted in ascending index order.
-// * Within any of these groupings, if two records have the same index, an error
-//   is emitted.
+// This mix-in record is used to specify the order in which option groups and
+// subcommands appear in documentation.
+// * Option groups and subcommands are sorted in ascending index order.
+// * If two records have the same index, an error is emitted.
 // * Errors are also emitted for records that do not have an index, even if that
-//   record is "hidden" from documentation (a hidden option or option group, for
-//   example).
+//   record is "hidden" from documentation (a hidden option group, for example).
+//
+// Options and their aliases take no index: they appear in the order they are
+// defined, and a group's options that come from several files appear in the
+// order the files are included.
 class Index<int i> {
   int index = i;
 }
@@ -39,47 +39,44 @@ class Index<int i> {
 // and one that doesn't. In other words, given the option name `foo` and the
 // metavar name `FOO`, this defines both `--foo <FOO>` and `--foo=<FOO>`
 multiclass CommandOption<list<string> prefixes, string name, OptionGroup group,
-                         Index i, MetaVarName meta, HelpText help> {
-  def NAME : Separate<prefixes, name>, Group<group>, Index<i.index>,
+                         MetaVarName meta, HelpText help> {
+  def NAME : Separate<prefixes, name>, Group<group>,
              MetaVarName<meta.MetaVarName>, HelpText<help.HelpText>;
 
-  // The `=` alias is the first alias, at index 0. (However, since it's hidden,
-  // it will not be displayed in the list of aliases.)
+  // The `=` alias is the first alias. (However, since it's hidden, it will not
+  // be displayed in the list of aliases.)
   def NAME # _eq : Joined<prefixes, name # "=">, Group<group>,
-                   Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
+                   Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
 }
 
 // Hidden version of CommmadOption
 multiclass CommandOptionHidden<list<string> prefixes, string name,
-                        OptionGroup group, Index i, MetaVarName meta,
-                        HelpText help> {
-  def NAME : Separate<prefixes, name>, Group<group>, Index<i.index>,
+                        OptionGroup group, MetaVarName meta, HelpText help> {
+  def NAME : Separate<prefixes, name>, Group<group>,
              MetaVarName<meta.MetaVarName>, HelpText<help.HelpText>,
              Flags<[HelpHidden]>;
 
-  // The `=` alias is the first alias, at index 0. (However, since it's hidden,
-  // it will not be displayed in the list of aliases.)
+  // The `=` alias is the first alias. (However, since it's hidden, it will not
+  // be displayed in the list of aliases.)
   def NAME # _eq : Joined<prefixes, name # "=">, Group<group>,
-                   Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
+                   Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
 }
 
 
 // Like CommandOption, but also accepts Values.
 multiclass CommandOptionWithValues<list<string> prefixes, string name,
-                                   OptionGroup group, Index i, MetaVarName meta,
+                                   OptionGroup group, MetaVarName meta,
                                    HelpText help, Values values> {
   def NAME : Separate<prefixes, name>,
              Group<group>,
-             Index<i.index>,
              MetaVarName<meta.MetaVarName>,
              HelpText<help.HelpText>,
              Values<values.Values>;
 
-  // The `=` alias is the first alias, at index 0. However, since it's hidden,
-  // it will not occupy the first spot in the list of aliases.
+  // The `=` alias is the first alias. However, since it's hidden, it will not
+  // occupy the first spot in the list of aliases.
   def NAME #_eq : Joined<prefixes, name #"=">,
                   Group<group>,
-                  Index<0>,
                   Alias<!cast<Separate>(NAME)>,
                   Flags<[HelpHidden]>;
 }

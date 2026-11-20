@@ -30,15 +30,15 @@ from collections.abc import Callable, Sequence
 
 import numpy as np
 import pytest
+from max import functional as F
 from max._core.driver import HostHazardCompletion, HostHazardError
 from max.driver import CPU, Accelerator, Buffer, Usage, accelerator_count
 from max.driver import buffer as driver_buffer
 from max.driver._hazard import render_producer_error, stamp_device_write
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import realization_context as rc
-from max.experimental.executor import UnsupportedGraphError
-from max.experimental.tensor import Tensor, realization_context
+from max.tensor import realization_context as rc
+from max.tensor.executor import UnsupportedGraphError
+from max.tensor.tensor import Tensor, realization_context
 
 
 def _cpu_queue():  # noqa: ANN202

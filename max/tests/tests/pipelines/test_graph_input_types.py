@@ -10,20 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""CPU-only snapshot of each model's flat graph input list.
+"""CPU-only snapshot of each model's graph input tree.
 
-The compiled graphs, and so max serve, depend on the exact order and types of
-the inputs each model declares. The snapshot in
-``testdata/graph_input_types.json`` records them; a change to any model's
-inputs fails here until the snapshot is regenerated deliberately with::
+The compiled graphs, max serve, and Mach's BatchProcessor depend on the exact
+order, names, kinds and types of the inputs each model declares. The snapshot
+in ``testdata/vision_input_trees.json`` (vision encoders) records each tree as
+a role's ``in_layouts`` and ``in_tree`` in ``artifact.json``, and
+``testdata/graph_group_kinds.json`` every group kind; Mach's planner tests
+read them. A change to a vision encoder's inputs fails here until the snapshot
+is regenerated deliberately with::
 
     UPDATE_GRAPH_INPUT_SNAPSHOT=1 ./bazelw test \
         //max/tests/tests/pipelines:test_graph_input_types \
         --test_env=UPDATE_GRAPH_INPUT_SNAPSHOT --strategy=TestRunner=local
-
-``testdata/graph_input_names.json`` records the path of each leaf of every
-model's named input tree, in flatten order, so a rename or reorder of inputs
-that share a type also fails.
 
 Each model's input method reads only a few attributes of ``self``, so these
 tests call it on a namespace holding just those, rather than building a model.
@@ -34,7 +33,8 @@ from __future__ import annotations
 import json
 import os
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -42,16 +42,59 @@ from typing import Any
 
 import pytest
 from max import tree
+from max._artifact.export import per_step_dims
+from max._artifact.value_types import treedef_from_json, treedef_to_json
+from max.driver import (
+    Accelerator,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.comm.ep import EPBatchManager, EPConfig
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MHAKVCacheParams, max_pages_per_request
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
+from max.nn.legacy import graph_groups
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.graph_groups import BatchContext, RaggedBatch
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
+from max.pipelines.architectures.flint.model_config import FlintConfig
 from max.pipelines.architectures.gemma4.batch_processor import (
     Gemma4BatchProcessor,
 )
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
+from max.pipelines.architectures.gemma4.vision_model.vision_model import (
+    Gemma4VisionModel,
+)
+from max.pipelines.architectures.gemma4_modulev3.modules import Gemma4Decoder
+from max.pipelines.architectures.inkling.inkling import Inkling
+from max.pipelines.architectures.inkling.layers.vision import InklingVisionModel
+from max.pipelines.architectures.inkling.state_cache import (
+    InklingConvStateLayout,
+)
+from max.pipelines.architectures.inkling_modulev3.modules import (
+    InklingVision as InklingVisionV3,
+)
+from max.pipelines.architectures.lfm2_vl.model_config import (
+    ATTN_CACHE_KEY as LFM2_VL_ATTN_CACHE_KEY,
+)
+from max.pipelines.architectures.lfm2_vl.model_config import (
+    CONV_LEAF_ID as LFM2_VL_CONV_LEAF_ID,
+)
+from max.pipelines.architectures.lfm2_vl.model_config import (
+    STATE_CACHE_KEY as LFM2_VL_STATE_CACHE_KEY,
+)
+from max.pipelines.architectures.lfm2_vl.network import Lfm2VlDecoder
+from max.pipelines.architectures.lfm2_vl.vision.tower import Lfm2VlVision
+from max.pipelines.architectures.lfm3.model_config import Lfm3Config
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
 )
@@ -59,17 +102,57 @@ from max.pipelines.architectures.llama3.distributed_llama import (
     DistributedLlama3,
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
+from max.pipelines.architectures.muse_glimmer.model_config import (
+    MuseGlimmerVisionConfig,
+)
+from max.pipelines.architectures.muse_glimmer.vision import vision_input_tree
+from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
+    CONV_LEAF_ID,
+    SSM_LEAF_ID,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import NemotronH
+from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
+    VisionTransformer as Qwen2_5VLVisionTransformer,
+)
 from max.pipelines.architectures.qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
 )
+from max.pipelines.architectures.qwen3_5.layers.visual_transformer import (
+    Qwen3_5VisionTransformer,
+)
 from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
+from max.pipelines.architectures.qwen3_5.state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    linear_state_regions,
+)
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib.graph_specs import (
+    GraphRole,
+    _check_inputs,
+    _input_signature,
+)
 from max.pipelines.lib.interfaces import (
+    BatchProcessorRuntime,
     PipelineModel,
     modulev3_ragged_kv_symbolic_input_tree,
 )
+from max.pipelines.lib.module_registration import (
+    decoder_input_types,
+    decoder_vision_input_types,
+    device_mesh,
+)
+from max.pipelines.lib.registration_runtime import batch_context_length_types
+from max.tensor.tensor_spec_serialization import (
+    layout_to_json,
+    layouts_from_json,
+)
 
-_SNAPSHOT = Path(__file__).parent / "testdata" / "graph_input_types.json"
-_NAMES = Path(__file__).parent / "testdata" / "graph_input_names.json"
+_VISION_SNAPSHOT = (
+    Path(__file__).parent / "testdata" / "vision_input_trees.json"
+)
+_KINDS = Path(__file__).parent / "testdata" / "graph_group_kinds.json"
 _HIDDEN = 64
 
 _InputTypes = tuple[TensorType | BufferType, ...]
@@ -114,7 +197,41 @@ def _kv_params(devices: list[DeviceRef]) -> MHAKVCacheParams:
     )
 
 
-def _ep_config(*, eplb: bool = False) -> EPConfig:
+def _gemma4_kv_params(devices: list[DeviceRef]) -> MultiKVCacheParams:
+    """Gemma 4's two attention caches, whose heads differ in width."""
+    full = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=32,
+        num_layers=1,
+        devices=tuple(devices),
+    )
+    return MultiKVCacheParams.from_params(
+        {"sliding_attention": _kv_params(devices), "full_attention": full}
+    )
+
+
+def _qwen3_5_kv_params(devices: list[DeviceRef]) -> MultiKVCacheParams:
+    """Qwen3.5's attention cache beside its linear-attention state pool."""
+    state = RecurrentStateParams(
+        regions=linear_state_regions(
+            num_linear_layers=3,
+            key_head_dim=16,
+            num_key_heads=4,
+            value_head_dim=16,
+            num_value_heads=4,
+            conv_kernel_dim=4,
+            dtype=DType.float32,
+            num_devices=len(devices),
+        ),
+        devices=devices,
+    )
+    return MultiKVCacheParams.from_params(
+        {ATTN_CACHE_KEY: _kv_params(devices), STATE_CACHE_KEY: state}
+    )
+
+
+def _ep_config(*, eplb: bool = False, count: bool = False) -> EPConfig:
     return EPConfig(
         dispatch_dtype=DType.bfloat16,
         combine_dtype=DType.bfloat16,
@@ -125,6 +242,7 @@ def _ep_config(*, eplb: bool = False) -> EPConfig:
         n_gpus_per_node=2,
         n_nodes=1,
         eplb_enabled=eplb,
+        eplb_count_expert_load=count,
         num_moe_layers=3,
         max_replicas=2,
     )
@@ -142,6 +260,186 @@ def _llama3(
     )
 
 
+def _registered_decoder() -> tuple[_InputTree, _InputTypes]:
+    """A decoder registered by role, whose graph takes its fields by name."""
+    types = decoder_input_types(_kv_params(_gpus(1)), DeviceRef.GPU(0))
+    return types, tuple(tree.leaves(types))
+
+
+def _registered_decoder_scratch() -> tuple[_InputTree, _InputTypes]:
+    """A registered decoder with a workspace buffer on each device, as
+    MiniMax-M3's sparse indexer declares its score table."""
+    devices = _gpus(2)
+    types = decoder_input_types(
+        _kv_params(devices),
+        devices[0],
+        scratch=[
+            BufferType(DType.float32, [2, 8, 4], device=device)
+            for device in devices
+        ],
+    )
+    return types, tuple(tree.leaves(types))
+
+
+def _registered_decoder_total_context() -> tuple[_InputTree, _InputTypes]:
+    """A registered decoder that takes its replica's total context length on
+    each device, as MiniMax-M3's sparse attention does."""
+    devices = _gpus(2)
+    types = decoder_input_types(
+        _kv_params(devices),
+        devices[0],
+        batch_context_lengths=BatchContext(
+            total_length=batch_context_length_types(
+                1, devices_per_replica=len(devices), dtype=DType.uint32
+            )
+        ),
+    )
+    return types, tuple(tree.leaves(types))
+
+
+def _nemotron_h(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
+    """Nemotron-H registered by role: attention beside the Mamba state.
+
+    Its tokens and row offsets sit on the first device, and the graph keeps
+    the input order its pre-registration MEFs take.
+    """
+    n = len(devices)
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=CONV_LEAF_ID,
+                num_layers=2,
+                row_shape=(64 // n, 3),
+                dtype=DType.bfloat16,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SSM_LEAF_ID,
+                num_layers=2,
+                row_shape=(4 // n, 16, 16),
+                dtype=DType.float32,
+            ),
+        ),
+        devices=devices,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {ATTN_CACHE_KEY: _kv_params(devices), STATE_CACHE_KEY: state}
+    )
+    types = decoder_input_types(
+        kv_params, devices[0], input_layout=NemotronH.input_layout
+    )
+    return types, tuple(tree.leaves(types))
+
+
+def _flint() -> tuple[_InputTree, _InputTypes]:
+    """Published Flint BF16 TP1 cache tree, declared by its export config."""
+    devices = _gpus(1)
+    kv_params = FlintConfig.construct_kv_params(
+        huggingface_config=_fake(
+            hidden_size=2048,
+            num_attention_heads=32,
+            num_hidden_layers=49,
+            num_key_value_heads=4,
+            head_dim=128,
+            sliding_window=513,
+        ),
+        pipeline_config=_fake(
+            speculative=None, model=_fake(data_parallel_degree=1)
+        ),
+        devices=devices,
+        kv_cache_config=KVCacheConfig(kv_cache_page_size=128),
+        cache_dtype=DType.bfloat16,
+    )
+    assert list(kv_params.children) == ["sliding_attention", "full_attention"]
+    for name, layers, window in [
+        ("sliding_attention", 35, 513),
+        ("full_attention", 14, None),
+    ]:
+        child = kv_params.children[name]
+        assert isinstance(child, MHAKVCacheParams)
+        assert child.num_layers == layers
+        assert child.window_size == window
+        assert child.n_kv_heads == 4
+        assert child.head_dim == 128
+        assert child.dtype == DType.bfloat16
+        assert child.page_size == 128
+    types = decoder_input_types(kv_params, devices[0])
+    return types, tuple(tree.leaves(types))
+
+
+def _lfm3() -> tuple[_InputTree, _InputTypes]:
+    """Published text BF16 TP1 geometry, including the conv-only state leaf."""
+    devices = _gpus(1)
+    hf = _fake(
+        hidden_size=2048,
+        num_attention_heads=16,
+        num_key_value_heads=4,
+        head_dim=128,
+        layer_types=["conv"] * 13
+        + ["sliding_attention"] * 5
+        + ["full_attention"] * 6,
+        sliding_window=256,
+        conv_L_cache=7,
+    )
+    hf.get_text_config = lambda: hf
+    kv_params = Lfm3Config.construct_kv_params(
+        huggingface_config=hf,
+        pipeline_config=_fake(
+            speculative=None, model=_fake(data_parallel_degree=1)
+        ),
+        devices=devices,
+        kv_cache_config=KVCacheConfig(kv_cache_page_size=128),
+        cache_dtype=DType.bfloat16,
+    )
+    assert list(kv_params.children) == [
+        "sliding_attention",
+        "full_attention",
+        "conv_state",
+    ]
+    for name, layers, window in [
+        ("sliding_attention", 5, 256),
+        ("full_attention", 6, None),
+    ]:
+        child = kv_params.child(name, MHAKVCacheParams)
+        assert child.num_layers == layers
+        assert child.window_size == window
+        assert child.dtype == DType.bfloat16
+        assert child.page_size == 128
+    conv = kv_params.child("conv_state", RecurrentStateParams)
+    assert len(conv.regions) == 1
+    assert conv.regions[0].leaf_id == "lfm3/conv"
+    assert conv.regions[0].num_layers == 13
+    assert conv.regions[0].row_shape == (2048, 6)
+    assert conv.regions[0].dtype == DType.bfloat16
+    types = decoder_input_types(kv_params, devices[0])
+    return types, tuple(tree.leaves(types))
+
+
+def _mimo_v2() -> tuple[_InputTree, _InputTypes]:
+    """MiMo-V2 registered by role at TP2: a windowed and a full attention
+    cache whose keys are wider than their values.
+
+    The graph keeps the input order its pre-registration MEFs take.
+    """
+    devices = _gpus(2)
+    sliding = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=24,
+        v_head_dim=16,
+        num_layers=2,
+        devices=tuple(devices),
+        window_size=8,
+    )
+    full = replace(sliding, n_kv_heads=4, num_layers=1, window_size=None)
+    kv_params = MultiKVCacheParams.from_params(
+        {"sliding_attention": sliding, "full_attention": full}
+    )
+    types = decoder_input_types(
+        kv_params, devices[0], input_layout=MiMoV2Decoder.input_layout
+    )
+    return types, tuple(tree.leaves(types))
+
+
 def _distributed_llama3() -> tuple[_InputTree, _InputTypes]:
     devices = _gpus(2)
     model = _model(DistributedLlama3, config=_fake(devices=devices))
@@ -152,7 +450,9 @@ def _distributed_llama3() -> tuple[_InputTree, _InputTypes]:
     )
 
 
-def _qwen3_5(*, vision: bool, mrope: bool) -> tuple[_InputTree, _InputTypes]:
+def _qwen3_5(
+    *, vision: bool, mrope: bool, hybrid: bool = False
+) -> tuple[_InputTree, _InputTypes]:
     devices = _gpus(2)
     model = _model(
         Qwen3_5,
@@ -161,18 +461,20 @@ def _qwen3_5(*, vision: bool, mrope: bool) -> tuple[_InputTree, _InputTypes]:
         vision_encoder=object() if vision else None,
         mrope_enabled=mrope,
     )
-    kv_params = _kv_params(devices)
+    kv_params: KVCacheParamInterface = (
+        _qwen3_5_kv_params(devices) if hybrid else _kv_params(devices)
+    )
     return (
         Qwen3_5.input_tree(model, kv_params),
         Qwen3_5.input_types(model, kv_params),
     )
 
 
-def _gemma4() -> tuple[_InputTree, _InputTypes]:
+def _gemma4(*, two_caches: bool = False) -> tuple[_InputTree, _InputTypes]:
     # Gemma4 reads driver-device attributes (label, id), not DeviceRefs.
     model = _fake(
         devices=[_fake(label="gpu", id=i) for i in range(2)],
-        kv_params=_kv_params(_gpus(2)),
+        kv_params=(_gemma4_kv_params if two_caches else _kv_params)(_gpus(2)),
     )
     config = _fake(
         unquantized_dtype=DType.bfloat16,
@@ -184,14 +486,40 @@ def _gemma4() -> tuple[_InputTree, _InputTypes]:
     return input_tree, tuple(tree.leaves(input_tree))
 
 
+def _gemma4_modulev3() -> tuple[_InputTree, _InputTypes]:
+    """Gemma 4's ModuleV3 decoder registered by role.
+
+    Its image rows sit on the first device while its caches span both, and
+    the graph keeps the graph API pipeline's input order.
+    """
+    devices = _gpus(2)
+    config = _fake(
+        unquantized_dtype=DType.bfloat16,
+        text_config=_fake(hidden_size=_HIDDEN),
+    )
+    mesh = _fake(devices=devices)
+    types = decoder_input_types(
+        _gemma4_kv_params(devices),
+        devices[0],
+        vision=Gemma4Decoder.vision_input_types(config, mesh),
+        input_layout=Gemma4Decoder.input_layout,
+    )
+    return types, tuple(tree.leaves(types))
+
+
 def _deepseek(
-    cls: Any, *, ep: bool, eplb: bool = False, profile: bool = False
+    cls: Any,
+    *,
+    ep: bool,
+    eplb: bool = False,
+    profile: bool = False,
+    count: bool = False,
 ) -> tuple[_InputTree, _InputTypes]:
     devices = _gpus(2)
     config = _fake(
         devices=devices,
         data_parallel_degree=2,
-        ep_config=_ep_config(eplb=eplb) if ep else None,
+        ep_config=_ep_config(eplb=eplb, count=count) if ep else None,
         # V3.2 builds no profiling counters, so only V3 reads these.
         eplb_profile_enabled=profile,
         num_hidden_layers=3,
@@ -202,52 +530,281 @@ def _deepseek(
     return cls.input_tree(model, kv_params), cls.input_types(model, kv_params)
 
 
+def _text_model(cls: Any, **attrs: object) -> tuple[_InputTree, _InputTypes]:
+    """A model whose ``input_tree`` takes no arguments."""
+    input_tree = cls.input_tree(_model(cls, **attrs))
+    return input_tree, tuple(tree.leaves(input_tree))
+
+
+def _inkling(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
+    """Inkling's global/sliding caches and all eight convolution-state leaves."""
+    channels = 16 // len(devices)
+    state = RecurrentStateParams(
+        regions=InklingConvStateLayout(
+            ring_len=3,
+            layers=((channels, channels, _HIDDEN, _HIDDEN),) * 2,
+            is_local=(False, True),
+        ).regions(),
+        devices=devices,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {
+            "full_attention": _kv_params(devices),
+            "sliding_attention": _kv_params(devices),
+            "conv_state": state,
+        }
+    )
+    model = _model(
+        Inkling,
+        devices=devices,
+        num_devices=len(devices),
+        dtype=DType.bfloat16,
+        text_config=_fake(hidden_size=_HIDDEN),
+        kv_params=kv_params,
+    )
+    return Inkling.input_tree(model), Inkling.input_types(model)
+
+
+def _lfm2_vl() -> tuple[_InputTree, _InputTypes]:
+    """LFM2-VL's registered decoder: paged attention, the conv state pool
+    and the vision merge, in the input order its MEFs took before the
+    registration."""
+    devices = _gpus(1)
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=LFM2_VL_CONV_LEAF_ID,
+                num_layers=2,
+                # causal_conv1d_varlen_fwd's pool contract:
+                # [slots, dim, kernel - 1], mutated in place.
+                row_shape=(_HIDDEN, 2),
+                dtype=DType.bfloat16,
+            ),
+        ),
+        devices=devices,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {
+            LFM2_VL_ATTN_CACHE_KEY: _kv_params(devices),
+            LFM2_VL_STATE_CACHE_KEY: state,
+        }
+    )
+    vision = decoder_vision_input_types(
+        device_mesh([Accelerator(0)], 1), DType.bfloat16, _HIDDEN
+    )
+    types = decoder_input_types(
+        kv_params,
+        devices[0],
+        vision=vision,
+        input_layout=Lfm2VlDecoder.input_layout,
+    )
+    return types, tuple(tree.leaves(types))
+
+
 _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
+    "inkling_single_device": lambda: _inkling(_gpus(1)),
+    "inkling_multi_device": lambda: _inkling(_gpus(2)),
     "llama3_single_device": lambda: _llama3(_gpus(1)),
     "llama3_eagle_draft": lambda: _llama3(_gpus(1), hidden=True),
     "llama3_multi_device": _distributed_llama3,
-    "qwen3_5_text": lambda: _qwen3_5(vision=False, mrope=False),
     "qwen3_5_vision": lambda: _qwen3_5(vision=True, mrope=False),
     "qwen3_5_vision_mrope": lambda: _qwen3_5(vision=True, mrope=True),
+    "qwen3_5_hybrid": lambda: _qwen3_5(vision=False, mrope=False, hybrid=True),
     "gemma4": _gemma4,
+    "gemma4_two_caches": lambda: _gemma4(two_caches=True),
+    "gemma4_modulev3": _gemma4_modulev3,
     "deepseekV3": lambda: _deepseek(DeepseekV3, ep=False),
     "deepseekV3_ep": lambda: _deepseek(DeepseekV3, ep=True),
     "deepseekV3_ep_eplb": lambda: _deepseek(DeepseekV3, ep=True, eplb=True),
+    "deepseekV3_ep_expert_load": lambda: _deepseek(
+        DeepseekV3, ep=True, count=True
+    ),
     "deepseekV3_eplb_profile": lambda: _deepseek(
         DeepseekV3, ep=True, profile=True
     ),
-    "deepseekV3_2": lambda: _deepseek(DeepseekV3_2, ep=False),
-    "deepseekV3_2_ep": lambda: _deepseek(DeepseekV3_2, ep=True),
-    "deepseekV3_2_ep_eplb_profile": lambda: _deepseek(
-        DeepseekV3_2, ep=True, eplb=True, profile=True
-    ),
+    "registered_decoder": _registered_decoder,
+    "registered_decoder_scratch": _registered_decoder_scratch,
+    "registered_decoder_total_context": _registered_decoder_total_context,
+    "nemotron_h_single_device": lambda: _nemotron_h(_gpus(1)),
+    "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
+    "lfm2_vl_single_device": _lfm2_vl,
+    "mimo_v2": _mimo_v2,
+    "flint": _flint,
+    "lfm3": _lfm3,
 }
 
 
-def _describe(types: _InputTypes) -> list[str]:
-    return [
-        f"{type(t).__name__}({t.dtype}, {list(t.shape)}, {t.device})"
-        for t in types
-    ]
+def _gemma4_vision() -> _InputTree:
+    config = _fake(
+        vision_config=_fake(patch_size=16),
+        devices=_gpus(2),
+        unquantized_dtype=DType.bfloat16,
+    )
+    return Gemma4VisionModel.input_tree(_fake(config=config))
 
 
-def _leaf_paths(input_tree: Mapping[str, object]) -> list[str]:
+def _qwen_vl_vision(cls: Any, patch_dim: int) -> _InputTree:
+    return cls.input_tree(
+        _fake(devices=_gpus(2), patch_embed=_fake(patch_dim=patch_dim))
+    )
+
+
+def _inkling_vision() -> _InputTree:
+    model = _bare(
+        InklingVisionModel,
+        config=_fake(patch_size=40, n_channels=3),
+        dtype=DType.bfloat16,
+        device=DeviceRef.GPU(0),
+    )
+    return InklingVisionModel.input_tree(model)
+
+
+def _lfm2_vl_vision() -> _InputTree:
+    config = _fake(devices=[DeviceRef.GPU(0)], vision_patch_dim=768)
+    return Lfm2VlVision.input_types(_bare(Lfm2VlVision, config=config))
+
+
+def _inkling_modulev3_vision() -> _InputTree:
+    model = _fake(
+        config=_fake(patch_size=40, n_channels=3),
+        _registered_config=_fake(devices=_gpus(1)),
+    )
+    model.patch_type = partial(InklingVisionV3.patch_type, model)
+    return InklingVisionV3.input_types(model)
+
+
+def _muse_glimmer_vision() -> _InputTree:
+    config = MuseGlimmerVisionConfig(
+        hidden_size=1536,
+        intermediate_size=8960,
+        num_hidden_layers=1,
+        num_attention_heads=16,
+        hidden_act="gelu",
+        layer_norm_eps=1e-5,
+        layer_types=["full_attention"],
+        patch_size=14,
+        patch_temporal=2,
+        merge_size=2,
+        pos_emb_height=32,
+        pos_emb_width=32,
+        rope_theta=10000.0,
+        projector_hidden_size=4096,
+    )
+    return vision_input_tree(config, DeviceRef.GPU(0), DType.bfloat16)
+
+
+_VISION_CASES: dict[str, Callable[[], _InputTree]] = {
+    "inkling": _inkling_vision,
+    "inkling_modulev3": _inkling_modulev3_vision,
+    "gemma4": _gemma4_vision,
+    "muse_glimmer": _muse_glimmer_vision,
+    "qwen3_5": lambda: _qwen_vl_vision(Qwen3_5VisionTransformer, 1536),
+    "qwen2_5vl": lambda: _qwen_vl_vision(Qwen2_5VLVisionTransformer, 1176),
+    "lfm2_vl": _lfm2_vl_vision,
+}
+
+
+def _decoder_tree(
+    build: Callable[[], tuple[_InputTree, _InputTypes]],
+) -> Callable[[], _InputTree]:
+    return lambda: build()[0]
+
+
+_ALL_TREES: dict[str, Callable[[], _InputTree]] = {
+    **{name: _decoder_tree(build) for name, build in _CASES.items()},
+    **{f"vision_{name}": build for name, build in _VISION_CASES.items()},
+}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def virtual_gpus() -> Iterator[None]:
+    """Lets a layout name a GPU on the CPU-only workers."""
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_80")
+    set_virtual_device_count(2)
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
+
+
+def _leaf_paths(input_tree: object) -> list[str]:
     return list(tree.flatten(input_tree)[1].leaf_paths)
 
 
-def _regenerate_snapshots() -> None:
-    types = {name: _describe(build()[1]) for name, build in _CASES.items()}
-    names = {name: _leaf_paths(build()[0]) for name, build in _CASES.items()}
-    _SNAPSHOT.resolve().write_text(json.dumps(types, indent=2) + "\n")
-    _NAMES.resolve().write_text(json.dumps(names, indent=2) + "\n")
+def _encode(input_tree: _InputTree) -> dict[str, Any]:
+    """Returns a role's inputs as ``artifact.json`` records them."""
+    layouts, treedef = _input_signature(input_tree)
+    return {
+        "in_layouts": [layout_to_json(layout) for layout in layouts],
+        "in_tree": treedef_to_json(treedef),
+    }
 
 
-@pytest.mark.parametrize("name", list(_CASES))
-def test_graph_input_types_match_snapshot(name: str) -> None:
+def _dumps(value: object, indent: int = 0) -> str:
+    """Formats JSON with any value that fits in 100 columns on one line.
+
+    Each layout stays on one line too, so a retyped input changes one line of
+    the snapshot rather than the two dozen ``indent=2`` spreads it over.
+    """
+    flat = json.dumps(value)
+    if (
+        not isinstance(value, (dict, list))
+        or not value
+        or indent + len(flat) <= 100
+        or (isinstance(value, dict) and "dtype" in value)
+    ):
+        return flat
+    pad = " " * (indent + 2)
+    if isinstance(value, list):
+        items = [pad + _dumps(item, indent + 2) for item in value]
+        open_, close = "[", "]"
+    else:
+        items = [
+            f"{pad}{json.dumps(key)}: {_dumps(item, indent + 2)}"
+            for key, item in value.items()
+        ]
+        open_, close = "{", "}"
+    return f"{open_}\n" + ",\n".join(items) + f"\n{' ' * indent}{close}"
+
+
+def _vision_snapshot(name: str) -> dict[str, Any]:
+    return json.loads(_VISION_SNAPSHOT.read_text())[name]
+
+
+def test_vision_snapshot_covers_every_case() -> None:
     if os.environ.get("UPDATE_GRAPH_INPUT_SNAPSHOT"):
-        _regenerate_snapshots()
-    expected = json.loads(_SNAPSHOT.read_text())
-    assert _describe(_CASES[name]()[1]) == expected[name]
+        trees = {
+            name: _encode(build()) for name, build in _VISION_CASES.items()
+        }
+        _VISION_SNAPSHOT.resolve().write_text(_dumps(trees) + "\n")
+    assert set(json.loads(_VISION_SNAPSHOT.read_text())) == set(_VISION_CASES)
+
+
+def test_graph_group_kinds_match_snapshot() -> None:
+    """Mach's planner reads the kinds too, so a new group fails its tests
+    until the engine's kind table names it or declares it unserved."""
+    groups = (getattr(graph_groups, name) for name in graph_groups.__all__)
+    kinds = sorted(
+        kind
+        for group in groups
+        if isinstance(group, type)
+        and issubclass(group, graph_groups.GraphGroup)
+        and (kind := group.kind) is not None
+    )
+    if os.environ.get("UPDATE_GRAPH_INPUT_SNAPSHOT"):
+        _KINDS.resolve().write_text(json.dumps(kinds, indent=2) + "\n")
+    assert json.loads(_KINDS.read_text()) == kinds
+
+
+@pytest.mark.parametrize("name", list(_VISION_CASES))
+def test_vision_input_tree_matches_snapshot(name: str) -> None:
+    assert _encode(_VISION_CASES[name]()) == _vision_snapshot(name), (
+        "A graph input was renamed, reordered or retyped. If that is "
+        "intended, regenerate with UPDATE_GRAPH_INPUT_SNAPSHOT=1 ./bazelw test "
+        "//max/tests/tests/pipelines:test_graph_input_types "
+        "--test_env=UPDATE_GRAPH_INPUT_SNAPSHOT --strategy=TestRunner=local"
+    )
 
 
 @pytest.mark.parametrize("name", list(_CASES))
@@ -256,30 +813,114 @@ def test_input_types_are_the_input_tree_leaves(name: str) -> None:
     assert tuple(tree.leaves(input_tree)) == input_types
 
 
-def test_deepseekv3_2_inputs_equal_deepseekv3_inputs() -> None:
-    """V3.2 reuses V3's input list, which ``main`` recorded for ``deepseekV3``."""
-    snapshot = json.loads(_SNAPSHOT.read_text())
-    assert snapshot["deepseekV3_2"] == snapshot["deepseekV3"]
-    assert snapshot["deepseekV3_2_ep"] == snapshot["deepseekV3_ep"]
+@pytest.mark.parametrize("name", list(_ALL_TREES))
+def test_every_input_is_in_a_kinded_group(name: str) -> None:
+    role = GraphRole.VISION if name.startswith("vision_") else GraphRole.DECODER
+    _check_inputs(role, _input_signature(_ALL_TREES[name]())[1])
 
 
-def test_names_golden_covers_every_snapshot_case() -> None:
-    assert set(json.loads(_NAMES.read_text())) == set(_CASES)
-    assert set(json.loads(_SNAPSHOT.read_text())) == set(_CASES)
+def test_a_decoder_input_outside_a_kinded_group_fails_the_load() -> None:
+    input_tree, _ = _CASES["llama3_single_device"]()
+    input_tree["position_ids"] = TensorType(
+        DType.int64, shape=[3, "total_seq_len"], device=DeviceRef.CPU()
+    )
+    in_tree = _input_signature(input_tree)[1]
+    with pytest.raises(ValueError, match=r"0\.position_ids"):
+        _check_inputs(GraphRole.DECODER, in_tree)
+
+
+def test_a_positional_decoder_needs_no_kinds() -> None:
+    _, input_types = _CASES["llama3_single_device"]()
+    _check_inputs(GraphRole.DECODER, _input_signature(input_types)[1])
+
+
+@pytest.mark.parametrize("name", list(_ALL_TREES))
+def test_graph_input_tree_round_trips(name: str) -> None:
+    layouts, treedef = _input_signature(_ALL_TREES[name]())
+    encoded = (
+        _vision_snapshot(name.removeprefix("vision_"))
+        if name.startswith("vision_")
+        else _encode(_ALL_TREES[name]())
+    )
+    assert treedef_from_json(encoded["in_tree"]) == treedef
+    assert layouts_from_json(encoded["in_layouts"], "in_layouts") == layouts
+
+
+def _runtime() -> BatchProcessorRuntime:
+    return BatchProcessorRuntime(
+        pipeline_config=_fake(runtime=_fake(vision_cache_utilization=0.1)),
+        devices=[],
+        return_logits=ReturnLogits.LAST_TOKEN,
+        max_batch_size=8,
+        max_seq_len=1000,
+        max_batch_input_tokens=512,
+        data_parallel_degree=2,
+    )
 
 
 @pytest.mark.parametrize("name", list(_CASES))
-def test_graph_input_names_match_snapshot(name: str) -> None:
-    expected = json.loads(_NAMES.read_text())[name]
-    input_tree, _ = _CASES[name]()
-    assert _leaf_paths(input_tree) == expected, (
-        "A graph input was renamed or reordered. If that is intended, "
-        "regenerate with UPDATE_GRAPH_INPUT_SNAPSHOT=1 ./bazelw test "
-        "//max/tests/tests/pipelines:test_graph_input_types "
-        "--test_env=UPDATE_GRAPH_INPUT_SNAPSHOT --strategy=TestRunner=local"
+def test_every_per_step_dim_has_a_maximum(name: str) -> None:
+    dims = per_step_dims(_input_signature(_CASES[name]()[0])[0])
+    assert set(_runtime().max_dims(dims, _kv_params(_gpus(1)))) == set(dims)
+    # KV pages and state pool rows are sized by their owners.
+    assert not [d for d in dims if d.endswith(("total_num_pages", "_rows"))]
+
+
+def test_max_dims_bound_the_step() -> None:
+    dims = per_step_dims(_input_signature(_CASES["gemma4_two_caches"]()[0])[0])
+    assert _runtime().max_dims(dims, _kv_params(_gpus(1))) == {
+        "total_seq_len": 1024,
+        "return_n_logits": 1,
+        "input_row_offsets_len": 17,
+        "num_image_tokens": 1024,
+        "total_image_tokens": 1024,
+        "replica_0_batch_size": 8,
+        "replica_0_sliding_attention_max_num_pages": 8,
+        "replica_0_full_attention_max_num_pages": 8,
+    }
+
+
+def test_max_dims_bound_pages_past_max_seq_len_by_the_draft_slack() -> None:
+    runtime = replace(_runtime(), max_seq_len=1024)
+    kv_params = _kv_params(_gpus(1))
+    drafting = replace(kv_params, num_draft_tokens=2)
+    dims = ["replica_0_max_num_pages"]
+    assert runtime.max_dims(dims, kv_params) == {dims[0]: 8}
+    assert runtime.max_dims(dims, drafting) == {
+        dims[0]: max_pages_per_request(drafting, 1024)
+    }
+    assert max_pages_per_request(drafting, 1024) > 8
+
+
+def test_max_dims_refuses_image_rows_without_the_vision_cache() -> None:
+    runtime = replace(
+        _runtime(),
+        pipeline_config=_fake(runtime=_fake(vision_cache_utilization=0)),
     )
-    snapshot = json.loads(_SNAPSHOT.read_text())[name]
-    assert _describe(tuple(tree.leaves(input_tree))) == snapshot
+    with pytest.raises(ValueError, match="'num_image_tokens'"):
+        runtime.max_dims(["num_image_tokens"], _kv_params(_gpus(1)))
+
+
+def test_max_dims_refuses_an_unknown_dim() -> None:
+    with pytest.raises(ValueError, match="'mystery'"):
+        _runtime().max_dims(["mystery"], _kv_params(_gpus(1)))
+
+
+@pytest.mark.parametrize(
+    ("v3_case", "options"),
+    [
+        ("deepseekV3", {"ep": False}),
+        ("deepseekV3_ep", {"ep": True}),
+        ("deepseekV3_ep_eplb", {"ep": True, "eplb": True, "profile": True}),
+    ],
+)
+def test_deepseekv3_2_inputs_equal_deepseekv3_inputs(
+    v3_case: str, options: dict[str, bool]
+) -> None:
+    """V3.2 reuses V3's input tree, so its inputs must match V3's."""
+    input_tree, input_types = _deepseek(DeepseekV3_2, **options)
+    assert _encode(input_tree) == _encode(_CASES[v3_case]()[0])
+    assert tuple(tree.leaves(input_tree)) == input_types
 
 
 def test_batch_processor_input_tree_is_none_until_bound() -> None:
@@ -296,28 +937,29 @@ def test_pipeline_model_binds_graph_input_tree() -> None:
         pass
 
     concrete.__abstractmethods__ = frozenset()
-    input_tree, input_types = _CASES["llama3_single_device"]()
+    input_tree, _ = _CASES["llama3_single_device"]()
 
     processor = _bare(Llama3BatchProcessor)
     model = _bare(concrete, _batch_processor=processor)
-    assert model._bind_graph_inputs(input_tree) == input_types
+    assert model._bind_graph_inputs(input_tree) is input_tree
     assert processor.input_tree is input_tree
 
     without_processor = _bare(concrete, _batch_processor=None)
-    assert without_processor._bind_graph_inputs(input_tree) == input_types
+    assert without_processor._bind_graph_inputs(input_tree) is input_tree
 
 
 @pytest.mark.parametrize(
-    ("name", "make_processor"),
+    ("build", "make_processor"),
     [
-        ("qwen3_5_text", Qwen3_5BatchProcessor),
-        ("qwen3_5_vision", Qwen3_5BatchProcessor),
-        ("qwen3_5_vision_mrope", Qwen3_5BatchProcessor),
-        ("gemma4", Gemma4BatchProcessor),
+        (partial(_qwen3_5, vision=False, mrope=False), Qwen3_5BatchProcessor),
+        (_CASES["qwen3_5_vision"], Qwen3_5BatchProcessor),
+        (_CASES["qwen3_5_vision_mrope"], Qwen3_5BatchProcessor),
+        (_CASES["gemma4"], Gemma4BatchProcessor),
     ],
+    ids=["qwen3_5_text", "qwen3_5_vision", "qwen3_5_vision_mrope", "gemma4"],
 )
 def test_bound_processor_symbolic_inputs_match_model_input_types(
-    name: str, make_processor: type
+    build: Callable[[], tuple[_InputTree, _InputTypes]], make_processor: type
 ) -> None:
     devices = _gpus(2)
     processor = _bare(make_processor)
@@ -326,11 +968,12 @@ def test_bound_processor_symbolic_inputs_match_model_input_types(
             kv_params=_kv_params(devices), device_refs=devices
         )
 
-    processor.bind_input_tree(_CASES[name]()[0])
+    input_tree, input_types = build()
+    processor.bind_input_tree(input_tree)
     inputs = processor.get_symbolic_inputs(
         kv_params=_kv_params(devices), device_refs=devices
     )
-    assert _describe(tuple(inputs)) == json.loads(_SNAPSHOT.read_text())[name]
+    assert tuple(inputs) == input_types
 
 
 def test_ep_fetch_buffers_reads_the_input_tree_in_order() -> None:
@@ -359,6 +1002,17 @@ def test_ep_fetch_buffers_reads_the_input_tree_in_order() -> None:
     }
 
 
+def test_ep_fetch_buffers_reads_the_expert_load_tally_per_device() -> None:
+    manager = EPBatchManager(_ep_config(eplb=True, count=True))
+    paths = _leaf_paths(manager.input_tree())
+    assert paths[-2:] == ["eplb_expert_load.0", "eplb_expert_load.1"]
+    manager.fetch_buffers([_fake(buffer=p, tensor=p) for p in paths])
+    assert manager._eplb_expert_load_per_device == {
+        0: "eplb_expert_load.0",
+        1: "eplb_expert_load.1",
+    }
+
+
 def test_modulev3_input_tree_orders_return_n_logits_before_offsets() -> None:
     """ModuleV3 ``forward`` takes ``(tokens, return_n_logits, row_offsets, *kv)``.
 
@@ -375,9 +1029,27 @@ def test_modulev3_input_tree_orders_return_n_logits_before_offsets() -> None:
         "batch.return_n_logits",
         "batch.row_offsets",
     ]
-    assert paths[3:] == [f"kv.0.{i}" for i in range(7)]
-    assert _describe(tuple(tree.leaves(inputs)))[:3] == [
-        "TensorType(DType.int64, [Dim('total_seq_len')], gpu:0)",
-        "TensorType(DType.int64, [Dim('return_n_logits')], cpu:0)",
-        "TensorType(DType.uint32, [Dim('input_row_offsets_len')], gpu:0)",
+    assert paths[3:] == [
+        f"kv.0.{field}"
+        for field in (
+            "kv_blocks",
+            "cache_lengths",
+            "lookup_table",
+            "max_prompt_length",
+            "max_cache_length",
+            "page_stride",
+            "attention_dispatch_metadata",
+            "mixed_step_split",
+        )
+    ]
+    batch = inputs["batch"]
+    assert isinstance(batch, RaggedBatch)
+    assert [
+        (t.dtype, str(t.device))
+        for t in batch.values()
+        if isinstance(t, TensorType)
+    ] == [
+        (DType.int64, "gpu:0"),
+        (DType.int64, "cpu:0"),
+        (DType.uint32, "gpu:0"),
     ]

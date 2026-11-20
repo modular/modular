@@ -39,7 +39,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import NullMask
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -91,27 +91,15 @@ def run_test_blockwise_fp8[
     num_heads: Int,
     page_size: Int,
     quant_granularity: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[],) raises:
     comptime head_dim_gran = ceildiv(DEPTH, quant_granularity)
 
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " page_size:",
-        page_size,
-        " quant_granularity:",
-        quant_granularity,
-        " scales_per_token:",
-        head_dim_gran,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  page_size: {page_size} "
+        t" quant_granularity: {quant_granularity}  scales_per_token:"
+        t" {head_dim_gran}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -141,7 +129,7 @@ def run_test_blockwise_fp8[
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1]=1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -176,7 +164,7 @@ def run_test_blockwise_fp8[
     #          per-token scales
     # -----------------------------------------------------------------------
     # Scales 6D shape: [total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, num_heads, head_dim_gran]
-    var scales_shape = IndexList[6](
+    var scales_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -429,6 +417,7 @@ def run_test_blockwise_fp8[
         rank=3,
         config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -617,19 +606,13 @@ def run_bench_blockwise_fp8[
     num_heads: Int,
     page_size: Int,
     quant_granularity: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext[]) raises:
     comptime head_dim_gran = ceildiv(DEPTH, quant_granularity)
 
     var batch_size = len(cache_lengths)
     print(
-        "bench:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " quant_granularity:",
-        quant_granularity,
+        t"bench: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" quant_granularity: {quant_granularity}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -652,7 +635,7 @@ def run_bench_blockwise_fp8[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -680,7 +663,7 @@ def run_bench_blockwise_fp8[
         blocks_host[i] = blocks_bf16[i].cast[kv_type]()
 
     # Scales tensor
-    var scales_shape = IndexList[6](
+    var scales_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -864,7 +847,7 @@ def run_bench_blockwise_fp8[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var out_tt,
         var q_tt,
@@ -877,6 +860,7 @@ def run_bench_blockwise_fp8[
             rank=3,
             config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -898,7 +882,7 @@ def run_bench_blockwise_fp8[
         nrun
     )
     var mstime = nstime / 1000000
-    print("  ", nrun, "runs avg", mstime, "ms")
+    print(t"   {nrun} runs avg {mstime} ms")
     print()
 
     _ = mla_args
@@ -939,7 +923,7 @@ def run_bench_uniform[
     config_name: StringLiteral,
     count: Int,
     value: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run blockwise FP8 benchmark with uniform cache lengths."""
     run_bench_blockwise_fp8[

@@ -88,7 +88,7 @@ async def test_failure_after_a_payload_stays_inside_the_stream(
 
     generator = OpenAICompletionResponseGenerator(Mock(model_name="m"))
     error_response, stream = await _start_stream(
-        generator._stream(_request(), tokens())
+        generator._stream(_request(), tokens(), Mock())
     )
     frames = await _collect(stream)
 
@@ -117,7 +117,7 @@ async def test_failure_before_any_payload_is_an_http_status(
 
     generator = OpenAICompletionResponseGenerator(Mock(model_name="m"))
     error_response, _ = await _start_stream(
-        generator._stream(_request(), tokens())
+        generator._stream(_request(), tokens(), Mock())
     )
 
     assert isinstance(error_response, JSONResponse)
@@ -134,4 +134,4 @@ async def test_other_failure_before_any_payload_propagates() -> None:
 
     generator = OpenAICompletionResponseGenerator(Mock(model_name="m"))
     with pytest.raises(RuntimeError, match="internal detail"):
-        await _start_stream(generator._stream(_request(), tokens()))
+        await _start_stream(generator._stream(_request(), tokens(), Mock()))

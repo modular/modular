@@ -82,7 +82,7 @@ lit.fn @decorated_fn()
 // CHECK: hlcf.return
 kgen.generator @bind_params_discharged_mask_cleared() {
   kgen.param.declare bound: index =
-    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("lower-lit":1:1)>}>index> ?, 1 | "1">>
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("lower-lit":1:1)>}>index> *?, 1 | "1">>
   hlcf.return
 }
 
@@ -134,51 +134,6 @@ lit.fn @call_generic(%p: index) {
   hlcf.return
 }
 
-
-//===----------------------------------------------------------------------===//
-// Nested Functions
-//===----------------------------------------------------------------------===//
-
-lit.struct.decl @StructWithNestedFn<a_param> {
-  // CHECK-LABEL: kgen.generator @"StructWithNestedFn::topLevelFunction"<a_param, b_param>() -> index
-  lit.fn @topLevelFunction<b_param>() -> index {
-    // CHECK: kgen.param.declare.region nestedFunction = () -> index
-    lit.fn nestedFunction() -> index {
-      hlcf.unreachable
-    }
-    // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
-    kgen.param.declare b: !lit.generator<() -> index> = <nestedFunction>
-
-    // CHECK: kgen.param.declare.region paramNestedFunc = <c_param>()
-    lit.fn paramNestedFunc<c_param>() {
-      hlcf.return
-    }
-    // CHECK: kgen.param.declare c: () -> () = <bind_params(:<index>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: !lit.generator<() -> ()> = <bind_params(:!lit.generator<<"c_param": index>() -> ()> paramNestedFunc, 2)>
-
-    %idx0_0 = index.constant 0
-    hlcf.return %idx0_0 : index
-  }
-}
-
-// CHECK-LABEL: kgen.struct.generator @StructWithNestedFn<a_param>
-
-// CHECK-LABEL: kgen.generator @topFunc
-lit.fn @topFunc() {
-  // CHECK: kgen.param.declare.region midFunc
-  lit.fn midFunc() {
-    // CHECK: kgen.param.declare.region botFunc
-    lit.fn botFunc() {
-      hlcf.return
-    }
-    // CHECK: declare bot: () -> () = <botFunc>
-    kgen.param.declare bot: !lit.generator<() -> ()> = <botFunc>
-    hlcf.return
-  }
-  // CHECK: declare mid: () -> () = <midFunc>
-  kgen.param.declare mid: !lit.generator<() -> ()> = <midFunc>
-  hlcf.return
-}
 
 //===----------------------------------------------------------------------===//
 // Imports
@@ -291,7 +246,7 @@ lit.fn @removeGenMetadata() {
   // CHECK-NEXT: struct<() memoryOnly> = <{  }>
   kgen.param.declare test2: !lit.generator<<"t": !lit.struct<@EmptyStruct>> !lit.struct<@EmptyStruct>> = <#kgen.gen<*(0,0)>>
   // CHECK-NEXT: (index) -> () = <@empty_fn>
-  kgen.param.declare test3: !lit.generator<<"t": !lit.struct<@EmptyStruct>> ("arg0":index) -> ()> = <@empty_fn>
+  kgen.param.declare test3: !lit.generator<<"t": !lit.struct<@EmptyStruct>> ("arg0":index) -> ()> = <@empty_fn<:!lit.struct<@EmptyStruct> *(0,0)>>
   // CHECK-NEXT: <index>struct<(struct<() memoryOnly>, index)> = <#kgen.gen<{ { }, *(0,0) }>>
   kgen.param.declare test4: !lit.generator<<"x": !lit.struct<@EmptyStruct>, "y": index = 5> !kgen.struct<(!lit.struct<@EmptyStruct>, index)>> = <#kgen.gen<#kgen.struct<*(0,0), *(0,1)>>>
   hlcf.return
@@ -469,22 +424,12 @@ lit.file_module @module {
 }
 
 // CHECK: kgen.generator @metadata
+// CHECK-SAME: <fnAttrs = ["llvm.someattr",  3 : index]
 // CHECK-SAME{LITERAL}: fnArgAttrs = [[], ["llvm.someattr", 2 : index]]
-// CHECK-SAME: fnAttrs = ["llvm.someattr",  3 : index]
 lit.fn @metadata(%a: i32, %b: i32) attributes {
   fnArgAttrs = [[], ["llvm.someattr", 2 : index]],
   fnAttrs = ["llvm.someattr", 3 : index]
 } {
-  // CHECK: kgen.param.declare.region metadataNested
-  lit.fn metadataNested(%c: i32, %d: i32) attributes {
-    fnArgAttrs = [[], ["llvm.someattr", 4 : index]],
-    fnAttrs = ["llvm.someattr",  5 : index]
-  } {
-    // CHECK-NEXT: hlcf.return
-    hlcf.return
-  // CHECK-NEXT{LITERAL}: fnArgAttrs = [[], ["llvm.someattr", 4 : index]]
-  // CHECK-SAME: fnAttrs = ["llvm.someattr", 5 : index]
-  }
   hlcf.return
 }
 
@@ -493,7 +438,8 @@ lit.fn @metadata(%a: i32, %b: i32) attributes {
 // COM: Ensure the linkage name is passed through on an exported function.
 
 // CHECK: kgen.generator export @"main::main::main"
-// CHECK-SAME: linkageName = #kgen.linkage_name<"main" : !kgen.string, false>
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } <linkageName = <"main" : !kgen.string, false>
 lit.package @main {
   lit.file_module @main {
     lit.fn export @main() attributes {linkageName = #kgen.linkage_name<"main" : !kgen.string, false>} {
@@ -508,7 +454,8 @@ lit.package @main {
 // COM: renaming the symbol.
 
 // CHECK: kgen.generator export @"pkg::mod::my_fn"
-// CHECK-SAME: linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } <linkageName = <"my_export" : !kgen.string, false>
 lit.package @pkg {
   lit.file_module @mod {
     lit.fn export @my_fn() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
@@ -522,7 +469,8 @@ lit.package @pkg {
 // COM: Ensure that linkageName on a non-export function passes through.
 
 // CHECK: kgen.generator @"pkg3::mod3::orig_name"
-// CHECK-SAME: linkageName = #kgen.linkage_name<"my_link_name" : !kgen.string, false>
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } <linkageName = <"my_link_name" : !kgen.string, false>
 lit.package @pkg3 {
   lit.file_module @mod3 {
     lit.fn @orig_name() attributes {linkageName = #kgen.linkage_name<"my_link_name" : !kgen.string, false>} {
@@ -551,16 +499,8 @@ lit.struct.decl @Mem   {
 // CHECK-LABEL: kgen.generator @getThing
 // CHECK-SAME:(%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
 lit.fn @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !kgen.none {
-  // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !kgen.pointer<struct<() memoryOnly>> byref_result) capturing
-  lit.fn localTest[mut lt](%__result__[__result__]: !lit.ref<!Mem, mut lt> byref_result, |) capturing -> !kgen.none {
-    // CHECK-NEXT: call @"Mem::__init__"(%arg1)
-    %1 = lit.call @Mem::@__init__[mut lt](%__result__) : !lit.generator<[1]("self": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
-    %none = kgen.param.constant: none = <#kgen.none>
-    hlcf.return %none : !kgen.none
-  }
-  // CHECK: }
-  // CHECK-NEXT: kgen.call_param[(!kgen.pointer<struct<() memoryOnly>> byref_result) capturing -> !kgen.none: localTest](%arg0)
-  %0 = lit.call [!lit.generator<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut abc](%res)
+  // CHECK-NEXT: call @"Mem::__init__"(%arg0)
+  %0 = lit.call @Mem::@__init__[mut abc](%res) : !lit.generator<[1]("self": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
   hlcf.return %none : !kgen.none
 }
@@ -568,9 +508,9 @@ lit.fn @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !kge
 
 // CHECK-LABEL: kgen.generator @callThing
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
-// CHECK-SAME: sourceName = "callThing"
 lit.fn @callThing[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
   // CHECK-NEXT: kgen.call @getThing(%arg0)
+  // CHECK: } <sourceName = "callThing"
   %0 = lit.call @getThing[mut lt](%__result__) : !lit.generator<[1]("res": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
   hlcf.return %none : !kgen.none
@@ -698,13 +638,13 @@ lit.file_module @struct_alignment {
 
   // Test concrete alignment on struct propagates to stack_allocation and does not
   // result in a flattened struct.
-  lit.struct.decl @AlignedStruct64<my_int: !MyInt> attributes {
-      minAlignment = #kgen.param.expr<apply,
-                                      #kgen.symbol.constant<@struct_alignment::@calculate_alignment> : !lit.generator<("my_int": !MyInt) -> index>,
-                                      #kgen.param.decl.ref<"my_int">: !MyInt> : index
-  } {
+  lit.struct.decl @AlignedStruct64<my_int: !MyInt> {
     lit.struct.field value : index
-  }
+  } <
+      minAlignment = #kgen.param.expr<apply,
+                                      #kgen.gen<#kgen.func.symbol<@struct_alignment::@calculate_alignment>> : !lit.generator<("my_int": !MyInt) -> index>,
+                                      #kgen.param.decl.ref<"my_int">: !MyInt> : index
+  >
 
   // CHECK-LABEL: kgen.generator @"struct_alignment::varDeclAligned64"
   lit.fn @varDeclAligned64() {
@@ -724,9 +664,9 @@ lit.struct.decl @Pair register_passable {
   lit.struct.field second : index
 }
 
-lit.struct.decl @AlignedParam<N: !Pair> attributes {minAlignment = #lit.struct.extract<:!Pair N, "first"> : index} {
+lit.struct.decl @AlignedParam<N: !Pair> {
   lit.struct.field data : index
-}
+} <minAlignment = #lit.struct.extract<:!Pair N, "first"> : index>
 
 // CHECK-LABEL: kgen.generator @varDeclAlignedParam
 lit.fn @varDeclAlignedParam<pair: !Pair>() {
@@ -748,13 +688,13 @@ lit.struct.decl @TestStruct1 {
 
 // CHECK-LABEL: kgen.struct.generator @TestStruct1
 
-lit.extension.decl @"extension:TestStruct1" attributes {targetStruct = @TestStruct1} {
+lit.extension.decl @"extension:TestStruct1" {
   // CHECK-LABEL: kgen.generator @"extension:TestStruct1::extension_method"
   lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct1>, mut O> imm_mem) -> index {
     %result = kgen.param.constant: index = <42>
     hlcf.return %result : index
   }
-}
+} <targetStruct = @TestStruct1>
 
 // -----
 
@@ -762,12 +702,12 @@ lit.extension.decl @"extension:TestStruct1" attributes {targetStruct = @TestStru
 // CHECK-LABEL: kgen.generator @"extension:TestStruct2::extension_method"
 
 // CHECK-LABEL: kgen.struct.generator @TestStruct2
-lit.extension.decl @"extension:TestStruct2" attributes {targetStruct = @TestStruct2} {
+lit.extension.decl @"extension:TestStruct2" {
   lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct2>, mut O> imm_mem) -> index {
     %result = kgen.param.constant: index = <1>
     hlcf.return %result : index
   }
-}
+} <targetStruct = @TestStruct2>
 
 lit.struct.decl @TestStruct2 {
 }

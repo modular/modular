@@ -77,39 +77,30 @@ def noop(a: Int):
 
 # CHECK-LABEL: lit.fn @"testWithNonRaising
 def testWithNonRaising(a: ExampleCM):
-    # CHECK-NEXT: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
-    # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
+    # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
     # CHECK-NEXT: %val = lit.var.decl "val"
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
-    # CHECK-NEXT: %__with_error__
-    # CHECK-NEXT: lit.try %__with_error__
+    # CHECK-NEXT: lit.try {
     with a as val:
         # CHECK-NEXT: [[VALR:%.*]] = kgen.rebind %val
         # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load [[VALR]]
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL]])
         noop(val)
     # CHECK: finally
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
-    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[IMMREF]])
+    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}(%a)
 
     # Test a with with no target.
 
-    # CHECK: %$CONTEXTMGR_0 = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR_0
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR_0
-    # CHECK: lit.call {{.*}}__enter__{{.*}}([[IMMREF]]
+    # CHECK: lit.call {{.*}}__enter__{{.*}}(%a)
     # CHECK: lit.try
     with a:
         # CHECK-NEXT: kgen.param.constant: {{.*}}42
         # CHECK-NEXT: lit.call {{.*}}noop
         noop(42)
     # CHECK: finally
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR_0
-    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}([[IMMREF]])
+    # CHECK-NEXT: lit.call {{.*}}__exit__{{.*}}(%a)
 
-    # CHECK: [[MGR:%.*]] = lit.var.decl "$CONTEXTMGR"{{.*}}!MutatingCM
+    # CHECK: [[MGR:%.*]] = lit.var.decl "__call_result_tmp__"{{.*}}!MutatingCM
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[MGR]])
     # CHECK-NEXT: lit.call {{.*}}__enter__{{.*}}([[MGR]])
     # CHECK-NEXT: %val{{.*}} = lit.var.decl "val"
@@ -133,15 +124,16 @@ def testWithNonRaising(a: ExampleCM):
 
 # CHECK-LABEL: lit.fn @"testWithRaising
 def testWithRaising(a: ExampleCM) raises:
-    # CHECK: %$CONTEXTMGR = lit.var.decl
-    # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
-    # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
+    # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
     # CHECK: %val = lit.var.decl "val"
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
-    # CHECK-NEXT: %__with_error__ = lit.var.decl
-    # CHECK: lit.try %__with_error__
-    # CHECK: lit.try %__inner_error__
+    # CHECK-NEXT: %__with_exc__ = lit.var.decl
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
+    # CHECK-NEXT: lit.ref.store [[FALSE]], %__with_exc__
+    # CHECK-NEXT: %__with_exc_value__ = lit.var.decl "__with_exc_value__" synth : !lit.ref<!Error
+    # CHECK-NEXT: lit.ownership.mark_initialized %__with_exc_value__
+    # CHECK: lit.try {
+    # CHECK: lit.try {
     with a as val:
         # CHECK-NEXT: [[VALR:%.*]] = kgen.rebind %val
         # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load [[VALR]]
@@ -150,51 +142,55 @@ def testWithRaising(a: ExampleCM) raises:
 
         # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_error{{.*}}(%__inner_error__, %__call_result_tmp__
         raise_error()
-        # CHECK-NEXT: lit.try.yield
+        # CHECK: lit.try.yield
     # CHECK-NEXT: } except {
-    # CHECK:        [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-    # CHECK-NEXT:   lit.ref.store [[FALSE]], %__with_exc__
-    # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
-    # CHECK-NEXT:   [[ERROR:%.*]] = lit.ref.immut %__inner_error__
-    # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMMREF]], [[ERROR]])
-    # CHECK-NEXT:   [[SUCCESS_SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[EXIT_RESULT]])
-    # CHECK-NEXT:   hlcf.if [[SUCCESS_SB]] {
-    # CHECK-NEXT:     hlcf.yield
-    # CHECK-NEXT:   } else {
-    # CHECK-NEXT:     lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__inner_error__, %__with_error__){{.*}}*, "move"
-    # CHECK-NEXT:     lit.raise
-    # CHECK-NEXT:     hlcf.yield
-    # CHECK-NEXT:   }
+    # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
+    # CHECK-NEXT:   lit.ref.store [[TRUE]], %__with_exc__
+    # CHECK-NEXT:   lit.ownership.mark_consumed %__with_exc_value__
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__inner_error__, %__with_exc_value__){{.*}}*, "move"
     # CHECK-NEXT:   lit.try.yield
     # CHECK:      } finally {
+    # CHECK-NEXT:   lit.try.yield
     # CHECK:    } except {
-    # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "move"
+    # CHECK-NEXT: hlcf.unreachable
     # CHECK:    } finally {
-    # CHECK-NEXT: %__finally_error__ = lit.var.decl
-    # CHECK-NEXT: lit.try
-    # CHECK-NEXT:   %[[EXC:.*]] = lit.ref.load %__with_exc__
-    # CHECK-NEXT:   hlcf.if %[[EXC]]
-    # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
-    # CHECK-NEXT:   call {{.*}}__exit__{{.*}}([[IMMREF]])
+    # CHECK: lit.try {
+    # CHECK-NEXT:   [[EXC:%.*]] = lit.ref.load %__with_exc__
+    # CHECK-NEXT:   hlcf.if [[EXC]] {
+    # CHECK-NEXT:     [[ERROR:%.*]] = lit.ref.immut %__with_exc_value__
+    # CHECK-NEXT:     [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}(%a, [[ERROR]])
+    # CHECK-NEXT:     [[SUCCESS_SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[EXIT_RESULT]])
+    # CHECK-NEXT:     hlcf.if [[SUCCESS_SB]] {
+    # CHECK-NEXT:       hlcf.yield
+    # CHECK-NEXT:     } else {
+    # CHECK-NEXT:       lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_exc_value__, %__try_error__){{.*}}*, "move"
+    # CHECK-NEXT:       lit.raise
+    # CHECK-NEXT:       hlcf.yield
+    # CHECK-NEXT:     }
+    # CHECK-NEXT:     hlcf.yield
+    # CHECK-NEXT:   } else {
+    # CHECK-NEXT:     lit.ownership.mark_consumed %__with_exc_value__
+    # CHECK-NEXT:     lit.call {{.*}}__exit__{{.*}}(%a)
+    # CHECK-NEXT:     hlcf.yield
+    # CHECK-NEXT:   }
 
 
 # CHECK-LABEL: lit.fn @"testWithInTry
 def testWithInTry(a: ExampleCM):
     # CHECK: %e = lit.var.decl "e" var
-    # CHECK-NEXT: lit.try %e
+    # CHECK-NEXT: lit.try {
     try:
-        # CHECK: %$CONTEXTMGR = lit.var.decl
-        # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
-        # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
-        # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
+        # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
         # CHECK: %cm = lit.var.decl "cm"
         # CHECK-NEXT: lit.ref.store [[TARGET]], %cm
-        # CHECK: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
-        # CHECK-NEXT: lit.ref.store [[TRUE]], %__with_exc__
-        # CHECK-NEXT: lit.try %__with_error__
+        # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
+        # CHECK-NEXT: lit.ref.store [[FALSE]], %__with_exc__
+        # CHECK-NEXT: %__with_exc_value__ = lit.var.decl
+        # CHECK-NEXT: lit.ownership.mark_initialized %__with_exc_value__
+        # CHECK: lit.try {
+        # CHECK-NEXT: %__inner_error__ = lit.var.decl
         with a as cm:
-            # CHECK: %__inner_error__ = lit.var.decl
-            # CHECK: lit.try %__inner_error__
+            # CHECK: lit.try {
             # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_error{{.*}}(%__inner_error__, %__call_result_tmp__
             raise_error()
     except e:
@@ -262,11 +258,10 @@ struct CMWithoutExit(Movable):
 
 # CHECK-LABEL: lit.fn @"testCMWithoutExit
 def testCMWithoutExit():
-    # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
+    # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
     # CHECK: %a = lit.var.decl "a"
-    # CHECK: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR, %a)
-    # CHECK-NEXT: %__with_error__ = lit.var.decl "__with_error__" synth
-    # CHECK-NEXT: lit.try %__with_error__
+    # CHECK: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%__call_result_tmp__, %a)
+    # CHECK-NEXT: lit.try {
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   lit.try.yield
@@ -281,12 +276,11 @@ def testCMWithoutExit():
     with CMWithoutExit() as a:
         a.method()
 
-    # CHECK: %$CONTEXTMGR_0 = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR_0)
+    # CHECK: [[CM:%.*]] = lit.var.decl "__call_result_tmp__"
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CM]])
     # CHECK: %a_1 = lit.var.decl "a"
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR_0, %a_1)
-    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
-    # CHECK-NEXT: lit.try %__with_error__
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CM]], %a_1)
+    # CHECK-NEXT: lit.try {
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a_1
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   lit.try.yield
@@ -317,19 +311,17 @@ def testMultiClauseWith():
     #         with MyClass() as b:
     #             ...
 
-    # CHECK: [[CMA:%.*]] = lit.var.decl "$CONTEXTMGR"
+    # CHECK: [[CMA:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CMA]])
     # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CMA]], %a)
-    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
-    # CHECK-NEXT: lit.try %__with_error__
+    # CHECK-NEXT: lit.try {
     #
-    # CHECK: [[CMB:%.*]] = lit.var.decl "$CONTEXTMGR"
+    # CHECK: [[CMB:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CMB]])
     # CHECK: %b = lit.var.decl "b"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CMB]], %b)
-    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
-    # CHECK-NEXT: lit.try %__with_error__
+    # CHECK-NEXT: lit.try {
     with CMWithoutExit() as a, CMWithoutExit() as b:
         # CHECK:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}
         a.method()
@@ -355,12 +347,11 @@ def testAmbiguousMultiContextWith():
 # CHECK-LABEL: lit.fn @"testCMWithoutExitEarlyReturn
 # https://github.com/modularml/modular/issues/23693
 def testCMWithoutExitEarlyReturn():
-    # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%$CONTEXTMGR)
+    # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%__call_result_tmp__)
     # CHECK: %a = lit.var.decl "a"
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR, %a)
-    # CHECK-NEXT: %__with_error__ = lit.var.decl "__with_error__" synth
-    # CHECK-NEXT: lit.try %__with_error__
+    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%__call_result_tmp__, %a)
+    # CHECK-NEXT: lit.try {
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
     # CHECK-NEXT:   kgen.param.constant: none
@@ -390,21 +381,18 @@ struct CMUnconditionalExit(Movable where False):
 
 # CHECK-LABEL: lit.fn @"unconditional_exit
 def unconditional_exit() raises:
-    # CHECK: lit.try %__with_error__
+    # CHECK: lit.try {
     with CMUnconditionalExit():
         # CHECK: lit.call {{.*}}noop
         # CHECK-NEXT:  lit.try.yield
         noop(42)
     # CHECK-NEXT: } except {
-    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "move"
-    # CHECK-NEXT:   lit.raise
-    # CHECK-NEXT:   lit.try.yield
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: finally {
-    # CHECK-NEXT: %__finally_error__ = lit.var.decl
-    # CHECK-NEXT:   lit.try %__finally_error__
-    # CHECK:          call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
+    # CHECK-NEXT:   lit.try {
+    # CHECK:          call {{.*}}__exit__{{.*}}(%__call_result_tmp__)
     # CHECK:        } except {
     # CHECK-NEXT:     hlcf.unreachable
 
@@ -425,9 +413,10 @@ struct ExampleCMTuple(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"testExampleCMTuple
 def testExampleCMTuple(cm: ExampleCMTuple):
+    # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__
     # CHECK: %a = lit.var.decl "a"
     # CHECK: %b = lit.var.decl "b"
-    # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__
+    # CHECK: lit.ref.store [[TARGET]],
     with cm as (a, b):
         # Captures the refs from the tuple.
         # CHECK: [[A:%.*]] = lit.ref.load %a
@@ -467,6 +456,29 @@ def with_infer_string() raises String:
 def with_infer_int() raises Int:
     with GenericExitCtxtMgr():
         raise_int()
+
+
+__enum ContextualWithError(ImplicitlyCopyable):
+    case custom(String)
+
+
+struct ContextualErrorExit(Movable):
+    def __init__(out self):
+        pass
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self):
+        pass
+
+    def __exit__(self, err: ContextualWithError) -> Bool:
+        return False
+
+
+def with_contextual_member_raise() raises ContextualWithError:
+    with ContextualErrorExit():
+        raise .custom("contextual error")
 
 
 # A context manager that has a Float __exit__ method.
@@ -511,3 +523,59 @@ struct ConsumingExitCM(Movable):
 def testConsumingExitCM():
     with ConsumingExitCM() as a:
         _ = a
+
+
+# Both __exit__ methods may consume the context manager, because they run on
+# disjoint branches of the finally region.
+@fieldwise_init
+struct ConsumingErrorExitCM(Movable):
+    def __enter__(self):
+        pass
+
+    def __exit__(var self):
+        pass
+
+    def __exit__(var self, err: Error) -> Bool:
+        return True
+
+
+# CHECK-LABEL: lit.fn @"testConsumingErrorExitCM
+def testConsumingErrorExitCM() raises:
+    # CHECK: [[CM:%.*]] = lit.var.decl "__call_result_tmp__"{{.*}}!ConsumingErrorExitCM
+    # CHECK: lit.try {
+    # CHECK: lit.call {{.*}}ConsumingErrorExitCM::@"__exit__{{.*}}([[CM]], {{.*}})
+    # CHECK: lit.ownership.mark_consumed %__with_exc_value__
+    # CHECK-NEXT: lit.call {{.*}}ConsumingErrorExitCM::@"__exit__{{.*}}([[CM]])
+    with ConsumingErrorExitCM():
+        raise_error()
+
+
+struct CountingCM(Movable):
+    var depth: Int
+
+    def __init__(out self):
+        self.depth = 0
+
+    def __enter__(mut self):
+        self.depth += 1
+
+    def __exit__(mut self):
+        self.depth -= 1
+
+
+# A context manager that names existing memory is used in place, so a mutable
+# non-copyable var works and sees the mutations. A transferred one is moved
+# into a with-owned var.
+# CHECK-LABEL: lit.fn @"testWithBorrowsInPlace
+def testWithBorrowsInPlace():
+    var cm = CountingCM()
+    # CHECK-NOT: $CONTEXTMGR
+    # CHECK: lit.call {{.*}}CountingCM::@"__enter__{{.*}}(%cm)
+    # CHECK: lit.call {{.*}}CountingCM::@"__exit__{{.*}}(%cm)
+    with cm:
+        pass
+    # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
+    # CHECK: lit.call {{.*}}CountingCM::@"__enter__{{.*}}(%$CONTEXTMGR)
+    # CHECK: lit.call {{.*}}CountingCM::@"__exit__{{.*}}(%$CONTEXTMGR)
+    with cm^:
+        pass

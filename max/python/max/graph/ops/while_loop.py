@@ -121,7 +121,13 @@ def while_loop(
         return mo.WhileConditionOp(condition, yielded)
 
     def fold_new_chains(live_on_entry: set[DeviceRef]) -> None:
-        new_devices = set(graph.device_chains) - live_on_entry
+        # A list in the map's sorted order, not a set difference: set order
+        # follows the per-process string hash and would reach the IR.
+        new_devices = [
+            device
+            for device in graph.device_chains
+            if device not in live_on_entry
+        ]
         graph.device_chains.merge_for(new_devices)
         for device in new_devices:
             del graph.device_chains[device]

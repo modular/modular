@@ -22,13 +22,10 @@ from std.math import ceildiv
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from layout import TileTensor
-from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import H100
 from internal_utils import Table
 from std.logger import Logger
-
-from std.utils.index import Index, IndexList
 
 from ....utils import (
     ElementwiseComputeFn,
@@ -72,7 +69,6 @@ def matmul_dispatch_sm90[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -98,8 +94,6 @@ def matmul_dispatch_sm90[
         b_type: Element type of the input tensor `b`.
         transpose_b: Whether `b` is stored transposed (defaults to `False`);
             the SM90 kernel requires this to be `True` to dispatch.
-        pdl_level: Programmatic dependent launch level for overlapping this
-            kernel with prior work (defaults to `PDLLevel()`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
             to `False`).
         has_compute_fn: Whether `compute_fn` transforms each output value
@@ -135,7 +129,6 @@ def matmul_dispatch_sm90[
     # fmt: on
 
     comptime N = c.static_shape[1]
-    comptime N_multiple_of_8 = N % 8 == 0
 
     logger.info("------ Dispatching to sm90 ------")
 
@@ -168,7 +161,6 @@ def matmul_dispatch_sm90[
                 transpose_b=transpose_b,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
-                pdl_level=pdl_level,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
         elif is_AB_bf16 or is_AB_fp32:
@@ -177,7 +169,6 @@ def matmul_dispatch_sm90[
                 transpose_b=transpose_b,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
-                pdl_level=pdl_level,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
         logger.info("SM90 dispatch miss - no matching path")
@@ -208,78 +199,78 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
-        grid_shape=Index(128, 1),
+        grid_shape=(128, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
         M=128,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
         M=256,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
         M=512,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=1024,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
         M=MAX_M,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
     ##############################
@@ -288,87 +279,87 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 48, 32),
-        block_tile_shape=Index(64, 48, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 48, 32),
+        block_tile_shape=(64, 48, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=128,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 48, 32),
-        block_tile_shape=Index(64, 48, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 48, 32),
+        block_tile_shape=(64, 48, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=256,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 96, 32),
-        block_tile_shape=Index(64, 96, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 96, 32),
+        block_tile_shape=(64, 96, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=512,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 144, 32),
-        block_tile_shape=Index(128, 144, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 144, 32),
+        block_tile_shape=(128, 144, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=1024,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 144, 32),
-        block_tile_shape=Index(128, 144, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 144, 32),
+        block_tile_shape=(128, 144, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=2048,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 144, 32),
-        block_tile_shape=Index(128, 144, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 144, 32),
+        block_tile_shape=(128, 144, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(16, 8),
+        grid_shape=(16, 8),
         schedule=MatmulSchedule.TILE2D,
     ),
     TuningConfigSM90(
         M=MAX_M,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -381,22 +372,22 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(128, 1),
+        grid_shape=(128, 1),
     ),
     TuningConfigSM90(
         M=128,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -407,9 +398,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=256,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 208, 32),
-        block_tile_shape=Index(128, 208, 128),
-        cluster_shape=Index(1, 2, 1),
+        mma_shape=(64, 208, 32),
+        block_tile_shape=(128, 208, 128),
+        cluster_shape=(1, 2, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -420,9 +411,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=512,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -433,9 +424,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=1024,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -446,13 +437,13 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
     ##############################
@@ -461,22 +452,22 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=16384,
         K=6656,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(128, 1),
+        grid_shape=(128, 1),
     ),
     TuningConfigSM90(
         M=1024,
         N=16384,
         K=6656,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -487,13 +478,13 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=16384,
         K=6656,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
 ]
@@ -509,9 +500,9 @@ comptime llama_8b_fp8_list: List[TuningConfigSM90] = [
         M=128,
         N=-1,
         K=-1,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=True,
@@ -522,9 +513,9 @@ comptime llama_8b_fp8_list: List[TuningConfigSM90] = [
         M=1024,
         N=-1,
         K=-1,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=6,
         num_consumer=2,
         partitioned_multicast=True,
@@ -535,13 +526,13 @@ comptime llama_8b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=-1,
         K=-1,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=6,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
 ]
@@ -557,7 +548,6 @@ def matmul_dispatch_sm90_fp8[
     ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     transpose_b: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -585,8 +575,6 @@ def matmul_dispatch_sm90_fp8[
         ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether `b` is stored transposed (defaults to `True`);
             the SM90 kernel requires this to be `True` to dispatch.
-        pdl_level: Programmatic dependent launch level for overlapping this
-            kernel with prior work (defaults to `PDLLevel()`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
             to `False`).
         has_compute_fn: Whether `compute_fn` transforms each output value
@@ -635,20 +623,19 @@ def matmul_dispatch_sm90_fp8[
             c_type,
             transpose_b,
         ](
-            block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, 128),
-            mma_shape=Index(64, WGMMA_N, 32),
-            cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
+            block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N, 128),
+            mma_shape=(64, WGMMA_N, 32),
+            cluster_shape=(CLUSTER_DIM_X, 1, 1),
             num_pipeline_stages=NUM_PIPELINE_STAGES,
             num_consumer=NUM_CONSUMER,
             partitioned_multicast=False,
-            pdl_level=pdl_level,
         )
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
             config=H100_FP8_TUNING_CONFIG,
-            grid_shape=Index(128, 1),
+            grid_shape=(128, 1),
             schedule=MatmulSchedule.DS_SCHEDULER,
         ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
         return DISPATCH_HIT
@@ -662,7 +649,6 @@ def matmul_dispatch_sm90_fp8[
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
             partitioned_multicast=entry.partitioned_multicast,
-            pdl_level=pdl_level,
         )
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,
@@ -735,13 +721,12 @@ def matmul_dispatch_sm90_fp8[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, BN, BK),
-                    mma_shape=Index(64, BN, 32),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, BN, BK),
+                    mma_shape=(64, BN, 32),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -754,13 +739,12 @@ def matmul_dispatch_sm90_fp8[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, BN, BK),
-                    mma_shape=Index(64, BN, 32),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, BN, BK),
+                    mma_shape=(64, BN, 32),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -768,7 +752,7 @@ def matmul_dispatch_sm90_fp8[
                     has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
-                    grid_shape=Index(H100.sm_count, 1),
+                    grid_shape=(H100.sm_count, 1),
                 ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
             else:
@@ -778,13 +762,12 @@ def matmul_dispatch_sm90_fp8[
                     c_type,
                     transpose_b,
                 ](
-                    block_tile_shape=Index(128, BN, BK),
-                    mma_shape=Index(64, BN, 32),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(128, BN, BK),
+                    mma_shape=(64, BN, 32),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=2,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -792,7 +775,7 @@ def matmul_dispatch_sm90_fp8[
                     has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
-                    grid_shape=Index(H100.sm_count, 1),
+                    grid_shape=(H100.sm_count, 1),
                 ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
     return DISPATCH_MISS
@@ -813,7 +796,6 @@ def matmul_dispatch_sm90_bf16_fp32[
     ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     transpose_b: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -839,8 +821,6 @@ def matmul_dispatch_sm90_bf16_fp32[
         EpilogueFnType: Type of `epilogue_fn` (inferred).
         ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether `b` is stored transposed (defaults to `True`).
-        pdl_level: Programmatic dependent launch level for overlapping this
-            kernel with prior work (defaults to `PDLLevel()`).
         has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
             to `False`).
         has_compute_fn: Whether `compute_fn` transforms each output value
@@ -900,22 +880,19 @@ def matmul_dispatch_sm90_bf16_fp32[
                 c_type,
                 transpose_b,
             ](
-                block_tile_shape=Index(
-                    BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK
-                ),
-                mma_shape=Index(64, WGMMA_N // size_factor, mma_k),
-                cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK),
+                mma_shape=(64, WGMMA_N // size_factor, mma_k),
+                cluster_shape=(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
                 num_pipeline_stages=NUM_PIPELINE_STAGES,
                 num_consumer=NUM_CONSUMER,
                 partitioned_multicast=PARTITIONED_MULTICAST,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=H100_TUNING_CONFIG,
-                grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
+                grid_shape=(GRID_DIM_X, GRID_DIM_Y),
                 schedule=SCHEDULE_TYPE,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
@@ -945,20 +922,19 @@ def matmul_dispatch_sm90_bf16_fp32[
                     c_type,
                     transpose_b,
                 ](
-                    block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
-                    cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                    block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N, BK),
+                    cluster_shape=(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
                     num_pipeline_stages=NUM_PIPELINE_STAGES,
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=PARTITIONED_MULTICAST,
-                    pdl_level=pdl_level,
-                    mma_shape=Index(64, WGMMA_N, 16),
+                    mma_shape=(64, WGMMA_N, 16),
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK,
-                    grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
+                    grid_shape=(GRID_DIM_X, GRID_DIM_Y),
                     schedule=SCHEDULE_TYPE,
                 ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
@@ -972,13 +948,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                     c_type,
                     transpose_b,
                 ](
-                    block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
-                    cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                    block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N, BK),
+                    cluster_shape=(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
                     num_pipeline_stages=NUM_PIPELINE_STAGES,
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=PARTITIONED_MULTICAST,
-                    pdl_level=pdl_level,
-                    mma_shape=Index(64, WGMMA_N, 16),
+                    mma_shape=(64, WGMMA_N, 16),
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -1017,7 +992,6 @@ def matmul_dispatch_sm90_bf16_fp32[
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
             partitioned_multicast=entry.partitioned_multicast,
-            pdl_level=pdl_level,
         )
 
         comptime if case .Some(splits) = entry.splits:
@@ -1124,11 +1098,10 @@ def matmul_dispatch_sm90_bf16_fp32[
                     m,
                     static_N,
                     static_K,
-                    Index(1, 1, 1),
+                    (1, 1, 1),
                     1,
                     1,
                     False,
-                    pdl_level,
                     4,
                     16,
                 )
@@ -1146,11 +1119,10 @@ def matmul_dispatch_sm90_bf16_fp32[
                         m,
                         static_N,
                         static_K,
-                        Index(1, 1, 1),
+                        (1, 1, 1),
                         1,
                         1,
                         False,
-                        pdl_level,
                         4,
                         16,
                     )
@@ -1191,13 +1163,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 16, 64),
-                    mma_shape=Index(64, 16, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 16, 64),
+                    mma_shape=(64, 16, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
 
@@ -1216,13 +1187,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 24, 64),
-                    mma_shape=Index(64, 24, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 24, 64),
+                    mma_shape=(64, 24, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=14,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
 
@@ -1244,13 +1214,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 24, 64),
-                    mma_shape=Index(64, 24, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 24, 64),
+                    mma_shape=(64, 24, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
 
@@ -1269,13 +1238,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 32, 64),
-                    mma_shape=Index(64, 32, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 32, 64),
+                    mma_shape=(64, 32, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
 
@@ -1294,13 +1262,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 32, 64),
-                    mma_shape=Index(64, 32, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 32, 64),
+                    mma_shape=(64, 32, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=16,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=4,
                 )
 
@@ -1319,13 +1286,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 40, 64),
-                    mma_shape=Index(64, 40, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 40, 64),
+                    mma_shape=(64, 40, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
 
@@ -1344,13 +1310,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 56, 64),
-                    mma_shape=Index(64, 56, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 56, 64),
+                    mma_shape=(64, 56, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
 
@@ -1369,13 +1334,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 48, 64),
-                    mma_shape=Index(64, 48, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 48, 64),
+                    mma_shape=(64, 48, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
                 warp_specialize_gemm_with_multicasting[
@@ -1392,13 +1356,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 56, 64),
-                    mma_shape=Index(64, 56, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 56, 64),
+                    mma_shape=(64, 56, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
                 warp_specialize_gemm_with_multicasting[
@@ -1415,13 +1378,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 64, 64),
-                    mma_shape=Index(64, 64, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, 64, 64),
+                    mma_shape=(64, 64, 16),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=10,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
                 warp_specialize_gemm_with_multicasting[
@@ -1437,12 +1399,11 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 48, 64),
-                    mma_shape=Index(64, 48, 16),
-                    cluster_shape=Index(1, 2, 1),
+                    block_tile_shape=(64, 48, 64),
+                    mma_shape=(64, 48, 16),
+                    cluster_shape=(1, 2, 1),
                     num_pipeline_stages=14,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                     k_group_size=2,
                 )
                 warp_specialize_gemm_with_multicasting[
@@ -1518,13 +1479,12 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 2048:
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                block_tile_shape=(64, 64 // size_factor, BK),
+                mma_shape=(64, 64 // size_factor, mma_k),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1532,18 +1492,17 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                block_tile_shape=(64, 64 // size_factor, BK),
+                mma_shape=(64, 64 // size_factor, mma_k),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1551,27 +1510,26 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N8192_K2048_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                block_tile_shape=(128, 256 // size_factor, BK),
+                mma_shape=(64, 256 // size_factor, mma_k),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=M8192_N8192_K2048_config,
-                grid_shape=Index(4, H100.sm_count // 4),
+                grid_shape=(4, H100.sm_count // 4),
                 schedule=MatmulSchedule.TILE2D,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
@@ -1580,13 +1538,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M4096_N8192_K2048_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                block_tile_shape=(128, 256 // size_factor, BK),
+                mma_shape=(64, 256 // size_factor, mma_k),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1600,13 +1557,12 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
         if m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 112 // size_factor, BK),
-                mma_shape=Index(64, 112 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                block_tile_shape=(64, 112 // size_factor, BK),
+                mma_shape=(64, 112 // size_factor, mma_k),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1614,27 +1570,26 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N14336_K8192_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                block_tile_shape=(128, 256 // size_factor, BK),
+                mma_shape=(64, 256 // size_factor, mma_k),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=M8192_N14336_K8192_config,
-                grid_shape=Index(8, H100.sm_count // 8),
+                grid_shape=(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
@@ -1643,13 +1598,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M4096_N14336_K8192_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                block_tile_shape=(128, 256 // size_factor, BK),
+                mma_shape=(64, 256 // size_factor, mma_k),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1663,13 +1617,12 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                block_tile_shape=(64, 64 // size_factor, BK),
+                mma_shape=(64, 64 // size_factor, mma_k),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1677,18 +1630,17 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
-                mma_shape=Index(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                block_tile_shape=(64, 64 // size_factor, BK),
+                mma_shape=(64, 64 // size_factor, mma_k),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1696,27 +1648,26 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N8192_K7168_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                block_tile_shape=(128, 256 // size_factor, BK),
+                mma_shape=(64, 256 // size_factor, mma_k),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=M8192_N8192_K7168_config,
-                grid_shape=Index(8, H100.sm_count // 8),
+                grid_shape=(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
@@ -1728,13 +1679,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 c_type,
                 transpose_b,
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
-                mma_shape=Index(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                block_tile_shape=(128, 256 // size_factor, BK),
+                mma_shape=(64, 256 // size_factor, mma_k),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1754,13 +1704,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M512_N3840_K15360_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 128 // size_factor, BK),
-                mma_shape=Index(64, 128 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                block_tile_shape=(128, 128 // size_factor, BK),
+                mma_shape=(64, 128 // size_factor, mma_k),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
-                pdl_level=pdl_level,
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -1788,13 +1737,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime default_bf16_config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, BN, BK),
-                    mma_shape=Index(64, BN, mma_k),
-                    cluster_shape=Index(1, 1, 1),
+                    block_tile_shape=(64, BN, BK),
+                    mma_shape=(64, BN, mma_k),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=1,
                     partitioned_multicast=False,
-                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -1810,14 +1758,14 @@ def matmul_dispatch_sm90_bf16_fp32[
             if m < 41:
                 var runtime_config = swapAB_smallM_ceildiv[
                     a_type, b_type, c_type, transpose_b
-                ](m, pdl_level)
+                ](m)
 
                 def config_fn_small(
                     m_val: Int,
                 ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM_ceildiv[
                         a_type, b_type, c_type, transpose_b
-                    ](m_val, pdl_level)
+                    ](m_val)
 
                 comptime configs_small = build_configs_generic[
                     a_type,
@@ -1856,14 +1804,14 @@ def matmul_dispatch_sm90_bf16_fp32[
             elif m < 129:
                 var runtime_config = swapAB_midM_linear[
                     a_type, b_type, c_type, transpose_b
-                ](m, pdl_level)
+                ](m)
 
                 def config_fn_mid(
                     m_val: Int,
                 ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_midM_linear[
                         a_type, b_type, c_type, transpose_b
-                    ](m_val, pdl_level)
+                    ](m_val)
 
                 comptime configs_mid = build_configs_generic[
                     a_type,
@@ -1899,14 +1847,14 @@ def matmul_dispatch_sm90_bf16_fp32[
             elif m <= 240:
                 var runtime_config = swapAB_largeM_clustered[
                     a_type, b_type, c_type, transpose_b
-                ](m, pdl_level)
+                ](m)
 
                 def config_fn_large(
                     m_val: Int,
                 ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_largeM_clustered[
                         a_type, b_type, c_type, transpose_b
-                    ](m_val, pdl_level)
+                    ](m_val)
 
                 comptime configs_large = build_configs_generic[
                     a_type,
@@ -1961,7 +1909,6 @@ def matmul_dispatch_sm90_bf16_fp32[
             static_K,
             num_k_partitions=1,
             partitioned_multicast=False,
-            pdl_level=pdl_level,
             k_groups=k_groups,
             consumer_groups=consumer_groups,
         )
@@ -1976,7 +1923,6 @@ def matmul_dispatch_sm90_bf16_fp32[
             transpose_b,
             1,
             False,
-            pdl_level,
             k_groups=k_groups,
             consumer_groups=consumer_groups,
         ]()
@@ -2002,11 +1948,10 @@ def matmul_dispatch_sm90_bf16_fp32[
         comptime default_bf16_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            block_tile_shape=Index(128, BN, 64),
-            mma_shape=Index(64, BN, mma_k),
+            block_tile_shape=(128, BN, 64),
+            mma_shape=(64, BN, mma_k),
             num_pipeline_stages=4,
             num_consumer=2,
-            pdl_level=pdl_level,
         )
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,

@@ -20,6 +20,11 @@
     "status": 301
   },
   {
+    "source": "/docs/manual/c-ffi/",
+    "dest": "/docs/manual/interop/interoperability/",
+    "status": 301
+  },
+  {
     "source": "/docs/manual/values/closures/",
     "dest": "/docs/manual/functions/closures/",
     "status": 301
@@ -55,6 +60,16 @@
     "status": 302
   },
   {
+    "source": "/docs/reference/decorators/parameter/",
+    "dest": "/docs/manual/functions/closures/",
+    "status": 301
+  },
+  {
+    "source": "/docs/reference/decorators/copy-capture/",
+    "dest": "/docs/manual/functions/closures/",
+    "status": 301
+  },
+  {
     "source": "/docs/reference/decorators/extensibility-register/",
     "dest": "https://max.modular.com/api/mojo/extensibility/decorators/register/",
     "status": 302
@@ -62,6 +77,21 @@
   {
     "source": "/docs/std/gpu/(.*)",
     "dest": "https://max.modular.com/api/mojo/max/gpu/{0}",
+    "status": 302
+  },
+  {
+    "source": "/docs/std/builtin/simd/(.*)",
+    "dest": "/docs/std/simd/{0}",
+    "status": 302
+  },
+  {
+    "source": "/docs/std/hashlib/(.*)",
+    "dest": "/docs/std/hash/{0}",
+    "status": 302
+  },
+  {
+    "source": "/docs/std/memory/unsafe_pointer/(.*)",
+    "dest": "/docs/std/memory/pointer/Pointer/",
     "status": 302
   },
   {

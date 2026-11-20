@@ -25,14 +25,14 @@ from conftest import (
     VISION_POSITION_EMBEDDING_SIZE,
     TorchGemma4VisionPatchEmbedder,
 )
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.pipelines.architectures.gemma4_modulev3.vision_model.embedding import (
     Gemma4VisionPatchEmbedder,
 )
+from max.tensor import default_dtype
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16

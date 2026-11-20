@@ -180,10 +180,11 @@ def _messages_carry_image(messages: Sequence[SerializedChatMessage]) -> bool:
 def _build_final_payload(
     base_payload: Mapping[str, Any], extra_body: Mapping[str, Any] | None
 ) -> dict[str, Any]:
-    """Return a new payload: a shallow copy of *base_payload* with *extra_body*
-    merged on top, last-writer-wins (an *extra_body* key overrides the managed
-    field of the same name). Not mutated, so *base_payload* keeps its precise
-    type and the result is ``dict[str, Any]``.
+    """Return a new payload with *extra_body* merged over *base_payload*.
+
+    The copy is shallow and last-writer-wins (an *extra_body* key overrides
+    the managed field of the same name). Not mutated, so *base_payload* keeps
+    its precise type and the result is ``dict[str, Any]``.
     """
     payload: dict[str, Any] = dict(base_payload)
     if not extra_body:
@@ -218,8 +219,12 @@ class RequestFuncInput(BaseRequestFuncInput):
     # The adapter the request is routed to. ``model`` already names it for the
     # server; this keeps it apart from a base-model request for the metrics.
     lora_id: str | None = None
+    # Cache seeding needs a completed generation, even if its tokens are
+    # special tokens that the server does not expose as text.
+    is_cache_warmup: bool = False
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        """Returns the output class this driver produces."""
         return RequestFuncOutput
 
 
@@ -233,6 +238,7 @@ class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
     image_options: PixelGenerationImageOptions | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        """Returns the output class this driver produces."""
         return PixelGenerationRequestFuncOutput
 
 
@@ -379,6 +385,9 @@ class ServerTokenStats:
     completion_tokens: int | None = None
     total_tokens: int | None = None
     cached_tokens: int = 0
+    # Whether the usage carried cached-token counts at all, so a server that
+    # reports none is not read as one that served nothing from its cache.
+    cached_tokens_reported: bool = False
 
 
 @dataclass
@@ -647,10 +656,12 @@ class _ChatDelta(BaseModel):
 
 class _ChatChoice(BaseModel):
     delta: _ChatDelta
+    finish_reason: str | None = None
 
 
 class _CompletionChoice(BaseModel):
     text: str
+    finish_reason: str | None = None
 
 
 class _ErrorDetail(BaseModel):
@@ -715,6 +726,11 @@ class OpenAIStreamRecorder:
         chat: Whether the stream carries chat completion chunks rather than
             completion chunks.
         tokenizer: The tokenizer for per-chunk TPOT, or ``None`` to skip it.
+        is_cache_warmup: Accepts a completed, usage-bearing generation without
+            visible text when its output is discarded for cache seeding.
+        max_tokens: The request's output-token budget, or ``None`` if it set
+            none. A budget of at most two tokens lets a measured response
+            without visible text succeed; see :meth:`finish`.
     """
 
     def __init__(
@@ -723,6 +739,8 @@ class OpenAIStreamRecorder:
         prompt_len: int,
         chat: bool,
         tokenizer: PreTrainedTokenizerBase | None = None,
+        is_cache_warmup: bool = False,
+        max_tokens: int | None = None,
     ) -> None:
         self.output = RequestFuncOutput()
         self.output.prompt_len = prompt_len
@@ -736,6 +754,11 @@ class OpenAIStreamRecorder:
         self.output.request_submit_time = self._st
         self._most_recent_timestamp = self._st
         self._has_content = False
+        self._is_cache_warmup = is_cache_warmup
+        self._max_tokens = max_tokens
+        self._finish_reason: str | None = None
+        self._finish_reason_time = 0.0
+        self._stream_complete = False
         self._latency = 0.0
         self._done = False
 
@@ -764,6 +787,7 @@ class OpenAIStreamRecorder:
 
         self._latency = now() - self._st
         if data == "[DONE]":
+            self._stream_complete = True
             return None
 
         chunk = self._chunk_type.model_validate_json(data)
@@ -782,11 +806,16 @@ class OpenAIStreamRecorder:
                     if chunk.usage.prompt_tokens_details
                     else 0
                 ),
+                cached_tokens_reported=chunk.usage.prompt_tokens_details
+                is not None,
             )
 
         # Skip content processing for chunks with no choices.
         if not chunk.choices:
             return None
+        if chunk.choices[0].finish_reason is not None:
+            self._finish_reason = chunk.choices[0].finish_reason
+            self._finish_reason_time = now()
         if isinstance(chunk, _ChatCompletionChunk):
             if chunk.choices[0].delta.tool_calls:
                 self.output.tool_call_returned = True
@@ -829,7 +858,32 @@ class OpenAIStreamRecorder:
             The request's output.
         """
         self._done = True
-        if not self._has_content:
+        completion_tokens = self.output.server_token_stats.completion_tokens
+        cache_warmup_completed = (
+            self._is_cache_warmup
+            and self._stream_complete
+            and (completion_tokens or 0) > 0
+        )
+        # A one- or two-token budget can be spent entirely on tokens the
+        # server's reasoning or tool parser consumes as delimiters (GLM's
+        # ``</think>``), so a correct response may carry no visible text.
+        # Accept that only when the server confirms it generated exactly the
+        # tiny budget; every other measured response without text still fails.
+        tiny_budget_exhausted = (
+            self._stream_complete
+            and self._finish_reason == "length"
+            and self._max_tokens is not None
+            and 0 < self._max_tokens <= 2
+            and completion_tokens == self._max_tokens
+        )
+        if tiny_budget_exhausted and not self._has_content:
+            self._ttft = self._finish_reason_time - self._st
+            self.output.ttft = self._ttft
+        if (
+            not self._has_content
+            and not cache_warmup_completed
+            and not tiny_budget_exhausted
+        ):
             self.output.error = (
                 "No text content captured from the response"
                 " (choices were present but"
@@ -881,9 +935,15 @@ async def _run_openai_stream_request(
     prompt_len: int,
     chat: bool,
     tokenizer: PreTrainedTokenizerBase | None = None,
+    is_cache_warmup: bool = False,
+    max_tokens: int | None = None,
 ) -> RequestFuncOutput:
     recorder = OpenAIStreamRecorder(
-        prompt_len=prompt_len, chat=chat, tokenizer=tokenizer
+        prompt_len=prompt_len,
+        chat=chat,
+        tokenizer=tokenizer,
+        is_cache_warmup=is_cache_warmup,
+        max_tokens=max_tokens,
     )
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         try:
@@ -919,12 +979,14 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         )
 
         base_payload: dict[
-            str, bool | str | int | float | list[ChatMessage]
+            str,
+            bool | str | int | float | list[ChatMessage] | dict[str, bool],
         ] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
             "stream": True,
+            "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,
         }
 
@@ -944,6 +1006,8 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             prompt_len=request_func_input.prompt_len,
             chat=False,
             tokenizer=self.tokenizer,
+            is_cache_warmup=request_func_input.is_cache_warmup,
+            max_tokens=request_func_input.max_tokens,
         )
 
 
@@ -1036,6 +1100,7 @@ async def _run_atom_nonstream_chat_request(
         completion_tokens=completion_tokens,
         total_tokens=usage.get("total_tokens"),
         cached_tokens=prompt_details.get("cached_tokens", 0),
+        cached_tokens_reported="cached_tokens" in prompt_details,
     )
     # No per-token latencies: synthesize a flat ITL/TPOT series from the mean
     # tpot_s so itl_ms/step_tpot_ms aren't NaN (headline TPOT still latency-based).
@@ -1131,6 +1196,8 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 prompt_len=request_func_input.prompt_len,
                 chat=True,
                 tokenizer=self.tokenizer,
+                is_cache_warmup=request_func_input.is_cache_warmup,
+                max_tokens=request_func_input.max_tokens,
             )
         output.tools_offered = "tools" in payload
         output.carries_image = _messages_carry_image(messages_data)
@@ -1323,6 +1390,7 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a pixel generation request to sglang."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "SglangPixelGenerationRequestDriver requires"
@@ -1408,6 +1476,8 @@ def _add_input_reference(
 
 
 class SglangVideoPayload(TypedDict):
+    """The JSON body of a sglang video generation request."""
+
     model: str
     prompt: str
     width: NotRequired[int]
@@ -1497,6 +1567,7 @@ class SglangVideoRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a video generation request to sglang."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "SglangVideoRequestDriver requires"
@@ -1635,12 +1706,15 @@ def _build_vllm_omni_pixel_generation_payload(
 
 
 class VllmOmniPixelGenerationRequestDriver(RequestDriver):
-    """Request driver for vllm-omni's /v1/chat/completions endpoint
-    (diffusion image generation)."""
+    """Request driver for vllm-omni's chat completions endpoint.
+
+    Targets ``/v1/chat/completions`` for diffusion image generation.
+    """
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a pixel generation request to vllm-omni."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "VllmOmniPixelGenerationRequestDriver requires"
@@ -1744,12 +1818,15 @@ def _build_vllm_omni_video_payload(
 
 
 class VllmOmniVideoRequestDriver(RequestDriver):
-    """Request driver for vllm-omni's /v1/videos/sync endpoint
-    (diffusion video generation)."""
+    """Request driver for vllm-omni's videos endpoint.
+
+    Targets ``/v1/videos/sync`` for diffusion video generation.
+    """
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a video generation request to vllm-omni."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "VllmOmniVideoRequestDriver requires"

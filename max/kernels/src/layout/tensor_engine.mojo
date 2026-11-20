@@ -87,7 +87,7 @@ def _offset_elements(offset_coord: Coord) -> Int:
     """
     var total = 0
     comptime for i in range(offset_coord.flat_rank):
-        total += Int(offset_coord[i].value())
+        total += Int(offset_coord[i])
     return total
 
 
@@ -486,9 +486,9 @@ def _copy_from[
         comptime num_scalars = num_elements * DstEngine.element_size
         comptime num_chunks = num_scalars // width
         comptime for i in range(num_chunks):
-            dst_ptr.store[alignment=dst_alignment](
+            dst_ptr.unsafe_store[alignment=dst_alignment](
                 i * width,
-                src_ptr.load[width=width, alignment=src_alignment](
+                src_ptr.unsafe_load[width=width, alignment=src_alignment](
                     i * width
                 ).cast[dst_dtype](),
             )
@@ -496,9 +496,9 @@ def _copy_from[
         comptime for i in range(num_elements):
             var src_offset = src_layout(Idx[i])
             var dst_offset = dst_layout(Idx[i])
-            dst_ptr.store[alignment=dst_alignment](
+            dst_ptr.unsafe_store[alignment=dst_alignment](
                 dst_offset,
-                src_ptr.load[
+                src_ptr.unsafe_load[
                     width=DstEngine.element_size, alignment=src_alignment
                 ](src_offset).cast[dst_dtype](),
             )
@@ -657,11 +657,15 @@ def _elementwise_binary_out_with_broadcast[
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i % rhs_size])
 
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 dst_idx,
                 func(
-                    lhs_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    rhs_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    lhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    rhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
     else:
@@ -669,11 +673,15 @@ def _elementwise_binary_out_with_broadcast[
             var dst_idx = dst_layout(Idx[i])
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i])
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 dst_idx,
                 func(
-                    lhs_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    rhs_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    lhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    rhs_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
 
@@ -765,22 +773,30 @@ def _elementwise_binary_with_broadcast[
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i % other_size])
 
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 lhs_idx,
                 func(
-                    dst_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    other_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    dst_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    other_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
     else:
         comptime for i in range(type_of(self_layout).static_product):
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i])
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 lhs_idx,
                 func(
-                    dst_ptr.load[width=width, alignment=alignment](lhs_idx),
-                    other_ptr.load[width=width, alignment=alignment](rhs_idx),
+                    dst_ptr.unsafe_load[width=width, alignment=alignment](
+                        lhs_idx
+                    ),
+                    other_ptr.unsafe_load[width=width, alignment=alignment](
+                        rhs_idx
+                    ),
                 ),
             )
 
@@ -863,9 +879,11 @@ def _elementwise_unary_out[
     comptime for i in range(type_of(dst_layout).static_product):
         var dst_idx = dst_layout(Idx[i])
         var src_idx = src_layout(Idx[i])
-        dst_ptr.store[alignment=alignment](
+        dst_ptr.unsafe_store[alignment=alignment](
             dst_idx,
-            func(src_ptr.load[width=width, alignment=alignment](src_idx)),
+            func(
+                src_ptr.unsafe_load[width=width, alignment=alignment](src_idx)
+            ),
         )
 
 
@@ -1860,6 +1878,172 @@ trait TensorOps(TensorEngine):
         ...
 
 
+trait TileIO(TensorEngine):
+    """Extends `TensorEngine` with whole-tile loads and stores.
+
+    A conforming engine names a register value type that holds a whole tile,
+    `TileValueType`, and moves storage into and out of it. The layout travels
+    with the storage handle, as in `TensorOps`, so an engine whose storage
+    bakes in its extents can check them against the layout. `TileTensor`
+    exposes these as the zero-coordinate `load()` and `store(value)`
+    overloads. `StorageIO` is the element-granular counterpart, for an
+    engine that also has no raw pointer to serve `t[i]`.
+    """
+
+    # TODO(HWB-749): Unify with a generic `InlineTensor`.
+    comptime TileValueType[dtype: DType]: TrivialRegisterPassable
+    """The register value holding a whole tile of `dtype` elements.
+
+    Parameters:
+        dtype: The element data type of the tile.
+    """
+
+    @staticmethod
+    def load_tile[
+        mut: Bool,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        LayoutType: TensorLayout,
+        //,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, origin, address_space], LayoutType
+        ],
+    ) -> Self.TileValueType[dtype]:
+        """Loads the whole tile into a register value.
+
+        Parameters:
+            mut: The mutability of the storage, inferred from `origin`.
+            dtype: The element data type of the storage.
+            origin: The origin tracking the lifetime of the storage.
+            address_space: The address space the storage resides in.
+            LayoutType: The layout type of the tile.
+
+        Args:
+            storage: A tuple of the storage handle and its layout.
+
+        Returns:
+            The tile's contents as a `TileValueType[dtype]`.
+        """
+        ...
+
+    @staticmethod
+    def store_tile[
+        dtype: DType,
+        origin: MutOrigin,
+        address_space: AddressSpace,
+        LayoutType: TensorLayout,
+        //,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, origin, address_space], LayoutType
+        ],
+        value: Self.TileValueType[dtype],
+    ):
+        """Stores a register value over the whole tile.
+
+        Parameters:
+            dtype: The element data type of the storage.
+            origin: The origin tracking the lifetime of the storage.
+            address_space: The address space the storage resides in.
+            LayoutType: The layout type of the tile.
+
+        Args:
+            storage: A tuple of the storage handle (modified in place) and its
+                layout.
+            value: The register value to store.
+        """
+        ...
+
+
+trait StorageIO(TensorEngine):
+    """Extends `TensorEngine` with element loads and stores that bypass
+    `unsafe_ptr`.
+
+    Element-granular access normally goes through the raw pointer
+    `unsafe_ptr` returns. An engine whose storage has no such pointer, such
+    as a TPU memref, conforms to this trait instead, and `TileTensor` routes
+    every offset-based load and store through it: coordinate loads and
+    stores, element indexing, `raw_load` and `raw_store`, and fills. The
+    engine decides which widths it supports. `TileIO` is the whole-tile
+    counterpart, keyed by call shape rather than by trait: `load()` with no
+    coordinate is `TileIO`, `t[i]` is `StorageIO`.
+    """
+
+    # TODO(HWB-749): Fold into `TileIO` once `InlineTensor` and
+    # `TileValueType` unify: `t[i]` is then `load_tile` with a one-element
+    # layout at offset `i`, and `SIMD` is its rank-1 case.
+    @staticmethod
+    def load[
+        mut: Bool,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        //,
+        width: SIMDLength,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space], offset: Int
+    ) -> SIMD[dtype, width]:
+        """Loads `width` elements starting at linear index `offset`.
+
+        Parameters:
+            mut: The mutability of the storage, inferred from `origin`.
+            dtype: The element data type of the storage.
+            origin: The origin tracking the lifetime of the storage.
+            address_space: The address space the storage resides in.
+            width: The number of elements to load.
+            alignment: The alignment of the access, in bytes.
+            invariant: Whether the storage is unchanged for the kernel's
+                lifetime, so the load may be hoisted or cached.
+            non_temporal: Whether the data is not reused soon, so the access
+                may bypass caches.
+
+        Args:
+            storage: The storage handle.
+            offset: The linear element index, as the layout computes it.
+
+        Returns:
+            The `width` elements at `offset`.
+        """
+        ...
+
+    @staticmethod
+    def store[
+        dtype: DType,
+        origin: MutOrigin,
+        address_space: AddressSpace,
+        width: SIMDLength,
+        //,
+        alignment: Int,
+        non_temporal: Bool = False,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space],
+        offset: Int,
+        value: SIMD[dtype, width],
+    ):
+        """Stores `value` starting at linear index `offset`.
+
+        Parameters:
+            dtype: The element data type of the storage.
+            origin: The origin tracking the lifetime of the storage.
+            address_space: The address space the storage resides in.
+            width: The number of elements to store, inferred from `value`.
+            alignment: The alignment of the access, in bytes.
+            non_temporal: Whether the data is not reused soon, so the access
+                may bypass caches.
+
+        Args:
+            storage: The storage handle, modified in place.
+            offset: The linear element index, as the layout computes it.
+            value: The elements to store.
+        """
+        ...
+
+
 struct DefaultEngine[*, element_width: Int = 1](TensorOps):
     """Implements `TensorOps` backed by a raw `Pointer`.
 
@@ -1939,7 +2123,7 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         # it to the scalar base pointer. For non-vectorized storage
         # (`element_width == 1`) this is the identity; for a vectorized view it
         # yields the scalar base address of the underlying storage.
-        return storage.bitcast[Scalar[dtype]]()
+        return storage.unsafe_bitcast[Scalar[dtype]]()
 
     @staticmethod
     @inline(.always)
@@ -2035,9 +2219,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         # it as a scalar pointer so `+ offset` advances in scalar (not SIMD)
         # units, then `rebind` back to the original handle type.
         return (
-            storage.bitcast[Scalar[offset_dtype]]()
-            + _offset_elements(offset_coord)
-        ).bitcast[SIMD[offset_dtype, Self.element_width]]()
+            storage.unsafe_bitcast[Scalar[offset_dtype]]().unsafe_offset(
+                _offset_elements(offset_coord)
+            )
+        ).unsafe_bitcast[SIMD[offset_dtype, Self.element_width]]()
 
     @staticmethod
     @inline(.always)
@@ -2508,10 +2693,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
 
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            storage.bitcast[Scalar[dtype]]().store(
+            storage.unsafe_bitcast[Scalar[dtype]]().unsafe_store(
                 idx,
                 func(
-                    storage.bitcast[Scalar[dtype]]().load[
+                    storage.unsafe_bitcast[Scalar[dtype]]().unsafe_load[
                         width=Self.element_width
                     ](idx)
                 ),
@@ -2622,10 +2807,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            storage.bitcast[Scalar[dtype]]().store(
+            storage.unsafe_bitcast[Scalar[dtype]]().unsafe_store(
                 idx,
                 exp(
-                    storage.bitcast[Scalar[dtype]]().load[
+                    storage.unsafe_bitcast[Scalar[dtype]]().unsafe_load[
                         width=Self.element_width
                     ](idx)
                     * scale.cast[dtype]()
@@ -3334,10 +3519,12 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         comptime for i in range(type_of(dst_layout).static_product):
             var dst_idx = dst_layout(Idx[i])
             var src_idx = src_layout(Idx[i])
-            dst_ptr.store[alignment=alignment](
+            dst_ptr.unsafe_store[alignment=alignment](
                 dst_idx,
                 exp(
-                    src_ptr.load[width=width, alignment=alignment](src_idx)
+                    src_ptr.unsafe_load[width=width, alignment=alignment](
+                        src_idx
+                    )
                     * scale.cast[dtype]()
                 ),
             )
@@ -3345,9 +3532,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
 
 @inline(.always)
 def _device_leaf_ptr[
-    dtype: DType, //
-](storage: DevicePointer[dtype, _]) -> MutPointer[
-    Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL
+    dtype: DType,
+    origin: Origin,
+](storage: DevicePointer[dtype, origin]) -> Pointer[
+    Scalar[dtype], origin, address_space=.GLOBAL
 ]:
     """Returns the encoded device-leaf pointer held in `storage`'s first bytes.
 
@@ -3370,6 +3558,7 @@ def _device_leaf_ptr[
 
     Parameters:
         dtype: The element data type of the referenced storage.
+        origin: The origin of the referenced storage.
 
     Args:
         storage: The device-pointer handle to reinterpret.
@@ -3382,8 +3571,8 @@ def _device_leaf_ptr[
         # Reinterpret the handle's first bytes as the encoded device address.
         # The leaf must be `GLOBAL` (device), not `GENERIC` — see the docstring:
         # a `GENERIC` leaf silently misses device memory on Metal.
-        return Pointer(to=storage).bitcast[
-            MutPointer[Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL]
+        return Pointer(to=storage).unsafe_bitcast[
+            Pointer[Scalar[dtype], origin, address_space=.GLOBAL]
         ]()[]
     else:
         abort("DevicePointerEngine operations are not supported on host")
@@ -3476,8 +3665,7 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         On device the owning `DeviceBuffer` is unavailable, so this reinterprets
         the encoded device address out of the handle (`_device_leaf_ptr`); on
         host it recovers the raw (offset-adjusted) address through the owning
-        `DeviceBuffer`. Stopgap for the in-progress `LayoutTensor` migration,
-        see GPUA-6.
+        `DeviceBuffer`. See GPUA-6.
 
         Parameters:
             mut: The mutability of the borrowed storage, inferred from `origin`.
@@ -3496,20 +3684,19 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         ]
         # `_device_leaf_ptr` returns a `GLOBAL` (device) leaf because Metal has
         # no usable `GENERIC` device space and the compiler does not insert the
-        # address-space conversion itself. `rebind` cannot change a pointer's
-        # address space, so cast the leaf to the tile's declared space, then
-        # `rebind` the origin. On flat-address targets (CUDA/HIP) `GLOBAL` and
+        # address-space conversion itself, so cast the leaf to the tile's
+        # declared space. On flat-address targets (CUDA/HIP) `GLOBAL` and
         # `GENERIC` are the same address so this cast is a no-op reinterpret; on
         # segmented targets like Metal a `GENERIC` result cannot reach device
         # memory, but `.ptr`'s return type is fixed to the tile's (`GENERIC`)
         # space, so Metal is out of scope for this stopgap (see GPUA-6).
         comptime if is_gpu():
-            return rebind[ResultPtr](
-                _device_leaf_ptr(storage).address_space_cast[address_space]()
-            )
+            return _device_leaf_ptr(storage).unsafe_address_space_cast[
+                address_space
+            ]()
         else:
             return rebind[ResultPtr](
-                storage.unsafe_ptr().address_space_cast[address_space]()
+                storage.unsafe_ptr().unsafe_address_space_cast[address_space]()
             )
 
     @staticmethod
@@ -3546,7 +3733,7 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
             A handle referring to the same storage, viewed with the new type
             parameters.
         """
-        result = Pointer(to=storage).bitcast[type_of(result)]()[]
+        result = Pointer(to=storage).unsafe_bitcast[type_of(result)]()[]
 
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
@@ -3602,10 +3789,10 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         """
         comptime if is_gpu():
             var result = storage
-            var leaf = Pointer(to=result).bitcast[
-                MutPointer[Scalar[type_of(storage).dtype], MutAnyOrigin]
+            var leaf = Pointer(to=result).unsafe_bitcast[
+                Pointer[Scalar[offset_dtype], offset_origin]
             ]()
-            leaf[] = leaf[] + _offset_elements(offset_coord)
+            leaf[] = leaf[].unsafe_offset(_offset_elements(offset_coord))
             return result
         else:
             # Keep this non-raising (matching the pointer-backed engine and
@@ -4092,12 +4279,12 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
 
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            _device_leaf_ptr(storage).store(
+            _device_leaf_ptr(storage).unsafe_store(
                 idx,
                 func(
-                    _device_leaf_ptr(storage).load[width=Self.element_width](
-                        idx
-                    )
+                    _device_leaf_ptr(storage).unsafe_load[
+                        width=Self.element_width
+                    ](idx)
                 ),
             )
 
@@ -4211,12 +4398,12 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         # during elaboration when passed as a function value.
         comptime for i in range(type_of(layout).static_product):
             var idx = layout(Idx[i])
-            _device_leaf_ptr(storage).store(
+            _device_leaf_ptr(storage).unsafe_store(
                 idx,
                 exp(
-                    _device_leaf_ptr(storage).load[width=Self.element_width](
-                        idx
-                    )
+                    _device_leaf_ptr(storage).unsafe_load[
+                        width=Self.element_width
+                    ](idx)
                     * scale.cast[dtype]()
                 ),
             )
@@ -4927,10 +5114,12 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
             var dst_idx = dst_layout(Idx[i])
             var src_idx = src_layout(Idx[i])
             # Store through the device leaf pointer, matching `iexp`.
-            _device_leaf_ptr(dst_storage).store(
+            _device_leaf_ptr(dst_storage).unsafe_store(
                 dst_idx,
                 exp(
-                    src_ptr.load[width=width, alignment=alignment](src_idx)
+                    src_ptr.unsafe_load[width=width, alignment=alignment](
+                        src_idx
+                    )
                     * scale.cast[dtype]()
                 ),
             )
@@ -5011,7 +5200,9 @@ struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
             element the engine exposes, i.e. `static_offset` scalar elements
             past the handle.
         """
-        return storage.bitcast[Scalar[dtype]]() + Self.static_offset
+        return storage.unsafe_bitcast[Scalar[dtype]]().unsafe_offset(
+            Self.static_offset
+        )
 
     @staticmethod
     @inline(.always)

@@ -63,8 +63,9 @@ DistributionParameter = int | float | str
 def _match_distribution_args(
     schema: str, prefix_pattern: str, num_args: int
 ) -> list[str] | None:
-    """Match a "PREFIX(a, b, ...)" distribution string and return its raw,
-    unparsed argument strings, or None if it doesn't match.
+    """Match a "PREFIX(a, b, ...)" distribution string.
+
+    Returns its raw, unparsed argument strings, or None if it doesn't match.
 
     Shared by every parametric distribution's ``parse_from_str_schema``; each
     still owns its own numeric conversion (float vs. int) and error messages.
@@ -193,14 +194,18 @@ class ContinuousDistribution(BaseDistribution):
     """Abstract base for continuous distributions that sample float values."""
 
     @abstractmethod
-    def sample_value(self) -> float: ...
+    def sample_value(self) -> float:
+        """Draws one sample from the continuous distribution."""
+        ...
 
 
 class DiscreteDistribution(BaseDistribution):
     """Abstract base for discrete distributions that sample integer values."""
 
     @abstractmethod
-    def sample_value(self) -> int: ...
+    def sample_value(self) -> int:
+        """Draws one sample from the discrete distribution."""
+        ...
 
 
 @dataclass
@@ -210,6 +215,7 @@ class ConstantDistribution(BaseDistribution):
     value: float
 
     def sample_value(self) -> float:
+        """Returns the configured constant."""
         return self.value
 
 
@@ -254,6 +260,7 @@ class CategoricalDistribution(BaseDistribution):
             raise ValueError("Weights must sum to a positive value")
 
     def sample_value(self) -> float:
+        """Draws a category from the configured weights."""
         # Individually finite weights can still sum to inf, which would send
         # every probability to 0. Scaling by the max preserves the ratios and
         # bounds the sum by len(weights).
@@ -321,6 +328,7 @@ class NormalDistribution(ContinuousDistribution):
             )
 
     def sample_value(self) -> float:
+        """Draws one sample from the normal distribution."""
         return float(np.random.normal(loc=self.mean, scale=self.std))
 
     @classmethod
@@ -367,6 +375,7 @@ class UniformDistribution(ContinuousDistribution):
             )
 
     def sample_value(self) -> float:
+        """Draws one sample from the uniform distribution."""
         return float(np.random.uniform(low=self.lower, high=self.upper))
 
     @classmethod
@@ -412,6 +421,7 @@ class GammaDistribution(ContinuousDistribution):
             raise ValueError(f"Scale must be positive, got {self.scale}")
 
     def sample_value(self) -> float:
+        """Draws one sample from the gamma distribution."""
         return float(np.random.gamma(shape=self.shape, scale=self.scale))
 
     @classmethod
@@ -445,8 +455,10 @@ class GammaDistribution(ContinuousDistribution):
 
 @dataclass
 class LogNormalDistribution(ContinuousDistribution):
-    """A log-normal distribution parameterized by the mean and std of the
-    underlying normal distribution.
+    """A log-normal distribution.
+
+    Parameterized by the mean and std of the underlying normal
+    distribution.
 
     Samples are drawn from exp(N(mean, std)), so the resulting values are
     always positive.
@@ -462,6 +474,7 @@ class LogNormalDistribution(ContinuousDistribution):
             )
 
     def sample_value(self) -> float:
+        """Draws one sample from the log-normal distribution."""
         return float(np.random.lognormal(mean=self.mean, sigma=self.std))
 
     @classmethod
@@ -495,8 +508,9 @@ class LogNormalDistribution(ContinuousDistribution):
 
 @dataclass
 class Burr12Distribution(ContinuousDistribution):
-    """A Burr Type XII distribution with shape parameters ``c``, ``d`` and
-    a ``scale`` parameter.
+    """A Burr Type XII distribution.
+
+    Shape parameters ``c`` and ``d``, plus a ``scale`` parameter.
 
     The CDF is ``F(x) = 1 - (1 + (x/scale)**c)**(-d)`` for ``x >= 0``.
     Samples are drawn via the inverse-CDF transform on a uniform draw, so
@@ -523,6 +537,7 @@ class Burr12Distribution(ContinuousDistribution):
             raise ValueError(f"scale must be positive, got {self.scale}")
 
     def sample_value(self) -> float:
+        """Draws one sample by inverse-CDF transform on a uniform draw."""
         u = np.random.uniform(low=0.0, high=1.0)
         # expm1/log1p form of (1 - u)**(-1/d) - 1; avoids cancellation when u ~ 0.
         inner = np.expm1(-np.log1p(-u) / self.d)
@@ -580,6 +595,7 @@ class DiscreteUniformDistribution(DiscreteDistribution):
             )
 
     def sample_value(self) -> int:
+        """Draws an integer in ``[lower, upper]``."""
         return int(np.random.randint(low=self.lower, high=self.upper + 1))
 
     @classmethod
@@ -638,6 +654,7 @@ class NegativeBinomialDistribution(DiscreteDistribution):
             )
 
     def sample_value(self) -> int:
+        """Draws a sample, shifted so the minimum value is 1."""
         return int(np.random.negative_binomial(n=self.n, p=self.p)) + 1
 
     @classmethod

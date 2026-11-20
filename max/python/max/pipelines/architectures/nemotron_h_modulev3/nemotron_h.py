@@ -21,19 +21,19 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMapping, NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
@@ -41,12 +41,17 @@ from max.nn.kv_cache import (
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, NamedMapping
 
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import (
-    MambaReplayRows,
+    MambaReplayCapture,
     MambaStateAccess,
     NemotronHMamba2Mixer,
 )
@@ -76,10 +81,8 @@ def _distributed_state(
         spec = (None, TP) + (None,) * (pools[0].rank - 2)
         leaves.append(
             RecurrentLeafInputs(
-                pool=Tensor.from_shard_values(
-                    pools, NamedMapping(mapping.mesh, spec)
-                ),
-                live_row_ids=Tensor.from_shard_values(
+                pool=cache_tensor(pools, NamedMapping(mapping.mesh, spec)),
+                live_row_ids=cache_tensor(
                     [
                         device.leaves[index].live_row_ids
                         for device in per_device
@@ -105,6 +108,7 @@ class NemotronHBlock(Module[..., Tensor]):
         self.capture_replay = capture_replay
 
     def forward(self, h: Tensor, *mixer_args: object) -> Any:
+        """Runs the block's mixer over ``h``."""
         # Row-parallel mixers leave partial sums; reduce before the residual add.
         if self.capture_replay:
             # A Mamba block that hands back the inputs of its state updates,
@@ -163,7 +167,9 @@ class NemotronHBackbone(
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         input_row_offsets: Tensor,
         capture_rows: Tensor | None = None,
-    ) -> tuple[Tensor, tuple[Tensor, ...], tuple[MambaReplayRows[Tensor], ...]]:
+        update_state: Tensor | None = None,
+        verify_width: Tensor | None = None,
+    ) -> tuple[Tensor, tuple[Tensor, ...], tuple[MambaReplayCapture, ...]]:
         """Runs the layer stack.
 
         Args:
@@ -175,13 +181,19 @@ class NemotronHBackbone(
             capture_rows: The token rows to capture each Mamba layer's replay
                 inputs of. Required when the config sets
                 ``capture_mamba_replay``.
+            update_state: The ``[batch_size]`` bool flags selecting which
+                requests write their new Mamba state back to their rows. A
+                request with the flag false only reads its state. ``None``
+                updates every request.
+            verify_width: The verify's ``[K]`` width operand; required when
+                the config sets ``capture_mamba_replay``.
 
         Returns:
             The final pre-norm hidden states, the hidden states selected by
             ``target_layer_ids`` and each Mamba layer's captured replay inputs.
         """
         h = self.embeddings(tokens)
-        replays: list[MambaReplayRows[Tensor]] = []
+        replays: list[MambaReplayCapture] = []
         captures: dict[int, Tensor] = {}
         query_start_loc = F.cast(input_row_offsets, DType.int32)
         # In the order NemotronHConfig.construct_kv_params declares them.
@@ -192,6 +204,8 @@ class NemotronHBackbone(
         has_initial_state = F.full(
             [batch_size], True, dtype=DType.bool, device=h.mesh
         )
+        if update_state is None:
+            update_state = has_initial_state
         mamba_idx = 0
         for index, (kind, layer) in enumerate(
             zip(self.layer_kinds, self.layers, strict=True)
@@ -220,16 +234,27 @@ class NemotronHBackbone(
                     assert capture_rows is not None, (
                         "capture_mamba_replay needs the rows to capture"
                     )
+                    assert verify_width is not None, (
+                        "capture_mamba_replay needs the verify width"
+                    )
                     h, replay = call(
                         h,
                         access,
                         query_start_loc,
                         has_initial_state,
+                        update_state,
                         capture_rows,
+                        verify_width,
                     )
                     replays.append(replay)
                 else:
-                    h = call(h, access, query_start_loc, has_initial_state)
+                    h = call(
+                        h,
+                        access,
+                        query_start_loc,
+                        has_initial_state,
+                        update_state,
+                    )
                 mamba_idx += 1
             else:
                 h = call(h)
@@ -242,8 +267,12 @@ class NemotronHBackbone(
         )
 
 
-class NemotronH(Module[..., ModuleV3Outputs]):
-    """Nemotron-H for causal language modeling."""
+class NemotronH(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
+    """Nemotron-H for causal language modeling, registered as the decoder."""
+
+    # The graph keeps the input order it had before registration, which the
+    # bare MEFs Mach boots from its registry are compiled with.
+    input_layout = ("tokens", "return_n_logits", "input_row_offsets", "kv")
 
     def __init__(self, config: NemotronHConfig) -> None:
         if any(
@@ -292,13 +321,12 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             )
         return tokens.to(mesh), input_row_offsets.to(mesh)
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *kv_inputs: Tensor,
-    ) -> ModuleV3Outputs:
+    def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
+        """Runs the decoder stack over the tokens."""
+        tokens = inputs.tokens
+        return_n_logits = inputs.return_n_logits
+        input_row_offsets = inputs.input_row_offsets
+        kv_inputs = tree.leaves(inputs.kv)
         if self.return_logits == ReturnLogits.VARIABLE:
             # Only `verify` builds the variable-logits range, from a host
             # count. This graph's count would land on the device, which
@@ -311,7 +339,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         row_offsets = input_row_offsets
         tokens, input_row_offsets = self._place(tokens, input_row_offsets)
         kv_tree = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         kv_collection = PagedCacheValues.from_upstream(
             tree.leaves(kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice),
@@ -342,7 +370,9 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         kv_collection: PagedCacheValues,
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor,
-    ) -> tuple[ModuleV3Outputs, Tensor, tuple[MambaReplayRows[Tensor], ...]]:
+        update_state: Tensor,
+        verify_width: Tensor,
+    ) -> tuple[ModuleV3Outputs, Tensor, tuple[MambaReplayCapture, ...]]:
         """Runs a speculative verify pass on the given Mamba state.
 
         Args:
@@ -350,11 +380,14 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             return_n_logits: How many tokens of logits each request returns.
             input_row_offsets: The single-device ragged offsets.
             kv_collection: The attention layers' cache, on the mesh.
-            state: The Mamba state the verify advances. Pass the scratch
-                leaves in the live leaves' place to leave the live state at
-                its pre-verify value.
+            state: The Mamba state the verify runs on.
             capture_rows: The token rows to capture each Mamba layer's replay
                 inputs of.
+            update_state: The ``[batch_size]`` bool flags selecting which
+                requests advance their state. A request with drafts must not,
+                since its accepted prefix is not known until the replay.
+            verify_width: The verify's ``[K]`` width operand; required when
+                the config sets ``capture_mamba_replay``.
 
         Returns:
             The model outputs, the selected hidden states as one tensor
@@ -371,6 +404,8 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             kv_collection,
             state,
             capture_rows,
+            update_state,
+            verify_width,
         )
         assert hidden is not None, "a verify pass returns hidden states"
         return outputs, hidden, replays
@@ -384,14 +419,22 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         kv_collection: PagedCacheValues,
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor | None,
+        update_state: Tensor | None = None,
+        verify_width: Tensor | None = None,
     ) -> tuple[
         ModuleV3Outputs,
         Tensor | None,
-        tuple[MambaReplayRows[Tensor], ...],
+        tuple[MambaReplayCapture, ...],
     ]:
         mesh = self.backbone.norm_f.weight.mesh
         h, captures, replays = self.backbone(
-            tokens, kv_collection, state, input_row_offsets, capture_rows
+            tokens,
+            kv_collection,
+            state,
+            input_row_offsets,
+            capture_rows,
+            update_state,
+            verify_width,
         )
 
         # One projection and one gather serve both outputs when ALL logits
@@ -410,9 +453,6 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             offsets = row_offsets
         elif self.return_logits == ReturnLogits.VARIABLE:
             assert count is not None, "variable logits need a host count"
-            last = self._logits(
-                F.gather(h, input_row_offsets[1:] - 1, axis=0)
-            ).local_shards[0]
             distance = F.range(
                 count,
                 0,
@@ -425,6 +465,13 @@ class NemotronH(Module[..., ModuleV3Outputs]):
                 (-1,)
             )
             logits = self._logits(F.gather(h, indices, axis=0)).local_shards[0]
+            # The last token of each request is the final row of its window
+            # (`distance` ends at 1), so the head need not run on it again.
+            # Only `verify` reaches this branch and it reads only `logits`, so
+            # `next_token_logits` aliases the whole window: its shape here is
+            # `[B * count, V]`, not `[B, V]`. A reader that needs the last rows
+            # takes rows `count - 1, 2 * count - 1, ...` of `logits`.
+            last = logits
             offsets = F.range(
                 0,
                 indices.shape[0] + count,

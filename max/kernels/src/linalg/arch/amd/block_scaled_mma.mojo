@@ -77,17 +77,15 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
         Returns:
             The element width in bits.
         """
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3:
-            return 8
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E5M2:
-            return 8
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3:
-            return 6
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2:
-            return 6
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1:
-            return 4
-        abort("invalid matrix format")
+        match self:
+            case Self.FLOAT8_E4M3 | Self.FLOAT8_E5M2:
+                return 8
+            case Self.FLOAT6_E2M3 | Self.FLOAT6_E3M2:
+                return 6
+            case Self.FLOAT4_E2M1:
+                return 4
+            case _:
+                abort("invalid matrix format")
 
     def simd_width(self) -> SIMDLength:
         """Returns the operand fragment width, in bytes, this format expects.
@@ -99,17 +97,18 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
         Returns:
             The fragment width in bytes.
         """
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3:
-            return 32
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E5M2:
-            return 32
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3:
-            return 32
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2:
-            return 32
-        if self == CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1:
-            return 16
-        abort("invalid matrix format")
+        match self:
+            case (
+                Self.FLOAT8_E4M3
+                | Self.FLOAT8_E5M2
+                | Self.FLOAT6_E2M3
+                | Self.FLOAT6_E3M2
+            ):
+                return 32
+            case Self.FLOAT4_E2M1:
+                return 16
+            case _:
+                abort("invalid matrix format")
 
 
 @inline(.always)

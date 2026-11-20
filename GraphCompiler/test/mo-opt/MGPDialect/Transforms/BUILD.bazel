@@ -1,0 +1,26 @@
+load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
+load("//bazel:api.bzl", "lit_tests")
+
+package(default_visibility = ["//visibility:private"])
+
+lit_tests(
+    name = "test",
+    srcs = glob(["**/*.mlir"]),
+    custom_substitutions = {
+        "%kernel_api_test_lib": "$(rlocationpath //GraphCompiler/test/kernels:testing_kernels)",
+    },
+    data = [
+        "//GraphCompiler/test/kernels:testing_kernels",
+    ],
+    mojo_deps = [
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
+    ] + INTERNAL_KERNEL_MOJOPKGS,
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = [
+        "//GraphCompiler/tools/mo-opt",
+    ],
+)

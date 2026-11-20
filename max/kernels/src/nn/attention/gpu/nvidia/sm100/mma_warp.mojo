@@ -21,7 +21,6 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 )
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
-    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -39,8 +38,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from nn.attention.mha_mask import MHAMask
 from linalg.arch.sm100.mma import smem_descriptor
-from layout import IntTuple
-from layout.tensor_core_async import tile_layout_k_major
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from .smem import SM100AttentionSMem
 
@@ -256,6 +253,8 @@ def fa4_mma[
     # Key-split and non-WS keep `PARTIAL_K`.
     comptime CUT_LAST_TILE = PARTIAL_K or config.ws_shared_key
 
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
     var s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
@@ -322,15 +321,6 @@ def fa4_mma[
     # from the OTHER stage's S columns (TMEM_P{wg}). Shared-KV path only (the
     # headline config); split-KV is rejected at compile time.
     comptime CrossP = crossp_effective and type_of(mbars).CrossP_enabled
-    # Fires only for an explicit `-D FA4_TMEM_CROSS_P=true` on a config outside
-    # the support matrix. The ON-by-default path resolves `crossp_on()` to
-    # False on those configs instead, so it never reaches here.
-    comptime assert not (ExplicitTMEMCrossP and not config.crossp_on()), (
-        "FA4_TMEM_CROSS_P=true was requested on a config that does not"
-        " support cross-stage P. Supported: 2Q, non-warp-specialized,"
-        " single-CTA, shared-KV, MHA (no rope split), full pages. See"
-        " FA4Config.crossp_supported"
-    )
 
     # Called after consumer_s[*].wait(phase), which orders the vote write
     # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
@@ -340,7 +330,7 @@ def fa4_mma[
 
     @inline(.always)
     def _commit(
-        mbar: UnsafePointer[address_space=.SHARED, ...],
+        mbar: Pointer[address_space=.SHARED, ...],
     ) {imm}:
         """Arrive at mbar: multicast for pair-CTA, local elect for single."""
         comptime if config.pair_cta:
@@ -995,10 +985,10 @@ def fa4_mma[
                     # ---- The A operand: P, from SMEM ----------------------
                     # `store_p_quadrant` writes warpgroup `wg`'s `BM x BN` P tile
                     # at `p_smem() + wg*BM*BN`, in the SWIZZLE_NONE k-major layout
-                    # `element (r, k) -> (k // sw_K)*(BM*sw_K) + r*sw_K`. The
-                    # `tile_layout_k_major(BM, BN, SWIZZLE_NONE)` IS that map, so
-                    # the descriptor, the MMA's internal per-k-block advance, and
-                    # the per-chunk advance below all read off one layout.
+                    # `element (r, k) -> (k // sw_K)*(BM*sw_K) + r*sw_K`, which
+                    # `tile_layout_k_major(BM, BN, SWIZZLE_NONE)` also encodes.
+                    # The descriptor, the MMA's internal per-k-block advance,
+                    # and the per-chunk advance below all follow that one map.
                     #
                     # `wg` is RUNTIME, not comptime, and that is load-bearing:
                     # the odd-`T` tail rebinds `s1_tmem = s0_tmem` at runtime, so
@@ -1007,30 +997,20 @@ def fa4_mma[
                     # still waiting WG0's barrier -- wrong output on odd `T`
                     # only. Same position and values as `_pv`'s `wg`.
                     comptime P_SWIZZLE = TensorMapSwizzle.SWIZZLE_NONE
-                    comptime p_layout = tile_layout_k_major[
-                        config.qkv_dtype, BM, BN, P_SWIZZLE
-                    ]()
-                    # Bytes from one key chunk's P columns to the next, taken
-                    # from the layout. Closed form `BM * pv_bk * dtsize`; assert
-                    # so a layout change cannot silently walk the descriptor off
-                    # the tile.
+                    # Bytes from one key chunk's P columns to the next: one
+                    # `BM x pv_bk` sub-tile of the P SMEM tile. The k-major
+                    # SWIZZLE_NONE layout this tile uses maps `(r, k)` to
+                    # `(k // sw_K) * (BM * sw_K) + r * sw_K`, which for a whole
+                    # chunk is exactly `BM * pv_bk` elements.
                     comptime p_chunk_bytes = (
-                        p_layout(IntTuple(0, pv_bk))
-                        * size_of[config.qkv_dtype]()
-                    )
-                    comptime assert (
-                        p_chunk_bytes
-                        == BM * pv_bk * size_of[config.qkv_dtype]()
-                    ), (
-                        "shared-key: the P key-chunk stride must be one"
-                        " BM x pv_bk sub-tile"
+                        BM * pv_bk * size_of[config.qkv_dtype]()
                     )
                     var p_desc = smem_descriptor[
                         BMN=BM,
                         BK=BN,
                         swizzle_mode=P_SWIZZLE,
                         is_k_major=True,
-                    ](smem.p_smem() + wg * UInt32(BM * BN))
+                    ](smem.p_smem().unsafe_offset(wg * UInt32(BM * BN)))
 
                     for c in range(live_chunks):
                         # P columns advance by ONE key chunk per `c`;
@@ -1810,6 +1790,81 @@ def fa4_mma[
             comptime KVPipeType = StagedPipeline[config.num_kv_stages, 1]
             var kv_pipeline: KVPipeType = {mbars.get_k_mbars()}
 
+            # K-tail (`config.k_tail()`): Q@K' is a nope MMA over the ring slot
+            # plus a tail MMA over the K tile's rope buffer, accumulating into
+            # the same S. Q stays one chunk-major `padded_qk_depth`-wide tile,
+            # so its tail chunks start `q_tail_bytes` into each Q half. The
+            # rope buffers cycle once per K tile, in the producer's order.
+            comptime assert not (
+                CrossP and config.k_tail()
+            ), "cross-stage P has no K-tail path"
+            comptime UMMA0NopeType = SM100TensorAccumulator[
+                config.qkv_dtype,
+                accum_type,
+                MMA_M=config.MMA_M,
+                MMA_N=BN,
+                BK=config.padded_nope_depth,
+                a_tmem=False,
+                swizzle_a=config.swizzle_mode,
+                swizzle_b=config.swizzle_mode,
+                transpose_b=True,
+                cta_group=cta_group,
+                mma_kind=mma_kind,
+            ]
+            comptime UMMA0TailType = SM100TensorAccumulator[
+                config.qkv_dtype,
+                accum_type,
+                MMA_M=config.MMA_M,
+                MMA_N=BN,
+                BK=config.rope_depth(),
+                a_tmem=False,
+                swizzle_a=config.swizzle_mode,
+                swizzle_b=config.swizzle_mode,
+                transpose_b=True,
+                cta_group=cta_group,
+                mma_kind=mma_kind,
+            ]
+            comptime q_tail_bytes = (
+                (BM // num_q)
+                * config.padded_nope_depth
+                * size_of[config.qkv_dtype]()
+            )
+            comptime k_tail_bytes = (
+                config.k_rows_per_cta()
+                * config.rope_depth()
+                * size_of[config.qkv_dtype]()
+            )
+            var k_tail_idx: UInt32 = 0
+
+            @inline(.always)
+            def _qk(
+                q: MMASmemDescriptorPair,
+                k: MMASmemDescriptorPair,
+                s_tmem: UInt32,
+                tail_idx: UInt32,
+            ) {imm}:
+                comptime if config.k_tail():
+                    var k_tail = smem_descriptor[
+                        BMN=config.k_rows_per_cta(),
+                        BK=config.rope_depth(),
+                        swizzle_mode=config.swizzle_mode,
+                        is_k_major=True,
+                    ](
+                        smem.rope_smem_base().unsafe_bitcast[
+                            Scalar[config.qkv_dtype]
+                        ]()
+                    )
+                    UMMA0NopeType.mma(q, k, s_tmem, elect=e, c_scale=0)
+                    UMMA0TailType.mma(
+                        q + UInt32(q_tail_bytes),
+                        k_tail + UInt32(k_tail_bytes) * tail_idx,
+                        s_tmem,
+                        elect=e,
+                        c_scale=1,
+                    )
+                else:
+                    UMMA0Type.mma[stage_idx=0](q, k, s_tmem, elect=e, c_scale=0)
+
             # We peel the first iteration, as we want to wait on q1.
             # Peel consumes 1 K_0 (shared by both Q halves); the main loop
             # decrements once per iter. iter_count = total_iters - 1.
@@ -1982,13 +2037,17 @@ def fa4_mma[
             var k0 = (
                 kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
             )
-            UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
+            _qk(q0, k0, s0_tmem, k_tail_idx)
             _commit(pipeline_s0.producer_mbar())
 
             # Q_1 @ K_0 (q1 half, same K).
             var q1_mbar = mbars.q1_wait_mbar()
             q1_mbar[0].wait()
-            UMMA0Type.mma[stage_idx=0](q1, k0, s1_tmem, elect=e, c_scale=0)
+            _qk(q1, k0, s1_tmem, k_tail_idx)
+            comptime if config.k_tail():
+                k_tail_idx = (k_tail_idx + 1) % UInt32(
+                    config.num_rope_buffers()
+                )
 
             # Release K_0 and advance.
             _commit(kv_pipeline.consumer_mbar())
@@ -2033,7 +2092,7 @@ def fa4_mma[
                     kv_desc_k
                     + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
                 )
-                UMMA0Type.mma[stage_idx=0](q0, kn, s0_tmem, elect=e, c_scale=0)
+                _qk(q0, kn, s0_tmem, k_tail_idx)
                 _commit(pipeline_s0.producer_mbar())
 
                 # P1 @ V_{n-1} (held V_o[n-1]). Per-depth-tile ring slots for
@@ -2052,7 +2111,11 @@ def fa4_mma[
                 _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # V_{n-1}_d0
 
                 # Q_1 @ K_n (q1 + same kn).
-                UMMA0Type.mma[stage_idx=0](q1, kn, s1_tmem, elect=e, c_scale=0)
+                _qk(q1, kn, s1_tmem, k_tail_idx)
+                comptime if config.k_tail():
+                    k_tail_idx = (k_tail_idx + 1) % UInt32(
+                        config.num_rope_buffers()
+                    )
                 _commit(
                     kv_pipeline.consumer_mbar()
                 )  # release K_n / K_o[n] last

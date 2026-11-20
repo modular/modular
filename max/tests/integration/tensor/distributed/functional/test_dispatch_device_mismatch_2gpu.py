@@ -20,16 +20,16 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import Accelerator
-from max.experimental import functional as F
-from max.experimental.functional import transfer_to
-from max.experimental.sharding import (
+from max.functional import transfer_to
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     ShardingError,
 )
-from max.experimental.tensor import Tensor
 
 MESH_2 = DeviceMesh(
     devices=(Accelerator(0), Accelerator(1)),

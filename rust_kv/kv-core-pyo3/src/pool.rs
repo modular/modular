@@ -144,6 +144,7 @@ struct PyJengaBlockPool {
     cache_index: HashMap<String, usize>,
     ratios: Vec<usize>,
     num_huge_blocks: usize,
+    num_allocatable_huge_blocks: usize,
     prefix_caches: Py<PyDict>,
     null_little_blocks: Py<PyDict>,
 }
@@ -154,6 +155,17 @@ impl PyJengaBlockPool {
             .get(cache_id)
             .copied()
             .ok_or_else(|| PyKeyError::new_err(cache_id.to_owned()))
+    }
+
+    /// Returns a `{cache_id: num_blocks}` mapping as one count per cache.
+    fn dense(&self, demand: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+        let mut dense = vec![0; self.cache_index.len()];
+        for item in demand.call_method0("items")?.try_iter()? {
+            let (cache_id, num_blocks): (String, i64) = item?.extract()?;
+            // No demand at all, as the Python pool read a count of 0 or less.
+            dense[self.cache(&cache_id)?] = usize::try_from(num_blocks).unwrap_or(0);
+        }
+        Ok(dense)
     }
 
     /// Returns `block`'s `(cache, bid)`, refusing a block of another pool:
@@ -178,10 +190,12 @@ fn geometry_error(err: &JengaError) -> PyErr {
 #[pymethods]
 impl PyJengaBlockPool {
     #[new]
+    #[pyo3(signature = (num_huge_blocks, cache_ratios, *, min_huge_bid = 0))]
     fn new(
         py: Python<'_>,
         num_huge_blocks: usize,
         cache_ratios: &Bound<'_, PyAny>,
+        min_huge_bid: usize,
     ) -> PyResult<Self> {
         let ratios: Vec<(String, i64)> = cache_ratios
             .call_method0("items")?
@@ -204,9 +218,11 @@ impl PyJengaBlockPool {
             PoolOptions {
                 null_block: true,
                 skip_prefix_cache: false,
+                min_huge_bid,
             },
         )
         .map_err(|err| geometry_error(&err))?;
+        let num_allocatable_huge_blocks = pool.allocatable_huge_bids().len();
         let handles = pool
             .little_blocks
             .iter()
@@ -244,6 +260,7 @@ impl PyJengaBlockPool {
             shared,
             ratios: ratio_values,
             num_huge_blocks,
+            num_allocatable_huge_blocks,
             prefix_caches: prefix_caches.unbind(),
             null_little_blocks: null_little_blocks.unbind(),
         })
@@ -256,7 +273,7 @@ impl PyJengaBlockPool {
 
     #[getter]
     fn num_allocatable_huge_blocks(&self) -> usize {
-        self.num_huge_blocks - 1
+        self.num_allocatable_huge_blocks
     }
 
     #[getter]
@@ -284,11 +301,24 @@ impl PyJengaBlockPool {
     }
 
     fn alloc_block(&self, py: Python<'_>, cache_id: &str) -> PyResult<Py<PyLittleBlock>> {
+        self.alloc_block_with_retype(py, cache_id)
+            .map(|(block, _)| block)
+    }
+
+    fn alloc_block_with_retype(
+        &self,
+        py: Python<'_>,
+        cache_id: &str,
+    ) -> PyResult<(Py<PyLittleBlock>, bool)> {
         let cache = self.cache(cache_id)?;
-        let bid = self.shared.lock(py).alloc_block(cache).map_err(|_| {
-            InsufficientBlocksError::new_err(format!("No free blocks available for {cache_id}"))
-        })?;
-        self.shared.handle(py, cache, bid)
+        let (bid, retyped) = self
+            .shared
+            .lock(py)
+            .alloc_block_with_retype(cache)
+            .map_err(|_| {
+                InsufficientBlocksError::new_err(format!("No free blocks available for {cache_id}"))
+            })?;
+        Ok((self.shared.handle(py, cache, bid)?, retyped))
     }
 
     fn free_block(&self, py: Python<'_>, block: &Bound<'_, PyLittleBlock>) -> PyResult<()> {
@@ -300,6 +330,12 @@ impl PyJengaBlockPool {
     fn touch(&self, py: Python<'_>, block: &Bound<'_, PyLittleBlock>) -> PyResult<()> {
         let (cache, bid) = self.locate(block)?;
         self.shared.lock(py).touch(cache, bid);
+        Ok(())
+    }
+
+    fn refresh(&self, py: Python<'_>, block: &Bound<'_, PyLittleBlock>) -> PyResult<()> {
+        let (cache, bid) = self.locate(block)?;
+        self.shared.lock(py).refresh(cache, bid);
         Ok(())
     }
 
@@ -356,6 +392,29 @@ impl PyJengaBlockPool {
         Ok(self.shared.lock(py).num_free_blocks(cache))
     }
 
+    /// Returns `(referenced, cached, free, claimed_huge_blocks,
+    /// parked_huge_blocks)` for `cache_id`, as `kv_core`'s `CacheOccupancy`.
+    fn occupancy(
+        &self,
+        py: Python<'_>,
+        cache_id: &str,
+    ) -> PyResult<(usize, usize, usize, usize, usize)> {
+        let cache = self.cache(cache_id)?;
+        let occupancy = self.shared.lock(py).occupancy(cache);
+        Ok((
+            occupancy.referenced,
+            occupancy.cached,
+            occupancy.free,
+            occupancy.claimed_huge_blocks,
+            occupancy.parked_huge_blocks,
+        ))
+    }
+
+    #[getter]
+    fn num_pristine_huge_blocks(&self, py: Python<'_>) -> usize {
+        self.shared.lock(py).num_pristine_huge_blocks()
+    }
+
     #[pyo3(signature = (demand, at_capacity = false))]
     fn can_satisfy_demand(
         &self,
@@ -363,13 +422,22 @@ impl PyJengaBlockPool {
         demand: &Bound<'_, PyAny>,
         at_capacity: bool,
     ) -> PyResult<bool> {
-        let mut dense = vec![0; self.cache_index.len()];
-        for item in demand.call_method0("items")?.try_iter()? {
-            let (cache_id, num_blocks): (String, i64) = item?.extract()?;
-            // No demand at all, as the Python pool read a count of 0 or less.
-            dense[self.cache(&cache_id)?] = usize::try_from(num_blocks).unwrap_or(0);
-        }
+        let dense = self.dense(demand)?;
         Ok(self.shared.lock(py).can_satisfy_demand(&dense, at_capacity))
+    }
+
+    #[pyo3(signature = (unit, at_capacity = false))]
+    fn max_satisfiable_multiple(
+        &self,
+        py: Python<'_>,
+        unit: &Bound<'_, PyAny>,
+        at_capacity: bool,
+    ) -> PyResult<usize> {
+        let dense = self.dense(unit)?;
+        Ok(self
+            .shared
+            .lock(py)
+            .max_satisfiable_multiple(&dense, at_capacity))
     }
 
     fn reset_prefix_cache<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {

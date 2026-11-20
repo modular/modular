@@ -21,6 +21,8 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/MojoParser/ASTType.h"
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParamInf.h"
@@ -36,7 +38,9 @@
 
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/KGENPogUtils.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -59,12 +63,42 @@ TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
   auto lookupResult = lookup.getIfSuccess()[0];
   if (!lookupResult)
     return {};
-  auto fieldOp =
-      dyn_cast_or_null<StructFieldOp>(lookupResult->getIfOperation());
-  if (!fieldOp)
+  auto *fieldDecl = dyn_cast<StructFieldASTDecl>(lookupResult);
+  if (!fieldDecl)
     return {};
 
-  return LIT::StructExtractAttr::get(value, fieldOp);
+  return LIT::StructExtractAttr::get(value, fieldDecl->getOp());
+}
+
+TypedAttr ASTType::extractAddressSpace(TypedAttr value, SMLoc loc,
+                                       SharedState &shared) {
+  if (value.getType().isIndex())
+    return value;
+
+  // `AddressSpace` holds the index two fields deep.
+  auto extractInt = extractStructField(value, "_value", loc, shared);
+  if (!extractInt)
+    return {};
+  auto extractIndex =
+      extractStructField(extractInt, "_mlir_value", loc, shared);
+  if (!extractIndex || !extractIndex.getType().isIndex())
+    return {};
+  return extractIndex;
+}
+
+TypedAttr ASTType::getAddressSpaceForDisplay(TypedAttr addrSpace) {
+  // FIXME: when StructExtractAttr::get folds the extracts on the constant, it
+  // keeps the sugar by applying the same extracts to that sugared form, which
+  // drops the member name and would print as simply 'AddressSpace'. Fall back
+  // to the canonical index instead.
+  addrSpace = getCanonicalAttr(addrSpace);
+  auto index = dyn_cast<LIT::StructExtractAttr>(addrSpace);
+  if (!index || index.getField() != "_mlir_value")
+    return addrSpace;
+  auto value = dyn_cast<LIT::StructExtractAttr>(index.getStructValue());
+  if (!value || value.getField() != "_value")
+    return addrSpace;
+  return value.getStructValue();
 }
 
 /// Given an expression that can be used in `origin_of` or a ref expression,
@@ -105,27 +139,6 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 
   IREmitter emitter(paramList.declScope, EC_Origin);
 
-  // Check to see if this is a value address space specifier.  If so, return
-  // true, otherwise return false.
-  auto digOutAddressSpace = [&](TypedAttr value, SMLoc loc) -> TypedAttr {
-    // If the value has index type, then it is good to go.
-    if (value.getType().isIndex())
-      return value;
-
-    // Check to see if this is the well-known AddressSpace struct.  If so,
-    // dig out the index from within it.
-    auto extractInt = ASTType::extractStructField(value, "_value", loc, shared);
-    if (!extractInt)
-      return {};
-    auto extractIndex =
-        ASTType::extractStructField(extractInt, "_mlir_value", loc, shared);
-    if (!extractIndex)
-      return {};
-    if (extractIndex.getType().isIndex())
-      return extractIndex;
-    return {};
-  };
-
   // If the origin expression is syntactically a multi-element tuple, then
   // take it apart.
   ArrayRef<const ExprNode *> originExprElts;
@@ -155,7 +168,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
         [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
-            if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
+            if (auto as = ASTType::extractAddressSpace(pv.get(), expr->getLoc(),
+                                                       shared)) {
               if (addrSpace) {
                 emitter.emitError(expr->getLoc())
                     << "address space must be specified once; remove duplicate "
@@ -796,6 +810,204 @@ static PValue emitDefault(ArrayRef<ParsedArgument> args, unsigned argIdx,
   return PValue();
 }
 
+/// Returns true if `type` is spelled with an alias that signatures keep.
+/// `Scalar` is excluded since keeping it would rebind every scalar argument at
+/// every method call and its sugar is special cased in the printer.
+static bool isKeptAlias(ASTType type, LIT::StructType structType) {
+  auto paramType = dyn_cast<ParamType>(type.mlirType);
+  auto aliasSugar = dyn_cast_if_present<SugarAttr>(
+      paramType ? paramType.getParam() : nullptr);
+  return aliasSugar && aliasSugar.getAliasDeclRef() &&
+         !isScalarSIMDType(structType);
+}
+
+/// Checks that an implicit parameter of type `paramType`, about to be prepended
+/// as an inferred parameter, only depends on parameters that are inferred
+/// themselves: implicit parameters declared before it (`siblingNames`),
+/// inferred parameters declared earlier in the same list (`earlierParams`), or
+/// parameters of an enclosing declaration. Consider something like:
+///   struct T1[mut: Bool, value: TakesBool[mut]]: ...
+///   struct T2[m: Bool, n: T1[m, _]]:
+/// it would be incorrect to transform this into:
+///   struct T2[IMP: TakesBool[m], //, m: Bool, n: T1[m, _]]:
+/// because IMP would use m before it is declared. Diagnoses at `loc` and
+/// returns failure on a bad dependency.
+static LogicalResult
+checkPrependedParamDeps(Type paramType, ArrayRef<StringAttr> siblingNames,
+                        ArrayRef<ParamDeclAttr> earlierParams,
+                        ArrayRef<PassingKind> earlierPassingKinds,
+                        ASTDecl &declScope, SMLoc loc) {
+  SharedState &shared = declScope.getShared();
+  auto isDeclaredParam = [](ASTDecl *scope, ParamDeclRefAttr paramRef) -> bool {
+    auto userName = StringAttr::get(
+        scope->getContext(), KGEN::demangleParameterName(paramRef.getName()));
+    if (ArrayRef<ASTDecl *> decls = scope->lookup(userName); !decls.empty()) {
+      for (auto decl : decls)
+        if (CValue cv = decl->getIfIRValue())
+          return cv.getIfPValue() && isEqualCanon(cv.getIfPValue(), paramRef);
+    }
+    return false;
+  };
+
+  bool hadFailure = false;
+  SmallVector<ParamDeclRefAttr> paramUses;
+  shared.collectParamRefsInType(paramType, paramUses);
+  // A type can reference the same parameter more than once; check each once.
+  llvm::SmallDenseSet<StringAttr, 4> checkedNames;
+  // This is O(n^2) but the N's are small.
+  for (ParamDeclRefAttr paramUse : paramUses) {
+    if (!checkedNames.insert(paramUse.getName()).second)
+      continue;
+    // Check to see if it is an earlier part of the type for this argument.
+    std::optional<PassingKind> passingKind;
+    if (llvm::is_contained(siblingNames, paramUse.getName()))
+      passingKind = PassingKind::Inferred;
+    // Otherwise, it must be something part of the enclosing param list.
+    if (!passingKind.has_value()) {
+      // Make sure to iterate over the decls (not the user-facing names)
+      // because those don't get mangled when params shadow.
+      for (auto [decl, kind] :
+           llvm::zip_equal(earlierParams, earlierPassingKinds)) {
+        if (paramUse.getName() == decl.getName()) {
+          passingKind = kind;
+          break;
+        }
+      }
+    }
+    // If we didn't find it, check to see if it is on the enclosing struct.
+    if (!passingKind.has_value()) {
+      // We can not reuse ASTDecl::lookupParamReference here, as the parent
+      // decl might not have been fully resolved yet. E.g.,
+      // def [T : AnyType, F : def [Param[T, _]]() ]()
+      // when auto parameterized `[Param[T, _]`, `T` has not been put into
+      // the parameter list of the holding function yet.
+      //
+      // Any parameters from it are fine.
+      if (isDeclaredParam(&declScope, paramUse))
+        passingKind = PassingKind::Inferred;
+    }
+
+    if (!passingKind.has_value()) {
+      shared.emitError(loc, "INTERNAL ERROR: inferred parameter of type ")
+          << paramType << " depends on unresolved parameter "
+          << paramUse.getName() << "; please file a compiler bug";
+      hadFailure = true;
+    } else if (*passingKind != PassingKind::Inferred) {
+      // It is common to hit this with variadic packs.
+      auto diag = shared.emitError(loc);
+      if (auto paramListType = dyn_cast<ParamListType>(paramType)) {
+        diag << "element type parameter " << paramListType.getElementType()
+             << " must be an 'inferred' parameter";
+        // The message doesn't name the offending parameter, so one is enough.
+        return failure();
+      } else {
+        diag << "inferred parameter of type " << paramType
+             << " cannot depend on non-inferred parameter "
+             << paramUse.getName();
+      }
+      hadFailure = true;
+    }
+  }
+  return failure(hadFailure);
+}
+
+TypeCheckedParamList::DeferredTypingScope::DeferredTypingScope(
+    TypeCheckedParamList &paramList, IREmitter *emitter, StringAttr argName,
+    bool append)
+    : paramList(paramList), emitter(emitter), append(append) {
+  if (argName)
+    context.implicitParams.emplace(paramList.declScope, /*prefix=*/argName);
+  if (emitter) {
+    assert(!emitter->deferredTypingContext &&
+           "an emitter is in one deferred typing scope at a time");
+    emitter->deferredTypingContext = &context;
+  }
+}
+
+TypeCheckedParamList::DeferredTypingScope::~DeferredTypingScope() {
+  if (emitter)
+    emitter->deferredTypingContext = nullptr;
+  SmallVector<ImplicitParamManager::PendingParam> pending;
+  if (context.implicitParams)
+    pending = context.implicitParams->takePending();
+  if (pending.empty()) {
+    llvm::append_range(paramList.deferredConstraints,
+                       context.deferredConstraints);
+    return;
+  }
+
+  // Deferred constraints this type raised on its own holes are auto-propagated
+  // onto this signature as necessary without needing the user to specify.
+  // TODO(MOCO-5245): This is a very rough categorization. We should either make
+  // the categorization more granular (by splitting top-level conjunctions) or
+  // find a better way to auto-propagate constraints.
+  llvm::SmallDenseSet<StringAttr, 4> pendingNames;
+  for (const ImplicitParamManager::PendingParam &param : pending)
+    pendingNames.insert(param.decl.getName());
+  auto refersToPending = [&](const DeferredConstraint &deferral) {
+    return deferral.constraint.getProposition()
+        .walk([&](ParamDeclRefAttr ref) {
+          return pendingNames.contains(ref.getName()) ? WalkResult::interrupt()
+                                                      : WalkResult::advance();
+        })
+        .wasInterrupted();
+  };
+  for (const DeferredConstraint &deferral : context.deferredConstraints) {
+    if (refersToPending(deferral)) {
+      paramList.emittedBodyConstraints.push_back(deferral.constraint);
+      paramList.declScope.insertKnownAssumptions({deferral.constraint});
+    } else {
+      paramList.deferredConstraints.push_back(deferral);
+    }
+  }
+
+  if (!append) {
+    // Only this argument's own implicit parameters can precede each one.
+    SmallVector<StringAttr> siblingNames;
+    for (const ImplicitParamManager::PendingParam &param : pending) {
+      if (failed(checkPrependedParamDeps(
+              param.decl.getType(), siblingNames, paramList.paramDeclAttrs,
+              paramList.passingKinds, paramList.declScope, param.loc)))
+        paramList.hadImplicitParamErrors = true;
+      siblingNames.push_back(param.decl.getName());
+    }
+  }
+  auto decls = llvm::map_range(
+      pending, [](const ImplicitParamManager::PendingParam &param) {
+        return param.decl;
+      });
+
+  size_t insertPt;
+  if (append) {
+    insertPt = paramList.paramDeclAttrs.size();
+  } else {
+    insertPt = 0;
+    while (insertPt < paramList.paramDeclAttrs.size() &&
+           paramList.passingKinds[insertPt] == PassingKind::Inferred)
+      ++insertPt;
+  }
+
+  auto insertN = [&](auto &dst, auto value) {
+    dst.insert(dst.begin() + insertPt, pending.size(), value);
+  };
+  paramList.paramDeclAttrs.insert(paramList.paramDeclAttrs.begin() + insertPt,
+                                  decls.begin(), decls.end());
+  auto declNames =
+      llvm::map_range(decls, [](ParamDeclAttr decl) { return decl.getName(); });
+  paramList.names.insert(paramList.names.begin() + insertPt, declNames.begin(),
+                         declNames.end());
+  insertN(paramList.passingKinds,
+          append ? PassingKind::Implicit : PassingKind::Inferred);
+  // Auto-parameterized parameters are never variadic: the variadic-ness of
+  // `*xs: SomeType` is carried by the user's own parameter. Any parameters
+  // synthesized for holes on the element type are not themselves variadic.
+  // Even if the element type's hole was declared variadic, the
+  // auto-parameterized version is not.
+  insertN(paramList.variadicKinds, VariadicKind::None);
+  insertN(paramList.defaults, TypedAttr());
+  insertN(paramList.locations, SMLoc());
+}
+
 /// Given a type that potentially has all of its parameters unbound, implicitly
 /// add the parameter declarations to the function parameters. For example, a
 /// struct type can be partially bound. This function implicitly adds a
@@ -825,51 +1037,15 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     return {};
 
   auto &shared = paramList.shared;
-  SmallVector<ParamDeclAttr> paramDeclAttrs;
-  SmallVector<StringAttr> names;
-  SmallVector<PassingKind> passingKinds;
-  SmallVector<VariadicKind> variadicKinds;
-  SmallVector<SMLoc> locations;
-  SmallVector<TypedAttr> defaults;
-
-  // Functor to insert the pending vectors into paramList, either at the front
-  // or back.
-  auto insertFn = [](size_t insertPt, auto &dst, auto &src) {
-    dst.insert(dst.begin() + insertPt, src.begin(), src.end());
-  };
-
-  auto commitChanges = llvm::scope_exit([&]() {
-    // All lists guaranteed to have the same length.
-    if (paramDeclAttrs.empty())
-      return;
-
-    // Figure out where to insert the new parameters.  If append, we put them at
-    // the end of the list.  If prepend, we put them after any infer-only
-    // parameters.
-    size_t insertPt;
-    if (append)
-      insertPt = paramList.paramDeclAttrs.size();
-    else {
-      insertPt = 0;
-      while (insertPt < paramList.paramDeclAttrs.size() &&
-             paramList.passingKinds[insertPt] == PassingKind::Inferred)
-        ++insertPt;
-    }
-
-    insertFn(insertPt, paramList.paramDeclAttrs, paramDeclAttrs);
-    insertFn(insertPt, paramList.names, names);
-    insertFn(insertPt, paramList.passingKinds, passingKinds);
-    insertFn(insertPt, paramList.variadicKinds, variadicKinds);
-    insertFn(insertPt, paramList.defaults, defaults);
-    insertFn(insertPt, paramList.locations, locations);
-  });
+  TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+      paramList, /*emitter=*/nullptr, argName, append);
+  DeferredTypingContext &deferredTypingContext =
+      deferredTypingScope.getContext();
 
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
   ParameterEvaluator evaluator = shared.getParameterEvaluator();
-
-  bool hadFailure = false;
 
   // Re-attach an auto-parameterized generator's trailing `where` (body)
   // constraints to the enclosing parameter list (rebinding their index refs to
@@ -887,99 +1063,11 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     }
   };
 
-  auto isDeclaredParam = [](ASTDecl *scope, ParamDeclRefAttr paramRef) -> bool {
-    auto userName = StringAttr::get(
-        scope->getContext(), KGEN::demangleParameterName(paramRef.getName()));
-    if (ArrayRef<ASTDecl *> decls = scope->lookup(userName); !decls.empty()) {
-      for (auto decl : decls)
-        if (CValue cv = decl->getIfIRValue())
-          return cv.getIfPValue() && isEqualCanon(cv.getIfPValue(), paramRef);
-    }
-    return false;
-  };
-
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name) {
-    auto boundParamType = evaluator.getReboundType(type);
-    // If we are prepending this as an implicit parameter, make sure its type
-    // doesn't depend on any parameters before it.  Consider something like:
-    //   struct T1[mut: Bool, value: TakesBool[mut]]: ...
-    //   struct T2[m: Bool, n: T1[m, _]]:
-    // it would be incorrect to transform this into:
-    //   struct T2[IMP: TakesBool[m], //, m: Bool, n: T1[m, _]]:
-    // because IMP would use m before it is declared.
-    if (!append) {
-      SmallVector<ParamDeclRefAttr> paramUses;
-      shared.collectParamRefsInType(boundParamType, paramUses);
-      // This is O(n^2) but the N's are small.
-      for (ParamDeclRefAttr paramUse : paramUses) {
-        // Check to see if it is an earlier part of the type for this argument.
-        std::optional<PassingKind> passingKind;
-        for (auto [idx, name] : llvm::enumerate(names)) {
-          if (paramUse.getName() == name) {
-            passingKind = passingKinds[idx];
-            break;
-          }
-        }
-        // Otherwise, it must be something part of the enclosing param list.
-        if (!passingKind.has_value()) {
-          // Make sure to iterate over paramDeclAttrs (not names) because
-          // 'names' doesn't get mangled when params shadow.
-          for (auto [idx, decl] : llvm::enumerate(paramList.paramDeclAttrs)) {
-            if (paramUse.getName() == decl.getName()) {
-              passingKind = paramList.passingKinds[idx];
-              break;
-            }
-          }
-        }
-        // If we didn't find it, check to see if it is on the enclosing struct.
-        if (!passingKind.has_value()) {
-          // We can not reuse ASTDecl::lookupParamReference here, as the parent
-          // decl might not have been fully resolved yet. E.g.,
-          // def [T : AnyType, F : def [Param[T, _]]() ]()
-          // when auto parameterized `[Param[T, _]`, `T` has not been put into
-          // the parameter list of the holding function yet.
-          //
-          // Any parameters from it are fine.
-          if (isDeclaredParam(&paramList.declScope, paramUse))
-            passingKind = PassingKind::Inferred;
-        }
-
-        if (!passingKind.has_value()) {
-          shared.emitError(loc, "INTERNAL ERROR: inferred parameter of type ")
-              << boundParamType << " depends on unresolved parameter "
-              << paramUse.getName() << "; please file a compiler bug";
-          boundParamType = TypeCheckErrorType::get(shared.getContext());
-        } else if (*passingKind != PassingKind::Inferred) {
-          // It is common to hit this with variadic packs.
-          auto diag = shared.emitError(loc);
-          if (auto paramList = dyn_cast<ParamListType>(boundParamType)) {
-            diag << "element type parameter " << paramList.getElementType()
-                 << " must be an 'inferred' parameter";
-          } else {
-            diag << "inferred parameter of type " << boundParamType
-                 << " cannot depend on non-inferred parameter "
-                 << paramUse.getName();
-          }
-          boundParamType = TypeCheckErrorType::get(shared.getContext());
-          hadFailure = true;
-        }
-      }
-    }
-
-    auto mangledName =
-        paramList.declScope.mangleParamName(argName.strref() + "." + name);
-    auto paramDecl = ParamDeclAttr::get(mangledName, boundParamType);
-    names.push_back(mangledName);
-    passingKinds.push_back(append ? PassingKind::Implicit
-                                  : PassingKind::Inferred);
-    paramDeclAttrs.push_back(paramDecl);
-    locations.push_back(SMLoc());
+    ParamDeclAttr paramDecl = deferredTypingContext.declareImplicitParam(
+        evaluator.getReboundType(type), name, loc);
     paramValues.push_back(ParamDeclRefAttr::get(paramDecl));
-
-    // FIXME: Autoparam of variadics looks broken?
-    variadicKinds.push_back(VariadicKind::None);
-    defaults.push_back(TypedAttr());
     evaluator.appendIndexBinding(paramValues.back());
   };
 
@@ -987,28 +1075,11 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   // FIXME: We need an AnyFunction metatype.
   if (auto sig = sugarDynCast<FnTypeGeneratorType>(type)) {
     TypedAttr origins = sig.getCaptureOrigins();
-    if (!isa<UnboundAttr>(origins))
+    if (!isa<GeneratorAttr>(origins))
       return type;
-    declareAndAddParam(origins.getType(), "__origins__");
-    if (hadFailure)
-      return {};
+    declareAndAddParam(cast<GeneratorType>(origins.getType()).getBody(),
+                       "__origins__");
     return sig.getWithCaptureOrigins(paramValues.back());
-  }
-
-  if (auto gen = sugarDynCast<GeneratorType>(type)) {
-    if (bindUnboundGeneratorTypes) {
-      PogListAttr genParamList = gen.getParamListAttrs();
-      ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
-      for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
-        declareAndAddParam(type, pogs[idx].getName());
-      if (hadFailure)
-        return {};
-      propagateBodyConstraints(genParamList);
-      return gen
-          .getSpecializedGenerator(paramValues, &shared.getEvaluationContext(),
-                                   shared.translateLocation(loc))
-          .getInstantiatedBody();
-    }
   }
 
   // Auto-parameterize generator typed values.
@@ -1019,8 +1090,6 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
       ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
         declareAndAddParam(type, pogs[idx].getName());
-      if (hadFailure)
-        return {};
       propagateBodyConstraints(genParamList);
       TypedAttr generator = paramType.getParam();
       // The generator's trailing constraints were re-attached to the enclosing
@@ -1035,26 +1104,42 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     }
   }
 
-  // Check for a struct type or a struct metatype.
-  auto getBoundStructMetaType = [&](StructMetaType metatype) -> StructMetaType {
-    // The unbound parameters will be on the struct type's signature.
-    TypeSignatureType sig = metatype.getSignature();
-    PogListAttr paramList = sig.getParamListAttrs();
-    ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
-    for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
-      declareAndAddParam(type, pogs[idx].getName());
-    if (!hadFailure)
-      return metatype.bindUnbound(paramValues);
-    return {};
-  };
-
+  // A struct type or struct metatype has all of its parameters bound, so no
+  // parameter is added. Drop the sugar it is spelled with, except an alias that
+  // signatures keep.
   if (auto metatype =
           sugarDynCastIfPresent<StructMetaType>(type.extractMetaType())) {
-    auto mt = getBoundStructMetaType(metatype);
-    return mt ? mt.getType() : ASTType();
+    if (isKeptAlias(type, metatype.getType()))
+      return type;
+    return metatype.getType();
   }
   if (auto metatype = sugarDynCast<StructMetaType>(type))
-    return getBoundStructMetaType(metatype);
+    return metatype;
+
+  if (auto gen = sugarDynCast<GeneratorType>(type)) {
+    // Always auto-param a `type_of(ParamStruct[_])` expression, this is to
+    // support `def __merge_with__[other_type: type_of(ParamStruct[_])]`.
+    //
+    // TODO: does it worth for us to bend the language for that specific
+    // (rare) use cases?
+    // TODO: we should have a syntactical way to opt-out/in
+    // auto-parameterization instead of relying on implicit rules.
+    bool bindUnbound = bindUnboundGeneratorTypes ||
+                       sugarIsa<LIT::StructMetaType>(gen.getBody());
+
+    if (bindUnbound) {
+      PogListAttr genParamList = gen.getParamListAttrs();
+      ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
+      for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
+        declareAndAddParam(type, pogs[idx].getName());
+      propagateBodyConstraints(genParamList);
+      return gen
+          .getSpecializedGenerator(
+              ParamsBindingArrayAttr::get(gen.getContext(), paramValues),
+              &shared.getEvaluationContext(), shared.translateLocation(loc))
+          .getInstantiatedBody();
+    }
+  }
 
   return type;
 }
@@ -1098,8 +1183,8 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
     emitter.emitError(arg.loc, "malformed ParameterList");
     return {};
   }
-  auto structDeclOp =
-      dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
+  auto *structDecl = dyn_cast<StructASTDecl>(listDecl);
+  StructDeclOp structDeclOp = structDecl ? structDecl->getOp() : nullptr;
   if (!structDeclOp || structDeclOp.getParams().size() != 2) {
     emitter.emitError(arg.loc, "malformed ParameterList");
     return {};
@@ -1109,13 +1194,12 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
   bindings.add(
       arg.typeExpr, PValue(elementType),
       StringAttr::get(emitter.getContext(), isValueList ? "type" : "Trait"));
-  bindings.add(arg.typeExpr, // 'values' is left unbound.
-               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
-               StringAttr::get(emitter.getContext(), "values"));
+  bindings.addUnprovided(arg.typeExpr,
+                         StringAttr::get(emitter.getContext(), "values"));
 
   ASTType result = specializeStruct(bindings, structDeclOp, listDecl);
   if (!result)
-    return emitter.shared.getTypeCheckErrorType();
+    return {};
 
   // Add the !kgen.param_list parameter to the parameter list.  It is possible
   // the element type is a non-inferred parameter, so "append" this.
@@ -1133,7 +1217,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   result.stagedBodyConstraints = std::move(parsedParams.bodyConstraints);
 
   // Resolve each of the parameter declarations.
-  IREmitter emitter(declScope, EC_Type, &result.deferredTypingContext);
+  IREmitter emitter(declScope, EC_Type);
   bool hasErrors = false;
 
   IndexRefRemapper remapper(ArrayRef<ParamDeclAttr>{});
@@ -1142,7 +1226,17 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     // parameters.
     ASTType type;
     if (arg.typeExpr) {
-      type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+      // Holes in a variadic element type are appended, matching
+      // `typeCheckVariadicParams`.
+      bool append = arg.variadicKind == VariadicKind::PosVarArg;
+      [[maybe_unused]] size_t numParams = result.paramDeclAttrs.size();
+      {
+        DeferredTypingScope deferredTypingScope(result, &emitter, arg.name,
+                                                append);
+        type = emitter.emitExprType(arg.typeExpr, TypeStrictness::kIncomplete);
+        assert(result.paramDeclAttrs.size() == numParams &&
+               "parameter list changed under a deferred typing scope");
+      }
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -1176,8 +1270,9 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     // Emit default parameter values if present. An error would have been
     // emitted if failed.
-    PValue defaultVal = emitDefault(parsedParams.params, argIdx, type,
-                                    result.defaults, emitter, EC_DefaultParam);
+    PValue defaultVal;
+    defaultVal = emitDefault(parsedParams.params, argIdx, type, result.defaults,
+                             emitter, EC_DefaultParam);
     result.defaults.push_back(defaultVal);
 
     // TODO: Parameter decls should support conventions at some point.
@@ -1199,13 +1294,16 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     result.names.push_back(arg.name);
     result.variadicKinds.push_back(variadicKind);
 
-    ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
+    auto &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
+    resolvedDecl.setArgOrParamNumber(static_cast<ssize_t>(argIdx),
+                                     /*isParameter=*/true);
+    result.paramASTDecls.push_back(&resolvedDecl);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
     remapper.appendParamDecl(newDecl);
   }
 
-  if (hasErrors)
+  if (hasErrors || result.hadImplicitParamErrors)
     return std::nullopt;
   return result;
 }
@@ -1249,8 +1347,7 @@ void TypeCheckedParamList::emitBodyConstraints() {
   // signature. A deferred constraint is "discharged" if the body constraints
   // (together with the rest of the scope's known assumptions) now imply it;
   // otherwise we surface a hard error pointing at the original binding site.
-  for (const DeferredConstraint &deferral :
-       deferredTypingContext.deferredConstraints) {
+  for (const DeferredConstraint &deferral : deferredConstraints) {
     SmallVector<ConstraintAttr> stillUnprovable;
     std::optional<MojoInflightDiag> violationDiag;
     auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
@@ -1260,7 +1357,7 @@ void TypeCheckedParamList::emitBodyConstraints() {
     TriBool result = LIT::canDischargeConstraintsInScope(
         declScope, /*paramListAttr=*/PogListAttr(), {deferral.constraint},
         /*origConstraints=*/{}, getDiag, &stillUnprovable,
-        /*evaluator=*/nullptr);
+        /*evaluator=*/nullptr, shared.noAssumptions);
     if (result.isTrue())
       continue;
 
@@ -1606,7 +1703,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 
       // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
-          << spelling << "', expected 'raises', 'capturing', or 'thin'";
+          << spelling << "', expected 'raises' or 'thin'";
     } else if (spelling == "raises") {
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
       p.consumeIdentifier();
@@ -1640,7 +1737,10 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       continue; // Don't consume the identifier again.
 
     } else if (spelling == "capturing") {
-      handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
+      p.emitError(loc, "the 'capturing' function effect is no longer "
+                       "supported; use a closure capture list like '{var}' or "
+                       "'{mut x}' instead");
+      return failure();
     } else if (spelling == "escaping") {
       p.emitError(loc, "the 'escaping' function effect is no longer supported");
       return failure();
@@ -1806,7 +1906,12 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   assert(arg.variadicKind == VariadicKind::PackVarArg &&
          "this applies to pack arguments");
 
-  PValue param = emitter.emitExprPValue(arg.typeExpr, EC_Type);
+  PValue param;
+  {
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &emitter, arg.name, /*append=*/true);
+    param = emitter.emitExprPValue(arg.typeExpr, EC_Type);
+  }
   if (!param) // Error emitting the expression is already diagnosed.
     return {};
 
@@ -1846,8 +1951,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
-  auto packStruct =
-      dyn_cast_if_present<StructDeclOp>(*packDecl->getIfOperation());
+  auto *packStructDecl = dyn_cast<StructASTDecl>(packDecl);
+  StructDeclOp packStruct = packStructDecl ? packStructDecl->getOp() : nullptr;
   if (!packStruct || packStruct.getParams().size() != 7) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
@@ -1860,9 +1965,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                SIMDAttr::getScalarBool(emitter.getContext(), isMutable),
                StringAttr::get(emitter.getContext(), "elt_is_mutable"));
-  bindings.add(arg.typeExpr,
-               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
-               StringAttr::get(emitter.getContext(), "origin"));
+  bindings.addUnprovided(arg.typeExpr,
+                         StringAttr::get(emitter.getContext(), "origin"));
   bindings.add(arg.typeExpr, PValue(elementType),
                StringAttr::get(emitter.getContext(), "element_trait"));
 
@@ -1884,8 +1988,13 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   assert(arg.variadicKind == VariadicKind::PosVarArg &&
          "this applies to variadic list arguments");
 
-  ASTType elementType =
-      emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+  ASTType elementType;
+  {
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &emitter, arg.name, /*append=*/true);
+    elementType =
+        emitter.emitExprType(arg.typeExpr, TypeStrictness::kIncomplete);
+  }
   if (!elementType) // Error emitting the expression is already diagnosed.
     return {};
 
@@ -1909,8 +2018,8 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
     emitter.emitError(arg.loc, "malformed VariadicList");
     return {};
   }
-  auto structDeclOp =
-      dyn_cast_if_present<StructDeclOp>(*listDecl->getIfOperation());
+  auto *structDecl = dyn_cast<StructASTDecl>(listDecl);
+  StructDeclOp structDeclOp = structDecl ? structDecl->getOp() : nullptr;
   if (!structDeclOp || structDeclOp.getParams().size() != 5) {
     emitter.emitError(arg.loc, "malformed VariadicList");
     return {};
@@ -1925,9 +2034,8 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
                SIMDAttr::getScalarBool(emitter.getContext(), isMutable),
                StringAttr::get(emitter.getContext(), "elt_is_mutable"));
 
-  bindings.add(arg.typeExpr, // Origin is left unbound.
-               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
-               StringAttr::get(emitter.getContext(), "origin"));
+  bindings.addUnprovided(arg.typeExpr,
+                         StringAttr::get(emitter.getContext(), "origin"));
   bindings.add(arg.typeExpr, PValue(elementType));
 
   bool isVar = arg.convention == ParsedArgument::kConventionVar;
@@ -1948,8 +2056,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = declScope.getShared();
-  IREmitter typeEmitter(declScope, EC_Type,
-                        &tcSignature.paramList.deferredTypingContext);
+  IREmitter typeEmitter(declScope, EC_Type);
 
   FnOp fnOp; // Null if type checking a function type.
   if (fnDecl)
@@ -1978,7 +2085,10 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       // Emit the argument type. Allow argument types to be "automatically"
       // parameterized: if the type is fully unbound, its parameters are
       // appended to the function parameters.
-      type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+      TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+          tcSignature.paramList, &typeEmitter, arg.name, /*append=*/true);
+      type =
+          typeEmitter.emitExprType(arg.typeExpr, TypeStrictness::kIncomplete);
     }
 
     // If the type couldn't be emitted, mark this argument erroneous (so uses
@@ -2045,8 +2155,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
           arg.loc,
           "'deinit' convention is only valid on struct method arguments");
       arg.convention = ParsedArgument::kConventionVar;
-    } else if (!type.getWithoutParameters(shared).isEqualCanon(
-                   tcSignature.selfType.getWithoutParameters(shared))) {
+    } else if (type.getDecl(shared) != tcSignature.selfType.getDecl(shared)) {
       shared.emitError(
           arg.loc, "'deinit' must only be applied to arguments of Self type");
       arg.convention = ParsedArgument::kConventionVar;
@@ -2080,9 +2189,14 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
 
   // Emit default argument values if present. An error would have been emitted
   // if failed.
-  auto defaultVal =
-      emitDefault(tcSignature.argList.parsedArgs, idx, type,
-                  tcSignature.defaults, typeEmitter, EC_DefaultArgument);
+  PValue defaultVal;
+  {
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &typeEmitter);
+    defaultVal =
+        emitDefault(tcSignature.argList.parsedArgs, idx, type,
+                    tcSignature.defaults, typeEmitter, EC_DefaultArgument);
+  }
   tcSignature.defaults.push_back(defaultVal);
 
   // Now that we have the declared type and default value sorted, apply the
@@ -2177,6 +2291,9 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       arg.kgenConvention = ArgConvention::ImmMem;
       break;
     }
+    // The convention of a pack also holds the convention of its elements.
+    if (arg.variadicKind == VariadicKind::PackVarArg)
+      arg.kgenConvention = getPackConvention(arg.variadicArgConvention);
   }
 
   // Values passed by memory need an associated origin parameter, and need to
@@ -2184,7 +2301,9 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   Type fullType;
   if (hasImplicitOrigin(arg.kgenConvention) &&
       arg.variadicKind != VariadicKind::KwVarArg) {
-    bool isMutable = arg.kgenConvention != ArgConvention::ImmMem;
+    bool isMutable = arg.kgenConvention != ArgConvention::ImmMem &&
+                     arg.kgenConvention != ArgConvention::PackImmMem &&
+                     arg.kgenConvention != ArgConvention::PackMut;
     fullType =
         makeImplicitRefTypeForArg(arg, idx, type, isMutable, tcSignature);
   } else {
@@ -2196,12 +2315,10 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     // We build StringDict[ValType].
     ASTType dictType = shared.getStandardCollectionType(arg.loc, "StringDict");
 
-    auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
-    // We know these are all UnboundAttrs created by
-    // StructDeclOp::bindReference. The correct way is to have bindReference
-    // return a GeneratorType.
-    ArrayRef<TypedAttr> inputUnboundParams = dictDecl.getParamValues();
-    if (inputUnboundParams.size() != 1) {
+    auto dictGen = StructTypeGenerator::dynCast(dictType);
+    ArrayRef<Type> dictParamTypes =
+        dictGen ? dictGen.getInputParamTypes() : ArrayRef<Type>();
+    if (dictParamTypes.size() != 1) {
       shared.emitError(arg.loc)
           << "internal compiler error: StringDict type has unexpected "
              "parameter signature; please file a bug";
@@ -2213,7 +2330,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     if (arg.isErroneous)
       return;
 
-    auto collectionElement = cast<TraitType>(inputUnboundParams[0].getType());
+    auto collectionElement = cast<TraitType>(dictParamTypes[0]);
     SyntheticNode typeExpr(arg.loc);
     auto typeExprToUse = arg.typeExpr ? arg.typeExpr : &typeExpr;
     auto binding = typeEmitter.emitPValue({fullType, typeExprToUse}, EC_Type,
@@ -2222,7 +2339,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       arg.isErroneous = true;
       return;
     }
-    fullType = cast<LIT::StructType>(dictType).bindAll(binding.get());
+    fullType = dictGen.bindAll({binding.get()}, &shared.getEvaluationContext());
 
     // StringDict is memory only and since only the callee can access it,
     // we pass it as owned.
@@ -2238,10 +2355,19 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   // SSA value.
   //
   // Names are always present for function bodies, but can be missing in
-  // function types.  In that case, there are obviously no dependent values on
-  // it, because they can't be named.
-  if (arg.name.empty())
+  // function types. Keep an anonymous declaration for the latter so the
+  // function-type owner's argument list remains aligned with its signature.
+  if (arg.name.empty()) {
+    if (!fnDecl && arg.kgenConvention != ArgConvention::ByRefError &&
+        arg.kgenConvention != ArgConvention::ByRefResult) {
+      auto &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
+          CValue(), StringAttr(), arg.loc, &typeEmitter.declScope);
+      decl.setArgOrParamNumber(static_cast<ssize_t>(idx),
+                               /*isParameter=*/false);
+      tcSignature.argASTDecls.push_back(&decl);
+    }
     return;
+  }
 
   // Create the block argument that will eventually represent this function
   // argument.  If we're generating this argument for a function, put it into
@@ -2252,14 +2378,17 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   BlockArgument bbArg =
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
-  DeclIRValue argIRValue;
+  CValue argIRValue;
   if (arg.kgenConvention == ArgConvention::ImmReg)
     argIRValue = SRValue(bbArg);
   else // Everything else is passed in memory.
     argIRValue = CValue::getMValueForRef(bbArg);
 
-  ASTDecl &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
+  auto &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
       argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
+  decl.setArgOrParamNumber(static_cast<ssize_t>(idx),
+                           /*isParameter=*/false);
+  tcSignature.argASTDecls.push_back(&decl);
 
   // If we don't have a function decl, notify the listener immediately (function
   // arguments will be notified when they are fully resolved later).
@@ -2283,9 +2412,11 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
   } else if (resultArg.typeExpr) {
-    IREmitter typeEmitter(declScope, EC_Type,
-                          &tcSignature.paramList.deferredTypingContext);
-    resultType = typeEmitter.emitExprType(resultArg.typeExpr);
+    IREmitter typeEmitter(declScope, EC_Type);
+    TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+        tcSignature.paramList, &typeEmitter);
+    resultType =
+        typeEmitter.emitExprType(resultArg.typeExpr, TypeStrictness::kConcrete);
 
     // If the resultType is a generated type, ensure that it is convertible to a
     // concrete type as we do not allow runtime generators, and we do not
@@ -2302,12 +2433,12 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
           // as any constraints on the generator can be discharged by the
           // function's constraints.
           for (ConstraintAttr c : genType.getBodyConstraints())
-            tcSignature.paramList.deferredTypingContext.deferredConstraints
-                .push_back({c, resultArg.typeExpr->getLoc()});
+            deferredTypingScope.getContext().addInconclusive(
+                c, resultArg.typeExpr->getLoc());
           llvm::BitVector discharged(genType.getBodyConstraints().size(), true);
           // Record the type as the discharged body type.
           resultType = BindParamsAttr::get(
-              shared.getContext(), paramType.getParam(), /*paramValues=*/{},
+              shared.getContext(), paramType.getParam(), ArrayRef<TypedAttr>(),
               /*discharged=*/
               getDenseBoolArrayAttr(shared.getContext(), discharged),
               &shared.getEvaluationContext());
@@ -2428,6 +2559,11 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
         diag << "has RegisterPassable type " << argType;
       else
         diag << "might expand to a RegisterPassable type";
+      // A 'ref' argument only replaces a borrow; owned arguments get no hint.
+      if (badArg.convention == ParsedArgument::kConventionMut)
+        diag << "; use a 'ref' argument with a MutOrigin instead";
+      else if (badArg.convention == ParsedArgument::kConventionImm)
+        diag << "; use a 'ref' argument with an ImmOrigin instead";
       diag << resultArg.typeExpr->getRange()
            << SourceRange(badArg.loc, badArg.loc);
       break;
@@ -2444,9 +2580,11 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
   if (tcSignature.argList.effects.isThrows()) {
     ASTType errorType;
     if (tcSignature.argList.thrownTypeExpr) {
-      IREmitter typeEmitter(declScope, EC_Type,
-                            &tcSignature.paramList.deferredTypingContext);
-      errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr);
+      IREmitter typeEmitter(declScope, EC_Type);
+      TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+          tcSignature.paramList, &typeEmitter);
+      errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr,
+                                           TypeStrictness::kConcrete);
     }
     if (!errorType)
       errorType = shared.lookupBuiltinType(
@@ -2528,8 +2666,12 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
           body.addArgument(refType, shared.translateLocation(resultArg.loc));
 
       // Add a decl so this will be found by name lookup within the body.
-      shared.getDeclResolver().addFullyResolvedDecl(
+      auto &resultDecl = shared.getDeclResolver().addFullyResolvedDecl(
           MLValue(bbArg), resultArg.name, resultArg.loc, &declScope);
+      resultDecl.setArgOrParamNumber(
+          static_cast<ssize_t>(tcSignature.argList.parsedArgs.size() - 1),
+          /*isParameter=*/false);
+      tcSignature.argASTDecls.push_back(&resultDecl);
     }
 
     // We know the ABI register result will be None now, which is trivial.
@@ -2567,8 +2709,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
   }
   SharedState &shared = paramList.shared;
-  IREmitter typeEmitter(paramList.declScope, EC_Type,
-                        &paramList.deferredTypingContext);
+  IREmitter typeEmitter(paramList.declScope, EC_Type);
 
   // If this definition is a struct/class member, compute the self type.
   if (fnDecl) {
@@ -2680,11 +2821,14 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // signature type later.
   if (originExpr) {
     // Special rule for `[_]` when specifying the capture origin set: the
-    // set is unbound and will be autoparameterized.
+    // set is a generator and will be autoparameterized.
     auto setType = OriginSetType::get(shared.getContext());
     if (originExpr->kind == ExprNode::kDiscardLiteral) {
-      captureOrigins = UnboundAttr::get(setType);
+      captureOrigins =
+          GeneratorAttr::get({setType}, ParamIndexRefAttr::get(0, setType));
     } else {
+      TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
+          paramList, &typeEmitter);
       captureOrigins =
           typeEmitter.emitExprPValue(originExpr, EC_Origin, setType);
     }
@@ -2746,8 +2890,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
   ASTType selfType;
   constexpr size_t kSelfArgNo = 0;
   if (ASTDecl *parent = decl.getParentDecl();
-      parent &&
-      isa_and_nonnull<StructDeclOp, TraitDeclOp>(parent->getIfOperation())) {
+      parent && isa<TypeASTDecl>(parent)) {
     // The parent decl must be fully resolved in order to resolve any of its
     // members.
     assert(parent->resolvedness == DeclResolvedness::body);
@@ -2756,6 +2899,36 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
 
   // Check any special function information.
 
+  // A self result declared with a specialization of Self (e.g.
+  // `out self: S[Int]`) is typed as Self, with a body constraint that each of
+  // Self's parameters is identical to the declared one.
+  auto constrainSelfToDeclaredType = [&](ASTType declaredType,
+                                         const ParsedArgument &selfArg) {
+    if (selfArg.isErroneous || selfType.isEqualCanon(declaredType) ||
+        selfType.getDecl(shared) != declaredType.getDecl(shared))
+      return declaredType;
+
+    TypedAttr prop = SIMDAttr::getScalarBool(shared.getContext(), true);
+    for (auto [l, r] : llvm::zip_equal(declaredType.getParamBindings(),
+                                       selfType.getParamBindings()))
+      prop =
+          ParamOperatorAttr::get(POC::And, prop, ParamIdenticalAttr::get(l, r));
+
+    std::string constraintMsg;
+    llvm::raw_string_ostream os(constraintMsg);
+    os << "Self type '";
+    selfType.print(os, {&shared});
+    os << "' is not identical to the declared type '";
+    declaredType.print(os, {&shared});
+    os << "'";
+    os.flush();
+
+    paramList.emittedBodyConstraints.push_back(ConstraintAttr::get(
+        prop, shared.diags.translateLocation(selfArg.loc),
+        StringAttr::get(shared.getContext(), constraintMsg)));
+    return selfType;
+  };
+
   // Check that the 'self' argument/result of a method was specified correctly.
   if (selfType) {
     if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
@@ -2763,6 +2936,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
       // thereof.
       checkSelfArgument(decl, resultType, argList.resultArg,
                         /*isSelfResult*/ true);
+      resultType = constrainSelfToDeclaredType(resultType, argList.resultArg);
     } else if (funcOp.getIsStatic()) {
       // Static methods don't have a self argument.
     } else if (argTypes.empty()) {
@@ -2771,6 +2945,8 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
       // Normal methods require a self argument.
       checkSelfArgument(decl, argTypes[kSelfArgNo], parsedArgs[kSelfArgNo],
                         /*isSelfResult*/ false);
+      this->argTypes[kSelfArgNo] = constrainSelfToDeclaredType(
+          argTypes[kSelfArgNo], parsedArgs[kSelfArgNo]);
     }
   }
 
@@ -2925,8 +3101,7 @@ void TypeCheckedFnSignature::checkSelfArgument(ASTDecl &decl,
     // the explicit self type is very hard to specify in mojo, so we
     // suggest to use 'Self' instead.
     auto diag = emitErrorLoc(selfArg.loc) << "'self' argument must have type ";
-    if (decl.getParentDecl() &&
-        isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()))
+    if (decl.getParentDecl() && isa<TraitASTDecl>(decl.getParentDecl()))
       diag << "'Self' in trait method declaration";
     else
       diag << selfType;
@@ -3026,10 +3201,11 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   [[maybe_unused]] int numVariadics = 0;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     if (arg.variadicKind == VariadicKind::PosVarArg ||
-        arg.variadicKind == VariadicKind::PackVarArg) {
-      argVariadicOrigConvention = arg.variadicArgConvention;
+        arg.variadicKind == VariadicKind::PackVarArg)
       ++numVariadics;
-    }
+    // The convention of a pack argument holds its element convention.
+    if (arg.variadicKind == VariadicKind::PosVarArg)
+      argVariadicOrigConvention = arg.variadicArgConvention;
 
     argPogs.emplace_back(
         PogMetadataAttr::get(arg.name, arg.getKWArgHandlingAsPassingKind(),

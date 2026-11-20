@@ -10,16 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Base pipeline model for the ModuleV3 autoencoder."""
 
 from collections.abc import Callable
 from typing import Any
 
+from max import functional as F
 from max.driver import Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.modeling.base.component_model import ComponentModel
+from max.tensor import Tensor
 
 from .model_config import AutoencoderKLConfigBase
 from .vae import DiagonalGaussianDistribution

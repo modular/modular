@@ -219,7 +219,7 @@ def test_apple_fa_softmax_unit(ctx: DeviceContext) raises:
             var expected = o_ref[c] / l
             var got = out_h[r * OUT_N + c]
             if abs(got - expected) > Float32(1e-3) * (1.0 + abs(expected)):
-                print("FAIL row", r, "col", c, "got", got, "exp", expected)
+                print(t"FAIL row {r} col {c} got {got} exp {expected}")
                 pass_ = False
 
     if not pass_:
@@ -232,7 +232,7 @@ def main() raises:
         print("SKIP: Apple GPU required")
         return
     var ctx = DeviceContext()
-    if ctx.compute_capability() != 5:
+    if ctx.compute_capability() < 5:
         print("SKIP: Apple M5 required (16x16 simdgroup MMA fragment)")
         return
     test_apple_fa_softmax_unit(ctx)

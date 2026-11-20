@@ -12,10 +12,16 @@ and initializes those artifacts instead of compiling.
 Note this is *not* the MEF cache. Reusing artifacts by path avoids matching a
 compile key that covers the host CPU target, kernel-package contents and the
 build configuration -- none of which agree between a build action and a test --
-and a mismatch raises rather than silently falling back to a full recompile. The
-consumer still has to build the same graphs, so config the pipeline derives from
-device memory must be pinned on both sides; the manifest check reports it when it
-is not.
+and a graph with no artifact raises rather than silently falling back to a full
+recompile. The consumer still has to build the same graphs, so config the
+pipeline derives from device memory must be pinned on both sides.
+
+The consumer has to pass ``--no-precompiled-mefs-verify-body`` as well. The
+record compiles under virtual devices, so the graphs it builds carry a
+compile-only memory plan and weight staging; the program it produces is the one
+the run needs, but the graph text is not the text a run with real devices
+builds. The name-and-signature match is what says the artifact is the right
+one here, and the consuming test's assertions say it runs.
 
 Public API:
 

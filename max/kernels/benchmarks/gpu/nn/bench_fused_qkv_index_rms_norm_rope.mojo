@@ -83,7 +83,8 @@ from nn.kv_cache import (
     fused_dual_qk_rms_norm_rope_ragged_paged,
     fused_qk_rms_norm_rope_ragged_paged,
 )
-from std.utils import Index, IndexList
+from std.utils import IndexList
+from std.utils.index import Index
 
 # Ring size per cache-busted tensor. 1 GiB comfortably exceeds a few x the MI355
 # last-level cache and, even at the largest window (bs=512 decode main-K is
@@ -122,7 +123,7 @@ def bench_fused_qkv_index_rms_norm_rope[
     main_kv_heads: Int,
     index_q_heads: Int,
     index_kv_heads: Int,
-](ctx: DeviceContext, mut m: Bench, batch_size: Int, seq_len: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, batch_size: Int, seq_len: Int) raises:
     """Benchmarks the fused single launch vs the unfused two-launch sequence."""
     comptime main_params = KVCacheStaticParams(
         num_heads=main_kv_heads, head_size=head_dim
@@ -142,13 +143,23 @@ def bench_fused_qkv_index_rms_norm_rope[
     var pages_per_seq = ceildiv(Int(cache_len) + seq_len, page_size)
     var num_paged_blocks = batch_size * pages_per_seq
 
-    var main_kv_block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, main_kv_heads, head_dim
+    var main_kv_block_shape = Index(
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        main_kv_heads,
+        head_dim,
     )
-    var index_kv_block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, index_kv_heads, head_dim
+    var index_kv_block_shape = Index(
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        index_kv_heads,
+        head_dim,
     )
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
 
     # Cache-busted tensors (cold HBM per iter). Q reads are read-only and
     # identical for both variants, so a single ring is shared. The K caches are
@@ -374,7 +385,7 @@ def bench_fused_qkv_index_rms_norm_rope[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var main_kv_tile = TileTensor(
                 cb_main_kv_unfused.offset_ptr(iteration), main_kv_layout
             )
@@ -410,9 +421,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
                 dtype, width
             ]:
-                return q_main_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_main_src.load[width=width]((token, head, col))
 
             @inline(.always)
             def q_index_fn[
@@ -420,12 +429,9 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
                 dtype, width
             ]:
-                return q_index_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_index_src.load[width=width]((token, head, col))
 
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](
@@ -442,7 +448,6 @@ def bench_fused_qkv_index_rms_norm_rope[
                 ctx,
             )
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](
@@ -497,7 +502,7 @@ def bench_fused_qkv_index_rms_norm_rope[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var main_kv_tile = TileTensor(
                 cb_main_kv_fused.offset_ptr(iteration), main_kv_layout
             )
@@ -533,9 +538,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_main_src} -> SIMD[
                 dtype, width
             ]:
-                return q_main_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_main_src.load[width=width]((token, head, col))
 
             @inline(.always)
             def q_index_fn[
@@ -543,16 +546,13 @@ def bench_fused_qkv_index_rms_norm_rope[
             ](token: Int, head: Int, col: Int) {var q_index_src} -> SIMD[
                 dtype, width
             ]:
-                return q_index_src.load[width=width](
-                    Coord(Index(token, head, col))
-                )
+                return q_index_src.load[width=width]((token, head, col))
 
-            # Exercises the merged dual op (`mo.fused_qk_rms_norm_rope.ragged.paged.dual`,
+            # Exercises the merged dual op (`kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual`,
             # landed separately), which collapses the two single-pair launches above
             # into one. It takes a per-band epsilon, so `main_epsilon`/`index_epsilon`
             # are passed twice below with the same value the unfused pair uses.
             fused_dual_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](

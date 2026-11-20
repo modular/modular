@@ -46,8 +46,8 @@ def argv() -> Span[StaticString, ImmStaticOrigin]:
         The list of command line arguments provided when mojo was invoked.
     """
     # SAFETY:
-    #   It is valid to use `StringSlice` (and thus `StaticString`) here because
-    #   `StringSlice` is guaranteed to be ABI compatible with `llvm::StringRef`.
+    #   It is valid to use `StringSpan` (and thus `StaticString`) here because
+    #   `StringSpan` is guaranteed to be ABI compatible with `llvm::StringRef`.
     var result = Span[StaticString, ImmStaticOrigin]()
     external_call["KGEN_CompilerRT_GetArgV", NoneType](Pointer(to=result))
     return result

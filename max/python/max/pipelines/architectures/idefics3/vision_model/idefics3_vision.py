@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Idefics3 vision tower."""
 
 from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.layer import Module
-from max.nn.norm import LayerNorm
+from max.nn.legacy.layer import Module
+from max.nn.legacy.norm import LayerNorm
 
 from ..model_config import Idefics3VisionConfig
 from .connector import Idefics3Connector
@@ -70,7 +71,6 @@ class Idefics3VisionModel(Module):
         Returns:
             Image embeddings tensor, flattened for language model.
         """
-
         hidden_states = self.embeddings(
             pixel_values=pixel_values, patch_attention_mask=None
         )

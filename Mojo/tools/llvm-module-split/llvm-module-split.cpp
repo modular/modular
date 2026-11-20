@@ -48,6 +48,7 @@ public:
   std::string inputFilename{"-"};
   std::string outputPrefix{"-"};
   bool perFunctionSplit = false;
+  bool outlineSharedSubtrees = false;
   bool timeTrace = false;
   int timeTraceGranularity = 0;
 
@@ -67,6 +68,12 @@ private:
       "per-func", llvm::cl::desc("split each function into separate modules"),
       llvm::cl::value_desc("split each function into separate modules"),
       llvm::cl::location(perFunctionSplit), llvm::cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> outlineSharedSubtreesOpt{
+      "outline-shared-subtrees",
+      llvm::cl::desc("emit a subtree reached from many anchors into a module "
+                     "of its own instead of cloning it into each"),
+      llvm::cl::location(outlineSharedSubtrees), llvm::cl::cat(cat)};
 
   M::cl::MOpt<bool, true> timeTraceOpt{
       "time-trace",
@@ -175,8 +182,11 @@ int main(int argc, char **argv) {
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
   if (clOptions.perFunctionSplit)
     splitPerFunction(std::move(module), outputLambda, symbolLinkageTypes);
-  else
-    splitPerExported(std::move(module), outputLambda);
+  else {
+    splitPerExported(std::move(module), outputLambda, symbolLinkageTypes,
+                     clOptions.outlineSharedSubtrees,
+                     llvm::hardware_concurrency().compute_thread_count());
+  }
 
   if (output)
     output->keep();

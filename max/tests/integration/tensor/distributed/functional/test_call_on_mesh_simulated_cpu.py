@@ -18,19 +18,19 @@ from typing import Any
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU
-from max.experimental import functional as F
-from max.experimental.functional import transfer_to
-from max.experimental.sharding import (
+from max.functional import transfer_to
+from max.graph import Shape
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
     ShardingError,
 )
-from max.experimental.sharding.action import PerShard
-from max.experimental.tensor import Tensor
-from max.graph import Shape
+from max.tensor.sharding.action import PerShard
 
 MESH_2 = DeviceMesh(devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",))
 MESH_2X2 = DeviceMesh(

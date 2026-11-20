@@ -41,10 +41,10 @@ def block_select_topk[
     out_idx_type: DType,
     largest: Bool = True,
 ](
-    scores: UnsafePointer[Scalar[T], MutAnyOrigin],
+    scores: MutPointer[Scalar[T], MutAnyOrigin],
     num_blocks: Int,
     k: Int,
-    out_idxs: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
+    out_idxs: MutPointer[Scalar[out_idx_type], MutAnyOrigin],
 ):
     """Select the top-k block indices from one row of block scores.
 

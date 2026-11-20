@@ -34,8 +34,12 @@ from max.gpu import (
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.sync import barrier
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 
-from std.utils import IndexList
 from std.utils.index import StaticTuple
 
 
@@ -222,7 +226,7 @@ def non_max_suppression_shape_func[
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
-) -> IndexList[2]:
+) -> Coord[Int, Int]:
     """Compute the output shape for NMS without allocating the output buffer.
 
     This function performs a dry-run of NMS to determine how many boxes will be
@@ -240,7 +244,7 @@ def non_max_suppression_shape_func[
         score_threshold: Minimum score threshold.
 
     Returns:
-        A 2-element IndexList specifying the output shape (num_selected_boxes, 3).
+        A 2-element `Coord` specifying the output shape (num_selected_boxes, 3).
     """
     comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
     comptime assert scores.flat_rank == 3, "scores must be of rank 3"
@@ -263,7 +267,7 @@ def non_max_suppression_shape_func[
         incr_pred_count,
     )
 
-    return IndexList[2](Int(box_pred_count), 3)
+    return (Int(box_pred_count), 3)
 
 
 def non_max_suppression[
@@ -300,19 +304,19 @@ def non_max_suppression[
     comptime assert boxes.rank == 3, "boxes must be of rank 3"
     comptime assert scores.rank == 3, "scores must be of rank 3"
 
-    var batch_size = Int(boxes.layout.shape[0]().value())
-    var num_boxes = Int(boxes.layout.shape[1]().value())
-    var num_classes = Int(scores.layout.shape[1]().value())
+    var batch_size = Int(boxes.dim[0]())
+    var num_boxes = Int(boxes.dim[1]())
+    var num_classes = Int(scores.dim[1]())
 
-    assert Int(boxes.layout.shape[2]().value()) == 4, (
+    assert Int(boxes.dim[2]()) == 4, (
         "boxes must be specified with the 2D coords representing the"
         " diagonal corners"
     )
-    assert Int(boxes.layout.shape[0]().value()) == Int(
-        scores.layout.shape[0]().value()
+    assert Int(boxes.dim[0]()) == Int(
+        scores.dim[0]()
     ), "dim 0 of boxes and scores must be equal"
-    assert Int(boxes.layout.shape[1]().value()) == Int(
-        scores.layout.shape[2]().value()
+    assert Int(boxes.dim[1]()) == Int(
+        scores.dim[2]()
     ), "boxes and scores must contain the same number of boxes"
 
     if max_output_boxes_per_class == 0:
@@ -324,19 +328,18 @@ def non_max_suppression[
 
     for b in range(batch_size):
         for c in range(num_classes):
-            # Entries of per_class_scores_ptr are set to neginf when they no longer
+            # Entries of the per-class scores are set to neginf when they no longer
             # correspond to an eligible box
             # this happens when:
             #   1. Score does not meet score threshold (filtered out initially)
             #   2. IoU with an already-selected boc is above IOU threshold (suppressed)
-            var offset = scores.layout(Coord(b, c, Idx[0]))
-            var per_class_scores_ptr = scores.ptr + offset
-
             # Filter boxes by score threshold
             # This reduces the number of boxes to sort and process
             var num_boxes_remaining = 0
             for i in range(num_boxes):
-                var score = per_class_scores_ptr.load(i)
+                var score = rebind[Scalar[dtype]](
+                    scores.load[invariant=False]((b, c, i))
+                )
                 if score > score_threshold.cast[dtype]():
                     per_class_scores[i] = score
                     num_boxes_remaining += 1
@@ -402,12 +405,10 @@ def non_max_suppression[
                 #   2. The end contains suppressed boxes with score=-inf (order doesn't matter)
                 # Note: Use num_boxes_curr_pred (not num_boxes_remaining) because it
                 # represents the count before we marked boxes as suppressed above
-                var box_idxs_ptr: UnsafePointer[
-                    box_idxs.T, origin_of(box_idxs)
-                ] = box_idxs.unsafe_ptr()
+                var box_idxs_ptr = box_idxs.unsafe_ptr()
                 sort(
-                    Span[box_idxs.T, origin_of(box_idxs)](
-                        unsafe_ptr=box_idxs_ptr + pred_idx,
+                    Span(
+                        unsafe_ptr=box_idxs_ptr.unsafe_offset(pred_idx),
                         length=num_boxes_curr_pred,
                     ),
                     _greater_than,
@@ -535,164 +536,170 @@ def _nms_greedy_kernel[
         sh_row[0] = 0
 
     var pair = 0
-    while pair < Int(scores_arg.layout.shape[0]().value()) * n_classes:
-        var b, c = divmod(pair, n_classes)
 
-        # Load, filter, and pad the current pair's candidates.
-        var i = tid
-        var scores_base = scores_arg.ptr + scores_arg.layout(
-            Coord(Int32(b), Int32(c), Idx[0])
-        )
-        while i < n:
-            var score = scores_base.unsafe_load(i)
-            if score > score_threshold.cast[dtype]():
-                # Eligible: keep the real score so the sort's total order
-                # matches the CPU path.
-                sh_score[i] = score
-                sh_alive[i] = True
-            else:
-                # Ineligible (also NaN, which fails strict >): park at
-                # the finite floor -MAX_FINITE. Unlike the CPU filter's
-                # negative infinity, this finite key keeps the sort total
-                # on every dtype; ineligible lanes are also marked dead,
-                # so the key value never competes for selection.
-                sh_score[i] = -Scalar[dtype].MAX_FINITE
-                sh_alive[i] = False
-            sh_index[i] = Int32(i)
-            i += BLOCK
-        i = n + tid
-        while i < PAD:
-            sh_score[i] = -Scalar[dtype].MAX_FINITE
-            sh_index[i] = Int32(0x7FFFFFFF)
-            sh_alive[i] = False
-            i += BLOCK
-        barrier()
+    with PDL():
+        while pair < Int(scores_arg.dim[0]()) * n_classes:
+            var b, c = divmod(pair, n_classes)
 
-        # Bitonic sort by score descending, index ascending. Runtime
-        # stage loops (PAD is a compile-time power of two). Descending
-        # blocks: swap when the lower lane's score is smaller (or equal
-        # score with larger index); ascending blocks invert.
-        var k = 2
-        while k <= PAD:
-            var j = k >> 1
-            while j > 0:
-                barrier()
-                i = tid
-                while i < PAD:
-                    var partner = i ^ j
-                    if partner > i:
-                        var ascending_block = (i & k) == 0
-                        var vi = sh_score[i]
-                        var vj = sh_score[partner]
-                        # true when the lower lane must swap up
-                        var wrong: Bool
-                        if vi == vj:
-                            wrong = (
-                                sh_index[i] > sh_index[partner]
-                            ) if ascending_block else (
-                                sh_index[i] < sh_index[partner]
-                            )
-                        else:
-                            # Geometrically-ascending blocks hold
-                            # score-descending runs: the lower lane
-                            # swaps up when its score is smaller
-                            # (or equal score and larger index);
-                            # other blocks invert. The final stage is
-                            # one geometrically-ascending block, so
-                            # the output is score descending.
-                            wrong = (vi > vj) if not ascending_block else (
-                                vi < vj
-                            )
-                        if wrong:
-                            var t_s = sh_score[i]
-                            sh_score[i] = vj
-                            sh_score[partner] = t_s
-                            var t_i = sh_index[i]
-                            sh_index[i] = sh_index[partner]
-                            sh_index[partner] = t_i
-                            var t_a = sh_alive[i]
-                            sh_alive[i] = sh_alive[partner]
-                            sh_alive[partner] = t_a
-                    i += BLOCK
-                j >>= 1
-            k <<= 1
-        barrier()
-
-        # Greedy selection for this pair. Thread 0 scans for the first
-        # alive candidate; alive lanes are sorted score-descending, so
-        # the first alive lane is the winner. sh_index[0] doubles as
-        # the winner-broadcast channel: safe because the first alive
-        # lane, once picked, is marked dead, so later rounds never
-        # read it as a candidate.
-        var sel = 0
-        while sel < cap:
-            var winner: Int32 = -1
-            if tid == 0:
-                var j = 0
-                while j < n:
-                    if sh_alive[j]:
-                        winner = sh_index[j]
-                        sh_alive[j] = False
-                        break
-                    j += 1
-                sh_index[0] = winner
-            barrier()
-            winner = sh_index[0]
-            if winner < 0:
-                break
-
-            if tid == 0:
-                # The host sizes output rows to the shape-function count,
-                # and both paths pin the same tie order, so the counts
-                # agree; the clamp guards against future drift so this
-                # can never write past the allocation.
-                var row = sh_row[0]
-                var out_rows = Int64(output_arg.layout.shape[0]().value())
-                if row < out_rows:
-                    output_arg.ptr.unsafe_store(
-                        output_arg.layout(Coord(row, Idx[0])),
-                        Int64(b),
-                    )
-                    output_arg.ptr.unsafe_store(
-                        output_arg.layout(Coord(row, Idx[0])) + 1,
-                        Int64(c),
-                    )
-                    output_arg.ptr.unsafe_store(
-                        output_arg.layout(Coord(row, Idx[0])) + 2,
-                        Int64(winner),
-                    )
-                sh_row[0] = row + 1
-
-            # Suppress remaining candidates that overlap the winner.
-            var w_base = boxes_arg.layout(Coord(Int32(b), winner, Idx[0]))
-            var w_y1 = boxes_arg.ptr.unsafe_load(w_base)
-            var w_x1 = boxes_arg.ptr.unsafe_load(w_base + 1)
-            var w_y2 = boxes_arg.ptr.unsafe_load(w_base + 2)
-            var w_x2 = boxes_arg.ptr.unsafe_load(w_base + 3)
-            i = tid
+            # Load, filter, and pad the current pair's candidates.
+            var i = tid
             while i < n:
-                if sh_alive[i]:
-                    var cand = sh_index[i]
-                    var c_base = boxes_arg.layout(Coord(Int32(b), cand, Idx[0]))
-                    if (
-                        _iou_pair[dtype](
-                            w_y1,
-                            w_x1,
-                            w_y2,
-                            w_x2,
-                            boxes_arg.ptr.unsafe_load(c_base),
-                            boxes_arg.ptr.unsafe_load(c_base + 1),
-                            boxes_arg.ptr.unsafe_load(c_base + 2),
-                            boxes_arg.ptr.unsafe_load(c_base + 3),
-                        )
-                        > iou_threshold.cast[dtype]()
-                    ):
-                        sh_alive[i] = False
+                var score = rebind[Scalar[dtype]](
+                    scores_arg.load((Int32(b), Int32(c), i))
+                )
+                if score > score_threshold.cast[dtype]():
+                    # Eligible: keep the real score so the sort's total order
+                    # matches the CPU path.
+                    sh_score[i] = score
+                    sh_alive[i] = True
+                else:
+                    # Ineligible (also NaN, which fails strict >): park at
+                    # the finite floor -MAX_FINITE. Unlike the CPU filter's
+                    # negative infinity, this finite key keeps the sort total
+                    # on every dtype; ineligible lanes are also marked dead,
+                    # so the key value never competes for selection.
+                    sh_score[i] = -Scalar[dtype].MAX_FINITE
+                    sh_alive[i] = False
+                sh_index[i] = Int32(i)
+                i += BLOCK
+            i = n + tid
+            while i < PAD:
+                sh_score[i] = -Scalar[dtype].MAX_FINITE
+                sh_index[i] = Int32(0x7FFFFFFF)
+                sh_alive[i] = False
                 i += BLOCK
             barrier()
-            sel += 1
-        barrier()
-        pair += 1
+
+            # Bitonic sort by score descending, index ascending. Runtime
+            # stage loops (PAD is a compile-time power of two). Descending
+            # blocks: swap when the lower lane's score is smaller (or equal
+            # score with larger index); ascending blocks invert.
+            var k = 2
+            while k <= PAD:
+                var j = k >> 1
+                while j > 0:
+                    barrier()
+                    i = tid
+                    while i < PAD:
+                        var partner = i ^ j
+                        if partner > i:
+                            var ascending_block = (i & k) == 0
+                            var vi = sh_score[i]
+                            var vj = sh_score[partner]
+                            # true when the lower lane must swap up
+                            var wrong: Bool
+                            if vi == vj:
+                                wrong = (
+                                    sh_index[i] > sh_index[partner]
+                                ) if ascending_block else (
+                                    sh_index[i] < sh_index[partner]
+                                )
+                            else:
+                                # Geometrically-ascending blocks hold
+                                # score-descending runs: the lower lane
+                                # swaps up when its score is smaller
+                                # (or equal score and larger index);
+                                # other blocks invert. The final stage is
+                                # one geometrically-ascending block, so
+                                # the output is score descending.
+                                wrong = (vi > vj) if not ascending_block else (
+                                    vi < vj
+                                )
+                            if wrong:
+                                var t_s = sh_score[i]
+                                sh_score[i] = vj
+                                sh_score[partner] = t_s
+                                var t_i = sh_index[i]
+                                sh_index[i] = sh_index[partner]
+                                sh_index[partner] = t_i
+                                var t_a = sh_alive[i]
+                                sh_alive[i] = sh_alive[partner]
+                                sh_alive[partner] = t_a
+                        i += BLOCK
+                    j >>= 1
+                k <<= 1
+            barrier()
+
+            # Greedy selection for this pair. Thread 0 scans for the first
+            # alive candidate; alive lanes are sorted score-descending, so
+            # the first alive lane is the winner. sh_index[0] doubles as
+            # the winner-broadcast channel: safe because the first alive
+            # lane, once picked, is marked dead, so later rounds never
+            # read it as a candidate.
+            var sel = 0
+            while sel < cap:
+                var winner: Int32 = -1
+                if tid == 0:
+                    var j = 0
+                    while j < n:
+                        if sh_alive[j]:
+                            winner = sh_index[j]
+                            sh_alive[j] = False
+                            break
+                        j += 1
+                    sh_index[0] = winner
+                barrier()
+                winner = sh_index[0]
+                if winner < 0:
+                    break
+
+                if tid == 0:
+                    # The host sizes output rows to the shape-function count,
+                    # and both paths pin the same tie order, so the counts
+                    # agree; the clamp guards against future drift so this
+                    # can never write past the allocation.
+                    var row = sh_row[0]
+                    var out_rows = Int64(output_arg.dim[0]())
+                    if row < out_rows:
+                        output_arg.store((row, Idx[0]), Int64(b))
+                        output_arg.store((row, Idx[1]), Int64(c))
+                        output_arg.store((row, Idx[2]), Int64(winner))
+                    sh_row[0] = row + 1
+
+                # Suppress remaining candidates that overlap the winner.
+                var w_y1 = rebind[Scalar[dtype]](
+                    boxes_arg.load((Int32(b), winner, Idx[0]))
+                )
+                var w_x1 = rebind[Scalar[dtype]](
+                    boxes_arg.load((Int32(b), winner, Idx[1]))
+                )
+                var w_y2 = rebind[Scalar[dtype]](
+                    boxes_arg.load((Int32(b), winner, Idx[2]))
+                )
+                var w_x2 = rebind[Scalar[dtype]](
+                    boxes_arg.load((Int32(b), winner, Idx[3]))
+                )
+                i = tid
+                while i < n:
+                    if sh_alive[i]:
+                        var cand = sh_index[i]
+                        if (
+                            _iou_pair[dtype](
+                                w_y1,
+                                w_x1,
+                                w_y2,
+                                w_x2,
+                                rebind[Scalar[dtype]](
+                                    boxes_arg.load((Int32(b), cand, Idx[0]))
+                                ),
+                                rebind[Scalar[dtype]](
+                                    boxes_arg.load((Int32(b), cand, Idx[1]))
+                                ),
+                                rebind[Scalar[dtype]](
+                                    boxes_arg.load((Int32(b), cand, Idx[2]))
+                                ),
+                                rebind[Scalar[dtype]](
+                                    boxes_arg.load((Int32(b), cand, Idx[3]))
+                                ),
+                            )
+                            > iou_threshold.cast[dtype]()
+                        ):
+                            sh_alive[i] = False
+                    i += BLOCK
+                barrier()
+                sel += 1
+            barrier()
+            pair += 1
 
 
 def non_max_suppression_gpu[
@@ -704,11 +711,11 @@ def non_max_suppression_gpu[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -753,9 +760,9 @@ def non_max_suppression_gpu[
     comptime assert scores.flat_rank == 3, "scores must be rank 3"
     comptime assert output.flat_rank == 2, "output must be rank 2"
 
-    var batch = Int(boxes.layout.shape[0]().value())
-    var num_boxes = Int(boxes.layout.shape[1]().value())
-    var num_classes = Int(scores.layout.shape[1]().value())
+    var batch = Int(boxes.dim[0]())
+    var num_boxes = Int(boxes.dim[1]())
+    var num_classes = Int(scores.dim[1]())
 
     # The kernel takes Int32 pair coordinates and extents; dimensions
     # beyond Int32 cannot be handled without wrapping (and would need
@@ -773,15 +780,15 @@ def non_max_suppression_gpu[
 
     # Same invariants the CPU kernel asserts; the verifier does not
     # enforce shape consistency between boxes and scores.
-    assert Int(boxes.layout.shape[2]().value()) == 4, (
+    assert Int(boxes.dim[2]()) == 4, (
         "boxes must be specified with the 2D coords representing the"
         " diagonal corners"
     )
-    assert Int(boxes.layout.shape[0]().value()) == Int(
-        scores.layout.shape[0]().value()
+    assert Int(boxes.dim[0]()) == Int(
+        scores.dim[0]()
     ), "dim 0 of boxes and scores must be equal"
     assert num_boxes == Int(
-        scores.layout.shape[2]().value()
+        scores.dim[2]()
     ), "boxes and scores must contain the same number of boxes"
 
     if num_boxes > _NMS_MAX_LOCAL:
@@ -808,8 +815,8 @@ def non_max_suppression_gpu[
         OutputEngine=OutputEngine,
     ]
     ctx.enqueue_function[kernel](
-        boxes.as_imm(),
-        scores.as_imm(),
+        boxes,
+        scores,
         output,
         Int32(num_boxes),
         Int32(num_classes),
@@ -818,12 +825,12 @@ def non_max_suppression_gpu[
         score_threshold,
         block_dim=_NMS_BLOCK_SIZE,
         grid_dim=1,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
 def non_max_suppression[
     dtype: DType,
-    target: StaticString,
     BoxesLayout: TensorLayout,
     ScoresLayout: TensorLayout,
     OutputLayout: TensorLayout,
@@ -831,11 +838,11 @@ def non_max_suppression[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -853,7 +860,6 @@ def non_max_suppression[
 
     Parameters:
         dtype: The data type for box coordinates and scores.
-        target: Compilation target string.
         BoxesLayout: Layout type of the boxes tensor.
         ScoresLayout: Layout type of the scores tensor.
         OutputLayout: Layout type of the output tensor.
@@ -878,9 +884,9 @@ def non_max_suppression[
     comptime assert scores.flat_rank == 3, "scores must be rank 3"
     comptime assert output.flat_rank == 2, "output must be rank 2"
 
-    var num_boxes = Int(boxes.layout.shape[1]().value())
+    var num_boxes = Int(boxes.dim[1]())
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         # Host tensors: run the CPU kernel directly, no copies.
         non_max_suppression[dtype](
             boxes,
@@ -959,11 +965,11 @@ def _nms_host_fallback[
     ScoresEngine: TensorEngine = DefaultEngine[element_width=1],
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    boxes: TileTensor[
-        mut=True, dtype, BoxesLayout, MutAnyOrigin, Engine=BoxesEngine
+    boxes: ImmTileTensor[
+        dtype, BoxesLayout, ImmutAnyOrigin, Engine=BoxesEngine
     ],
-    scores: TileTensor[
-        mut=True, dtype, ScoresLayout, MutAnyOrigin, Engine=ScoresEngine
+    scores: ImmTileTensor[
+        dtype, ScoresLayout, ImmutAnyOrigin, Engine=ScoresEngine
     ],
     output: TileTensor[
         mut=True, .int64, OutputLayout, MutAnyOrigin, Engine=OutputEngine
@@ -975,9 +981,9 @@ def _nms_host_fallback[
     num_boxes: Int,
 ) raises:
     """Host NMS fallback: device -> host copies, CPU kernel, copy back."""
-    var batch = Int(boxes.layout.shape[0]().value())
-    var n_classes = Int(scores.layout.shape[1]().value())
-    var out_rows = Int(output.layout.shape[0]().value())
+    var batch = Int(boxes.dim[0]())
+    var n_classes = Int(scores.dim[1]())
+    var out_rows = Int(output.dim[0]())
     var n_boxes_total = batch * num_boxes * 4
     var n_scores_total = batch * n_classes * num_boxes
     var n_out_total = out_rows * 3

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Pipeline that echoes its input back."""
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -97,7 +99,6 @@ class EchoPipelineTokenizer(
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
         """Creates a new TextContext for echo generation."""
-
         # Extract prompt from request
         prompt: str | Sequence[int]
         if request.prompt is not None:
@@ -158,6 +159,7 @@ class EchoTokenGenerator(
 
     @property
     def max_batch_size(self) -> int:
+        """The largest batch the token generator accepts."""
         return self._max_batch_size
 
     @property
@@ -169,6 +171,7 @@ class EchoTokenGenerator(
         self,
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
+        """Returns responses that echo the request's tokens."""
         responses = {}
 
         for context in inputs.flat_batch:

@@ -1,0 +1,23 @@
+load("//bazel:api.bzl", "mojo_library", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "router_gate_prefill_utils",
+    srcs = [
+        "__init__.mojo",
+        "validation.mojo",
+    ],
+    validate_missing_docs = False,
+    deps = ["@mojo//:std"],
+)
+
+mojo_test(
+    name = "test_validation.mojo.test",
+    size = "small",
+    srcs = ["test_validation.mojo"],
+    deps = [
+        ":router_gate_prefill_utils",
+        "@mojo//:std",
+    ],
+)

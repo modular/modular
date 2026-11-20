@@ -20,7 +20,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.kv_cache import cache_dtype_for_encoding
@@ -161,6 +161,7 @@ class HYV3Config(Llama3Config):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         # HF reports 80; the trailing MTP layer at index 80 is dropped
         # in the weight adapter (matches HF reference).
         return int(huggingface_config.num_hidden_layers)

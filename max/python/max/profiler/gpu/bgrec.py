@@ -303,7 +303,8 @@ class BackgroundRecorder(GpuStatsRecorder):
         for i, snapshot in enumerate(recorder.stats):
             print(f"Sample {i}: {len(snapshot)} GPUs detected")
             for gpu_id, gpu_stats in snapshot.items():
-                print(f"  {gpu_id}: {gpu_stats.memory.used_bytes} bytes used")
+                if gpu_stats.memory is not None:
+                    print(f"  {gpu_id}: {gpu_stats.memory.used_bytes} bytes used")
 
     Args:
         interval: How frequently (in seconds) to sample GPU statistics.
@@ -371,10 +372,20 @@ class BackgroundRecorder(GpuStatsRecorder):
             return
         try:
             if exc_value is None:
-                # Graceful stop
-                output_path = self._proc.stop()
-                self._stats = _read_stats(output_path)
-                os.unlink(output_path)
+                # Graceful stop. If the recorder died or hung, record no GPU
+                # stats so the benchmark still completes.
+                try:
+                    output_path = self._proc.stop()
+                except (RuntimeError, BrokenPipeError, TimeoutError) as e:
+                    print(
+                        "GPU stats unavailable: background recorder failed:"
+                        f" {e}",
+                        file=sys.stderr,
+                    )
+                    self._stats = []
+                else:
+                    self._stats = _read_stats(output_path)
+                    os.unlink(output_path)
             else:
                 # Exception was thrown; tear down faster
                 self._proc.stop_without_request()
@@ -416,6 +427,30 @@ class _KeepableTempFile(io.RawIOBase, BinaryIO):
         return path
 
 
+async def _record_samples(
+    diag: GPUDiagContext, output_file: IO[bytes], interval: float
+) -> None:
+    """Writes a JSON line of GPU stats to ``output_file``.
+
+    Samples every ``interval`` seconds and drops any sample that raises.
+    """
+    reported: set[str] = set()
+    while True:
+        try:
+            stats = diag.get_stats()
+        except Exception as e:
+            # GPU stats are best-effort. Drop the sample and keep recording.
+            # Log each distinct failure once so a persistent or intermittent
+            # problem can't flood stderr.
+            cause = repr(e)
+            if cause not in reported:
+                print(f"GPU stats sample dropped: {cause}", file=sys.stderr)
+                reported.add(cause)
+        else:
+            output_file.write(msgspec.json.encode(stats) + b"\n")
+        await asyncio.sleep(interval)
+
+
 async def recorder_async_main() -> None:
     """Runs the background GPU diagnostics recorder event loop.
 
@@ -442,18 +477,14 @@ async def recorder_async_main() -> None:
             outch.write(_DieNotification(cause_texts[0].rstrip()[:200]))
             raise
 
-    async def recorder(output_file: IO[bytes]) -> None:
-        while True:
-            stats = diag.get_stats()
-            output_file.write(msgspec.json.encode(stats) + b"\n")
-            await asyncio.sleep(interval)
-
     async with contextlib.AsyncExitStack() as stack:
         stack.enter_context(die_notifier())
         diag = stack.enter_context(GPUDiagContext())
         group = await stack.enter_async_context(TaskGroup())
         output_file = stack.enter_context(_KeepableTempFile())
-        recording_task = group.create_task(recorder(output_file))
+        recording_task = group.create_task(
+            _record_samples(diag, output_file, interval)
+        )
         outch.write(_ReadyNotification())
         try:
             while req := await inch.read_async():

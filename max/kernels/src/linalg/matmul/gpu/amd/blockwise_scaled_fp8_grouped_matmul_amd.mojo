@@ -50,10 +50,10 @@ from max.gpu import (
     block_idx,
     grid_dim,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -197,7 +197,7 @@ def blockwise_scaled_fp8_grouped_matmul_amd_kernel[
     comptime N_SCALES = N // N_SCALE
     comptime K_SCALES = K // K_SCALE
 
-    var slot = Int(block_idx.z)
+    var slot = block_idx.z
     var M = Int(a_offsets[slot + 1]) - Int(a_offsets[slot])
     if M == 0 or N == 0:
         return
@@ -225,7 +225,7 @@ def blockwise_scaled_fp8_grouped_matmul_amd_kernel[
 
     # M-tile stride loop: this CTA strides its expert's M-tiles by grid_dim.y,
     # so coverage is independent of grid.y (any grid.y covers every tile).
-    var m_tile = Int(block_idx.y)
+    var m_tile = block_idx.y
     var num_m_tiles = ceildiv(M, BM)
     while m_tile < num_m_tiles:
         blockwise_scaled_fp8_matmul_amd_tile[
@@ -262,11 +262,11 @@ def blockwise_scaled_fp8_grouped_matmul_amd_kernel[
             a_scales,
             b_scale_tile,
             m_tile,
-            Int(block_idx.x),
+            block_idx.x,
             a_start_row,
             M,
         )
-        m_tile += Int(grid_dim.y)
+        m_tile += grid_dim.y
 
 
 def blockwise_scaled_fp8_grouped_matmul_amd[
@@ -372,7 +372,7 @@ def blockwise_scaled_fp8_grouped_matmul_amd[
             unchanged: a caller wiring this up passes the cap device
             graph capture is bounded to (e.g. the recipe's max decode batch
             size), mirroring `decode_grid_m_cap` on the AMD MXFP4 grouped
-            path (`max/python/max/nn/kernels.py`).
+            path (`max/python/max/nn/_graph_ops/__init__.py`).
     """
     comptime assert transpose_b, "transpose_b must be True"
     comptime assert b.flat_rank == 3, "b must be [num_experts, N, K]"
@@ -433,7 +433,9 @@ def blockwise_scaled_fp8_grouped_matmul_amd[
         K_SCALE=K_SCALE,
     ]
 
-    comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    comptime num_threads = (
+        (BM // WM) * (BN // WN) * ctx.default_device_info.warp_size
+    )
 
     # grid.y is a packing hint, not a coverage bound (the M-tile stride loop
     # covers every tile for any grid.y); size it from this call's token count.
@@ -463,10 +465,12 @@ def blockwise_scaled_fp8_grouped_matmul_amd[
         b_scales,
         a_offsets,
         expert_ids,
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(m_cap, BM),
-            grid_z,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(N, BN),
+                ceildiv(m_cap, BM),
+                grid_z,
+            ),
+            block_dim=(num_threads, 1, 1),
         ),
-        block_dim=(num_threads, 1, 1),
     )

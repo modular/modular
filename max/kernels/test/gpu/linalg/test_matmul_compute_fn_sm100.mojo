@@ -71,7 +71,7 @@ def test_dispatch_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
+        var row_scale = -scale if Int(idx[0]) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -101,27 +101,10 @@ def test_dispatch_compute_fn[
             errors += 1
             if errors <= 5:
                 print(
-                    "  MISMATCH [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "]: got",
-                    c_host_ptr[i],
-                    "expected",
-                    expected,
+                    t"  MISMATCH [ {i // N} , {i % N} ]: got"
+                    t" {c_host_ptr[i]} expected {expected}"
                 )
-    print(
-        "  compute_fn",
-        a_type,
-        "M=",
-        m,
-        " N=",
-        N,
-        " K=",
-        K,
-        " errors=",
-        errors,
-    )
+    print(t"  compute_fn {a_type} M= {m}  N= {N}  K= {K}  errors= {errors}")
     assert_true(errors == 0, msg=String("COMPUTE_FN FAILED:", errors))
 
 

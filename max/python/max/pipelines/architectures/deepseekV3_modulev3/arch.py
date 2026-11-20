@@ -10,21 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for the ModuleV3 DeepSeek-V3."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.deepseekV3.tool_parser import (
     resolve_deepseekv3_tool_parser,
 )
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import DeepseekV3ModuleV3BatchProcessor
-from .memory_planner import (
-    DeepseekV3ModuleV3MemoryPlanner,
-)
-from .model import DeepseekV3Model
+from .deepseekV3 import DeepseekV3Decoder
 from .model_config import DeepseekV3Config
 
 deepseekV3_modulev3_arch = SupportedArchitecture(
@@ -36,7 +33,7 @@ deepseekV3_modulev3_arch = SupportedArchitecture(
     default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
     supported_encodings=DeepseekV3Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
-    pipeline_model=DeepseekV3Model,
+    modules={GraphRole.DECODER: DeepseekV3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -45,7 +42,5 @@ deepseekV3_modulev3_arch = SupportedArchitecture(
     },
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
-    batching=DeepseekV3ModuleV3BatchProcessor,
     tool_parser=resolve_deepseekv3_tool_parser,
-    memory_planner=DeepseekV3ModuleV3MemoryPlanner,
 )

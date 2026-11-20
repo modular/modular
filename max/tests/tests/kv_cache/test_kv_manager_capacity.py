@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -23,6 +25,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
+    cache_params,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
 )
@@ -154,6 +157,37 @@ def test_the_advertised_cap_fits_the_pool_the_manager_builds() -> None:
         require_max_seq_len_fits=True,
     )
     assert num_blocks == ceildiv(cap, PAGE_SIZE)
+
+
+def test_the_slab_holds_no_more_pages_than_a_leaf_can_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A budget past what the kernels' int32 row ids reach caps the slab
+    rather than failing when the views are built."""
+    params = _attention()
+    uncapped = JengaKVCacheManager._plan_geometry(params, BUDGET)
+    (leaf,) = params.leaves().values()
+    assert leaf.max_pages is not None
+    assert leaf.max_pages >= uncapped.num_huge_blocks
+
+    rows_per_page = math.prod(params.shape_per_block[:-1])
+    ratio = uncapped.ratios[leaf.leaf_id]
+    cap = 3
+    monkeypatch.setattr(
+        cache_params, "_MAX_INT32_ROW_ID", cap * ratio * rows_per_page - 1
+    )
+    (leaf,) = params.leaves().values()
+    assert leaf.max_pages == cap * ratio
+    cache_params._check_paged_row_ids(
+        leaf.leaf_id,
+        leaf.max_pages,
+        rows_per_page,
+        cache_params._MAX_INT32_ROW_ID,
+    )
+
+    capped = JengaKVCacheManager._plan_geometry(params, BUDGET)
+    assert capped.num_huge_blocks == cap
+    assert capped.huge_page_bytes == uncapped.huge_page_bytes
 
 
 def test_a_one_page_budget_raises_rather_than_advertising_one_token() -> None:

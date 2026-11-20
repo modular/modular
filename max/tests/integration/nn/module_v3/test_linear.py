@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.Linear."""
+"""Tests for max.nn.legacy.Linear."""
 
 from __future__ import annotations
 
-from max.experimental.nn import Linear
-from max.experimental.tensor import Tensor
+from max.nn import Linear
+from max.tensor import Tensor
 
 
 def test_repr() -> None:

@@ -11,12 +11,14 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+#include "mlir/Pass/PassRegistry.h"
 #include "Mojo/Compiler/KGENCompiler.h"
 #include "Mojo/DepGraphDialect/DepGraphPasses.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
-#include "mlir/Conversion/Passes.h"
+#include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Transforms/Passes.h"
 
 using namespace M;
@@ -26,8 +28,10 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   // Register the standard passes we want.
   mlir::registerCSEPass();
   mlir::registerCanonicalizerPass();
-  mlir::registerConvertIndexToLLVMPass();
-  mlir::registerReconcileUnrealizedCastsPass();
+  // Registered by hand: mlir/Conversion/Passes.h, which declares the
+  // register*Pass functions, links every conversion and dialect in MLIR.
+  mlir::registerPass([] { return mlir::createConvertIndexToLLVMPass(); });
+  mlir::registerPass([] { return mlir::createReconcileUnrealizedCastsPass(); });
   mlir::registerPrintOpStatsPass();
   mlir::registerStripDebugInfoPass();
 
@@ -40,6 +44,7 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerEliminateDuplicateFunctions();
   KGEN::registerEnsureNoParameters();
+  KGEN::registerForceAlwaysInline();
   KGEN::registerFunctionStats();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
@@ -52,17 +57,18 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerLowerGlobalPOPToLLVM();
   KGEN::registerLowerArgConventions();
   KGEN::registerLowerLoops();
+  KGEN::registerLowerHLCFToSCF();
+  KGEN::registerLowerKGENToArith();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();
   KGEN::registerLegalizePOPOperations();
   KGEN::registerLowerPOPToLLVM();
-  KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
   KGEN::registerMem2Reg();
-  KGEN::registerOutlineClosures();
   KGEN::registerRaiseForLoops();
   KGEN::registerRemoveUnusedParams();
   KGEN::registerReorderParamOps();
+  KGEN::registerRotateLoops();
   KGEN::registerSROA();
   KGEN::registerSetFastMathFlags();
   KGEN::registerSimplifyCF();
@@ -86,7 +92,6 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerInlineParametric();
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();
-  KGEN::registerResolveCompilerPromises();
   KGEN::registerUpdateMaterialization();
   KGEN::registerInferFunctionAttrs();
 }

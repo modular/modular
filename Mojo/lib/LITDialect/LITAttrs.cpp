@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/LITDialect/LITAttrs.h"
+#include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -852,6 +853,8 @@ LITStructAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 }
 
 bool LITStructAttr::isConstant() const {
+  if (isParameterizedType(getType()))
+    return false;
   return llvm::all_of(getValues(), [&](const auto &value) {
     return ParameterAttr::isSimpleConstant(std::get<1>(value));
   });
@@ -870,6 +873,17 @@ bool LIT::StructExtractAttr::isLessThan(Attribute rhs) const {
     return ParameterAttr::compare(getStructValue(),
                                   rhsExtract.getStructValue());
   return getField().getValue() < rhsExtract.getField().getValue();
+}
+
+LogicalResult
+LIT::StructExtractAttr::printDisplayValue(AsmPrinter &p,
+                                          KGENParamPrinter &printer) const {
+  p << "#lit.struct.extract<";
+  printer.printColonTypeParamValue(p, getStructValue());
+  p << ", ";
+  p.printAttribute(getField());
+  p << '>';
+  return success();
 }
 
 LIT::StructExtractAttr
@@ -966,7 +980,8 @@ OptionalParseResult RefPackType::parseValue(AsmParser &p,
   return p.parseGreater();
 }
 
-LogicalResult RefPackType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult RefPackType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   auto packAttr = ::dyn_cast<RefPackAttr>(value);
   if (!packAttr)
     return failure();
@@ -1013,6 +1028,104 @@ LogicalResult RefPackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 bool RefPackAttr::isConstant() const {
   return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+}
+
+//===----------------------------------------------------------------------===//
+// StructTypeGenerator
+//===----------------------------------------------------------------------===//
+
+static bool isStructTypeGenerator(TypedAttr attr) {
+  auto gen = sugarDynCast<GeneratorAttr>(attr);
+  return gen && LIT::isTypeExpr(gen.getBody()) &&
+         sugarIsa<LIT::StructType>(ParamType::get(gen.getBody()));
+}
+
+StructTypeGenerator::StructTypeGenerator(TypedAttr attr) {
+  assert((!attr || isStructTypeGenerator(attr)) &&
+         "expected a GeneratorAttr wrapping a struct type");
+  if (attr)
+    storage = sugarCast<GeneratorAttr>(attr);
+}
+
+StructTypeGenerator StructTypeGenerator::dynCast(Attribute attr) {
+  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
+  if (typedAttr && isStructTypeGenerator(typedAttr))
+    return StructTypeGenerator(typedAttr);
+  return {};
+}
+
+StructTypeGenerator StructTypeGenerator::dynCast(Type type) {
+  if (auto paramType = sugarDynCastIfPresent<ParamType>(type))
+    return dynCast(paramType.getParam());
+  return {};
+}
+
+StructTypeGenerator StructTypeGenerator::cast(Attribute attr) {
+  StructTypeGenerator gen = dynCast(attr);
+  assert(gen && "expected a GeneratorAttr wrapping a struct type");
+  return gen;
+}
+
+StructTypeGenerator StructTypeGenerator::cast(Type type) {
+  StructTypeGenerator gen = dynCast(type);
+  assert(gen && "expected a ParamType over a struct type generator");
+  return gen;
+}
+
+GeneratorType StructTypeGenerator::getType() const {
+  return ::cast<GeneratorType>(storage.getType());
+}
+
+ArrayRef<Type> StructTypeGenerator::getInputParamTypes() const {
+  return storage.getInputParamTypes();
+}
+
+PogListAttr StructTypeGenerator::getMetadata() const {
+  return storage.getMetadata();
+}
+
+TypedAttr StructTypeGenerator::getBody() const { return storage.getBody(); }
+
+LIT::StructType StructTypeGenerator::getStructType() const {
+  return sugarCast<LIT::StructType>(ParamType::get(getBody()));
+}
+
+bool StructTypeGenerator::isUnresolvedParam(size_t idx) const {
+  ParamIndexRefAttrFinder finder;
+  return finder.hasReferences(getStructType().getParamValues()[idx]);
+}
+
+bool StructTypeGenerator::isFullyBound() const {
+  return getInputParamTypes().empty();
+}
+
+bool StructTypeGenerator::isEqualAllowingUnbound(Type other) const {
+  LIT::StructType structType = getStructType();
+  auto otherStruct = sugarDynCast<LIT::StructType>(other);
+  if (!otherStruct || otherStruct.getSymbol() != structType.getSymbol())
+    return false;
+
+  for (auto [idx, param, otherParam] : llvm::enumerate(
+           structType.getParamValues(), otherStruct.getParamValues())) {
+    // FIXME: the use of `isUnresolvedParam` is wrong: We only should skip
+    // "forwarded" parameters. e.g.,
+    // ```mojo
+    //   comptime A[a : Int] = Param[a, a]
+    // ```
+    // only the first `a` is a forward parameter, not the second (turning
+    // `Param[a, a]` into `Param[?, ?]` lost the the fact that two values are
+    // equal).
+    if (!isUnresolvedParam(idx) &&
+        getCanonicalAttr(param) != getCanonicalAttr(otherParam))
+      return false;
+  }
+  return true;
+}
+
+Type StructTypeGenerator::bindAll(ArrayRef<TypedAttr> paramValues,
+                                  ParameterEvaluationContext *evalCtx) const {
+  return ParamType::get(
+      BindParamsAttr::get(storage.getContext(), storage, paramValues, evalCtx));
 }
 
 //===----------------------------------------------------------------------===//

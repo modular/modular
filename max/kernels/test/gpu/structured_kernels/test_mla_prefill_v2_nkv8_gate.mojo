@@ -43,13 +43,14 @@ in-place-FP32 helpers are not wired, so the kernel will not compile.
 
 from std.math import ceildiv, exp, rsqrt
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed
 from max.gpu.host import DeviceContext
 from std.sys import get_defined_int, get_defined_string
 
 from layout import TileTensor
 from layout.coord import Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MlaConfigV2
 from nn.attention.gpu.amd_structured.mla_prefill_v2 import MlaPrefillV2
@@ -121,7 +122,7 @@ def _mla_naive_fp32_ref_chunked(
     K_nope segment (DeepSeek-V3 convention).
     """
     var heads_per_kv = num_heads // num_kv_heads
-    var score_buf = alloc[Float32](chunk_size * num_keys)
+    var score_buf = unsafe_alloc[Float32](chunk_size * num_keys)
 
     for b in range(batch):
         for h in range(num_heads):
@@ -197,7 +198,7 @@ def _mla_naive_fp32_ref_chunked(
 
                 q_start = q_end
 
-    score_buf.free()
+    score_buf.unsafe_free()
 
 
 @inline(.always)
@@ -311,21 +312,9 @@ def test_mla_vs_fp32_ref[
     comptime NUM_KEYS = seq_len
 
     print(
-        "--- MlaPrefillV2 vs FP32 ref (qkv=",
-        qkv_type,
-        " out=",
-        output_type,
-        " mask=",
-        mask_name,
-        " kv_block=",
-        kv_block,
-        " heads=",
-        NUM_HEADS,
-        " kv_heads=",
-        NUM_KV_HEADS,
-        " seq=",
-        SEQ_LEN,
-        ") ---",
+        t"--- MlaPrefillV2 vs FP32 ref (qkv= {qkv_type}  out= {output_type} "
+        t" mask= {mask_name}  kv_block= {kv_block}  heads= {NUM_HEADS} "
+        t" kv_heads= {NUM_KV_HEADS}  seq= {SEQ_LEN} ) ---"
     )
 
     var scale = rsqrt(Float32(D_QK))
@@ -468,7 +457,7 @@ def test_mla_vs_fp32_ref[
 
     # ---- FP32 host reference (full sweep) -----------------------------
     var size_ref = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
-    var host_out_ref_fp32 = alloc[Float32](size_ref)
+    var host_out_ref_fp32 = unsafe_alloc[Float32](size_ref)
     comptime CHUNK_SIZE = 64
     _mla_naive_fp32_ref_chunked(
         host_q_src.unsafe_ptr(),
@@ -533,30 +522,17 @@ def test_mla_vs_fp32_ref[
     var passed = min_cos >= 0.997 and num_nonfinite == 0
     if passed:
         print(
-            "  PASSED (",
-            mask_name,
-            " nkv=",
-            NUM_KV_HEADS,
-            ") — min cos_sim=",
-            Float32(min_cos),
-            " max_diff=",
-            max_diff,
+            t"  PASSED ( {mask_name}  nkv= {NUM_KV_HEADS} ) — min cos_sim="
+            t" {Float32(min_cos)}  max_diff= {max_diff}"
         )
     else:
         print(
-            "  FAILED (",
-            mask_name,
-            " nkv=",
-            NUM_KV_HEADS,
-            ") — min cos_sim=",
-            Float32(min_cos),
-            " (gate 0.997) max_diff=",
-            max_diff,
-            " nonfinite=",
-            num_nonfinite,
+            t"  FAILED ( {mask_name}  nkv= {NUM_KV_HEADS} ) — min cos_sim="
+            t" {Float32(min_cos)}  (gate 0.997) max_diff= {max_diff} "
+            t" nonfinite= {num_nonfinite}"
         )
 
-    host_out_ref_fp32.free()
+    host_out_ref_fp32.unsafe_free()
     _ = host_q_src
     _ = host_knope_src
     _ = host_krope_src
@@ -583,12 +559,8 @@ def main() raises:
 
     print("=" * 60)
     print(
-        "MlaPrefillV2 R3 nkv-GATE  num_heads=",
-        _NH,
-        " seq=",
-        _SEQ,
-        " num_kv_heads=",
-        NUM_KV_HEADS,
+        t"MlaPrefillV2 R3 nkv-GATE  num_heads= {_NH}  seq= {_SEQ} "
+        t" num_kv_heads= {NUM_KV_HEADS}"
     )
     print("=" * 60)
 
@@ -621,23 +593,13 @@ def main() raises:
     print("=" * 60)
     if all_passed:
         print(
-            "GATE RESULT num_heads=",
-            _NH,
-            " seq=",
-            _SEQ,
-            " nkv=",
-            NUM_KV_HEADS,
-            ": PASSED",
+            t"GATE RESULT num_heads= {_NH}  seq= {_SEQ}  nkv= {NUM_KV_HEADS} :"
+            t" PASSED"
         )
     else:
         print(
-            "GATE RESULT num_heads=",
-            _NH,
-            " seq=",
-            _SEQ,
-            " nkv=",
-            NUM_KV_HEADS,
-            ": FAILED — see above",
+            t"GATE RESULT num_heads= {_NH}  seq= {_SEQ}  nkv= {NUM_KV_HEADS} :"
+            t" FAILED — see above"
         )
     print("=" * 60)
     if not all_passed:

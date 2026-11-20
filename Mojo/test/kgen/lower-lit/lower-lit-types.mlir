@@ -111,13 +111,13 @@ lit.fn @use_struct_param(%arg0: !lit.struct<@StructParam<:@Struct #lit.struct<{}
 
 // CHECK-LABEL: kgen.generator @lifetime_lower
 // CHECK-SAME: (%arg0: !kgen.struct<()>)
-// CHECK: sourceParamList = #kgen.pog_list<[<"p", pos_or_kw, not_vararg>]>
 lit.fn @lifetime_lower<p: !lit.origin<false>>(%a: !lit.origin<true>) {
 
   // CHECK: kgen.param.declare A: struct<()> = <{ }>
   kgen.param.declare A: !lit.origin<true> = <#lit.any.origin>
 
   // CHECK: kgen.param.declare B: struct<()> = <{ }>
+  // CHECK: } <sourceParamList = <[<"p", pos_or_kw, not_vararg>]>
   kgen.param.declare B: origin.set = <{imm p}>
   hlcf.return
 }
@@ -275,11 +275,11 @@ lit.fn @does_memcpy<l: !lit.origin<true>, l2: !lit.origin<true>>
   // This rebind should be removed entirely by lower types.
   %rb = kgen.rebind %0 : !lit.ref<si32, mut l->x> to !lit.ref<si32, mut l2>
 
-  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant = <get_sizeof(si32, current_target())>
+  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant: scalar<index> = <get_sizeof(si32, current_target())>
   // CHECK-NEXT: pop.memcpy %0, %1, [[LEN]] : !kgen.pointer<si32> -> !kgen.pointer<si32>
   lit.memcpy %1, %rb : !lit.ref<si32, mut l->x> -> !lit.ref<si32, mut l2>
 
-  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant = <get_sizeof(si32, current_target())>
+  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant: scalar<index> = <get_sizeof(si32, current_target())>
   // CHECK-NEXT: pop.memcpy %2, %1, [[LEN]] : !kgen.pointer<si32> -> !kgen.pointer<si32, 3>
   lit.memcpy %1, %2 : !lit.ref<si32, mut l->x> -> !lit.ref<si32, mut l->x, 3>
 
@@ -297,17 +297,17 @@ lit.fn @does_memcpy<l: !lit.origin<true>, l2: !lit.origin<true>>
 // CHECK-LABEL: kgen.generator @takes_pack<types: param_list<type>>
 lit.fn @takes_pack
 <life: !lit.origin<true>, types: !kgen.param_list<!kgen.type>>
-// CHECK-SAME: (%arg0: !kgen.struct<variadic_ptr_map(:param_list<type> types, 42) isParamPack>)
-// CHECK-SAME: sourceParamList = #kgen.pog_list<[<"life", pos_or_kw, not_vararg>, <"types", pos_or_kw, not_vararg>]>
+// CHECK-SAME: (%arg0: !kgen.struct<variadic_ptr_map(:param_list<type> types, 42) isParamPack layout>)
 (%args: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>) {
 
-  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[0] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack>
+  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[0] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack layout>
   // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
   %v1 = lit.ref.pack.extract %args[0]: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>
 
-  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[1] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack>
+  // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[1] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack layout>
   // CHECK-NEXT: kgen.rebind [[E]] : !kgen.param<{{.*}}> to !kgen.pointer
   %v2 = lit.ref.pack.extract %args[1]: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>
+  // CHECK: } <sourceParamList = <[<"life", pos_or_kw, not_vararg>, <"types", pos_or_kw, not_vararg>]>
 
   hlcf.return
 }
@@ -343,6 +343,20 @@ kgen.func @ref_pack_from_pointer_pack(
     : !kgen.struct<(pointer<index, 4>, pointer<f32, 4>) isParamPack>
    -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin, 4>
   hlcf.return %0 : !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin, 4>
+}
+
+// -----
+
+// CHECK-LABEL: kgen.generator @ref_pack_concat<Ts: param_list<type>>
+lit.fn @ref_pack_concat<Ts: !kgen.param_list<!kgen.type>>(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+    %b: !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>) {
+  // CHECK-NEXT: kgen.struct.concat(%arg0, %arg1) : !kgen.struct<(pointer<index>) isParamPack>, !kgen.struct<variadic_ptr_map(:param_list<type> Ts, 0) isParamPack layout> -> !kgen.struct<variadic_ptr_map(:param_list<type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, 0) isParamPack layout>
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+      !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+  hlcf.return
 }
 
 // -----

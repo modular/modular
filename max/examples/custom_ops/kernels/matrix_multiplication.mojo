@@ -11,19 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/custom-ops-matmul.mdx
+# DOC: develop/custom-ops-matmul.mdx
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.sys import default_accelerator
 from std.sys.info import has_accelerator, simd_width_of
 
 import extensibility
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_dim,
     block_idx,
     thread_idx,
@@ -36,6 +34,7 @@ from max.gpu.memory import (
     async_copy_wait_all,
 )
 from layout import (
+    coord,
     TensorLayout,
     TileTensor,
     col_major,
@@ -46,9 +45,10 @@ from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 from layout.tile_io import GenericToSharedAsyncTileCopier, copy_dram_to_sram
 
-from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
 
 from std.utils import StaticTuple
+from std.utils.coord import Coord
 from std.utils.index import Index
 
 # The number of threads per block to use for the optimized kernels
@@ -69,19 +69,23 @@ comptime OPTIMIZED_BLOCK_SIZE = 16 if default_accelerator().is_amd_gpu() else 32
 
 
 def naive_matrix_multiplication_cpu(
-    output: ManagedTensorSlice,
-    a: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    b: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    output: TileTensor[mut=True, ...],
+    a: TileTensor[output.dtype, ...],
+    b: TileTensor[output.dtype, ...],
 ):
     """A naive matrix multiplication used as a fallback on CPU hardware."""
-    var M = a.shape()[0]
-    var N = b.shape()[1]
-    var K = b.shape()[0]
+    var M = Int(a.dim[0]())
+    var N = Int(b.dim[1]())
+    var K = Int(b.dim[0]())
 
     for row in range(M):
         for col in range(N):
+            var acc = Scalar[output.dtype](0)
             for k in range(K):
-                output[row, col] = output[row, col] + a[row, k] * b[k, col]
+                acc += a.load[width=1](Coord(row, k)) * b.load[width=1](
+                    Coord(k, col)
+                )
+            output.store[width=1](Coord(row, col), acc)
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -780,7 +784,7 @@ def tensor_core_matrix_multiplication[
     ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object
-    var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[A.dtype, C.dtype, coord[MMA_M, MMA_N, MMA_K]]()
 
     # Allocate shared memory for tiles of A and B
     var A_sram_tile = stack_allocation[A.dtype, address_space=.SHARED](
@@ -865,22 +869,57 @@ struct MatrixMultiplication[algorithm: StaticString]:
     """
 
     @staticmethod
-    def execute[
-        # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
-    ](
-        output: OutputTensor[rank=2, ...],
-        a: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        b: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+
+        # The kernels take plain pointer-backed views, so rebuild each
+        # argument's view from its pointer and layout.
+        Self.run(
+            TileTensor(
+                ptr=output.to_tile_tensor[dtype]().unsafe_ptr(),
+                layout=output.layout(),
+            ),
+            TileTensor(
+                ptr=a.to_tile_tensor[dtype]().unsafe_ptr(), layout=a.layout()
+            ),
+            TileTensor(
+                ptr=b.to_tile_tensor[dtype]().unsafe_ptr(), layout=b.layout()
+            ),
+            ctx,
+        )
+
+    @staticmethod
+    def run[
+        dtype: DType,
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        //,
+    ](
+        output: TileTensor[mut=True, dtype, c_layout, _],
+        a: TileTensor[dtype, a_layout, _],
+        b: TileTensor[dtype, b_layout, _],
+        ctx: DeviceContext,
+    ) raises:
+        """Runs the selected algorithm on `TileTensor` views of the matrices."""
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
-        comptime if target == "gpu":
-            var a_tt = a.to_tile_tensor().as_unsafe_any_origin()
-            var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
-            var out_tt = output.to_tile_tensor().as_unsafe_any_origin()
+        comptime if ctx.target.is_gpu():
+            var a_tt = a.as_unsafe_any_origin()
+            var b_tt = b.as_unsafe_any_origin()
+            var out_tt = output.as_unsafe_any_origin()
 
             var M = Int(a_tt.dim[0]())
             var N = Int(b_tt.dim[1]())
@@ -1053,7 +1092,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     comptime BN = 64
                     comptime BK = OPTIMIZED_BLOCK_SIZE
                     comptime WM = 32
-                    comptime WN = WARP_SIZE
+                    comptime warp_size = gpu_ctx.default_device_info.warp_size
+                    comptime WN = warp_size
                     # different MMA shapes for AMD and NVIDIA, see:
                     # https://max.modular.com/api/mojo/layout/tensor_core/TensorCore/
                     comptime MMA_M = 16
@@ -1079,7 +1119,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                         b_tt,
                         out_tt,
                         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                        block_dim=(NUM_WARPS * WARP_SIZE),
+                        block_dim=(NUM_WARPS * warp_size),
                     )
                 else:
                     raise Error("Tensor Cores are not available on this device")

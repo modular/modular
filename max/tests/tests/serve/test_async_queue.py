@@ -54,7 +54,7 @@ async def test_fast() -> None:
     async with AsyncioTelemetryController() as atc:
         client = atc.Client()
         start = time.perf_counter()
-        client.send_measurement(MaxMeasurement("maxserve.request_count", 1))
+        client.send_measurement(MaxMeasurement("max.request_count", 1))
         duration = time.perf_counter() - start
         assert duration < 1e-3
 

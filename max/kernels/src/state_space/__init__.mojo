@@ -17,7 +17,6 @@ scan, causal conv1d, and SSD (state-space duality) operations used by Mamba,
 Mamba-2, and Gated DeltaNet models, including variable-length sequence variants
 for continuous-batching inference.
 
-Both forward and update (decode-step) paths are included, and operation
-registrations in the `*_ops` modules wire these kernels into the MAX graph
-compiler.
+Kernel operation registrations live in the `*_ops` modules where present; the
+variable-length forward paths are registered in the built-in kernel library.
 """

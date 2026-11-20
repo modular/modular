@@ -19,7 +19,7 @@ import os
 import shutil
 from dataclasses import dataclass
 
-from ._cuda import can_load_cudart
+from ._cuda import can_load_cuda_driver
 
 # Set on the spawned child so it knows it is running under nsys.
 #
@@ -45,10 +45,10 @@ class ProfileBackend:
 
     nsys_available: bool
     nvidia_gpu_present: bool
-    # libcudart must be dlopenable so we can call cudaProfilerStart/Stop. The
+    # libcuda must be dlopenable so we can call cuProfilerStart/Stop. The
     # nsys child is launched with ``--capture-range=cudaProfilerApi``, so
     # without those calls the trace is empty.
-    cudart_loadable: bool
+    cuda_driver_loadable: bool
 
     @property
     def can_capture_gpu(self) -> bool:
@@ -56,7 +56,7 @@ class ProfileBackend:
         return (
             self.nsys_available
             and self.nvidia_gpu_present
-            and self.cudart_loadable
+            and self.cuda_driver_loadable
         )
 
 
@@ -77,7 +77,7 @@ def detect_backend() -> ProfileBackend:
     return ProfileBackend(
         nsys_available=shutil.which("nsys") is not None,
         nvidia_gpu_present=_detect_nvidia_gpu(),
-        cudart_loadable=can_load_cudart(),
+        cuda_driver_loadable=can_load_cuda_driver(),
     )
 
 

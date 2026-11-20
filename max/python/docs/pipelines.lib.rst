@@ -18,17 +18,44 @@ Submodules
    :nosignatures:
 
    max.pipelines.lib.arch_lookup
+   max.pipelines.lib.auto_processor
+   max.pipelines.lib.decoder_scratch
+   max.pipelines.lib.generate
+   max.pipelines.lib.generate_images
+   max.pipelines.lib.graph_specs
    max.pipelines.lib.interfaces
    max.pipelines.lib.log_probabilities
+   max.pipelines.lib.module_registration
+   max.pipelines.lib.pipeline_parallel
+   max.pipelines.lib.registration_draft
+   max.pipelines.lib.registration_encoder
+   max.pipelines.lib.registration_graph_api
+   max.pipelines.lib.registration_runtime
+   max.pipelines.lib.registry
+   max.pipelines.lib.request_state
+   max.pipelines.lib.role_contracts
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
    pipelines.lib.arch_lookup
+   pipelines.lib.auto_processor
+   pipelines.lib.decoder_scratch
    pipelines.lib.generate
+   pipelines.lib.generate_images
+   pipelines.lib.graph_specs
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
+   pipelines.lib.module_registration
+   pipelines.lib.pipeline_parallel
+   pipelines.lib.registration_draft
+   pipelines.lib.registration_encoder
+   pipelines.lib.registration_graph_api
+   pipelines.lib.registration_runtime
+   pipelines.lib.registry
+   pipelines.lib.request_state
+   pipelines.lib.role_contracts
 
 Configuration
 -------------
@@ -66,9 +93,14 @@ Model interface
    :template: autosummary/class.rst
 
    AlwaysSignalBuffersMixin
+   GraphPipelineModelWithKVCache
+   ModuleV3MultiGraphPipelineModelWithKVCache
+   ModuleV3Outputs
    ModuleV3PipelineModelWithKVCache
    PipelineModelWithKVCache
+   SupportsSSMStateWarmup
    UnifiedEagleOutputs
+   UnifiedSpecDecodeInputs
 
 Tokenizers
 ----------
@@ -80,6 +112,23 @@ Tokenizers
 
    AudioGenerationTokenizer
    PixelGenerationTokenizer
+
+Weight transform
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   Bitcast
+   CheckpointRole
+   Ignore
+   WeightEntry
+   WeightNaming
+   WeightRenaming
+   WeightRule
+   WeightTransform
 
 Utilities
 ---------
@@ -94,7 +143,6 @@ Utilities
    MemoryPlan
    ModelManifest
    RetrievedPipeline
-   Speculator
    VisionPreprocessCache
    WeightPathParser
 
@@ -106,17 +154,60 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   apply_weight_entries
    build_eos_tracker_for_request
    convert_max_config_value
    deep_merge_max_configs
-   float32_array_to_buffer
-   float32_to_bfloat16_as_uint16
    generate_local_model_path
    get_default_max_config_file_section_name
    max_tokens_to_generate
    parse_quant_config
+   process_ragged_kv_outputs
+   ragged_kv_symbolic_inputs
    resolve_eos_token_ids
    resolve_max_config_inheritance
    try_to_load_from_cache
    validate_hf_repo_access
 
+Expert load balancing
+---------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.pipelines.lib.eplb_stats.EplbStatsAccumulator
+   ~max.pipelines.lib.eplb_stats.EplbStatsMetadata
+   ~max.pipelines.lib.eplb_stats.EplbStatsSnapshot
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.pipelines.lib.eplb_rebalance.balanced_packing
+   ~max.pipelines.lib.eplb_rebalance.rebalance_experts
+   ~max.pipelines.lib.eplb_rebalance.rebalance_experts_hierarchical
+   ~max.pipelines.lib.eplb_rebalance.replicate_experts
+
+Output parsers
+--------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.pipelines.lib.reasoning.get_parser_cls
+   ~max.pipelines.lib.tool_parsing.get_parser_cls
+
+Constants
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ~max.pipelines.lib.config.DEFAULT_MAX_BATCH_INPUT_TOKENS

@@ -39,6 +39,7 @@ def unfused_runner() -> LayerTestRunner[
     AttentionDynamicParams,
     list[TextContext],
 ]:
+    """Builds the runner that drives the unfused RoPE attention spec."""
     return create_runner(ATTENTION_UNFUSED_ROPE)
 
 

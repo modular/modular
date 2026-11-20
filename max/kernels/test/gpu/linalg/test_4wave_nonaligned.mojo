@@ -126,14 +126,8 @@ def test_nonaligned_n(ctx: DeviceContext) raises:
                     tail_mismatches += 1
 
     print(
-        "[N] Shape: M=",
-        M,
-        " K=",
-        K,
-        " Cout_aligned=",
-        Cout_aligned,
-        " Cout_unaligned=",
-        Cout_unaligned,
+        t"[N] Shape: M= {M}  K= {K}  Cout_aligned= {Cout_aligned} "
+        t" Cout_unaligned= {Cout_unaligned}"
     )
     print(
         "  Interior cols (0..",
@@ -142,12 +136,8 @@ def test_nonaligned_n(ctx: DeviceContext) raises:
         interior_mismatches,
     )
     print(
-        "  Last-block-tail cols (",
-        LAST_BLOCK_START,
-        "..",
-        Cout_unaligned,
-        "): mismatches=",
-        tail_mismatches,
+        t"  Last-block-tail cols ( {LAST_BLOCK_START} .. {Cout_unaligned} ):"
+        t" mismatches= {tail_mismatches}"
     )
     if interior_mismatches == 0 and tail_mismatches == 0:
         print(
@@ -222,14 +212,8 @@ def test_nonaligned_m(ctx: DeviceContext) raises:
                     tail_mismatches += 1
 
     print(
-        "[M] Shape: M_aligned=",
-        M_aligned,
-        " M_unaligned=",
-        M_unaligned,
-        " K=",
-        K,
-        " N=",
-        N,
+        t"[M] Shape: M_aligned= {M_aligned}  M_unaligned= {M_unaligned}  K="
+        t" {K}  N= {N}"
     )
     print(
         "  Interior rows (0..",
@@ -238,12 +222,8 @@ def test_nonaligned_m(ctx: DeviceContext) raises:
         interior_mismatches,
     )
     print(
-        "  Last-block-tail rows (",
-        LAST_BLOCK_START,
-        "..",
-        M_unaligned,
-        "): mismatches=",
-        tail_mismatches,
+        t"  Last-block-tail rows ( {LAST_BLOCK_START} .. {M_unaligned} ):"
+        t" mismatches= {tail_mismatches}"
     )
     if interior_mismatches == 0 and tail_mismatches == 0:
         print(

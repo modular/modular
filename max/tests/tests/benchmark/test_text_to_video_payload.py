@@ -20,8 +20,10 @@ from typing import Any
 
 import aiohttp
 import pytest
+from max.benchmark.benchmark_shared.backend_names import Backend
 from max.benchmark.benchmark_shared.config import (
     PIXEL_GENERATION_TASKS,
+    BenchmarkTask,
     get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.pixel_synthetic import (
@@ -39,8 +41,9 @@ from max.benchmark.benchmark_shared.request import (
 )
 
 
-def test_text_to_video_is_a_pixel_generation_task() -> None:
-    assert "text-to-video" in PIXEL_GENERATION_TASKS
+@pytest.mark.parametrize("task", ["text-to-video", "image-to-video"])
+def test_video_task_is_a_pixel_generation_task(task: str) -> None:
+    assert task in PIXEL_GENERATION_TASKS
 
 
 def test_synthetic_pixel_dataset_propagates_num_frames() -> None:
@@ -111,19 +114,24 @@ def test_pixel_generation_payload_routes_image_when_no_num_frames() -> None:
     assert image["width"] == 1024
 
 
-def test_get_pixel_gen_endpoint_vllm_video() -> None:
-    assert get_pixel_gen_endpoint("vllm", "text-to-video") == "/v1/videos/sync"
-
-
-def test_get_pixel_gen_endpoint_vllm_image() -> None:
-    assert (
-        get_pixel_gen_endpoint("vllm", "text-to-image")
-        == "/v1/chat/completions"
-    )
-
-
-def test_get_pixel_gen_endpoint_modular_video() -> None:
-    assert get_pixel_gen_endpoint("modular", "text-to-video") == "/v1/responses"
+@pytest.mark.parametrize(
+    ("backend", "task", "expected"),
+    [
+        pytest.param(
+            "vllm", "text-to-video", "/v1/videos/sync", id="vllm_video"
+        ),
+        pytest.param(
+            "vllm", "text-to-image", "/v1/chat/completions", id="vllm_image"
+        ),
+        pytest.param(
+            "modular", "text-to-video", "/v1/responses", id="modular_video"
+        ),
+    ],
+)
+def test_get_pixel_gen_endpoint(
+    backend: Backend, task: BenchmarkTask, expected: str
+) -> None:
+    assert get_pixel_gen_endpoint(backend, task) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -131,10 +139,6 @@ def test_get_pixel_gen_endpoint_modular_video() -> None:
 # uploads the conditioning image as a multipart `input_reference` file on the
 # vllm-omni / sglang backends.
 # ---------------------------------------------------------------------------
-
-
-def test_image_to_video_is_a_pixel_generation_task() -> None:
-    assert "image-to-video" in PIXEL_GENERATION_TASKS
 
 
 def test_get_pixel_gen_endpoint_image_to_video() -> None:

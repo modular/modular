@@ -19,24 +19,14 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "REPL/REPLOptions.inc"
+#include "REPL/REPLOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct REPLOptTable : public llvm::opt::OptTable {
-  REPLOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Launches the Mojo REPL, which is in fact an invocation of
 /// `lldb --repl-language mojo`. Exits unsuccessfully if LLDB could not be found
 /// in the user's PATH.
-static int repl(const State &state) {
-  // Parse command line arguments. We forward most arguments to the underlying
-  // invocation of lldb, and so don't check for invalid options.
-  REPLOptTable options;
-  unsigned unused = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, unused, unused);
+static int repl(const State &subcommandState) {
+  State state = subcommandState;
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr =
@@ -45,15 +35,13 @@ static int repl(const State &state) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
 
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "REPL/REPLOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
-#include "REPL/REPLOptionsHelpHiddenText.inc"
-    );
-  }
+  // Parse command line arguments. We forward most arguments to the underlying
+  // invocation of lldb, and so don't check for invalid options.
+  options::Table optTable;
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), args))
+    return *exitCode;
 
   SmallVector<std::string> lldbArgs = {"--one-line-before-file",
                                        "settings set show-progress false",

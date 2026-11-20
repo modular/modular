@@ -191,22 +191,11 @@ def test_paged_ragged_attention[
             ce_count += 1
 
     print(
-        "Running: batch_size=",
-        batch_size,
-        "total_tokens=",
-        total_length,
-        "CE=",
-        ce_count,
-        "TG=",
-        tg_count,
-        "max_prompt_len=",
-        max_prompt_length,
-        "max_context_len=",
-        max_full_context_length,
-        "num_pages=",
-        num_blocks,
-        "pages_needed=",
-        total_pages,
+        t"Running: batch_size= {batch_size} total_tokens= {total_length} CE="
+        t" {ce_count} TG= {tg_count} max_prompt_len="
+        t" {max_prompt_length} max_context_len="
+        t" {max_full_context_length} num_pages= {num_blocks} pages_needed="
+        t" {total_pages}"
     )
 
     flash_attention[ragged=True](

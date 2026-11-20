@@ -70,15 +70,13 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     packed_filter_shape[spec.static_info.rank + 2] = micro_kernel_f_size
 
     # Input and output shape, sizes
-    var input_shape = extend_shape(spec.input_dims, spec.n, spec.c)
-    var input_alloc_size = align_up(input_shape.flattened_length(), input_align)
+    var input_shape = extend_shape(Coord(spec.input_dims), spec.n, spec.c)
+    var input_alloc_size = align_up(input_shape.product(), input_align)
     var filter_alloc_size = align_up(
         packed_filter_shape.flattened_length(), filter_align
     )
-    var output_shape = extend_shape(output_dims, spec.n, spec.f)
-    var output_alloc_size = align_up(
-        output_shape.flattened_length(), output_align
-    )
+    var output_shape = extend_shape(Coord(output_dims), spec.n, spec.f)
+    var output_alloc_size = align_up(output_shape.product(), output_align)
 
     # Set the total buffer allocation to be 4x L3 cache.
     comptime MB = 1024 * 1024
@@ -92,22 +90,31 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     # Allocate input and output buffers.
     var input_alloc = alloc(
         AllocLayout[Scalar[input_type], alignment=.of_bytes[alignment]()](
-            count=num_copies * input_alloc_size
+            length=num_copies * input_alloc_size
         )
     ).into_managed()
-    var input_ptr = input_alloc.unsafe_ptr()
+    # TODO(https://github.com/modular/modular/issues/7552): Drop the origin
+    # casts once a closure can pass a captured interior-origin pointer to a
+    # generic function.
+    var input_ptr = input_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(input_alloc)
+    ]()
     var filter_alloc = alloc(
         AllocLayout[Scalar[filter_type], alignment=.of_bytes[alignment]()](
-            count=num_copies * filter_alloc_size
+            length=num_copies * filter_alloc_size
         )
     ).into_managed()
-    var filter_ptr = filter_alloc.unsafe_ptr()
+    var filter_ptr = filter_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(filter_alloc)
+    ]()
     var output_alloc = alloc(
         AllocLayout[Scalar[output_type], alignment=.of_bytes[alignment]()](
-            count=num_copies * output_alloc_size
+            length=num_copies * output_alloc_size
         )
     ).into_managed()
-    var output_ptr = output_alloc.unsafe_ptr()
+    var output_ptr = output_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(output_alloc)
+    ]()
 
     rand(input_alloc.unsafe_span())
     rand(filter_alloc.unsafe_span())
@@ -116,15 +123,18 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    comptime if spec.static_info.rank == 1:
-        pad_w = Index(spec.pad[0], spec.pad[1])
-    elif spec.static_info.rank == 2:
-        pad_h = Index(spec.pad[0], spec.pad[1])
-        pad_w = Index(spec.pad[2], spec.pad[3])
-    elif spec.static_info.rank == 3:
-        pad_d = Index(spec.pad[0], spec.pad[1])
-        pad_h = Index(spec.pad[2], spec.pad[3])
-        pad_w = Index(spec.pad[4], spec.pad[5])
+    comptime match spec.static_info.rank:
+        case 1:
+            pad_w = Index(spec.pad[0], spec.pad[1])
+        case 2:
+            pad_h = Index(spec.pad[0], spec.pad[1])
+            pad_w = Index(spec.pad[2], spec.pad[3])
+        case 3:
+            pad_d = Index(spec.pad[0], spec.pad[1])
+            pad_h = Index(spec.pad[2], spec.pad[3])
+            pad_w = Index(spec.pad[4], spec.pad[5])
+        case _:
+            pass
 
     var conv_shape = ConvShape[spec.static_info.rank](
         n=spec.n,
@@ -154,7 +164,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
                 input_ptr.unsafe_offset(
                     (counter % num_copies) * input_alloc_size
                 ),
-                row_major(Coord(input_shape)),
+                row_major(input_shape),
             )
             var filter = TileTensor(
                 filter_ptr.unsafe_offset(
@@ -166,7 +176,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
                 output_ptr.unsafe_offset(
                     (counter % num_copies) * output_alloc_size
                 ),
-                row_major(Coord(output_shape)),
+                row_major(output_shape),
             )
 
             try:
@@ -264,9 +274,9 @@ def main() raises:
 
     comptime fp32_1d = ConvSpecStatic(
         rank=1,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
     @inline(.always)
@@ -299,9 +309,9 @@ def main() raises:
 
     comptime fp32_2d = ConvSpecStatic(
         rank=2,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
     @inline(.always)
@@ -340,9 +350,9 @@ def main() raises:
 
     comptime fp32_3d = ConvSpecStatic(
         rank=3,
-        input_type=DType.float32,
-        filter_type=DType.float32,
-        output_type=DType.float32,
+        input_type=.float32,
+        filter_type=.float32,
+        output_type=.float32,
     )
 
     @inline(.always)

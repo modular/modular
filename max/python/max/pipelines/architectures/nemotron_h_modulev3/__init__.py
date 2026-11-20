@@ -13,11 +13,10 @@
 """Nemotron-H hybrid Mamba-2 and attention architecture (ModuleV3)."""
 
 from .arch import nemotron_h_modulev3_arch
-from .model import NemotronHModel
-from .model_config import NemotronHConfig
+from .model_config import LayerKind, NemotronHConfig
 
 __all__ = [
+    "LayerKind",
     "NemotronHConfig",
-    "NemotronHModel",
     "nemotron_h_modulev3_arch",
 ]

@@ -50,7 +50,7 @@ the correctness-critical part is authored once, not copied.
 """
 
 from std.math import ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -59,12 +59,12 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.sync import barrier
 
-from layout import Idx, TensorEngine, TensorLayout, TileTensor
+from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 
 from std.utils import StaticTuple
@@ -72,6 +72,10 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from .matmul_mma import MmaOp
+from .blockwise_scaled_fp8_matmul_amd_large import (
+    blockwise_scaled_fp8_matmul_amd_large,
+    blockwise_scaled_fp8_matmul_amd_large_supported,
+)
 from .amd_4wave_split_k_matmul import (
     SplitKWorkspace,
     _split_k_reduce_kernel,
@@ -222,7 +226,6 @@ def blockwise_scaled_fp8_matmul_amd_tile[
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
     comptime c_frag_size = MMA_M * MMA_N // WARP_SIZE
-    comptime num_c_regs = num_m_mmas * num_n_mmas * c_frag_size
     comptime num_threads = num_warps_m * num_warps_n * WARP_SIZE
 
     # DRAM->reg->LDS tiling keys off the host SIMD width (like `AMDMatmul`),
@@ -300,7 +303,7 @@ def blockwise_scaled_fp8_matmul_amd_tile[
     var mma_op = MmaOp[
         out_type=accum_type,
         in_type=a_type,
-        shape=Index(MMA_M, MMA_N, MMA_K),
+        shape=(MMA_M, MMA_N, MMA_K),
         k_group_size=k_group_size,
         num_k_tiles=num_k_tiles,
         num_m_mmas=num_m_mmas,
@@ -312,8 +315,9 @@ def blockwise_scaled_fp8_matmul_amd_tile[
     var promoted = stack_allocation[accum_type, address_space=.LOCAL](
         row_major[num_m_mmas, num_n_mmas * c_frag_size]()
     )
-    comptime for i in range(num_c_regs):
-        promoted.raw_store(i, Scalar[accum_type](0))
+    comptime for i in range(num_m_mmas):
+        comptime for j in range(num_n_mmas * c_frag_size):
+            promoted[i, j] = 0
 
     # Per-lane output fragment coordinates (constant across slabs).
     var lane = Int(lane_id())
@@ -355,35 +359,33 @@ def blockwise_scaled_fp8_matmul_amd_tile[
                 if kb == NUM_SLABS - 1:
                     comptime n_oob = k_tile_size - c_valid
                     var a_tail = TileTensor(
-                        a_smem.ptr + kt_partial * BM * k_tile_size,
+                        a_smem.ptr.unsafe_offset(kt_partial * BM * k_tile_size),
                         row_major[BM, k_tile_size](),
                     )
                     var b_tail = TileTensor(
-                        b_smem.ptr + kt_partial * BN * k_tile_size,
+                        b_smem.ptr.unsafe_offset(kt_partial * BN * k_tile_size),
                         row_major[BN, k_tile_size](),
                     )
                     var tid = Int(warp_id()) * WARP_SIZE + Int(lane_id())
                     for i in range(tid, BM * n_oob, num_threads):
                         var row, col = divmod(i, n_oob)
-                        a_tail.store_linear(
-                            Index(row, c_valid + col),
-                            Scalar[a_type](0),
+                        a_tail.store(
+                            Coord(row, c_valid + col), Scalar[a_type](0)
                         )
                     for i in range(tid, BN * n_oob, num_threads):
                         var row, col = divmod(i, n_oob)
-                        b_tail.store_linear(
-                            Index(row, c_valid + col),
-                            Scalar[a_type](0),
+                        b_tail.store(
+                            Coord(row, c_valid + col), Scalar[a_type](0)
                         )
                     barrier()
 
         comptime for k in range(num_k_tiles):
             var a_blk = TileTensor(
-                a_smem.ptr + k * BM * k_tile_size,
+                a_smem.ptr.unsafe_offset(k * BM * k_tile_size),
                 row_major[BM, k_tile_size](),
             )
             var b_blk = TileTensor(
-                b_smem.ptr + k * BN * k_tile_size,
+                b_smem.ptr.unsafe_offset(k * BN * k_tile_size),
                 row_major[BN, k_tile_size](),
             )
             mma_op.load_frag[k](
@@ -398,8 +400,9 @@ def blockwise_scaled_fp8_matmul_amd_tile[
             if k < TAIL_K_TILES or kb < NUM_SLABS - 1:
                 var k_blk = kb * num_k_tiles + k
 
-                comptime for i in range(num_c_regs):
-                    blk_acc.raw_store(i, Scalar[accum_type](0))
+                comptime for i in range(num_m_mmas):
+                    comptime for j in range(num_n_mmas * c_frag_size):
+                        blk_acc[i, j] = 0
                 mma_op.mma[k]()
 
                 # fp32 per-block promotion: `a_scale[k_blk, m]` one scalar per row,
@@ -408,7 +411,7 @@ def blockwise_scaled_fp8_matmul_amd_tile[
                     var m = warp_tile_m + m_mma * MMA_M + lane_row
                     var m_idx = min(m, M - 1)
                     var a_s = rebind[Scalar[a_scales_type]](
-                        a_scales.load_linear(Index(k_blk, a_scale_col + m_idx))
+                        a_scales.load(Coord(k_blk, a_scale_col + m_idx))
                     ).cast[accum_type]()
 
                     comptime for n_mma in range(num_n_mmas):
@@ -419,18 +422,20 @@ def blockwise_scaled_fp8_matmul_amd_tile[
                         )
                         var nb = min(n0, N - 1) // N_SCALE
                         var b_s = rebind[Scalar[b_scales_type]](
-                            b_scales.load_linear(Index(nb, k_blk))
+                            b_scales.load(Coord(nb, k_blk))
                         ).cast[accum_type]()
                         var scale = a_s * b_s
 
-                        comptime off = (
-                            m_mma * num_n_mmas * c_frag_size
-                            + n_mma * c_frag_size
-                        )
-                        var blk_v = blk_acc.raw_load[width=c_frag_size](off)
-                        var prom_v = promoted.raw_load[width=c_frag_size](off)
-                        promoted.raw_store[width=c_frag_size](
-                            off, prom_v + blk_v * scale
+                        comptime align = align_of[accum_type]()
+                        var frag = Coord(m_mma, n_mma * c_frag_size)
+                        var blk_v = blk_acc.load[
+                            width=c_frag_size, alignment=align
+                        ](frag)
+                        var prom_v = promoted.load[
+                            width=c_frag_size, alignment=align
+                        ](frag)
+                        promoted.store[alignment=align](
+                            frag, prom_v + blk_v * scale
                         )
 
     # Output store with per-element OOB masking. Split-K rows live at
@@ -443,14 +448,13 @@ def blockwise_scaled_fp8_matmul_amd_tile[
         if m < M:
             comptime for n_mma in range(num_n_mmas):
                 var n0 = warp_tile_n + n_mma * MMA_N + lane_group * c_frag_size
-                comptime off = (
-                    m_mma * num_n_mmas * c_frag_size + n_mma * c_frag_size
-                )
-                var v = promoted.raw_load[width=c_frag_size](off).cast[c_type]()
+                var v = promoted.load[
+                    width=c_frag_size, alignment=align_of[accum_type]()
+                ](Coord(m_mma, n_mma * c_frag_size)).cast[c_type]()
                 comptime for e in range(c_frag_size):
                     var col = n0 + e
                     if col < N:
-                        c.store_linear(Index(c_row_base + m, col), v[e])
+                        c.store(Coord(c_row_base + m, col), v[e])
 
 
 @__llvm_metadata(
@@ -546,7 +550,7 @@ def blockwise_scaled_fp8_matmul_amd_kernel[
     """
     # K-band id from grid.z, split mode only: `num_splits == 1` must not read
     # block_idx.z (this kernel may run as a device fn under a different grid.z).
-    var split_id = Int(block_idx.z) if num_splits > 1 else 0
+    var split_id = block_idx.z if num_splits > 1 else 0
     # `c` is the stacked (num_splits*M, N) workspace when splitting, so the
     # true row count comes from `a`.
     var M = Int(a.dim[0]())
@@ -584,8 +588,8 @@ def blockwise_scaled_fp8_matmul_amd_kernel[
         b,
         a_scales,
         b_scales,
-        Int(block_idx.y),
-        Int(block_idx.x),
+        block_idx.y,
+        block_idx.x,
         0,
         M,
         split_id,
@@ -617,7 +621,7 @@ def _pick_split_k_num_splits[
         BK: Block tile K (a whole number of K scale blocks).
         base_ctas: CTAs the plain launch already runs at this M bucket —
             `ceildiv(N, BN) * ceildiv(M, BM)`.
-        cta_cap: CTA budget, ~2 waves (all CUs + one for latency hiding).
+        cta_cap: CTA budget (`sm_count * SK_CTA_WAVES` single-wave CTAs).
     """
     comptime assert K % BK == 0, "split-K requires K % BK == 0"
     comptime total_slabs = K // BK
@@ -710,15 +714,19 @@ def _launch_blockwise_split_k[
         num_splits=num_splits,
     ]
 
-    comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    comptime num_threads = (
+        (BM // WM) * (BN // WN) * ctx.default_device_info.warp_size
+    )
     ctx.enqueue_function[kernel](
         ws_tile,
         a,
         b,
         a_scales,
         b_scales,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), num_splits),
-        block_dim=(num_threads, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), num_splits),
+            block_dim=(num_threads, 1, 1),
+        ),
     )
 
     # Reduce + cast on the same stream (serialized after the matmul): sums the
@@ -726,18 +734,32 @@ def _launch_blockwise_split_k[
     comptime block_dim_x: Int = 256
     var total_elems = M * N
     var num_blocks = ceildiv(total_elems, block_dim_x)
-    comptime reduce_kernel = _split_k_reduce_kernel[num_splits, c_type]
+    comptime reduce_kernel = _split_k_reduce_kernel[
+        num_splits,
+        c_type,
+        type_of(c).LayoutType,
+        type_of(c).Engine,
+    ]
     ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
-        c.ptr,
+        c,
         Int32(total_elems),
         Int32(elems_per_split),
         Int32(N),
-        grid_dim=(num_blocks,),
-        block_dim=(block_dim_x,),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks,),
+            block_dim=(block_dim_x,),
+        ),
     )
     # Keep the workspace alive until both kernels are enqueued.
     _ = workspace^
+
+
+comptime LARGE_M_MIN = 65
+"""Rows from which the default configuration hands a matmul to the large-M
+kernel (`blockwise_scaled_fp8_matmul_amd_large`): just past the split-K
+decode band (`M <= 64`). Measured faster on MI355X at every M from 65 to
+16384 on the GLM-5.3 shapes and on other models' (N, K), K = 512 even."""
 
 
 def blockwise_scaled_fp8_matmul_amd[
@@ -757,6 +779,7 @@ def blockwise_scaled_fp8_matmul_amd[
     N_SCALE: Int = 128,
     K_SCALE: Int = 128,
     accum_type: DType = get_accum_type[c_type](),
+    large_m: Bool = True,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -786,6 +809,10 @@ def blockwise_scaled_fp8_matmul_amd[
         N_SCALE: N scale granularity (64 or 128).
         K_SCALE: K scale granularity (64 or 128).
         accum_type: Accumulation element type (`float32`).
+        large_m: With the default tile configuration, hand `M >=
+            LARGE_M_MIN` to the large-M kernel when it covers the shape and
+            the operands are dense row major. False keeps this kernel (for
+            comparisons).
 
     Args:
         c: Output `[M, N]`.
@@ -797,11 +824,11 @@ def blockwise_scaled_fp8_matmul_amd[
 
     Decode regime (small M): the launch geometry is
     `(ceildiv(N, BN), ceildiv(M, BM))`, which at M <= 64 is one or a few
-    M-tiles — only `ceildiv(N, BN)` CTAs against ~2 waves of CUs. This
+    M-tiles — only `ceildiv(N, BN)` CTAs against ~256 CUs. This
     launcher then transparently splits K across `grid.z` (fp32 partials +
     deterministic reduce; see `_launch_blockwise_split_k`) with a
     comptime-picked `num_splits` that lifts the CTA count toward
-    `sm_count * 2`. No tile-shape change can fix this: CTAs cannot be
+    `sm_count * 8`. No tile-shape change can fix this: CTAs cannot be
     manufactured in the M direction at M <= 64, only in K.
     """
     comptime assert transpose_b, "transpose_b must be True"
@@ -836,10 +863,12 @@ def blockwise_scaled_fp8_matmul_amd[
     #     the CTA cap with 2-4 M-tiles in flight.
     # Both return 1 (no split) when the shape already fills the GPU or no
     # legal factor exists, so the plain launch below is unchanged there.
-    # The cap is `sm_count * 2` — every CU plus a second wave for latency
-    # hiding.
+    # The cap is `sm_count * SK_CTA_WAVES` single-wave CTAs.
     comptime _gpu = ctx.default_device_info
-    comptime SK_CTA_WAVES = 2
+    # The CTAs are one wave each, so ~2 per CU leaves HBM underused: at
+    # 8 per CU the dense N=24576 K=4096 decode GEMM drops from 43 to 27 us
+    # and N=4096 K=12288 from 25 to 17.5 us (MI355X, weights from HBM).
+    comptime SK_CTA_WAVES = 8
     comptime _sk_cta_cap = _gpu.sm_count * SK_CTA_WAVES
     # Decode band only: above it the f32 workspace traffic outweighs the
     # parallelism win, so larger M keeps the single-launch path.
@@ -852,6 +881,41 @@ def blockwise_scaled_fp8_matmul_amd[
         K, BK, ceildiv(N, BN) * ceildiv(SK_MAX_M, BM), _sk_cta_cap
     ]() if K % BK == 0 else 1
 
+    # The fp32 partials cost `8 * M * N * num_splits` bytes of traffic
+    # (written, then read by the reduce) against `N * K` weight bytes. Where
+    # that exceeds the weights, a split capped at `K // (8 * BM)` keeps the
+    # partials under the weight bytes for the whole tile: N = K = 4096 at
+    # M = 48 runs 8 splits in 14.8 us against 16.5 us for 16, and
+    # N = 4096, K = 12288 at M = 64 runs 24 in 24.8 us against 26.6 us for
+    # 32 (MI355X, weights from HBM). Shapes with no legal smaller split keep
+    # `_sk_splits_1m`.
+    comptime _sk_splits_1m_deep = _pick_split_k_num_splits[
+        K, BK, ceildiv(N, BN), ceildiv(N, BN) * (K // (8 * BM))
+    ]() if K % BK == 0 else 1
+    comptime if 1 < _sk_splits_1m_deep < _sk_splits_1m:
+        comptime _ws_max_m = SK_MAX_WORKSPACE_BYTES // (
+            _sk_splits_1m_deep * N * size_of[DType.float32]()
+        )
+        if M <= min(BM, _ws_max_m) and 8 * M * _sk_splits_1m > K:
+            _launch_blockwise_split_k[
+                c_type,
+                a_type,
+                b_type,
+                a_scales_type,
+                b_scales_type,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
+                N_SCALE=N_SCALE,
+                K_SCALE=K_SCALE,
+                num_splits=_sk_splits_1m_deep,
+            ](c, a, b, a_scales, b_scales, ctx)
+            return
     comptime if _sk_splits_1m > 1:
         comptime _ws_max_m = SK_MAX_WORKSPACE_BYTES // (
             _sk_splits_1m * N * size_of[DType.float32]()
@@ -901,6 +965,47 @@ def blockwise_scaled_fp8_matmul_amd[
             ](c, a, b, a_scales, b_scales, ctx)
             return
 
+    # === Prefill regime (large M) ===
+    # The one-wave 64 x 64 tiles below leave the matrix cores mostly idle at
+    # prefill sizes; the large-M kernel takes over there. It addresses its
+    # operands as dense row-major arrays (A's scales by their row stride), so
+    # any other layout keeps this kernel. A caller-chosen tile keeps it too.
+    comptime if (
+        large_m
+        and BM == 64
+        and BN == 64
+        and BK == 128
+        and WM == 64
+        and WN == 64
+        and N_SCALE == 128
+        and K_SCALE == 128
+        and blockwise_scaled_fp8_matmul_amd_large_supported[c_type, N, K]()
+    ):
+        if (
+            M >= LARGE_M_MIN
+            and Int(c.dynamic_stride(0)) == N
+            and Int(c.dynamic_stride(1)) == 1
+            and Int(a.dynamic_stride(0)) == K
+            and Int(a.dynamic_stride(1)) == 1
+            and Int(b.dynamic_stride(0)) == K
+            and Int(b.dynamic_stride(1)) == 1
+            and Int(a_scales.dynamic_stride(0)) >= M
+            and Int(a_scales.dynamic_stride(1)) == 1
+            and Int(b_scales.dynamic_stride(0)) == K // K_SCALE
+            and Int(b_scales.dynamic_stride(1)) == 1
+        ):
+            blockwise_scaled_fp8_matmul_amd_large[N, K](
+                ctx,
+                Int(c.ptr),
+                Int(a.ptr),
+                Int(a_scales.ptr),
+                Int(b.ptr),
+                Int(b_scales.ptr),
+                M,
+                Int(a_scales.dynamic_stride(0)),
+            )
+            return
+
     comptime kernel = blockwise_scaled_fp8_matmul_amd_kernel[
         c_type,
         a_type,
@@ -930,13 +1035,17 @@ def blockwise_scaled_fp8_matmul_amd[
         K_SCALE=K_SCALE,
     ]
 
-    comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    comptime num_threads = (
+        (BM // WM) * (BN // WN) * ctx.default_device_info.warp_size
+    )
     ctx.enqueue_function[kernel](
         c,
         a,
         b,
         a_scales,
         b_scales,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-        block_dim=(num_threads, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+            block_dim=(num_threads, 1, 1),
+        ),
     )

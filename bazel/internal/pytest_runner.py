@@ -16,6 +16,7 @@ import faulthandler
 import importlib
 import os
 import platform
+import pwd
 import shlex
 import signal
 import sys
@@ -73,10 +74,19 @@ def __set_torch_memory_limit() -> None:
 
 
 def run():  # noqa: ANN201
-    # Allow opt-out of using $TEST_TMPDIR for HF_HOME for performance reasons in
-    # special cases
     os.environ["HF_MODULES_CACHE"] = os.environ["TEST_TMPDIR"]
-    if os.environ.get("HF_ESCAPES_SANDBOX") != "1":
+    if os.environ.get("HF_ESCAPES_SANDBOX") == "1":
+        # Share the machine's HuggingFace cache, which CI executors mount under
+        # the account's home. HOME can't locate it: Bazel points HOME at
+        # $TEST_TMPDIR, and passing the client's HOME in would put a path from
+        # another machine into the action key.
+        os.environ.setdefault(
+            "HF_HOME",
+            str(
+                Path(pwd.getpwuid(os.getuid()).pw_dir, ".cache", "huggingface")
+            ),
+        )
+    else:
         os.environ["HF_HOME"] = os.environ["TEST_TMPDIR"]
 
     # Setup python for nested mojo runs
@@ -153,6 +163,11 @@ fi
         raise SystemExit(
             "\033[31merror\033[0m: use 'bazel test' instead of 'bazel run' to run tests"
         )
+
+    # Bazel sets TEST_TMPDIR but not TMPDIR, so tempfile would use /tmp. On
+    # the remote executors /tmp is an overlayfs, where directory inode numbers
+    # can change and make shutil.rmtree fail.
+    os.environ.setdefault("TMPDIR", os.environ["TEST_TMPDIR"])
 
     __set_torch_memory_limit()
     namespace, unknown_args = __build_parser().parse_known_args(args)

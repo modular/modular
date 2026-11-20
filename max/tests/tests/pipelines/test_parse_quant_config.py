@@ -40,6 +40,7 @@ from max.pipelines.weights.quant import (
     _modelopt_shared_experts_quantized_dtype,
     _quantized_layers_from_modelopt_ignore,
     parse_quant_config,
+    resolve_hf_quant_config,
 )
 from transformers import AutoConfig
 
@@ -791,7 +792,10 @@ def test_parse_float4_from_standalone_hf_quant_config(
     repo_dir.mkdir(parents=True)
     hf_quant_config = {
         "producer": {"name": "modelopt", "version": "0.0"},
-        "quantization": {"quant_algo": "NVFP4"},
+        "quantization": {
+            "quant_algo": "NVFP4",
+            "ignore": ["model.layers.0.mlp*"],
+        },
     }
     (repo_dir / "hf_quant_config.json").write_text(json.dumps(hf_quant_config))
 
@@ -799,11 +803,76 @@ def test_parse_float4_from_standalone_hf_quant_config(
     if hasattr(hf_config, "quantization_config"):
         del hf_config.quantization_config
     hf_config._name_or_path = str(repo_dir)
+    state_dict: dict[str, WeightData] = {
+        "layers.0.weight_scale_2": WeightData(
+            name="layers.0.weight_scale_2",
+            shape=Shape((1,)),
+            dtype=DType.uint8,
+            data=torch.zeros((1,), dtype=torch.uint8),
+        ),
+    }
 
-    quant_config = parse_quant_config(hf_config, {}, DType.uint8)
+    quant_config = parse_quant_config(hf_config, state_dict, DType.uint8)
 
     assert quant_config is not None
     assert quant_config.format == QuantFormat.NVFP4
+    assert quant_config.mlp_quantized_layers == set(
+        range(1, hf_config.num_hidden_layers)
+    )
+
+
+def test_resolve_hf_quant_config_prefers_embedded_config(
+    hf_config_instruct_fbgemm: AutoConfig, tmp_path: Path
+) -> None:
+    embedded = {"quant_method": "modelopt", "quant_algo": "NVFP4"}
+    hf_config_instruct_fbgemm.quantization_config = embedded
+    hf_config_instruct_fbgemm._name_or_path = str(tmp_path)
+    (tmp_path / "hf_quant_config.json").write_text(
+        json.dumps(
+            {
+                "producer": {"name": "sidecar"},
+                "quantization": {"quant_algo": "OTHER"},
+            }
+        )
+    )
+
+    state_dict: dict[str, object] = {"weight_scale_2": object()}
+    resolved = resolve_hf_quant_config(hf_config_instruct_fbgemm, state_dict)
+
+    assert resolved is embedded
+
+
+def test_resolve_hf_quant_config_reads_standalone_file(
+    hf_config_instruct_fbgemm: AutoConfig, tmp_path: Path
+) -> None:
+    (tmp_path / "hf_quant_config.json").write_text(
+        json.dumps(
+            {
+                "producer": {"name": "modelopt"},
+                "quantization": {"quant_algo": "NVFP4"},
+            }
+        )
+    )
+    if hasattr(hf_config_instruct_fbgemm, "quantization_config"):
+        del hf_config_instruct_fbgemm.quantization_config
+    hf_config_instruct_fbgemm._name_or_path = str(tmp_path)
+
+    state_dict: dict[str, object] = {"weight_scale_2": object()}
+    resolved = resolve_hf_quant_config(hf_config_instruct_fbgemm, state_dict)
+
+    assert resolved == {"quant_method": "modelopt", "quant_algo": "NVFP4"}
+
+
+def test_resolve_hf_quant_config_nvfp4_fallback_uses_names_only(
+    hf_config_instruct_fbgemm: AutoConfig,
+) -> None:
+    if hasattr(hf_config_instruct_fbgemm, "quantization_config"):
+        del hf_config_instruct_fbgemm.quantization_config
+    state_dict: dict[str, object] = {"layers.0.weight_scale_2": object()}
+
+    resolved = resolve_hf_quant_config(hf_config_instruct_fbgemm, state_dict)
+
+    assert resolved == {"quant_method": "modelopt", "quant_algo": "NVFP4"}
 
 
 def test_standalone_hf_quant_config_reads_config_snapshot(

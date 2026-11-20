@@ -21,7 +21,7 @@ from max.gpu import thread_idx
 from max.gpu.primitives.warp import _ReduceFn
 from std.os import abort
 from std.sys.info import is_amd_gpu
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 
 
@@ -66,32 +66,48 @@ def coop_row_words(batch_size: Int, group_size: Int) -> Int:
 
 
 def coop_group_size(
-    ctx: DeviceContext, batch_size: Int, block_size: Int, n_vec: Int
+    ctx: DeviceContext,
+    batch_size: Int,
+    block_size: Int,
+    n_vec: Int,
+    requested: Int = 0,
 ) raises -> Int:
-    """Chooses a resident AMD block group for each row.
+    """Chooses a resident block group for each row.
 
     Every block must be resident because the barrier spins until all blocks
-    arrive. The launch therefore uses at most one block per compute unit. The
-    timeout catches contention that prevents a group from becoming resident.
+    arrive, so a launch never asks for more blocks than the device has
+    multiprocessors: one block lands on each of them, and a block waiting for
+    the rest of its group holds the multiprocessor that the peer it waits on
+    would need. The count comes from the device rather than from a constant
+    because it is what decides whether a group fits. The timeout in the
+    barrier turns contention that keeps a group from becoming resident into an
+    error instead of a hang.
 
     Args:
         ctx: Device the launch targets.
         batch_size: Number of rows in the launch.
         block_size: Threads per block.
         n_vec: Vectors in one row.
+        requested: Blocks per row the caller wants. Values that are not powers
+            of two, and values above what the device can keep resident, fall
+            back to the largest group that fits. Zero derives the group from
+            the device.
 
     Returns:
         Blocks per row, or `1` when the row should not be split.
     """
-    comptime if not ctx.target.is_amd_gpu():
-        return 1
     if batch_size <= 0:
         return 1
-    var cu_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var limit = _MAX_COOP_GROUP
+    if requested > 0:
+        limit = 1
+        while limit * 2 <= min(requested, _MAX_COOP_GROUP):
+            limit *= 2
+    var mp_count = ctx.device().multiprocessor_count()
     var group_size = 1
     var c = 2
-    while c <= _MAX_COOP_GROUP:
-        if batch_size * c <= cu_count and n_vec >= c * block_size:
+    while c <= limit:
+        if batch_size * c <= mp_count and n_vec >= c * block_size:
             group_size = c
         c *= 2
     return group_size
@@ -114,24 +130,25 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
 
     @inline(.always)
     def _counter(
-        self, workspace: UnsafePointer[Int32, MutAnyOrigin]
-    ) -> UnsafePointer[Int32, MutAnyOrigin]:
-        return workspace + self._row * (
-            _COOP_CONTROL_WORDS + 2 * Self.group_size * COOP_SLOT_FLOATS
+        self, workspace: MutPointer[Int32, MutAnyOrigin]
+    ) -> MutPointer[Int32, MutAnyOrigin]:
+        return workspace.unsafe_offset(
+            self._row
+            * (_COOP_CONTROL_WORDS + 2 * Self.group_size * COOP_SLOT_FLOATS)
         )
 
     @inline(.always)
     def _slots(
-        self, workspace: UnsafePointer[Int32, MutAnyOrigin]
-    ) -> UnsafePointer[Float32, MutAnyOrigin]:
-        return (self._counter(workspace) + _COOP_CONTROL_WORDS).bitcast[
-            Float32
-        ]()
+        self, workspace: MutPointer[Int32, MutAnyOrigin]
+    ) -> MutPointer[Float32, MutAnyOrigin]:
+        return (
+            self._counter(workspace)
+            .unsafe_offset(_COOP_CONTROL_WORDS)
+            .unsafe_bitcast[Float32]()
+        )
 
     @inline(.always)
-    def _arrive_and_wait(
-        mut self, workspace: UnsafePointer[Int32, MutAnyOrigin]
-    ):
+    def _arrive_and_wait(mut self, workspace: MutPointer[Int32, MutAnyOrigin]):
         """Synchronizes the group with device-scoped release and acquire fences.
 
         Thread 0 updates the counter. Block barriers make the acquired peer
@@ -143,16 +160,13 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         var counter = self._counter(workspace)
         barrier()
         if thread_idx.x == 0:
-            fence[ordering=Ordering.RELEASE, scope=_DEVICE_SCOPE]()
+            fence[ordering=.release, scope=_DEVICE_SCOPE]()
             var seen = (
-                _coop_atomic.fetch_add[ordering=Ordering.RELAXED](
-                    counter, Int32(1)
-                )
-                + 1
+                _coop_atomic.fetch_add[ordering=.relaxed](counter, Int32(1)) + 1
             )
             var spins = 0
             while seen < target and spins < _COOP_SPIN_LIMIT:
-                seen = _coop_atomic.load[ordering=Ordering.RELAXED](counter)
+                seen = _coop_atomic.load[ordering=.relaxed](counter)
                 spins += 1
             if seen < target:
                 debug_assert(
@@ -160,11 +174,11 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
                     "coop_row barrier timed out; blocks may not be co-resident",
                 )
                 abort()
-            fence[ordering=Ordering.ACQUIRE, scope=_DEVICE_SCOPE]()
+            fence[ordering=.acquire, scope=_DEVICE_SCOPE]()
         barrier()
 
     @inline(.always)
-    def sync(mut self, workspace: UnsafePointer[Int32, MutAnyOrigin]):
+    def sync(mut self, workspace: MutPointer[Int32, MutAnyOrigin]):
         """Makes each block's preceding global writes visible to its peers."""
         self._arrive_and_wait(workspace)
 
@@ -173,8 +187,8 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         width: Int
     ](
         mut self,
-        workspace: UnsafePointer[Int32, MutAnyOrigin],
-        table: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
+        workspace: MutPointer[Int32, MutAnyOrigin],
+        table: MutPointer[Float32, _, address_space=.SHARED],
         vals: SIMD[.float32, width],
     ):
         """Publishes `vals` and copies each rank's slot into shared memory.
@@ -192,14 +206,16 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         self._phase ^= 1
 
         if tx == 0:
-            slots.store(slot_base + self.rank * COOP_SLOT_FLOATS, vals)
+            slots.unsafe_store(slot_base + self.rank * COOP_SLOT_FLOATS, vals)
 
         self._arrive_and_wait(workspace)
 
         if tx < Self.group_size:
-            table.store(
+            table.unsafe_store(
                 tx * width,
-                slots.load[width=width](slot_base + tx * COOP_SLOT_FLOATS),
+                slots.unsafe_load[width=width](
+                    slot_base + tx * COOP_SLOT_FLOATS
+                ),
             )
         barrier()
 
@@ -208,8 +224,8 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         width: Int, combine_fn: _ReduceFn
     ](
         mut self,
-        workspace: UnsafePointer[Int32, MutAnyOrigin],
-        table: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
+        workspace: MutPointer[Int32, MutAnyOrigin],
+        table: MutPointer[Float32, _, address_space=.SHARED],
         vals: SIMD[.float32, width],
     ) -> SIMD[.float32, width]:
         """Combines block-reduced vectors in rank order.
@@ -218,7 +234,7 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         result.
         """
         self.gather[width](workspace, table, vals)
-        var acc = table.load[width=width](0)
+        var acc = table.unsafe_load[width=width](0)
         comptime for r in range(1, Self.group_size):
-            acc = combine_fn(acc, table.load[width=width](r * width))
+            acc = combine_fn(acc, table.unsafe_load[width=width](r * width))
         return acc

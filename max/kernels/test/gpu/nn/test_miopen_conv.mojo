@@ -186,18 +186,9 @@ def test_conv_miopen[
     num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
     print(
-        "== test_miopen_conv: dtype_in=",
-        input_type,
-        " dtype_filter=",
-        filter_type,
-        " dtype_out=",
-        output_type,
-        " input=",
-        input_dim,
-        " filter=",
-        filter_dim,
-        " num_groups=",
-        num_groups,
+        t"== test_miopen_conv: dtype_in= {input_type}  dtype_filter="
+        t" {filter_type}  dtype_out= {output_type}  input= {input_dim}  filter="
+        t" {filter_dim}  num_groups= {num_groups}"
     )
 
     comptime input_dim_flattened = input_dim.flattened_length()
@@ -285,9 +276,9 @@ def test_conv_miopen[
         input_dev_tensor,
         filter_dev_tensor,
         output_dev_tensor,
-        stride_dim,
-        dilation_dim,
-        pad_dim,
+        Coord(stride_dim),
+        Coord(dilation_dim),
+        Coord(pad_dim),
         num_groups,
         ctx,
     )

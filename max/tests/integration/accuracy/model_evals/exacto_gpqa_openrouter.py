@@ -29,7 +29,9 @@ Stdlib only, so it unit-tests under bazel and imports into the harness venv.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping
+from pathlib import Path
 
 HARNESS = "OpenRouterTeam/benchmark-harness"
 #: The harness commit this module was ported from.
@@ -42,6 +44,12 @@ DATASET = "nmayorga7/gpqa_diamond"
 DATASET_REVISION = "c63e9ba02dc3da4c698e2a8485551b35041c3900"
 SPLIT = "train"
 NUM_QUESTIONS = 198
+#: SHA-256 of ``gpqa_diamond.csv`` at :data:`DATASET_REVISION`. A local copy
+#: must match it byte for byte, or its rows, and so every question's
+#: permutation, could differ from the harness's.
+DATASET_SHA256 = (
+    "41d1213cd7a4998605a26c2798500652572007161b3a92817ba46b35befcd305"
+)
 
 #: ``GPQA_META`` in ``src/benchmarks/benchmark-meta.ts``.
 TEMPERATURE = 0.5
@@ -74,6 +82,23 @@ OPTION_FIELDS = (
 )
 
 _MASK32 = 0xFFFFFFFF
+
+
+def check_dataset_file(path: str) -> None:
+    """Checks that ``path`` is the pinned revision's ``gpqa_diamond.csv``.
+
+    Args:
+        path: A local copy of the dataset's CSV.
+
+    Raises:
+        ValueError: If the file's SHA-256 is not :data:`DATASET_SHA256`.
+    """
+    digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    if digest != DATASET_SHA256:
+        raise ValueError(
+            f"{path} has SHA-256 {digest}, expected {DATASET_SHA256}: it is "
+            f"not {DATASET}@{DATASET_REVISION}'s gpqa_diamond.csv"
+        )
 
 
 def _mulberry32(seed: int) -> Callable[[], float]:

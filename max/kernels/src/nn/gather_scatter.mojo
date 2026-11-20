@@ -18,7 +18,6 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
     row_major,
 )
 from std.collections.string.string_span import get_static_string
@@ -34,19 +33,44 @@ from std.sys.info import (
 from std.utils.numerics import neg_inf
 
 from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
-from std.algorithm.functional import tile
-from std.atomic import Atomic
+from std.algorithm.functional import tile, vectorize
+from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from max.gpu.host.info import is_cpu, is_gpu
 
-from layout.coord import DynamicCoord
+from layout.coord import CoordLike, DynamicCoord
 from std.memory import unsafe_memcpy
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from extensibility import ManagedTensorSlice
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.collections import OptionalReg
+
+
+@inline(.always)
+def _coord_get[
+    element_types: TypeList[Trait=CoordLike, ...]
+](coord: Coord[*element_types], idx: Int) -> Int:
+    """Reads element `idx` of a flat `Coord` at runtime.
+
+    A `Coord` subscript needs the index to be known at compile time, because
+    only then is the element's type known. So unroll over the comptime
+    positions and select with a runtime predicate.
+
+    Parameters:
+        element_types: Element types of the `Coord`.
+
+    Args:
+        coord: The `Coord` to read from.
+        idx: Runtime element index to read.
+
+    Returns:
+        The element at `idx`.
+    """
+    var result = 0
+    comptime for i in range(coord.rank):
+        if i == idx:
+            result = Int(coord[i])
+    return result
 
 
 @inline(.always)
@@ -194,18 +218,13 @@ def gather_reduce[
 
     var out_vecs_per_thread = ceildiv(Int(indices.dim[0]()), num_tasks)
 
-    var output_2d_dims = IndexList[2](
-        Int(output.dim[0]()), Int(output.dim[1]())
-    )
+    var output_2d_dims = Coord(Int(output.dim[0]()), Int(output.dim[1]()))
 
     comptime if output.flat_rank == 3:
-        output_2d_dims[1] = Int(output.dim[2]())
+        output_2d_dims.replace_dynamic[1](Int(output.dim[2]()))
 
-    var output_bind = TileTensor(output.ptr, row_major(Coord(output_2d_dims)))
-    var input_bind = TileTensor(
-        input.ptr,
-        input.layout.make_dynamic[.int64](),
-    )
+    var output_bind = output.reshape(row_major(output_2d_dims))
+    var input_bind = input.reshape(input.layout.make_dynamic[.int64]())
 
     var gather_axis_size = Int(input.dim(gather_axis))
 
@@ -267,7 +286,7 @@ def gather_reduce[
                 ) {imm} -> StaticTuple[SIMD[dtype, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = _unsafe_normalize_neg_index(
-                        indices.load[width=unroll_factor](Coord(i, j)),
+                        indices.load[width=unroll_factor]((i, j)),
                         gather_axis_size,
                     )
 
@@ -301,7 +320,7 @@ def gather_reduce[
                     )[0]
 
                 var out_idx = Coord(i, k)
-                output.store[width=simd_width, alignment=1](out_idx, accum)
+                output.store[alignment=1](out_idx, accum)
 
             tile[k_tile_sizes,](0, row_size, gather_k_tile)
             # TODO(MOCO-2074): Suppress false positive unused var warning.
@@ -314,7 +333,6 @@ def gather_reduce[
 def gather_sum[
     dtype: DType,
     //,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[mut=False, dtype, ...],
@@ -349,13 +367,10 @@ def gather_sum[
 
     # Rank-3 outputs ([batch, 1, emb_dim]) are contiguous with the rank-2
     # view, so one flat layout covers both.
-    var output_flat = TileTensor(output.ptr, row_major(Coord(batch, emb_dim)))
-    var input_flat = TileTensor(
-        input.ptr,
-        input.layout.make_dynamic[.int64](),
-    )
+    var output_flat = output.reshape(row_major(Coord(batch, emb_dim)))
+    var input_flat = input.reshape(input.layout.make_dynamic[.int64]())
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
 
         def add[
             dtype: DType, simd_width: SIMDLength
@@ -400,16 +415,16 @@ def gather_sum[
             var emb_dim,
             var table_size,
         }:
-            var i = Int(coords[0].value())
-            var k = Int(coords[1].value())
+            var i = Int(coords[0])
+            var k = Int(coords[1])
 
             var accum = SIMD[dtype, width](0)
             for j in range(multi_hot):
-                var idx = Int(indices.raw_load(i * multi_hot + j))
+                var idx = Int(indices[i, j])
                 if idx < 0:
                     idx += table_size
                 # Trap in safe builds if normalization still leaves the
-                # index out of bounds: raw_load would silently read
+                # index out of bounds: the load would silently read
                 # garbage on GPU (the gather path above validates the
                 # same).
                 debug_assert[assert_mode="safe"](
@@ -419,17 +434,16 @@ def gather_sum[
                         " more detailed error checking."
                     ),
                 )
-                accum += input_flat.raw_load[
+                accum += input_flat.load[
                     width=width, alignment=alignment * align_of[dtype]()
-                ](idx * emb_dim + k)
+                ](Coord(idx, k))
 
-            output_flat.raw_store[
-                width=width, alignment=alignment * align_of[dtype]()
-            ](i * emb_dim + k, accum)
+            output_flat.store[alignment=alignment * align_of[dtype]()](
+                Coord(i, k), accum
+            )
 
         elementwise[
             simd_width=target_simd_width,
-            target=target,
             _trace_description="gather_sum",
         ](
             gather_sum_elementwise_fn,
@@ -445,7 +459,6 @@ def gather[
     //,
     *,
     axis: Int,
-    target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[mut=False, dtype, ...],
@@ -462,8 +475,6 @@ def gather[
         dtype: Element type of `input` and `output`.
         indices_type: Element type of the `indices` tensor.
         axis: Axis along which to gather from `input`.
-        target: Target backend to execute on, such as "cpu" or "cuda"
-            (defaults to "cpu").
 
     Args:
         output: Gathered values, shaped per the ONNX Gather spec.
@@ -471,15 +482,12 @@ def gather[
         indices: Indices to gather along `axis`.
         context: Device context for execution.
     """
-
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr.unsafe_offset(indices.num_elements())
-
-    @__parameter
-    @__copy_capture(end_indices_ptr)
     @inline(.always)
-    def prefetch_fn(_input_coords: Coord, indices_coords: Coord):
+    def prefetch_fn(
+        _input_coords: Coord, indices_coords: Coord
+    ) {var indices, var input}:
         # `input_coords` is written below; arguments are immutable.
         var input_coords = _input_coords
         comptime assert indices_coords.rank == indices.rank
@@ -495,18 +503,20 @@ def gather[
             and indices.Engine == DefaultEngine[element_width=1]
             and input.Engine == DefaultEngine[element_width=1]
         ):
-            var indices_ptr = indices.ptr_at_offset(indices_coords)
-            var indices_remaining = (
-                Int(end_indices_ptr) - Int(indices_ptr)
-            ) // size_of[indices_type]()
-            # assumes that indices are laid out in row major order
-            var next_idx_ptr = indices_ptr.unsafe_offset(
-                min(indices_remaining - 1, prefetch_offset)
+            var indices_offset = Int(
+                indices.layout[linear_idx_type=indices.linear_idx_type](
+                    indices_coords
+                )
             )
+            var indices_remaining = indices.num_elements() - indices_offset
+            # assumes that indices are laid out in row major order
+            var next_idx = indices.reshape(row_major(indices.num_elements()))[
+                indices_offset + min(indices_remaining - 1, prefetch_offset)
+            ]
             input_coords.replace_dynamic[axis](
                 Int64(
                     _unsafe_normalize_neg_index(
-                        next_idx_ptr.unsafe_load(),
+                        next_idx,
                         Int(input.dim[axis]()),
                     )
                 )
@@ -536,34 +546,54 @@ def gather[
         width: SIMDLength, element_alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output}:
         comptime assert output.flat_rank >= coords.flat_rank
-        output.store[
-            width=width, alignment=element_alignment * align_of[dtype]()
-        ](coords, rebind[SIMD[dtype, width]](val))
+        output.store[alignment=element_alignment * align_of[dtype]()](
+            coords, rebind[SIMD[dtype, width]](val)
+        )
 
-    gather[
+    var input_shape = DynamicCoord[.int64, input.rank]()
+    comptime for i in range(input.rank):
+        input_shape.replace_dynamic[i](Int64(input.dim(i)))
+    var indices_shape = DynamicCoord[.int64, indices.rank]()
+    comptime for i in range(indices.rank):
+        indices_shape.replace_dynamic[i](Int64(indices.dim(i)))
+    var output_shape = DynamicCoord[.int64, output.rank]()
+    comptime for i in range(output.rank):
+        output_shape.replace_dynamic[i](Int64(output.dim(i)))
+
+    _gather_impl[
+        input.rank,
+        indices.rank,
+        output.rank,
         dtype,
         indices_type,
-        prefetch_fn=prefetch_fn,
-        target=target,
+        has_prefetch=True,
     ](
         Axis(axis),
-        coord_to_index_list(input.layout.shape_coord()),
-        coord_to_index_list(indices.layout.shape_coord()),
-        coord_to_index_list(output.layout.shape_coord()),
+        input_shape,
+        indices_shape,
+        output_shape,
         input_fn=input_fn,
         indices_fn=indices_fn,
         output_fn=output_fn,
+        prefetch_fn=prefetch_fn,
         context=context,
     )
 
 
-def gather_guards(
+def gather_guards[
+    input_rank: Int, indices_rank: Int, output_rank: Int
+](
     axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
 ) raises -> None:
     """Validates that the input, indices, and output shapes are compatible for a gather operation.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
 
     Args:
         axis: Axis along which the gather is performed; must be non-negative
@@ -579,30 +609,87 @@ def gather_guards(
     """
     if Int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
-    for i in range(axis):
-        if output_shape[i] != input_shape[i]:
+    for i in range(Int(axis)):
+        if _coord_get(output_shape, i) != _coord_get(input_shape, i):
             raise Error(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(Int(axis), Int(axis) + indices_shape.size):
-        if output_shape[i] != indices_shape[i - Int(axis)]:
+    for i in range(Int(axis), Int(axis) + indices_shape.rank):
+        if _coord_get(output_shape, i) != _coord_get(
+            indices_shape, i - Int(axis)
+        ):
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"
                 " match indices_shape"
             )
-    for i in range(Int(axis) + indices_shape.size, output_shape.size):
-        if output_shape[i] != input_shape[i - indices_shape.size + 1]:
+    for i in range(Int(axis) + indices_shape.rank, output_shape.rank):
+        if _coord_get(output_shape, i) != _coord_get(
+            input_shape, i - indices_shape.rank + 1
+        ):
             raise Error(
                 "gather: output_shape[axis + indices_rank:] does not match"
                 " input_shape[axis:]"
             )
-    if Int(axis) >= input_shape.size:
+    if Int(axis) >= input_shape.rank:
         raise Error("gather: axis must be less than input rank")
 
 
 @inline(.always)
+def _vectorizes_last_axis[
+    indices_rank: Int, target: CompilationTarget
+]() -> Bool:
+    """Whether a gather along the input's last axis runs on SIMD vectors.
+
+    Only the CPU does, and rank-0 indices have no index vector to load.
+    """
+    return target.is_cpu() and indices_rank > 0
+
+
+@inline(.always)
+def _normalize_and_check_gather_index[
+    dtype: DType, width: SIMDLength, *, target: CompilationTarget
+](
+    raw: SIMD[dtype, width],
+    axis_dim: Int,
+    error_index_ptr: OptionalReg[MutPointer[Int, MutAnyOrigin]],
+    mut normalized: SIMD[DType.int, width],
+) -> Bool:
+    """Wraps negative gather indices and checks them against `axis_dim`.
+
+    On CPU, records the first out-of-bounds raw index in `error_index_ptr` and
+    returns `False`; on GPU a debug assert traps instead.
+    """
+    normalized = _unsafe_normalize_neg_index(raw, axis_dim)
+    var out_of_bounds = normalized.lt(0) | normalized.ge(
+        SIMD[DType.int, width](axis_dim)
+    )
+
+    # Use debug_assert to validate normalized index is within bounds on GPU
+    # and trap, as more detailed checking is costly on GPU.
+    comptime if target.is_cpu():
+        if any(out_of_bounds):
+            for k in range(Int(width)):
+                if out_of_bounds[k]:
+                    error_index_ptr.value()[] = Int(raw[k])
+                    break
+            return False
+
+    debug_assert[assert_mode="safe"](
+        not any(out_of_bounds),
+        (
+            "Gather index out of bounds. Run on CPU for more"
+            " detailed error checking."
+        ),
+    )
+    return True
+
+
+@inline(.always)
 def gather_elementwise_fn_wrapper[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
     dtype: DType,
     indices_type: DType,
     InputFnType: ImplicitlyCopyable
@@ -616,19 +703,23 @@ def gather_elementwise_fn_wrapper[
     & def[width: SIMDLength, element_alignment: Int](
         Coord, SIMD[dtype, width]
     ) -> None,
+    PrefetchFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def(Coord, Coord) -> None,
     *,
     simd_width: Int,
-    prefetch_fn: OptionalReg[def(Coord, Coord) capturing -> None] = None,
-    target: StaticString = "cpu",
+    has_prefetch: Bool,
+    target: CompilationTarget,
     element_alignment: Int = 1,
 ](
     input_fn: InputFnType,
     indices_fn: IndicesFnType,
     output_fn: OutputFnType,
+    prefetch_fn: PrefetchFnType,
     axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
     coords: Coord,
     error_index_ptr: OptionalReg[MutPointer[Int, MutAnyOrigin]] = None,
 ):
@@ -642,6 +733,9 @@ def gather_elementwise_fn_wrapper[
     instead.
 
     Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
         dtype: Element type of the input and output values.
         indices_type: Element type of the indices buffer.
         InputFnType: Function type that loads a SIMD vector from the input
@@ -650,11 +744,14 @@ def gather_elementwise_fn_wrapper[
             from the indices buffer at given coordinates.
         OutputFnType: Function type that stores a SIMD vector into the
             output tensor at given coordinates.
-        simd_width: SIMD vector width for the elementwise load and store.
-        prefetch_fn: Optional prefetch callback for software index
-            prefetching (defaults to None).
-        target: Target backend to execute on, such as "cpu" or "cuda"
-            (defaults to "cpu").
+        PrefetchFnType: Function type of the software index-prefetch
+            callback.
+        simd_width: SIMD vector width for the elementwise load and store. When
+            gathering the input's last axis on CPU the width applies to the
+            indices and the output instead, and the data loads are scalar.
+        has_prefetch: Whether to call `prefetch_fn` before each load (not done
+            on the vectorized last-axis path).
+        target: Compilation target the gather runs on.
         element_alignment: Alignment factor for element loads and stores
             (defaults to 1).
 
@@ -662,6 +759,8 @@ def gather_elementwise_fn_wrapper[
         input_fn: Callback that loads values from the input tensor.
         indices_fn: Callback that loads indices from the indices tensor.
         output_fn: Callback that stores values into the output tensor.
+        prefetch_fn: Software index-prefetch callback; ignored unless
+            `has_prefetch`.
         axis: Validated axis along which to gather from the input tensor.
         input_shape: Shape of the input tensor.
         indices_shape: Shape of the indices tensor.
@@ -670,9 +769,9 @@ def gather_elementwise_fn_wrapper[
         error_index_ptr: Optional pointer to record an out-of-bounds index
             for CPU error reporting (defaults to None).
     """
-    comptime assert coords.rank == output_shape.size
+    comptime assert coords.rank == output_shape.rank
     comptime assert (
-        output_shape.size == input_shape.size + indices_shape.size - 1
+        output_shape.rank == input_shape.rank + indices_shape.rank - 1
     )
 
     # out_coords consists of 3 chunks:
@@ -680,51 +779,68 @@ def gather_elementwise_fn_wrapper[
     #   out_coords[axis:axis+indices_rank] = indices_coords
     #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
     # and input_coords[axis] = indices[indices_coords]
-    var indices_index = DynamicCoord[.int64, indices_shape.size]()
+    var indices_index = DynamicCoord[.int64, indices_shape.rank]()
 
     # Get the indices of the index. `axis` is a runtime value, so the source
     # position is picked by a runtime predicate over comptime positions; a
     # dynamic subscript would force `coords` out of registers and through
     # memory.
-    comptime for i in range(indices_shape.size):
+    comptime for i in range(indices_shape.rank):
         comptime for j in range(coords.rank):
             if j == i + Int(axis):
                 indices_index.replace_dynamic[i](Int64(coords[j].value()))
+
+    # Extent of the gathered axis; a runtime subscript on a `Coord` does not
+    # compile, so this unrolls over the comptime positions.
+    var axis_dim = _coord_get(input_shape, Int(axis))
+
+    # Gathering the input's last axis: the output's last dim is the indices'
+    # last dim, so a vector of output lanes reads a vector of indices and
+    # gathers one input element per lane. The data loads stay scalar; the
+    # index load and the output store are vectorized.
+    comptime if _vectorizes_last_axis[indices_rank, target]():
+        comptime if simd_width > 1:
+            if Int(axis) == input_shape.rank - 1:
+                var lanes = SIMD[DType.int, simd_width]()
+                if not _normalize_and_check_gather_index[target=target](
+                    indices_fn[simd_width](indices_index),
+                    axis_dim,
+                    error_index_ptr,
+                    lanes,
+                ):
+                    return
+                var lane_indices = DynamicCoord[.int64, input_shape.rank]()
+                comptime for i in range(input_shape.rank - 1):
+                    lane_indices.replace_dynamic[i](Int64(coords[i].value()))
+                var out = SIMD[dtype, simd_width]()
+                comptime for k in range(simd_width):
+                    lane_indices.replace_dynamic[input_shape.rank - 1](
+                        Int64(lanes[k])
+                    )
+                    out[k] = input_fn[1, 1](lane_indices)[0]
+                output_fn[simd_width, element_alignment](coords, out)
+                return
 
     # The index we are gathering.
     var data_index = indices_fn[1](indices_index)
 
     # Update the indices with the new data index.
-    var data_indices = DynamicCoord[.int64, input_shape.size]()
+    var data_indices = DynamicCoord[.int64, input_shape.rank]()
 
-    comptime skip_factor = indices_shape.size - 1
+    comptime skip_factor = indices_shape.rank - 1
 
     # Build the indices for the input. We have replaced in index in 'axis'
     # with an index from the indices tensor. `Coord` subscripts are checked
     # at compile time, so the `comptime if`s skip positions that rank-0
     # indices make out of range; the runtime `axis` test never reaches them.
-    comptime for i in range(input_shape.size):
+    comptime for i in range(input_shape.rank):
         if i == Int(axis):
-            var normalized_coords = _unsafe_normalize_neg_index(
-                data_index, input_shape[axis]
-            )
-            data_indices.replace_dynamic[i](Int64(normalized_coords))
-
-            # Do a real bounds check and provide a nice message on CPU.
-            # Use debug_assert to validate normalized index is within bounds
-            # on GPU and trap, as more detailed checking is costly on GPU.
-            comptime if is_cpu[target]():
-                if not (0 <= Int(normalized_coords) < input_shape[axis]):
-                    error_index_ptr.value()[] = Int(data_index)
-                    return  # Early return on bounds error
-
-            debug_assert[assert_mode="safe"](
-                0 <= Int(normalized_coords) < input_shape[axis],
-                (
-                    "Gather index out of bounds. Run on CPU for more"
-                    " detailed error checking."
-                ),
-            )
+            var normalized_index = SIMD[DType.int, 1]()
+            if not _normalize_and_check_gather_index[target=target](
+                data_index, axis_dim, error_index_ptr, normalized_index
+            ):
+                return  # Early return on bounds error
+            data_indices.replace_dynamic[i](Int64(normalized_index))
         elif i > Int(axis):
             # Skip over any extra indices dimensions. These are essentially new dimensions.
             comptime if i + skip_factor >= 0:
@@ -736,17 +852,25 @@ def gather_elementwise_fn_wrapper[
                 data_indices.replace_dynamic[i](Int64(coords[i].value()))
 
     # Load the data.
-    comptime if case .Some(func) = prefetch_fn:
-        func(data_indices, indices_index)
+    comptime if has_prefetch:
+        prefetch_fn(data_indices, indices_index)
     var data = input_fn[simd_width, element_alignment](data_indices)
 
     # Store it to the original index.
     output_fn[simd_width, element_alignment](coords, data)
 
 
+@inline(.always)
+def _no_prefetch(input_coords: Coord, indices_coords: Coord):
+    pass
+
+
 # TODO: Delete / for testing purposes (test_gather.mojo)
 @inline(.always)
 def gather[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
     dtype: DType,
     indices_type: DType,
     InputFnType: ImplicitlyCopyable
@@ -760,14 +884,11 @@ def gather[
     & def[width: SIMDLength, element_alignment: Int](
         Coord, SIMD[dtype, width]
     ) -> None,
-    *,
-    prefetch_fn: OptionalReg[def(Coord, Coord) capturing -> None] = None,
-    target: StaticString = "cpu",
 ](
     axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
     *,
     input_fn: InputFnType,
     indices_fn: IndicesFnType,
@@ -780,6 +901,9 @@ def gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
 
     Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
         dtype: Element type of the input and output tensors.
         indices_type: Element type of the `indices` tensor.
         InputFnType: Function type that loads a SIMD vector from the input
@@ -788,10 +912,6 @@ def gather[
             the indices buffer at given coordinates.
         OutputFnType: Function type that stores a SIMD vector into the output
             tensor at given coordinates.
-        prefetch_fn: Optional prefetch callback for software index prefetching
-            (defaults to None).
-        target: Target backend to execute on, such as "cpu" or "cuda"
-            (defaults to "cpu").
 
     Args:
         axis: Validated axis along which to gather from the input tensor.
@@ -803,26 +923,76 @@ def gather[
         output_fn: Callback that stores values into the output tensor.
         context: Device context for execution.
     """
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=context.target]()
+    _gather_impl[
+        input_rank,
+        indices_rank,
+        output_rank,
+        dtype,
+        indices_type,
+        has_prefetch=False,
+    ](
+        axis,
+        input_shape,
+        indices_shape,
+        output_shape,
+        input_fn=input_fn,
+        indices_fn=indices_fn,
+        output_fn=output_fn,
+        prefetch_fn=_no_prefetch,
+        context=context,
     )
 
-    gather_guards(axis, input_shape, indices_shape, output_shape)
-    with Trace[TraceLevel.OP, target=target](
+
+@inline(.always)
+def _gather_impl[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    dtype: DType,
+    indices_type: DType,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, element_alignment: Int](Coord) -> SIMD[dtype, width],
+    IndicesFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[indices_type, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDLength, element_alignment: Int](
+        Coord, SIMD[dtype, width]
+    ) -> None,
+    PrefetchFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def(Coord, Coord) -> None,
+    *,
+    has_prefetch: Bool,
+](
+    axis: Axis,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
+    *,
+    input_fn: InputFnType,
+    indices_fn: IndicesFnType,
+    output_fn: OutputFnType,
+    prefetch_fn: PrefetchFnType,
+    context: DeviceContext,
+) raises:
+    comptime target_simd_width = simd_width_of[dtype, target=context.target]()
+
+    gather_guards[input_rank, indices_rank, output_rank](
+        axis, input_shape, indices_shape, output_shape
+    )
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "gather", task_id=get_safe_task_id(context)
     ):
-        if (
-            input_shape.flattened_length() == 0
-            or indices_shape.flattened_length() == 0
-        ):
+        if Int(input_shape.product()) == 0 or Int(indices_shape.product()) == 0:
             return
 
         # Create an error reporting location since we cannot raise from an elementwise lambda.
         var error_index: Int = -1
         var error_index_ptr = OptionalReg[MutPointer[Int, MutAnyOrigin]](None)
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             error_index_ptr = OptionalReg[MutPointer[Int, MutAnyOrigin]](
                 MutPointer[Int, MutAnyOrigin](to=error_index)
             )
@@ -838,58 +1008,69 @@ def gather[
             var input_fn,
             var indices_fn,
             var output_fn,
+            var prefetch_fn,
             var error_index_ptr,
         }:
             gather_elementwise_fn_wrapper[
+                input_rank,
+                indices_rank,
+                output_rank,
                 dtype,
                 indices_type,
                 simd_width=simd_width,
-                prefetch_fn=prefetch_fn,
-                target=target,
+                has_prefetch=has_prefetch,
+                target=context.target,
                 element_alignment=alignment,
             ](
                 input_fn,
                 indices_fn,
                 output_fn,
+                prefetch_fn,
                 axis,
-                input_shape.canonicalize(),
-                indices_shape.canonicalize(),
-                output_shape.canonicalize(),
+                input_shape,
+                indices_shape,
+                output_shape,
                 idx,
                 error_index_ptr,
             )
 
-        # If we are gathering on the last dimension then we have to be scalar.
-        if Int(axis) == input_shape.size - 1:
+        # Gathering the last axis can't vectorize the data loads; see
+        # `gather_elementwise_fn_wrapper`.
+        comptime last_axis_width = target_simd_width if _vectorizes_last_axis[
+            indices_rank, context.target
+        ]() else 1
+        if Int(axis) == input_shape.rank - 1:
             elementwise[
-                simd_width=1,
-                target=target,
+                simd_width=last_axis_width,
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
-                Coord(output_shape),
+                output_shape,
                 context,
             )
         else:
             elementwise[
                 simd_width=target_simd_width,
-                target=target,
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
-                Coord(output_shape),
+                output_shape,
                 context,
             )
 
         # Check for bounds errors after elementwise operation completes (CPU only)
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             if error_index != -1:
                 var invalid_index = error_index
                 raise Error(
                     String(
                         "gather index {} is out of bounds for axis {} with"
                         " size {}"
-                    ).format(invalid_index, Int(axis), input_shape[axis])
+                    ).format(
+                        invalid_index,
+                        Int(axis),
+                        _coord_get(input_shape, Int(axis)),
+                    )
                 )
 
 
@@ -925,7 +1106,7 @@ struct ScatterOobIndexStrategy(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -989,9 +1170,17 @@ def _atomic_reduce[
         var desired = reduction_fn[dtype, 1](expected, update)
         if desired.to_bits() == expected.to_bits():
             return
+        # Relaxed orderings: the only memory this loop shares with another
+        # thread is the destination element itself, and atomicity alone makes
+        # each update land exactly once. Nothing is published through it, so
+        # there is no edge to order against.
         # Apple GPU only exposes a weak compare-exchange primitive; the retry
         # loop already tolerates spurious failures.
-        if Atomic.compare_exchange[weak=is_apple_gpu()](ptr, expected, desired):
+        if Atomic.compare_exchange[
+            success_ordering=.relaxed,
+            failure_ordering=.relaxed,
+            weak=is_apple_gpu(),
+        ](ptr, expected, desired):
             return
 
 
@@ -1005,9 +1194,14 @@ def _atomic_add[
     dtype: DType, //
 ](ptr: MutPointer[Scalar[dtype], ...], update: Scalar[dtype]):
     """Adds an update atomically, using compare-exchange on unsupported targets.
+
+    The add is relaxed, not the seq_cst the stdlib defaults to. A scatter
+    shares nothing but the destination element between threads, so atomicity
+    is all it needs; a seq_cst add also pays a device-scope fence per update,
+    and these run one per element.
     """
     comptime if _has_native_atomic_add[dtype]():
-        _ = Atomic.fetch_add(ptr, update)
+        _ = Atomic.fetch_add[ordering=.relaxed](ptr, update)
     else:
 
         @inline(.always)
@@ -1025,7 +1219,6 @@ def scatter_nd_generator[
     indices_type: DType,
     //,
     oob_index_strategy: ScatterOobIndexStrategy = ScatterOobIndexStrategy.UNDEFINED,
-    target: StaticString = "cpu",
     atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
     *,
     _trace_description: StaticString = "scatter_nd",
@@ -1043,7 +1236,6 @@ def scatter_nd_generator[
         output_type: Type of data, updates, and output tensors.
         indices_type: Type of the indices tensor.
         oob_index_strategy: Strategy to handle out of bounds indices.
-        target: Target cpu or cuda.
         atomic_update_fn: Callable that atomically applies an update to a
             destination pointer. Called for every update on CPU and GPU, in
             unspecified order. Use `_atomic_add` for addition or
@@ -1060,14 +1252,10 @@ def scatter_nd_generator[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         context: Pointer to DeviceContext.
     """
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         _trace_description, task_id=get_safe_task_id(context)
     ):
-        if rebind[IndexList[data.rank]](
-            coord_to_index_list(data.layout.shape_coord())
-        ) != rebind[IndexList[data.rank]](
-            coord_to_index_list(output.layout.shape_coord())
-        ):
+        if data.layout.shape_coord() != output.layout.shape_coord():
             raise Error(
                 "Input and output shapes in scatter_nd must be the same."
             )
@@ -1084,39 +1272,26 @@ def scatter_nd_generator[
                 " indices_shape[-1] - 1"
             )
 
-        var output_flat = TileTensor(
-            output.ptr, row_major(output.num_elements())
-        )
-        var data_flat = TileTensor(data.ptr, row_major(data.num_elements()))
+        var output_flat = output.reshape(row_major(output.num_elements()))
+        var data_flat = data.reshape(row_major(data.num_elements()))
 
-        var output_strides = IndexList[data.rank]()
-        for i in range(data.rank):
-            output_strides[i] = Int(output.dynamic_stride(i))
+        var output_strides = DynamicCoord[.int64, data.rank]()
+        comptime for i in range(data.rank):
+            output_strides.replace_dynamic[i](Int64(output.dynamic_stride(i)))
 
-        var updates_strides = IndexList[updates.rank]()
-        for i in range(updates.rank):
-            updates_strides[i] = Int(updates.dynamic_stride(i))
+        var updates_strides = DynamicCoord[.int64, updates.rank]()
+        comptime for i in range(updates.rank):
+            updates_strides.replace_dynamic[i](Int64(updates.dynamic_stride(i)))
 
         # Always copy input to output first.
-        comptime if is_gpu[target]():
+        comptime if context.target.is_gpu():
             # TODO: Does it matter if output.data or output_flat.data (and data)?
             var ctx = context
-            # TODO: Owning = True or False?
-            var outp = DeviceBuffer(
-                ctx,
-                output.ptr,
-                data.num_elements(),
-                owning=False,
-            )
-            var inp = DeviceBuffer(
-                ctx, data.ptr, data.num_elements(), owning=False
-            )
             ctx.enqueue_copy(
-                outp,
-                inp,
+                output.to_device_buffer(ctx), data.to_device_buffer(ctx)
             )
 
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
             unsafe_memcpy(
                 dest=output_flat.ptr,
                 src=data_flat.ptr,
@@ -1131,9 +1306,10 @@ def scatter_nd_generator[
             updates.ptr, row_major(updates.num_elements())
         )
 
-        var data_shape = coord_to_index_list(data.layout.shape_coord())
-        var indices_shape = coord_to_index_list(indices.layout.shape_coord())
-        var last_shape_of_indices = indices_shape[indices.rank - 1]
+        var data_shape = DynamicCoord[.int64, data.rank]()
+        comptime for i in range(data.rank):
+            data_shape.replace_dynamic[i](Int64(data.dim(i)))
+        var last_shape_of_indices = Int(indices.dim(indices.rank - 1))
 
         # Depending on r_minus_m = data_rank - last_shape_of_indices,
         # we will be copying (gather):
@@ -1163,38 +1339,42 @@ def scatter_nd_generator[
             # dimensions, and is continuous memory locations).
             var count_copy = 1
             for i in range(r_minus_m):
-                count_copy = count_copy * data_shape[data.rank - 1 - i]
-            var indices_coords = coord_to_index_list(_indices_coords)
+                count_copy = count_copy * _coord_get(
+                    data_shape, data.rank - 1 - i
+                )
 
             # Stores the full index on output, where to copy updates to.
             # Zeroing here to avoid doing it selectively within the nested loop below.
-            var output_index_tensor = IndexList[data.rank](0)
+            var output_index_tensor = DynamicCoord[.int64, data.rank]()
 
             # Stores the full index on updates, where to copy from.
             # Zeroing here to avoid doing it selectively within the nested loop below.
-            var updates_index_tensor = IndexList[updates_rank](0)
+            var updates_index_tensor = DynamicCoord[.int64, updates_rank]()
 
             # Construct the full index on updates tensor, i.e., where to copy from.
-            for dim in range(_indices_coords.rank):
-                updates_index_tensor[dim] = indices_coords[dim]
+            comptime for dim in range(_indices_coords.rank):
+                updates_index_tensor.replace_dynamic[dim](
+                    Int64(_coord_get(_indices_coords, dim))
+                )
 
             # Construct the output_index_tensor whose elements contain the indices
             # for each dimension of the output, i.e., where to copy updates to.
             # As part of that we need to construct the indices_index, which is the
             # index to the indices tensor, where we get the elements for the
             # output_index_tensor from.
-            var indices_index = IndexList[indices.rank]()
+            var indices_index = DynamicCoord[.int64, indices.rank]()
+            comptime for i in range(indices.rank - 1):
+                indices_index.replace_dynamic[i](
+                    Int64(_coord_get(_indices_coords, i))
+                )
             for dim in range(last_shape_of_indices):
                 # Size of current dimension on data.
                 # Used to compare to index on this dimension (idx_on_axis).
-                var input_ax_dim = data_shape[dim]
+                var input_ax_dim = _coord_get(data_shape, dim)
 
-                for i in range(_indices_coords.rank):
-                    indices_index[i] = indices_coords[i]
-                indices_index[indices.rank - 1] = dim
+                indices_index.replace_dynamic[indices.rank - 1](Int64(dim))
 
-                var indices_coord = Coord(indices_index)
-                var idx_on_axis = indices.load[width=1](indices_coord)
+                var idx_on_axis = indices.load(indices_index)
 
                 comptime if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
                     # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
@@ -1203,39 +1383,54 @@ def scatter_nd_generator[
                     ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
 
-                output_index_tensor[dim] = Int(
+                var normalized = Int(
                     _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
                 )
+                comptime for i in range(data.rank):
+                    if i == dim:
+                        output_index_tensor.replace_dynamic[i](
+                            Int64(normalized)
+                        )
 
             # Calculate the updates_offset from where to copy the updates.
             var updates_offset = 0
 
             for i in range(updates_rank):
-                updates_offset = (
-                    updates_offset
-                    + updates_strides[i] * updates_index_tensor[i]
-                )
+                updates_offset = updates_offset + _coord_get(
+                    updates_strides, i
+                ) * _coord_get(updates_index_tensor, i)
 
             # Calculate the output_offset to where to copy the updates.
             var output_offset = 0
 
             for i in range(data.rank):
-                output_offset = (
-                    output_offset + output_strides[i] * output_index_tensor[i]
-                )
+                output_offset = output_offset + _coord_get(
+                    output_strides, i
+                ) * _coord_get(output_index_tensor, i)
 
             comptime if case .Some(atomic_update) = atomic_update_fn:
                 for i in range(count_copy):
                     atomic_update(
                         output_flat.ptr.unsafe_offset(output_offset + i),
-                        updates_flat.load[width=1](Coord(updates_offset + i)),
+                        updates_flat.load((updates_offset + i,)),
                     )
 
             else:
-                for i in range(count_copy):
-                    output_flat[output_offset + i] = updates_flat[
-                        updates_offset + i
-                    ]
+
+                def copy_chunk[
+                    width: Int
+                ](i: Int) {
+                    imm output_flat,
+                    imm updates_flat,
+                    output_offset,
+                    updates_offset,
+                }:
+                    output_flat.store(
+                        (output_offset + i,),
+                        updates_flat.load[width=width]((updates_offset + i,)),
+                    )
+
+                vectorize[simd_width_of[output_type]()](count_copy, copy_chunk)
 
         @inline(.always)
         def update_element_func[
@@ -1256,22 +1451,21 @@ def scatter_nd_generator[
             # parallelism, where iterating over index rows alone caps
             # parallelism at the row count and leaves each thread serially
             # copying an entire slice.
-            var coords = coord_to_index_list(_coords)
-            var elem = coords[indices.rank - 1]
+            var elem = _coord_get(_coords, indices.rank - 1)
 
             # Index into the indices tensor naming this update row.
-            var indices_index = IndexList[indices.rank]()
-            for i in range(indices.rank - 1):
-                indices_index[i] = coords[i]
+            var indices_index = DynamicCoord[.int64, indices.rank]()
+            comptime for i in range(indices.rank - 1):
+                indices_index.replace_dynamic[i](Int64(_coord_get(_coords, i)))
 
             # Base offset on output addressed by this index row.
             var output_base = 0
             for dim in range(last_shape_of_indices):
                 # Size of current dimension on data.
                 # Used to compare to index on this dimension (idx_on_axis).
-                var input_ax_dim = data_shape[dim]
-                indices_index[indices.rank - 1] = dim
-                var idx_on_axis = indices.load[width=1](Coord(indices_index))
+                var input_ax_dim = _coord_get(data_shape, dim)
+                indices_index.replace_dynamic[indices.rank - 1](Int64(dim))
+                var idx_on_axis = indices.load(indices_index)
 
                 comptime if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
                     # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
@@ -1280,8 +1474,11 @@ def scatter_nd_generator[
                     ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
 
-                output_base = output_base + output_strides[dim] * Int(
+                var normalized = Int(
                     _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
+                output_base = (
+                    output_base + _coord_get(output_strides, dim) * normalized
                 )
 
             # Base offset on updates for this row; the copied slice occupies
@@ -1293,7 +1490,9 @@ def scatter_nd_generator[
             # produce wrong results.
             var updates_base = 0
             for i in range(indices.rank - 1):
-                updates_base = updates_base + updates_strides[i] * coords[i]
+                updates_base = updates_base + _coord_get(
+                    updates_strides, i
+                ) * _coord_get(_coords, i)
 
             # The launch below only selects simd_width > 1 when slice_elems,
             # the row strides, and the base pointers are all multiples of the
@@ -1303,7 +1502,7 @@ def scatter_nd_generator[
             ]()
             var update_vec = updates_flat.load[
                 width=simd_width, alignment=access_alignment
-            ](Coord(updates_base + elem))
+            ]((updates_base + elem,))
 
             comptime if case .Some(atomic_update) = atomic_update_fn:
                 comptime for lane in range(simd_width):
@@ -1315,26 +1514,28 @@ def scatter_nd_generator[
                     )
             else:
                 output_flat.store[alignment=access_alignment](
-                    Coord(output_base + elem), update_vec
+                    (output_base + elem,), update_vec
                 )
 
         comptime trace_description_str = get_static_string[
             "elementwise_impl_" + _trace_description
         ]()
 
-        comptime if is_gpu[target]():
+        comptime if context.target.is_gpu():
             # Iterate over indices.shape[:-1] x slice_elems, one update
             # element per thread. The CPU path below iterates over index rows
             # with a contiguous inner copy per row, which is the right shape
             # for CPU but caps GPU parallelism at the row count.
             var slice_elems = 1
             for i in range(r_minus_m):
-                slice_elems = slice_elems * data_shape[data.rank - 1 - i]
+                slice_elems = slice_elems * _coord_get(
+                    data_shape, data.rank - 1 - i
+                )
 
-            var iter_shape = IndexList[indices.rank]()
+            var iter_shape = DynamicCoord[.int64, indices.rank]()
             comptime for i in range(indices.rank - 1):
-                iter_shape[i] = Int(indices.dim[i]())
-            iter_shape[indices.rank - 1] = slice_elems
+                iter_shape.replace_dynamic[i](Int64(Int(indices.dim[i]())))
+            iter_shape.replace_dynamic[indices.rank - 1](Int64(slice_elems))
 
             # Vectorize across the slice when every access is provably
             # aligned: each thread touches `base + elem` where elem is a
@@ -1364,27 +1565,24 @@ def scatter_nd_generator[
             if vector_safe:
                 elementwise[
                     simd_width=pack,
-                    target=target,
                     _trace_description=trace_description_str,
-                ](update_element_func, Coord(iter_shape), context)
+                ](update_element_func, iter_shape, context)
             else:
                 elementwise[
                     simd_width=1,
-                    target=target,
                     _trace_description=trace_description_str,
-                ](update_element_func, Coord(iter_shape), context)
+                ](update_element_func, iter_shape, context)
         else:
             # Iterate over indices.shape[:-1], i.e. one update vector per
             # index row.
-            var iter_shape = IndexList[indices.rank - 1]()
+            var iter_shape = DynamicCoord[.int64, indices.rank - 1]()
             comptime for i in range(indices.rank - 1):
-                iter_shape[i] = Int(indices.dim[i]())
+                iter_shape.replace_dynamic[i](Int64(Int(indices.dim[i]())))
 
             elementwise[
                 simd_width=1,
-                target=target,
                 _trace_description=trace_description_str,
-            ](update_func, Coord(iter_shape), context)
+            ](update_func, iter_shape, context)
 
 
 @inline(.always)
@@ -1392,7 +1590,6 @@ def scatter_nd[
     output_type: DType,
     indices_type: DType,
     //,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, output_type, address_space=.GENERIC, ...],
     indices: TileTensor[mut=False, indices_type, address_space=.GENERIC, ...],
@@ -1405,7 +1602,6 @@ def scatter_nd[
     Parameters:
         output_type: Element type of `data`, `updates`, and `output`.
         indices_type: Element type of the `indices` tensor.
-        target: Target backend to execute on, such as "cpu" or "cuda".
 
     Args:
         data: Source tensor of rank at least 1 copied into `output` before
@@ -1418,7 +1614,7 @@ def scatter_nd[
             and scattered result.
         context: Device context for execution.
     """
-    scatter_nd_generator[target=target](data, indices, updates, output, context)
+    scatter_nd_generator(data, indices, updates, output, context)
 
 
 @inline(.always)
@@ -1429,7 +1625,7 @@ def scatter_nd_shape[
     input: TileTensor[mut=False, input_type, ...],
     updates: TileTensor[mut=False, input_type, ...],
     indices: TileTensor[mut=False, indices_type, ...],
-) raises -> IndexList[input.rank]:
+) raises -> DynamicCoord[.int64, input.rank]:
     """
     Compute the output shape of a `scatter_nd` operation, and assert the
     inputs are compatible.
@@ -1478,9 +1674,10 @@ def scatter_nd_shape[
                 " match"
             )
 
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var output_shape = DynamicCoord[.int64, input.rank]()
+    comptime for i in range(input.rank):
+        output_shape.replace_dynamic[i](Int64(input.dim(i)))
+    return output_shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1497,7 +1694,7 @@ def gather_shape[
     input_buf: TileTensor[mut=False, input_type, ...],
     indices_buf: TileTensor[mut=False, indices_type, ...],
     axis: Int,
-) raises -> IndexList[output_rank]:
+) raises -> DynamicCoord[.int64, output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
     compatible.
@@ -1524,20 +1721,35 @@ def gather_shape[
     var normalized_axis = normalize_neg_index(axis, input_buf.rank)
 
     # compute and return the output shape
-    var output_shape = IndexList[output_rank]()
+    var output_shape = DynamicCoord[.int64, output_rank]()
 
-    var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
-    var indices_shape = coord_to_index_list(indices_buf.layout.shape_coord())
+    var input_shape = DynamicCoord[.int64, input_buf.rank]()
+    comptime for i in range(input_buf.rank):
+        input_shape.replace_dynamic[i](Int64(input_buf.dim(i)))
+    var indices_shape = DynamicCoord[.int64, indices_buf.rank]()
+    comptime for i in range(indices_buf.rank):
+        indices_shape.replace_dynamic[i](Int64(indices_buf.dim(i)))
 
     # NOTE it's written this way instead of 3 separate for-loops because
-    # currently KGEN unrolling only works for strictly static bounds.
+    # currently KGEN unrolling only works for strictly static bounds. Every
+    # read goes through `_coord_get` even where the position is a comptime
+    # expression: a runtime `axis` prunes the branches only at runtime, so a
+    # literal subscript here would materialize as a constant GEP for a
+    # position outside the shape (e.g. `input_shape[out_dim]` with
+    # `output_rank > input_rank`).
     comptime for out_dim in range(output_rank):
         if out_dim < normalized_axis:
-            output_shape[out_dim] = input_shape[out_dim]
+            output_shape.replace_dynamic[out_dim](
+                Int64(_coord_get(input_shape, out_dim))
+            )
         elif out_dim < normalized_axis + indices_buf.rank:
-            output_shape[out_dim] = indices_shape[out_dim - normalized_axis]
+            output_shape.replace_dynamic[out_dim](
+                Int64(_coord_get(indices_shape, out_dim - normalized_axis))
+            )
         else:
-            output_shape[out_dim] = input_shape[out_dim - indices_buf.rank + 1]
+            output_shape.replace_dynamic[out_dim](
+                Int64(_coord_get(input_shape, out_dim - indices_buf.rank + 1))
+            )
 
     return output_shape
 
@@ -1549,28 +1761,25 @@ def gather_shape[
 
 @inline(.always)
 def scatter_elements[
-    rank: Int,
     input_type: DType,
     indices_type: DType,
+    //,
     *,
-    target: StaticString = "cpu",
     atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
 ](
-    input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
-    indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
-    updates: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    indices: TileTensor[indices_type, ...],
+    updates: TileTensor[input_type, ...],
     _axis: Int,
-    output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    output: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
 
     Parameters:
-        rank: Rank of the `input`, `indices`, `updates`, and `output` tensors.
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
-        target: Target backend to execute on, such as "cpu" or "gpu".
         atomic_update_fn: Callable that atomically applies an update to a
             destination pointer. Called for every update on CPU and GPU, in
             unspecified order. Use `_atomic_add` for addition or
@@ -1591,13 +1800,17 @@ def scatter_elements[
     comptime assert (
         indices_type == .int32 or indices_type == .int64
     ), "indices in scatter_elements must be int32 or int64"
+    comptime rank = input.rank
+    comptime assert indices.rank == rank
+    comptime assert updates.rank == rank
+    comptime assert output.rank == rank
 
-    if input.shape() != output.shape():
+    if input.layout.shape_coord() != output.layout.shape_coord():
         raise Error(
             "input and output shape in scatter_elements must be the same"
         )
 
-    if indices.shape() != updates.shape():
+    if indices.layout.shape_coord() != updates.layout.shape_coord():
         raise Error(
             "indices and updates shape in scatter_elements must be the same"
         )
@@ -1609,49 +1822,52 @@ def scatter_elements[
 
     var axis = _axis if _axis >= 0 else _axis + rank
 
-    comptime if is_gpu[target]():
-        ctx.enqueue_copy(output.unsafe_ptr(), input.unsafe_ptr(), output.size())
+    comptime if ctx.target.is_gpu():
+        ctx.enqueue_copy(output.ptr, input.as_imm().ptr, output.num_elements())
     else:
         unsafe_parallel_memcpy(
-            dest=output.unsafe_ptr(),
-            src=input.unsafe_ptr(),
-            count=output.size(),
+            dest=output.ptr,
+            src=input.as_imm().ptr,
+            count=output.num_elements(),
         )
 
-    if indices.size() == 0:
+    if indices.num_elements() == 0:
         return
 
-    var input_ax_dim = input.dim_size(axis)
+    var input_ax_dim = Int(input.dim(axis))
 
     def update_func[
         simd_width: Int, alignment: Int = 1
     ](indices_coords: Coord) {var}:
-        var idx_on_axis = indices.to_tile_tensor()[indices_coords]
-        var output_coords = coord_to_index_list(indices_coords)
-        output_coords[axis] = Int(
+        var idx_on_axis = indices.load[width=1](indices_coords)
+        var output_coords = DynamicCoord[.int64, rank]()
+        comptime for i in range(rank):
+            output_coords.replace_dynamic[i](
+                Int64(_coord_get(indices_coords, i))
+            )
+        var normalized = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        var update_val = updates.to_tile_tensor()[indices_coords]
+        comptime for i in range(rank):
+            if i == axis:
+                output_coords.replace_dynamic[i](Int64(normalized))
+        var update_val = updates.load[width=1](indices_coords)
 
         comptime if case .Some(atomic_update) = atomic_update_fn:
-            var output_tt = output.to_tile_tensor()
             var output_offset = 0
             for i in range(rank):
-                output_offset += (
-                    Int(output_tt.dynamic_stride(i)) * output_coords[i]
+                output_offset += Int(output.dynamic_stride(i)) * _coord_get(
+                    output_coords, i
                 )
-            atomic_update(
-                output.unsafe_ptr().unsafe_offset(output_offset), update_val
-            )
+            atomic_update(output.ptr.unsafe_offset(output_offset), update_val)
         else:
-            output.to_tile_tensor()[Coord(output_coords)] = update_val
+            output.store[width=1](output_coords, update_val)
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="scatter_elements",
-    ](update_func, indices.shape_coord(), ctx)
+    ](update_func, indices.layout.shape_coord(), ctx)
 
 
 @inline(.always)
@@ -1663,7 +1879,7 @@ def scatter_elements_shape[
     updates: TileTensor[mut=False, input_type, ...],
     indices: TileTensor[mut=False, indices_type, ...],
     axis: Int,
-) raises -> IndexList[input.rank]:
+) raises -> DynamicCoord[.int64, input.rank]:
     """
     Compute the output shape of a `scatter_elements` operation, and assert the
     inputs are compatible.
@@ -1700,9 +1916,10 @@ def scatter_elements_shape[
             )
 
     # Return output shape
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var output_shape = DynamicCoord[.int64, input.rank]()
+    comptime for i in range(input.rank):
+        output_shape.replace_dynamic[i](Int64(input.dim(i)))
+    return output_shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1719,7 +1936,7 @@ def gather_elements[
     indices: TileTensor[mut=False, indices_type, ...],
     _axis: Int,
     output: TileTensor[mut=True, input_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -1743,11 +1960,7 @@ def gather_elements[
         indices_type == .int32 or indices_type == .int64
     ), "indices in gather_elements must be int32 or int64"
 
-    if rebind[IndexList[input.rank]](
-        coord_to_index_list(indices.layout.shape_coord())
-    ) != rebind[IndexList[input.rank]](
-        coord_to_index_list(output.layout.shape_coord())
-    ):
+    if indices.layout.shape_coord() != output.layout.shape_coord():
         raise Error(
             "indices and output shape in gather_elements must be the same"
         )
@@ -1766,14 +1979,18 @@ def gather_elements[
     ](output_coords: Coord) {var}:
         comptime assert indices.flat_rank >= output_coords.flat_rank
         comptime assert output.flat_rank >= output_coords.flat_rank
-        var idx_on_axis = indices.load[width=1](output_coords)
-        var input_idx = coord_to_index_list(output_coords)
-        input_idx[axis] = Int(
+        var idx_on_axis = indices.load(output_coords)
+        var input_coords = DynamicCoord[.int64, input.rank]()
+        comptime for i in range(input.rank):
+            input_coords.replace_dynamic[i](Int64(_coord_get(output_coords, i)))
+        var normalized = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        var input_coords = Coord(input_idx)
+        comptime for i in range(input.rank):
+            if i == axis:
+                input_coords.replace_dynamic[i](Int64(normalized))
         comptime assert input.flat_rank >= input_coords.flat_rank
-        output.store(output_coords, input.load[width=1](input_coords))
+        output.store(output_coords, input.load(input_coords))
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[1](gather_func, output.layout.shape_coord(), ctx)
@@ -1793,7 +2010,7 @@ def gather_nd_shape[
 ](
     input_buf: TileTensor[mut=False, input_type, ...],
     indices_buf: TileTensor[mut=False, indices_type, ...],
-) raises -> IndexList[output_rank]:
+) raises -> DynamicCoord[.int64, output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
     compatible.
@@ -1814,8 +2031,10 @@ def gather_nd_shape[
     if input_buf.rank < 1 or indices_buf.rank < 1:
         raise Error("[gather_nd] input_rank and indices_rank must be >= 1")
 
-    var indices_shape = coord_to_index_list(indices_buf.layout.shape_coord())
-    var index_size = indices_shape[indices_buf.rank - 1]
+    var indices_shape = DynamicCoord[.int64, indices_buf.rank]()
+    comptime for i in range(indices_buf.rank):
+        indices_shape.replace_dynamic[i](Int64(indices_buf.dim(i)))
+    var index_size = Int(indices_shape[indices_buf.rank - 1])
     if index_size < 1 or input_buf.rank - batch_dims < index_size:
         raise Error(
             "[gather_nd] index size must be within range [1, input_rank -"
@@ -1825,22 +2044,24 @@ def gather_nd_shape[
         raise Error("[gather_nd] requires (batch_dims < indices_rank)")
 
     # compute and return the output shape
-    var output_shape = IndexList[output_rank]()
-    var next_out_dim = 0
+    var output_shape = DynamicCoord[.int64, output_rank]()
 
-    var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
+    var input_shape = DynamicCoord[.int64, input_buf.rank]()
+    comptime for i in range(input_buf.rank):
+        input_shape.replace_dynamic[i](Int64(input_buf.dim(i)))
 
-    comptime for i in range(batch_dims):
-        output_shape[next_out_dim] = indices_shape[i]
-        next_out_dim += 1
-
-    comptime for i in range(batch_dims, indices_buf.rank - 1):
-        output_shape[next_out_dim] = indices_shape[i]
-        next_out_dim += 1
+    # The output is the batch dims followed by the index's remaining dims,
+    # then the input dims past the gathered ones.
+    comptime for i in range(indices_buf.rank - 1):
+        output_shape.replace_dynamic[i](Int64(indices_shape[i]))
 
     for i in range(batch_dims + index_size, input_buf.rank):
-        output_shape[next_out_dim] = input_shape[i]
-        next_out_dim += 1
+        var out_pos = i - index_size - batch_dims + indices_buf.rank - 1
+        comptime for d in range(output_rank):
+            if d == out_pos:
+                output_shape.replace_dynamic[d](
+                    Int64(_coord_get(input_shape, i))
+                )
 
     return output_shape
 
@@ -1855,7 +2076,6 @@ def gather_nd[
     indices_type: DType,
     //,
     batch_dims: Int,
-    target: StaticString = "cpu",
 ](
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
@@ -1871,7 +2091,6 @@ def gather_nd[
         indices_type: Type of indices tensor.
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
-        target: The target architecture to execute on.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -1886,9 +2105,9 @@ def gather_nd[
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
-    var indices_shape = coord_to_index_list(indices.layout.shape_coord())
+    var last_indices_dim = Int(indices.dim(indices.rank - 1))
     assert (
-        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims
+        1 <= last_indices_dim <= data.rank - batch_dims
     ), "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims"
 
     # This is modeled as an elementwise function mapping an index in the
@@ -1896,53 +2115,56 @@ def gather_nd[
     def gather_nd_elementwise_fn[
         simd_width: Int, alignment: Int = 1
     ](output_idx_arg: Coord) {var}:
-        var output_idx = coord_to_index_list(output_idx_arg)
-        var data_idx = IndexList[data.rank]()
-        var indices_idx = IndexList[indices.rank]()
-        var indices_last_dim = Int(indices.dim[indices.rank - 1]())
+        var data_idx = DynamicCoord[.int64, data.rank]()
+        var indices_idx = DynamicCoord[.int64, indices.rank]()
+        var indices_last_dim = Int(indices.dim(indices.rank - 1))
 
         # Fill in the known dimensions in our batch_dim
         comptime for i in range(batch_dims):
-            data_idx[i] = output_idx[i]
+            data_idx.replace_dynamic[i](Int64(_coord_get(output_idx_arg, i)))
 
         # Start filling in the index into the indices buffer
         comptime for i in range(0, indices.rank - 1):
-            indices_idx[i] = output_idx[i]
+            indices_idx.replace_dynamic[i](Int64(_coord_get(output_idx_arg, i)))
 
         # walk the last dimensions, which are the slices we're gathering
         for i in range(indices_last_dim):
-            indices_idx[indices.rank - 1] = i
-            var indices_coord = Coord(indices_idx)
-            data_idx[batch_dims + i] = Int(indices.load[width=1](indices_coord))
+            indices_idx.replace_dynamic[indices.rank - 1](Int64(i))
+            var load_pos = batch_dims + i
+            comptime for d in range(data.rank):
+                if d == load_pos:
+                    data_idx.replace_dynamic[d](
+                        Int64(Int(indices.load(indices_idx)))
+                    )
 
         # fill in the last slices in the input
         var num_tail_elems = data.rank - batch_dims - indices_last_dim
         var output_start = output.rank - num_tail_elems
         var src_start = indices_last_dim + batch_dims
         for i in range(0, num_tail_elems):
-            data_idx[src_start + i] = output_idx[output_start + i]
+            var tail_pos = src_start + i
+            comptime for d in range(data.rank):
+                if d == tail_pos:
+                    data_idx.replace_dynamic[d](
+                        Int64(_coord_get(output_idx_arg, output_start + i))
+                    )
 
         comptime for i in range(data.rank):
-            assert data_idx[i] >= 0 and data_idx[i] < Int(
+            assert Int(data_idx[i]) >= 0 and Int(data_idx[i]) < Int(
                 data.dim[i]()
             ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            assert Int(output_idx[i].value()) >= 0 and Int(
-                output_idx[i].value()
-            ) < Int(output.dim[i]()), "output index out of bounds"
+            assert Int(output_idx_arg[i]) >= 0 and Int(output_idx_arg[i]) < Int(
+                output.dim[i]()
+            ), "output index out of bounds"
 
-        var data_coord = Coord(data_idx)
-        var output_coord = Coord(output_idx)
-        output.store[width=simd_width, alignment=1](
-            output_coord, data.load[width=simd_width, alignment=1](data_coord)
+        output.store[alignment=1](
+            output_idx_arg,
+            data.load[width=simd_width, alignment=1](data_idx),
         )
 
-    comptime target_simd_width = (
-        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
-            target
-        ]() else simd_width_of[dtype, target=ctx.target]()
-    )
+    comptime target_simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous
@@ -1964,13 +2186,11 @@ def gather_nd[
     if use_simd:
         elementwise[
             target_simd_width,
-            target=target,
             _trace_description="gather_nd",
         ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
     else:
         elementwise[
             1,
-            target=target,
             _trace_description="gather_nd",
         ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
 
@@ -1984,7 +2204,6 @@ def scatter_set_constant[
     data_type: DType,
     index_type: DType,
     //,
-    target: StaticString,
 ](
     data: TileTensor[mut=True, data_type, ...],
     indices: TileTensor[mut=False, index_type, ...],
@@ -2015,7 +2234,6 @@ def scatter_set_constant[
     Parameters:
         data_type: Element type of `data` and `fill_value`.
         index_type: Integral element type of the `indices` tensor.
-        target: Target backend to execute on, such as "cpu" or "cuda".
 
     Args:
         data: The data to scatter the updates into.
@@ -2047,7 +2265,6 @@ def scatter_set_constant[
     var dispatch_shape = Coord(Int(indices.dim[0]()))
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="scatter_set_constant",
     ](scatter_set_constant_fn, dispatch_shape, ctx)
 
@@ -2055,7 +2272,6 @@ def scatter_set_constant[
 def apply_packed_bitmask[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     output: TileTensor[mut=True, dtype, ...],
     logits: TileTensor[dtype, ...],
@@ -2082,7 +2298,6 @@ def apply_packed_bitmask[
 
     Parameters:
         dtype: Element type of `logits`, `output`, and `fill_value`.
-        target: Target backend to execute on, such as "cpu" or "cuda".
 
     Args:
         output: Masked logits, shape `[batch, vocab]`.
@@ -2108,8 +2323,8 @@ def apply_packed_bitmask[
         comptime assert (
             width <= 32
         ), "apply_packed_bitmask: simd_width must be <= 32"
-        var b = Int(idx[0].value())
-        var v = Int(idx[1].value())
+        var b = Int(idx[0])
+        var v = Int(idx[1])
         var tok = Int32(v) + iota[.int32, width]()
         var base = v >> 5
         var w0 = SIMD[.int32, width](packed[b, base][0])
@@ -2131,6 +2346,5 @@ def apply_packed_bitmask[
     var dispatch_shape = Coord(Int(output.dim[0]()), Int(output.dim[1]()))
     elementwise[
         simd_width=simd_width,
-        target=target,
         _trace_description="apply_packed_bitmask",
     ](apply_packed_bitmask_fn, dispatch_shape, ctx)

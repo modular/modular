@@ -17,9 +17,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: rm -rf %t && kgen -elaborate %s -mlir-disable-threading \
-# RUN:   -mlir-print-ir-before=elaborate-generators -mlir-print-ir-module-scope \
-# RUN:   -mlir-print-ir-tree-dir=%t -o /dev/null
+# RUN: rm -rf %t && kgen -elaborate %s -mllvm -mlir-disable-threading \
+# RUN:   -mllvm -mlir-print-ir-before=elaborate-generators \
+# RUN:   -mllvm -mlir-print-ir-module-scope \
+# RUN:   -mllvm -mlir-print-ir-tree-dir=%t -o /dev/null
 # MLIR names the dump after the op it prints, an unnamed `builtin.module`, and
 # numbers it in print order, so the one dump is at a fixed path.
 # RUN: kgen-opt --verify-roundtrip -o /dev/null \

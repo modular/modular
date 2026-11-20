@@ -21,12 +21,14 @@ from extensibility.managed_tensor_slice import (
     _IndexListToTileLayout,
 )
 from layout import coord_to_index_list
+from std.ffi import external_call
 from std.memory import AddressSpace
-from std.sys import align_of
+from std.sys import align_of, size_of
+from std.sys.info import CompilationTarget
 from max.gpu.host import DeviceContext
 from extensibility import foreach
 from layout import Coord
-from std.testing import assert_equal, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 from std.utils import IndexList
 
@@ -405,7 +407,7 @@ def _check_value_form_rank1[dtype: DType]() raises:
     def body[width: Int](idx: Coord) {var bias} -> SIMD[dtype, width]:
         return SIMD[dtype, width](bias)
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for i in range(N):
@@ -415,14 +417,14 @@ def _check_value_form_rank1[dtype: DType]() raises:
 
 def test_foreach_value_form_rank1() raises:
     """The value overload resolves and runs over a rank-1 tensor."""
-    _check_value_form_rank1[DType.float32]()
+    _check_value_form_rank1[.float32]()
 
 
 def _check_value_form_rank2[dtype: DType]() raises:
     comptime ROWS = 3
     comptime COLS = 4
     var storage = Array[Scalar[dtype], ROWS * COLS](fill={})
-    var base = storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+    var base = storage.unsafe_ptr()
     comptime spec = get_row_major_tensor_spec_static[dtype, 2, ROWS, COLS]()
     var out = ManagedTensorSlice[io_spec=IOSpec.Output, static_spec=spec](
         base, (ROWS, COLS)
@@ -445,7 +447,7 @@ def _check_value_form_rank2[dtype: DType]() raises:
             v[lane] = base_val + Scalar[dtype](lane)
         return v
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for r in range(ROWS):
@@ -456,7 +458,7 @@ def _check_value_form_rank2[dtype: DType]() raises:
 
 def test_foreach_value_form_rank2() raises:
     """The value overload handles rank 2, including `Coord` conversion."""
-    _check_value_form_rank2[DType.float32]()
+    _check_value_form_rank2[.float32]()
 
 
 def _check_capture_outer_tensor[dtype: DType]() raises:
@@ -484,7 +486,7 @@ def _check_capture_outer_tensor[dtype: DType]() raises:
     def body[width: Int](idx: Coord) {var x} -> SIMD[dtype, width]:
         return x.load[width](idx) + 1
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for i in range(N):
@@ -494,7 +496,7 @@ def _check_capture_outer_tensor[dtype: DType]() raises:
 
 def test_foreach_captures_outer_tensor() raises:
     """A captured input tensor, the shape the migrated examples use."""
-    _check_capture_outer_tensor[DType.float32]()
+    _check_capture_outer_tensor[.float32]()
 
 
 def _check_capture_tensor_and_scalar[dtype: DType]() raises:
@@ -516,7 +518,7 @@ def _check_capture_tensor_and_scalar[dtype: DType]() raises:
     def body[width: Int](idx: Coord) {var x, var addend} -> SIMD[dtype, width]:
         return x.load[width](idx) + addend
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
     for i in range(N):
@@ -526,7 +528,7 @@ def _check_capture_tensor_and_scalar[dtype: DType]() raises:
 
 def test_foreach_captures_tensor_and_scalar() raises:
     """Mixed capture list: an outer tensor alongside an outer scalar."""
-    _check_capture_tensor_and_scalar[DType.float32]()
+    _check_capture_tensor_and_scalar[.float32]()
 
 
 @inline(.never)
@@ -554,7 +556,7 @@ def _foreach_over_input[
             coord_to_index_list(idx)[0]
         )
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach(body, out, ctx)
 
 
@@ -585,7 +587,7 @@ def _check_capture_input_tensor[dtype: DType]() raises:
 
 def test_foreach_captures_input_tensor() raises:
     """A captured `IOSpec.Input` tensor, invariant loads and all."""
-    _check_capture_input_tensor[DType.float32]()
+    _check_capture_input_tensor[.float32]()
 
 
 def _check_simd_width_one[dtype: DType]() raises:
@@ -605,7 +607,7 @@ def _check_simd_width_one[dtype: DType]() raises:
             Scalar[dtype](coord_to_index_list(idx)[0]) * one
         )
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach[simd_width=1](body, out, ctx)
 
     for i in range(N):
@@ -615,7 +617,7 @@ def _check_simd_width_one[dtype: DType]() raises:
 
 def test_foreach_honors_simd_width() raises:
     """A non-default `simd_width` reaches the body."""
-    _check_simd_width_one[DType.float32]()
+    _check_simd_width_one[.float32]()
 
 
 @fieldwise_init
@@ -664,7 +666,7 @@ def _check_fused_store[dtype: DType]() raises:
             Scalar[dtype](coord_to_index_list(idx)[0]) * one
         )
 
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     foreach[simd_width=1](body, fused_out, ctx)
 
     for i in range(N):
@@ -679,7 +681,168 @@ def test_foreach_routes_through_fused_store() raises:
     Without this the wrapper could write straight to the tensor and silently
     break output fusion while every other test still passed.
     """
-    _check_fused_store[DType.float32]()
+    _check_fused_store[.float32]()
+
+
+# ===----------------------------------------------------------------------=== #
+# Strided SIMD loads
+# ===----------------------------------------------------------------------=== #
+#
+# A view whose innermost stride is a static value in 2...8 is loaded with one
+# contiguous window plus a lane shuffle on CPU, falling back to a gather when
+# the window would run past the end of the view. These tests compare every
+# load against a scalar reference, with the buffer ending exactly where the
+# view does so that an overrun would touch a protected page.
+
+comptime _GUARD_PAGE_BYTES = 16384
+comptime _SENTINEL = 255
+
+
+struct _GuardedBuffer[dtype: DType](Movable):
+    """`count` elements that end exactly at an inaccessible page, so any read
+    past the last element faults instead of silently returning garbage."""
+
+    var _base: Int
+    var ptr: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
+
+    def __init__(out self, count: Int) raises:
+        comptime read_write = Int32(3)
+        comptime no_access = Int32(0)
+        # MAP_PRIVATE | MAP_ANONYMOUS
+        comptime flags = Int32(
+            0x1002
+        ) if CompilationTarget.is_macos() else Int32(0x22)
+        var bytes = count * size_of[Self.dtype]()
+        if bytes > _GUARD_PAGE_BYTES:
+            raise Error("buffer does not fit in one page")
+        self._base = external_call["mmap", Int](
+            Int(0),
+            Int(2 * _GUARD_PAGE_BYTES),
+            read_write,
+            flags,
+            Int32(-1),
+            Int(0),
+        )
+        if self._base == -1:
+            raise Error("mmap failed")
+        var guard = external_call["mprotect", Int32](
+            Int(self._base + _GUARD_PAGE_BYTES),
+            Int(_GUARD_PAGE_BYTES),
+            no_access,
+        )
+        if guard != 0:
+            raise Error("mprotect failed")
+        self.ptr = Pointer[Scalar[Self.dtype], MutUntrackedOrigin](
+            unsafe_from_address=self._base + _GUARD_PAGE_BYTES - bytes
+        )
+
+    def __deinit__(deinit self):
+        _ = external_call["munmap", Int32](
+            self._base, Int(2 * _GUARD_PAGE_BYTES)
+        )
+
+
+def _ramp_value[dtype: DType](i: Int) -> Scalar[dtype]:
+    """Distinct small values (all below `_SENTINEL`, exact in bfloat16)."""
+    return Scalar[dtype]((i * 5 + 1) % 251)
+
+
+def _check_view[
+    dtype: DType, stride: Int, width: Int
+](
+    ptr: Pointer[Scalar[dtype], MutUntrackedOrigin],
+    rows: Int,
+    cols: Int,
+    row_stride: Int,
+) raises:
+    """Loads every in-row window of a `rows x cols` view with innermost stride
+    `stride` and compares it with the scalar element at the same offset."""
+    comptime layout = _IndexListToTileLayout[
+        IndexList[2](-1, -1), IndexList[2](-1, stride)
+    ]
+    comptime spec = StaticTensorSpec[dtype, 2, layout](1, AddressSpace.GENERIC)
+    var view = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=spec](
+        ptr, (rows, cols), (row_stride, stride)
+    )
+    for r in range(rows):
+        for c in range(cols - width + 1):
+            var got = view.load[width]((r, c))
+            for lane in range(width):
+                var expected = ptr.unsafe_load(
+                    r * row_stride + (c + lane) * stride
+                )
+                assert_equal(got[lane], expected)
+                assert_true(got[lane] != Scalar[dtype](_SENTINEL))
+
+
+def _check_stride_width[dtype: DType, stride: Int, width: Int]() raises:
+    # 37 is not a multiple of any tested width, so the last window of a row
+    # does not line up with the end of the row.
+    comptime rows = 3
+    comptime cols = 37
+
+    # A step view over an exactly-sized buffer, the last lane of the last row
+    # being the last element: every window near the end must fall back.
+    var row_stride = cols * stride
+    var extent = (rows - 1) * row_stride + (cols - 1) * stride + 1
+    var buf = _GuardedBuffer[dtype](extent)
+    for i in range(extent):
+        buf.ptr.unsafe_offset(i).unsafe_write(_ramp_value[dtype](i))
+    _check_view[dtype, stride, width](buf.ptr, rows, cols, row_stride)
+
+    # The same buffer with the rows reversed (negative outer stride), so the
+    # view's first row is the one at the end of the buffer.
+    _check_view[dtype, stride, width](
+        buf.ptr.unsafe_offset((rows - 1) * row_stride), rows, cols, -row_stride
+    )
+    # `ptr` does not keep the mapping alive, so end the buffers' lifetimes
+    # explicitly.
+    _ = buf^
+
+    # An NHWC -> NCHW style permute: `stride` channels, innermost stride
+    # `stride`, outer stride 1.
+    var permuted_extent = stride * cols
+    var permuted = _GuardedBuffer[dtype](permuted_extent)
+    for i in range(permuted_extent):
+        permuted.ptr.unsafe_offset(i).unsafe_write(_ramp_value[dtype](i))
+    _check_view[dtype, stride, width](permuted.ptr, stride, cols, 1)
+    _ = permuted^
+
+    # A view that is smaller than its buffer: the buffer, including the gaps
+    # between lanes and rows, is sentinel outside the view, so a window that
+    # fits in the buffer but not in the view must not leak those values.
+    var padded_row_stride = (cols + 5) * stride
+    var view_extent = (rows - 1) * padded_row_stride + (cols - 1) * stride + 1
+    var total = view_extent + 64
+    var padded = _GuardedBuffer[dtype](total)
+    for i in range(total):
+        padded.ptr.unsafe_offset(i).unsafe_write(Scalar[dtype](_SENTINEL))
+    for r in range(rows):
+        for c in range(cols):
+            var i = r * padded_row_stride + c * stride
+            padded.ptr.unsafe_offset(i).unsafe_write(_ramp_value[dtype](i))
+    _check_view[dtype, stride, width](padded.ptr, rows, cols, padded_row_stride)
+    _ = padded^
+
+
+def _check_strided_loads[dtype: DType]() raises:
+    # 1 and 9 take the contiguous and gather paths; 2...8 take the window.
+    comptime for stride in range(1, 10):
+        _check_stride_width[dtype, stride, 1]()
+        _check_stride_width[dtype, stride, 4]()
+        _check_stride_width[dtype, stride, 16]()
+
+
+def test_strided_load_uint8() raises:
+    _check_strided_loads[.uint8]()
+
+
+def test_strided_load_bfloat16() raises:
+    _check_strided_loads[.bfloat16]()
+
+
+def test_strided_load_float32() raises:
+    _check_strided_loads[.float32]()
 
 
 def main() raises:

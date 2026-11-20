@@ -33,4 +33,4 @@ struct WeightsRegistry(ImplicitlyCopyable):
         if case .Some(lookup) = lookup:
             return lookup
 
-        raise Error("no weight called " + name + " in weights registry")
+        raise Error(String(t"no weight called {name} in weights registry"))

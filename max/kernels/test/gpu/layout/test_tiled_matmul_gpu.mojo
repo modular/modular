@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 from max.gpu.host import DeviceContext
@@ -30,10 +31,13 @@ def naive_matmul[
     layout_rhs: TensorLayout,
     BM: Int,
     BN: Int,
+    dst_origin: MutOrigin,
+    lhs_origin: ImmOrigin,
+    rhs_origin: ImmOrigin,
 ](
-    dst: TileTensor[.float32, layout_dst, MutAnyOrigin],
-    lhs: TileTensor[.float32, layout_lhs, ImmutAnyOrigin],
-    rhs: TileTensor[.float32, layout_rhs, ImmutAnyOrigin],
+    dst: TileTensor[.float32, layout_dst, dst_origin],
+    lhs: TileTensor[.float32, layout_lhs, lhs_origin],
+    rhs: TileTensor[.float32, layout_rhs, rhs_origin],
 ):
     var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
     dst_tile[thread_idx.y, thread_idx.x] = 0
@@ -68,13 +72,20 @@ def test_naive_matmul_kernel[
     mat_c.to_device()
 
     comptime naive_matmul_kernel = naive_matmul[
-        type_of(layout_c), type_of(layout_a), type_of(layout_b), BM, BN
+        type_of(layout_c),
+        type_of(layout_a),
+        type_of(layout_b),
+        BM,
+        BN,
+        dst_origin=origin_of(mat_c),
+        lhs_origin=origin_of(mat_a),
+        rhs_origin=origin_of(mat_b),
     ]
 
     ctx.enqueue_function[naive_matmul_kernel](
-        mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
-        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_c.device_tensor(),
+        mat_a.device_tensor().as_imm(),
+        mat_b.device_tensor().as_imm(),
         grid_dim=(N // BN, M // BM),
         block_dim=(BN, BM),
     )
@@ -101,10 +112,13 @@ def sram_blocked_matmul[
     BM: Int,
     BN: Int,
     BK: Int,
+    dst_origin: MutOrigin,
+    lhs_origin: ImmOrigin,
+    rhs_origin: ImmOrigin,
 ](
-    dst: TileTensor[.float32, layout_dst, MutAnyOrigin],
-    lhs: TileTensor[.float32, layout_lhs, ImmutAnyOrigin],
-    rhs: TileTensor[.float32, layout_rhs, ImmutAnyOrigin],
+    dst: TileTensor[.float32, layout_dst, dst_origin],
+    lhs: TileTensor[.float32, layout_lhs, lhs_origin],
+    rhs: TileTensor[.float32, layout_rhs, rhs_origin],
 ):
     comptime assert dst.flat_rank == 2
     comptime assert lhs.flat_rank == 2
@@ -224,12 +238,15 @@ def test_sram_blocked_matmul(ctx: DeviceContext) raises:
         BM,
         BN,
         BK,
+        dst_origin=origin_of(mat_c),
+        lhs_origin=origin_of(mat_a),
+        rhs_origin=origin_of(mat_b),
     ]
 
     ctx.enqueue_function[sram_blocked_matmul_kernel](
-        mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
-        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_c.device_tensor(),
+        mat_a.device_tensor().as_imm(),
+        mat_b.device_tensor().as_imm(),
         grid_dim=(N // BN, M // BM),
         block_dim=(comptime (thread_layout.size())),
     )
@@ -248,10 +265,13 @@ def single_warp_mma_sync_m16n8k8[
     layout_c: TensorLayout,
     layout_a: TensorLayout,
     layout_b: TensorLayout,
+    mat_c_origin: MutOrigin,
+    mat_a_origin: ImmOrigin,
+    mat_b_origin: ImmOrigin,
 ](
-    mat_c: TileTensor[.float32, layout_c, MutAnyOrigin],
-    mat_a: TileTensor[.float32, layout_a, ImmutAnyOrigin],
-    mat_b: TileTensor[.float32, layout_b, ImmutAnyOrigin],
+    mat_c: TileTensor[.float32, layout_c, mat_c_origin],
+    mat_a: TileTensor[.float32, layout_a, mat_a_origin],
+    mat_b: TileTensor[.float32, layout_b, mat_b_origin],
 ):
     comptime assert (
         layout_a.flat_rank == 2
@@ -280,26 +300,23 @@ def single_warp_mma_sync_m16n8k8[
     # MMA fragments address the row-major A and column-major B storage
     # directly; each axis describes a lane or a value owned by that lane.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
-    var mat_a_mma = TileTensor(
-        ptr=mat_a.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_a_mma = mat_a.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
             Coord(Idx[1], Idx[8], Idx[64], Idx[4]),
         ),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
     # These strides address column-major KxN storage without a transpose.
-    var mat_b_mma = TileTensor(
-        ptr=mat_b.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_b_mma = mat_b.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2]),
             Coord(Idx[1], Idx[8], Idx[4]),
         ),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-c
-    var mat_c_mma = TileTensor(
-        ptr=mat_c.unsafe_ptr(),
-        layout=MixedLayout(
+    var mat_c_mma = mat_c.reshape(
+        MixedLayout(
             Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
             Coord(Idx[2], Idx[8], Idx[1], Idx[64]),
         ),
@@ -351,13 +368,18 @@ def test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     mat_c.to_device()
 
     comptime single_warp_mma_sync_m16n8k8_kernel = single_warp_mma_sync_m16n8k8[
-        type_of(layout_c), type_of(layout_a), type_of(layout_b)
+        type_of(layout_c),
+        type_of(layout_a),
+        type_of(layout_b),
+        mat_c_origin=origin_of(mat_c),
+        mat_a_origin=origin_of(mat_a),
+        mat_b_origin=origin_of(mat_b),
     ]
 
     ctx.enqueue_function[single_warp_mma_sync_m16n8k8_kernel](
-        mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
-        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_c.device_tensor(),
+        mat_a.device_tensor().as_imm(),
+        mat_b.device_tensor().as_imm(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
@@ -378,10 +400,16 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     BM: Int,
     BN: Int,
     BK: Int,
+    DstEngine: TensorEngine,
+    LhsEngine: TensorEngine,
+    RhsEngine: TensorEngine,
+    dst_origin: MutOrigin,
+    lhs_origin: ImmOrigin,
+    rhs_origin: ImmOrigin,
 ](
-    dst: TileTensor[.float32, DstLayoutType, MutAnyOrigin],
-    lhs: TileTensor[.float32, LhsLayoutType, ImmutAnyOrigin],
-    rhs: TileTensor[.float32, RhsLayoutType, ImmutAnyOrigin],
+    dst: TileTensor[.float32, DstLayoutType, dst_origin, Engine=DstEngine],
+    lhs: TileTensor[.float32, LhsLayoutType, lhs_origin, Engine=LhsEngine],
+    rhs: TileTensor[.float32, RhsLayoutType, rhs_origin, Engine=RhsEngine],
 ):
     var lhs_sram_tile = stack_allocation[.float32, address_space=.SHARED](
         col_major[BM, BK]()
@@ -466,9 +494,9 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
 
     comptime thread_layout = row_major[TH_M, TH_N]()
 
-    var mat_c_ptr = alloc[Float32](M * N)
-    var mat_a_ptr = alloc[Float32](M * K)
-    var mat_b_ptr = alloc[Float32](K * N)
+    var mat_c_ptr = unsafe_alloc[Float32](M * N)
+    var mat_a_ptr = unsafe_alloc[Float32](M * K)
+    var mat_b_ptr = unsafe_alloc[Float32](K * N)
 
     for i in range(M * K):
         mat_a_ptr[i] = Float32(i)
@@ -497,12 +525,18 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         BM,
         BN,
         BK,
+        type_of(mat_c).Engine,
+        type_of(mat_a).Engine,
+        type_of(mat_b).Engine,
+        dst_origin=mat_c.origin,
+        lhs_origin=mat_a.origin,
+        rhs_origin=mat_b.origin,
     ]
 
     ctx.enqueue_function[sram_blocked_matmul_dynamic_nd_buffer_kernel](
-        mat_c.as_unsafe_any_origin(),
-        mat_a.as_imm().as_unsafe_any_origin(),
-        mat_b.as_imm().as_unsafe_any_origin(),
+        mat_c,
+        mat_a.as_imm(),
+        mat_b.as_imm(),
         grid_dim=(N // BN, M // BM),
         block_dim=(comptime (thread_layout.size())),
     )

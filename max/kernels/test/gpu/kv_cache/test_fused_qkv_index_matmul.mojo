@@ -309,7 +309,7 @@ def execute_dual_cache_fused_bf16[
     index_blocks_ref.to_device()
     ctx.synchronize()
 
-    generic_fused_qkv_index_matmul_kv_cache_paged_ragged[target="gpu",](
+    generic_fused_qkv_index_matmul_kv_cache_paged_ragged(
         hs_dev,
         input_row_offsets_tensor,
         w_dev,
@@ -325,7 +325,7 @@ def execute_dual_cache_fused_bf16[
     # Sub-weight rows [0, qkv_n): [Wq|Wk|Wv].
     var w_qkv = w_dev.slice[0:qkv_n, 0:hidden]()
 
-    generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu",](
+    generic_fused_qkv_matmul_kv_cache_paged_ragged(
         hs_dev,
         input_row_offsets_tensor,
         w_qkv,
@@ -342,7 +342,7 @@ def execute_dual_cache_fused_bf16[
     # kernel's IndexQ/IndexK bands.
     var w_idx = w_dev.slice[qkv_n:n_total, 0:hidden]()
 
-    generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu",](
+    generic_fused_qkv_matmul_kv_cache_paged_ragged(
         hs_dev,
         input_row_offsets_tensor,
         w_idx,
@@ -410,13 +410,15 @@ def execute_dual_cache_fused_bf16[
 
     # ---- main cache (K + V) flat compare ----
     var main_n = main_host.num_elements()
+    var main_flat = main_host.reshape(row_major(main_n))
+    var main_ref_flat = main_ref_host.reshape(row_major(main_n))
     var main_mism = 0
     var main_viol = 0
     var main_max_abs = Float32(0)
     var main_max_rel = Float32(0)
     for i in range(main_n):
-        var a = main_host.ptr[i].cast[.float32]()
-        var b = main_ref_host.ptr[i].cast[.float32]()
+        var a = main_flat[i].cast[.float32]()
+        var b = main_ref_flat[i].cast[.float32]()
         var d = abs(a - b)
         if a != b:
             main_mism += 1
@@ -428,13 +430,15 @@ def execute_dual_cache_fused_bf16[
 
     # ---- index cache (K only) flat compare ----
     var index_n = index_host.num_elements()
+    var index_flat = index_host.reshape(row_major(index_n))
+    var index_ref_flat = index_ref_host.reshape(row_major(index_n))
     var index_mism = 0
     var index_viol = 0
     var index_max_abs = Float32(0)
     var index_max_rel = Float32(0)
     for i in range(index_n):
-        var a = index_host.ptr[i].cast[.float32]()
-        var b = index_ref_host.ptr[i].cast[.float32]()
+        var a = index_flat[i].cast[.float32]()
+        var b = index_ref_flat[i].cast[.float32]()
         var d = abs(a - b)
         if a != b:
             index_mism += 1
@@ -445,56 +449,20 @@ def execute_dual_cache_fused_bf16[
             index_max_rel = max(index_max_rel, d / abs(b))
 
     print(
-        "  Q      : ",
-        q_mism,
-        "/",
-        total_length * q_dim,
-        " differ, ",
-        q_viol,
-        " beyond tol, max_abs=",
-        q_max_abs,
-        " max_rel=",
-        q_max_rel,
-        sep="",
+        t"  Q      : {q_mism}/{total_length * q_dim} differ, {q_viol} beyond"
+        t" tol, max_abs={q_max_abs} max_rel={q_max_rel}"
     )
     print(
-        "  IndexQ : ",
-        iq_mism,
-        "/",
-        total_length * iq_dim,
-        " differ, ",
-        iq_viol,
-        " beyond tol, max_abs=",
-        iq_max_abs,
-        " max_rel=",
-        iq_max_rel,
-        sep="",
+        t"  IndexQ : {iq_mism}/{total_length * iq_dim} differ, {iq_viol} beyond"
+        t" tol, max_abs={iq_max_abs} max_rel={iq_max_rel}"
     )
     print(
-        "  mainKV : ",
-        main_mism,
-        "/",
-        main_n,
-        " differ, ",
-        main_viol,
-        " beyond tol, max_abs=",
-        main_max_abs,
-        " max_rel=",
-        main_max_rel,
-        sep="",
+        t"  mainKV : {main_mism}/{main_n} differ, {main_viol} beyond tol,"
+        t" max_abs={main_max_abs} max_rel={main_max_rel}"
     )
     print(
-        "  indexK : ",
-        index_mism,
-        "/",
-        index_n,
-        " differ, ",
-        index_viol,
-        " beyond tol, max_abs=",
-        index_max_abs,
-        " max_rel=",
-        index_max_rel,
-        sep="",
+        t"  indexK : {index_mism}/{index_n} differ, {index_viol} beyond tol,"
+        t" max_abs={index_max_abs} max_rel={index_max_rel}"
     )
 
     # The accuracy check: no element may exceed |a-b| <= atol + rtol*|ref|.

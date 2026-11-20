@@ -20,7 +20,7 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import (
     BufferType,
@@ -30,12 +30,12 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     cross_attention_ragged,
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
@@ -47,12 +47,9 @@ from torch.nn.functional import scaled_dot_product_attention
 TORCH_DTYPE = torch.bfloat16
 
 
-def causal_max_flash_attn(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
-) -> torch.Tensor:
-    dtype = torch_dtype_to_max(q.dtype)
-    _batch, _q_seq_len, nheads, head_dim = q.shape
-
+def load_causal_max_flash_attn(
+    dtype: DType, nheads: int, head_dim: int
+) -> Model:
     # Graph types.
     q_type = TensorType(
         dtype,
@@ -85,12 +82,7 @@ def causal_max_flash_attn(
     )
 
     # Compile model.
-    model = session.load(graph)
-
-    # Execute.
-    output = model.execute(q.detach(), k.detach(), v.detach())[0]
-    assert isinstance(output, Buffer)
-    return torch.from_dlpack(output)
+    return session.load(graph)
 
 
 @pytest.mark.parametrize(
@@ -112,11 +104,17 @@ def test_causal_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
     q_shape = (batch_size, q_seqlen, nheads, head_dim)
     kv_shape = (batch_size, k_seqlen, nheads_k, head_dim)
 
+    model = load_causal_max_flash_attn(
+        torch_dtype_to_max(torch_dtype), nheads, head_dim
+    )
+
     q = torch.randn(q_shape, device=torch_device, dtype=torch_dtype)
     k = torch.randn(kv_shape, device=torch_device, dtype=torch_dtype)
     v = torch.randn(kv_shape, device=torch_device, dtype=torch_dtype)
 
-    out_max = causal_max_flash_attn(q, k, v).squeeze()
+    output = model.execute(q.detach(), k.detach(), v.detach())[0]
+    assert isinstance(output, Buffer)
+    out_max = torch.from_dlpack(output).squeeze()
     out_flash_attn = (
         scaled_dot_product_attention(
             q.to(torch_device).permute(0, 2, 1, 3),
@@ -343,6 +341,127 @@ def test_flash_attention_ragged_gpu_rejects_max_seq_len_on_gpu() -> None:
                 max_seq_len,
                 mask_variant=MHAMaskVariant.NULL_MASK,
                 scale=math.sqrt(1.0 / head_dim),
+            )
+
+
+@pytest.mark.parametrize("head_dim", [64, 128])
+def test_segment_flash_attention_ragged_gpu(
+    gpu_session: InferenceSession, head_dim: int
+) -> None:
+    n_heads, n_kv_heads = 8, 2
+    # Each row is a list of (segment id, length) runs: a shared state with
+    # questions crossing tile boundaries, an empty row, a lone question, a
+    # lone state, and segments whole key tiles apart, with and without a
+    # shared state.
+    rows = [
+        [(-1, 70), (0, 5), (1, 40), (2, 90)],
+        [],
+        [(0, 33)],
+        [(-1, 50)],
+        [(-1, 128), (0, 128), (1, 273)],
+        [(0, 200), (1, 64), (2, 300)],
+    ]
+    ids_per_row = [
+        torch.tensor([i for i, n in row for _ in range(n)], dtype=torch.int32)
+        for row in rows
+    ]
+    lengths = [len(ids) for ids in ids_per_row]
+    offsets = [0] + torch.cumsum(torch.tensor(lengths), 0).tolist()
+    total = offsets[-1]
+    scale = math.sqrt(1.0 / head_dim)
+
+    dtype = torch_dtype_to_max(TORCH_DTYPE)
+    q_type = TensorType(dtype, ["total", n_heads, head_dim], DeviceRef.GPU())
+    kv_type = TensorType(
+        dtype, ["total", n_kv_heads, head_dim], DeviceRef.GPU()
+    )
+    with Graph(
+        "segment_flash_attn",
+        input_types=[
+            q_type,
+            kv_type,
+            kv_type,
+            TensorType(DType.uint32, ["offsets"], DeviceRef.GPU()),
+            TensorType(DType.int32, ["total"], DeviceRef.GPU()),
+            TensorType(DType.uint32, [1], DeviceRef.CPU()),
+        ],
+    ) as g:
+        assert are_all_tensor_values(g.inputs)
+        q, k, v, row_offsets, segment_ids, max_seq_len = g.inputs
+        g.output(
+            flash_attention_ragged_gpu(
+                q,
+                k,
+                v,
+                row_offsets,
+                max_seq_len,
+                mask_variant=MHAMaskVariant.NULL_MASK,
+                scale=scale,
+                segment_ids=segment_ids,
+            )
+        )
+    model = gpu_session.load(g)
+
+    q_ragged = torch.randn(total, n_heads, head_dim, dtype=TORCH_DTYPE).cuda()
+    k_ragged = torch.randn(total, n_kv_heads, head_dim, dtype=TORCH_DTYPE)
+    v_ragged = torch.randn(total, n_kv_heads, head_dim, dtype=TORCH_DTYPE)
+    k_ragged, v_ragged = k_ragged.cuda(), v_ragged.cuda()
+    output = model.execute(
+        q_ragged,
+        k_ragged,
+        v_ragged,
+        torch.tensor(offsets, dtype=torch.uint32).cuda(),
+        torch.cat(ids_per_row).cuda(),
+        torch.tensor([max(lengths)], dtype=torch.uint32),
+    )[0]
+    assert isinstance(output, Buffer)
+    out_ragged = torch.from_dlpack(output)
+
+    group = n_heads // n_kv_heads
+    for ids, start, end in zip(ids_per_row, offsets, offsets[1:], strict=False):
+        if start == end:
+            continue
+        ids = ids.cuda()
+        visible = ((ids[:, None] == -1) | (ids[None, :] == -1)) | (
+            ids[:, None] == ids[None, :]
+        )
+        expected = scaled_dot_product_attention(
+            q_ragged[start:end].transpose(0, 1),
+            k_ragged[start:end].repeat_interleave(group, 1).transpose(0, 1),
+            v_ragged[start:end].repeat_interleave(group, 1).transpose(0, 1),
+            attn_mask=visible,
+            scale=scale,
+        ).transpose(0, 1)
+        torch.testing.assert_close(
+            out_ragged[start:end], expected, rtol=1e-2, atol=2e-2
+        )
+
+
+def test_segment_flash_attention_ragged_gpu_rejects_short_ids() -> None:
+    qkv_type = TensorType(DType.bfloat16, [8, 4, 64], DeviceRef.GPU())
+    with pytest.raises(ValueError, match="one id per query token"):
+        with Graph(
+            "short_segment_ids",
+            input_types=[
+                qkv_type,
+                qkv_type,
+                qkv_type,
+                TensorType(DType.uint32, ["offsets"], DeviceRef.GPU()),
+                TensorType(DType.int32, [7], DeviceRef.GPU()),
+                TensorType(DType.uint32, [1], DeviceRef.CPU()),
+            ],
+        ) as g:
+            assert are_all_tensor_values(g.inputs)
+            q, k, v, row_offsets, segment_ids, max_seq_len = g.inputs
+            flash_attention_ragged_gpu(
+                q,
+                k,
+                v,
+                row_offsets,
+                max_seq_len,
+                mask_variant=MHAMaskVariant.NULL_MASK,
+                scale=0.125,
+                segment_ids=segment_ids,
             )
 
 

@@ -59,13 +59,28 @@ _FEATURES_BY_PREFIX = {
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--feature",
+        action="append",
+        default=[],
+        dest="features",
+        help=(
+            "A lit feature this package's tests may name, beyond the ones"
+            " known here. Use it for a feature a plugin adds when the test"
+            " runs, through `lit_tests(site_cfg_extensions = ...)`, which this"
+            " check cannot see."
+        ),
+    )
     parser.add_argument("root")
     parser.add_argument("files", nargs="+")
     return parser
 
 
 def _get_unsupported_features(
-    root: str, contents: str, include_gpu_features: bool
+    root: str,
+    contents: str,
+    include_gpu_features: bool,
+    declared_features: set[str],
 ) -> set[str]:
     features = _RE.findall(contents)
     if not features:
@@ -82,7 +97,11 @@ def _get_unsupported_features(
         )
     used_features.discard("")  # Empty spaces from split
 
-    valid_features = _KNOWN_FEATURES | _FEATURES_BY_PREFIX.get(root, set())
+    valid_features = (
+        _KNOWN_FEATURES
+        | _FEATURES_BY_PREFIX.get(root, set())
+        | declared_features
+    )
     if include_gpu_features:
         valid_features |= _GPU_FEATURES
 
@@ -93,7 +112,7 @@ def _has_run_command(contents: str) -> bool:
     return "RUN:" in contents
 
 
-def _main(root: str, files: list[str]) -> None:
+def _main(root: str, files: list[str], declared_features: set[str]) -> None:
     include_gpu_features = os.environ["RUNS_ON_GPU"] == "True"
     errors = []
     for file in files:
@@ -107,7 +126,7 @@ def _main(root: str, files: list[str]) -> None:
             )
 
         if invalid_features := _get_unsupported_features(
-            root, contents, include_gpu_features
+            root, contents, include_gpu_features, declared_features
         ):
             errors.append(
                 f"error: {path} contains invalid lit features:"
@@ -121,4 +140,4 @@ def _main(root: str, files: list[str]) -> None:
 
 if __name__ == "__main__":
     args = _build_parser().parse_args()
-    _main(args.root, args.files)
+    _main(args.root, args.files, set(args.features))

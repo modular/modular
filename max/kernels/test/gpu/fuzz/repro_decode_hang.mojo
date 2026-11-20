@@ -59,12 +59,8 @@ def main() raises:
     comptime seq_len = 1
 
     print(
-        "start: seq_len=",
-        seq_len,
-        "num_keys=",
-        num_keys,
-        "valid_length=",
-        valid_length,
+        t"start: seq_len= {seq_len} num_keys= {num_keys} valid_length="
+        t" {valid_length}"
     )
 
     with DeviceContext() as ctx:

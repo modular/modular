@@ -32,6 +32,7 @@ class InflightDiag;
 
 namespace KGEN {
 class ParamDeclAttr;
+class DedupContext;
 
 } // namespace KGEN
 
@@ -85,26 +86,13 @@ public:
   ASTDecl *getDecl(SharedState &shared) const;
 
   /// If this is a parametric user defined type, return all parameter bindings
-  /// on this reference to the type.  Note that this is potentially a partial
-  /// binding set - incomplete bindings (missing bindings) are valid.
+  /// on this reference to the type. For a struct type generator, a binding can
+  /// refer to an input of the generator.
   ArrayRef<TypedAttr> getParamBindings() const;
-  TypeSignatureType getSignature() const;
-
-  /// Return this type with any parameter bindings removed.
-  ASTType getWithoutParameters(SharedState &shared) const;
-
-  /// Return true if this type has any unbound parameters.
-  bool hasUnboundParameters() const;
 
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
-
-  /// Return true if this is the same as another ASTType are the same, or if
-  /// they match when unbound parameters in the 'this' type are treated as
-  /// the same as the corresponding parameter in the second type.
-  ///    Foo[1] != Foo[2]   but  Bar[?, 1] == Bar[7, 1]
-  bool isEqualAllowingUnbound(ASTType other, SharedState &shared) const;
 
   /// Return true if this is a None type.
   bool isNoneType() const;
@@ -148,12 +136,6 @@ public:
   bool isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                              SharedState &shared,
                                              ASTDecl &scope) const;
-  /// Return true if this type is provably 'trivially' moveable, as defined by
-  /// its '__move_ctor_is_trivial' member.
-  bool isProvablyTriviallyMoveable(llvm::SMLoc loc, SharedState &shared) const;
-  /// Return true if this type is provably 'trivially' deletable, as defined by
-  /// its '__del__is_trivial' member.
-  bool isProvablyTriviallyDeletable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is implicitly/explicitly copyable, either because
   /// it is trivial or conforms to (Implicitly)Copyable trait. Note:
@@ -177,11 +159,6 @@ public:
   /// to prove conditional conformances.
   bool isMovable(llvm::SMLoc loc, SharedState &shared, ASTDecl &scope) const;
 
-  /// Return true if this type is register passable or conforms to
-  /// RegisterPassable trait.
-  /// Note: this resolves the body of a struct type.
-  bool isRegisterType(llvm::SMLoc loc, SharedState &shared) const;
-
   /// Return true if this type is trivial register passable
   /// or conforms to TrivialRegisterPassable trait.
   /// Note: this resolves the body of a struct type.
@@ -193,7 +170,7 @@ public:
   /// 3-state result. This uses the concrete type's parameter bindings to
   /// evaluate any conditional trait conformances.
   ///
-  /// When callerAssumptions is non-empty, where-clause assumptions are used
+  /// The `callerAssumptions` set (see `LIT::buildAssumptions`) is used
   /// to prove unfoldable conformance constraints (e.g., a where clause
   /// `AllWritable[*types]` can prove a Tuple's conditional Writable
   /// conformance).
@@ -204,13 +181,13 @@ public:
   /// - `unknown` if conformance depends on constraints that cannot be
   ///   evaluated statically
   TriBool doesConformTo(TraitType trait, SharedState &shared,
-                        ArrayRef<ConstraintAttr> callerAssumptions) const;
+                        TypedAttr callerAssumptions) const;
 
   /// Same, additionally collecting the problematic constraints so a diagnosing
   /// caller can name them.
-  ConstraintResult
-  doesConformToWithDetails(TraitType trait, SharedState &shared,
-                           ArrayRef<ConstraintAttr> callerAssumptions) const;
+  ConstraintResult doesConformToWithDetails(TraitType trait,
+                                            SharedState &shared,
+                                            TypedAttr callerAssumptions) const;
 
   /// Given a standard trait like Copyable, look up the conformance.  On
   /// success, the ASTDecl of the trait itself is returned, it is otherwise
@@ -218,13 +195,13 @@ public:
   std::pair<TriBool, ASTDecl *>
   conformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
                          SharedState &shared,
-                         ArrayRef<ConstraintAttr> callerAssumptions) const;
+                         TypedAttr callerAssumptions) const;
 
   /// This returns true if the current type unconditionally conforms to the
   /// specified builtin trait, e.g. "Movable".
-  bool provenConformsToBuiltinTrait(
-      StringRef traitName, llvm::SMLoc loc, SharedState &shared,
-      ArrayRef<ConstraintAttr> callerAssumptions) const;
+  bool provenConformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                                    SharedState &shared,
+                                    TypedAttr callerAssumptions) const;
 
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.
@@ -275,20 +252,24 @@ public:
   /// needed.  This does NOT strip off the RefType for a 'ref[]' result.
   ASTType getSignatureUserResultType() const;
 
-  /// If this type is parameterized, and if any of the parameters refer to a
-  /// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
-  /// will infer it.
+  /// If this type is has any index ref referencing to parameter defined in the
+  /// current scope, extract those out and construct a new StructTypeGenerator
+  /// independent from the current scope. E.g., it turns
+  ///
+  /// def [a : Int, b : Int](a : Param[b]), in which,
+  /// `Param[*(0, 1)]` into
+  /// `#gen<b : Int> Param[*(0, 0)]`
   ///
   /// This makes parameter inference sensitive to what to propagate vs infer.
   /// For example, if expectedType is known to be 'SIMD[uint8, 1]', then we can
   /// infer which constructor to use when the input is an IntLiteral.
   ///
-  /// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-  /// argument is an Int8, then we need the implicit conversion to infer the
-  /// base element.  Our solution to this is to rip and replace parameters that
-  /// contain unbound parameters, replacing them with UnboundAttr so inference
-  /// can find them.
-  ASTType getWithUnknownParametersReplaced(SharedState &shared) const;
+  /// On the other hand, if expectedType is something like 'SIMD[*(0, 1), 1]'
+  /// and the argument is an Int8, then we need the implicit conversion to infer
+  /// the base element.  Our solution to this is to rip and replace parameters
+  /// that contain unresolved the parameter, and construct an new partially
+  /// bound struct type such that parameter inferences knows now to infer it.
+  ASTType extractAndRelinkParamRef(SharedState &shared) const;
 
   /// Return true if this type contains any origins that are unmaterializable
   /// from comptime to runtime.
@@ -348,6 +329,15 @@ public:
   static TypedAttr extractStructField(TypedAttr value, StringRef fieldName,
                                       llvm::SMLoc loc, SharedState &shared);
 
+  /// Return the index-typed address space a value denotes, either an index
+  /// itself or an `AddressSpace` struct. Returns null without diagnosing if it
+  /// is neither.
+  static TypedAttr extractAddressSpace(TypedAttr value, llvm::SMLoc loc,
+                                       SharedState &shared);
+
+  /// Return an index-typed address space in a human-readable form.
+  static TypedAttr getAddressSpaceForDisplay(TypedAttr addrSpace);
+
   /// Return the !lit.origin parameter if this type is a standard library
   /// `Origin` struct, otherwise return null.
   TypedAttr isOriginStruct() const;
@@ -375,11 +365,22 @@ struct ASTTypePrinterContext {
   /// Set to true when printing a closure trait signature.
   bool isClosureSignature = false;
 
+  /// When non-null, parameter expressions are deduplicated into this context
+  /// while printing.
+  DedupContext *dedup = nullptr;
+
+  /// Set to true when printing the body of a struct type generator, so that a
+  /// reference to an input of the generator prints as `_`.
+  bool printGeneratorInputsAsUnbound = false;
+
   ASTTypePrinterContext() {}
   ASTTypePrinterContext(SharedState *shared) : shared(shared) {}
   ASTTypePrinterContext(SharedState *shared, ASTType selfType)
       : shared(shared), selfType(selfType) {}
 };
+
+/// Returns true for `SIMD[_, 1]`.
+bool isScalarSIMDType(StructType type);
 
 } // namespace KGEN::LIT
 

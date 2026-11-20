@@ -28,6 +28,7 @@ from click.core import Command
 from click.testing import CliRunner
 from kbench import cli as kbench_cli
 from kbench_model import (
+    BuildFailed,
     BuildItem,
     ExecItemTask,
     ItemPool,
@@ -388,6 +389,18 @@ def test_kbench_cache_basic_operations(tmp_path: Path) -> None:
 
     # Non-existent key
     assert cache.query("nonexistent") is None
+
+
+def test_kbench_cache_build_failed_survives_reload(tmp_path: Path) -> None:
+    """A failure stored by one process is still `BuildFailed` in the next."""
+    writer = KbenchCache(base_dir=tmp_path)
+    writer.load()
+    writer.store_failed("broken")
+    writer.dump()
+
+    reader = KbenchCache(base_dir=tmp_path)
+    reader.load()
+    assert reader.query("broken") is BuildFailed
 
 
 def test_process_output_log() -> None:

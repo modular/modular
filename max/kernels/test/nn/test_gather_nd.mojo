@@ -47,13 +47,13 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 2](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             "Output buffer:", output_data_buffer[0], ",", output_data_buffer[1]
@@ -83,23 +83,18 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[1, 0]} ,"
+            t" {output_data_buffer[1, 1]}"
         )
 
     def test_gather_nd_eg3() raises:
@@ -128,23 +123,18 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[1, 0]} ,"
+            t" {output_data_buffer[1, 1]}"
         )
 
     def test_gather_nd_eg4() raises:
@@ -175,23 +165,18 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0, 0],
-            ",",
-            output_data_buffer[0, 0, 1],
-            ",",
-            output_data_buffer[1, 0, 0],
-            ",",
-            output_data_buffer[1, 0, 1],
+            t"Output buffer: {output_data_buffer[0, 0, 0]} ,"
+            t" {output_data_buffer[0, 0, 1]} , {output_data_buffer[1, 0, 0]} ,"
+            t" {output_data_buffer[1, 0, 1]}"
         )
 
     def test_gather_nd_eg5() raises:
@@ -217,23 +202,18 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[1, 0]} ,"
+            t" {output_data_buffer[1, 1]}"
         )
 
     def test_gather_nd_eg6() raises:
@@ -268,27 +248,19 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 6](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0, 0],
-            ",",
-            output_data_buffer[0, 1, 0],
-            ",",
-            output_data_buffer[0, 2, 0],
-            ",",
-            output_data_buffer[1, 0, 0],
-            ",",
-            output_data_buffer[1, 1, 0],
-            ",",
-            output_data_buffer[1, 2, 0],
+            t"Output buffer: {output_data_buffer[0, 0, 0]} ,"
+            t" {output_data_buffer[0, 1, 0]} , {output_data_buffer[0, 2, 0]} ,"
+            t" {output_data_buffer[1, 0, 0]} , {output_data_buffer[1, 1, 0]} ,"
+            t" {output_data_buffer[1, 2, 0]}"
         )
 
     def test_gather_nd_eg7() raises:
@@ -314,32 +286,24 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 8](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
 
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0, 0, 0],
-            ",",
-            output_data_buffer[0, 0, 0, 1],
-            ",",
-            output_data_buffer[0, 0, 1, 0],
-            ",",
-            output_data_buffer[0, 0, 1, 1],
-            ",",
-            output_data_buffer[1, 0, 0, 0],
-            ",",
-            output_data_buffer[1, 0, 0, 1],
-            ",",
-            output_data_buffer[1, 0, 1, 0],
-            ",",
-            output_data_buffer[1, 0, 1, 1],
+            t"Output buffer: {output_data_buffer[0, 0, 0, 0]} ,"
+            t" {output_data_buffer[0, 0, 0, 1]} ,"
+            t" {output_data_buffer[0, 0, 1, 0]} ,"
+            t" {output_data_buffer[0, 0, 1, 1]} ,"
+            t" {output_data_buffer[1, 0, 0, 0]} ,"
+            t" {output_data_buffer[1, 0, 0, 1]} ,"
+            t" {output_data_buffer[1, 0, 1, 0]} ,"
+            t" {output_data_buffer[1, 0, 1, 1]}"
         )
 
     def test_gather_nd_eg8() raises:
@@ -368,31 +332,23 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 6](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[0, 2],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
-            ",",
-            output_data_buffer[1, 2],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[0, 2]} ,"
+            t" {output_data_buffer[1, 0]} , {output_data_buffer[1, 1]} ,"
+            t" {output_data_buffer[1, 2]}"
         )
 
     try:
-        # CHECK: Output shape:  (2,)
+        # CHECK: Output shape:  (2)
         # CHECK: Output buffer: 0 , 3
         test_gather_nd_eg1()
         # CHECK: Output shape:  (2, 2)

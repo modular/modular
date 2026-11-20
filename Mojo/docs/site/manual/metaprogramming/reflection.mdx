@@ -120,9 +120,9 @@ struct std.collections.optional.Optional[SIMD[DType.float64, 1]]
 └── var _value: std.utils.variant.Variant[<unprintable>, {}]
 
 struct std.collections.dict.Dict[SIMD[DType.int, 1], String, \
-    std.hashlib._ahash.AHasher[[0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
+    std.hash._ahash.AHasher[[0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
 ├── var _table: std.collections._swisstable.SwissTable[\
-    SIMD[DType.int, 1], String, std.hashlib._ahash.AHasher[\
+    SIMD[DType.int, 1], String, std.hash._ahash.AHasher[\
     [0, 0, 0, 0] : SIMD[DType.uint64, 4]]]
 └── var _order: List[SIMD[DType.int32, 1]]
 

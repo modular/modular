@@ -25,7 +25,8 @@ from std.collections import Deque
 from std.bit import next_power_of_two
 from std.builtin.rebind import downcast
 import std.format._utils as fmt
-from std.hashlib import Hasher
+from std.hash import Hasher
+from std.itertools import drop
 from std.collections import check_bounds
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
@@ -34,14 +35,13 @@ from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 # ===-----------------------------------------------------------------------===#
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `Deque` of"
-    " non-`Deinitable` elements"
-)
 struct Deque[ElementType: Movable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
-    Deinitable where conforms_to(ElementType, Deinitable),
+    Deinitable where conforms_to(ElementType, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy a `Deque` of"
+        " non-`Deinitable` elements"
+    ),
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     Iterable,
@@ -173,7 +173,7 @@ struct Deque[ElementType: Movable](
 
         self._capacity = deque_capacity
         self._data = alloc(
-            Layout[Self.ElementType](count=deque_capacity)
+            Layout[Self.ElementType](length=deque_capacity)
         ).unsafe_leak()
         self._head = 0
         self._tail = 0
@@ -209,7 +209,7 @@ struct Deque[ElementType: Movable](
         var deque_capacity = next_power_of_two(capacity)
         self._capacity = deque_capacity
         self._data = alloc(
-            Layout[Self.ElementType](count=deque_capacity)
+            Layout[Self.ElementType](length=deque_capacity)
         ).unsafe_leak()
         self._head = 0
         self._tail = 0
@@ -242,7 +242,7 @@ struct Deque[ElementType: Movable](
         # so no renormalization is needed.
         self._capacity = copy._capacity
         self._data = alloc(
-            Layout[Self.ElementType](count=copy._capacity)
+            Layout[Self.ElementType](length=copy._capacity)
         ).unsafe_leak()
         self._head = 0
         self._tail = 0
@@ -264,7 +264,7 @@ struct Deque[ElementType: Movable](
         """
         dealloc(
             ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                {count = self._capacity}
+                {length = self._capacity}
             )
         )
 
@@ -513,7 +513,7 @@ struct Deque[ElementType: Movable](
         comptime assert (
             IntLiteral[idx.value]() >= 0
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
     @__unsafe_nested_origins_read_only
@@ -529,7 +529,7 @@ struct Deque[ElementType: Movable](
         Returns:
             A reference to the element at the given index.
         """
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
     @__unsafe_nested_origins_read_only
@@ -589,6 +589,7 @@ struct Deque[ElementType: Movable](
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     def append(
         mut self, var value: Self.ElementType
     ) where conforms_to(Self.ElementType, Deinitable):
@@ -612,6 +613,7 @@ struct Deque[ElementType: Movable](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
+    @__unsafe_nested_origins_read_only
     def appendleft(
         mut self, var value: Self.ElementType
     ) where conforms_to(Self.ElementType, Deinitable):
@@ -647,12 +649,12 @@ struct Deque[ElementType: Movable](
             (self._data.unsafe_offset(offset)).unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                {count = self._capacity}
+                {length = self._capacity}
             )
         )
         self._capacity = self._min_capacity
         self._data = alloc(
-            Layout[Self.ElementType](count=self._capacity)
+            Layout[Self.ElementType](length=self._capacity)
         ).unsafe_leak()
         self._head = 0
         self._tail = 0
@@ -683,8 +685,8 @@ struct Deque[ElementType: Movable](
         Args:
             values: List whose elements will be added at the right side of the deque.
         """
-        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
-            len(self), len(values)
+        var n_move_total, n_move_self, n_pop_self, n_pop_values = (
+            self._compute_pop_and_move_counts(len(self), len(values))
         )
 
         # pop excess `self` elements
@@ -696,24 +698,12 @@ struct Deque[ElementType: Movable](
         if n_move_total >= self._capacity:
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
-        # we will consume all elements of `values`
-        var values_alloc = values.unsafe_take_allocation()
-        var values_data = values_alloc.unsafe_ptr()
-
-        # pop excess elements from `values`
-        for i in range(n_pop_values):
-            (values_data.unsafe_offset(i)).unsafe_deinit_pointee()
-
-        # move remaining elements from `values`
-        var src = values_data.unsafe_offset(n_pop_values)
-        for i in range(n_move_values):
-            (self._data.unsafe_offset(self._tail)).unsafe_write_move_from(
-                src.unsafe_offset(i)
-            )
+        # TODO(https://github.com/modular/modular/issues/7425): Remove `assert`
+        # when fixed. Otherwise, `drop` silently borrows `values` and copies.
+        comptime assert conforms_to(Self.ElementType, Deinitable & Movable)
+        for var value in drop(values^, n_pop_values):
+            self._data.unsafe_offset(self._tail).unsafe_write(value^)
             self._tail = self._physical_index(self._tail + 1)
-
-        # free the list backing buffer
-        dealloc(values_alloc^)
 
     def extendleft(
         mut self, var values: List[Self.ElementType]
@@ -725,8 +715,8 @@ struct Deque[ElementType: Movable](
         Args:
             values: List whose elements will be added at the left side of the deque.
         """
-        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
-            len(self), len(values)
+        var n_move_total, n_move_self, n_pop_self, n_pop_values = (
+            self._compute_pop_and_move_counts(len(self), len(values))
         )
 
         # pop excess `self` elements
@@ -738,23 +728,12 @@ struct Deque[ElementType: Movable](
         if n_move_total >= self._capacity:
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
-        # we will consume all elements of `values`
-        var values_alloc = values.unsafe_take_allocation()
-        var values_data = values_alloc.unsafe_ptr()
-
-        # pop excess elements from `values`
-        for i in range(n_pop_values):
-            (values_data.unsafe_offset(i)).unsafe_deinit_pointee()
-
-        # move remaining elements from `values`
-        var src = values_data.unsafe_offset(n_pop_values)
-        for i in range(n_move_values):
+        # TODO(https://github.com/modular/modular/issues/7425): Remove `assert`
+        # when fixed. Otherwise, `drop` silently borrows `values` and copies.
+        comptime assert conforms_to(Self.ElementType, Deinitable & Movable)
+        for var value in drop(values^, n_pop_values):
             self._head = self._physical_index(self._head - 1)
-            (self._data.unsafe_offset(self._head)).unsafe_write_move_from(
-                src.unsafe_offset(i)
-            )
-
-        dealloc(values_alloc^)
+            self._data.unsafe_offset(self._head).unsafe_write(value^)
 
     def index(
         self,
@@ -796,6 +775,7 @@ struct Deque[ElementType: Movable](
                 return idx
         raise "ValueError: Given element is not in deque"
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def insert(
         mut self, idx: Int, var value: Self.ElementType
@@ -814,7 +794,7 @@ struct Deque[ElementType: Movable](
         if deque_len == self._maxlen:
             raise "IndexError: Deque is already at its maximum size"
 
-        check_bounds(idx, deque_len + 1)
+        check_bounds(idx, length=deque_len + 1)
 
         if idx <= deque_len // 2:
             for i in range(idx):
@@ -1009,7 +989,7 @@ struct Deque[ElementType: Movable](
 
     def _compute_pop_and_move_counts(
         self, len_self: Int, len_values: Int
-    ) -> Tuple[Int, Int, Int, Int, Int]:
+    ) -> Tuple[Int, Int, Int, Int]:
         """
         Calculates the number of elements to retain, move or discard in the deque and
         in the list of the new values based on the current length of the deque,
@@ -1020,10 +1000,9 @@ struct Deque[ElementType: Movable](
             len_values: The number of new elements to add to the deque.
 
         Returns:
-            A tuple: (n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values)
+            A tuple: (n_move_total, n_move_self, n_pop_self, n_pop_values)
                 n_move_total: Total final number of elements in the deque.
                 n_move_self: Number of existing elements to retain in the deque.
-                n_move_values: Number of new elements to add from `values`.
                 n_pop_self: Number of existing elements to remove from the deque.
                 n_pop_values: Number of new elements that don't fit and will be discarded.
         """
@@ -1041,7 +1020,6 @@ struct Deque[ElementType: Movable](
         return (
             n_move_total,
             n_move_self,
-            n_move_values,
             n_pop_self,
             n_pop_values,
         )
@@ -1072,7 +1050,7 @@ struct Deque[ElementType: Movable](
             new_capacity <<= 1
 
         var new_data = alloc(
-            Layout[Self.ElementType](count=new_capacity)
+            Layout[Self.ElementType](length=new_capacity)
         ).unsafe_leak()
 
         for i in range(n_retain):
@@ -1084,7 +1062,7 @@ struct Deque[ElementType: Movable](
         if self._capacity > 0:
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                    {count = self._capacity}
+                    {length = self._capacity}
                 )
             )
 
@@ -1112,7 +1090,7 @@ struct Deque[ElementType: Movable](
             tail_len = 0
 
         var new_data = alloc(
-            Layout[Self.ElementType](count=new_capacity)
+            Layout[Self.ElementType](length=new_capacity)
         ).unsafe_leak()
 
         var src = self._data.unsafe_offset(self._head)
@@ -1131,7 +1109,7 @@ struct Deque[ElementType: Movable](
         if self._capacity > 0:
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
-                    {count = self._capacity}
+                    {length = self._capacity}
                 )
             )
         self._data = new_data

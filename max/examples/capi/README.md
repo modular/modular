@@ -34,10 +34,10 @@ finally executing it on the GPU:
 pixi run test
 ```
 
-## Capturing a MEF with the new `max.experimental` API
+## Capturing a MEF with the `max.nn` and `max.tensor` API
 
 `test_capi_v3.py` is the new-API counterpart to `test_capi.py`. It builds the
-same vector-add graph as a `max.experimental.nn.Module`, compiles it with
+same vector-add graph as a `max.nn.Module`, compiles it with
 `Module.compile()`, and exports the compiled artifact to a MEF file using the
 public `CompiledCallable.export_mef()` method. The resulting `graph.mef` is
 consumed by the same `example.c` executor: both APIs name graph inputs

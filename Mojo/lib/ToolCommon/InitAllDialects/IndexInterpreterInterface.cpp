@@ -45,7 +45,8 @@ static bool compareIndices(const APInt &lhs, const APInt &rhs,
 }
 
 // Interpret result of the binary operation
-template <bool isSigned, bool withOverflowCheck, typename BinaryFn>
+template <bool isSigned, bool withOverflowCheck,
+          bool withDivByZeroCheck = false, typename BinaryFn>
 static ErrorTreeOrSuccess
 interpretBinaryOp(Location loc, MLIRContext *ctx, ArrayRef<Attribute> operands,
                   BinaryFn binaryFn, InterpreterState &state,
@@ -89,6 +90,12 @@ interpretBinaryOp(Location loc, MLIRContext *ctx, ArrayRef<Attribute> operands,
 
   lhs = lhsInt.getValue().trunc(targetBitwidth);
   rhs = rhsInt.getValue().trunc(targetBitwidth);
+
+  // APInt division traps on a zero divisor, so reject it before evaluating.
+  if constexpr (withDivByZeroCheck)
+    if (rhs.isZero())
+      return ErrorTree(loc,
+                       "`index." + opName + "` failed due to division by zero");
 
   APInt result;
   if constexpr (withOverflowCheck) {
@@ -194,7 +201,8 @@ CeilDivUOpInterpretInterface::interpret(mlir::index::CeilDivUOp ceilDivUOp,
                                         ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
   assert(operands.size() == 2 && "ceildivu expected two operands");
-  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false,
+                           /*withDivByZeroCheck=*/true>(
       ceilDivUOp.getLoc(), ceilDivUOp.getContext(), operands,
       [](APInt lhs, APInt rhs) {
         return lhs.udiv(rhs) + (lhs.urem(rhs) != 0 ? 1 : 0);
@@ -208,7 +216,8 @@ CeilDivSOpInterpretInterface::interpret(mlir::index::CeilDivSOp ceilDivSOp,
                                         ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
   assert(operands.size() == 2 && "ceildivs expected two operands");
-  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false,
+                           /*withDivByZeroCheck=*/true>(
       ceilDivSOp.getLoc(), ceilDivSOp.getContext(), operands,
       [](APInt lhs, APInt rhs) {
         return lhs.sdiv(rhs) + (lhs.srem(rhs).sgt(0) ? 1 : 0);
@@ -222,7 +231,8 @@ DivUOpInterpretInterface::interpret(mlir::index::DivUOp divUOp,
                                     ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
   assert(operands.size() == 2 && "divu expected two operands");
-  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false,
+                           /*withDivByZeroCheck=*/true>(
       divUOp.getLoc(), divUOp.getContext(), operands,
       [](APInt lhs, APInt rhs) { return lhs.udiv(rhs); }, state, "divu");
 }
@@ -233,7 +243,8 @@ DivSOpInterpretInterface::interpret(mlir::index::DivSOp divSOp,
                                     ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
   assert(operands.size() == 2 && "divs expected two operands");
-  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false,
+                           /*withDivByZeroCheck=*/true>(
       divSOp.getLoc(), divSOp.getContext(), operands,
       [](APInt lhs, APInt rhs) { return lhs.sdiv(rhs); }, state, "divs");
 }
@@ -319,7 +330,8 @@ RemUOpInterpretInterface::interpret(mlir::index::RemUOp remuOp,
                                     ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
   assert(operands.size() == 2 && "remu expected two operands");
-  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false,
+                           /*withDivByZeroCheck=*/true>(
       remuOp.getLoc(), remuOp.getContext(), operands,
       [](APInt lhs, APInt rhs) { return lhs.urem(rhs); }, state, "remu");
 }
@@ -330,7 +342,8 @@ RemSOpInterpretInterface::interpret(mlir::index::RemSOp remsOp,
                                     ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
   assert(operands.size() == 2 && "rems expected two operands");
-  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false,
+                           /*withDivByZeroCheck=*/true>(
       remsOp.getLoc(), remsOp.getContext(), operands,
       [](APInt lhs, APInt rhs) { return lhs.srem(rhs); }, state, "rems");
 }

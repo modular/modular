@@ -11,26 +11,68 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Graph input types for the KV cache."""
+
 from __future__ import annotations
 
 from typing import Any, Generic, TypeAlias, TypeVar
 
+import numpy as np
+import numpy.typing as npt
 from max import tree
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
     TensorType,
     TensorValue,
 )
+from max.tensor import Tensor
 from max.tree import Tree
 
 _Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
 _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 
+MIXED_STEP_SPLIT_SIZE = 7
+"""Number of ``uint32`` slots in a KV cache's mixed-step split record."""
 
+_MIXED_STEP_SPLIT_DECODE_CAP = 8
+"""Widest query the split-route ops run on their decode routes
+(``MIXED_STEP_DECODE_WIDTH`` in ``kv_cache.mixed_step_split``). A mismatch only
+turns the split off: the ops re-check it."""
+
+
+def _mixed_step_decode_view(
+    record: npt.NDArray[np.uint32], batch_size: int
+) -> tuple[int, int, int] | None:
+    """Returns the record's decode view as ``(rows, max_query, max_cache)``.
+
+    ``None`` when the record does not split (slot 0 zero) or its head row
+    count reaches the batch size. Mirrors ``MixedSplit.decode_view`` in
+    ``kv_cache.mixed_step_split``: the head view (slots 0, 2-3) when its
+    max query fits the decode cap, else the tail view (slots 4-5).
+    """
+    if record[0] == 0 or record[0] >= batch_size:
+        return None
+    if record[2] <= _MIXED_STEP_SPLIT_DECODE_CAP:
+        return int(record[0]), int(record[2]), int(record[3])
+    return batch_size - int(record[0]), int(record[4]), int(record[5])
+
+
+@tree.kind("split_kv_head_dims")
+@tree.dataclass(frozen=True)
+class SplitKVHeadDims:
+    """Marks a paged cache that packs keys and values of different widths.
+
+    See :attr:`~max.nn.kv_cache.KVCacheParams.has_split_head_dims`.
+
+    A tree node without leaves, so it rides through flatten, unflatten and an
+    exported artifact's input structure without adding a graph input.
+    """
+
+
+@tree.kind("paged_kv")
 @tree.dataclass
 class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     """Symbolic graph input types for a single device's paged KV cache."""
@@ -73,20 +115,16 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     draft_mla_num_partitions: _Tensor | None = None
     """The analog of :attr:`mla_num_partitions` for the draft-forward query
     width, carried by target cache leaves as well as draft ones."""
-    kv_blocks_per_layer: list[_Buffer] | None = None
-    """One single-layer KV buffer per layer, used when the backing pool
-    allocates a standalone buffer per layer
-    (``KVCacheParams.per_layer_buffers``) instead of one multi-layer buffer.
-    ``kv_blocks`` aliases ``kv_blocks_per_layer[0]`` so single-buffer
-    consumers stay valid; a per-layer attention dispatch picks
-    ``kv_blocks_per_layer[layer_idx]``. ``None`` (the default) for every
-    non-per-layer cache."""
-    kv_scales_per_layer: list[_Buffer] | None = None
-    """One single-layer scale buffer per layer, the quantized-scale analog of
-    ``kv_blocks_per_layer`` (used with ``per_layer_buffers`` + a quantized
-    KV cache). ``kv_scales`` aliases ``kv_scales_per_layer[0]``; a per-layer
-    attention dispatch picks ``kv_scales_per_layer[layer_idx]``. ``None``
-    for every non-per-layer / unquantized cache."""
+    split_head_dims: SplitKVHeadDims | None = None
+    """Set when each cache row packs a key and a value of different widths.
+    The blocks alone cannot say so: one plane also means an MLA cache. An op
+    that does not read this layout must refuse the cache."""
+    mixed_step_split: _Tensor | None = None
+    """The batch's mixed-step split record (CPU ``uint32[7]``), slots 2-8 of
+    the replica's host max lengths after ``max_prompt_length`` and
+    ``max_cache_length``. Every paged leaf declares it last; the KV cache
+    manager fills it and the attention ops that can split read it. A draft
+    forward drops it: the record describes the target's rows."""
 
     def __post_init__(self) -> None:
         def verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:
@@ -126,20 +164,18 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     # TODO: FIX THIS HACK!!!
     def flatten_without_attention_dispatch_metadata(
         self,
+        *,
+        include_scales: bool = True,
     ) -> list[_Tensor | _Buffer]:
-        """Serializes fields into a flat list, minus the attention dispatch
-        metadata fields."""
-        scales: tuple[_Tensor | _Buffer, ...] = ()
-        if self.kv_scales is not None:
-            assert (
-                self.scales_page_stride is not None
-                and self.scales_lookup_table is not None
-            )
-            scales = (
-                self.kv_scales,
-                self.scales_page_stride,
-                self.scales_lookup_table,
-            )
+        """Serializes fields into a flat list.
+
+        Leaves out the attention dispatch metadata fields.
+
+        Args:
+            include_scales: Whether to append the quantization scale operands.
+                Pass ``False`` for an op that reads only the cache's lengths
+                and page table, so one registration serves every cache format.
+        """
         return [
             self.kv_blocks,
             self.page_stride,
@@ -147,11 +183,18 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.lookup_table,
             self.max_prompt_length,
             self.max_cache_length,
-            *scales,
-            # Tail per-layer buffers (see ``flatten``). Attention dispatch clears
-            # this field before calling an op, so this is ``()`` at op sites.
-            *(self.kv_blocks_per_layer or ()),
-            *(self.kv_scales_per_layer or ()),
+            *(
+                (
+                    self.kv_scales,
+                    self.scales_page_stride,
+                    self.scales_lookup_table,
+                )
+                if include_scales
+                and self.kv_scales is not None
+                and self.scales_page_stride is not None
+                and self.scales_lookup_table is not None
+                else ()
+            ),
         ]
 
 
@@ -165,6 +208,7 @@ as graph values."""
 # ===--------------------------------------------------------------------=== #
 
 
+@tree.kind("recurrent_leaf")
 @tree.dataclass(frozen=True)
 class RecurrentLeafInputs(Generic[_Tensor, _Buffer]):
     """One state leaf's graph inputs on one device."""
@@ -188,6 +232,7 @@ def _layer_row_ids(ids: Any, layer: int) -> TensorValue:
     return ids[layer]
 
 
+@tree.kind("recurrent_state")
 @tree.dataclass
 class RecurrentStateInputsPerDevice(Generic[_Tensor, _Buffer]):
     """One device's recurrent-state leaves."""

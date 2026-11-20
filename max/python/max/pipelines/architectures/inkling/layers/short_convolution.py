@@ -30,14 +30,17 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn._graph_ops.state_space import short_conv_ring
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module, Shardable
-from max.nn.state_space import short_conv_ring
+from max.nn.legacy.layer import Module, Shardable
 
 
 class ShortConvolution(Module, Shardable):
-    """Depthwise causal conv1d with a residual; history lives in a
-    caller-owned ring of past inputs indexed by position."""
+    """A depthwise causal conv1d over a caller-owned history.
+
+    History is a ring of past inputs indexed by position, and the layer adds a
+    residual.
+    """
 
     def __init__(
         self,
@@ -66,6 +69,7 @@ class ShortConvolution(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the convolution's weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -214,7 +218,7 @@ def fused_qk_rms_norm_short_conv_ragged(
         The normalized query, ``[total_tokens, q_num_heads, head_dim]``.
     """
     return ops.inplace_custom(
-        "mo.fused_qk_rms_norm_short_conv.ragged.paged",
+        "kv_cache.fused_qk_rms_norm_short_conv.ragged.paged",
         device=qkvr.device,
         values=[
             qkvr,

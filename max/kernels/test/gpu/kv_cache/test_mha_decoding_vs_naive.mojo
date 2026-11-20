@@ -32,7 +32,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Idx, row_major
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
@@ -42,10 +42,11 @@ from std.testing import assert_almost_equal
 
 def compute_hash[
     type: DType
-](ptr: Pointer[Scalar[type], _], size: Int) -> UInt64:
+](tensor: TileTensor[type, ...], size: Int) -> UInt64:
     var h: UInt64 = 14695981039346656037
+    var flat = tensor.reshape(row_major(size))
     for i in range(size):
-        var val = ptr[i].cast[.float32]()
+        var val = flat[i].cast[.float32]()
         var bits = bitcast[.uint32, 1](val)
         h ^= bits.cast[.uint64]()
         h *= 1099511628211
@@ -234,7 +235,7 @@ def test_decode_kv_cache[
     print("REF OK")
 
     var actual_hash = compute_hash(
-        out_host.unsafe_ptr(),
+        out_host,
         total_length * num_q_heads * kv_params.head_size,
     )
     print("HASH:", actual_hash)

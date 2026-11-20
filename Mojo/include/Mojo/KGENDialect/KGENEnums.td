@@ -260,6 +260,20 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// This is used on the second-last argument of a function that may raise,
   /// returning a potentially initialized error value if the function throws.
   I32EnumAttrCase<"ByRefError", 9, "byref_error">,
+
+  /// These are used for a variadic pack argument like `def x(*args: *Ts)`.
+  /// Each element of the pack is the address of an argument of the caller,
+  /// passed as `imm_mem`, `mut` or `owned_in_mem`, respectively.
+  ///
+  /// Before LowerLIT, the MLIR type is a LIT::RefType to a `VariadicPack`. The
+  /// pack is read but not mutated, except with `pack_owned_in_mem`: the callee
+  /// then owns the pack and destroys it, as with `owned_in_mem`. After
+  /// LowerLIT, the MLIR type is a pointer to a parameter pack that is read but
+  /// not mutated. LowerArgConventions splits the pack into its elements, so
+  /// these conventions do not occur after it.
+  I32EnumAttrCase<"PackImmMem", 10, "pack_imm_mem">,
+  I32EnumAttrCase<"PackMut", 11, "pack_mut">,
+  I32EnumAttrCase<"PackOwnedMem", 12, "pack_owned_in_mem">,
 ]> {
   let cppNamespace = "M::KGEN";
 }
@@ -273,8 +287,6 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Throws", 0, "throws">,
   /// This is an async function.
   I16BitEnumAttrCaseBit<"Async", 1, "async">,
-  /// This function captures state.
-  I16BitEnumAttrCaseBit<"Capturing", 2, "capturing">,
   /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.
   I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
   /// This function uses the C ABI for argument and return value passing.
@@ -392,6 +404,31 @@ def KGEN_VariadicKind : I32EnumAttr<"VariadicKind",
   I32EnumAttrCase<"PackVarArg", 2, "pack_vararg">,
   /// A variadic keywords argument, e.g. `**x: Int`.
   I32EnumAttrCase<"KwVarArg", 3, "kw_vararg">
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+//===----------------------------------------------------------------------===//
+// StructDomain
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructDomain : I32EnumAttr<"StructDomain",
+    "Whether a struct is a memory layout or a value representation", [
+  /// Not decided yet. Only LIT-level IR has these; LowerLIT decides each one
+  /// by its position.
+  ///
+  /// FIXME(MOCO-5118): This case only needs to exist because `!kgen.struct` can
+  /// appear before LowerLIT in Mojo source. Its elements are then LIT types,
+  /// whose type constants have identical halves until LowerLIT splits them.
+  /// This means a struct cannot tell plain elements from unlowered ones. A LIT-
+  /// level pack type (so that only LowerLIT builds `!kgen.struct`) would remove
+  /// the bulk of this awkwardness.
+  I32EnumAttrCase<"Unset", 0, "unset">,
+  /// A memory layout (the type domain).
+  I32EnumAttrCase<"Layout", 1, "layout">,
+  /// A value representation (the value domain).
+  I32EnumAttrCase<"Value", 2, "value">
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;

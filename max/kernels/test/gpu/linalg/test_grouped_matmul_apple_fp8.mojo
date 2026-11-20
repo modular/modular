@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unit tests for the Apple M5 weight-only FP8 (W8A16) grouped (MoE) matmul.
 
-Target: Apple M5 (`compute_capability() == 5`, Metal 4). The grouped analog of
+Target: Apple M5 (`compute_capability() >= 5`, Metal 4). The grouped analog of
 `test_fp8_gemv.mojo`: `bf16` activation x `float8_e4m3fn` expert-weight stack ->
 `bf16`, one expert group per `block_idx.z`, produced RAW (the per-expert
 `weight_scale` is a graph-level post-matmul fold, not part of the kernel -- see
@@ -71,13 +71,10 @@ def _run_case[
     comptime K = expert_shape[1]
 
     print(
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts, (N, K) =",
-        N,
-        K,
-        " tokens:",
+        (
+            t"{num_active_experts} active of {num_experts} experts, (N, K) ="
+            t" {N} {K}  tokens:"
+        ),
         end="",
     )
     for i in range(len(num_tokens_by_expert)):
@@ -215,7 +212,7 @@ def _run_case[
         # dispatch reports.
         var out = val.cast[.float32]() * 2 + 1
         c_epi_ptr.unsafe_store[width=width](
-            Int(idx[0].value()) * N + Int(idx[1].value()), out.cast[out_type]()
+            Int(idx[0]) * N + Int(idx[1]), out.cast[out_type]()
         )
 
     grouped_matmul[has_epilogue_fn=True](
@@ -273,46 +270,47 @@ def main() raises:
     with DeviceContext() as ctx:
         # Apple M5 only (the native fp8-operand simdgroup MMA); skip elsewhere so
         # the target stays runnable on non-M5 Apple CI without a hard failure.
-        if ctx.compute_capability() != 5:
-            print("skip: grouped W8A16 tiled matmul requires Apple M5 (cc==5)")
+        if ctx.compute_capability() < 5:
+            print(
+                "skip: grouped W8A16 tiled matmul requires Apple M5 or newer"
+                " (cc>=5)"
+            )
             return
 
         comptime BF16 = DType.bfloat16
 
         # --- Small aligned: single group, tile-aligned N/K. ---
-        _run_case[BF16, num_experts=1, expert_shape=Index(64, 32)](
-            1, [8], [0], ctx
-        )
+        _run_case[BF16, num_experts=1, expert_shape=(64, 32)](1, [8], [0], ctx)
 
         # --- Small routing: multiple groups, incl. a 0-token group. ---
-        _run_case[BF16, num_experts=4, expert_shape=Index(128, 64)](
+        _run_case[BF16, num_experts=4, expert_shape=(128, 64)](
             4, [3, 0, 5, 2], [2, 0, 3, 1], ctx
         )
 
         # --- Tile-unaligned N and K (ragged store guard + K tail). ---
-        _run_case[BF16, num_experts=4, expert_shape=Index(70, 40)](
+        _run_case[BF16, num_experts=4, expert_shape=(70, 40)](
             3, [7, 0, 20], [1, 0, 3], ctx
         )
 
         # --- Inactive LoRA group (expert_ids == -1) must produce zeros. ---
-        _run_case[BF16, num_experts=2, expert_shape=Index(128, 64)](
+        _run_case[BF16, num_experts=2, expert_shape=(128, 64)](
             2, [16, 24], [0, -1], ctx
         )
 
         # --- c32-decode-like: many tiny (1-3 token) groups over many experts. ---
-        _run_case[BF16, num_experts=16, expert_shape=Index(128, 96)](
+        _run_case[BF16, num_experts=16, expert_shape=(128, 96)](
             8, [1, 2, 1, 3, 1, 1, 2, 1], [0, 5, 2, 9, 1, 12, 7, 3], ctx
         )
 
         # --- Real Nemotron-30B-A3B MoE up-proj dims (N=1856, K=2688). ---
         # Reduced expert count keeps the weight buffer small; per-group M is
         # tiny (batch-1 / c32 decode) incl. a 0-token group.
-        _run_case[BF16, num_experts=8, expert_shape=Index(1856, 2688)](
+        _run_case[BF16, num_experts=8, expert_shape=(1856, 2688)](
             6, [1, 1, 2, 0, 1, 1], [0, 3, 1, 4, 5, 2], ctx, rtol=2e-2
         )
 
         # --- Real Nemotron-30B-A3B MoE down-proj dims (N=2688, K=1856). ---
-        _run_case[BF16, num_experts=8, expert_shape=Index(2688, 1856)](
+        _run_case[BF16, num_experts=8, expert_shape=(2688, 1856)](
             6, [2, 1, 1, 0, 3, 1], [1, 0, 4, 2, 5, 3], ctx, rtol=2e-2
         )
 

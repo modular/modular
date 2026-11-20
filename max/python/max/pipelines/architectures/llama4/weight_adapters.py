@@ -85,7 +85,7 @@ def _stack_fp8_experts(
     The compressed-tensors FP8 Scout checkpoint stores each routed expert as a
     separate ``feed_forward.experts.{j}.{gate,up,down}_proj`` linear (FP8 e4m3
     weight ``[out, in]`` + per-output-channel ``weight_scale`` ``[out, 1]``).
-    :class:`~max.nn.moe.stacked_moe.StackedMoE` instead consumes fused tensors:
+    :class:`~max.nn.legacy.moe.stacked_moe.StackedMoE` instead consumes fused tensors:
 
       - ``mlp.experts.gate_up_proj``        FP8   ``[E, hidden, 2 * moe]``
       - ``mlp.experts.down_proj``           FP8   ``[E, moe, hidden]``

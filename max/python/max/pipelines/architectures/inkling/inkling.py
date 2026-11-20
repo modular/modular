@@ -15,7 +15,9 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Mapping, Sequence
+from collections import OrderedDict
+from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -25,15 +27,17 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Dim,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
+    Type,
     Value,
     Weight,
     ops,
 )
-from max.nn.comm import Signals
-from max.nn.embedding import Embedding, VocabParallelEmbedding
+from max.graph import Module as GraphModule
 from max.nn.kv_cache import (
     CacheLeafKind,
     KVCacheInputsPerDevice,
@@ -42,25 +46,31 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import (
-    ReturnHiddenStates,
-    ReturnLogits,
+from max.nn.legacy.embedding import Embedding, VocabParallelEmbedding
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
     forward_sequential_layers,
     logits_postprocess,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     distributed_logits_postprocess,
     forward_sharded_layers,
+)
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
 )
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.tree import Tree
 
 from .layers.attention import InklingAttention, log_scaling_tau
-from .layers.moe import InklingGate, InklingMoE
+from .layers.moe import InklingGate, InklingMLP, InklingMoE
 from .layers.short_convolution import ShortConvolution
 from .model_config import (
     GLOBAL_ATTENTION,
@@ -73,8 +83,7 @@ from .state_cache import ConvSite, InklingConvStateLayout
 
 
 class InklingDecoderLayer(Module):
-    """One decoder layer: attention and feed-forward, each with an output
-    conv."""
+    """One decoder layer: attention and feed-forward, each with an output conv."""
 
     def __init__(
         self,
@@ -152,18 +161,21 @@ class InklingDecoderLayer(Module):
                     route_scale=text_config.route_scale,
                 ),
                 has_shared_experts=True,
+                shared_mlp_cls=functools.partial(
+                    InklingMLP, n_shared_experts=text_config.n_shared_experts
+                ),
                 shared_experts_dim=(
                     text_config.n_shared_experts * text_config.intermediate_size
                 ),
                 # Packed FP4 stores as uint8; a differing shared_experts_dtype
-                # is what keeps the sinks unquantized in max.nn.moe.
+                # is what keeps the sinks unquantized in max.nn.legacy.moe.
                 dtype=DType.uint8 if routed_quant is not None else dtype,
                 shared_experts_dtype=dtype,
                 interleaved_gate_up=True,
                 quant_config=routed_quant,
             )
         else:
-            self.mlp = MLP(
+            self.mlp = InklingMLP(
                 dtype=dtype,
                 quantization_encoding=None,
                 hidden_dim=text_config.hidden_size,
@@ -172,7 +184,7 @@ class InklingDecoderLayer(Module):
             )
             # Dotted name matches the checkpoint's mlp namespace.
             self.mlp_global_scale = Weight(
-                "mlp.global_scale", DType.float32, [1], device=device
+                "mlp.global_scale", DType.bfloat16, [1], device=device
             )
             self.mlp_global_scale.sharding_strategy = replicate
             self.mlp_global_scale_shards = list(
@@ -368,7 +380,9 @@ class InklingDecoderLayer(Module):
         # Scaling in float32 keeps the scalar's low bits.
         return [
             ops.cast(
-                ops.cast(out, DType.float32) * scale.to(out.device), out.dtype
+                ops.cast(out, DType.float32)
+                * ops.cast(scale, DType.float32).to(out.device),
+                out.dtype,
             )
             for out, scale in zip(
                 outs, self.mlp_global_scale_shards, strict=True
@@ -456,6 +470,22 @@ def kv_collections_by_key(
         for key, child in kv_tree.items()
         if key != STATE_CACHE_KEY
     }
+
+
+def token_positions(
+    row_offsets: TensorValue, cache_lengths: TensorValue, total_tokens: Dim
+) -> TensorValue:
+    """Expands each row's cached length into absolute token positions."""
+    offsets = row_offsets.cast(DType.int64)
+    lengths = offsets[1:] - offsets[:-1]
+    bases = (
+        cache_lengths.rebind([offsets.shape[0] - 1]).cast(DType.int64)
+        - offsets[:-1]
+    )
+    return (
+        ops.range(0, total_tokens, dtype=DType.int64, device=row_offsets.device)
+        + ops.repeat_interleave(bases, lengths, out_dim=total_tokens)
+    ).cast(DType.uint32)
 
 
 class Inkling(Module):
@@ -593,7 +623,7 @@ class Inkling(Module):
         signal_buffers: list[BufferValue],
         kv_collections: dict[str, list[PagedCacheValues]],
         state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
-    ) -> tuple[TensorValue, ...]:
+    ) -> DecoderOutputs:
         """Runs the whole text model over one ragged batch."""
         if self.num_devices > 1:
             assert isinstance(self.embed, VocabParallelEmbedding)
@@ -761,34 +791,25 @@ class Inkling(Module):
             logits.dtype,
         )
 
-    def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Graph input types, in the order :meth:`__call__` consumes them."""
-        device = self.devices[0]
-        signals = (
-            Signals(self.devices).input_types() if self.num_devices > 1 else []
-        )
-        return (
-            TensorType(DType.int64, shape=["total_seq_len"], device=device),
-            TensorType(
-                DType.uint32, shape=["input_row_offsets_len"], device=device
-            ),
-            TensorType(DType.uint32, shape=["total_seq_len"], device=device),
-            TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            ),
-            TensorType(
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Names the token batch, image merge, signals and cache inputs."""
+        inputs: OrderedDict[str, object] = OrderedDict(
+            batch=ragged_batch_inputs(self.devices[0]),
+            vision=vision_merge_inputs(
+                self.devices[:1],
                 self.dtype,
-                shape=["total_image_tokens", self.text_config.hidden_size],
-                device=device,
+                self.text_config.hidden_size,
+                rows_dim="total_image_tokens",
             ),
-            TensorType(
-                DType.int32, shape=["total_image_tokens"], device=device
-            ),
-            *signals,
-            # The conv state is a child of the cache tree, so one flatten
-            # covers the attention pages and the state leaves both.
-            *self.kv_params.flattened_kv_inputs(),
         )
+        if self.num_devices > 1:
+            inputs["signals"] = signal_inputs(self.devices)
+        inputs["kv"] = self.kv_params.get_symbolic_inputs()
+        return inputs
+
+    def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """Returns the leaves of the named decoder inputs."""
+        return tuple(tree.leaves(self.input_tree()))
 
     def unflatten_kv_inputs(
         self, kv_inputs: Sequence[object]
@@ -817,7 +838,6 @@ class Inkling(Module):
         (
             tokens,
             input_row_offsets,
-            positions,
             return_n_logits,
             image_embeddings,
             image_indices,
@@ -826,6 +846,13 @@ class Inkling(Module):
         signals = rest[:num_signals]
         kv_inputs = rest[num_signals:]
         kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_inputs))
+        collections = kv_collections_by_key(kv_tree)
+        primary = next(iter(collections.values()))[0]
+        positions = token_positions(
+            input_row_offsets.tensor,
+            primary.cache_lengths,
+            tokens.tensor.shape[0],
+        )
         assert STATE_CACHE_KEY in kv_tree, (
             "Inkling always convolves; the cache declared no conv-state child"
         )
@@ -835,11 +862,50 @@ class Inkling(Module):
         return (
             tokens.tensor,
             input_row_offsets.tensor,
-            positions.tensor,
+            positions,
             return_n_logits.tensor,
             image_embeddings.tensor,
             image_indices.tensor,
             [value.buffer for value in signals],
-            kv_collections_by_key(kv_tree),
+            collections,
             state,
+        )
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        Splits the flat graph inputs into :meth:`__call__`'s arguments with
+        :meth:`unpack_inputs`.
+
+        Args:
+            *input_types: The graph's input types, :meth:`input_types`.
+            name: The name of the graph. Defaults to the class's qualified
+                name.
+            module: The MLIR module to add the graph to. Defaults to a new
+                module.
+            custom_extensions: Paths to custom kernel libraries the graph
+                uses.
+            is_device_graph: Whether to build a device graph.
+
+        Returns:
+            The traced :class:`~max.graph.Graph`.
+        """
+
+        def forward(*inputs: Value[Any]) -> DecoderOutputs:
+            return self(*self.unpack_inputs(inputs))
+
+        return Graph(
+            type(self).__qualname__ if name is None else name,
+            forward,
+            input_types=input_types,
+            custom_extensions=list(custom_extensions),
+            module=module,
+            is_device_graph=is_device_graph,
         )

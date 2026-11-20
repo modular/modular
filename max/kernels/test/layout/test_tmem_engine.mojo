@@ -24,7 +24,7 @@ Blackwell GPU and live in `max/kernels/test/gpu/layout/test_tmem_engine.mojo`.
 from std.testing import assert_equal, TestSuite
 
 from layout import Coord, Idx, TileTensor
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tmem_engine import TMemEngine, TMemStorage, TMEM_NUM_LANES
 
 comptime NUM_LANES = 128
@@ -40,31 +40,31 @@ def _addr(lane: Int, col: Int) -> UInt32:
 
 comptime BASE_ADDR = _addr(BASE_LANE, BASE_COL)
 
-comptime ACCUM_LAYOUT = TileLayout(
+comptime ACCUM_LAYOUT = Layout(
     shape=Coord(Idx[NUM_LANES], Idx[NUM_COLS]),
     stride=Coord(Idx[1], Idx[TMEM_NUM_LANES]),
 )
 comptime AccumTile = TileTensor[
     .float32,
     type_of(ACCUM_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 # The handle carries no `address_space`, so the engine's trait-mandated
 # parameters can only be inferred inside `TileTensor`'s generic context.
 # Every operation below therefore goes through a tile, as kernels do.
-comptime AccumStorage = TMemStorage[.float32, MutAnyOrigin]
+comptime AccumStorage = TMemStorage[.float32, MutUntrackedOrigin]
 
 comptime NUM_WARPS = 4
 comptime M64_LANES_PER_WARP = 16
-comptime M64_LAYOUT = TileLayout(
+comptime M64_LAYOUT = Layout(
     shape=Coord(Coord(Idx[M64_LANES_PER_WARP], Idx[NUM_WARPS]), Idx[NUM_COLS]),
     stride=Coord(Coord(Idx[1], Idx[32]), Idx[TMEM_NUM_LANES]),
 )
 comptime M64Tile = TileTensor[
     .float32,
     type_of(M64_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 
@@ -81,7 +81,7 @@ def test_offset_encodes_lane_and_column() raises:
 
 def test_unsafe_cast_keeps_address() raises:
     var tile = AccumTile(AccumStorage(BASE_ADDR), ACCUM_LAYOUT)
-    var cast = tile._unsafe_storage_cast[to_dtype=DType.int32]()
+    var cast = tile._unsafe_storage_cast[to_dtype=.int32]()
     assert_equal(cast.addr, BASE_ADDR)
 
 
@@ -94,9 +94,9 @@ def test_layout_is_the_lane_column_grid() raises:
 
 def test_warp_tile_lands_on_quadrant_base() raises:
     var tile = AccumTile(AccumStorage(BASE_ADDR), ACCUM_LAYOUT)
-    var warp_tile = tile.tile[32, NUM_COLS](Coord(Int(2), Idx[0]))
+    var warp_tile = tile[64:96, :]
     assert_equal(warp_tile._storage.addr, _addr(BASE_LANE + 2 * 32, BASE_COL))
-    var row = warp_tile.tile[1, NUM_COLS](Coord(Idx[0], Idx[0]))
+    var row = warp_tile[:1, :]
     assert_equal(row._storage.addr, warp_tile._storage.addr)
     assert_equal(Int(row.layout(Coord(Idx[0], Idx[9]))), 9 * TMEM_NUM_LANES)
 

@@ -34,6 +34,11 @@ from std.math import clamp, floor
 
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import TensorLayout, TensorEngine, TileTensor
 
 
@@ -140,59 +145,61 @@ def _gpu_kernel[
     var t: Int = 0
     var h: Int = 0
     var w: Int = 0
-    for img in range(_N):
-        t = Int(grid_thws[img, 0])
-        h = Int(grid_thws[img, 1])
-        w = Int(grid_thws[img, 2])
-        var img_len = t * h * w
-        if pos_idx < offset + img_len:
-            break
-        offset += img_len
 
-    var local_pos = pos_idx - offset
-    var tt, hw_pos = divmod(local_pos, h * w)
-    var hh, ww = divmod(hw_pos, w)
+    with PDL():
+        for img in range(_N):
+            t = Int(grid_thws[img, 0])
+            h = Int(grid_thws[img, 1])
+            w = Int(grid_thws[img, 2])
+            var img_len = t * h * w
+            if pos_idx < offset + img_len:
+                break
+            offset += img_len
 
-    var no_interp = h == _H and w == _W
-    var scale_h = Float32(_H) / Float32(h)
-    var scale_w = Float32(_W) / Float32(w)
+        var local_pos = pos_idx - offset
+        var tt, hw_pos = divmod(local_pos, h * w)
+        var hh, ww = divmod(hw_pos, w)
 
-    # Precompute bicubic mapping for this spatial position.
-    var ih_floor: Int = 0
-    var iw_floor: Int = 0
-    var dy: Float32 = 0
-    var dx: Float32 = 0
-    if not no_interp:
-        var in_h = (Float32(hh) + 0.5) * scale_h - 0.5
-        var in_w = (Float32(ww) + 0.5) * scale_w - 0.5
-        ih_floor = Int(floor(in_h))
-        iw_floor = Int(floor(in_w))
-        dy = in_h - Float32(ih_floor)
-        dx = in_w - Float32(iw_floor)
+        var no_interp = h == _H and w == _W
+        var scale_h = Float32(_H) / Float32(h)
+        var scale_w = Float32(_W) / Float32(w)
 
-    # Threads stride over _dim channels.
-    for d in range(thread_idx.x, _dim, block_dim.x):
-        var pos_val: Float32
-        if no_interp:
-            pos_val = Float32(weight[hh, ww, d][0])
-        else:
-            var val: Float32 = 0
-            comptime for i in range(4):
-                var yp = clamp(ih_floor + i - 1, 0, _H - 1)
-                var wy = _cubic_weight(Float32(i) - 1.0 - dy)
-                comptime for j in range(4):
-                    var xp = clamp(iw_floor + j - 1, 0, _W - 1)
-                    var wx = _cubic_weight(Float32(j) - 1.0 - dx)
-                    val += Float32(weight[yp, xp, d][0]) * wy * wx
-            pos_val = val
+        # Precompute bicubic mapping for this spatial position.
+        var ih_floor: Int = 0
+        var iw_floor: Int = 0
+        var dy: Float32 = 0
+        var dx: Float32 = 0
+        if not no_interp:
+            var in_h = (Float32(hh) + 0.5) * scale_h - 0.5
+            var in_w = (Float32(ww) + 0.5) * scale_w - 0.5
+            ih_floor = Int(floor(in_h))
+            iw_floor = Int(floor(in_w))
+            dy = in_h - Float32(ih_floor)
+            dx = in_w - Float32(iw_floor)
 
-        var time_val: Float32 = 0
-        if t > 1:
-            time_val = time_weight[tt, d][0]
+        # Threads stride over _dim channels.
+        for d in range(thread_idx.x, _dim, block_dim.x):
+            var pos_val: Float32
+            if no_interp:
+                pos_val = Float32(weight[hh, ww, d][0])
+            else:
+                var val: Float32 = 0
+                comptime for i in range(4):
+                    var yp = clamp(ih_floor + i - 1, 0, _H - 1)
+                    var wy = _cubic_weight(Float32(i) - 1.0 - dy)
+                    comptime for j in range(4):
+                        var xp = clamp(iw_floor + j - 1, 0, _W - 1)
+                        var wx = _cubic_weight(Float32(j) - 1.0 - dx)
+                        val += Float32(weight[yp, xp, d][0]) * wy * wx
+                pos_val = val
 
-        output[pos_idx, d] = Scalar[dtype](
-            Float32(x[pos_idx, d][0]) + pos_val + time_val
-        )
+            var time_val: Float32 = 0
+            if t > 1:
+                time_val = time_weight[tt, d][0]
+
+            output[pos_idx, d] = Scalar[dtype](
+                Float32(x[pos_idx, d][0]) + pos_val + time_val
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -271,4 +278,5 @@ def learnable_2d_interp_pos_emb[
         Int32(W),
         grid_dim=(L,),
         block_dim=(BLOCK_SIZE,),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

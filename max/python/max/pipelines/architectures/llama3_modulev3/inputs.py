@@ -32,6 +32,7 @@ class Llama3Inputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         if isinstance(self.input_row_offsets, np.ndarray):
             input_row_offsets = Buffer.from_numpy(self.input_row_offsets).to(
                 self.tokens.device

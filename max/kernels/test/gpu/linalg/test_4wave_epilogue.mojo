@@ -72,7 +72,7 @@ def test_4wave_epilogue[
     var a_tt = TileTensor(device_a, row_major[M, K]())
     var b_tt = TileTensor(device_b, row_major[N, K]())
     var c_tt = TileTensor(device_c, row_major[M, N]())
-    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # Capture the raw pointer: a `{var}` capture byte-copies, so a
     # `DeviceBuffer`-backed tile would reach the device as a host reference.
     var out_tt = TileTensor(device_out.unsafe_ptr(), row_major[M, N]())
 
@@ -100,7 +100,7 @@ def test_4wave_epilogue[
     ](idx: Coord, val: SIMD[_dtype, width]) {var} -> None:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert idx.flat_rank == out_tt.flat_rank
-        out_tt.store[width=width, alignment=alignment](
+        out_tt.store[alignment=alignment](
             idx, rebind[SIMD[out_dtype, width]](val)
         )
 
@@ -134,18 +134,9 @@ def test_4wave_epilogue[
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
-                        "Mismatch at (",
-                        row,
-                        ",",
-                        col,
-                        "): actual=",
-                        actual,
-                        " expected=",
-                        expected,
-                        " diff=",
-                        diff,
-                        " threshold=",
-                        threshold,
+                        t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                        t" expected= {expected}  diff= {diff}  threshold="
+                        t" {threshold}"
                     )
                     printed += 1
                 errors += 1
@@ -174,7 +165,7 @@ def test_4wave_epilogue[
 
 def run_dtype_sweep[dtype: DType](ctx: DeviceContext) raises:
     """Run swizzle on/off cases for one dtype."""
-    print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
+    print(t"  Shape: M={TEST_M} N={TEST_N} K={TEST_K}", sep="")
     print("  no swizzle...")
     test_4wave_epilogue[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=False](
         ctx

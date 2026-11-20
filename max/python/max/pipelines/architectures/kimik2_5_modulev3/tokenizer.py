@@ -40,7 +40,9 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
+    checked_token_ids,
     encode_dkv_cache_hint,
+    resolve_token_id_bound,
     run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
@@ -177,6 +179,9 @@ class KimiK2_5VLTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
         )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
+        )
 
         im_end_id = self.delegate.convert_tokens_to_ids(IM_END)
         if isinstance(im_end_id, int):
@@ -251,7 +256,7 @@ class KimiK2_5VLTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
             if max_length and len(encoded_prompt) > max_length:
                 raise PromptTooLongError(len(encoded_prompt), max_length)
         else:
-            encoded_prompt = np.array(list(prompt))
+            encoded_prompt = checked_token_ids(prompt, self._token_id_bound)
 
         return encoded_prompt
 

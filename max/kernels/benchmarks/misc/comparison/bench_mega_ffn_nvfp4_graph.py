@@ -43,7 +43,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
 )
@@ -253,7 +253,7 @@ class Inputs:
             _gpu(self.es_down),
             _gpu(self.c_input_scales),
             # Mirrors the host values serving binds: the usage stats
-            # `max/python/max/nn/moe/quant_strategy.py` puts in place of the
+            # `max/python/max/nn/_graph_ops/moe_quant.py` puts in place of the
             # dispatch's device ones, and the token estimate from
             # `expert_parallel.py` (tokens * top_k over the GPUs per node,
             # which is the EP degree here).
@@ -414,6 +414,11 @@ def main() -> None:
         max_rows=args.chunk * args.ep_size,
     )
     copies_list = [int(c) for c in args.copies.split(",")]
+    # Seeded so output digests compare across processes and builds. Allocated
+    # before the MAX device, whose memory manager takes a share of the memory
+    # free at creation and backs all of it for graph capture.
+    torch.manual_seed(args.seed)
+    data = Inputs(cfg, max(copies_list))
     device = Accelerator()
     session = InferenceSession(devices=[device])
     models = {}
@@ -423,9 +428,6 @@ def main() -> None:
         # Compile time: run with an empty MODULAR_CACHE_DIR to measure it.
         print(f"# load_s copies={c} {time.perf_counter() - t0:.1f}", flush=True)
 
-    # Seeded so output digests compare across processes and builds.
-    torch.manual_seed(args.seed)
-    data = Inputs(cfg, max(copies_list))
     results = []
     key = 0
     for tokens in (int(t) for t in args.tokens.split(",")):

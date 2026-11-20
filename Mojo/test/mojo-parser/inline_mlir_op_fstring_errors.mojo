@@ -91,3 +91,10 @@ def test_error_names_fstring_with_placeholders(
     # `%arg<N>` form.
     # expected-error @+1 {{failed to parse f-string MLIR op in f-string `index.add %{x} bogus %{y}`}}
     var _r = __mlir_op[`index.add %{x} bogus %{y}`]
+
+
+def test_unowned_dialect(x: __mlir_type.index):
+    # A namespace that no loaded dialect and no target plugin owns is
+    # rejected, not parsed as an unregistered op.
+    # expected-error @+1 {{dialect `nosuchdialect` is not registered and no target plugin owns it in f-string `nosuchdialect.op %{x} : (index) -> ()`}}
+    __mlir_op[`nosuchdialect.op %{x} : (index) -> ()`]

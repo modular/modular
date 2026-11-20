@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers MiniMax-M2 with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
@@ -19,7 +20,6 @@ from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .batch_processor import MiniMaxM2BatchProcessor
-from .memory_planner import MiniMaxM2MemoryPlanner
 from .model import MiniMaxM2Model
 from .model_config import MiniMaxM2Config
 
@@ -46,5 +46,4 @@ minimax_m2_arch = SupportedArchitecture(
     batching=MiniMaxM2BatchProcessor,
     tool_parser="minimax_m2",
     reasoning_parser="minimax_m2",
-    memory_planner=MiniMaxM2MemoryPlanner,
 )

@@ -24,15 +24,14 @@ from max.graph import DeviceRef
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import (
-    Llama3RopeScalingParams,
+from max.nn.legacy.rotary_embedding import (
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
-    LongRoPEScalingParams,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
+from max.nn.rope_scaling import Llama3RopeScalingParams, LongRoPEScalingParams
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -162,6 +161,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
     ) -> float:
         """The attention multiplier is a scalar that scales the attention scores.
+
         It is used to control the variance of the attention scores.
 
         This function is used to get the attention multiplier from the
@@ -217,6 +217,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @override
@@ -252,6 +253,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline and HF configs."""
         model_config = model_config or pipeline_config.model
         kv_cache_config = model_config.kv_cache
         quantization_encoding = _select_quantization_encoding(

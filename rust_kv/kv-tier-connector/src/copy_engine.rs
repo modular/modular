@@ -30,6 +30,11 @@
 //! address in whichever chunk holds it; within that row each device
 //! unit occupies `[offset, offset + stride)` and maps to device address
 //! `unit.ptr + bid * stride`, where `stride` is that unit's own `bytes`.
+//!
+//! The host row can be longer than the units it holds: with direct disk I/O,
+//! MAX pads every row to a whole number of 4 KiB so the disk tier can read and
+//! write it in place. The copies move only the units' bytes; the padding goes
+//! to disk and back but never reaches a device.
 
 use std::collections::HashMap;
 
@@ -54,7 +59,108 @@ pub struct Unit {
 
 pub struct LeafMem {
     pub units: Vec<Unit>,
-    pub replicated: bool,
+    /// How many of `units` hold distinct bytes: the first `shards`, of which
+    /// unit `i` mirrors unit `i % shards`. 1 for a leaf replicated across the
+    /// replica (an MLA latent), every unit for a sharded one, and a DCP
+    /// group's size for a leaf that decode context parallelism splits by
+    /// position within each of the replica's `units / shards` groups. A block
+    /// moves to or from the host through the distinct units only, and an
+    /// onload fans each one out to its mirrors.
+    pub shards: usize,
+}
+
+/// One unit's copy of a block: its span of the block's host row, and the
+/// device address of the block in that unit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UnitSpan {
+    host_offset: usize,
+    dev_ptr: usize,
+    len: usize,
+}
+
+impl LeafMem {
+    /// A leaf whose every unit holds the whole block.
+    #[must_use]
+    pub fn replicated(units: Vec<Unit>) -> Self {
+        Self { units, shards: 1 }
+    }
+
+    /// A leaf whose units hold distinct slices of the block.
+    #[must_use]
+    pub fn sharded(units: Vec<Unit>) -> Self {
+        let shards = units.len();
+        Self { units, shards }
+    }
+
+    /// The units that hold distinct bytes; the rest mirror them.
+    fn distinct(&self) -> &[Unit] {
+        &self.units[..self.shards.min(self.units.len())]
+    }
+
+    /// The bytes of one block the devices hold between their distinct units:
+    /// a replicated leaf's one unit holds the whole block, a sharded leaf's
+    /// units hold it between them.
+    #[must_use]
+    pub fn logical_row_bytes(&self) -> usize {
+        self.distinct().iter().map(|unit| unit.bytes).sum()
+    }
+
+    /// Checks the leaf's units fit a host row of `stride` bytes.
+    fn check_row(&self, leaf_idx: usize, stride: usize) -> Result<()> {
+        let config = |msg: String| Err(ConnectorError::Config(msg));
+        if self.units.is_empty() {
+            return config(format!("leaf {leaf_idx} has no device units"));
+        }
+        if self.shards == 0 || !self.units.len().is_multiple_of(self.shards) {
+            return config(format!(
+                "leaf {leaf_idx}'s {} units do not split into mirrors of {} shards",
+                self.units.len(),
+                self.shards
+            ));
+        }
+        if self
+            .units
+            .iter()
+            .enumerate()
+            .any(|(i, unit)| unit.bytes != self.units[i % self.shards].bytes)
+        {
+            return config(format!(
+                "leaf {leaf_idx}'s mirrored units disagree on the block size"
+            ));
+        }
+        let logical = self.logical_row_bytes();
+        if logical == 0 || logical > stride {
+            return config(format!(
+                "leaf {leaf_idx}'s {logical}-byte block does not fit its {stride}-byte host row"
+            ));
+        }
+        Ok(())
+    }
+
+    /// The copies that move block `dev_bid` to or from the host row of block
+    /// `host_bid`, `stride` bytes apart, one per distinct unit. A replicated
+    /// leaf copies through its first unit only, which then fans out to its
+    /// peers; a mirrored one through its first `shards`. Each unit's device
+    /// address steps by its own `bytes`, never by the (possibly padded)
+    /// stride.
+    fn spans(
+        &self,
+        stride: usize,
+        host_bid: usize,
+        dev_bid: usize,
+    ) -> impl Iterator<Item = UnitSpan> + '_ {
+        self.distinct()
+            .iter()
+            .scan(host_bid * stride, move |offset, unit| {
+                let span = UnitSpan {
+                    host_offset: *offset,
+                    dev_ptr: unit.ptr + dev_bid * unit.bytes,
+                    len: unit.bytes,
+                };
+                *offset += unit.bytes;
+                Some(span)
+            })
+    }
 }
 
 #[derive(Clone)]
@@ -152,6 +258,25 @@ impl CopyEngine {
         assert!(!replicas.is_empty(), "must have at least one replica");
         let devices_per_replica = device_ids.len() / num_replicas;
 
+        for leaves in &replicas {
+            if leaves.len() != bytes_per_leaf.len() {
+                return Err(ConnectorError::Config(format!(
+                    "a replica has {} leaves, but bytes_per_leaf names {}",
+                    leaves.len(),
+                    bytes_per_leaf.len()
+                )));
+            }
+            for (leaf_idx, (leaf, &stride)) in leaves.iter().zip(bytes_per_leaf).enumerate() {
+                leaf.check_row(leaf_idx, stride)?;
+                if leaf.units.len() != devices_per_replica {
+                    return Err(ConnectorError::Config(format!(
+                        "leaf {leaf_idx} has {} device units for {devices_per_replica} devices per replica",
+                        leaf.units.len()
+                    )));
+                }
+            }
+        }
+
         let mut devices = Vec::new();
         for i in 0..num_replicas {
             let mut replica_devices = Vec::new();
@@ -226,7 +351,7 @@ impl CopyEngine {
     ) {
         let leaf = &self.replicas[replica_idx][leaf_idx];
         let devices = &self.devices[replica_idx];
-        let bytes = self.bytes_per_leaf[leaf_idx];
+        let stride = self.bytes_per_leaf[leaf_idx];
         assert!(
             devices
                 .first()
@@ -240,59 +365,45 @@ impl CopyEngine {
             .collect::<Vec<_>>();
         gate.wait(&all_streams);
 
-        if leaf.replicated {
-            let unit = leaf.units[0];
-            let device = &devices[0];
+        // Each distinct unit's slice from its own host span.
+        for (span, device) in leaf.spans(stride, host_bid, dst_bid).zip(devices.iter()) {
             let stream = device.onload[lane_idx];
+            let host_ptr = self.host.addr(span.host_offset, span.len);
 
-            assert_eq!(unit.bytes, bytes);
-
-            let host_ptr = self.host.addr(host_bid * bytes, bytes);
-            let dev_ptr = unit.ptr + dst_bid * bytes;
-
-            gpu::memcpy_htod_async(&device.ctx, stream, dev_ptr as _, host_ptr as _, bytes);
-            gpu::sync_stream(stream);
-
-            for (peer_unit, peer_device) in leaf.units.iter().zip_eq(devices.iter()).skip(1) {
-                let peer_stream = peer_device.onload[lane_idx];
-                let peer_dev_ptr = peer_unit.ptr + dst_bid * bytes;
-
-                gpu::memcpy_peer_async(
-                    peer_stream,
-                    peer_dev_ptr as _,
-                    &peer_device.ctx,
-                    dev_ptr as _,
-                    &device.ctx,
-                    bytes,
-                );
+            gpu::memcpy_htod_async(
+                &device.ctx,
+                stream,
+                span.dev_ptr as _,
+                host_ptr as _,
+                span.len,
+            );
+        }
+        let shards = leaf.distinct().len();
+        for device in &devices[..shards] {
+            gpu::sync_stream(device.onload[lane_idx]);
+        }
+        if shards == leaf.units.len() {
+            return;
+        }
+        // Then each mirror from the distinct unit it copies, peer to peer: a
+        // replicated leaf's first unit, or the same rank of the first DCP
+        // group.
+        for (i, (peer_unit, peer_device)) in leaf.units.iter().zip(devices.iter()).enumerate() {
+            if i < shards {
+                continue;
             }
-
-            for peer_device in devices.iter().skip(1) {
-                gpu::sync_stream(peer_device.onload[lane_idx]);
-            }
-        } else {
-            let mut offset = 0;
-            for (unit, device) in leaf.units.iter().zip_eq(devices.iter()) {
-                assert_eq!(unit.bytes * leaf.units.len(), bytes);
-
-                let stream = device.onload[lane_idx];
-                let host_ptr = self.host.addr(host_bid * bytes + offset, unit.bytes);
-                let dev_ptr = unit.ptr + dst_bid * unit.bytes;
-
-                gpu::memcpy_htod_async(
-                    &device.ctx,
-                    stream,
-                    dev_ptr as _,
-                    host_ptr as _,
-                    unit.bytes,
-                );
-
-                offset += unit.bytes;
-            }
-
-            for device in devices.iter() {
-                gpu::sync_stream(device.onload[lane_idx]);
-            }
+            let (src_unit, src_device) = (&leaf.units[i % shards], &devices[i % shards]);
+            gpu::memcpy_peer_async(
+                peer_device.onload[lane_idx],
+                (peer_unit.ptr + dst_bid * peer_unit.bytes) as _,
+                &peer_device.ctx,
+                (src_unit.ptr + dst_bid * src_unit.bytes) as _,
+                &src_device.ctx,
+                peer_unit.bytes,
+            );
+        }
+        for peer_device in &devices[shards..] {
+            gpu::sync_stream(peer_device.onload[lane_idx]);
         }
     }
 
@@ -313,7 +424,7 @@ impl CopyEngine {
     ) {
         let leaf = &self.replicas[replica_idx][leaf_idx];
         let devices = &self.devices[replica_idx];
-        let bytes = self.bytes_per_leaf[leaf_idx];
+        let stride = self.bytes_per_leaf[leaf_idx];
 
         let all_streams = devices
             .iter()
@@ -321,46 +432,37 @@ impl CopyEngine {
             .collect::<Vec<_>>();
         gate.wait(&all_streams);
 
-        if leaf.replicated {
-            assert!(bytes == leaf.units[0].bytes);
+        // `spans` covers the distinct units alone, so a replicated leaf reads
+        // the block from one device and a mirrored one from one DCP group.
+        for (span, device) in leaf.spans(stride, host_bid, src_bid).zip(devices.iter()) {
+            let host_ptr = self.host.addr(span.host_offset, span.len);
 
-            let unit = leaf.units[0];
-            let device = &devices[0];
-
-            let stream = device.offload;
-            let host_ptr = self.host.addr(host_bid * bytes, bytes);
-            let dev_ptr = unit.ptr + src_bid * bytes;
-
-            gpu::memcpy_dtoh_async(&device.ctx, stream, host_ptr as _, dev_ptr as _, bytes);
-        } else {
-            let mut offset = 0;
-            for (unit, device) in leaf.units.iter().zip_eq(devices.iter()) {
-                assert!(bytes == unit.bytes * leaf.units.len());
-
-                let stream = device.offload;
-                let host_ptr = self.host.addr(host_bid * bytes + offset, unit.bytes);
-                let dev_ptr = unit.ptr + src_bid * unit.bytes;
-
-                gpu::memcpy_dtoh_async(
-                    &device.ctx,
-                    stream,
-                    host_ptr as _,
-                    dev_ptr as _,
-                    unit.bytes,
-                );
-
-                offset += unit.bytes;
-            }
-        };
+            gpu::memcpy_dtoh_async(
+                &device.ctx,
+                device.offload,
+                host_ptr as _,
+                span.dev_ptr as _,
+                span.len,
+            );
+        }
 
         for device in devices.iter() {
             gpu::sync_stream(device.offload);
         }
     }
 
+    /// The host address of `host_bid`'s whole row, padding included: the span
+    /// the disk tier reads and writes.
     pub fn host_ptr(&self, leaf_idx: usize, host_bid: usize) -> usize {
         let bytes = self.bytes_per_leaf[leaf_idx];
         self.host.addr(host_bid * bytes, bytes)
+    }
+
+    /// The bytes of one `leaf_idx` block an H2D or D2H moves, without the host
+    /// row's padding.
+    #[must_use]
+    pub fn logical_row_bytes(&self, leaf_idx: usize) -> usize {
+        self.replicas[0][leaf_idx].logical_row_bytes()
     }
 }
 
@@ -390,5 +492,137 @@ impl Drop for CopyEngine {
         // We neither registered nor own the host buffer: MAX's DeviceContext
         // fast pinned allocator page-locked it and unregisters + frees it, so
         // there is nothing to unregister here.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LeafMem, Unit, UnitSpan};
+
+    fn unit(ptr: usize, bytes: usize) -> Unit {
+        Unit {
+            device_id: 0,
+            ptr,
+            bytes,
+        }
+    }
+
+    #[test]
+    fn a_padded_replicated_row_keeps_the_device_stride() {
+        // DSv4.1's idx_c2a: 13056 bytes padded to a 16384-byte host row. The
+        // device block must step by 13056, or the H2D lands in the next block.
+        let leaf = LeafMem {
+            units: vec![unit(0x1000_0000, 13056), unit(0x2000_0000, 13056)],
+            shards: 1,
+        };
+        assert_eq!(leaf.logical_row_bytes(), 13056);
+        let spans: Vec<UnitSpan> = leaf.spans(16384, 3, 5).collect();
+        assert_eq!(
+            spans,
+            vec![UnitSpan {
+                host_offset: 3 * 16384,
+                dev_ptr: 0x1000_0000 + 5 * 13056,
+                len: 13056,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_padded_sharded_row_packs_its_units_and_pads_the_tail() {
+        let leaf = LeafMem {
+            units: vec![unit(0x1000_0000, 4352), unit(0x2000_0000, 4352)],
+            shards: 2,
+        };
+        assert_eq!(leaf.logical_row_bytes(), 8704);
+        let spans: Vec<UnitSpan> = leaf.spans(12288, 2, 7).collect();
+        assert_eq!(
+            spans,
+            vec![
+                UnitSpan {
+                    host_offset: 2 * 12288,
+                    dev_ptr: 0x1000_0000 + 7 * 4352,
+                    len: 4352,
+                },
+                UnitSpan {
+                    host_offset: 2 * 12288 + 4352,
+                    dev_ptr: 0x2000_0000 + 7 * 4352,
+                    len: 4352,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unpadded_row_is_unchanged() {
+        let leaf = LeafMem {
+            units: vec![unit(0x1000_0000, 8192)],
+            shards: 1,
+        };
+        let spans: Vec<UnitSpan> = leaf.spans(8192, 4, 4).collect();
+        assert_eq!(
+            spans,
+            vec![UnitSpan {
+                host_offset: 4 * 8192,
+                dev_ptr: 0x1000_0000 + 4 * 8192,
+                len: 8192,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_row_its_units_overflow_is_refused() {
+        let sharded = LeafMem::sharded(vec![unit(0, 4096), unit(0, 4096)]);
+        sharded.check_row(0, 8192).expect("an exact fit is fine");
+        sharded.check_row(0, 12288).expect("padding is fine");
+        let err = sharded.check_row(1, 4096).unwrap_err().to_string();
+        assert!(err.contains("leaf 1"), "{err}");
+
+        let mismatched = LeafMem::replicated(vec![unit(0, 4096), unit(0, 2048)]);
+        assert!(mismatched.check_row(0, 4096).is_err());
+
+        let empty = LeafMem::sharded(Vec::new());
+        assert!(empty.check_row(0, 4096).is_err());
+
+        // Three units cannot mirror two shards.
+        let ragged = LeafMem {
+            units: vec![unit(0, 4096); 3],
+            shards: 2,
+        };
+        assert!(ragged.check_row(0, 8192).is_err());
+    }
+
+    #[test]
+    fn a_mirrored_row_moves_through_its_first_group_only() {
+        // TP4 x DCP2: two groups of two ranks, each group a copy of the
+        // block. The host row holds one group's two slices; the second
+        // group's units mirror the first's.
+        let leaf = LeafMem {
+            units: vec![
+                unit(0x1000_0000, 4096),
+                unit(0x2000_0000, 4096),
+                unit(0x3000_0000, 4096),
+                unit(0x4000_0000, 4096),
+            ],
+            shards: 2,
+        };
+        leaf.check_row(0, 8192).expect("one group fills the row");
+        assert!(leaf.check_row(0, 4096).is_err());
+        assert_eq!(leaf.logical_row_bytes(), 8192);
+        let spans: Vec<UnitSpan> = leaf.spans(8192, 1, 3).collect();
+        assert_eq!(
+            spans,
+            vec![
+                UnitSpan {
+                    host_offset: 8192,
+                    dev_ptr: 0x1000_0000 + 3 * 4096,
+                    len: 4096,
+                },
+                UnitSpan {
+                    host_offset: 8192 + 4096,
+                    dev_ptr: 0x2000_0000 + 3 * 4096,
+                    len: 4096,
+                },
+            ]
+        );
     }
 }

@@ -97,10 +97,13 @@ optimization and does not affect accuracy. Try one of:
 
 For any recipe with a `kv_connector` (`tiered` or `rust_tiered`), the harness
 sets `MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE=1` (`smoke_test.py`). This
-disables the device prefix cache so every prefix-cache hit is served through the
-connector — intentional, so the test exercises the CPU/disk offload path it is
-meant to cover. Per-step connector metrics (`D2H`/`H2D` blocks, disk
-reads/writes, hit rate) are printed in the server log.
+disables the device prefix cache so every prefix-cache hit is served through
+the connector — intentional, so the test exercises the CPU/disk offload path it
+is meant to cover. Per-step connector metrics (`D2H`/`H2D` blocks, disk
+reads/writes, hit rate) are printed in the server log. `mach-ci` serves the
+`__rust_tiered_kvconnector` variants from their entries in
+`internal/mach_variants.py`, which turn on the engine's in-process host/disk
+tier and set the same variable.
 
 ### Local accuracy severity can be milder than CI
 

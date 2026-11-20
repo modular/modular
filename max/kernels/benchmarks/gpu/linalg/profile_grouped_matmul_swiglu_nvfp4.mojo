@@ -279,25 +279,10 @@ def main() raises:
     var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
     var eid_str = "[" + ", ".join(expert_ids_input) + "]"
     print(
-        "Config: variant=",
-        variant,
-        " match_bf16=",
-        match_bf16 if fused else False,
-        " M=",
-        M,
-        " (nae=",
-        num_active_experts,
-        ", ragged=",
-        ragged_tokens,
-        ") N=",
-        N,
-        " K=",
-        K,
-        " num_experts=",
-        num_experts,
-        " bytes_per_iter=",
-        bytes_per_iter,
-        sep="",
+        t"Config:"
+        t" variant={variant} match_bf16={match_bf16 if fused else False} M={M} (nae={num_active_experts},"
+        t" ragged={ragged_tokens})"
+        t" N={N} K={K} num_experts={num_experts} bytes_per_iter={bytes_per_iter}"
     )
     print("  num_tokens_by_expert: ", tok_str, sep="")
     print("  expert_ids: ", eid_str, sep="")
@@ -337,23 +322,23 @@ def main() raises:
 
         # Per-expert offsets / IDs (small, host-built once).
         var a_offsets_host_alloc = alloc[UInt32](
-            {count = num_active_experts + 1}
+            {length = num_active_experts + 1}
         ).into_managed()
         var a_offsets_host = a_offsets_host_alloc.unsafe_ptr()
         var a_scale_offsets_host_alloc = alloc[UInt32](
-            {count = num_active_experts}
+            {length = num_active_experts}
         ).into_managed()
         var a_scale_offsets_host = a_scale_offsets_host_alloc.unsafe_ptr()
         var expert_ids_host_alloc = alloc[Int32](
-            {count = num_active_experts}
+            {length = num_active_experts}
         ).into_managed()
         var expert_ids_host = expert_ids_host_alloc.unsafe_ptr()
         var expert_scales_host_alloc = alloc[Float32](
-            {count = num_experts}
+            {length = num_experts}
         ).into_managed()
         var expert_scales_host = expert_scales_host_alloc.unsafe_ptr()
         var input_scales_host_alloc = alloc[Float32](
-            {count = num_active_experts}
+            {length = num_active_experts}
         ).into_managed()
         var input_scales_host = input_scales_host_alloc.unsafe_ptr()
 
@@ -487,7 +472,7 @@ def main() raises:
 
         @inline(.always)
         def kernel_launch(
-            ctx: DeviceContext, iteration: Int
+            ctx: DeviceContext[], iteration: Int
         ) raises {
             mut cb_a,
             mut cb_b,
@@ -707,6 +692,12 @@ def main() raises:
                     input_scales_immut.LayoutType,
                     hw_info.max_thread_block_size,
                     hw_info.sm_count,
+                    OutputEngine=o_tt.Engine,
+                    ScalesEngine=s_tt.Engine,
+                    InputEngine=c_immut.Engine,
+                    RowOffsetsEngine=a_offsets_immut.Engine,
+                    ScalesOffsetsEngine=a_scale_offsets_immut.Engine,
+                    InputScalesEngine=input_scales_immut.Engine,
                 ]
                 if not matmul_only:
                     if disable_pdl:
@@ -787,7 +778,7 @@ def main() raises:
         # Slot 0 (= L0_D) is the kernel-never-ran sentinel.
         if trace and fused:
             var trace_host_alloc = alloc[UInt64](
-                {count = trace_buf_size}
+                {length = trace_buf_size}
             ).into_managed()
             var trace_host = trace_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(trace_host, trace_buf_dev)

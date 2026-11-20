@@ -1,0 +1,1258 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Tests for exporting a pipeline's graphs to a pipeline artifact."""
+
+from __future__ import annotations
+
+import itertools
+import json
+from collections import OrderedDict
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
+from unittest.mock import Mock
+
+import huggingface_hub
+import pytest
+from max import tree
+from max._artifact import ArtifactError, HuggingFaceRef
+from max._artifact import export as export_module
+from max._artifact.batch_processor import BatchProcessorDims
+from max._artifact.engine_config import (
+    EngineCaptureConfig,
+    EngineConfig,
+    EnginePrefillContextParallel,
+    EngineSamplingConfig,
+    EngineSpeculativeConfig,
+    SpecGraphFacts,
+)
+from max._artifact.export import (
+    SupportsCompiledModules,
+    _check_batch_context_window,
+    _prefill_context_parallel,
+    _takes_mrope_positions,
+    _verify_facts,
+    _warn_unhonored_context_parallel,
+    architecture_capture,
+    batch_processor_dims,
+    checkpoint_format_spec,
+    checkpoint_tokenizer,
+    model_artifact,
+    pipeline_engine_config,
+    pipeline_kv_cache,
+    pipeline_modules,
+    pipeline_sampling_defaults,
+    ships_overlap_helpers,
+    vision_preprocess_modules,
+)
+from max._artifact.kv_cache import (
+    ContextParallel,
+    KVCacheLayout,
+    KVCacheQuantization,
+    KVPoolLeaf,
+    MHAKVCache,
+    MLAKVCache,
+    MSAIndexKVCache,
+    RecurrentStateCache,
+    StateRegion,
+)
+from max._artifact.model_artifact import ModelArtifact
+from max._artifact.pipeline_modules import PipelineModules
+from max._artifact.sampling_defaults import SamplingDefaults
+from max._artifact.serialization import deserialize, serialize
+from max._artifact.tokenizer import Tokenizer
+from max._artifact.vision import (
+    AspectRatioPreserving,
+    ModalityLayout,
+    PromptText,
+    Span,
+    VisionMetadata,
+)
+from max.driver import CPU, Device, DeviceSpec
+from max.dtype import DType
+from max.engine import InferenceSession, Model
+from max.graph import BufferType, DeviceRef, TensorType, TensorValue
+from max.nn.kv_cache import (
+    KVCacheContextParallel,
+    KVCacheQuantizationConfig,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    MSAIndexKVCacheParams,
+    MSAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import Logits, MRoPEPositions, RaggedBatch
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnLogits
+from max.pipelines import lib as pipelines_lib
+from max.pipelines.architectures.gemma4.arch import gemma4_arch
+from max.pipelines.architectures.llama3.arch import llama_arch
+from max.pipelines.context import SamplingParamsGenerationConfigDefaults
+from max.pipelines.lib import (
+    GraphRole,
+    GraphSpec,
+    KVCacheConfig,
+    MAXModelConfig,
+    MemoryPlan,
+    ModelInputs,
+    ModelOutputs,
+    PipelineConfig,
+    PipelineModelWithKVCache,
+    PipelineRuntimeConfig,
+    SupportedArchitecture,
+    compile_and_init_graphs,
+)
+from max.pipelines.lib.graph_specs import compile_roles_separately
+from max.pipelines.lib.interfaces import BatchProcessorRuntime
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecDecodePipelineModel,
+)
+from max.pipelines.lib.pipeline_variants.text_generation import (
+    TextGenerationPipelineInterface,
+)
+from max.pipelines.sampling import SamplingConfig
+from max.pipelines.speculative import SpeculativeConfig
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding.types import as_layout
+
+X = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
+
+
+class _Scale(Module):
+    def __init__(self, factor: int) -> None:
+        super().__init__()
+        self.factor = factor
+
+    def __call__(self, x: TensorValue) -> DecoderOutputs:
+        return DecoderOutputs(logits=Logits(next_token_logits=x * self.factor))
+
+
+_factors = itertools.count(2)
+
+
+def _specs(groups: Mapping[GraphRole, str | None]) -> dict[str, GraphSpec]:
+    # Distinct factors keep the compile cache from handing one graph's
+    # artifact to an identical graph of another name.
+    return {
+        role: GraphSpec(
+            _Scale(next(_factors)),
+            f"{role.value}_graph",
+            [X],
+            weights={},
+            group=group,
+        )
+        for role, group in groups.items()
+    }
+
+
+def _compile(
+    specs: Mapping[str, GraphSpec],
+) -> dict[str, CompiledCallable[..., Any]]:
+    return compile_and_init_graphs(InferenceSession(devices=[CPU()]), specs)
+
+
+@dataclass
+class _Pipeline:
+    compiled_modules: Mapping[str, CompiledCallable[..., Any]]
+
+
+def test_each_role_becomes_one_mef(tmp_path: Path) -> None:
+    pipeline = _Pipeline(
+        _compile(_specs({GraphRole.DECODER: None, GraphRole.SAMPLER: None}))
+    )
+    graphs = pipeline_modules(pipeline, "Fake")
+    assert set(graphs.roles) == {"decoder", "sampler"}
+
+    dest = serialize(ModelArtifact(model=graphs), tmp_path / "a")
+    section = json.loads((dest / "artifact.json").read_text())["model"]
+    assert set(section) == {"decoder", "sampler"}
+    decoder = section["decoder"]
+    assert decoder["mef"] == {"$file": "decoder/model.mef"}
+    assert decoder["in_layouts"] == [
+        {
+            "buffer": False,
+            "dtype": "float32",
+            "shape": ["batch", 4],
+            "mesh": {
+                "devices": [{"type": "cpu", "id": 0}],
+                "shape": [1],
+                "axis_names": ["_"],
+            },
+            "placements": [{"type": "replicated"}],
+        }
+    ]
+    assert sorted(str(p.relative_to(dest)) for p in dest.glob("*/*.mef")) == [
+        "decoder/model.mef",
+        "sampler/model.mef",
+    ]
+
+    loaded = deserialize(dest).model
+    assert loaded is not None
+    for role, compiled in graphs.roles.items():
+        assert loaded.roles[role].in_layouts == compiled.in_layouts
+        assert loaded.roles[role].in_tree == compiled.in_tree
+        assert loaded.roles[role].out_layouts == compiled.out_layouts
+        assert loaded.roles[role].out_tree == compiled.out_tree
+    with pytest.raises(RuntimeError, match="not initialized"):
+        _ = loaded.roles["decoder"].engine_model
+
+
+def test_export_compiles_a_group_as_one_mef_per_role(tmp_path: Path) -> None:
+    specs = _specs({GraphRole.DECODER: "model", GraphRole.VISION: "model"})
+    with compile_roles_separately():
+        graphs = _compile(specs)
+    assert graphs[GraphRole.DECODER]._artifact is not (
+        graphs[GraphRole.VISION]._artifact
+    )
+    dest = serialize(
+        ModelArtifact(model=pipeline_modules(_Pipeline(graphs), "Fake")),
+        tmp_path / "a",
+    )
+    assert sorted(str(p.relative_to(dest)) for p in dest.glob("*/*.mef")) == [
+        "decoder/model.mef",
+        "vision/model.mef",
+    ]
+
+
+class _LoadsItsOwnGraphs(PipelineModelWithKVCache[Any, Any, Any]):
+    """A model that compiles its graphs itself, as several ModuleV3 and
+    unified spec-decode models do, and so registers none by role."""
+
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        graph = _Scale(next(_factors)).trace(X, name="own")
+        return {GraphRole.DECODER: session.load(graph)}
+
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        raise NotImplementedError
+
+
+def test_only_an_accelerator_export_ships_the_overlap_helpers() -> None:
+    accelerator = Mock(spec=Device)
+    accelerator.is_host = False
+    assert not ships_overlap_helpers([CPU()])
+    assert ships_overlap_helpers([accelerator])
+    assert ships_overlap_helpers([CPU(), accelerator])
+
+
+def test_only_a_graph_with_mrope_positions_takes_the_positions_feed() -> None:
+    # The serving engine stages M-RoPE positions by this group's kind, so the
+    # export ships the positions feed exactly when the signature holds it.
+    tokens = TensorType(DType.int64, ["total_seq_len"], device=DeviceRef.CPU())
+    positions = TensorType(
+        DType.int64, [3, "total_seq_len"], device=DeviceRef.CPU()
+    )
+
+    def graph(inputs: object) -> CompiledCallable[..., Any]:
+        signature: tuple[list[Any], tree.TreeDef] = (
+            [],
+            tree.flatten(inputs)[1],
+        )
+        return cast(
+            CompiledCallable[..., Any], _fake(graph_signature=lambda: signature)
+        )
+
+    plain = OrderedDict(batch=RaggedBatch(tokens=tokens))
+    assert not _takes_mrope_positions(graph(plain))
+    nested = OrderedDict(
+        batch=RaggedBatch(tokens=tokens),
+        rope=OrderedDict(positions=MRoPEPositions(position_ids=positions)),
+    )
+    assert _takes_mrope_positions(graph(nested))
+
+
+def test_a_model_that_loads_its_own_graphs_is_refused() -> None:
+    model = _LoadsItsOwnGraphs.__new__(_LoadsItsOwnGraphs)
+    model.load_graphs(InferenceSession(devices=[CPU()]))
+    pipeline = _Pipeline(
+        {
+            **model.compiled_graphs,
+            **_compile(_specs({GraphRole.SAMPLER: None})),
+        }
+    )
+    with pytest.raises(
+        ArtifactError, match="OwnGraphs registers no decoder graph by role"
+    ):
+        pipeline_modules(pipeline, "OwnGraphs")
+
+
+def test_a_pipeline_without_compiled_modules_is_not_exportable() -> None:
+    assert isinstance(_Pipeline({}), SupportsCompiledModules)
+    assert not isinstance(object(), SupportsCompiledModules)
+
+
+_VISION = VisionMetadata.from_layouts(
+    image=ModalityLayout(
+        patch_size=16,
+        merge_size=3,
+        strategy=AspectRatioPreserving(max_patches=2520),
+        span=Span(image_token_id=1, begin_marker=2, end_marker=3),
+    ),
+    video=None,
+    max_image_bytes=0,
+    max_video_bytes=0,
+    prompt=PromptText(),
+)
+
+
+def test_export_adds_the_vision_preprocess_roles(tmp_path: Path) -> None:
+    """A pipeline with a vision graph exports the graphs its model returns
+    for preprocessing images and video beside the roles it serves, and its
+    vision metadata."""
+    image, video = _specs(
+        {
+            GraphRole.VISION_PREPROCESS: None,
+            GraphRole.VISION_PREPROCESS_VIDEO: None,
+        }
+    ).values()
+    model = _fake(
+        vision_preprocess_spec=lambda: image,
+        vision_preprocess_video_spec=lambda: video,
+        vision_metadata=lambda: _VISION,
+    )
+    graphs = pipeline_modules(
+        _Pipeline(
+            _compile(_specs({GraphRole.DECODER: None, GraphRole.VISION: None}))
+        ),
+        "Fake",
+    )
+
+    dest = serialize(model_artifact(graphs, model, None), tmp_path / "a")
+    written = json.loads((dest / "artifact.json").read_text())
+    assert set(written["model"]) == {
+        "decoder",
+        "vision",
+        "vision_preprocess",
+        "vision_preprocess_video",
+    }
+    for role in ("vision_preprocess", "vision_preprocess_video"):
+        assert written["model"][role]["mef"] == {"$file": f"{role}/model.mef"}
+    assert deserialize(dest).vision == _VISION
+
+    text_only = pipeline_modules(
+        _Pipeline(_compile(_specs({GraphRole.DECODER: None}))), "Fake"
+    )
+    artifact = model_artifact(text_only, model, None)
+    assert artifact.model is not None
+    assert set(artifact.model.roles) == {"decoder"}
+    assert artifact.vision is None
+    assert model_artifact(graphs, None, None).vision is None
+
+    assert set(
+        vision_preprocess_modules(
+            _fake(
+                vision_preprocess_spec=lambda: image,
+                vision_preprocess_video_spec=lambda: None,
+            )
+        )
+    ) == {"vision_preprocess"}
+    assert (
+        vision_preprocess_modules(
+            _fake(
+                vision_preprocess_spec=lambda: None,
+                vision_preprocess_video_spec=lambda: None,
+            )
+        )
+        == {}
+    )
+
+
+def test_a_vision_graph_needs_its_metadata_and_preprocessing_together(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A serving engine needs both the media layout and the image
+    preprocessing graph to serve a vision graph, so a model that declares
+    only one of them is refused. A model that declares neither exports its
+    vision graph alone."""
+    graphs = PipelineModules({"decoder": _fake(), "vision": _fake()})
+    no_preprocessing = _fake(
+        vision_preprocess_spec=lambda: None,
+        vision_preprocess_video_spec=lambda: None,
+        vision_metadata=lambda: _VISION,
+    )
+    with pytest.raises(ArtifactError, match="no vision_preprocess graph"):
+        model_artifact(graphs, no_preprocessing, None)
+
+    no_metadata = _fake(vision_metadata=lambda: None)
+    monkeypatch.setattr(
+        export_module,
+        "vision_preprocess_modules",
+        lambda model: {"vision_preprocess": _fake()},
+    )
+    with pytest.raises(ArtifactError, match="no vision metadata"):
+        model_artifact(graphs, no_metadata, None)
+
+    monkeypatch.setattr(
+        export_module, "vision_preprocess_modules", lambda model: {}
+    )
+    artifact = model_artifact(graphs, no_metadata, None)
+    assert artifact.vision is None
+    assert artifact.model is not None
+    assert set(artifact.model.roles) == {"decoder", "vision"}
+
+
+def test_spec_decoder_pipeline_is_exported() -> None:
+    pipeline = _Pipeline(_compile(_specs({GraphRole.SPEC_DECODER: None})))
+    assert set(pipeline_modules(pipeline, "Fake").roles) == {"spec_decoder"}
+
+
+def test_no_roles_are_refused() -> None:
+    with pytest.raises(ArtifactError, match="no graphs"):
+        PipelineModules({})
+
+
+def _fake(**attrs: object) -> Any:
+    """Stands in for an object that exposes only ``attrs``."""
+    return SimpleNamespace(**attrs)
+
+
+@pytest.mark.parametrize(
+    ("published", "server", "expected"),
+    [
+        # Nemotron: sampled, with MAX's default top-k (none).
+        (
+            {"do_sample": True, "temperature": 1.0, "top_p": 0.95},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=0.95, repetition_penalty=1.0
+            ),
+        ),
+        # Gemma 4: no do_sample, each value applies.
+        (
+            {"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=64, top_p=0.95, repetition_penalty=1.0
+            ),
+        ),
+        # do_sample false is greedy whatever else the file sets.
+        (
+            {"do_sample": False, "temperature": 0.6},
+            {},
+            SamplingDefaults(
+                temperature=0.0, top_k=1, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+        # A published repetition penalty carries through.
+        (
+            {"repetition_penalty": 1.05},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=1.0, repetition_penalty=1.05
+            ),
+        ),
+        # Nothing published: MAX's own defaults.
+        (
+            {},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+        # The server's --temperature and --top-k override the checkpoint.
+        (
+            {"temperature": 1.0, "top_k": 64},
+            {"temperature": 0.3, "top_k": 8},
+            SamplingDefaults(
+                temperature=0.3, top_k=8, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+    ],
+)
+def test_pipeline_sampling_defaults_resolve_as_max_serve_does(
+    published: dict[str, Any],
+    server: dict[str, Any],
+    expected: SamplingDefaults,
+) -> None:
+    config = _fake(
+        runtime=_fake(
+            temperature=server.get("temperature"), top_k=server.get("top_k")
+        ),
+        model=_fake(
+            sampling_params_defaults=SamplingParamsGenerationConfigDefaults(
+                **published
+            )
+        ),
+    )
+    assert pipeline_sampling_defaults(config) == expected
+
+
+def test_checkpoint_format_spec_is_the_architectures_document() -> None:
+    repo = _fake(repo_id="org/model")
+    assert checkpoint_format_spec(None, repo) is None
+    assert checkpoint_format_spec(_fake(format_spec=None), repo) is None
+    document = Path("spec.json")
+    assert checkpoint_format_spec(_fake(format_spec=document), repo) == document
+
+
+def test_checkpoint_format_spec_is_picked_per_checkpoint() -> None:
+    document = Path("spec.json")
+    arch = _fake(
+        format_spec=lambda repo: document if repo.repo_id == "org/new" else None
+    )
+    assert checkpoint_format_spec(arch, _fake(repo_id="org/new")) == document
+    assert checkpoint_format_spec(arch, _fake(repo_id="org/old")) is None
+
+
+def test_checkpoint_tokenizer_is_the_checkpoints_own(tmp_path: Path) -> None:
+    (tmp_path / "tokenizer.json").write_text("{}")
+    (tmp_path / "tokenizer_config.json").write_text("{}")
+    (tmp_path / "chat_template.jinja").write_text("{{ checkpoint }}")
+    repo = _fake(repo_type="local", local_path=str(tmp_path), revision="main")
+    named = {"default": "{{ messages }}", "tool_use": "{{ tools }}"}
+    tokenizer = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0, "b": 9}, chat_template=named),
+        eos_token_ids={9, 3},
+    )
+    config = _fake(model=_fake(huggingface_config=_fake(vocab_size=16)))
+    arch = _fake(tokenizer_family=lambda repo: ("gemma4", "thinking"))
+
+    assert checkpoint_tokenizer(arch, repo, tokenizer, config) == Tokenizer(
+        family="gemma4",
+        flavor="thinking",
+        files={
+            name: HuggingFaceRef(str(tmp_path), "main", name)
+            for name in ("tokenizer.json", "tokenizer_config.json")
+        },
+        chat_templates=named,
+        vocab_size=16,
+        sampleable_vocab_size=10,
+        eos_token_ids=(3, 9),
+    )
+
+    served = _fake(
+        delegate=_fake(
+            get_vocab=lambda: {"a": 0}, chat_template="{{ served }}"
+        ),
+        eos_token_ids={0},
+    )
+    unnamed = checkpoint_tokenizer(None, repo, served, config)
+    assert unnamed is not None
+    assert (unnamed.family, unnamed.flavor) == (None, None)
+    assert unnamed.chat_templates == {"default": "{{ served }}"}
+    untemplated = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0}, chat_template=None),
+        eos_token_ids={0},
+    )
+    result = checkpoint_tokenizer(None, repo, untemplated, config)
+    assert result is not None and result.chat_templates == {}
+    assert checkpoint_tokenizer(arch, repo, _fake(), config) is None
+
+
+def test_checkpoint_tokenizer_files_are_referenced_at_the_cached_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cached = "a" * 40
+    downloaded = "b" * 40
+    fetched: list[str] = []
+
+    def from_cache(repo_id: str, name: str, revision: str) -> str | None:
+        assert (repo_id, revision) == ("org/model", "main")
+        if name != "tokenizer.json":
+            return None
+        return str(tmp_path / "snapshots" / cached / name)
+
+    def download(repo_id: str, name: str, revision: str) -> str:
+        fetched.append(name)
+        if name == "tiktoken.model":
+            raise huggingface_hub.errors.EntryNotFoundError(name)
+        return str(tmp_path / "snapshots" / downloaded / name)
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", from_cache)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    repo = _fake(repo_type="online", repo_id="org/model", revision="main")
+    tokenizer = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0}, chat_template=None),
+        eos_token_ids={0},
+    )
+    config = _fake(model=_fake(huggingface_config=_fake(vocab_size=1)))
+
+    result = checkpoint_tokenizer(None, repo, tokenizer, config)
+
+    assert result is not None
+    assert result.files == {
+        "tokenizer.json": HuggingFaceRef("org/model", cached, "tokenizer.json"),
+        "tokenizer_config.json": HuggingFaceRef(
+            "org/model", downloaded, "tokenizer_config.json"
+        ),
+    }
+    assert fetched == ["tokenizer_config.json", "tiktoken.model"]
+
+
+@pytest.mark.parametrize(
+    ("arch", "repo_id", "family"),
+    [
+        (gemma4_arch, "google/gemma-4-31B-it", ("gemma4", "thinking")),
+        (gemma4_arch, "google/gemma-4-E4B-it", ("gemma4", "nonthinking")),
+        (
+            llama_arch,
+            "meta-llama/Llama-3.1-8B-Instruct",
+            ("llama3", "standard"),
+        ),
+        (llama_arch, "meta-llama/Llama-3.2-1B-Instruct", ("llama3", "lite")),
+        (llama_arch, "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", None),
+        (
+            llama_arch,
+            "myorg/Llama-3.1-8B-Instruct-v3.2",
+            ("llama3", "standard"),
+        ),
+        (llama_arch, "mlabonne/Meta-Llama-3-120B-Instruct", None),
+        (
+            gemma4_arch,
+            "/hub/models--google--gemma-4-31B-it/snapshots/0e2b4e4b",
+            ("gemma4", "thinking"),
+        ),
+        (
+            gemma4_arch,
+            "/hub/models--google--gemma-4-E2B-it/snapshots/0e2b4e4b",
+            ("gemma4", "nonthinking"),
+        ),
+    ],
+)
+def test_architecture_names_the_checkpoints_tokenizer_family(
+    arch: SupportedArchitecture,
+    repo_id: str,
+    family: tuple[str, str | None] | None,
+) -> None:
+    assert callable(arch.tokenizer_family)
+    assert arch.tokenizer_family(_fake(repo_id=repo_id)) == family
+
+
+@pytest.mark.parametrize(
+    "architecture",
+    [
+        "beam_modulev3",
+        "deepseekV41",
+        "gemma4",
+        "glm5_1",
+        "inkling",
+        "laguna",
+        "lfm3",
+        "mimo_v2_modulev3",
+        "muse_glimmer",
+        "nemotron_h_modulev3",
+        "qwen3_5",
+    ],
+)
+def test_shipped_format_specs_are_packaged(architecture: str) -> None:
+    architectures = Path(pipelines_lib.__file__).parent.parent / "architectures"
+    assert (architectures / architecture / "formatspec.json").is_file()
+
+
+def test_batch_processor_dims_bound_a_bound_decoders_per_step_dims() -> None:
+    runtime = BatchProcessorRuntime(
+        pipeline_config=_fake(),
+        devices=[],
+        return_logits=ReturnLogits.LAST_TOKEN,
+        max_batch_size=4,
+        max_seq_len=256,
+        max_batch_input_tokens=64,
+    )
+    processor = DecoderBatchProcessor(_fake(), runtime)
+    processor.bind_input_tree(OrderedDict())
+    model = _fake(
+        batch_processor=processor,
+        kv_params=_fake(page_size=128, num_draft_tokens=0),
+    )
+    tokens = TensorType(DType.int64, ["total_seq_len"], device=DeviceRef.CPU())
+    # Pages are sized by the KV cache, so their dim gets no bound here.
+    pages = BufferType(
+        DType.bfloat16, ["total_num_pages", 2], device=DeviceRef.CPU()
+    )
+    decoder = _fake(in_layouts=[as_layout(tokens), as_layout(pages)])
+
+    assert batch_processor_dims(model, decoder) == BatchProcessorDims(
+        {"total_seq_len": runtime.max_batch_active_tokens}
+    )
+
+    processor.input_tree = None
+    assert batch_processor_dims(model, decoder) is None
+    model.batch_processor = None
+    assert batch_processor_dims(model, decoder) is None
+
+
+_DEVICES = (DeviceSpec.accelerator(0), DeviceSpec.accelerator(1))
+_PLAN = MemoryPlan(
+    planned_max_batch_size=8,
+    footprint=0,
+    planned_max_length=4096,
+    device_specs=_DEVICES,
+    planned_max_batch_total_tokens=4096,
+)
+
+
+def _pipeline_config(
+    *,
+    sampling: SamplingConfig,
+    speculative: SpeculativeConfig | None = None,
+    reasoning_parser: str | None = None,
+) -> PipelineConfig:
+    model = MAXModelConfig.model_construct(
+        model_path="org/model",
+        device_specs=list(_DEVICES),
+        data_parallel_degree=2,
+        kv_cache=KVCacheConfig(),
+    )
+    return PipelineConfig.model_construct(
+        runtime=PipelineRuntimeConfig.model_construct(
+            # The configuration's, which the plan's values replace.
+            max_batch_size=None,
+            max_batch_input_tokens=2048,
+            ep_size=2,
+            reasoning_parser=reasoning_parser,
+        ),
+        models=ModelManifest({"main": model}),
+        sampling=sampling,
+        speculative=speculative,
+    )
+
+
+def test_export_refuses_a_window_that_holds_no_max_length_request() -> None:
+    """The window's page-aligned floor must hold one request at max length."""
+    plan = replace(_PLAN, planned_max_length=4100)
+    for short in (0, 4096, 4100):
+        with pytest.raises(ArtifactError, match="at least 4224"):
+            _check_batch_context_window(
+                replace(plan, planned_max_batch_total_tokens=short), 128
+            )
+    for fits in (None, 4224):
+        _check_batch_context_window(
+            replace(plan, planned_max_batch_total_tokens=fits), 128
+        )
+
+
+def test_engine_config_copies_the_planned_settings() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(
+            enable_structured_output=True, enable_penalties=True
+        )
+    )
+    assert pipeline_engine_config(config, _PLAN) == EngineConfig(
+        max_batch_size=8,
+        max_length=4096,
+        max_batch_input_tokens=2048,
+        max_batch_total_tokens=4096,
+        devices=_DEVICES,
+        data_parallel_degree=2,
+        ep_size=2,
+        sampling=EngineSamplingConfig(
+            needs_bitmask_constraints=True,
+            enable_variable_logits=False,
+            enable_penalties=True,
+        ),
+        speculative=None,
+    )
+
+
+def test_engine_config_records_device_graph_capture() -> None:
+    config = _pipeline_config(sampling=SamplingConfig.model_construct())
+    assert not pipeline_engine_config(config, _PLAN).device_graph_capture
+    assert pipeline_engine_config(
+        config, _PLAN, device_graph_capture=True
+    ).device_graph_capture
+
+
+def test_engine_config_records_the_architectures_capture() -> None:
+    config = _pipeline_config(sampling=SamplingConfig.model_construct())
+    arch = _fake(mla_decode_capture=True, capture_cache_bound="bucketed")
+    assert pipeline_engine_config(
+        config, _PLAN, capture=architecture_capture(arch)
+    ).capture == EngineCaptureConfig(mla_decode=True, cache_bound="bucketed")
+    assert (
+        pipeline_engine_config(
+            config, _PLAN, capture=architecture_capture(None)
+        ).capture
+        == EngineCaptureConfig()
+    )
+
+
+@pytest.mark.parametrize("greedy", [False, True])
+def test_engine_config_copies_the_speculative_settings(greedy: bool) -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp",
+            num_speculative_tokens=3,
+            use_greedy_acceptance=greedy,
+        ),
+        reasoning_parser="gemma4",
+    )
+    assert pipeline_engine_config(config, _PLAN).speculative == (
+        EngineSpeculativeConfig(
+            speculative_method="mtp",
+            num_speculative_tokens=3,
+            draft_proposal="argmax",
+            acceptance_mode="greedy" if greedy else "stochastic",
+            reasoning_parser="gemma4",
+        )
+    )
+
+
+def test_engine_config_records_the_verify_facts() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    # Mixed values, so a swapped field cannot pass.
+    facts = SpecGraphFacts(
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=True,
+    )
+    speculative = pipeline_engine_config(
+        config, _PLAN, verify_facts=facts
+    ).speculative
+    assert speculative is not None
+    assert speculative.verify_takes_prefill_rows
+    assert not speculative.verify_commits_long_rows
+    assert speculative.successor_replay
+
+
+def test_engine_config_records_the_reversed_verify_facts() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    # The reverse mix, so the two keys cannot be swapped anywhere.
+    facts = SpecGraphFacts(
+        verify_takes_prefill_rows=False,
+        verify_commits_long_rows=True,
+        successor_replay=True,
+    )
+    speculative = pipeline_engine_config(
+        config, _PLAN, verify_facts=facts
+    ).speculative
+    assert speculative is not None
+    assert not speculative.verify_takes_prefill_rows
+    assert speculative.verify_commits_long_rows
+    assert speculative.successor_replay
+
+
+def test_engine_config_without_verify_facts_reads_all_false() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    speculative = pipeline_engine_config(config, _PLAN).speculative
+    assert speculative is not None
+    assert not speculative.verify_takes_prefill_rows
+    assert not speculative.verify_commits_long_rows
+    assert not speculative.successor_replay
+
+
+def test_verify_facts_read_the_spec_pipeline_model() -> None:
+    class _SpecModel(SpecDecodePipelineModel):
+        def __init__(self) -> None:
+            # The export reads only the three fact properties.
+            pass
+
+        @property
+        def verify_takes_prefill_rows(self) -> bool:
+            return True
+
+        @property
+        def verify_commits_long_rows(self) -> bool:
+            return False
+
+        @property
+        def successor_replay(self) -> bool:
+            return True
+
+    class _SpecPipeline(TextGenerationPipelineInterface[Any]):
+        _pipeline_model = _SpecModel()
+
+        @property
+        def max_batch_size(self) -> int:
+            return 1
+
+        @property
+        def kv_manager(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def pipeline_config(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def tokenizer(self) -> Any:
+            raise NotImplementedError
+
+        def execute(self, inputs: Any) -> Any:
+            raise NotImplementedError
+
+        def release(self, request_id: Any) -> None:
+            raise NotImplementedError
+
+    class _PlainPipeline(TextGenerationPipelineInterface[Any]):
+        _pipeline_model = cast(PipelineModelWithKVCache[Any], object())
+
+        @property
+        def max_batch_size(self) -> int:
+            return 1
+
+        @property
+        def kv_manager(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def pipeline_config(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def tokenizer(self) -> Any:
+            raise NotImplementedError
+
+        def execute(self, inputs: Any) -> Any:
+            raise NotImplementedError
+
+        def release(self, request_id: Any) -> None:
+            raise NotImplementedError
+
+    assert _verify_facts(_SpecPipeline()) == SpecGraphFacts(
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=True,
+    )
+    # A pipeline whose model is not a fused spec-decode one has no facts.
+    assert _verify_facts(_PlainPipeline()) is None
+
+
+def _mha(num_layers: int, window_size: int | None = None) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=num_layers,
+        devices=[DeviceRef.CPU()],
+        window_size=window_size,
+    )
+
+
+def test_kv_cache_records_every_cache_in_graph_order() -> None:
+    quantized = MHAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e8m0fnu, quantization_granularity=32
+        ),
+    )
+    sparse = MSAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+    )
+    index = MSAIndexKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        allow_kv_head_replication=True,
+        stride_alignment=512,
+    )
+    mla = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        num_q_heads=16,
+        sparse_indices_stride=64,
+    )
+    state = RecurrentStateParams(
+        devices=[DeviceRef.CPU()],
+        regions=(
+            RecurrentStateRegion(
+                leaf_id="conv",
+                num_layers=2,
+                row_shape=(64, 3),
+                dtype=DType.bfloat16,
+            ),
+        ),
+    )
+    params = MultiKVCacheParams.from_params(
+        {
+            "target": MultiKVCacheParams.from_params(
+                {
+                    "sliding_attention": _mha(5, window_size=1024),
+                    "full_attention": quantized,
+                }
+            ),
+            "sparse": sparse,
+            "indexer": index,
+            "latent": mla,
+            "state": state,
+        }
+    )
+    layout = pipeline_kv_cache(params)
+    assert layout.page_size == 128
+    assert [(cache.name, cache.kind) for cache in layout.caches] == [
+        ("target.sliding_attention", "mha"),
+        ("target.full_attention", "mha"),
+        ("sparse", "msa"),
+        ("indexer", "msa_index"),
+        ("latent", "mla"),
+        ("state", "recurrent"),
+    ]
+    sliding_id = "target.sliding_attention.sliding_window_group(1024)"
+    assert layout.caches[0] == MHAKVCache(
+        name="target.sliding_attention",
+        dtype=DType.bfloat16,
+        num_layers=5,
+        n_kv_heads=4,
+        head_dim=64,
+        v_head_dim=None,
+        window_size=1024,
+        allow_kv_head_replication=False,
+        slots_per_page=128,
+        stride_alignment=None,
+        scratch=False,
+        kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
+        leaves=(
+            KVPoolLeaf(
+                leaf_id=sliding_id,
+                group="sliding_window",
+                window_size=1024,
+                bytes_per_page=params.leaves()[sliding_id].bytes_per_page,
+                stride_alignment=None,
+            ),
+        ),
+    )
+    full = layout.caches[1]
+    assert isinstance(full, MHAKVCache)
+    assert (full.dtype, full.kvcache_quant_config) == (
+        DType.float8_e4m3fn,
+        KVCacheQuantization(
+            scale_dtype=DType.float8_e8m0fnu,
+            quantization_granularity=32,
+            fp8_tail_dim=0,
+        ),
+    )
+
+    def full_leaf(path: str) -> KVPoolLeaf:
+        leaf_id = f"{path}.full_group"
+        region = params.leaves()[leaf_id]
+        return KVPoolLeaf(
+            leaf_id=leaf_id,
+            group="full",
+            window_size=None,
+            bytes_per_page=region.bytes_per_page,
+            stride_alignment=region.stride_alignment,
+        )
+
+    assert layout.caches[3] == MSAIndexKVCache(
+        name="indexer",
+        dtype=DType.bfloat16,
+        num_layers=1,
+        n_kv_heads=1,
+        head_dim=128,
+        v_head_dim=None,
+        window_size=None,
+        allow_kv_head_replication=True,
+        slots_per_page=128,
+        stride_alignment=512,
+        scratch=False,
+        kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
+        leaves=(full_leaf("indexer"),),
+    )
+    assert layout.caches[4] == MLAKVCache(
+        name="latent",
+        dtype=DType.bfloat16,
+        num_layers=1,
+        num_q_heads=16,
+        head_dim=576,
+        v_head_dim=None,
+        window_size=None,
+        slots_per_page=128,
+        sparse_indices_stride=64,
+        stride_alignment=None,
+        scratch=False,
+        kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
+        leaves=(full_leaf("latent"),),
+        # An unscaled BF16 latent.
+        sparse_kv_form="plain",
+    )
+    assert layout.caches[5] == RecurrentStateCache(
+        name="state",
+        regions=(
+            StateRegion(
+                leaf_id="conv",
+                num_layers=2,
+                row_shape=(64, 3),
+                dtype=DType.bfloat16,
+                scratch=False,
+            ),
+        ),
+        leaves=(
+            KVPoolLeaf(
+                leaf_id="conv",
+                group="recurrent",
+                window_size=None,
+                bytes_per_page=2 * 64 * 3 * 2,
+                stride_alignment=None,
+            ),
+        ),
+    )
+
+
+def test_kv_cache_records_the_unread_dispatch_of_named_mla_caches() -> None:
+    mla = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        num_q_heads=16,
+    )
+    params = MultiKVCacheParams.from_params(
+        {
+            "target": MultiKVCacheParams.from_params(
+                {"mla": mla, "indexer": mla}
+            ),
+            "draft": MultiKVCacheParams.from_params(
+                {"mla": mla, "indexer": mla}
+            ),
+        }
+    )
+    layout = pipeline_kv_cache(params, ("indexer",))
+    assert [
+        (cache.name, isinstance(cache, MLAKVCache) and cache.dispatch_unread)
+        for cache in layout.caches
+    ] == [
+        ("target.mla", False),
+        ("target.indexer", True),
+        ("draft.mla", False),
+        ("draft.indexer", True),
+    ]
+
+
+class _CustomKVCacheParams(MHAKVCacheParams):
+    pass
+
+
+def test_kv_cache_refuses_a_cache_type_it_does_not_record() -> None:
+    custom = _CustomKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+    )
+    params = MultiKVCacheParams.from_params({"custom": custom})
+    with pytest.raises(ArtifactError, match="_CustomKVCacheParams"):
+        pipeline_kv_cache(params)
+
+
+def _dcp_latent(degree: int = 4) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        num_q_heads=64,
+        context_parallel=KVCacheContextParallel(degree=degree, interleave=128),
+    )
+
+
+def test_kv_cache_records_how_a_cache_splits_positions() -> None:
+    unsplit = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+    )
+    params = MultiKVCacheParams.from_params(
+        {"latent": _dcp_latent(), "plain": unsplit}
+    )
+    latent, plain = pipeline_kv_cache(params).caches
+    assert isinstance(latent, MLAKVCache) and isinstance(plain, MHAKVCache)
+    assert latent.context_parallel == ContextParallel(degree=4, interleave=128)
+    assert plain.context_parallel is None
+
+
+@pytest.mark.parametrize("degree", [1, 3])
+def test_a_context_parallel_degree_must_split_a_replica(degree: int) -> None:
+    with pytest.raises(ValueError, match="context parallel degree"):
+        _dcp_latent(degree)
+
+
+def _pcp_config(
+    prefill_context_parallel: bool, decode_context_parallel_degree: int = 1
+) -> PipelineConfig:
+    config = _pipeline_config(sampling=SamplingConfig.model_construct())
+    model = config.model.model_copy(
+        update={
+            "prefill_context_parallel": prefill_context_parallel,
+            "decode_context_parallel_degree": decode_context_parallel_degree,
+        }
+    )
+    return config.model_copy(update={"models": ModelManifest({"main": model})})
+
+
+def test_engine_config_records_prefill_context_parallel_over_split_caches() -> (
+    None
+):
+    split = pipeline_kv_cache(_dcp_latent())
+    unsplit = KVCacheLayout(page_size=128, caches=())
+    assert _prefill_context_parallel(
+        _pcp_config(True), split
+    ) == EnginePrefillContextParallel(
+        min_step_tokens=7168, min_rows_per_request=8, max_batch_context=262144
+    )
+    # An architecture that splits no cache builds no PCP path.
+    assert _prefill_context_parallel(_pcp_config(True), unsplit) is None
+    assert _prefill_context_parallel(_pcp_config(False), split) is None
+    assert _prefill_context_parallel(_pcp_config(True), None) is None
+
+
+@pytest.mark.parametrize(
+    ("config", "warns"),
+    [
+        (_pcp_config(False, decode_context_parallel_degree=4), True),
+        (_pcp_config(True), True),
+        (_pcp_config(False), False),
+    ],
+)
+def test_export_warns_when_no_cache_splits_the_positions_asked_for(
+    config: PipelineConfig, warns: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    unsplit = KVCacheLayout(page_size=128, caches=())
+    _warn_unhonored_context_parallel(config, "LlamaForCausalLM", unsplit)
+    assert ("ignores the context parallel flags" in caplog.text) == warns
+    caplog.clear()
+    _warn_unhonored_context_parallel(
+        config, "GlmMoeDsaForCausalLM", pipeline_kv_cache(_dcp_latent())
+    )
+    assert "ignores the context parallel flags" not in caplog.text

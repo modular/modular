@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for TensorLayout and BufferLayout.
 
-These types live in ``max.experimental.sharding`` and describe how
+These types live in ``max.tensor.sharding`` and describe how
 a tensor's global shape maps to per-device local types for graph compilation.
 """
 
@@ -21,7 +21,8 @@ from __future__ import annotations
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.sharding import (
+from max.graph import BufferType, SymbolicDim, TensorType
+from max.tensor.sharding import (
     BufferLayout,
     DeviceMapping,
     DeviceMesh,
@@ -29,7 +30,6 @@ from max.experimental.sharding import (
     Sharded,
     TensorLayout,
 )
-from max.graph import BufferType, SymbolicDim, TensorType
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────
 

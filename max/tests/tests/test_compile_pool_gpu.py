@@ -21,8 +21,8 @@ import numpy as np
 from max.driver import CPU, Accelerator, Buffer, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.compile_pool import ProcessCompilePool
 from max.graph import DeviceRef, Graph, TensorType
+from max.tensor.compile_pool import ProcessCompilePool
 
 _GPU_DEVICE_NODES = ("/dev/nvidia", "/dev/kfd", "/dev/dri")
 

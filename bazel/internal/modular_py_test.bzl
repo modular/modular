@@ -45,7 +45,7 @@ _PLUGIN_MODULE = "precompile_mefs_plugin"
 
 # What a test that is not precompiled adds to itself, so the `py_test` below
 # has one spelling either way.
-_NOT_PRECOMPILED = struct(args = [], deps = [], data = [], env = {})
+_NOT_PRECOMPILED = struct(args = [], deps = [], data = [], env = {}, tags = [])
 
 # What the test's own environment says about the GPU it expects, which the
 # record action has none of. A non-zero memory-manager size in particular makes
@@ -91,7 +91,10 @@ def _wire_precompile(
         pytest_args: The arguments the consumer passes to pytest.
         deps: The consumer's deps.
         data: The consumer's data.
-        env: The consumer's env.
+        env: The consumer's env, including whether it reads the shared
+            HuggingFace cache. A test that resolves a model by name has to
+            find it in the same cache while recording, or the record run
+            looks in an empty one.
         mojo_deps: The consumer's `mojo_deps`.
         imports: The consumer's import paths.
         gpu_constraints: The consumer's GPU requirements, which say which arch
@@ -177,7 +180,6 @@ def _wire_precompile(
         strip_env = _RECORD_STRIP_ENV,
         test_label = "//{}:{}".format(native.package_name(), test_name),
         expansion_targets = data,
-        exec_properties = get_resources_exec_properties(test_name, test = False),
         tags = ["manual"],
         testonly = True,
         target_compatible_with = gpu_constraints + target_compatible_with + _NO_RECORD,
@@ -200,6 +202,7 @@ def _wire_precompile(
                 "PRECOMPILE_MEFS_REPLAY_RLOCATIONS": "$(rlocationpaths :{}.mefs)".format(test_name),
             },
         }),
+        tags = ["precompiled-mefs"],
     )
 
 def modular_py_test(
@@ -219,6 +222,7 @@ def modular_py_test(
         main = None,
         imports = [],
         per_test_tags = {},
+        per_test_target_compatible_with = {},
         test_name_prefix = "",
         shard_count = None,
         per_test_shard_count = {},
@@ -245,6 +249,9 @@ def modular_py_test(
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
         imports: Additional python import paths
         per_test_tags: A mapping of source files to extra tags to apply to that test file.
+        per_test_target_compatible_with: A mapping of source files to extra
+            constraints for that test file's target, added to
+            `target_compatible_with` (multi-source only).
         test_name_prefix: Prefix added to per-src py_test target names (multi-source only).
         shard_count: Forwarded to the underlying test target.
         per_test_shard_count: Forwarded to the underlying test target for the specified source(s).
@@ -269,6 +276,9 @@ def modular_py_test(
 
     if len(set(per_test_shard_count.keys()) - set(srcs)) != 0:
         fail("keys specified in per_test_shard_count that are not source files: {}".format(set(per_test_shard_count.keys()) - set(srcs)))
+
+    if len(set(per_test_target_compatible_with.keys()) - set(srcs)) != 0:
+        fail("keys specified in per_test_target_compatible_with that are not source files: {}".format(set(per_test_target_compatible_with.keys()) - set(srcs)))
 
     if "gpu" in tags and "enable-sanitizers" in tags:
         fail("gpu + sanitizers are able to be run manually, but not in CI. remove `enable-sanitizers`.")
@@ -312,6 +322,7 @@ def modular_py_test(
     toolchains.append(env_name)
     extra_data += [env_name]  # buildifier: disable=list-append
     extra_env |= {
+        "MODULAR_DRIVER_PLUGINS": "$(MODULAR_DRIVER_PLUGINS)",
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
         "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
         "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
@@ -327,11 +338,11 @@ def modular_py_test(
     )
 
     default_exec_properties = get_default_exec_properties(tags, gpu_constraints)
-    extra_env |= get_default_test_env(exec_properties)
+    extra_env |= get_default_test_env(default_exec_properties | exec_properties)
 
-    if "requires-network" in tags:
-        # Assume networking is used for huggingface and add the cache
-        extra_env |= {"HF_ESCAPES_SANDBOX": "1"}
+    # Assume networking is used for huggingface and add the cache
+    hf_env = {"HF_ESCAPES_SANDBOX": "1"} if "requires-network" in tags else {}
+    extra_env |= hf_env
 
     test_srcs = [src for src in srcs if src.split("/")[-1].startswith("test_")]
     non_test_srcs = [src for src in srcs if not src.split("/")[-1].startswith("test_")]
@@ -420,11 +431,11 @@ def modular_py_test(
                     pytest_args = final_args,
                     deps = deps,
                     data = data,
-                    env = env,
+                    env = hf_env | env,
                     mojo_deps = mojo_deps,
                     imports = imports,
                     gpu_constraints = gpu_constraints,
-                    target_compatible_with = target_compatible_with,
+                    target_compatible_with = target_compatible_with + per_test_target_compatible_with.get(src, []),
                 )
             py_test(
                 name = test_name,
@@ -439,9 +450,9 @@ def modular_py_test(
                 ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []) + replay.deps,
                 shard_count = n_shards,
                 srcs = test_srcs_with_runner,
-                exec_properties = default_exec_properties | get_resources_exec_properties(test_name, test = True) | exec_properties,
-                target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []),
+                exec_properties = default_exec_properties | get_resources_exec_properties(test_name) | exec_properties,
+                target_compatible_with = gpu_constraints + target_compatible_with + per_test_target_compatible_with.get(src, []),
+                tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []) + replay.tags,
                 imports = imports,
                 **kwargs
             )
@@ -456,6 +467,8 @@ def modular_py_test(
             fail("Don't use `per_test_tags` if only one source file is specified, use `tags` directly.")
         if per_test_shard_count:
             fail("do not use per_test_shard_count with only one test, use shard_count")
+        if per_test_target_compatible_with:
+            fail("Don't use `per_test_target_compatible_with` if only one source file is specified, use `target_compatible_with` directly.")
 
         # If a custom main is used, it is responsible for sharding via
         # TEST_SHARD_INDEX and TEST_TOTAL_SHARDS env vars.
@@ -474,7 +487,7 @@ def modular_py_test(
                 pytest_args = final_args,
                 deps = deps,
                 data = data,
-                env = env,
+                env = hf_env | env,
                 mojo_deps = mojo_deps,
                 imports = imports,
                 gpu_constraints = gpu_constraints,
@@ -496,9 +509,9 @@ def modular_py_test(
             ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []) + replay.deps,
             shard_count = shard_count,
             srcs = srcs + ["//bazel/internal:pytest_runner"],
-            exec_properties = default_exec_properties | get_resources_exec_properties(name, test = True) | exec_properties,
+            exec_properties = default_exec_properties | get_resources_exec_properties(name) | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags + get_resources_tags(name),
+            tags = tags + get_resources_tags(name) + replay.tags,
             imports = imports,
             **kwargs
         )
@@ -516,7 +529,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ] + ([_PLUGIN] if precompile_mefs else []),
             ignore_unresolved_imports = ignore_unresolved_imports,
-            target_compatible_with = select({
+            target_compatible_with = target_compatible_with + select({
                 # No point in running these, causes "error replanting symlinks" failures
                 "//:asan": ["@platforms//:incompatible"],
                 "//:ubsan": ["@platforms//:incompatible"],

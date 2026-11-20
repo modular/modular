@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for the DeepSeek-V3 next-token draft."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
@@ -21,7 +22,6 @@ from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .batch_processor import DeepseekV3NextNBatchProcessor
-from .memory_planner import DeepseekV3NextNMemoryPlanner
 from .model import DeepseekV3NextNModel
 from .model_config import DeepseekV3NextNConfig
 
@@ -45,5 +45,4 @@ deepseekV3_nextn_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3NextNConfig,
-    memory_planner=DeepseekV3NextNMemoryPlanner,
 )

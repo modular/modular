@@ -247,7 +247,6 @@ def resize_nearest_neighbor[
     coordinate_transformation_mode: CoordinateTransformationMode,
     round_mode: RoundMode,
     dtype: DType,
-    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
@@ -267,13 +266,13 @@ def resize_nearest_neighbor[
         coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
         round_mode: How to round fractional input coordinates to integer indices.
         dtype: Type of input and output.
-        target: The target backend to execute on, such as "cpu" or "gpu".
 
     Args:
         input: The input to be resized.
         output: The output containing the resized input.
         ctx: The device context used to launch the kernel.
     """
+
     _check_resize_shapes(input, output)
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
@@ -343,9 +342,9 @@ def resize_nearest_neighbor[
                     all_pow2_runtime = False
 
             comptime width = (
-                simd_width_of[dtype, target=get_gpu_target()]() if is_gpu[
-                    target
-                ]() else simd_width_of[dtype]()
+                simd_width_of[
+                    dtype, target=get_gpu_target()
+                ]() if ctx.target.is_gpu() else simd_width_of[dtype]()
             )
 
             if all_pow2_runtime:
@@ -356,25 +355,19 @@ def resize_nearest_neighbor[
                     var in_coords = IndexList[input.rank](0)
 
                     comptime for i in range(last):
-                        in_coords[i] = (
-                            Int(out_coords[i].value()) >> shift_scales[i]
-                        )
+                        in_coords[i] = Int(out_coords[i]) >> shift_scales[i]
 
-                    var out_last = Int(out_coords[last].value())
+                    var out_last = Int(out_coords[last])
                     var values = SIMD[dtype, simd_width]()
                     comptime for lane in range(simd_width):
                         in_coords[last] = (out_last + lane) >> shift_scales[
                             last
                         ]
-                        values[lane] = input.ptr[input.layout(Coord(in_coords))]
+                        values[lane] = input.load[width=1](Coord(in_coords))
 
-                    output.raw_store[width=simd_width, alignment=alignment](
-                        output.layout(out_coords), values
-                    )
+                    output.store[alignment=alignment](out_coords, values)
 
-                elementwise[width, target=target](
-                    nn_shift, output.layout.shape_coord(), ctx
-                )
+                elementwise[width](nn_shift, output.layout.shape_coord(), ctx)
             else:
 
                 def nn_div[
@@ -383,23 +376,17 @@ def resize_nearest_neighbor[
                     var in_coords = IndexList[input.rank](0)
 
                     comptime for i in range(last):
-                        in_coords[i] = (
-                            Int(out_coords[i].value()) // int_scales[i]
-                        )
+                        in_coords[i] = Int(out_coords[i]) // int_scales[i]
 
-                    var out_last = Int(out_coords[last].value())
+                    var out_last = Int(out_coords[last])
                     var values = SIMD[dtype, simd_width]()
                     comptime for lane in range(simd_width):
                         in_coords[last] = (out_last + lane) // int_scales[last]
-                        values[lane] = input.ptr[input.layout(Coord(in_coords))]
+                        values[lane] = input.load[width=1](Coord(in_coords))
 
-                    output.raw_store[width=simd_width, alignment=alignment](
-                        output.layout(out_coords), values
-                    )
+                    output.store[alignment=alignment](out_coords, values)
 
-                elementwise[width, target=target](
-                    nn_div, output.layout.shape_coord(), ctx
-                )
+                elementwise[width](nn_div, output.layout.shape_coord(), ctx)
             return
 
     @inline(.always)
@@ -449,13 +436,13 @@ def resize_nearest_neighbor[
             in_coords[i] = _nearest_source_index[
                 coordinate_transformation_mode, round_mode
             ](
-                Int(out_coords[i].value()),
+                Int(out_coords[i]),
                 Int(input.dim(i)),
                 Int(output.dim(i)),
                 scales[i],
             )
 
-        var out_last = Int(out_coords[last].value())
+        var out_last = Int(out_coords[last])
         var values = SIMD[dtype, simd_width]()
         comptime for lane in range(simd_width):
             in_coords[last] = _nearest_source_index[
@@ -466,18 +453,15 @@ def resize_nearest_neighbor[
                 Int(output.dim(last)),
                 scales[last],
             )
-            values[lane] = input.ptr[input.layout(Coord(in_coords))]
+            values[lane] = input.load[width=1](Coord(in_coords))
 
-        output.raw_store[width=simd_width, alignment=alignment](
-            output.layout(out_coords), values
-        )
+        output.store[alignment=alignment](out_coords, values)
 
     comptime width = (
-        16 // size_of[dtype]() if is_gpu[target]() else simd_width_of[dtype]()
+        16
+        // size_of[dtype]() if ctx.target.is_gpu() else simd_width_of[dtype]()
     )
-    elementwise[width, target=target](
-        nn_interpolate, output.layout.shape_coord(), ctx
-    )
+    elementwise[width](nn_interpolate, output.layout.shape_coord(), ctx)
 
 
 @inline(.always)
@@ -576,14 +560,15 @@ def interpolate_point_1d[
             (Float32(k + xmin) + Float32(0.5)) - center
         ) * ss
         var filter_coeff = linear_filter(dist_from_center).cast[acc_dtype]()
-        var in_idx = input.layout(Coord(in_coords))
-        acc += input.raw_load(in_idx).cast[acc_dtype]() * filter_coeff
+        acc += (
+            input.load[width=1](Coord(in_coords)).cast[acc_dtype]()
+            * filter_coeff
+        )
         sum += filter_coeff
 
     # normalize to handle cases near image boundary where only 1 point is used
     # for interpolation
-    var out_idx = output.layout(Coord(out_coords))
-    output.raw_store(out_idx, (acc / sum).cast[dtype]())
+    output.store(Coord(out_coords), (acc / sum).cast[dtype]())
 
 
 def resize_linear[
@@ -591,7 +576,7 @@ def resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     """Resizes input to output shape using linear interpolation.
@@ -608,11 +593,7 @@ def resize_linear[
     """
     _check_resize_shapes(input, output)
 
-    if rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    ) == rebind[IndexList[input.rank]](
-        coord_to_index_list(output.layout.shape_coord())
-    ):
+    if input.layout.shape_coord() == output.layout.shape_coord():
         return unsafe_memcpy(
             dest=output.ptr, src=input.ptr, count=input.num_elements()
         )
@@ -628,7 +609,7 @@ def resize_linear[
 
     var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     # SAFETY: Placeholder; always overwritten below.
-    var out_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
+    var out_ptr = MutPointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
 
     var using_tmp1 = False
     var tmp_buffer1 = List[Scalar[dtype]]()
@@ -686,9 +667,11 @@ def resize_linear[
         in_shape = out_shape
         in_ptr = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
 
-        out_ptr = (
-            tmp_buffer2.unsafe_ptr() if using_tmp1 else tmp_buffer1.unsafe_ptr()
-        ).as_unsafe_any_origin()
+        # Form both pointers before the ternary: CheckLifetimes rejects an
+        # interior origin that only one arm of a branch defines.
+        var tmp1_ptr = tmp_buffer1.unsafe_ptr()
+        var tmp2_ptr = tmp_buffer2.unsafe_ptr()
+        out_ptr = (tmp2_ptr if using_tmp1 else tmp1_ptr).as_unsafe_any_origin()
         using_tmp1 = not using_tmp1
 
     _ = tmp_buffer1^
@@ -737,11 +720,9 @@ def resize_linear_gpu[
     if len(resize_dims) == 0:
 
         def copy[simd_width: Int, alignment: Int = 1](coords: Coord) {var}:
-            output.raw_store(
-                output.layout(coords), input.raw_load(input.layout(coords))
-            )
+            output.store(coords, input.load[width=1](coords))
 
-        elementwise[1, target="gpu"](copy, output.layout.shape_coord(), ctx)
+        elementwise[1](copy, output.layout.shape_coord(), ctx)
         return
 
     var scratch = List[DeviceBuffer[dtype]]()
@@ -779,9 +760,7 @@ def resize_linear_gpu[
                 out_buf,
             )
 
-        elementwise[1, target="gpu"](
-            interpolate, out_buf.layout.shape_coord(), ctx
-        )
+        elementwise[1](interpolate, out_buf.layout.shape_coord(), ctx)
 
         in_shape = out_shape
         in_ptr = out_ptr
@@ -790,8 +769,8 @@ def resize_linear_gpu[
 
 
 def resize_cubic[
-    in_dtype: DType, //
-](input: ImmTileTensor[in_dtype, ...], output: MutTileTensor[.float32, ...],):
+    in_dtype: DType, out_dtype: DType, //
+](input: ImmTileTensor[in_dtype, ...], output: MutTileTensor[out_dtype, ...],):
     """Resizes the height and width of an `[outer, H, W, inner]` tensor with
     antialiased cubic interpolation.
 
@@ -801,15 +780,23 @@ def resize_cubic[
     `interpolate(mode="bicubic", antialias=True, align_corners=False)`, and
     the result matches it to float32 rounding.
 
+    A uint8 input with a uint8 output resizes as Pillow's `BICUBIC` resizes a
+    uint8 image, bit for bit, rather than as torch does: the same filter, its
+    weights computed in float64 and rounded to 22-bit fixed point, and each
+    pass summing in int32 and rounding half up and clamping to uint8.
+
     An NHWC batch is `[N, H, W, C]`, and an NCHW batch is `[N * C, H, W, 1]`.
     W is resampled before H, and each output adds up its taps in order with
     FMAs, so every shape gives the same bits for the same pixels. The resize
-    runs on the CPU, on the calling thread, in float32.
+    runs on the CPU, on the calling thread, in float32 or, for a uint8
+    output, in fixed point.
 
     Parameters:
         in_dtype: The type of the input: float32, or an integer type such as
-            uint8. The result is the same as when you convert the input to
-            float32 first.
+            uint8. With a float32 output, the result is the same as when you
+            convert the input to float32 first.
+        out_dtype: The type of the output: float32, or uint8 for a uint8
+            input, which resizes as Pillow does.
 
     Args:
         input: The input to be resized, contiguous and row-major.
@@ -819,6 +806,7 @@ def resize_cubic[
 
     Constraints:
         Both tensors are rank 4. The input is float32 or an integer type.
+        The output is float32, or uint8 for a uint8 input.
     """
     _check_resize_shapes(input, output)
     comptime assert (
@@ -827,30 +815,230 @@ def resize_cubic[
     comptime assert (
         in_dtype == .float32 or in_dtype.is_integral()
     ), "input must be float32 or an integer type"
+    comptime assert out_dtype == .float32 or (
+        out_dtype == .uint8 and in_dtype == .uint8
+    ), "output must be float32, or uint8 for a uint8 input"
 
-    var in_shape = rebind[IndexList[4]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
-    var out_shape = rebind[IndexList[4]](
-        coord_to_index_list(output.layout.shape_coord())
-    )
+    var in_shape = input.layout.shape_coord()
+    var out_shape = output.layout.shape_coord()
     debug_assert(
-        in_shape[0] == out_shape[0] and in_shape[3] == out_shape[3],
+        Int(in_shape[0]) == Int(out_shape[0])
+        and Int(in_shape[3]) == Int(out_shape[3]),
         "outer and inner sizes must match",
     )
     if input.num_elements() == 0 or output.num_elements() == 0:
         return
-    var outer = in_shape[0]
-    var inner = in_shape[3]
-    _resize_2d_fused(
-        _AxisTaps(in_shape[2], out_shape[2]),
-        _AxisTaps(in_shape[1], out_shape[1]),
-        input.reshape(row_major((outer, in_shape[1], in_shape[2] * inner))),
-        output.reshape(row_major((outer, out_shape[1], out_shape[2] * inner))),
-        in_shape[2],
-        out_shape[2],
-        inner,
+    var outer = Int(in_shape[0])
+    var inner = Int(in_shape[3])
+    var src = input.reshape(
+        row_major((outer, Int(in_shape[1]), Int(in_shape[2]) * inner))
     )
+    var dst = output.reshape(
+        row_major((outer, Int(out_shape[1]), Int(out_shape[2]) * inner))
+    )
+    comptime if out_dtype == .uint8:
+        _resize_2d_fixed_point(
+            src.bitcast[.uint8](),
+            dst.bitcast[.uint8](),
+            Int(in_shape[2]),
+            Int(out_shape[2]),
+            inner,
+        )
+    else:
+        _resize_2d_fused(
+            _AxisTaps(Int(in_shape[2]), Int(out_shape[2])),
+            _AxisTaps(Int(in_shape[1]), Int(out_shape[1])),
+            src,
+            dst.bitcast[.float32](),
+            Int(in_shape[2]),
+            Int(out_shape[2]),
+            inner,
+        )
+
+
+comptime _FIXED_BITS = 22
+"""Fraction bits of a uint8 resize's fixed-point weights, Pillow's
+`PRECISION_BITS`, which leave an int32 tap sum two bits of headroom."""
+
+comptime _FIXED_WIDTH = 2 * simd_width_of[DType.int32]()
+"""Int32 lanes a fixed-point pass sums at a time."""
+
+comptime _FIXED_STRIP = 32
+"""Rows a fixed-point W pass transposes at a time, which its H-style pass
+then sums across."""
+
+
+@inline(.always)
+def _pillow_cubic(x: Float64) -> Float64:
+    """Evaluates Pillow's bicubic filter, `a = -0.5`, in float64 and in
+    Pillow's order of operations, so the weights round as Pillow's do."""
+    comptime a = -0.5
+    var t = abs(x)
+    if t < 1:
+        return ((a + 2) * t - (a + 3)) * t * t + 1
+    if t < 2:
+        return (((t - 5) * t + 8) * t - 4) * a
+    return 0
+
+
+struct _FixedTaps(Movable):
+    """Holds Pillow's fixed-point taps of each output index along one resized
+    dimension of a uint8 resize.
+
+    Output i is the sum of the count_of(i) inputs from start[i] on, times
+    weights coeffs[offset[i] : offset[i + 1]] scaled by 2^_FIXED_BITS.
+    """
+
+    var start: List[Int]
+    var offset: List[Int]
+    var coeffs: List[Int32]
+
+    def __init__(out self, in_dim: Int, out_dim: Int):
+        """Builds the taps as Pillow's `precompute_coeffs` and
+        `normalize_coeffs_8bpc` do: the normalized float64 weights of a
+        cubic window around each output's center, stretched by the downscale
+        factor, rounded half away from zero to fixed point. Equal sizes keep
+        the four-tap window, with weight one on the center tap and zero on
+        the rest, so the copy is exact."""
+        self.start = List[Int](capacity=out_dim)
+        self.offset = List[Int](capacity=out_dim + 1)
+        self.offset.append(0)
+        self.coeffs = List[Int32]()
+        var scale = Float64(in_dim) / Float64(out_dim)
+        var stretch = max(scale, 1.0)
+        var support = Float64(_CUBIC_SUPPORT) * stretch
+        var inv_stretch = 1.0 / stretch
+        var weights = List[Float64]()
+        for i in range(out_dim):
+            var center = (Float64(i) + 0.5) * scale
+            # Int truncates toward zero, as Pillow's C casts do.
+            var first = max(Int(center - support + 0.5), 0)
+            var end = min(Int(center + support + 0.5), in_dim)
+            weights.clear()
+            var total = Float64(0)
+            for x in range(first, end):
+                var w = _pillow_cubic((Float64(x) - center + 0.5) * inv_stretch)
+                weights.append(w)
+                total += w
+            for w in weights:
+                var normalized = w / total if total != 0 else w
+                var fixed = normalized * Float64(1 << _FIXED_BITS)
+                self.coeffs.append(
+                    Int32(Int(fixed - 0.5 if normalized < 0 else fixed + 0.5))
+                )
+            self.start.append(first)
+            self.offset.append(len(self.coeffs))
+
+
+def _fixed_point_rows(
+    taps: _FixedTaps,
+    src: TileTensor[.uint8, ...],
+    dst: MutTileTensor[.uint8, ...],
+):
+    """Writes each row i of dst, `[out_dim, cols]`, as the weighted sum of
+    rows of src, `[in_dim, cols]`, rounded half up and clamped to uint8 as a
+    pass of Pillow's uint8 resize rounds. The int32 sum cannot overflow:
+    Pillow's bicubic weights add up to at most 1.27 in magnitude."""
+    var cols = Int(src.dim[1]())
+    for i in range(Int(dst.dim[0]())):
+        var first = taps.start[i]
+        var offset = taps.offset[i]
+        var count = taps.offset[i + 1] - offset
+
+        def row_at[width: Int](c: Int) {imm}:
+            var acc = SIMD[.int32, width](1 << (_FIXED_BITS - 1))
+            for k in range(count):
+                acc += (
+                    src.load[width=width]((first + k, c)).cast[.int32]()
+                    * taps.coeffs[offset + k]
+                )
+            dst.store((i, c), (acc >> _FIXED_BITS).clamp(0, 255).cast[.uint8]())
+
+        vectorize[_FIXED_WIDTH](cols, row_at)
+
+
+def _transpose_pixels(
+    src: TileTensor[.uint8, ...], dst: MutTileTensor[.uint8, ...], inner: Int
+):
+    """Writes src, `[rows, cols * inner]`, into dst, `[cols, rows * inner]`,
+    keeping each pixel's inner values together."""
+    var rows = Int(src.dim[0]())
+    var cols = Int(src.dim[1]()) // inner
+    for r in range(rows):
+        for c in range(cols):
+            for q in range(inner):
+                dst.store(
+                    (c, r * inner + q), src.load[width=1]((r, c * inner + q))
+                )
+
+
+def _fixed_point_w_pass(
+    taps: _FixedTaps,
+    src: TileTensor[.uint8, ...],
+    dst: MutTileTensor[.uint8, ...],
+    in_w: Int,
+    out_w: Int,
+    inner: Int,
+):
+    """Resamples W of src, `[rows, in_w * inner]`, into dst, `[rows, out_w *
+    inner]`. Each strip of rows is transposed so that the W taps sum rows,
+    vectorized across the strip, and transposed back."""
+    var rows = Int(src.dim[0]())
+    var strip_in = List[UInt8](unsafe_uninit_length=in_w * _FIXED_STRIP * inner)
+    var strip_out = List[UInt8](
+        unsafe_uninit_length=out_w * _FIXED_STRIP * inner
+    )
+    var r = 0
+    while r < rows:
+        var n = min(_FIXED_STRIP, rows - r)
+        var columns = TileTensor(strip_in, row_major((in_w, n * inner)))
+        var resized = TileTensor(strip_out, row_major((out_w, n * inner)))
+        _transpose_pixels(src[r : r + n, :], columns, inner)
+        _fixed_point_rows(taps, columns, resized)
+        _transpose_pixels(resized, dst[r : r + n, :], inner)
+        r += n
+
+
+def _resize_2d_fixed_point(
+    src: TileTensor[.uint8, ...],
+    dst: MutTileTensor[.uint8, ...],
+    in_w: Int,
+    out_w: Int,
+    inner: Int,
+):
+    """Resamples W, then H, of `[outer, H, W * inner]` views of row-major
+    uint8 `[outer, H, W, inner]` tensors as Pillow's uint8 `BICUBIC` resize
+    does, rounding to uint8 after each pass. A pass whose size is unchanged
+    is skipped, as Pillow skips it; its taps would copy the pixels. An image
+    more than 100 times taller than wide whose H shrinks resamples H first,
+    as Pillow's `Image.resize` orders it, and the rounding between the
+    passes makes the order visible."""
+    var in_h = Int(src.dim[1]())
+    var out_h = Int(dst.dim[1]())
+    var taps_w = _FixedTaps(in_w, out_w)
+    var taps_h = _FixedTaps(in_h, out_h)
+    var both = in_w != out_w and in_h != out_h
+    var h_first = in_h > in_w * 100 and out_h < in_h
+    var mid_rows = out_h if h_first else in_h
+    var mid_w = in_w if h_first else out_w
+    var mid_buffer = List[UInt8](
+        unsafe_uninit_length=mid_rows * mid_w * inner if both else 0
+    )
+    var mid = TileTensor(mid_buffer, row_major((mid_rows, mid_w * inner)))
+    for o in range(Int(src.dim[0]())):
+        var src_rows = src[o, :, :]
+        var dst_rows = dst[o, :, :]
+        if in_w == out_w:
+            # Equal H taps copy the rows when neither size changes.
+            _fixed_point_rows(taps_h, src_rows, dst_rows)
+        elif in_h == out_h:
+            _fixed_point_w_pass(taps_w, src_rows, dst_rows, in_w, out_w, inner)
+        elif h_first:
+            _fixed_point_rows(taps_h, src_rows, mid)
+            _fixed_point_w_pass(taps_w, mid, dst_rows, in_w, out_w, inner)
+        else:
+            _fixed_point_w_pass(taps_w, src_rows, mid, in_w, out_w, inner)
+            _fixed_point_rows(taps_h, mid, dst_rows)
 
 
 comptime _WIDTH = simd_width_of[DType.float32]()
@@ -998,8 +1186,9 @@ def _weighted_row_sum[
     end: Int,
 ):
     """Writes columns [begin, end) of row i of dst as a weighted sum of input
-    rows. begin is a multiple of _GROUP vectors. With wraps, rows is a ring
-    of a power-of-two size holding input row r at r % size."""
+    rows. begin is a multiple of _GROUP vectors. With
+    wraps, rows is a ring of a power-of-two size holding input row r at
+    r % size."""
     comptime block = _GROUP * _WIDTH
     debug_assert(begin % block == 0, "begin must be block aligned")
     var first = taps.start_of(i)
@@ -1167,9 +1356,9 @@ def _move_columns[
         while j < end:
             comptime for s in range(_WIDTH):
                 comptime if to_tile:
-                    dst.store((j % ring, s), src.load[width=1]((s, j)))
+                    dst.store((j % ring, s), src[s, j])
                 else:
-                    dst.store((s, j), src.load[width=1]((j % ring, s)))
+                    dst.store((s, j), src[j % ring, s])
             j += 1
     return j
 

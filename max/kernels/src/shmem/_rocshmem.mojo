@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections.string.string_span import get_static_string
 from max.gpu.host import DeviceContext
-from max.gpu.host._amdgpu_hip import hipStream_t, HIP
+from max.gpu.host import hipStream_t, HIP
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import size_of
@@ -33,17 +33,6 @@ from .shmem_api import SHMEMUniqueID
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
-
-
-struct ROCSHEMIVersion(RegisterPassable):
-    var major: c_int
-    var minor: c_int
-    var patch: c_int
-
-    def __init__(out self):
-        self.major = 3
-        self.minor = 4
-        self.patch = 5
 
 
 comptime ROCSHMEM_LIBRARY = _Global["ROCSHMEM_LIBRARY", _init_rocshmem_dylib]
@@ -169,7 +158,7 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
     var nranks: Int32
     var uid: SHMEMUniqueID
 
-    var mpi_comm: Optional[UnsafePointer[NoneType, ImmUntrackedOrigin]]
+    var mpi_comm: Optional[ImmPointer[NoneType, ImmUntrackedOrigin]]
 
     def __init__(out self):
         comptime assert (
@@ -264,16 +253,9 @@ def _dtype_to_rocshmem_type[
 # ===-----------------------------------------------------------------------===#
 
 
-def _rocshmem_init() raises:
-    _get_rocshmem_function[
-        "rocshmem_init",
-        def() thin -> NoneType,
-    ]()()
-
-
 def rocshmem_init_thread_tcp(
     ctx: DeviceContext,
-    uid: UnsafePointer[SHMEMUniqueID, MutAnyOrigin],
+    uid: MutPointer[SHMEMUniqueID, MutAnyOrigin],
     node_id: Int = -1,
     total_nodes: Int = -1,
     gpus_per_node: Int = -1,
@@ -303,7 +285,7 @@ def rocshmem_init_thread_tcp(
     """
     ctx.set_as_current()
 
-    var global_rank = node_id * gpus_per_node + Int(ctx.id())
+    var global_rank = node_id * gpus_per_node + Int(ctx.device().id)
     var total_gpus = gpus_per_node * total_nodes
 
     var attr = ROCSHMEMInitAttr()
@@ -311,11 +293,11 @@ def rocshmem_init_thread_tcp(
         c_int(global_rank),
         c_int(total_gpus),
         uid,
-        UnsafePointer(to=attr).as_unsafe_any_origin(),
+        Pointer(to=attr).as_unsafe_any_origin(),
     )
     rocshmem_init_attr(
         ROCSHMEM_INIT_WITH_UNIQUEID,
-        UnsafePointer(to=attr).as_unsafe_any_origin(),
+        Pointer(to=attr).as_unsafe_any_origin(),
     )
 
 
@@ -339,19 +321,19 @@ def rocshmem_create_uniqueid(
     _get_rocshmem_function[
         "rocshmem_create_uniqueid",
         def(
-            CStringSpan[origin_of(server_ip)],
+            type_of(server_ip.as_c_string_span()),
             c_int,
-            UnsafePointer[SHMEMUniqueID, origin_of(uid)],
+            MutPointer[SHMEMUniqueID, origin_of(uid)],
         ) thin -> None,
-    ]()(server_ip.as_c_string_span(), server_port, UnsafePointer(to=uid))
+    ]()(server_ip.as_c_string_span(), server_port, Pointer(to=uid))
     return uid
 
 
 def rocshmem_set_attr_uniqueid_args(
     rank: c_int,
     nranks: c_int,
-    uid: UnsafePointer[SHMEMUniqueID, MutAnyOrigin],
-    attr: UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
+    uid: MutPointer[SHMEMUniqueID, MutAnyOrigin],
+    attr: MutPointer[ROCSHMEMInitAttr, MutAnyOrigin],
 ) raises:
     """Populate a `ROCSHMEMInitAttr` with rank, size, and unique ID for
     attribute-based initialization.
@@ -372,8 +354,8 @@ def rocshmem_set_attr_uniqueid_args(
         def(
             c_int,
             c_int,
-            UnsafePointer[SHMEMUniqueID, MutAnyOrigin],
-            UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
+            MutPointer[SHMEMUniqueID, MutAnyOrigin],
+            MutPointer[ROCSHMEMInitAttr, MutAnyOrigin],
         ) thin -> c_int,
     ]()(rank, nranks, uid, attr)
     if result:
@@ -384,24 +366,20 @@ def rocshmem_set_attr_uniqueid_args(
 
 def rocshmem_init_attr(
     flags: UInt32,
-    attr: UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin],
+    attr: MutPointer[ROCSHMEMInitAttr, MutAnyOrigin],
 ) raises:
     var result = _get_rocshmem_function[
         "rocshmem_init_attr",
-        def(
-            UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]
-        ) thin -> c_int,
+        def(UInt32, MutPointer[ROCSHMEMInitAttr, MutAnyOrigin]) thin -> c_int,
     ]()(flags, attr)
     if result:
         raise Error("rocshmem_init_attr failed with error code:", result)
 
 
-def rocshmem_get_uniqueid(
-    uid: UnsafePointer[SHMEMUniqueID, MutAnyOrigin]
-) raises:
+def rocshmem_get_uniqueid(uid: MutPointer[SHMEMUniqueID, MutAnyOrigin]) raises:
     var result = _get_rocshmem_function[
         "rocshmem_get_uniqueid",
-        def(UnsafePointer[SHMEMUniqueID, MutAnyOrigin]) thin -> c_int,
+        def(MutPointer[SHMEMUniqueID, MutAnyOrigin]) thin -> c_int,
     ]()(uid)
     if result:
         raise Error("rocshmem_get_uniqueid failed with error code:", result)
@@ -467,12 +445,12 @@ def rocshmem_n_pes() -> c_int:
 
 def rocshmem_malloc[
     dtype: DType
-](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
+](size: c_size_t) raises -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
     var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
         def(
             c_size_t,
-        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -480,14 +458,14 @@ def rocshmem_malloc[
 
 def rocshmem_calloc[
     dtype: DType
-](count: c_size_t, size: c_size_t) raises -> UnsafePointer[
+](count: c_size_t, size: c_size_t) raises -> MutPointer[
     Scalar[dtype], MutUntrackedOrigin
 ]:
     var ptr = _get_rocshmem_function[
         "rocshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     ]()(count, size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_calloc", count * size)
@@ -496,28 +474,30 @@ def rocshmem_calloc[
 def _check_rocshmem_allocation[
     dtype: DType
 ](
-    ptr: OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
+    ptr: Optional[Pointer[Scalar[dtype], MutUntrackedOrigin]],
     func_name: StaticString,
     requested_bytes: c_size_t,
-) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
-    if not ptr:
-        raise Error(
-            func_name,
-            " failed to allocate ",
-            requested_bytes,
-            " bytes of ",
-            dtype,
-            (
-                ". Increase allocatable bytes by setting the ROCSHMEM_HEAP_SIZE"
-                " env var"
-            ),
-        )
-    return ptr.unsafe_value()
+) raises -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
+    match ptr:
+        case .Some(allocated):
+            return allocated
+        case .None:
+            raise Error(
+                func_name,
+                " failed to allocate ",
+                requested_bytes,
+                " bytes of ",
+                dtype,
+                (
+                    ". Increase allocatable bytes by setting the"
+                    " ROCSHMEM_HEAP_SIZE env var"
+                ),
+            )
 
 
 def rocshmem_free[
     dtype: DType, //
-](ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]):
+](ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin]):
     _get_rocshmem_function[
         "rocshmem_free",
         def(type_of(ptr)) thin -> NoneType,
@@ -545,8 +525,8 @@ def rocshmem_put[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -558,8 +538,8 @@ def rocshmem_put_nbi[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -570,7 +550,7 @@ def rocshmem_put_nbi[
 def rocshmem_p[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dest: MutPointer[Scalar[dtype], MutAnyOrigin],
     value: Scalar[dtype],
     pe: c_int,
 ):
@@ -582,7 +562,7 @@ def rocshmem_p[
         _get_rocshmem_function[
             symbol,
             def(
-                UnsafePointer[Scalar[dtype], MutAnyOrigin],
+                MutPointer[Scalar[dtype], MutAnyOrigin],
                 Scalar[dtype],
                 c_int,
             ) thin -> NoneType,
@@ -593,8 +573,8 @@ def rocshmem_get[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    source: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dest: MutPointer[Scalar[dtype], MutAnyOrigin],
+    source: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -606,8 +586,8 @@ def rocshmem_get_nbi[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -617,7 +597,7 @@ def rocshmem_get_nbi[
 
 def rocshmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
+](source: Pointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
@@ -630,10 +610,10 @@ def rocshmem_g[
 def rocshmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype], _],
-    source: UnsafePointer[Scalar[dtype], _],
+    dest: Pointer[Scalar[dtype], _],
+    source: Pointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64, _],
+    sig_addr: Pointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -647,7 +627,7 @@ def rocshmem_put_signal_nbi[
 
 
 def rocshmemx_signal_op(
-    sig_addr: UnsafePointer[UInt64, _],
+    sig_addr: Pointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -705,11 +685,7 @@ def rocshmem_barrier_all_on_stream(stream: hipStream_t):
 
 def rocshmem_signal_wait_until[
     dtype: DType
-](
-    sig_addr: UnsafePointer[Scalar[dtype], _],
-    cmp: c_int,
-    cmp_value: Scalar[dtype],
-):
+](sig_addr: Pointer[Scalar[dtype], _], cmp: c_int, cmp_value: Scalar[dtype],):
     comptime symbol = _dtype_to_rocshmem_type[
         "rocshmem_", dtype, "_wait_until"
     ]()

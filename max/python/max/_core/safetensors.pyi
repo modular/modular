@@ -18,14 +18,14 @@ import os
 import max._core.driver
 
 class SafeTensor:
-    """A parser for the HuggingFace SafeTensors format."""
+    """A parser for the Hugging Face SafeTensors format."""
 
     def keys(self) -> list[str]:
         """Returns the list of tensor keys present."""
 
     def metadata(self) -> dict[str, str]:
         """
-        Returns the file-level ``__metadata__`` map from the SafeTensors header. Only string-valued entries are included; non-string values (which the HuggingFace spec forbids) are skipped. Returns an empty dict when the header has no ``__metadata__`` section.
+        Returns the file-level ``__metadata__`` map from the SafeTensors header. Only string-valued entries are included; non-string values (which the Hugging Face spec forbids) are skipped. Returns an empty dict when the header has no ``__metadata__`` section.
         """
 
     def get_buffer(self, name: str) -> max._core.driver.Buffer:
@@ -47,5 +47,7 @@ def safe_open(
 
     Defaults to loading on the CPU.
 
-    NOTE: Currently only implemented for CPUs.
+    .. note::
+
+       Currently only implemented for CPUs.
     """

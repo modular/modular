@@ -17,7 +17,7 @@ from max.gpu.host import DeviceContext, DeviceMulticastBuffer
 from std.testing import TestSuite
 
 
-def _test_multicast_memory(contexts: List[DeviceContext]) raises:
+def _test_multicast_memory(contexts: List[DeviceContext[]]) raises:
     comptime alloc_len = 128 * 1024
     comptime dtype = DType.int32
 

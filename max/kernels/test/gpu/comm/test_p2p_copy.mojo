@@ -67,7 +67,7 @@ def main() raises:
     # Create contexts for both devices
     var ctx1 = DeviceContext(device_id=0)
     var ctx2 = DeviceContext(device_id=1)
-    var can_access_p2p = ctx1.can_access(ctx2)
+    var can_access_p2p = ctx1.device().can_access_peer(ctx2.device())
     print("ctx1 can access ctx2: ", can_access_p2p)
     if not can_access_p2p:
         print("Skipping test as ctx1 cannot access ctx2")

@@ -27,10 +27,11 @@ from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
 from std.memory import bitcast
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, TensorLayout, TileTensor, row_major
+from layout import TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -91,8 +92,8 @@ def _block_scaled_mma_smoke_kernel[
         one,
     )
 
-    baseline_out.store(Coord(lane, 0), baseline_acc)
-    scaled_out.store(Coord(lane, 0), scaled_acc)
+    baseline_out.store((lane, 0), baseline_acc)
+    scaled_out.store((lane, 0), scaled_acc)
 
 
 @__llvm_metadata(
@@ -144,24 +145,25 @@ def _fp6_padding_kernel[
         one,
     )
 
-    zero_pad_out.store(Coord(lane, 0), zero_pad_acc)
-    one_pad_out.store(Coord(lane, 0), one_pad_acc)
+    zero_pad_out.store((lane, 0), zero_pad_acc)
+    one_pad_out.store((lane, 0), one_pad_acc)
 
 
 def _run_fp6_padding_check[
     matrix_format: CDNA4F8F6F4MatrixFormat,
     accum_width: Int,
 ](ctx: DeviceContext) raises:
-    comptime num_values = WARP_SIZE * accum_width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime num_values = warp_size * accum_width
 
     var zero_pad_device = ctx.enqueue_create_buffer[.float32](num_values)
     var one_pad_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var zero_pad_tt = TileTensor(
-        zero_pad_device, row_major[WARP_SIZE, accum_width]()
+        zero_pad_device, row_major[warp_size, accum_width]()
     )
     var one_pad_tt = TileTensor(
-        one_pad_device, row_major[WARP_SIZE, accum_width]()
+        one_pad_device, row_major[warp_size, accum_width]()
     )
 
     comptime kernel = _fp6_padding_kernel[
@@ -175,7 +177,7 @@ def _run_fp6_padding_check[
         zero_pad_tt.as_unsafe_any_origin(),
         one_pad_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 
@@ -200,16 +202,17 @@ def _run_block_scaled_mma_amd_smoke[
     matrix_format: CDNA4F8F6F4MatrixFormat,
     accum_width: Int,
 ](ctx: DeviceContext) raises:
-    comptime num_values = WARP_SIZE * accum_width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime num_values = warp_size * accum_width
 
     var baseline_device = ctx.enqueue_create_buffer[.float32](num_values)
     var scaled_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var baseline_tt = TileTensor(
-        baseline_device, row_major[WARP_SIZE, accum_width]()
+        baseline_device, row_major[warp_size, accum_width]()
     )
     var scaled_tt = TileTensor(
-        scaled_device, row_major[WARP_SIZE, accum_width]()
+        scaled_device, row_major[warp_size, accum_width]()
     )
 
     comptime kernel = _block_scaled_mma_smoke_kernel[
@@ -223,12 +226,12 @@ def _run_block_scaled_mma_amd_smoke[
         baseline_tt.as_unsafe_any_origin(),
         scaled_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 
-    var baseline_host = alloc[Float32](num_values)
-    var scaled_host = alloc[Float32](num_values)
+    var baseline_host = unsafe_alloc[Float32](num_values)
+    var scaled_host = unsafe_alloc[Float32](num_values)
     ctx.enqueue_copy(baseline_host, baseline_device)
     ctx.enqueue_copy(scaled_host, scaled_device)
     ctx.synchronize()

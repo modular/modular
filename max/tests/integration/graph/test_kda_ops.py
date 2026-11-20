@@ -25,6 +25,9 @@ which the direct-launch Mojo KDA tests cannot catch. They verify:
   against the oracle;
 * untouched slots elsewhere in the pool remain byte-identical.
 
+``kda_verify_ring`` and ``kda_state_fold`` are checked bit-for-bit against
+``kda_decode`` in :func:`test_kda_verify_ring_and_fold_match_decode`.
+
 ``kda_chunk`` additionally exercises the host-side work that only its
 registration performs: the ``cu_seqlens`` readback, the chunk map built
 from it, and the scratch workspaces sized off the resulting chunk count.
@@ -36,16 +39,27 @@ import max.driver as md
 import numpy as np
 import pytest
 import torch
-from max.driver import accelerator_architecture_name, accelerator_count
+from max.driver import (
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.state_space import (
+from max.engine import InferenceSession, Model
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn._graph_ops.state_space import (
     kda_chunk,
     kda_chunk_supports_head_dims,
     kda_decode,
+    verify_width_operand,
 )
-from max.nn.state_space.kimi_delta import KDA_GATE_LOWER_BOUND
+from max.nn._graph_ops.state_space.kimi_delta import (
+    KDA_GATE_LOWER_BOUND,
+    KdaStateLayout,
+    kda_ring_record_elements,
+    kda_state_fold,
+    kda_verify_ring,
+)
 
 # The chunk pipeline reassociates the fp32 arithmetic, so it is graded on
 # relative RMSE at the tolerance its kernel suite documents rather than on
@@ -771,8 +785,8 @@ def _error_chain(exc: BaseException) -> str:
 
 
 # The AMD path is a narrower scope than the SM100 one: 128-wide heads with
-# Hk == Hv, bf16 q/k/v/output, fp32 gates and state, and the bounded "safe"
-# gate. Both pool layouts and both beta modes are covered.
+# Hk == Hv, bf16 q/k/v, a bf16 or fp32 output, fp32 gates and state, and the
+# bounded "safe" gate. Both pool layouts and both beta modes are covered.
 @pytest.mark.skipif(
     not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
 )
@@ -852,6 +866,165 @@ def test_kda_chunk_amd_graph_capture(
         seq_lens=seq_lens,
         capture=True,
     )
+
+
+@pytest.mark.skipif(
+    not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
+)
+def test_kda_chunk_amd_k_first_flash_heads(session: InferenceSession) -> None:
+    """kda_chunk on gfx950 at one GLM-5.3-Flash TP2 rank: K_FIRST, 32 heads."""
+    _run_kda_chunk_amd_case(
+        session,
+        state_layout="K_FIRST",
+        beta_mode="logits",
+        heads=32,
+        seq_lens=[300, 65, 1],
+    )
+
+
+_COND_HEADS = 4
+_COND_HEAD_DIM = 128
+_COND_SLOTS = 5
+
+
+def _kda_prefill_cond_graph() -> Graph:
+    """The GLM KDA layer's routing, as one graph over symbolic extents.
+
+    Prefill (more tokens than sequences) takes bf16 ``kda_chunk`` and decode
+    takes float32 ``kda_decode``; both mutate the same pool and return
+    float32.
+    """
+    gpu = DeviceRef.GPU()
+    f32 = DType.float32
+    h, d = _COND_HEADS, _COND_HEAD_DIM
+    act = TensorType(f32, ["total_tokens", h, d], device=gpu)
+    with Graph(
+        "kda_prefill_cond",
+        input_types=[
+            act,
+            act,
+            act,
+            act,
+            TensorType(f32, ["total_tokens", h], device=gpu),
+            TensorType(f32, [h], device=gpu),
+            TensorType(f32, [h, d], device=gpu),
+            TensorType(DType.int32, ["batch_plus_one"], device=gpu),
+            BufferType(f32, [_COND_SLOTS, h, d, d], device=gpu),
+            TensorType(DType.int32, ["batch"], device=gpu),
+        ],
+    ) as graph:
+        q, k, v, gate, beta, a_log, dt_bias, cu_seqlens = (
+            inp.tensor for inp in graph.inputs[:8]
+        )
+        pool = graph.inputs[8].buffer
+        state_indices = graph.inputs[9].tensor
+
+        def recurrence(chunked: bool) -> TensorValue:
+            op = kda_chunk if chunked else kda_decode
+            io_dtype = DType.bfloat16 if chunked else f32
+            out = op(
+                q.cast(io_dtype),
+                k.cast(io_dtype),
+                v.cast(io_dtype),
+                gate,
+                beta,
+                a_log,
+                dt_bias,
+                cu_seqlens,
+                pool,
+                state_indices,
+                output_dtype=io_dtype,
+                gate_mode="safe",
+                beta_mode="logits",
+                state_layout="K_FIRST",
+            ).cast(f32)
+            return ops.rebind(out, q.shape)
+
+        total_tokens = ops.shape_to_tensor(q.shape)[0]
+        batch = ops.shape_to_tensor(cu_seqlens.shape)[0] - 1
+        graph.output(
+            ops.cond(
+                total_tokens > batch,
+                [TensorType(f32, q.shape, gpu)],
+                lambda: recurrence(chunked=True),
+                lambda: recurrence(chunked=False),
+            )[0]
+        )
+    return graph
+
+
+@pytest.mark.skipif(
+    not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
+)
+def test_kda_chunk_amd_cond_graph_capture(session: InferenceSession) -> None:
+    """The prefill/decode ``ops.cond`` captured per branch and replayed.
+
+    Each branch is captured under its own key, then replayed twice from the
+    initial pool. The second replay starts from the pool the first one left,
+    so both must match two eager executions bit for bit. A chunk output is
+    bf16-rounded and a decode output is not, which shows each capture recorded
+    the branch its batch selects.
+    """
+    model = session.load(_kda_prefill_cond_graph())
+    device = model.input_devices[0]
+    h, d = _COND_HEADS, _COND_HEAD_DIM
+    rng = np.random.default_rng(29)
+
+    def normal(*shape: int, mean: float = 0.0) -> np.ndarray:
+        return (rng.standard_normal(shape) * 0.5 + mean).astype(np.float32)
+
+    a_log = normal(h)
+    dt_bias = normal(h, d)
+    pool_initial = normal(_COND_SLOTS, h, d, d)
+    state_indices = np.asarray([3, 1], dtype=np.int32)
+
+    def inputs(seq_lens: list[int]) -> list[md.Buffer]:
+        t = sum(seq_lens)
+        arrays = [
+            normal(t, h, d),
+            normal(t, h, d),
+            normal(t, h, d),
+            normal(t, h, d, mean=-6.0),
+            normal(t, h),
+            a_log,
+            dt_bias,
+            np.concatenate([[0], np.cumsum(seq_lens)]).astype(np.int32),
+            pool_initial.copy(),
+            state_indices,
+        ]
+        return [md.Buffer.from_numpy(a).to(device) for a in arrays]
+
+    def reset_pool(args: list[md.Buffer]) -> None:
+        args[8].inplace_copy_from(
+            md.Buffer.from_numpy(pool_initial.copy()).to(device)
+        )
+
+    def read(buf: md.Buffer) -> np.ndarray:
+        return torch.from_dlpack(buf).cpu().numpy().copy()
+
+    for graph_key, seq_lens, chunked in (
+        (1, [300, 65], True),
+        (2, [1, 1], False),
+    ):
+        args = inputs(seq_lens)
+        eager = []
+        for _ in range(2):
+            (out,) = model.execute(*args)
+            eager.append((read(out), read(args[8])))
+        assert not np.array_equal(eager[1][1], pool_initial)
+        rounded = (
+            torch.from_numpy(eager[0][0]).to(torch.bfloat16).float().numpy()
+        )
+        assert np.array_equal(eager[0][0], rounded) == chunked
+
+        reset_pool(args)
+        (out_buf,) = model.capture(graph_key, *args)
+        reset_pool(args)
+        for replay, (want_out, want_pool) in enumerate(eager):
+            model.replay(graph_key, *args)
+            tag = f"chunked={chunked} replay {replay}"
+            np.testing.assert_array_equal(read(out_buf), want_out, err_msg=tag)
+            np.testing.assert_array_equal(read(args[8]), want_pool, err_msg=tag)
 
 
 @pytest.mark.skipif(
@@ -1022,8 +1195,8 @@ def test_kda_chunk_wrapper_rejects_amd_unsupported() -> None:
                 gate_mode="safe",
                 use_computebound=True,
             )
-        with pytest.raises(ValueError, match="bf16 q/k/v/output"):
-            kda_chunk(*args, output_dtype=DType.float32, gate_mode="safe")
+        with pytest.raises(ValueError, match="a bf16 or fp32 output"):
+            kda_chunk(*args, output_dtype=DType.float16, gate_mode="safe")
         bf16_gate = graph.inputs[8].tensor
         with pytest.raises(ValueError, match=r"raw_gate DType\.bfloat16"):
             kda_chunk(
@@ -1311,3 +1484,795 @@ def test_kda_decode_wrapper_rejects_mismatched_shapes() -> None:
             )
 
         graph.output()
+
+
+# ---------------------------------------------------------------------------
+# kda_verify_ring / kda_state_fold
+# ---------------------------------------------------------------------------
+
+_RING_LEN = 4
+_RING_PADDING = 3
+_RING_POISON = np.float32(-7.75e18)
+_POOL_SLOTS = 6
+_RING_ROWS = 5
+_CONV_SLOTS = 6
+_CONV_TAPS = 3
+"""The conv pool's rows and window width, a kernel-size-4 conv."""
+
+
+def _assert_reproduces(
+    actual: np.ndarray, desired: np.ndarray, err_msg: str
+) -> None:
+    """Asserts ``actual`` reproduces ``desired``: bit for bit on NVIDIA.
+
+    The verify, the fold and ``kda_decode`` are separate kernels, but on
+    NVIDIA each spells every multiply-add of the token step as an explicit
+    ``fma``, so its contraction cannot tell them apart. Elsewhere
+    ``kda_decode`` keeps the compiler's arithmetic for speed, and MTP is
+    NVIDIA-only, so they agree to rounding.
+    """
+    if accelerator_api() == "cuda":
+        np.testing.assert_array_equal(actual, desired, err_msg=err_msg)
+    else:
+        np.testing.assert_allclose(
+            actual, desired, rtol=1e-4, atol=1e-5, err_msg=err_msg
+        )
+
+
+def _pool_shape(kd: int, num_value_heads: int) -> list[int]:
+    """The pool's shape, which the equal head widths make layout-independent."""
+    return [_POOL_SLOTS, num_value_heads, kd, kd]
+
+
+def _conv_dim(kd: int, num_value_heads: int) -> int:
+    """The conv input's width: one q, k and v segment per value head."""
+    return 3 * num_value_heads * kd
+
+
+def _conv_shape(kd: int, num_value_heads: int) -> list[int]:
+    """The conv pool's shape: windows ``_conv_dim`` wide, ``_CONV_TAPS``
+    deep."""
+    return [_CONV_SLOTS, _conv_dim(kd, num_value_heads), _CONV_TAPS]
+
+
+def _expected_conv_pool(
+    conv_init: np.ndarray,
+    windows: np.ndarray,
+    offsets: np.ndarray,
+    lengths: list[int],
+    accepted: list[int],
+    conv_rows: np.ndarray,
+) -> np.ndarray:
+    """The conv windows the fold should place, one q, k and v segment wide.
+
+    At an accepted length ``L`` (clamped to the request's rows), window
+    slot ``j`` takes the captured input at position ``L - taps + j`` once
+    that lies in the request's rows, and the pre-verify entry ``L + j``
+    otherwise. The placement only copies, so this NumPy view of it is exact.
+    """
+    pool = conv_init.copy()
+    taps = _CONV_TAPS
+    for b, row in enumerate(conv_rows):
+        kept = min(accepted[b], lengths[b])
+        if kept <= 0:
+            continue
+        for j in range(taps):
+            lookback = kept - taps + j
+            if lookback >= 0:
+                pool[row, :, j] = windows[offsets[b] + lookback]
+            else:
+                pool[row, :, j] = conv_init[row, :, kept + j]
+    return pool
+
+
+def _kda_graph_inputs(
+    kd: int, num_key_heads: int, num_value_heads: int, batch: int
+) -> list[TensorType | BufferType]:
+    """The ``kda_decode`` operands up to the pool, over a symbolic token axis."""
+    gpu = DeviceRef.GPU()
+    f32 = DType.float32
+    return [
+        TensorType(f32, ["total_t", num_key_heads, kd], device=gpu),
+        TensorType(f32, ["total_t", num_key_heads, kd], device=gpu),
+        TensorType(f32, ["total_t", num_value_heads, kd], device=gpu),
+        TensorType(f32, ["total_t", num_value_heads, kd], device=gpu),
+        TensorType(f32, ["total_t", num_value_heads], device=gpu),
+        TensorType(f32, [num_value_heads], device=gpu),
+        TensorType(f32, [num_value_heads, kd], device=gpu),
+        TensorType(DType.int32, [batch + 1], device=gpu),
+    ]
+
+
+def _decode_model(
+    session: InferenceSession,
+    kd: int,
+    num_key_heads: int,
+    num_value_heads: int,
+    batch: int,
+    state_layout: KdaStateLayout,
+) -> Model:
+    gpu = DeviceRef.GPU()
+    with Graph(
+        "kda_decode_reference",
+        input_types=[
+            *_kda_graph_inputs(kd, num_key_heads, num_value_heads, batch),
+            BufferType(
+                DType.float32,
+                _pool_shape(kd, num_value_heads),
+                device=gpu,
+            ),
+            TensorType(DType.int32, [batch], device=gpu),
+        ],
+    ) as graph:
+        q, k, v, raw_gate, beta, a_log, dt_bias, cu_seqlens = (
+            inp.tensor for inp in graph.inputs[:8]
+        )
+        pool = graph.inputs[8].buffer
+        indices = graph.inputs[9].tensor
+        graph.output(
+            kda_decode(
+                q,
+                k,
+                v,
+                raw_gate,
+                beta,
+                a_log,
+                dt_bias,
+                cu_seqlens,
+                pool,
+                indices,
+                output_dtype=DType.float32,
+                state_layout=state_layout,
+            )
+        )
+    return session.load(graph)
+
+
+def _ring_model(
+    session: InferenceSession,
+    kd: int,
+    num_key_heads: int,
+    num_value_heads: int,
+    batch: int,
+    state_layout: KdaStateLayout,
+    num_drafts: int,
+    fold: bool,
+    place_conv: bool = True,
+) -> Model:
+    """Builds the verify, then optionally the fold, over the same buffers.
+
+    ``fold=False`` is the verify alone. Otherwise the fold also places the
+    conv window, unless ``place_conv`` is false, which takes the no-conv arm
+    a rollback that replays the conv itself uses. The conv operands stay
+    graph inputs either way, so one caller feeds the same buffers to both.
+    """
+    gpu = DeviceRef.GPU()
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    conv_dim = _conv_dim(kd, num_value_heads)
+    with Graph(
+        "kda_verify_ring_and_fold",
+        input_types=[
+            *_kda_graph_inputs(kd, num_key_heads, num_value_heads, batch),
+            BufferType(
+                DType.float32,
+                _pool_shape(kd, num_value_heads),
+                device=gpu,
+            ),
+            TensorType(DType.int32, [batch], device=gpu),
+            BufferType(
+                DType.float32,
+                [_RING_ROWS, num_value_heads, _RING_LEN, stride],
+                device=gpu,
+            ),
+            TensorType(DType.int32, [batch], device=gpu),
+            TensorType(DType.uint32, [batch], device=gpu),
+            # The fold's conv operands: one captured window, the conv pool
+            # and its rows.
+            TensorType(DType.float32, ["total_t", conv_dim], device=gpu),
+            TensorType(DType.uint32, [1, batch], device=gpu),
+            BufferType(DType.float32, _conv_shape(kd, num_value_heads), gpu),
+        ],
+    ) as graph:
+        q, k, v, raw_gate, beta, a_log, dt_bias, cu_seqlens = (
+            inp.tensor for inp in graph.inputs[:8]
+        )
+        pool = graph.inputs[8].buffer
+        indices = graph.inputs[9].tensor
+        ring = graph.inputs[10].buffer
+        ring_indices = graph.inputs[11].tensor
+        accepted = graph.inputs[12].tensor
+        window = graph.inputs[13].tensor
+        conv_rows = graph.inputs[14].tensor
+        conv_pool = graph.inputs[15].buffer
+        verify_width = verify_width_operand(num_drafts)
+        out = kda_verify_ring(
+            q,
+            k,
+            v,
+            raw_gate,
+            beta,
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            pool,
+            indices,
+            ring,
+            ring_indices,
+            verify_width,
+            output_dtype=DType.float32,
+            state_layout=state_layout,
+        )
+        if fold and place_conv:
+            kda_state_fold(
+                pool,
+                ring,
+                ops.unsqueeze(indices.cast(DType.uint32), 0),
+                ops.unsqueeze(ring_indices.cast(DType.uint32), 0),
+                accepted,
+                cu_seqlens,
+                verify_width,
+                conv_pool=conv_pool,
+                conv_row_ids=conv_rows,
+                qkv_windows=[window],
+                state_layout=state_layout,
+            )
+        elif fold:
+            kda_state_fold(
+                pool,
+                ring,
+                ops.unsqueeze(indices.cast(DType.uint32), 0),
+                ops.unsqueeze(ring_indices.cast(DType.uint32), 0),
+                accepted,
+                cu_seqlens,
+                verify_width,
+                state_layout=state_layout,
+            )
+        graph.output(out)
+    return session.load(graph)
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+@pytest.mark.parametrize("state_layout", ["K_FIRST", "V_FIRST"])
+@pytest.mark.parametrize(
+    ("kd", "num_key_heads", "num_value_heads"), [(32, 1, 2), (128, 2, 2)]
+)
+@pytest.mark.parametrize(
+    ("num_drafts", "lengths", "accepted"),
+    [
+        # At width zero the op is `kda_decode` on the live pool, no ring.
+        (0, [4, 2, 1], [0, 0, 0]),
+        # Every window fits the ring; the fold lands each request's own count.
+        (3, [4, 4, 4], [4, 1, 0]),
+        # The second request is longer than the ring: it records nothing and
+        # commits the pool itself, so the fold must skip its (full) count.
+        (3, [4, 6, 2], [2, 6, 2]),
+        # A one-token row without proposals folds its one record, and a
+        # zero-length padding row folds nothing.
+        (3, [4, 1, 0], [2, 1, 0]),
+        # Counts past a row's length, which the fold clamps to it rather than
+        # folding ring slots this verify never wrote. The kernel's
+        # `debug_assert` would reject them, but the graph compiles kernels
+        # without that assert level.
+        (3, [4, 1, 0], [4, 3, 2]),
+    ],
+)
+def test_kda_verify_ring_and_fold_match_decode(
+    session: InferenceSession,
+    kd: int,
+    num_key_heads: int,
+    num_value_heads: int,
+    state_layout: KdaStateLayout,
+    num_drafts: int,
+    lengths: list[int],
+    accepted: list[int],
+) -> None:
+    """Verify + fold land the state and readout ``kda_decode`` would.
+
+    The reference is ``kda_decode`` on a host-sliced batch holding each
+    request's accepted tokens, from a copy of the same pool. On NVIDIA the
+    comparison is bit-exact: the verify shares ``kda_decode``'s arithmetic and
+    the fold replays its update with the same operands.
+    """
+    batch = len(lengths)
+    total = sum(lengths)
+    offsets = np.concatenate([[0], np.cumsum(lengths)]).astype(np.int32)
+    state_indices = np.array([4, 1, 3], dtype=np.int32)
+    ring_indices = np.array([2, 0, 3], dtype=np.int32)
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+
+    rng = np.random.default_rng(7)
+
+    def tensors(n: int) -> list[np.ndarray]:
+        return [
+            rng.standard_normal((n, num_key_heads, kd)).astype(np.float32),
+            rng.standard_normal((n, num_key_heads, kd)).astype(np.float32),
+            rng.standard_normal((n, num_value_heads, kd)).astype(np.float32),
+            rng.standard_normal((n, num_value_heads, kd)).astype(np.float32),
+            rng.standard_normal((n, num_value_heads)).astype(np.float32),
+        ]
+
+    q, k, v, raw_gate, beta = tensors(total)
+    a_log = (rng.standard_normal(num_value_heads) * 0.5).astype(np.float32)
+    dt_bias = rng.standard_normal((num_value_heads, kd)).astype(np.float32)
+    pool_init = (
+        rng.standard_normal(_pool_shape(kd, num_value_heads)) * 0.3
+    ).astype(np.float32)
+
+    ring_model = _ring_model(
+        session,
+        kd,
+        num_key_heads,
+        num_value_heads,
+        batch,
+        state_layout,
+        num_drafts,
+        fold=True,
+    )
+    decode_model = _decode_model(
+        session, kd, num_key_heads, num_value_heads, batch, state_layout
+    )
+    device = ring_model.input_devices[0]
+
+    def buf(array: np.ndarray) -> md.Buffer:
+        return md.Buffer.from_numpy(np.ascontiguousarray(array)).to(device)
+
+    def decode(
+        token_idx: np.ndarray, cu: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        pool = buf(pool_init.copy())
+        out = decode_model.execute(
+            buf(q[token_idx]),
+            buf(k[token_idx]),
+            buf(v[token_idx]),
+            buf(raw_gate[token_idx]),
+            buf(beta[token_idx]),
+            buf(a_log),
+            buf(dt_bias),
+            buf(cu),
+            pool,
+            buf(state_indices),
+        )
+        return (
+            torch.from_dlpack(out[0]).cpu().numpy(),
+            torch.from_dlpack(pool).cpu().numpy(),
+        )
+
+    full_out, full_pool = decode(np.arange(total), offsets)
+
+    kept = [
+        n if n > _RING_LEN else min(a, n)
+        for n, a in zip(lengths, accepted, strict=True)
+    ]
+    if num_drafts == 0:
+        kept = list(lengths)
+    kept_idx = np.concatenate(
+        [np.arange(offsets[b], offsets[b] + kept[b]) for b in range(batch)]
+    )
+    kept_cu = np.concatenate([[0], np.cumsum(kept)]).astype(np.int32)
+    _, expected_pool = decode(kept_idx, kept_cu)
+
+    pool = buf(pool_init.copy())
+    ring = buf(
+        np.full(
+            (_RING_ROWS, num_value_heads, _RING_LEN, stride),
+            _RING_POISON,
+            dtype=np.float32,
+        )
+    )
+    conv_dim = _conv_dim(kd, num_value_heads)
+    window = rng.standard_normal((total, conv_dim)).astype(np.float32)
+    conv_rows = np.array([2, 0, 3], dtype=np.uint32)
+    conv_init = (
+        rng.standard_normal(_conv_shape(kd, num_value_heads)) * 0.4
+    ).astype(np.float32)
+    conv_pool = buf(conv_init.copy())
+    out = ring_model.execute(
+        buf(q),
+        buf(k),
+        buf(v),
+        buf(raw_gate),
+        buf(beta),
+        buf(a_log),
+        buf(dt_bias),
+        buf(offsets),
+        pool,
+        buf(state_indices),
+        ring,
+        buf(ring_indices),
+        buf(np.array(accepted, dtype=np.uint32)),
+        buf(window),
+        buf(conv_rows.reshape(1, -1)),
+        conv_pool,
+    )
+    _assert_reproduces(
+        torch.from_dlpack(out[0]).cpu().numpy(),
+        full_out,
+        "kda_verify_ring readout differs from kda_decode",
+    )
+    _assert_reproduces(
+        torch.from_dlpack(pool).cpu().numpy(),
+        expected_pool,
+        "the folded pool differs from kda_decode over the accepted tokens",
+    )
+    # The conv window placement is a copy, so it is exact whatever the target.
+    expected_conv = (
+        conv_init
+        if num_drafts == 0
+        else _expected_conv_pool(
+            conv_init, window, offsets, lengths, accepted, conv_rows
+        )
+    )
+    np.testing.assert_array_equal(
+        torch.from_dlpack(conv_pool).cpu().numpy(),
+        expected_conv,
+        err_msg="the placed conv windows differ from the per-layer replay",
+    )
+    ring_after = torch.from_dlpack(ring).cpu().numpy()
+    if num_drafts == 0:
+        assert np.all(ring_after == _RING_POISON), (
+            "K == 0 must not write the ring"
+        )
+    else:
+        record = kda_ring_record_elements(kd, kd)
+        for b in range(batch):
+            row = ring_after[ring_indices[b]]
+            if lengths[b] > _RING_LEN:
+                assert np.all(row == _RING_POISON), "a long request recorded"
+            else:
+                assert not np.any(
+                    row[:, : lengths[b], :record] == _RING_POISON
+                ), "a record was left unwritten"
+        assert np.all(ring_after[1] == _RING_POISON), (
+            "an unowned ring row moved"
+        )
+    assert full_pool.shape == expected_pool.shape
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+def test_kda_state_fold_without_conv_folds_the_same_pool(
+    session: InferenceSession,
+) -> None:
+    """A fold given no conv operands lands the pool the conv fold lands.
+
+    Kimi K3's rollback replays the conv itself and folds without the window
+    placement, which is a separate op. Its fold must be the same fold, so
+    both arms run over equal pools from one batch of inputs, and the no-conv
+    arm must leave the conv pool where it found it.
+    """
+    kd, num_key_heads, num_value_heads = 32, 1, 2
+    state_layout: KdaStateLayout = "K_FIRST"
+    num_drafts = 3
+    lengths = [4, 3]
+    accepted = [3, 0]
+    batch = len(lengths)
+    total = sum(lengths)
+    offsets = np.concatenate([[0], np.cumsum(lengths)]).astype(np.int32)
+    rng = np.random.default_rng(11)
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    models = [
+        _ring_model(
+            session,
+            kd,
+            num_key_heads,
+            num_value_heads,
+            batch,
+            state_layout,
+            num_drafts,
+            fold=True,
+            place_conv=place_conv,
+        )
+        for place_conv in (True, False)
+    ]
+    device = models[0].input_devices[0]
+
+    def buf(array: np.ndarray) -> md.Buffer:
+        return md.Buffer.from_numpy(np.ascontiguousarray(array)).to(device)
+
+    pool_init = (
+        rng.standard_normal(_pool_shape(kd, num_value_heads)) * 0.3
+    ).astype(np.float32)
+    conv_init = (
+        rng.standard_normal(_conv_shape(kd, num_value_heads)) * 0.4
+    ).astype(np.float32)
+    conv_rows = np.array([2, 0], dtype=np.uint32)
+    # One batch of inputs for both arms: the folds differ only in whether they
+    # place the window, so anything else that differed would hide a divergence.
+    operands = [
+        rng.standard_normal((total, num_key_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_key_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_value_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_value_heads, kd)).astype(np.float32),
+        rng.standard_normal((total, num_value_heads)).astype(np.float32),
+        (rng.standard_normal(num_value_heads) * 0.5).astype(np.float32),
+        rng.standard_normal((num_value_heads, kd)).astype(np.float32),
+        offsets,
+    ]
+    ring_init = np.full(
+        (_RING_ROWS, num_value_heads, _RING_LEN, stride),
+        _RING_POISON,
+        dtype=np.float32,
+    )
+    window = rng.standard_normal(
+        (total, _conv_dim(kd, num_value_heads))
+    ).astype(np.float32)
+    state_indices = np.array([4, 1], dtype=np.int32)
+    ring_indices = np.array([2, 0], dtype=np.int32)
+    pooled = []
+    for model, place_conv in zip(models, (True, False), strict=True):
+        pool = buf(pool_init.copy())
+        conv_pool = buf(conv_init.copy())
+        model.execute(
+            *[buf(operand) for operand in operands],
+            pool,
+            buf(state_indices),
+            buf(ring_init.copy()),
+            buf(ring_indices),
+            buf(np.array(accepted, dtype=np.uint32)),
+            buf(window),
+            buf(conv_rows.reshape(1, -1)),
+            conv_pool,
+        )
+        pooled.append(torch.from_dlpack(pool).cpu().numpy())
+        # Request 1 accepted nothing, so neither arm may write its pool row.
+        np.testing.assert_array_equal(
+            pooled[-1][state_indices[1]],
+            pool_init[state_indices[1]],
+            err_msg="a fold of zero accepted records wrote the pool",
+        )
+        conv_after = torch.from_dlpack(conv_pool).cpu().numpy()
+        if place_conv:
+            assert not np.array_equal(
+                conv_after[conv_rows[0]], conv_init[conv_rows[0]]
+            ), "the conv fold placed no window"
+            np.testing.assert_array_equal(
+                conv_after[conv_rows[1]],
+                conv_init[conv_rows[1]],
+                err_msg="a fold of zero accepted records placed a window",
+            )
+        else:
+            np.testing.assert_array_equal(
+                conv_after,
+                conv_init,
+                err_msg="a fold given no conv operands placed a window",
+            )
+    # The second request accepted nothing, so its row must be skipped and the
+    # first request's records must still land.
+    assert not np.array_equal(pooled[1], pool_init), (
+        "the fold skipped both rows"
+    )
+    _assert_reproduces(
+        pooled[1],
+        pooled[0],
+        "the fold without the conv placement differs from the conv fold",
+    )
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+def test_kda_verify_ring_leaves_the_live_pool_alone(
+    session: InferenceSession,
+) -> None:
+    """Without the fold, a verify of ring-sized windows never writes the pool."""
+    kd, num_key_heads, num_value_heads = 32, 1, 2
+    state_layout: KdaStateLayout = "K_FIRST"
+    lengths = [4, 3]
+    batch = len(lengths)
+    total = sum(lengths)
+    offsets = np.concatenate([[0], np.cumsum(lengths)]).astype(np.int32)
+    rng = np.random.default_rng(3)
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    model = _ring_model(
+        session,
+        kd,
+        num_key_heads,
+        num_value_heads,
+        batch,
+        state_layout,
+        3,
+        fold=False,
+    )
+    device = model.input_devices[0]
+
+    def buf(array: np.ndarray) -> md.Buffer:
+        return md.Buffer.from_numpy(np.ascontiguousarray(array)).to(device)
+
+    pool_init = rng.standard_normal(_pool_shape(kd, num_value_heads)).astype(
+        np.float32
+    )
+    pool = buf(pool_init.copy())
+    conv_dim = _conv_dim(kd, num_value_heads)
+    window = buf(rng.standard_normal((total, conv_dim)).astype(np.float32))
+    conv_rows = np.array([5, 0], dtype=np.uint32)
+    conv_init = (
+        rng.standard_normal(_conv_shape(kd, num_value_heads)) * 0.4
+    ).astype(np.float32)
+    conv_pool = buf(conv_init.copy())
+    model.execute(
+        buf(rng.standard_normal((total, num_key_heads, kd)).astype(np.float32)),
+        buf(rng.standard_normal((total, num_key_heads, kd)).astype(np.float32)),
+        buf(
+            rng.standard_normal((total, num_value_heads, kd)).astype(np.float32)
+        ),
+        buf(
+            rng.standard_normal((total, num_value_heads, kd)).astype(np.float32)
+        ),
+        buf(rng.standard_normal((total, num_value_heads)).astype(np.float32)),
+        buf(np.zeros(num_value_heads, dtype=np.float32)),
+        buf(np.zeros((num_value_heads, kd), dtype=np.float32)),
+        buf(offsets),
+        pool,
+        buf(np.array([4, 1], dtype=np.int32)),
+        buf(
+            np.full(
+                (_RING_ROWS, num_value_heads, _RING_LEN, stride),
+                _RING_POISON,
+                dtype=np.float32,
+            )
+        ),
+        buf(np.array([2, 0], dtype=np.int32)),
+        buf(np.array([3, 3], dtype=np.uint32)),
+        window,
+        buf(conv_rows.reshape(1, -1)),
+        conv_pool,
+    )
+    np.testing.assert_array_equal(
+        torch.from_dlpack(pool).cpu().numpy(), pool_init
+    )
+    # Without the fold nothing writes the conv pool either.
+    np.testing.assert_array_equal(
+        torch.from_dlpack(conv_pool).cpu().numpy(), conv_init
+    )
+
+
+# ---------------------------------------------------------------------------
+# kda_verify_ring over a mixed verify (chunk_long_rows, gfx950)
+# ---------------------------------------------------------------------------
+
+_MIXED_HEADS = 2
+_MIXED_DRAFTS = 7
+_MIXED_RING_LEN = _MIXED_DRAFTS + 1
+
+
+def _mixed_ring_graph(batch: int, slots: int) -> Graph:
+    """``kda_verify_ring`` with ``chunk_long_rows`` over bf16 q/k/v."""
+    gpu = DeviceRef.GPU()
+    kd = 128
+    h = _MIXED_HEADS
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    with Graph(
+        "kda_verify_ring_mixed",
+        input_types=[
+            TensorType(DType.bfloat16, ["total_t", h, kd], device=gpu),
+            TensorType(DType.bfloat16, ["total_t", h, kd], device=gpu),
+            TensorType(DType.bfloat16, ["total_t", h, kd], device=gpu),
+            TensorType(DType.float32, ["total_t", h, kd], device=gpu),
+            TensorType(DType.float32, ["total_t", h], device=gpu),
+            TensorType(DType.float32, [h], device=gpu),
+            TensorType(DType.float32, [h, kd], device=gpu),
+            TensorType(DType.int32, [batch + 1], device=gpu),
+            BufferType(DType.float32, [slots, h, kd, kd], device=gpu),
+            TensorType(DType.int32, [batch], device=gpu),
+            BufferType(
+                DType.float32,
+                [batch, h, _MIXED_RING_LEN, stride],
+                device=gpu,
+            ),
+            TensorType(DType.int32, [batch], device=gpu),
+        ],
+    ) as graph:
+        q, k, v, raw_gate, beta, a_log, dt_bias, cu = (
+            inp.tensor for inp in graph.inputs[:8]
+        )
+        graph.output(
+            kda_verify_ring(
+                q,
+                k,
+                v,
+                raw_gate,
+                beta,
+                a_log,
+                dt_bias,
+                cu,
+                graph.inputs[8].buffer,
+                graph.inputs[9].tensor,
+                graph.inputs[10].buffer,
+                graph.inputs[11].tensor,
+                verify_width_operand(_MIXED_DRAFTS),
+                output_dtype=DType.float32,
+                gate_mode="safe",
+                chunk_long_rows=True,
+            )
+        )
+    return graph
+
+
+@pytest.mark.skipif(
+    not _is_gfx950_gpu(), reason="a mixed verify's prompt rows are gfx950-only"
+)
+def test_kda_verify_ring_mixed_routes_each_row(
+    session: InferenceSession,
+) -> None:
+    """A mixed verify routes each row to its path, and leaves the rest alone.
+
+    The numerics of both paths are graded by the kernel tests
+    (`test_kda_amd_chunk_rows.mojo`, `test_kda_spec_ring.mojo`); this checks
+    the op's wiring. Decode rows record into the ring and leave the pool;
+    prompt rows commit the pool, record nothing and zero their drafts'
+    outputs; slots no row names are untouched.
+    """
+    kd = 128
+    h = _MIXED_HEADS
+    window = _MIXED_DRAFTS + 1
+    real = [0, 50, 0, 70]
+    lens = [window if r == 0 else r + _MIXED_DRAFTS for r in real]
+    batch = len(lens)
+    total_t = sum(lens)
+    slots = batch + 2
+    cu = np.concatenate([[0], np.cumsum(lens)]).astype(np.int32)
+    state_idx = np.array([4, 1, 5, 2], dtype=np.int32)
+
+    rng = np.random.default_rng(20261106)
+    q_t, k_t, v_t = (
+        torch.from_numpy(
+            rng.standard_normal((total_t, h, kd)).astype(np.float32)
+        ).to(torch.bfloat16)
+        for _ in range(3)
+    )
+    pool0 = (0.5 * rng.standard_normal((slots, h, kd, kd))).astype(np.float32)
+    stride = kda_ring_record_elements(kd, kd) + _RING_PADDING
+    ring0 = np.full(
+        (batch, h, _MIXED_RING_LEN, stride), _RING_POISON, dtype=np.float32
+    )
+
+    model = session.load(_mixed_ring_graph(batch, slots))
+    dev = model.input_devices[0]
+    pool = md.Buffer.from_numpy(pool0.copy()).to(dev)
+    ring = md.Buffer.from_numpy(ring0.copy()).to(dev)
+    (out_buf,) = model.execute(
+        md.Buffer.from_dlpack(q_t).to(dev),
+        md.Buffer.from_dlpack(k_t).to(dev),
+        md.Buffer.from_dlpack(v_t).to(dev),
+        md.Buffer.from_numpy(
+            (0.5 * rng.standard_normal((total_t, h, kd)) - 6.0).astype(
+                np.float32
+            )
+        ).to(dev),
+        md.Buffer.from_numpy(
+            rng.standard_normal((total_t, h)).astype(np.float32)
+        ).to(dev),
+        md.Buffer.from_numpy(np.zeros(h, dtype=np.float32)).to(dev),
+        md.Buffer.from_numpy(np.zeros((h, kd), dtype=np.float32)).to(dev),
+        md.Buffer.from_numpy(cu).to(dev),
+        pool,
+        md.Buffer.from_numpy(state_idx).to(dev),
+        ring,
+        md.Buffer.from_numpy(np.arange(batch, dtype=np.int32)).to(dev),
+    )
+    out = torch.from_dlpack(out_buf).cpu().numpy()
+    pool_after = torch.from_dlpack(pool).cpu().numpy()
+    ring_after = torch.from_dlpack(ring).cpu().numpy()
+
+    assert np.all(np.isfinite(out))
+    for b in range(batch):
+        s = state_idx[b]
+        if real[b] == 0:
+            assert not np.array_equal(ring_after[b], ring0[b]), (
+                f"decode row {b} recorded nothing"
+            )
+            np.testing.assert_array_equal(
+                pool_after[s], pool0[s], err_msg=f"decode row {b} committed"
+            )
+        else:
+            np.testing.assert_array_equal(
+                ring_after[b], ring0[b], err_msg=f"prompt row {b} recorded"
+            )
+            assert not np.array_equal(pool_after[s], pool0[s]), (
+                f"prompt row {b} committed nothing"
+            )
+            np.testing.assert_array_equal(
+                out[cu[b] + real[b] : cu[b + 1]],
+                0.0,
+                err_msg=f"prompt row {b}'s drafts",
+            )
+    for s in range(slots):
+        if s not in state_idx:
+            np.testing.assert_array_equal(pool_after[s], pool0[s])

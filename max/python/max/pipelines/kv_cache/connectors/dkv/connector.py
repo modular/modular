@@ -23,6 +23,7 @@ reconnection, and metrics; this shim only adapts the MAX-side types (device
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import math
 import os
@@ -47,15 +48,66 @@ from max.pipelines.kv_cache._nixl_backend import (
 )
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
+    CompletedLookup,
+    CompletedProbe,
     KVConnector,
     KVConnectorTransfer,
     KVLoadFailed,
     KVLoadRefused,
+    KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.profiler import traced
 
 _logger = logging.getLogger("max.pipelines")
+
+# Entries a dkv extension gained after the blocking ones. An older extension
+# lacks them, so each client is checked once and driven through the blocking
+# calls it has rather than failing on the first request.
+_ASYNC_LOOKUP_ENTRIES = ("start_prepare_load", "load_lookup", "abandon_lookup")
+_PRESENCE_ENTRIES = ("presence", "presence_supported", "start_presence")
+# Lookup entries that gained ``chain_start`` later. pyo3 rejects an unknown
+# keyword, so each entry is passed it only where its signature names it.
+_CHAIN_START_ENTRIES = ("prepare_load", "start_prepare_load")
+
+
+class _DkvLookup(Protocol):
+    """One leaf's leased read in flight, as ``start_prepare_load`` returns it.
+
+    The lease lives in this handle rather than in the client's single
+    prepared slot, so any number of requests can each hold one on the same
+    client. Dropping it unconsumed hands the lease back on its own.
+    """
+
+    def is_complete(self) -> bool: ...
+
+    def resident_mask(self) -> Sequence[bool]: ...
+
+
+class _DkvPresence(Protocol):
+    """One presence call in flight, as ``start_presence`` returns it.
+
+    It pins nothing and stages nothing, so there is nothing to hand back.
+    ``masks`` is ``None`` when the server or a hinted peer predates presence,
+    or when the query went unanswered because the server shed it or the
+    co-located dKV timed out, answered not ready, or never received it.
+    """
+
+    def is_complete(self) -> bool: ...
+
+    def masks(self) -> Sequence[Sequence[bool]] | None: ...
+
+
+class _DkvLoadTransfer(KVTransfer, Protocol):
+    """A load's ``dkv_connector.DkvTransfer``, which names what a peer filled.
+
+    ``peer_block_ids`` are the device blocks of the load that a hinted peer
+    filled rather than the co-located dKV, fixed when the load posted.
+    """
+
+    @property
+    def peer_block_ids(self) -> Sequence[int]: ...
 
 
 class _DkvClient(Protocol):
@@ -73,6 +125,7 @@ class _DkvClient(Protocol):
         group_id: int,
         block_hashes: Sequence[int],
         hint: bytes | None = ...,
+        chain_start: int | None = ...,
     ) -> Sequence[bool]: ...
 
     def load_prepared(
@@ -82,11 +135,52 @@ class _DkvClient(Protocol):
         block_ids: Sequence[int],
         end: int,
         num_blocks: int,
-    ) -> tuple[int, KVTransfer]: ...
+    ) -> tuple[int, _DkvLoadTransfer]: ...
 
     def abandon_prepared(self) -> None: ...
 
+    def start_prepare_load(
+        self,
+        *,
+        group_id: int,
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+        chain_start: int | None = ...,
+    ) -> _DkvLookup: ...
+
+    def load_lookup(
+        self,
+        *,
+        lookup: _DkvLookup,
+        group_id: int,
+        block_ids: Sequence[int],
+        end: int,
+        num_blocks: int,
+    ) -> tuple[int, _DkvLoadTransfer]: ...
+
+    def abandon_lookup(self, *, lookup: _DkvLookup) -> None: ...
+
+    def presence(
+        self,
+        *,
+        group_ids: Sequence[int],
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> Sequence[Sequence[bool]] | None: ...
+
+    def presence_supported(self) -> bool: ...
+
+    def start_presence(
+        self,
+        *,
+        group_ids: Sequence[int],
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> _DkvPresence: ...
+
     def is_healthy(self) -> bool: ...
+
+    def attached_peers(self) -> int: ...
 
     def lookup(
         self,
@@ -127,20 +221,18 @@ def _validate_dkv_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
     cache manager repeats the check -- a cache manager especially should not,
     since it would have to know which connector is configured.
 
-    The single-window restriction is :meth:`touch`'s, not :meth:`load`'s. The
-    cache manager sizes each leaf's share off that leaf's own group, so
-    differing widths are fine by the time they reach here. ``touch`` still
-    windows every sliding leaf by the one ``_window_blocks`` it reads off
-    ``_sliding_leaf_ids[0]``, so a second width would silently refresh the
-    wrong range. Lifting this gate means fixing ``touch`` first.
+    Sliding-window leaves may mix widths (DISTINF-792: MiMo-V2 DFlash serves
+    the target's 128-token window beside the drafter's 1,024): the cache
+    manager sizes each leaf's share off that leaf's own group, and
+    :meth:`touch` windows each sliding leaf by its own ``_window_blocks``
+    entry, so no width is shared on either side of the store.
 
     Args:
         leaves: Leaf id to attention group, as ``params.leaves()`` names them.
 
     Raises:
-        ValueError: If the tree is empty, holds a group that is neither full
-            attention nor sliding window, or mixes sliding-window leaves with
-            different ``window_size`` values.
+        ValueError: If the tree is empty, or holds a group that is neither
+            full attention nor sliding window.
     """
     if not leaves:
         raise ValueError("DKVConnector requires at least one KV cache leaf")
@@ -151,16 +243,6 @@ def _validate_dkv_leaves(leaves: Mapping[str, KVCacheGroupId]) -> None:
         raise ValueError(
             "DKVConnector supports full-attention and sliding-window leaves "
             f"only. Found: {leaves}"
-        )
-    windows = {
-        group_id.window_size
-        for group_id in leaves.values()
-        if group_id.is_sliding_window()
-    }
-    if len(windows) > 1:
-        raise ValueError(
-            "DKVConnector requires all sliding-window leaves to share one "
-            f"window_size; found {windows} in {leaves}"
         )
 
 
@@ -193,6 +275,21 @@ def _group_recency(group_id: KVCacheGroupId) -> int:
     if group_id.is_sliding_window():
         return _DKV_RECENCY_SLIDING_WINDOW
     return _DKV_RECENCY_FULL_SEQUENCE
+
+
+def _takes_chain_start(client: object, entry: str) -> bool:
+    """Returns whether ``client``'s ``entry`` accepts ``chain_start``.
+
+    An entry the client lacks, or one whose signature cannot be read, does
+    not.
+    """
+    method = getattr(client, entry, None)
+    if method is None:
+        return False
+    try:
+        return "chain_start" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _to_dkv_u64(h: bytes) -> int:
@@ -230,9 +327,39 @@ def _buffer_nbytes(buffer: Buffer) -> int:
     return buffer.num_elements * buffer.dtype.size_in_bytes
 
 
+def _check_handle_source(buffer: Buffer) -> None:
+    """Raises if ``buffer`` cannot cross to the dKV client as a driver buffer.
+
+    Mirrors the refusals of ``Buffer._driver_buffer_handle`` that Python can
+    see, so the shim can check every unit before it makes the first handle.
+
+    Args:
+        buffer: One shard's KV buffer unit.
+
+    Raises:
+        ValueError: If the buffer is strided, empty, or host hazard tracked.
+    """
+    device_id = buffer.device.id
+    if not buffer.is_contiguous:
+        raise ValueError(
+            f"dKV takes a KV buffer as a driver buffer handle, which names "
+            f"contiguous memory, and the KV buffer on device {device_id} is "
+            "strided"
+        )
+    if buffer.num_elements == 0:
+        raise ValueError(
+            f"dKV cannot take the empty KV buffer on device {device_id}"
+        )
+    if buffer._host_hazard_tracked:
+        raise ValueError(
+            f"the KV buffer on device {device_id} is host hazard tracked, "
+            "and dKV copies it on its own streams, outside that tracking"
+        )
+
+
 def _group_units_by_shard(
     kv_memory: Sequence[KVCacheMemory],
-) -> tuple[list[tuple[int, list[tuple[int, int]]]], bool]:
+) -> tuple[list[tuple[int, list[Buffer]]], bool]:
     """Groups one replica's KV memory units into per-shard unit lists.
 
     Each unit carries every TP shard, so shard ``s`` is ``mem.buffers[s]``
@@ -247,9 +374,9 @@ def _group_units_by_shard(
 
     Returns:
         A ``(shards, shards_are_identical)`` pair, where ``shards`` has one
-        ``(device_id, [(ptr, nbytes), ...])`` entry per TP shard in canonical
-        device order, and ``shards_are_identical`` reports whether every unit
-        is replicated.
+        ``(device_id, [buffer, ...])`` entry per TP shard in canonical device
+        order, and ``shards_are_identical`` reports whether every unit is
+        replicated.
 
     Raises:
         ValueError: If unit page counts disagree, or if units span different
@@ -284,16 +411,7 @@ def _group_units_by_shard(
 
     topology = next(iter(topologies))
     shards = [
-        (
-            device_id,
-            [
-                (
-                    mem.buffers[rank]._data_ptr(),
-                    _buffer_nbytes(mem.buffers[rank]),
-                )
-                for mem in kv_memory
-            ],
-        )
+        (device_id, [mem.buffers[rank] for mem in kv_memory])
         for rank, device_id in enumerate(topology)
     ]
     return shards, shards_are_identical
@@ -324,7 +442,7 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
     total_num_pages = kv_memory[0].total_num_pages
     _, units = shards[0]
 
-    return [nbytes // total_num_pages for _, nbytes in units]
+    return [_buffer_nbytes(buffer) // total_num_pages for buffer in units]
 
 
 # Default wall-clock budget for admitting (connect + handshake) one per-replica
@@ -386,6 +504,25 @@ _HEARTBEAT_ENV_KWARGS = {
 }
 
 
+def _env_truthy(name: str) -> bool:
+    """Returns whether the switch ``name`` is set to 1, true, yes or y.
+
+    The connector's on/off switches all read this one set, any case, so they
+    cannot drift apart. Unset reads as off.
+    """
+    return os.getenv(name, "0").lower() in ("1", "true", "yes", "y")
+
+
+def _writeback_supported(extension: object) -> bool:
+    """Returns whether ``extension``'s load transfer names peer-filled blocks.
+
+    An extension predating ``DkvTransfer.peer_block_ids`` raises out of every
+    load that posted once write-back reads it, so it is checked for once, at
+    construction, rather than on every load.
+    """
+    return hasattr(getattr(extension, "DkvTransfer", None), "peer_block_ids")
+
+
 def _heartbeat_overrides() -> dict[str, int]:
     """Collects the heartbeat-poller overrides set in the environment.
 
@@ -408,21 +545,68 @@ def _heartbeat_overrides() -> dict[str, int]:
     """
     overrides: dict[str, int] = {}
     for env_var, keyword in _HEARTBEAT_ENV_KWARGS.items():
-        raw = os.getenv(env_var, "").strip()
-        if not raw:
-            continue
-        try:
-            value = int(raw)
-        except ValueError as exc:
-            raise ValueError(
-                f"{env_var} must be an integer number, got {raw!r}"
-            ) from exc
-        if value < 0:
-            raise ValueError(f"{env_var} must not be negative, got {value}")
-
-        overrides[keyword] = value
+        value = _env_non_negative_int(env_var)
+        if value is not None:
+            overrides[keyword] = value
 
     return overrides
+
+
+def _env_non_negative_int(env_var: str) -> int | None:
+    """Reads ``env_var`` as a non-negative integer.
+
+    Returns:
+        The value, or ``None`` when the variable is unset or blank.
+
+    Raises:
+        ValueError: If the variable is set to something other than a
+            non-negative integer.
+    """
+    raw = os.getenv(env_var, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"{env_var} must be an integer number, got {raw!r}"
+        ) from exc
+    if value < 0:
+        raise ValueError(f"{env_var} must not be negative, got {value}")
+    return value
+
+
+_PEER_ATTACH_WAIT_ENV_VAR = "MODULAR_DKV_PEER_ATTACH_WAIT_MS"
+
+# The block manager gives up on a connector lookup after 5 s and serves the
+# whole request as a miss, which loses its co-located hits too. A wait near
+# that bound makes a slow attach cost more than no wait, so it stops at half
+# of it. Fixed rather than read from `_CONNECTOR_LOOKUP_TIMEOUT_S`, because
+# this module cannot import the block manager without a dependency cycle.
+_PEER_ATTACH_WAIT_MAX_MS = 2000
+
+
+def _peer_attach_wait_ms() -> int:
+    """Reads ``MODULAR_DKV_PEER_ATTACH_WAIT_MS``, 0 when unset.
+
+    Returns:
+        How long, in ms, an async lookup waits for a peer attach its hint
+        needs. 0 never waits.
+
+    Raises:
+        ValueError: If the variable is not a non-negative integer, or exceeds
+            :data:`_PEER_ATTACH_WAIT_MAX_MS`.
+    """
+    value = _env_non_negative_int(_PEER_ATTACH_WAIT_ENV_VAR)
+    if value is None:
+        return 0
+    if value > _PEER_ATTACH_WAIT_MAX_MS:
+        raise ValueError(
+            f"{_PEER_ATTACH_WAIT_ENV_VAR} must be at most "
+            f"{_PEER_ATTACH_WAIT_MAX_MS} ms, half of MAX's dKV lookup "
+            f"timeout, got {value}"
+        )
+    return value
 
 
 def _required_nixl_backend() -> NixlBackendType:
@@ -555,7 +739,7 @@ def _layout_fields(
     block_value_bytes = (
         math.prod(params.shape_per_block) * params.dtype.size_in_bytes
     )
-    return [
+    fields = [
         ("dtype", _dtype_tag(params.dtype)),
         ("dtype_bytes", str(params.dtype.size_in_bytes)),
         ("kv_dim", str(params.kv_dim)),
@@ -583,6 +767,11 @@ def _layout_fields(
         # fold has to stay a stable string for whatever a caller hands over.
         ("window_size", str(getattr(params, "window_size", -1))),
     ]
+    # Appended only for a split layout, so every other fingerprint is
+    # unchanged. A params stand-in that predates the field is unsplit.
+    if getattr(params, "has_split_head_dims", False):
+        fields.append(("v_head_dim", str(params.v_head_dim)))
+    return fields
 
 
 def _kv_config_hash(
@@ -840,17 +1029,23 @@ class _DkvBatchTransfer:
     the copy drains.
 
     ``g0_blocks_per_leaf`` is what an offload took; a load is handed the exact
-    blocks to fill and reports nothing back.
+    blocks to fill. ``writeback_blocks_per_leaf`` is which of those a hinted
+    peer filled, listed for write-back only with
+    ``MODULAR_DKV_OFFLOAD_PEER_LOADS`` on.
     """
 
     def __init__(
         self,
         transfers: Sequence[KVTransfer],
         g0_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
+        writeback_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
     ) -> None:
         self._pending = list(transfers)
         self._g0_blocks_per_leaf: Mapping[str, Sequence[int]] = (
             g0_blocks_per_leaf or {}
+        )
+        self._writeback_blocks_per_leaf: Mapping[str, Sequence[int]] = (
+            writeback_blocks_per_leaf or {}
         )
         # A terminal failure, kept so every later poll reports it too. The
         # scheduler's cordon sweep and the block manager poll the SAME object,
@@ -863,6 +1058,11 @@ class _DkvBatchTransfer:
     def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
         """The device blocks this transfer pins until it completes, per leaf."""
         return self._g0_blocks_per_leaf
+
+    @property
+    def writeback_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        """Blocks a hinted peer filled, to write back, per leaf."""
+        return self._writeback_blocks_per_leaf
 
     def is_complete(self) -> bool:
         """Whether every leaf's copy has landed. Never blocks.
@@ -928,6 +1128,154 @@ class _DkvBatchTransfer:
             raise self._failure
 
 
+class _DkvPendingLookup:
+    """One request's leased reads, one per leaf, polled as one.
+
+    Each leaf's read runs on that leaf's own client, so every one is started
+    before any is polled and the reads overlap. The lease lives in the
+    per-leaf handles rather than in a client's single prepared slot, so any
+    number of requests can hold one on the same clients at once, and
+    ``depths`` is how :meth:`DKVConnector.load_lookup` addresses the lease
+    from the hashes the manager hands back.
+    """
+
+    def __init__(
+        self,
+        replica_idx: int,
+        handles: Mapping[str, _DkvLookup],
+        dkv_hashes: Sequence[int],
+    ) -> None:
+        self.replica_idx = replica_idx
+        self.handles = dict(handles)
+        self.depths = {
+            dkv_hash: depth for depth, dkv_hash in enumerate(dkv_hashes, 1)
+        }
+        self._width = len(dkv_hashes)
+        self._complete = False
+
+    def is_complete(self) -> bool:
+        """Returns whether every leaf's read has answered. Never blocks.
+
+        An answer never goes back to unanswered, so once every leaf has
+        answered this stops polling them. A cordoned request is polled on
+        every scheduler iteration, and each poll is a call into the
+        extension per leaf.
+        """
+        if not self._complete:
+            self._complete = all(
+                handle.is_complete() for handle in self.handles.values()
+            )
+        return self._complete
+
+    def masks(self) -> Mapping[str, Sequence[bool]]:
+        """Returns each leaf's residency, once every leaf has answered.
+
+        A read that failed or was skipped answers all false, which is a miss
+        and never an error.
+        """
+        if not self.is_complete():
+            raise RuntimeError("dkv lookup has not answered on every leaf yet")
+        resident = {
+            leaf_id: list(handle.resident_mask())
+            for leaf_id, handle in self.handles.items()
+        }
+        # O(leaves), not O(blocks), because the manager indexes these masks
+        # positionally, so a mis-sized one has to fail here rather than as an
+        # IndexError inside a serving request.
+        short_mask = {
+            leaf_id: len(mask)
+            for leaf_id, mask in resident.items()
+            if len(mask) != self._width
+        }
+        if short_mask:
+            raise ValueError(
+                f"dkv start_prepare_load answered {short_mask} blocks wide "
+                f"over {self._width} blocks"
+            )
+        return resident
+
+
+class _DkvPendingProbe:
+    """One pricing's presence calls, one per shard layout, polled as one.
+
+    Answers per replica asked, as :meth:`DKVConnector.probe` does. A
+    replica the calls did not price answers an empty mapping, so its own
+    lease decides what it loads. Reads ``None`` when any call was shed, timed
+    out, or reached a server without presence.
+    """
+
+    def __init__(
+        self,
+        leaf_ids: Sequence[str],
+        handles: Sequence[tuple[Sequence[str], _DkvPresence]],
+        width: int,
+        replica_idxs: Sequence[int],
+        able: Sequence[int],
+    ) -> None:
+        self._leaf_ids = list(leaf_ids)
+        self._handles = list(handles)
+        self._width = width
+        self._replica_idxs = list(replica_idxs)
+        self._able = set(able)
+        self._complete = False
+
+    def is_complete(self) -> bool:
+        """Returns whether every layout's call has answered. Never blocks."""
+        if not self._complete:
+            self._complete = all(
+                handle.is_complete() for _, handle in self._handles
+            )
+        return self._complete
+
+    def masks(self) -> list[Mapping[str, Sequence[bool]]] | None:
+        """Returns each replica's residency, once every layout has answered."""
+        if not self.is_complete():
+            raise RuntimeError("dkv presence has not answered on every layout")
+        answered: dict[str, Sequence[bool]] = {}
+        for leaf_ids, handle in self._handles:
+            answer = handle.masks()
+            if answer is None:
+                return None
+            if len(answer) != len(leaf_ids) or any(
+                len(mask) != self._width for mask in answer
+            ):
+                raise ValueError(
+                    f"dkv start_presence answered {len(answer)} leaves "
+                    f"{[len(mask) for mask in answer]} blocks wide for "
+                    f"leaves {leaf_ids} over {self._width} blocks"
+                )
+            answered.update(
+                zip(leaf_ids, [list(mask) for mask in answer], strict=True)
+            )
+        resident: Mapping[str, Sequence[bool]] = {
+            leaf_id: answered[leaf_id] for leaf_id in self._leaf_ids
+        }
+        unknown: Mapping[str, Sequence[bool]] = {}
+        return [
+            resident if r in self._able else unknown for r in self._replica_idxs
+        ]
+
+
+class _DkvSyncLookup(CompletedLookup):
+    """A lookup answered in place by an extension without the async entries.
+
+    Its lease sits in each client's single prepared slot, so the next lookup
+    on the same replica supersedes it. ``depths`` is the map this lookup
+    recorded, which is how :meth:`DKVConnector.load_lookup` tells its own
+    lease from a later request's.
+    """
+
+    def __init__(
+        self,
+        masks: Mapping[str, Sequence[bool]],
+        replica_idx: int,
+        depths: Mapping[int, int] | None,
+    ) -> None:
+        super().__init__(masks)
+        self.replica_idx = replica_idx
+        self.depths = depths
+
+
 class DKVConnector(KVConnector):
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
@@ -989,7 +1337,9 @@ class DKVConnector(KVConnector):
         # Deferred so importing this module (e.g. by a non-dKV pipeline) does
         # not require the optional, runtime-provided dkv_connector extension to
         # be installed.
-        from dkv_connector import DkvConnector as _DkvConnectorClient
+        import dkv_connector as _dkv_extension
+
+        _DkvConnectorClient = _dkv_extension.DkvConnector
 
         # The Rust client creates a NIXL agent, which dlopens the transport
         # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
@@ -1025,14 +1375,31 @@ class DKVConnector(KVConnector):
         # revert. Read once here (not per call); BlockManager always calls
         # touch, the connector decides. Same truthy convention as block_manager's
         # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag.
-        self._g0_touch_disabled = os.getenv(
-            "MODULAR_DKV_DISABLE_G0_TOUCH", "0"
-        ).lower() in (
-            "1",
-            "true",
-            "yes",
-            "y",
-        )
+        self._g0_touch_disabled = _env_truthy("MODULAR_DKV_DISABLE_G0_TOUCH")
+        # Opt-in (CLIN-2163): a hinted lookup asks its first peer while the
+        # co-located dKV is still answering. Read once here like the touch
+        # kill-switch above, with the same truthy set, because MAX takes
+        # connector settings from engine-pod env rather than CLI flags.
+        overlap_peer_lookups = _env_truthy("MODULAR_DKV_OVERLAP_PEER_LOOKUPS")
+        # Opt-in (CLIN-2228): an async lookup whose hint names a peer not yet
+        # attached, past what the co-located dKV holds, waits this long for
+        # the attach, so the first request naming a peer can load from it.
+        # The scheduler holds the prompts queued behind that request for as
+        # long, so keep it to about one attach.
+        peer_attach_wait_ms = _peer_attach_wait_ms()
+        if peer_attach_wait_ms:
+            _logger.warning(
+                "%s=%d: a hinted dKV lookup may wait up to %d ms for a peer "
+                "attach, holding the prompts queued behind it on this replica "
+                "for as long",
+                _PEER_ATTACH_WAIT_ENV_VAR,
+                peer_attach_wait_ms,
+                peer_attach_wait_ms,
+            )
+        # Opt-in: a load reports the blocks a hinted peer filled, so the block
+        # manager writes them back to the co-located dKV at release. Read once
+        # here with the same truthy set as the switches above.
+        self._offload_peer_loads = _env_truthy("MODULAR_DKV_OFFLOAD_PEER_LOADS")
 
         num_replicas = len(replica_kv_memory)
         # one shard's per-unit page strides in canonical order, from replica 0
@@ -1109,6 +1476,9 @@ class DKVConnector(KVConnector):
         # One entry per replica at most: a replica's lookup is answered before
         # the next one is asked, on the one scheduler thread.
         self._leased_depths: dict[int, dict[int, int]] = {}
+        # Loads refused since the last take_metrics, as TierConnector counts
+        # its own, so both reach connector_loads_refused.
+        self._loads_refused = 0
         # Each client registers its replica's FULL TP GPU set (that leaf's units
         # concatenated per shard by _make_client). For MLA this restores
         # device_buffers.len() == tp, so the Rust client's NVLink broadcast +
@@ -1160,6 +1530,8 @@ class DKVConnector(KVConnector):
                     tenant_gpu_count=tenant_gpu_count,
                     tenant_gpu_device_ids=tenant_gpu_device_ids,
                     heartbeat_overrides=heartbeat_overrides,
+                    overlap_peer_lookups=overlap_peer_lookups,
+                    peer_attach_wait_ms=peer_attach_wait_ms,
                     admission_timeout_s=admission_timeout_s,
                 )
             self._clients.append(clients_for_replica)
@@ -1172,6 +1544,20 @@ class DKVConnector(KVConnector):
             raise RuntimeError(
                 "dKV connector client topology does not match its leaf mapping"
             )
+        self._group_presence_layouts(
+            {
+                leaf_id: replica_kv_memory[0][leaf_id].replicated
+                for leaf_id in self._leaves
+            }
+        )
+        self._detect_client_entries()
+        if self._offload_peer_loads and not _writeback_supported(
+            _dkv_extension
+        ):
+            _logger.warning(
+                "MODULAR_DKV_OFFLOAD_PEER_LOADS is set, but this dkv_connector extension does not report which load blocks a peer filled, so peer-loaded blocks are not written back. Install the dkv_connector wheel built with this MAX to write them back."
+            )
+            self._offload_peer_loads = False
 
         # Surface the Rust connector's MLA NVLink-broadcast status to the serve
         # process: the Rust side logs it through ``tracing`` at ``info``, and the
@@ -1229,6 +1615,7 @@ class DKVConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the leaf IDs this connector services."""
         return self._leaves
 
     @staticmethod
@@ -1249,6 +1636,8 @@ class DKVConnector(KVConnector):
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
+        overlap_peer_lookups: bool,
+        peer_attach_wait_ms: int,
         admission_timeout_s: float,
     ) -> _DkvClient:
         # Group the per-leaf units into one (device_id, units) entry
@@ -1300,32 +1689,84 @@ class DKVConnector(KVConnector):
         # unaffected since the null page is last and is never transferred.
         total_num_pages = kv_memory[0].total_num_pages
 
-        return client_cls(
-            local_block_store_endpoint,
-            shards,
-            0,  # page_size (tokens): unused by the Rust client
-            total_num_pages,
-            len(shards),
-            # the client's parameter is still named ``is_mla``, but
-            # replication is not MLA-specific: M3's index-K cache replicates.
-            shards_are_identical,
-            listen_port=listen_port,
-            backend=backend,
-            compute_streams=compute_streams,
-            groups=list(groups),
-            owner_group_id=owner_group_id,
-            tenant_id=tenant_id,
-            kv_config_hash=kv_config_hash,
-            kv_shard_id=kv_shard_id,
-            replica_id=replica_id,
-            tenant_gpu_count=tenant_gpu_count,
-            tenant_gpu_device_ids=list(tenant_gpu_device_ids),
-            admission_timeout_s=admission_timeout_s,
-            **heartbeat_overrides,
-        )
+        # Each unit crosses as a driver buffer handle rather than an address,
+        # so the Rust client copies through views of the buffer. An extension
+        # older than that takes (address, length) pairs, and would refuse the
+        # handles with pyo3's bare TypeError after they exist, with nothing
+        # left to release them.
+        if not getattr(client_cls, "TAKES_DRIVER_BUFFER_HANDLES", False):
+            raise RuntimeError(
+                "The installed dkv_connector extension takes KV buffers as "
+                "(address, length) pairs, but this MAX hands them over as "
+                "driver buffer handles. Install the dkv_connector wheel "
+                "built with this MAX, which has the same version as the max "
+                "package."
+            )
+
+        # Every unit is checked before the first handle exists, because a
+        # refusal partway through would strand the handles made before it.
+        # TODO(pprovins): a refusal Python cannot see, such as a sub-byte view
+        # that does not start on a byte, still strands them. Once such a
+        # buffer can reach dKV, release the made handles on that path.
+        for _, units in shards:
+            for buffer in units:
+                _check_handle_source(buffer)
+
+        # The client owns the handles from here and releases them, also when
+        # its construction fails.
+        device_buffers = [
+            (device_id, [buffer._driver_buffer_handle() for buffer in units])
+            for device_id, units in shards
+        ]
+
+        try:
+            return client_cls(
+                local_block_store_endpoint,
+                device_buffers,
+                0,  # page_size (tokens): unused by the Rust client
+                total_num_pages,
+                len(shards),
+                # the client's parameter is still named ``is_mla``, but
+                # replication is not MLA-specific: M3's index-K cache
+                # replicates.
+                shards_are_identical,
+                listen_port=listen_port,
+                backend=backend,
+                compute_streams=compute_streams,
+                groups=list(groups),
+                owner_group_id=owner_group_id,
+                tenant_id=tenant_id,
+                kv_config_hash=kv_config_hash,
+                kv_shard_id=kv_shard_id,
+                replica_id=replica_id,
+                tenant_gpu_count=tenant_gpu_count,
+                tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+                overlap_peer_lookups=overlap_peer_lookups,
+                admission_timeout_s=admission_timeout_s,
+                # passed only when set, so an extension that predates the
+                # keyword still builds with the wait off
+                **(
+                    {"peer_attach_wait_ms": peer_attach_wait_ms}
+                    if peer_attach_wait_ms
+                    else {}
+                ),
+                **heartbeat_overrides,
+            )
+        except TypeError as exc:
+            # The wait was asked for explicitly, so an extension without it
+            # fails model load rather than serving with the wait silently off.
+            if peer_attach_wait_ms and "peer_attach_wait_ms" in str(exc):
+                raise RuntimeError(
+                    f"{_PEER_ATTACH_WAIT_ENV_VAR} is set, but the installed "
+                    "dkv_connector extension predates it. Install the "
+                    "dkv_connector wheel built with this MAX, or unset "
+                    f"{_PEER_ATTACH_WAIT_ENV_VAR}."
+                ) from exc
+            raise
 
     @property
     def name(self) -> str:
+        """Reports the name ``dkv`` in logs and metrics."""
         return "dkv"
 
     def _derive_leaf_shape(self) -> None:
@@ -1341,9 +1782,10 @@ class DKVConnector(KVConnector):
         derived shape cannot drift from the real one.
         """
         # Reset here rather than only in __init__: this is the hook a test
-        # that bypasses __init__ calls to finish construction, and `lookup`
-        # and `load` both assume it exists.
+        # that bypasses __init__ calls to finish construction, and `lookup`,
+        # `load` and the metrics reads all assume these exist.
         self._leased_depths = {}
+        self._loads_refused = 0
         self._full_leaf_ids = [
             leaf_id
             for leaf_id, group_id in self._leaves.items()
@@ -1354,21 +1796,19 @@ class DKVConnector(KVConnector):
             for leaf_id, group_id in self._leaves.items()
             if group_id.is_sliding_window()
         ]
-        # :meth:`probe` asks one leaf and its masks are read as a
+        # The pricing fallback asks one leaf and its mask is read as a
         # full-attention run, which only a full leaf answers.
         self._probe_leaf_id: str | None = (
             self._full_leaf_ids[0] if self._full_leaf_ids else None
         )
-        # One window for every sliding leaf (``_validate_dkv_leaves`` rejects a
-        # tree with two), so resolve it once. 0 only when there is no sliding
-        # leaf at all, per the note below.
-        self._window_blocks = (
-            self._leaves[self._sliding_leaf_ids[0]].blocks_in_window(
-                self._page_size
-            )
-            if self._sliding_leaf_ids
-            else 0
-        )
+        # Each sliding leaf's own window, in blocks: a tree may mix widths
+        # (DISTINF-792), and ``touch`` posts every sliding leaf its own-width
+        # tail of the root-anchored chain. Empty only when there is no sliding
+        # leaf at all.
+        self._window_blocks = {
+            leaf_id: self._leaves[leaf_id].blocks_in_window(self._page_size)
+            for leaf_id in self._sliding_leaf_ids
+        }
         # A sliding leaf always spans a whole block: ``KVCacheGroupId``
         # refuses ``window_size <= 1`` (SERVOPT-1627), and every window above
         # that leaves at least one block once the query token's own page comes
@@ -1390,11 +1830,80 @@ class DKVConnector(KVConnector):
             self._sliding_leaf_ids
         )
 
+    def _group_presence_layouts(self, replicated: Mapping[str, bool]) -> None:
+        """Groups the leaves by the shard layout their clients key blocks with.
+
+        A client mints one key per hash when its leaf is replicated across
+        the TP shards and one per shard otherwise, and a ``presence`` call
+        keys every group it covers with the calling client's layout. Every
+        leaf of a replica spans the same TP shards, so replication alone
+        tells the layouts apart.
+        """
+        layouts: dict[bool, list[str]] = {}
+        for leaf_id in self._leaves:
+            layouts.setdefault(replicated[leaf_id], []).append(leaf_id)
+        self._presence_layouts = list(layouts.values())
+
+    def _detect_client_entries(self) -> None:
+        """Records which newer entries each client's extension carries.
+
+        An extension without the handle carried lookup and presence entries
+        is driven through the blocking calls instead, and one whose lookups
+        predate ``chain_start`` is called without it.
+        """
+        self._async_lookup_replicas = [
+            all(
+                hasattr(client, entry)
+                for client in clients.values()
+                for entry in _ASYNC_LOOKUP_ENTRIES
+            )
+            for clients in self._clients
+        ]
+        self._presence_clients = [
+            {
+                leaf_id: all(
+                    hasattr(client, entry) for entry in _PRESENCE_ENTRIES
+                )
+                for leaf_id, client in clients.items()
+            }
+            for clients in self._clients
+        ]
+        self._peer_count_replicas = [
+            all(
+                hasattr(client, "attached_peers") for client in clients.values()
+            )
+            for clients in self._clients
+        ]
+        self._chain_start_entries = [
+            {
+                leaf_id: frozenset(
+                    entry
+                    for entry in _CHAIN_START_ENTRIES
+                    if _takes_chain_start(client, entry)
+                )
+                for leaf_id, client in clients.items()
+            }
+            for clients in self._clients
+        ]
+
+    def _chain_start_kwargs(
+        self,
+        replica_idx: int,
+        leaf_id: str,
+        entry: str,
+        chain_start: int | None,
+    ) -> dict[str, int | None]:
+        """Returns ``chain_start`` as a keyword if ``entry`` takes it."""
+        if entry in self._chain_start_entries[replica_idx][leaf_id]:
+            return {"chain_start": chain_start}
+        return {}
+
     def lookup(
         self,
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Reports which of ``block_hashes`` dkv holds, per leaf, under a lease.
 
@@ -1409,6 +1918,9 @@ class DKVConnector(KVConnector):
 
         ``hint`` routes the read to the peer that may hold the blocks;
         :meth:`load` inherits it from the lease. See :meth:`_usable_hint`.
+        ``chain_start`` goes with it to an extension that takes it, so the
+        client can tell a hint that cannot serve this read from one that
+        describes another chain.
         """
         # `prepare_load` may well supersede its own plan, but that is the Rust
         # client's business and not written down on this side of the FFI.
@@ -1423,6 +1935,9 @@ class DKVConnector(KVConnector):
                 group_id=self._wire_ids[leaf_id],
                 block_hashes=dkv_hashes,
                 hint=self._usable_hint(hint),
+                **self._chain_start_kwargs(
+                    replica_idx, leaf_id, "prepare_load", chain_start
+                ),
             )
             for leaf_id in leaf_ids
         }
@@ -1451,33 +1966,169 @@ class DKVConnector(KVConnector):
         self,
         block_hashes: Sequence[bytes],
         replica_idxs: Sequence[int],
-    ) -> list[Mapping[str, Sequence[bool]]]:
-        """Reports what each replica could load of ``block_hashes``.
+        hint: bytes | None = None,
+    ) -> list[Mapping[str, Sequence[bool]]] | None:
+        """Reports what each replica could load of ``block_hashes``, for pricing.
 
-        One lookup of the first full-attention leaf, for pricing a request
-        before it is bound: every replica of a tenant shares one store, so one
-        healthy replica's client answers for every replica that can load. It
-        costs two RPCs, a ``read_blocks`` that pins and a ``release_blocks``
-        before it returns, and the read bumps that leaf's read tally on the
-        server. A replica with a degraded leaf client loads nothing until it
-        reconnects, so it answers all misses. A tree with no full-attention
-        leaf raises ``ValueError``: a sliding leaf's mask cannot price a run. Holds no pin past the call,
-        takes no hint, which would dial peers, and leaves every replica's
-        outstanding lease alone.
+        One ``presence`` call per shard layout in the tree, for pricing a
+        request before it is bound. A client keys every group it is asked
+        about with its own layout, so each layout's leaves are asked on a
+        client of that layout, which is one call for a uniform tree. Every
+        replica of a tenant shares one store, so one healthy replica's
+        clients answer for every replica that can load, and a replica with
+        a degraded leaf client loads nothing from that store until it
+        reconnects, so it answers all misses. When no replica can load,
+        a hint can still be served by the peers it names, so the first
+        replica whose clients have a peer attached is priced through its own
+        client instead (see :meth:`_pricing_replicas`). Those answers share
+        two masks mappings, one for every replica priced and one for every
+        other, so a caller reads them and never changes them in place. Presence
+        pins nothing, stages no disk block and bumps no read tally, all
+        three of which a leased ``lookup`` does, so it leaves every
+        request's outstanding lease alone.
+
+        Without presence on any layout's client, its server or a hinted
+        peer, prices with one client ``lookup`` on the first full-attention
+        leaf, which pins and releases inline and stages disk blocks. It
+        takes no hint, so pricing never dials a peer on the scheduler
+        thread, and a degraded replica priced through its peers answers
+        misses without that lookup. ``None`` only for a tree without a
+        full-attention leaf.
         """
-        # TODO(CLIN-2044): this pinned read bumps read_ref_tally on this leaf
-        # alone and stages G2 inside read_blocks, so at diskWriteThreshold >= 2
-        # this leaf turns disk-eligible first; a presence-only lookup fixes both.
-        probe_leaf_id = self._probe_leaf_id
-        if probe_leaf_id is None:
-            raise ValueError("dkv probe needs a full-attention leaf")
         misses: Mapping[str, Sequence[bool]] = {
-            probe_leaf_id: [False] * len(block_hashes)
+            leaf_id: [False] * len(block_hashes) for leaf_id in self._leaves
         }
-        able = [r for r in replica_idxs if self._can_load(r)]
+        usable_hint = self._usable_hint(hint)
+        able = self._pricing_replicas(replica_idxs, usable_hint)
         if not block_hashes or not able:
             return [misses for _ in replica_idxs]
+
+        clients = self._clients[able[0]]
+        has_presence = self._presence_clients[able[0]]
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        # Checked for every layout before any call, so a fallback wastes no RPC.
+        if not all(
+            has_presence[leaf_ids[0]]
+            and clients[leaf_ids[0]].presence_supported()
+            for leaf_ids in self._presence_layouts
+        ):
+            return self._probe_without_presence(
+                dkv_hashes, replica_idxs, able, misses
+            )
+
+        answered: dict[str, Sequence[bool]] = {}
+        for leaf_ids in self._presence_layouts:
+            answer = clients[leaf_ids[0]].presence(
+                group_ids=[self._wire_ids[leaf_id] for leaf_id in leaf_ids],
+                block_hashes=dkv_hashes,
+                hint=usable_hint,
+            )
+            if answer is None:
+                return self._probe_without_presence(
+                    dkv_hashes, replica_idxs, able, misses
+                )
+            if len(answer) != len(leaf_ids) or any(
+                len(mask) != len(dkv_hashes) for mask in answer
+            ):
+                raise ValueError(
+                    f"dkv presence answered {len(answer)} leaves "
+                    f"{[len(mask) for mask in answer]} blocks wide for "
+                    f"leaves {leaf_ids} over {len(dkv_hashes)} blocks"
+                )
+            answered.update(
+                zip(leaf_ids, [list(mask) for mask in answer], strict=True)
+            )
+
+        resident: Mapping[str, Sequence[bool]] = {
+            leaf_id: answered[leaf_id] for leaf_id in self._leaves
+        }
+        return [resident if r in able else misses for r in replica_idxs]
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        """Starts :meth:`probe`'s presence calls and returns at once.
+
+        Returns a handle that answers as :meth:`probe` does for the replicas
+        it priced when it started, and ``None`` when some layout's client or
+        server lacks presence, which leaves the manager on :meth:`probe`.
+        """
+        if not block_hashes:
+            return CompletedProbe(
+                [
+                    {leaf_id: [] for leaf_id in self._leaves}
+                    for _ in replica_idxs
+                ]
+            )
+        usable_hint = self._usable_hint(hint)
+        able = self._pricing_replicas(replica_idxs, usable_hint)
+        if not able:
+            return CompletedProbe(None)
+
+        clients = self._clients[able[0]]
+        has_presence = self._presence_clients[able[0]]
+        if not all(
+            has_presence[leaf_ids[0]]
+            and clients[leaf_ids[0]].presence_supported()
+            for leaf_ids in self._presence_layouts
+        ):
+            return None
+
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        handles = [
+            (
+                leaf_ids,
+                clients[leaf_ids[0]].start_presence(
+                    group_ids=[self._wire_ids[leaf_id] for leaf_id in leaf_ids],
+                    block_hashes=dkv_hashes,
+                    hint=usable_hint,
+                ),
+            )
+            for leaf_ids in self._presence_layouts
+        ]
+        return _DkvPendingProbe(
+            list(self._leaves), handles, len(dkv_hashes), replica_idxs, able
+        )
+
+    def _probe_without_presence(
+        self,
+        dkv_hashes: Sequence[int],
+        replica_idxs: Sequence[int],
+        able: Sequence[int],
+        misses: Mapping[str, Sequence[bool]],
+    ) -> list[Mapping[str, Sequence[bool]]] | None:
+        """Prices :meth:`probe` where presence cannot answer.
+
+        A degraded replica is priced only through the peers its hint names,
+        and the client lookup takes no hint, so its client would answer that
+        lookup all misses behind the connector lock. Every replica then
+        answers misses and no client is asked.
+        """
+        if not self._can_load(able[0]):
+            return [misses for _ in replica_idxs]
+        return self._probe_one_leaf(dkv_hashes, replica_idxs, able)
+
+    def _probe_one_leaf(
+        self,
+        dkv_hashes: Sequence[int],
+        replica_idxs: Sequence[int],
+        able: Sequence[int],
+    ) -> list[Mapping[str, Sequence[bool]]] | None:
+        """Prices :meth:`probe` with one client ``lookup`` without presence.
+
+        Asks the first full-attention leaf on the first replica that can
+        load, and answers for that leaf alone, which the manager reconciles
+        as the one leaf the answer covers. A replica that cannot load
+        answers all misses. ``None`` for a tree without a full-attention
+        leaf.
+        """
+        probe_leaf_id = self._probe_leaf_id
+        if probe_leaf_id is None:
+            return None
+
         (mask,) = self._clients[able[0]][probe_leaf_id].lookup(
             group_ids=[self._wire_ids[probe_leaf_id]],
             block_hashes=dkv_hashes,
@@ -1487,13 +2138,49 @@ class DKVConnector(KVConnector):
                 f"dkv lookup answered {len(mask)} blocks wide over "
                 f"{len(dkv_hashes)} blocks"
             )
-        resident: Mapping[str, Sequence[bool]] = {probe_leaf_id: mask}
+
+        resident: Mapping[str, Sequence[bool]] = {probe_leaf_id: list(mask)}
+        misses: Mapping[str, Sequence[bool]] = {
+            probe_leaf_id: [False] * len(dkv_hashes)
+        }
         return [resident if r in able else misses for r in replica_idxs]
 
     def _can_load(self, replica_idx: int) -> bool:
         """Whether every leaf client of ``replica_idx`` is serving."""
         return all(
             client.is_healthy()
+            for client in self._clients[replica_idx].values()
+        )
+
+    def _pricing_replicas(
+        self, replica_idxs: Sequence[int], hint: bytes | None
+    ) -> list[int]:
+        """Returns the replicas one presence answer prices.
+
+        Every replica that can load, or, when none can, the first whose
+        clients have a peer attached that ``hint`` could name. A degraded
+        client still serves those peers and misses what it leaves to the
+        co-located dKV, so its presence answer is what its own lease would
+        find. Which peers a client has attached, and which it remembers as
+        failed, is its own, so that answer prices its replica alone. A
+        degraded replica without a hint or an attached peer would answer all
+        misses, so it is not asked and its connector lock is not taken.
+
+        TODO(CLIN-1918): pricing a degraded replica takes its connector lock
+        on the scheduler thread, so it waits out the teardown RPCs a
+        reconnect issues under that lock. They are quick on a real restart,
+        but a dKV that answers probes and stalls block operations stalls
+        pricing with them.
+        """
+        able = [r for r in replica_idxs if self._can_load(r)]
+        if able or hint is None:
+            return able
+        return next(([r] for r in replica_idxs if self._reaches_peers(r)), [])
+
+    def _reaches_peers(self, replica_idx: int) -> bool:
+        """Whether a leaf client of ``replica_idx`` has a peer attached."""
+        return self._peer_count_replicas[replica_idx] and any(
+            client.attached_peers() > 0
             for client in self._clients[replica_idx].values()
         )
 
@@ -1509,7 +2196,11 @@ class DKVConnector(KVConnector):
         for leaf_id, client in self._clients[replica_idx].items():
             try:
                 client.abandon_prepared()
+            except (KeyboardInterrupt, SystemExit):
+                raise
             except BaseException:
+                # A pyo3 PanicException is not an Exception, and this runs on
+                # unwind paths whose callers must finish their own cleanup.
                 _logger.exception(
                     "dkv abandon_prepared failed for leaf %s; its pins wait "
                     "on the lease TTL",
@@ -1526,6 +2217,10 @@ class DKVConnector(KVConnector):
         per-leaf ids (SERVOPT-1617), a hybrid tree stays local on every leaf.
         """
         return None if self._sliding_leaf_ids else hint
+
+    def routes_hint(self, hint: bytes) -> bool:
+        """Returns whether ``hint`` reaches the wire, per :meth:`_usable_hint`."""
+        return self._usable_hint(hint) is not None
 
     @staticmethod
     def _leased_end(
@@ -1596,12 +2291,227 @@ class DKVConnector(KVConnector):
                 drained by then.
         """
         clients = self._clients[replica_idx]
-        leaf_ids = list(self._leaves)
         depths = self._leased_depths.pop(replica_idx, None)
-        # Transfers of the leaves whose `load_prepared` posted, in call order.
+
+        def post(
+            leaf_id: str, bids: list[int], end: int, share: int
+        ) -> tuple[int, _DkvLoadTransfer]:
+            return clients[leaf_id].load_prepared(
+                group_id=self._wire_ids[leaf_id],
+                block_ids=bids,
+                end=end,
+                num_blocks=share,
+            )
+
+        return self._load_leased(
+            block_ids,
+            block_hashes,
+            depths,
+            post=post,
+            abandon_leaf=lambda leaf_id: clients[leaf_id].abandon_prepared(),
+            abandon_all=lambda: self._abandon_leases(replica_idx),
+        )
+
+    def start_lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+        chain_start: int | None = None,
+    ) -> KVLookup:
+        """Starts one leased read per leaf and returns before any answers.
+
+        The reads run concurrently because each leaf has its own client, and
+        the handle rather than a client slot carries their leases, so one
+        request's lookup never cancels another's. :meth:`load_lookup` reads
+        out of the handle and :meth:`abandon_lookup` hands it back, and a
+        handle the manager drops does the same on its own. ``hint`` and
+        ``chain_start`` go to the reads as in :meth:`lookup`.
+
+        An extension without the async entries answers through the blocking
+        :meth:`lookup` here instead. That lease lives in the prepared slot,
+        so a later lookup on the replica supersedes it and the request it
+        belonged to is then served as a miss.
+
+        A leaf whose read fails to start hands back the reads already
+        started and answers a miss, the way a lookup that fails while it is
+        polled does.
+        """
+        if not block_hashes:
+            return CompletedLookup({leaf_id: [] for leaf_id in self._leaves})
+        if not self._async_lookup_replicas[replica_idx]:
+            masks = self.lookup(
+                block_hashes,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=chain_start,
+            )
+            return _DkvSyncLookup(
+                masks, replica_idx, self._leased_depths.get(replica_idx)
+            )
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        clients = self._clients[replica_idx]
+        usable_hint = self._usable_hint(hint)
+        handles: dict[str, _DkvLookup] = {}
+        try:
+            for leaf_id in self._leaves:
+                handles[leaf_id] = clients[leaf_id].start_prepare_load(
+                    group_id=self._wire_ids[leaf_id],
+                    block_hashes=dkv_hashes,
+                    hint=usable_hint,
+                    **self._chain_start_kwargs(
+                        replica_idx, leaf_id, "start_prepare_load", chain_start
+                    ),
+                )
+        except Exception:
+            _logger.exception(
+                "dkv start_prepare_load failed on replica %d, so its "
+                "request is served as a cache miss",
+                replica_idx,
+            )
+            self.abandon_lookup(
+                _DkvPendingLookup(replica_idx, handles, dkv_hashes)
+            )
+            return CompletedLookup(
+                {
+                    leaf_id: [False] * len(block_hashes)
+                    for leaf_id in self._leaves
+                }
+            )
+
+        return _DkvPendingLookup(replica_idx, handles, dkv_hashes)
+
+    def defers_lookup(self, replica_idx: int = 0) -> bool:
+        """Returns whether ``replica_idx``'s extension has the async entries.
+
+        Without them :meth:`start_lookup` answers through the blocking
+        :meth:`lookup` before it returns.
+        """
+        return self._async_lookup_replicas[replica_idx]
+
+    def load_lookup(
+        self,
+        lookup: KVLookup,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        """Moves each leaf's share out of the lease ``lookup`` holds.
+
+        As :meth:`load`, except that the lease comes from the handle its
+        :meth:`start_lookup` returned rather than from the client's prepared
+        slot. ``hint`` is ignored for the same reason. Consumes the handle
+        however this exits, raising included. Any other handle, which is
+        what an extension without the async entries answers with, goes to
+        :meth:`load` and its prepared slot lease.
+
+        Raises:
+            ValueError: As :meth:`load`, or if ``lookup`` is a handle this
+                connector leased on another replica.
+            KVLoadRefused: As :meth:`load`, or if a later lookup on the
+                replica superseded the prepared slot lease ``lookup`` took.
+            KVLoadFailed: As :meth:`load`.
+        """
+        if not isinstance(lookup, _DkvPendingLookup):
+            if (
+                isinstance(lookup, _DkvSyncLookup)
+                and self._leased_depths.get(replica_idx) is not lookup.depths
+            ):
+                self._loads_refused += 1
+                raise KVLoadRefused(
+                    "dkv lookup lease was superseded by a later lookup on "
+                    f"replica {replica_idx} before it was loaded"
+                )
+            return self.load(
+                block_ids, block_hashes, replica_idx=replica_idx, hint=hint
+            )
+        if lookup.replica_idx != replica_idx:
+            self.abandon_lookup(lookup)
+            raise ValueError(
+                f"DKVConnector.load_lookup on replica {replica_idx} with a "
+                f"lookup replica {lookup.replica_idx} took"
+            )
+        clients = self._clients[replica_idx]
+        handles = lookup.handles
+
+        def post(
+            leaf_id: str, bids: list[int], end: int, share: int
+        ) -> tuple[int, _DkvLoadTransfer]:
+            return clients[leaf_id].load_lookup(
+                lookup=handles[leaf_id],
+                group_id=self._wire_ids[leaf_id],
+                block_ids=bids,
+                end=end,
+                num_blocks=share,
+            )
+
+        return self._load_leased(
+            block_ids,
+            block_hashes,
+            lookup.depths,
+            post=post,
+            abandon_leaf=lambda leaf_id: clients[leaf_id].abandon_lookup(
+                lookup=handles[leaf_id]
+            ),
+            abandon_all=lambda: self.abandon_lookup(lookup),
+        )
+
+    def abandon_lookup(self, lookup: KVLookup) -> None:
+        """Hands back every leaf's lease in ``lookup`` without waiting.
+
+        A no-op on an empty lookup and on a handle already loaded from.
+        Guarded per leaf so one failure strands nothing after it. A lookup
+        answered in place hands back the prepared slot lease only while it
+        is still that lookup's, so it never cancels a later request's.
+        """
+        if isinstance(lookup, _DkvSyncLookup):
+            replica_idx = lookup.replica_idx
+            if self._leased_depths.get(replica_idx) is lookup.depths:
+                self._abandon_leases(replica_idx)
+            return
+        if not isinstance(lookup, _DkvPendingLookup):
+            return
+        clients = self._clients[lookup.replica_idx]
+        for leaf_id, handle in lookup.handles.items():
+            try:
+                clients[leaf_id].abandon_lookup(lookup=handle)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except BaseException:
+                # A pyo3 PanicException is not an Exception, and the block
+                # manager hands lookups back from release after freeing pages.
+                _logger.exception(
+                    "dkv abandon_lookup failed for leaf %s, so its pins wait "
+                    "on the lease TTL",
+                    leaf_id,
+                )
+
+    def _load_leased(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        depths: Mapping[int, int] | None,
+        *,
+        post: Callable[
+            [str, list[int], int, int], tuple[int, _DkvLoadTransfer]
+        ],
+        abandon_leaf: Callable[[str], None],
+        abandon_all: Callable[[], None],
+    ) -> KVTransfer:
+        """Posts each leaf's share of a lease and unwinds the same way for both.
+
+        ``post`` moves one leaf's share out of whichever lease the caller
+        holds, ``abandon_leaf`` hands one leaf's lease back and
+        ``abandon_all`` every leaf's, so :meth:`load` and :meth:`load_lookup`
+        differ only in where the lease lives.
+        """
+        leaf_ids = list(self._leaves)
+        # Transfers of the leaves whose post went through, in call order.
         # Filled as it goes, because an H2D landing in a staging row the caller
         # is about to free has to be waited on however this returns.
         posted_transfers: list[KVTransfer] = []
+        writeback_blocks: dict[str, Sequence[int]] = {}
         try:
             wanted = {
                 leaf_id: len(hashes) for leaf_id, hashes in block_hashes.items()
@@ -1619,9 +2529,8 @@ class DKVConnector(KVConnector):
                 )
             if depths is None:
                 raise ValueError(
-                    "DKVConnector.load ran without a lease on replica "
-                    f"{replica_idx}; every load reads out of the plan its own "
-                    "lookup built."
+                    "DKVConnector.load ran without a lease, and every load "
+                    "reads out of the plan its own lookup built."
                 )
             end = self._leased_end(depths, block_hashes)
 
@@ -1633,20 +2542,21 @@ class DKVConnector(KVConnector):
                     # leaf spans a whole block, so a share of a non-zero hit
                     # cannot be 0. Kept because the alternative is posting
                     # `num_blocks=0` against a live lease.
-                    clients[leaf_id].abandon_prepared()
+                    abandon_leaf(leaf_id)
                     posted[leaf_id] = 0
                     continue
-                posted[leaf_id], transfer = clients[leaf_id].load_prepared(
-                    group_id=self._wire_ids[leaf_id],
-                    block_ids=list(block_ids[leaf_id]),
-                    end=end,
-                    num_blocks=share,
+                posted[leaf_id], transfer = post(
+                    leaf_id, list(block_ids[leaf_id]), end, share
                 )
                 # A zero post is exact: that leaf released its plan before
                 # anything went in flight, so its transfer holds nothing and
                 # collecting it would only cost a poll per scheduler iteration.
                 if posted[leaf_id]:
                     posted_transfers.append(transfer)
+                    if self._offload_peer_loads and (
+                        filled := transfer.peer_block_ids
+                    ):
+                        writeback_blocks[leaf_id] = filled
             if posted != wanted:
                 short_leaves = [
                     leaf_id
@@ -1662,6 +2572,7 @@ class DKVConnector(KVConnector):
                 # again, since a failed transfer re-raises on every drain.
                 drained, posted_transfers = posted_transfers, []
                 _drain(drained)
+                self._loads_refused += 1
                 raise KVLoadRefused(
                     "dkv load_prepared fell short of its own lease: leaves "
                     f"{short_leaves} delivered "
@@ -1670,11 +2581,13 @@ class DKVConnector(KVConnector):
                     "connector degraded, the lease expired mid-request, or a "
                     "hinted peer left the table."
                 )
-            return _DkvBatchTransfer(posted_transfers)
+            return _DkvBatchTransfer(
+                posted_transfers, writeback_blocks_per_leaf=writeback_blocks
+            )
         except BaseException as err:
             # Every leaf leased before anything was decided, so any raise
             # above has to hand those pins back rather than wait for the TTL.
-            self._abandon_leases(replica_idx)
+            abandon_all()
             # A leaf that posted has reads landing into rows the caller frees
             # as soon as this raises. Swallowing: the original exception is
             # the one worth propagating.
@@ -1825,15 +2738,13 @@ class DKVConnector(KVConnector):
                     block_hashes=dkv_hashes,
                 )
             # The active window only, per the contract above. The window is the
-            # sequence TAIL, and dkv_hashes is root-anchored, so the last
-            # ``_window_blocks`` entries are it. Guarded because ``[-0:]`` is
-            # the whole list, which is the bug this fixes.
-            window = (
-                dkv_hashes[-self._window_blocks :]
-                if self._window_blocks
-                else []
-            )
+            # sequence TAIL, and dkv_hashes is root-anchored, so each leaf's
+            # last ``_window_blocks[leaf_id]`` entries are its window. Never 0
+            # for a sliding leaf (see ``_derive_leaf_shape``), but guarded
+            # because ``[-0:]`` is the whole list.
             for leaf_id in self._sliding_leaf_ids:
+                blocks = self._window_blocks[leaf_id]
+                window = dkv_hashes[-blocks:] if blocks else []
                 clients[leaf_id].touch(
                     group_id=self._wire_ids[leaf_id],
                     block_hashes=window,
@@ -1855,27 +2766,31 @@ class DKVConnector(KVConnector):
                 client.poll_transfers()
 
     def shutdown(self) -> None:
-        # No-op: the Rust client releases its NIXL agent, heartbeat poller, and
-        # RPC connection when the object is dropped (at process teardown).
-        # Per-batch transfer throughput is surfaced by the scheduler from
-        # ``metrics`` below, so no background logger is needed here.
-        pass
+        """Does nothing: the Rust client frees its NIXL agent when dropped.
+
+        Dropping the object also releases the heartbeat poller and RPC
+        connection. Per-batch transfer throughput reaches the scheduler
+        through :attr:`metrics`, so no background logger runs here.
+        """
 
     def reset_prefix_cache(self) -> None:
-        # No-op: dKV manages its own external block lifecycle server-side.
-        pass
+        """Does nothing: dKV manages block lifetime on the server."""
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters without resetting them."""
         return self._aggregate_metrics(lambda client: client.metrics())
 
     def take_metrics(self) -> KVCacheMetrics:
-        return self._aggregate_metrics(lambda client: client.take_metrics())
+        """Reports transfer counters and resets the refusal counter."""
+        metrics = self._aggregate_metrics(lambda client: client.take_metrics())
+        self._loads_refused = 0
+        return metrics
 
     def _aggregate_metrics(
         self, snapshot: Callable[[_DkvClient], Mapping[str, Any]]
     ) -> KVCacheMetrics:
-        total = KVCacheMetrics()
+        total = KVCacheMetrics(connector_loads_refused=self._loads_refused)
         for clients in self._clients:
             leaf_clients = list(clients.values())
             # One snapshot per client. It crosses into Rust and the scheduler
@@ -1942,9 +2857,104 @@ class DKVConnector(KVConnector):
                     dkv_peers_dropped=m["peers_dropped"],
                     dkv_peer_loads=m["peer_loads"],
                     dkv_peer_load_failures=m["peer_load_failures"],
+                    dkv_peer_transfer_failures=m["peer_transfer_failures"],
+                    dkv_peer_metadata_refreshes=m["peer_metadata_refreshes"],
+                    dkv_peer_metadata_refresh_failures=m[
+                        "peer_metadata_refresh_failures"
+                    ],
                     dkv_hints_rejected=m["hints_rejected"],
                     dkv_hints_rejected_by_reason=dict(
                         m["hints_rejected_by_reason"]
+                    ),
+                    # An extension predating these reports none, which folds
+                    # as no unused hint rather than as a missing key.
+                    dkv_hints_unused=m.get("hints_unused", 0),
+                    dkv_hints_unused_by_reason=dict(
+                        m.get("hints_unused_by_reason", {})
+                    ),
+                    dkv_hints_received=m.get("hints_received", 0),
+                    dkv_hint_blocks_forgone_by_reason=dict(
+                        m.get("hint_blocks_forgone_by_reason", {})
+                    ),
+                    # A per-window delta like its neighbours. An extension
+                    # predating it reports none, which folds as nothing
+                    # dropped rather than as a missing key.
+                    dkv_touches_deduplicated=m.get("touches_deduplicated", 0),
+                    # Fail-opens, per-window deltas the same way: answered
+                    # as misses, so a hit rate alone cannot tell them from a
+                    # cold cache.
+                    dkv_prepare_load_degraded=m["prepare_load_degraded"],
+                    dkv_load_with_plan_degraded=m["load_with_plan_degraded"],
+                    dkv_load_with_plan_expired=m["load_with_plan_expired"],
+                    # What the peers covered of those fail-opens. An
+                    # extension predating it reports none, read as no round.
+                    dkv_peer_rounds_while_degraded=m.get(
+                        "peer_rounds_while_degraded", 0
+                    ),
+                    # The overlapped hinted lookup (CLIN-2163), per-window
+                    # deltas like the peer counters. An extension predating
+                    # them reports none, read as no hinted lookup.
+                    dkv_own_runs_short_of_hint=m.get(
+                        "own_runs_short_of_hint", 0
+                    ),
+                    dkv_own_run_blocks_short_of_hint=m.get(
+                        "own_run_blocks_short_of_hint", 0
+                    ),
+                    dkv_peer_blocks_short_of_hint=m.get(
+                        "peer_blocks_short_of_hint", 0
+                    ),
+                    dkv_hint_blocks_unserved=m.get("hint_blocks_unserved", 0),
+                    dkv_split_loads=m.get("split_loads", 0),
+                    dkv_overlapped_peer_lookups=m.get(
+                        "overlapped_peer_lookups", 0
+                    ),
+                    dkv_hinted_lookups=m.get("hinted_lookups", 0),
+                    dkv_hinted_lookup_ms_total=m.get(
+                        "hinted_lookup_ms_total", 0.0
+                    ),
+                    # The peer attach wait (MODULAR_DKV_PEER_ATTACH_WAIT_MS).
+                    # An extension predating it reports none, read as no wait.
+                    dkv_hinted_attach_waits=m.get("hinted_attach_waits", 0),
+                    dkv_hinted_attach_wait_ms_total=m.get(
+                        "hinted_attach_wait_ms_total", 0.0
+                    ),
+                    dkv_hinted_attach_wait_timeouts=m.get(
+                        "hinted_attach_wait_timeouts", 0
+                    ),
+                    # The orphan queue, folded per leaf client like the settle
+                    # worker below: per-window outcome counts and a depth
+                    # level. An extension predating them reports none.
+                    dkv_orphan_cleanups_reissued=m.get(
+                        "orphan_cleanups_reissued", 0
+                    ),
+                    dkv_orphan_cleanups_abandoned=m.get(
+                        "orphan_cleanups_abandoned", 0
+                    ),
+                    dkv_orphan_cleanups_dropped=m.get(
+                        "orphan_cleanups_dropped", 0
+                    ),
+                    dkv_orphan_cleanups_refused=m.get(
+                        "orphan_cleanups_refused", 0
+                    ),
+                    dkv_orphan_cleanups_expired=m.get(
+                        "orphan_cleanups_expired", 0
+                    ),
+                    dkv_orphan_queue_depth=m.get("orphan_queue_depth", 0),
+                    # The settle worker, which every leaf client runs for
+                    # itself, so these fold per leaf client and KVCacheMetrics
+                    # sums the depth and the finished count and maxes the age
+                    # and the halt. The depth, the age and the halt are levels
+                    # the client reads fresh on every snapshot, so they survive
+                    # take_metrics like the health keys above. An extension
+                    # predating them reports none, which reads as an idle
+                    # worker rather than as a missing key.
+                    dkv_settle_queue_depth=m.get("settle_queue_depth", 0),
+                    dkv_settle_queue_oldest_age_ms=m.get(
+                        "settle_queue_oldest_age_ms", 0.0
+                    ),
+                    dkv_settle_jobs_finished=m.get("settle_jobs_finished", 0),
+                    dkv_owner_releases_halted=int(
+                        m.get("owner_releases_halted", False)
                     ),
                     # Per-call counters: summed per leaf client, since each
                     # client issues its own RPCs on its own socket and lock.
@@ -1953,5 +2963,11 @@ class DKVConnector(KVConnector):
                     dkv_rpc_socket_wait_ms=dict(m["rpc_socket_wait_ms"]),
                     dkv_lock_waits=dict(m["lock_waits"]),
                     dkv_lock_wait_ms=dict(m["lock_wait_ms"]),
+                    # Wall time the calling thread spent inside each entry,
+                    # lock wait and RPC included. An extension predating them
+                    # reports neither, which reads as nothing blocked rather
+                    # than as a missing key.
+                    dkv_blocked_calls=dict(m.get("blocked_calls", {})),
+                    dkv_blocked_ms=dict(m.get("blocked_ms", {})),
                 )
         return total

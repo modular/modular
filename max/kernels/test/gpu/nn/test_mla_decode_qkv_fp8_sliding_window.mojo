@@ -34,13 +34,14 @@ Dispatch logic relevant to coverage (from mla_decode_dispatch.mojo):
 - Sliding-window caps effective_split_len at window_size + q_max_seq_len
 """
 
+from std.memory.alloc import unsafe_alloc
 from std.random import randn
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import SlidingWindowCausalMask
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
@@ -89,17 +90,9 @@ def test[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_decode_qkv_fp8_sliding_window",
-        "W:",
-        window_size,
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "num_heads:",
-        num_heads,
+        t"test_mla_decode_qkv_fp8_sliding_window W: {window_size} batch_size:"
+        t" {batch_size} seq_len: {seq_len} num_keys: {num_keys} num_heads:"
+        t" {num_heads}"
     )
 
     comptime scale = Float32(0.125)
@@ -110,13 +103,13 @@ def test[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var o_size = batch_size * num_heads * seq_len * v_depth
 
-    var q_bf16_ptr = alloc[Scalar[output_type]](q_size)
-    var q_fp8_ptr = alloc[Scalar[q_type]](q_size)
-    var q_bf16_dequant_ptr = alloc[Scalar[output_type]](q_size)
-    var k_fp8_ptr = alloc[Scalar[kv_type]](k_size)
-    var k_bf16_ptr = alloc[Scalar[output_type]](k_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_bf16_ptr = unsafe_alloc[Scalar[output_type]](q_size)
+    var q_fp8_ptr = unsafe_alloc[Scalar[q_type]](q_size)
+    var q_bf16_dequant_ptr = unsafe_alloc[Scalar[output_type]](q_size)
+    var k_fp8_ptr = unsafe_alloc[Scalar[kv_type]](k_size)
+    var k_bf16_ptr = unsafe_alloc[Scalar[output_type]](k_size)
+    var output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
+    var flash_output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
 
     randn[output_type](q_bf16_ptr, q_size)
     host_quantize_bf16_to_fp8[bf16_t=output_type, fp8_t=q_type](
@@ -204,7 +197,7 @@ def test[
         var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt, imm
     }:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -250,7 +243,7 @@ def test[
     ctx.synchronize()
     print("  Reference completed.")
 
-    var ref_full_output_ptr = alloc[Scalar[output_type]](ref_full_o_size)
+    var ref_full_output_ptr = unsafe_alloc[Scalar[output_type]](ref_full_o_size)
     ctx.enqueue_copy(ref_full_output_ptr, output_ref_full_device_ptr)
     ctx.synchronize()
 
@@ -264,12 +257,12 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(v_depth):
-                    var expect = ref_full_output_ptr.load(
+                    var expect = ref_full_output_ptr.unsafe_load(
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
                     ).cast[.float64]()
-                    var actual = flash_output_ptr.load(
+                    var actual = flash_output_ptr.unsafe_load(
                         d
                         + v_depth * (h + s * num_heads)
                         + b * v_depth * num_heads * seq_len
@@ -297,14 +290,14 @@ def test[
     _ = output_ref_device_ptr
     _ = output_ref_full_device_ptr
 
-    q_bf16_ptr.free()
-    q_fp8_ptr.free()
-    q_bf16_dequant_ptr.free()
-    k_fp8_ptr.free()
-    k_bf16_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
-    ref_full_output_ptr.free()
+    q_bf16_ptr.unsafe_free()
+    q_fp8_ptr.unsafe_free()
+    q_bf16_dequant_ptr.unsafe_free()
+    k_fp8_ptr.unsafe_free()
+    k_bf16_ptr.unsafe_free()
+    output_ptr.unsafe_free()
+    flash_output_ptr.unsafe_free()
+    ref_full_output_ptr.unsafe_free()
 
 
 def test_decoding[

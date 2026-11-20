@@ -18,7 +18,7 @@ from std.testing import TestSuite, assert_equal, assert_not_equal
 
 def test_chdir() raises:
     try:
-        std.os.rmdir("test_chdir")
+        rmdir("test_chdir")
     except:
         pass
     mkdir("test_chdir")
@@ -30,7 +30,7 @@ def test_chdir() raises:
 
 def test_fchdir() raises:
     try:
-        std.os.rmdir("test_fchdir")
+        rmdir("test_fchdir")
     except:
         pass
     mkdir("test_fchdir")

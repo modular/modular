@@ -23,12 +23,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    MHAKVCacheParams,
-)
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MHAKVCacheParams
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -37,7 +33,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lora import LoRAManagerV3
 from transformers import AutoConfig
 
@@ -170,20 +166,6 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
-
-    @classmethod
-    def infer_optional_batch_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        huggingface_config: AutoConfig,
-        devices: list[Device],
-    ) -> int:
-        return 16
-
-    @classmethod
-    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
-        return 1000000
 
     def execute(
         self,

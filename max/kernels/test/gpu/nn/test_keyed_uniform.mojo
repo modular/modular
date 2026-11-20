@@ -40,7 +40,7 @@ def _draw(ctx: DeviceContext, seeds: List[UInt64]) raises -> List[Float32]:
     var out_dev = ctx.enqueue_create_buffer[.float32](rows)
     ctx.enqueue_copy(seeds_dev, seeds_host)
 
-    keyed_uniform[target="gpu"](
+    keyed_uniform(
         TileTensor(out_dev, row_major(rows)),
         TileTensor(seeds_dev, row_major(rows)).as_unsafe_any_origin().as_imm(),
         ctx,
@@ -162,7 +162,7 @@ def test_empty_batch(ctx: DeviceContext) raises:
     """
     var seeds_dev = ctx.enqueue_create_buffer[.uint64](0)
     var out_dev = ctx.enqueue_create_buffer[.float32](0)
-    keyed_uniform[target="gpu"](
+    keyed_uniform(
         TileTensor(out_dev, row_major(0)),
         TileTensor(seeds_dev, row_major(0)).as_unsafe_any_origin().as_imm(),
         ctx,

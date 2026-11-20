@@ -15,6 +15,7 @@
 #define KGEN_ELABORATOR_ELABORATORHELPER_H
 
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/ToolCommon/ElaborationStats.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
@@ -48,7 +49,7 @@ mlir::StringAttr applyLinkageName(mlir::StringAttr resolved,
 ///     name (sanitized on GPU, verbatim on host), then remove the attribute.
 ///  2. On GPU targets, additionally sanitize every other name to
 ///     alphanumeric-only characters for PTX compatibility.
-///  3. Fix up all `SymbolConstantAttr` references in the module to reflect the
+///  3. Fix up all `FuncSymbolAttr` references in the module to reflect the
 ///     new names.
 ///
 /// Sets `failed = true` on errors (unresolved linkage name, duplicate symbols).
@@ -78,6 +79,9 @@ ErrorTreeOrSuccess sortAndBundleOffloadOps(
 /// Bundling and plugging results back must agree on this, in both the
 /// concrete and the parametric elaborator, which is why it is one function.
 std::string makeOffloadGroupKey(CompileOffloadOp op);
+
+/// Count the operations in `region`, nested ones included.
+int64_t countOps(mlir::Region &region);
 
 } // namespace M::KGEN
 

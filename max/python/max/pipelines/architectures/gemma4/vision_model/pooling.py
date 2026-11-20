@@ -20,7 +20,7 @@ import numpy as np
 import numpy.typing as npt
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 
 def avg_pool_by_positions(

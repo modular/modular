@@ -36,7 +36,7 @@ from std.utils import StaticTuple
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import TileTensor
 from layout.coord import Coord, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -85,19 +85,8 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
     )
 
     print(
-        "--- MhaPrefillV2 CAUSAL paged (BM=",
-        BM,
-        " KV=",
-        KV_BLOCK,
-        " D=",
-        depth,
-        " tiles=",
-        NUM_TILES,
-        " page_size=",
-        PAGE_SIZE,
-        " pages=",
-        NUM_PAGES,
-        ") ---",
+        t"--- MhaPrefillV2 CAUSAL paged (BM= {BM}  KV= {KV_BLOCK}  D= {depth} "
+        t" tiles= {NUM_TILES}  page_size= {PAGE_SIZE}  pages= {NUM_PAGES} ) ---"
     )
 
     var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
@@ -229,14 +218,8 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "MISMATCH q=",
-                            q,
-                            " d=",
-                            d,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"MISMATCH q= {q}  d= {d}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     print("  mismatches=", mismatches, " max_diff=", max_diff)

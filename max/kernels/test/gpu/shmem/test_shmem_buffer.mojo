@@ -15,14 +15,15 @@ from std.math import iota
 
 from shmem import SHMEMContext, shmem_launch
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
 def test_buffer_copy(ctx: SHMEMContext) raises:
     comptime length = 1024
 
-    var host_buffer = alloc[Float32](length)
-    var host_buffer_2 = alloc[Float32](length)
+    var host_buffer = unsafe_alloc[Float32](length)
+    var host_buffer_2 = unsafe_alloc[Float32](length)
     var shmem_buffer = ctx.enqueue_create_buffer[.float32](length)
 
     iota(host_buffer, length)

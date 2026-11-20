@@ -47,7 +47,7 @@ def test_compute_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that a compute closure's result is what the kernel stores
     into `c`, at the index the closure was given."""
-    print("compute:", a_type, "->", c_type, m, "x", N, "x", K, num_k_partitions)
+    print(t"compute: {a_type} -> {c_type} {m} x {N} x {K} {num_k_partitions}")
     comptime config = MatmulKernels[
         a_type, a_type, c_type, True
     ]().ampere_256x64_4
@@ -74,7 +74,7 @@ def test_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
+        var row_scale = -scale if Int(idx[0]) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
     comptime if num_k_partitions > 0:
@@ -102,9 +102,7 @@ def test_epilogue_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that a store closure receives each output at its index and that
     the kernel itself leaves `c` untouched."""
-    print(
-        "epilogue:", a_type, "->", c_type, m, "x", N, "x", K, num_k_partitions
-    )
+    print(t"epilogue: {a_type} -> {c_type} {m} x {N} x {K} {num_k_partitions}")
     comptime config = MatmulKernels[
         a_type, a_type, c_type, True
     ]().ampere_256x64_4
@@ -132,8 +130,8 @@ def test_epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var d}:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
-        d.store[width=width](
+        var row_scale = -2 if Int(idx[0]) % 2 == 1 else 2
+        d.store(
             idx,
             (val * SIMD[dtype, width](row_scale)).cast[c_type](),
         )

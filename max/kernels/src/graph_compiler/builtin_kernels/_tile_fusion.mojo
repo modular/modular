@@ -10,79 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Transitional tile-codegen scaffolding: the terminal store of a tile kernel's
-output, the tile analog of `ManagedTensorSlice._fused_store`.
+"""Transitional tile-codegen scaffolding: the terminal store and the epilogue
+operation of a tile kernel's output.
 
-`_tile_store_consumer` returns the `TileConsumer` that owns a kernel's final
-store: the bound store fusion when there is one, otherwise a direct copy into
-the output. A tile kernel always binds that consumer, so it never builds a
-`TileTensor` over a store-fused output. The helper lives here rather than on
-the slice because `TileConsumer` is a `linalg` trait.
+`_TileStoreConsumer` copies each fragment into the output. The legacy tile
+consumer and operation forward each tile to the fused epilogue of an output
+declared with a legacy tile trait. They live here rather than on the traits
+because `TileConsumer` and `TileOperation` are `linalg` traits.
 
 Expected to be removed with the rest of the tile path's scaffolding once it is
 productionized (see GEX-3919).
 """
 
 from layout import Coord, TensorLayout, TileTensor, coord_to_index_list
-from layout.tile_layout import Layout as _NewLayout
+from layout.layout import Layout as _NewLayout
 from layout.tile_io import GenericToLocalTileCopier, LocalToGenericTileCopier
 from std.utils import IndexList
-from linalg.utils import TileConsumer
-from extensibility import ManagedTensorSlice, OutputFusionTile
-
-
-@fieldwise_init
-struct _OutputFusionTileConsumer[
-    FusionType: OutputFusionTile,
-](TileConsumer):
-    """Terminal `TileConsumer` over an output's tile store fusion.
-
-    Forwards the per-tile epilogue to the fusion's `store`, which owns the
-    write.
-    """
-
-    comptime src_address_space = AddressSpace.GENERIC
-
-    var fusion: Self.FusionType
-
-    @inline(.always)
-    def __call__[
-        dtype: DType,
-        LayoutType: TensorLayout,
-    ](
-        ref self,
-        tile_coord: Coord,
-        tile: TileTensor[
-            dtype, LayoutType, ..., address_space=Self.src_address_space
-        ],
-        thread_layout: _NewLayout,
-    ) -> None:
-        comptime assert type_of(
-            thread_layout
-        ).all_dims_known, "TileConsumer thread_layout must be statically known"
-        comptime assert tile_coord.is_flat, "Tile coordinate must be flat."
-
-        var copier = GenericToLocalTileCopier[type_of(thread_layout)()]()
-        var store_copier = LocalToGenericTileCopier[type_of(thread_layout)()]()
-        comptime TM = type_of(thread_layout).static_shape[0]
-        comptime TN = type_of(thread_layout).static_shape[1]
-        var elem = rebind[IndexList[2]](coord_to_index_list(tile_coord))
-        var ridx = IndexList[2](elem[0] // TM, elem[1] // TN)
-        self.fusion.store[
-            dtype, 2, LayoutType, type_of(copier), type_of(store_copier)
-        ](
-            ridx,
-            copier,
-            store_copier,
-            rebind[
-                TileTensor[
-                    dtype,
-                    LayoutType,
-                    MutAnyOrigin,
-                    address_space=Self.src_address_space,
-                ]
-            ](tile),
-        )
+from linalg.utils import TileConsumer, TileOperation
+from extensibility import _LegacyTileComputable, _LegacyTileStorable
 
 
 @fieldwise_init
@@ -125,31 +70,116 @@ struct _TileStoreConsumer[
         )
 
 
-@inline(.always)
-def _tile_store_consumer(
-    output: ManagedTensorSlice[mut=True, ...],
-    out result: (
-        _OutputFusionTileConsumer[type_of(output).OutFusionTile] if type_of(
-            output
-        )._has_output_fusion_tile else _TileStoreConsumer[
-            type_of(output).dtype, type_of(output).RuntimeLayout
-        ]
-    ),
-):
-    """Returns the consumer that owns the final store into `output`.
+# TODO(GEX-4340): the consumer and operation over an output declared with a
+# legacy tile trait. Remove with the legacy tile traits.
 
-    Args:
-        output: The kernel's output.
 
-    Returns:
-        The store fusion's consumer when `output` has one, otherwise a
-        consumer that copies into `output` directly.
+@fieldwise_init
+struct _LegacyTileStoreConsumer[
+    OutType: _LegacyTileStorable & TrivialRegisterPassable,
+](TileConsumer):
+    """Terminal `TileConsumer` over an output's legacy tile store fusion.
+
+    Holds the output's device value and forwards each tile to its `store`,
+    which runs the epilogue and owns the write. Build it on the device: the
+    host value cannot call `store`.
     """
-    comptime if type_of(output)._has_output_fusion_tile:
-        result = rebind[type_of(result)](
-            _OutputFusionTileConsumer(output.output_fusion_tile)
+
+    comptime src_address_space = AddressSpace.GENERIC
+
+    var output: Self.OutType
+
+    @inline(.always)
+    def __call__[
+        dtype: DType,
+        LayoutType: TensorLayout,
+    ](
+        ref self,
+        tile_coord: Coord,
+        tile: TileTensor[
+            dtype, LayoutType, ..., address_space=Self.src_address_space
+        ],
+        thread_layout: _NewLayout,
+    ) -> None:
+        comptime assert type_of(
+            thread_layout
+        ).all_dims_known, "TileConsumer thread_layout must be statically known"
+        comptime assert tile_coord.is_flat, "Tile coordinate must be flat."
+
+        var copier = GenericToLocalTileCopier[type_of(thread_layout)()]()
+        var store_copier = LocalToGenericTileCopier[type_of(thread_layout)()]()
+        comptime TM = type_of(thread_layout).static_shape[0]
+        comptime TN = type_of(thread_layout).static_shape[1]
+        var elem = rebind[IndexList[2]](coord_to_index_list(tile_coord))
+        var ridx = IndexList[2](elem[0] // TM, elem[1] // TN)
+        self.output.store[
+            dtype, 2, LayoutType, type_of(copier), type_of(store_copier)
+        ](
+            ridx,
+            copier,
+            store_copier,
+            rebind[
+                TileTensor[
+                    dtype,
+                    LayoutType,
+                    MutAnyOrigin,
+                    address_space=Self.src_address_space,
+                ]
+            ](tile),
         )
-    else:
-        result = rebind[type_of(result)](
-            _TileStoreConsumer(output.to_tile_tensor())
+
+
+@fieldwise_init
+struct _LegacyTileComputeOp[
+    OutType: _LegacyTileComputable & TrivialRegisterPassable,
+](TileOperation):
+    """`TileOperation` over an output's legacy tile compute fusion.
+
+    Holds the output's device value and forwards each tile to its `compute`,
+    which returns the transformed tile for the kernel to store. Build it on
+    the device: the host value cannot call `compute`.
+    """
+
+    comptime src_address_space = AddressSpace.GENERIC
+
+    var output: Self.OutType
+
+    @inline(.always)
+    def __call__[
+        dtype: DType,
+        LayoutType: TensorLayout,
+    ](
+        mut self,
+        tile_coord: Coord,
+        tile: TileTensor[
+            dtype,
+            LayoutType,
+            MutAnyOrigin,
+            ...,
+            address_space=Self.src_address_space,
+        ],
+        thread_layout: _NewLayout,
+    ) -> type_of(tile):
+        comptime assert type_of(
+            thread_layout
+        ).all_dims_known, "TileOperation thread_layout must be statically known"
+        comptime assert tile_coord.is_flat, "Tile coordinate must be flat."
+        var copier = GenericToLocalTileCopier[type_of(thread_layout)()]()
+        comptime TM = type_of(thread_layout).static_shape[0]
+        comptime TN = type_of(thread_layout).static_shape[1]
+        var elem = rebind[IndexList[2]](coord_to_index_list(tile_coord))
+        var ridx = IndexList[2](elem[0] // TM, elem[1] // TN)
+        return rebind[type_of(tile)](
+            self.output.compute[dtype, 2, LayoutType, type_of(copier)](
+                ridx,
+                copier,
+                rebind[
+                    TileTensor[
+                        dtype,
+                        LayoutType,
+                        MutAnyOrigin,
+                        address_space=Self.src_address_space,
+                    ]
+                ](tile),
+            )
         )

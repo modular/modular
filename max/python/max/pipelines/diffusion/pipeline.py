@@ -25,11 +25,10 @@ from typing import (
 )
 
 import numpy as np
+from max import functional as F
 from max.driver import load_devices
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Module
 from max.pipelines.context import (
     GenerationStatus,
     PixelGenerationContextType,
@@ -52,14 +51,15 @@ from max.pipelines.request.open_responses import (
     Usage,
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
+from max.tensor import Tensor
 
 from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
-    from max.experimental.compilation import CompiledCallable
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.model_manifest import ModelManifest
     from max.pipelines.lib.pipeline_executor import PipelineExecutor
+    from max.tensor.compilation import CompiledCallable
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -69,9 +69,9 @@ class PixelGenerationModule(Protocol):
     """Interface a Module-driven architecture exposes to ``PixelGenerationPipeline``.
 
     A class satisfying this Protocol (typically also subclassing
-    :class:`~max.experimental.nn.Module`) can be driven through the
+    :class:`~max.nn.Module`) can be driven through the
     pipeline's ModuleV3 path: the pipeline wraps construction in
-    :func:`~max.experimental.functional.lazy`, walks the Module tree
+    :func:`~max.functional.lazy`, walks the Module tree
     via
     :func:`~max.pipelines.lib.weight_loader.adapt_module_loader`
     to bind weights, compiles the forward graph, and per request calls

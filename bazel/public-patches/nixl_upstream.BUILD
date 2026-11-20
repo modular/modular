@@ -18,6 +18,22 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
 
+# libnixl and each plugin NIXL dlopens statically link their own abseil and
+# initialize absl logging. libAsyncRTRuntimeGlobals exports another abseil, so
+# the version script hides each copy in its object. An exported copy binds to
+# whichever abseil loaded first: absl logging aborts on the second
+# initialization, and ASan reports an ODR violation for each shared global. The
+# script hides ASan's ODR-indicator symbols for absl globals too.
+genrule(
+    name = "absl_local_lds",
+    outs = ["absl_local.lds"],
+    cmd = "echo '{ local: _ZN4absl*; _ZNK4absl*; _ZZN4absl*; _ZZNK4absl*; " +
+          "_ZT*N4absl*; _ZGV*N4absl*; AbslInternal*; " +
+          "__odr_asan_gen__Z*N4absl*; };' > $@",
+)
+
+_PLUGIN_LINKOPTS = ["-Wl,--version-script,$(location :absl_local.lds)"]
+
 # Upstream NIXL is Linux-only (uses SOCK_NONBLOCK, dlopen, etc.). Apply the
 # constraint at the package level so every target inherits it.
 _LINUX_X86 = [
@@ -377,7 +393,8 @@ cc_library(
 # to bind at load time in the Python serving process.
 cc_binary(
     name = "rocm-uccl/libplugin_UCCL.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         "-Wl,-rpath,$$ORIGIN",
         # Installed layout: <root>/lib/nixl/rocm-uccl/ → <root>/lib.
@@ -511,7 +528,8 @@ cc_library(
 # gets folded in.
 cc_binary(
     name = "cuda/libplugin_UCX.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/cuda/ → <root>/lib.
         "-Wl,-rpath,$$ORIGIN/../../../lib",
@@ -535,7 +553,8 @@ cc_binary(
 # fallback.
 cc_binary(
     name = "cuda-verbs/libplugin_UCX.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/cuda-verbs/ → <root>/lib.
         "-Wl,-rpath,$$ORIGIN/../../../lib",
@@ -570,7 +589,8 @@ cc_binary(
 # on CPU-only CI workers) point NIXL_PLUGIN_DIR at the cpu/ directory.
 cc_binary(
     name = "cpu/libplugin_UCX.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
     ],
     linkshared = True,
@@ -589,7 +609,8 @@ cc_binary(
 # time; the subdir here only keeps its filename distinct from cpu/.
 cc_binary(
     name = "cpu-verbs/libplugin_UCX.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <prefix>/lib/plugins/ → <prefix>/lib. The two
         # rdma-core libs below are DT_NEEDED, so without this the prefix is
@@ -620,7 +641,8 @@ cc_binary(
 # rdma-core is present.
 cc_binary(
     name = "rocm/libplugin_UCX.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/rocm/ → <root>/lib.
         "-Wl,-rpath,$$ORIGIN/../../../lib",
@@ -639,7 +661,8 @@ cc_binary(
 # cuda-verbs, the resolved libraries must define IBVERBS_1.12 and MLX5_1.11.
 cc_binary(
     name = "rocm-verbs/libplugin_UCX.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/rocm-verbs/ → <root>/lib.
         "-Wl,-rpath,$$ORIGIN/../../../lib",
@@ -667,7 +690,8 @@ cc_binary(
 # directory as the cuda UCX plugin for NIXL's single-dir discovery.
 cc_binary(
     name = "cuda/libplugin_LIBFABRIC.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
     ],
     linkshared = True,
@@ -685,7 +709,8 @@ cc_binary(
 # libplugin_LIBFABRIC.so (the name NIXL's loader discovers).
 cc_binary(
     name = "libplugin_LIBFABRIC_cpu.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <prefix>/lib/plugins/ → <prefix>/lib, where the
         # libfabric and rdma-core stack it needs is staged flat.
@@ -710,7 +735,8 @@ cc_binary(
 # first definition (libnixl, linked first), which carries the complete set.
 cc_binary(
     name = "libnixl.so",
-    linkopts = [
+    additional_linker_inputs = [":absl_local.lds"],
+    linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Set the SONAME so a downstream link records a clean `libnixl.so`
         # DT_NEEDED (rather than the bazel link-time path) and the runtime
@@ -765,12 +791,26 @@ cc_import(
 # headers-only on macOS/aarch64 (the Linux-only targets enter the graph only via
 # the linux_x86_64 select arm) so downstream targets like libmax still build
 # there. This replaces the former //MLRT:Driver/NIXL wrapper.
+filegroup(name = "_empty")
+
+# The CUDA libfabric plugin links the CUDA build of libfabric, which hard-needs
+# libcudart/libcuda. AMD hosts never load it (NIXL_PLUGIN_DIR points at rocm/),
+# so leave it out of AMD builds: carried here it reaches Mojo links of every
+# max consumer and makes them unloadable without the CUDA runtime.
+alias(
+    name = "_cuda_libfabric_plugin_unless_amd",
+    actual = select({
+        "@@//:amd_gpu": ":_empty",
+        "//conditions:default": ":cuda/libplugin_LIBFABRIC.so",
+    }),
+)
+
 cc_library(
     name = "nixl_runtime",
     data = select({
         "@@//:linux_x86_64": [
+            ":_cuda_libfabric_plugin_unless_amd",
             ":cuda-verbs/libplugin_UCX.so",
-            ":cuda/libplugin_LIBFABRIC.so",
             ":cuda/libplugin_UCX.so",
             ":rocm-verbs/libplugin_UCX.so",
             ":rocm/libplugin_UCX.so",

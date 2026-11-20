@@ -20,10 +20,11 @@ import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
-from max.config import ConfigFileModel
+from max.config import ConfigFileModel, ConfigModel
 from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
-from max.nn.comm import MulticastPool, Signals
+from max.nn import Module as ModuleV3
+from max.nn.legacy.comm import MulticastPool
 from max.pipelines.diffusion.config import resolve_denoising_cache
 from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
 from max.pipelines.lib._model_components import (
@@ -31,20 +32,21 @@ from max.pipelines.lib._model_components import (
     updated_component,
 )
 from max.pipelines.lib.arch_lookup import (
-    ARCH_LOOKUP,
-    Speculator,
+    SupportedArchitecture,
     find_architecture,
     import_custom_architectures,
-    select_speculator,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces import (
-    ArchConfig,
     arch_has_vision_tower,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
     DISABLE_PARSER_SENTINEL,
     PipelineRuntimeConfig,
+)
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    spec_decode_architecture,
 )
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
@@ -111,7 +113,7 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     return None
 
 
-_SubConfigT = TypeVar("_SubConfigT", bound=ConfigFileModel)
+_SubConfigT = TypeVar("_SubConfigT", bound=ConfigModel)
 
 
 def _construct_from_user_fields(
@@ -131,7 +133,7 @@ def _construct_from_user_fields(
 
 
 def _resolved_field_changes(
-    sub: ConfigFileModel, **resolved: Any
+    sub: ConfigModel, **resolved: Any
 ) -> dict[str, Any]:
     """Returns the resolved values that differ from the sub-config's fields.
 
@@ -326,6 +328,86 @@ def _validate_kv_cache_format(kv_cache: KVCacheConfig, arch: Any) -> None:
         )
 
 
+def _check_eager(
+    runtime: PipelineRuntimeConfig,
+    model: MAXModelConfig | None,
+    arch: SupportedArchitecture | None,
+    lora: LoRAConfig | None,
+    speculative: SpeculativeConfig | None,
+    task: PipelineTask = PipelineTask.TEXT_GENERATION,
+) -> None:
+    """Fails an eager config before anything loads, if it can't run.
+
+    Every ModuleV3 decoder registered for the ``DECODER`` role runs eagerly.
+
+    Raises:
+        ValueError: If ``runtime.eager`` is set for a task other than text
+            generation, an architecture without a ModuleV3 decoder, more than
+            one device per data-parallel replica, or with device graph capture
+            or synthesis, the overlap scheduler, MEF export, LoRA, speculative
+            decoding or expert
+            parallelism.
+    """
+    if not runtime.eager:
+        return
+    if task is not PipelineTask.TEXT_GENERATION:
+        raise ValueError(
+            "eager=True (--eager) runs text generation, not the"
+            f" {task.value} task."
+        )
+    if arch is None:
+        raise ValueError(
+            "eager=True (--eager) needs a text generation model with a"
+            " ModuleV3 decoder."
+        )
+    decoder = arch.modules.get(GraphRole.DECODER)
+    if decoder is None:
+        raise ValueError(
+            f"{arch.name} builds its graphs in its own pipeline model, with no"
+            " registered ModuleV3 decoder, so it can't run with eager=True"
+            " (--eager) yet."
+        )
+    if not (isinstance(decoder, type) and issubclass(decoder, ModuleV3)):
+        raise ValueError(
+            f"{arch.name} is a graph API architecture, so it can't run with"
+            " eager=True (--eager). MAX picks the graph API version when"
+            " prefer_module_v3 is off, or when the ModuleV3 version doesn't"
+            " support the checkpoint's encoding."
+        )
+    conflicts = [
+        name
+        for name, conflicting in (
+            (
+                "more than one device per data-parallel replica",
+                model is not None
+                and len(model.device_specs) > model.data_parallel_degree,
+            ),
+            (
+                "device_graph_capture=True (--device-graph-capture)",
+                bool(runtime.device_graph_capture),
+            ),
+            (
+                "experimental_device_graph_synthesis=True",
+                runtime.experimental_device_graph_synthesis,
+            ),
+            (
+                "enable_overlap_scheduler=True (--enable-overlap-scheduler)",
+                bool(runtime.enable_overlap_scheduler),
+            ),
+            ("export_mefs (--export-mefs)", runtime.export_mefs is not None),
+            ("LoRA", lora is not None and lora.enable_lora),
+            ("speculative decoding", speculative is not None),
+            ("expert parallelism (ep_size > 1)", runtime.ep_size > 1),
+        )
+        if conflicting
+    ]
+    if conflicts:
+        raise ValueError(
+            "eager=True (--eager) can't be combined with "
+            + ", ".join(conflicts)
+        )
+
+
 def _resolve_overlap_and_device_graph_capture(
     runtime: PipelineRuntimeConfig,
     sampling: SamplingConfig,
@@ -336,10 +418,15 @@ def _resolve_overlap_and_device_graph_capture(
     """Returns the resolved (device_graph_capture, enable_overlap_scheduler).
 
     Device graph capture requires the overlap scheduler, so the two
-    resolve together. ``--force`` skips the auto-enables and the
+    resolve together. An explicit ``enable_overlap_scheduler=False`` keeps
+    both auto-enables off. ``--force`` skips the auto-enables and the
     overlap-compatibility validation, matching its meaning everywhere
     else in construction.
     """
+    if runtime.eager:
+        # An eager decoder has no graph to capture or to overlap.
+        return False, False
+
     device_graph_capture = runtime.device_graph_capture
 
     if runtime.experimental_device_graph_synthesis:
@@ -353,6 +440,7 @@ def _resolve_overlap_and_device_graph_capture(
     if not runtime.force:
         if (
             device_graph_capture is None
+            and runtime.enable_overlap_scheduler is not False
             and arch is not None
             and arch.supports_device_graph_capture
             and accelerator_api() in ("cuda", "hip")
@@ -374,27 +462,32 @@ def _resolve_overlap_and_device_graph_capture(
 
     enable_overlap_scheduler = runtime.enable_overlap_scheduler
     if device_graph_capture:
-        if not enable_overlap_scheduler:
+        if enable_overlap_scheduler is False:
+            logger.warning(
+                "Device graph capture needs the overlap scheduler, so it "
+                "overrides --no-enable-overlap-scheduler."
+            )
+        elif enable_overlap_scheduler is None:
             logger.info("Enabling overlap scheduling for device graph capture.")
         enable_overlap_scheduler = True
 
     if runtime.force:
-        return device_graph_capture, enable_overlap_scheduler
+        return device_graph_capture, bool(enable_overlap_scheduler)
 
     # Automatically enable overlap scheduling for architectures that declare
     # support. New architectures opt out by setting ``supports_overlap_scheduler=False``.
-    if not enable_overlap_scheduler:
-        if (
+    if enable_overlap_scheduler is None:
+        enable_overlap_scheduler = (
             arch is not None
             and arch.supports_overlap_scheduler
             and _is_eligible_for_overlap_serve_optimizations(
                 sampling, lora, model, arch
             )
-        ):
-            enable_overlap_scheduler = True
+        )
+        if enable_overlap_scheduler:
             logger.info(
                 f"Automatically enabling overlap scheduling for {arch.name}. "
-                "You can manually disable this by setting --no-enable-overlap-scheduler --force."
+                "You can manually disable this by setting --no-enable-overlap-scheduler."
             )
 
     # Raise errors when we detect features that are not compatible with the overlap scheduler.
@@ -598,77 +691,132 @@ def _resolved_runtime_and_sampling(
     return runtime, sampling
 
 
+def _resolve_prefer_module_v3(
+    prefer_module_v3: bool,
+    models: Mapping[str, MAXModelConfig],
+    arch_name: str | None,
+    task: PipelineTask | None,
+) -> bool:
+    """Returns the ModuleV3 preference a checkpoint can actually be served on.
+
+    ``prefer_module_v3`` promises a fallback to the graph API architecture,
+    but :func:`find_architecture` only falls back when no ModuleV3 variant is
+    *registered*. A registered variant that does not list the checkpoint's
+    encoding -- a ModuleV3 architecture is often brought up on bfloat16 before
+    its quantized encodings -- would otherwise fail resolution outright rather
+    than fall back. Clearing the preference here keeps every later lookup, the
+    registry's included, on the variant that can serve the checkpoint.
+    """
+    if not prefer_module_v3 or arch_name is None or "main" not in models:
+        return prefer_module_v3
+    v3_arch = find_architecture(arch_name, prefer_module_v3=True, task=task)
+    if v3_arch is None:
+        return prefer_module_v3
+    try:
+        encoding = _select_quantization_encoding(
+            models["main"], v3_arch.default_encoding
+        )
+    except Exception:
+        logger.debug(
+            "Could not resolve the encoding for the ModuleV3 preference; "
+            "keeping it.",
+            exc_info=True,
+        )
+        return prefer_module_v3
+    if encoding in v3_arch.supported_encodings:
+        return prefer_module_v3
+    graph_arch = find_architecture(arch_name, prefer_module_v3=False, task=task)
+    if graph_arch is None or encoding not in graph_arch.supported_encodings:
+        # Neither variant serves the encoding. Keep the preference so the
+        # error names the architecture that was asked for.
+        return prefer_module_v3
+    logger.warning(
+        "Encoding '%s' is not supported by '%s'. Falling back to the graph API"
+        " architecture '%s'.",
+        encoding,
+        v3_arch.name,
+        graph_arch.name,
+    )
+    return False
+
+
 def _apply_speculative_draft_architecture(
-    speculative: SpeculativeConfig | None, draft_model: MAXModelConfig | None
+    speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
 ) -> None:
     """Rewrite the draft model's HuggingFace architecture for the method.
 
-    Runs after the models are built, since it edits the draft's loaded
-    HuggingFace config rather than any MAX config field.
+    The target's family picks the registered draft architecture. Runs after
+    the models are built, since it edits the draft's loaded HuggingFace
+    config rather than any MAX config field.
     """
     if speculative is None:
         return
-    # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
+    draft_model = models.get("draft")
+    main = models.get("main")
+    method = speculative.speculative_method
     if speculative.is_eagle() and draft_model is not None:
         if len(draft_model.huggingface_config.architectures) != 1:
             raise ValueError(
                 f"Expected exactly 1 architecture in draft model config, "
                 f"got {len(draft_model.huggingface_config.architectures)}"
             )
-        hf_arch = draft_model.huggingface_config.architectures[0]
-        if hf_arch == "LlamaForCausalLM":
-            draft_model.huggingface_config.architectures[0] = (
-                "LlamaForCausalLMEagle"
-            )
-    # DFlash drafts ship with architectures: ["DFlashDraftModel"],
-    # which isn't registered as a standalone MAX architecture (the draft
-    # is only ever invoked through UnifiedDflashLlama3). Override to
-    # LlamaForCausalLM.
-    if speculative.is_dflash() and draft_model is not None:
-        if len(draft_model.huggingface_config.architectures) != 1:
-            raise ValueError(
-                f"Expected exactly 1 architecture in draft model config, "
-                f"got {len(draft_model.huggingface_config.architectures)}"
-            )
-        hf_arch = draft_model.huggingface_config.architectures[0]
-        if hf_arch == "DFlashDraftModel":
-            draft_model.huggingface_config.architectures[0] = "LlamaForCausalLM"
+    if (
+        draft_model is not None
+        and main is not None
+        and method is not None
+        and main.huggingface_config.architectures
+        and draft_model.huggingface_config.architectures
+    ):
+        target = find_architecture(main.huggingface_config.architectures[0])
+        if target is not None:
+            draft_archs = draft_model.huggingface_config.architectures
+            draft_archs[0] = target.draft_architecture(method, draft_archs[0])
 
 
-def _select_declared_speculator(
-    speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
-) -> Speculator | None:
-    """Selects the speculator declared for the target architecture.
-
-    Raises:
-        ValueError: If the target offers speculators but none accepts the
-            configured draft.
-    """
+def _select_spec_decode_architecture(
+    speculative: SpeculativeConfig | None,
+    models: Mapping[str, MAXModelConfig],
+    prefer_module_v3: bool = False,
+) -> SupportedArchitecture | None:
+    """Returns the unified architecture for the target and its draft, if any."""
     if not speculative:
         return None
 
     target_archs = models["main"].huggingface_config.architectures
     if not target_archs:
         return None
-    target = target_archs[0]
-
-    # Keyed by target name, so a target that declares no speculators costs
-    # nothing here and never imports a spec-decode package.
-    if not ARCH_LOOKUP.speculators_for(target):
-        return None
-
     draft_model = models.get("draft")
-    draft_arch: str | None = None
-    if draft_model is not None:
-        draft_archs = draft_model.huggingface_config.architectures
-        if not draft_archs:
-            raise ValueError(
-                "Draft model HF config has empty ``architectures=[]``,"
-                f" so no speculator for {target} can be selected."
-            )
-        draft_arch = draft_archs[0]
+    draft_archs = (
+        draft_model.huggingface_config.architectures
+        if draft_model is not None
+        else None
+    )
+    return spec_decode_architecture(
+        target_archs[0],
+        speculative.speculative_method,
+        draft_archs[0] if draft_archs else None,
+        prefer_module_v3=prefer_module_v3,
+    )
 
-    return select_speculator(target, speculative.speculative_method, draft_arch)
+
+def _is_nemotron_h_dspark_pair(models: Mapping[str, MAXModelConfig]) -> bool:
+    """Whether the target is Nemotron-H and the draft its DSpark drafter.
+
+    The drafter declares ``architectures: ["Qwen3DSparkModel"]``.
+    """
+    target_archs = models["main"].huggingface_config.architectures
+    draft_model = models.get("draft")
+    draft_archs = (
+        draft_model.huggingface_config.architectures
+        if draft_model is not None
+        else None
+    )
+    return bool(
+        target_archs
+        and target_archs[0] == "NemotronHForCausalLM"
+        and draft_archs
+        and draft_archs[0] == "Qwen3DSparkModel"
+    )
 
 
 def _require_dspark(speculative: SpeculativeConfig, draft_arch: str) -> None:
@@ -686,113 +834,36 @@ def _require_dspark(speculative: SpeculativeConfig, draft_arch: str) -> None:
 
 
 def _apply_speculative_target_architecture(
-    speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
-) -> Speculator | None:
-    """Selects the fused spec-decode architecture for the target.
+    speculative: SpeculativeConfig | None,
+    models: Mapping[str, MAXModelConfig],
+    prefer_module_v3: bool = False,
+) -> SupportedArchitecture | None:
+    """Selects the unified spec-decode architecture for the target.
 
-    A target that declares a :class:`Speculator` returns it, leaving its
-    ``architectures`` untouched. The caller derives the fused architecture
-    from the one the checkpoint's own name resolves to.
+    A target that pairs with its draft in a unified graph returns the unified
+    architecture, leaving its ``architectures`` untouched.
+
+    ``prefer_module_v3`` selects the speculator in lockstep with the
+    architecture variant the same flag selects.
 
     It is a no-op when speculative decoding is disabled.
     """
     if not speculative:
         return None
-    speculator = _select_declared_speculator(speculative, models)
-    if speculator is not None:
-        return speculator
+    if _is_nemotron_h_dspark_pair(models):
+        # The unified model would also pair this draft under a DFlash method.
+        _require_dspark(speculative, "Qwen3DSparkModel")
+    spec_arch = _select_spec_decode_architecture(
+        speculative, models, prefer_module_v3=prefer_module_v3
+    )
+    if spec_arch is not None:
+        return spec_arch
 
     draft_model = models.get("draft")
     target_archs = models["main"].huggingface_config.architectures
     if not target_archs:
         # Nothing to rewrite; the lookup below reports the real problem.
         return None
-    # The Llama and Kimi arms below name DFlash v1 and Eagle graphs, and
-    # neither can verify a DFlash2 block draft. ``is_dflash()`` is true for
-    # v2, so without this both would happily rewrite a DFlash2 pairing onto
-    # a graph that silently mismatches the drafter. A v2 target selects its
-    # own fused arch from its own arm; leaving the name alone here lets the
-    # lookup reject a pairing no arm claims.
-    v1_or_eagle = not speculative.is_dflash2()
-    if target_archs[0] == "LlamaForCausalLM" and v1_or_eagle:
-        if speculative.is_dflash():
-            target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
-        else:
-            target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-    if target_archs[0] == "KimiK25ForConditionalGeneration" and v1_or_eagle:
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if speculative.is_dflash():
-            target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
-        elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
-            # MLA target + MHA (Llama-style) Eagle3 draft.
-            target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
-        else:
-            # MLA target + MLA Eagle3 draft (existing path).
-            target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
-    if target_archs[0] == "Gemma4ForConditionalGeneration":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
-            target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
-        elif draft_archs and draft_archs[0] == "DSparkDraftModel":
-            # Speculators-format DSpark drafters (e.g.
-            # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
-            # generic architectures: ["DSparkDraftModel"].
-            _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
-        elif (
-            speculative.is_dflash()
-            and draft_archs
-            # z-lab DFlash drafters (e.g. z-lab/gemma-4-31B-it-DFlash)
-            # declare architectures: ["DFlashDraftModel"], which
-            # ``_create_speculative_config_if_needed`` rewrites to
-            # "LlamaForCausalLM" on the CLI-kwargs path (but not the
-            # recipe path) before this runs. Accept both spellings.
-            and draft_archs[0] in ("DFlashDraftModel", "LlamaForCausalLM")
-        ):
-            target_archs[0] = "UnifiedDflashGemma4_31BForCausalLM"
-    # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
-    # block drafter declares architectures: ["Gemma4DSparkModel"].
-    if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
-            _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
-    # Nemotron-H's DSpark block drafter declares architectures:
-    # ["Qwen3DSparkModel"], the dense Qwen3-style DSpark draft.
-    if target_archs[0] == "NemotronHForCausalLM":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "Qwen3DSparkModel":
-            _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkNemotronHForCausalLM"
-    # Kimi K3's speculators-format DSpark drafter (
-    # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
-    # architectures: ["DSparkDraftModel"] the Gemma4 arm keys on; the
-    # verifier it names is what picks the fused graph apart.
-    if target_archs[0] == "KimiK3ForConditionalGeneration":
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if draft_archs and draft_archs[0] == "DSparkDraftModel":
-            _require_dspark(speculative, draft_archs[0])
-            target_archs[0] = "UnifiedDSparkKimiK3ForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -812,36 +883,6 @@ def _apply_speculative_target_architecture(
             target_archs[0] = (
                 "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
             )
-    if target_archs[0] == "Qwen3_5ForConditionalGeneration":
-        # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
-        # there is no separate draft model. Qwen3.5 shares the arch name
-        # but ships no head; only override when the head exists. Unlike
-        # the other in-checkpoint MTP overrides this one also waits for an
-        # explicit `--speculative-method mtp`: the fused graph it selects
-        # is served by Mach rather than MAX, so a plain `max serve` of a
-        # Qwen3.8 checkpoint must keep landing on the base architecture.
-        text_config = getattr(
-            models["main"].huggingface_config,
-            "text_config",
-            models["main"].huggingface_config,
-        )
-        has_mtp = (getattr(text_config, "mtp_num_hidden_layers", 0) or 0) > 0
-        draft_archs = (
-            draft_model.huggingface_config.architectures
-            if draft_model is not None
-            else None
-        )
-        if speculative.is_mtp() and models.get("draft") is None and has_mtp:
-            target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
-        elif (
-            speculative.is_dflash2()
-            and draft_archs
-            # "DFlash2DraftModel" is a registered placeholder arch, so
-            # unlike v1's "DFlashDraftModel" it is never rewritten to
-            # "LlamaForCausalLM" and only the one spelling reaches here.
-            and draft_archs[0] == "DFlash2DraftModel"
-        ):
-            target_archs[0] = "UnifiedDflash2Qwen3_5ForConditionalGeneration"
     if target_archs[0] == "GlmMoeDsaForCausalLM":
         # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
         # there is no separate draft model. GLM-5.1 shares the arch name
@@ -856,21 +897,9 @@ def _apply_speculative_target_architecture(
         ) > 0
         if models.get("draft") is None and has_mtp:
             target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
-    if target_archs[0] == "InklingForConditionalGeneration":
-        # Inkling bakes chained MTP depths into the target checkpoint.
-        mtp_config = getattr(
-            models["main"].huggingface_config, "mtp_config", None
-        )
-        n_mtp = (
-            mtp_config.get("num_nextn_predict_layers")
-            if isinstance(mtp_config, dict)
-            else getattr(mtp_config, "num_nextn_predict_layers", None)
-        )
-        if models.get("draft") is None and (n_mtp or 0) > 0:
-            target_archs[0] = "UnifiedMTPInklingForConditionalGeneration"
 
     # The legacy branches above rewrote the name in place; there is no
-    # speculator to hand back.
+    # unified architecture to hand back.
     return None
 
 
@@ -997,6 +1026,16 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
     """Whether to run eager verification before device graph replay."""
+
+    export_only: bool = Field(
+        default=False,
+        description=(
+            "Build the module and skip the KV cache, sampler, and warmup. "
+            "Quantized checkpoint export sets this so no generate graph "
+            "is compiled."
+        ),
+    )
+    """Build the module and skip generation setup."""
 
     tokenizer_impl: str | None = Field(
         default=None,
@@ -1295,7 +1334,10 @@ class PipelineConfig(ConfigFileModel):
         25 MiB workspace with a legacy-stream ``hipMemset`` and calls
         ``exit(1)`` when that fails. Inside a capture region that memset
         returns ``hipErrorStreamCaptureImplicit``, so the model worker dies
-        instead of raising. MAX's own kernels cover the same shapes.
+        instead of raising. The shapes MAX's own kernels do not take run a
+        far slower naive kernel: fp16, an N that is not a multiple of 4, and a
+        K that is not a multiple of the K tile or is below 128, except bf16
+        with a transposed B and an even K.
         """
         return self.runtime.disable_vendor_blas_fallback or bool(
             self.runtime.device_graph_capture and accelerator_api() == "hip"
@@ -1305,9 +1347,8 @@ class PipelineConfig(ConfigFileModel):
         """Returns the per-device symmetric multicast pool bytes, or ``0``.
 
         The pool backs NVSwitch (NVLS) allreduce. This is the single place the
-        sizing inputs are read, so the allocation site and the memory estimate
-        cannot disagree; ``0`` means no pool is created and collectives stay
-        peer-to-peer.
+        sizing inputs are read; ``0`` means no pool is created and collectives
+        stay peer-to-peer.
 
         Returns:
             Per-device pool bytes, or ``0`` when no pool will be allocated.
@@ -1324,45 +1365,11 @@ class PipelineConfig(ConfigFileModel):
         )
         if capacity == 0:
             return 0
-        # A multi-GPU box without NVSwitch cannot back a pool; charging for
-        # one the driver will refuse would shrink the KV cache for nothing.
+        # A multi-GPU box without NVSwitch cannot back a pool.
         devices = load_devices(self.model.device_specs)
         if not SymmetricPool.is_supported(devices):
             return 0
-        # The driver rounds the reservation up to its allocation granularity
-        # (2 MiB per GPU on current hardware), well inside the estimate's own
-        # margin, so the request is charged as is.
         return capacity
-
-    def estimate_signal_buffer_memory(
-        self, arch_config: ArchConfig | None = None
-    ) -> int:
-        """Estimates total signal-buffer memory across all devices.
-
-        Signal buffers are fixed-size (:attr:`~max.nn.comm.allreduce.Signals.NUM_BYTES`)
-        per-GPU allocations used by P2P collectives. The only site visible
-        from :class:`PipelineConfig` is the main model graph, and only for
-        multi-GPU pipelines. The ``tiered``/``rust_tiered`` KV connectors fan
-        MLA-replicated blocks out via plain P2P copies, not a signal-buffer
-        broadcast (see ``rust_kv/kv-tier-connector/src/copy_engine.rs``), so they
-        contribute no additional term here.
-
-        The per-GPU symmetric multicast pool backing NVLS allreduce is
-        charged alongside, when :meth:`multicast_pool_bytes` is non-zero.
-
-        Returns 0 for single-device pipelines.
-
-        Args:
-            arch_config: Unused; kept for interface parity with
-                :meth:`MemoryPlanner.estimate_signal_buffer_memory`.
-
-        Returns:
-            Estimated total signal-buffer memory in bytes (across all devices).
-        """
-        ngpus = len(self.model.device_specs)
-        if ngpus <= 1:
-            return 0
-        return (Signals.NUM_BYTES + self.multicast_pool_bytes()) * ngpus
 
     def _validate_repo_access(self) -> None:
         """Validates that every model's repo was provided and is accessible.
@@ -1601,14 +1608,23 @@ class PipelineConfig(ConfigFileModel):
                 exc_info=True,
             )
             denoising_arch_name = None
+        resolved_task = (
+            args.task
+            if args.task != PipelineTask.UNDEFINED
+            else PipelineTask.TEXT_GENERATION
+        )
+        # Resolve the preference before the first lookup, so the denoising
+        # arch, the arch below, and the registry all select the same variant.
+        prefer_module_v3 = _resolve_prefer_module_v3(
+            args.runtime.prefer_module_v3,
+            models,
+            denoising_arch_name,
+            resolved_task,
+        )
         denoising_arch = find_architecture(
             denoising_arch_name,
-            prefer_module_v3=args.runtime.prefer_module_v3,
-            task=(
-                args.task
-                if args.task != PipelineTask.UNDEFINED
-                else PipelineTask.TEXT_GENERATION
-            ),
+            prefer_module_v3=prefer_module_v3,
+            task=resolved_task,
         )
         denoising_cache = resolve_denoising_cache(
             args.denoising_cache,
@@ -1619,19 +1635,21 @@ class PipelineConfig(ConfigFileModel):
         )
 
         runtime = _construct_from_user_fields(
-            args.runtime, denoising_cache=denoising_cache
+            args.runtime,
+            denoising_cache=denoising_cache,
+            **_resolved_field_changes(
+                args.runtime, prefer_module_v3=prefer_module_v3
+            ),
         )
         lora = args.lora.model_copy(deep=True) if args.lora else None
 
-        _apply_speculative_draft_architecture(
-            args.speculative, models.get("draft")
-        )
+        _apply_speculative_draft_architecture(args.speculative, models)
         # Must precede the arch lookups so every consumer resolves the
         # overridden arch (#88511).
-        speculator: Speculator | None = None
+        spec_arch: SupportedArchitecture | None = None
         if args.speculative is not None and "main" in models:
-            speculator = _apply_speculative_target_architecture(
-                args.speculative, models
+            spec_arch = _apply_speculative_target_architecture(
+                args.speculative, models, prefer_module_v3
             )
         for model in models.values():
             model.validate_repo_access()
@@ -1653,22 +1671,17 @@ class PipelineConfig(ConfigFileModel):
                     "construction; skipping construction-time resolution.",
                     exc_info=True,
                 )
-            task = (
-                args.task
-                if args.task != PipelineTask.UNDEFINED
-                else PipelineTask.TEXT_GENERATION
-            )
             arch = find_architecture(
                 arch_name,
                 prefer_module_v3=runtime.prefer_module_v3,
-                task=task,
+                task=resolved_task,
             )
             if arch_name is not None and arch is None:
                 raise ValueError(f"No architecture found for {arch_name}")
             if arch is not None:
                 _validate_kv_cache_format(models["main"].kv_cache, arch)
-            if arch is not None and speculator is not None:
-                arch = speculator.derive()
+            if arch is not None and spec_arch is not None:
+                arch = spec_arch
 
         draft_arch = None
         if models.get("draft") is not None:
@@ -1681,11 +1694,15 @@ class PipelineConfig(ConfigFileModel):
                     exc_info=True,
                 )
                 draft_arch_name = None
-            # Mirrors the registry's draft lookup, which passes no task.
-            draft_arch = find_architecture(
-                draft_arch_name,
-                prefer_module_v3=runtime.prefer_module_v3,
-            )
+            # Mirrors the registry's draft lookup, which passes no task. The
+            # prefer flag is deliberately not forwarded either: it selects
+            # the target's build, while this lookup only resolves the draft's
+            # validation alias. A draft's rename target can name a real
+            # architecture with a `_ModuleV3` namesake of a different shape;
+            # forwarding the flag would reject the TP pairs the graph-API
+            # alias accepts. The drafter itself runs inside the fused model,
+            # never through this name.
+            draft_arch = find_architecture(draft_arch_name)
             if draft_arch_name is not None and draft_arch is None:
                 raise ValueError(
                     "MAX-Optimized architecture not found for `draft_model`"
@@ -1711,6 +1728,15 @@ class PipelineConfig(ConfigFileModel):
                 **({"num_speculative_tokens": width} if width else {}),
             )
 
+        _check_eager(
+            runtime,
+            models.get("main"),
+            arch,
+            lora,
+            speculative,
+            task=resolved_task,
+        )
+
         top_level: dict[str, Any] = {}
         if arch is not None:
             models["main"] = cls._model_with_resolved_weights(
@@ -1734,11 +1760,16 @@ class PipelineConfig(ConfigFileModel):
             runtime, sampling = _resolved_runtime_and_sampling(
                 runtime, sampling, lora, models["main"], arch
             )
-        elif runtime.device_graph_capture is None:
+        elif (
+            runtime.device_graph_capture is None
+            or runtime.enable_overlap_scheduler is None
+        ):
             # Overlap/DGC resolution is arch-gated; configs without a
-            # registered architecture still end with a concrete bool.
+            # registered architecture still end with concrete bools.
             runtime = _construct_from_user_fields(
-                runtime, device_graph_capture=False
+                runtime,
+                device_graph_capture=bool(runtime.device_graph_capture),
+                enable_overlap_scheduler=bool(runtime.enable_overlap_scheduler),
             )
 
         config = cls(

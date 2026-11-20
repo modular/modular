@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph 3a-FBC: First-Block-Cache denoise compute component for Flux2Executor.
 
 Used when ``--first-block-caching`` is enabled.  Analogous to
@@ -54,8 +53,8 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import load_weights
-from max.nn.comm import Signals
-from max.nn.layer import Module
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
@@ -133,6 +132,7 @@ class DenoiseComputeFBCacheStep(Module):
         *,
         signal_buffers: list[BufferValue] | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Runs one denoising step, reusing the previous step's residual."""
         # Concat image latents for img2img (no-op when img_seq=0).
         latents_concat = ops.concat([latents, image_latents], axis=1)
         latent_image_ids_concat = ops.concat(
@@ -233,6 +233,7 @@ class DenoiseComputeFBCacheStep(Module):
         return (result[0], result[1], use_fbcache_cpu)
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         in_channels = self.transformer.in_channels
         joint_attention_dim = self.transformer.joint_attention_dim
         inner_dim = self.transformer.inner_dim

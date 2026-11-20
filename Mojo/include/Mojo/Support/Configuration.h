@@ -17,6 +17,7 @@
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 
 #include <filesystem>
 #include <variant>
@@ -33,7 +34,7 @@ namespace M::KGEN {
 
 /// This class provides easy and type-safe access to values in the Mojo section
 /// of the modular configuration file.
-class MojoConfig {
+class MODULAR_CXX_EXPORT MojoConfig {
 public:
   /// Returns the path to the modular.cfg file.
   ErrorOr<std::filesystem::path> getConfigFilePath() const;
@@ -63,18 +64,11 @@ public:
   // LLDB Configurations
   //===--------------------------------------------------------------------===//
 
-  /// Return the path to the lldb-vscode executable within the mojo install.
-  StringRef getLLDBVSCodePath();
-
   /// Return the path to the Mojo lldb plugin within the mojo install.
   StringRef getLLDBPluginPath();
 
   /// Return the path to the lldb executable within the mojo install.
   StringRef getLLDBPath();
-
-  /// Return the default lldb visualizers to use when starting an LLDB debug
-  /// session.
-  void getLLDBVisualizers(SmallVectorImpl<StringRef> &paths);
 
   //===--------------------------------------------------------------------===//
   // JIT Configurations
@@ -82,6 +76,21 @@ public:
 
   /// Return the path to the kgen-compiler-rt library.
   StringRef getCompilerRTPath();
+
+  /// Return the path to the kgen-compiler-rt library built with
+  /// ThreadSanitizer, which ThreadSanitizer executables link in place of the
+  /// default one.
+  StringRef getCompilerRTTSanPath();
+
+  /// Return the path to the driver runtime library (libMDriver) built with
+  /// ThreadSanitizer, which ThreadSanitizer executables link in place of the
+  /// default one.
+  StringRef getMDriverTSanPath();
+
+  /// Return the path to the AsyncRT runtime globals library built on the
+  /// system allocator, which ThreadSanitizer executables link in place of the
+  /// tcmalloc one.
+  StringRef getRuntimeGlobalsTSanPath();
 
   /// Return the path to the mgp-rt library.
   StringRef getMGPRTPath();
@@ -92,9 +101,6 @@ public:
 
   /// Return the path to the `mojo` driver in the mojo install.
   StringRef getDriverPath();
-
-  /// Return the path to the Mojo jupyter library.
-  StringRef getJupyterPath();
 
   /// Return the path to the Mojo LSP server.
   StringRef getLSPServerPath();

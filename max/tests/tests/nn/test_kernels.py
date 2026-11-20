@@ -27,8 +27,9 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     _fp6_format_code,
+    _moe_sigmoid_gemv_group_limited_router_unsupported,
     block_scaled_preshuffle_grouped_scale_4d,
     grouped_dynamic_block_scaled_matmul_amd,
 )
@@ -57,9 +58,9 @@ def test_fp6_format_code_rejects_unknown_names() -> None:
 # expert's is correct but roughly `top_k`-fold too large per slot, which is
 # invisible at decode and fatal at a 6610-token Kimi K3 prefill: 896 x 105,760
 # x 112 B is 10.6 GB on a model already at 305 of 309 GB. These pin that the
-# bound is opt-in (so MiniMax M3 and Kimi K2.5 are untouched) and that the
-# region the matmul addresses still fits inside what the bound allocates -- too
-# small a bound is silent corruption, not a crash.
+# bound is opt-in and that the region the kernel addresses fits inside what
+# either sizing allocates. Every slot strides by a multiple of 32 rows, so an
+# unpadded default overruns any step of fewer than 32 rows.
 _K3_EXPERTS, _K3_TOP_K, _K3_ROW_BOUND, _K3_K_SCALES = 896, 16, 8192, 112
 _M3_EXPERTS, _M3_TOP_K, _M3_ROW_BOUND, _M3_K_SCALES = 128, 4, 8192, 192
 
@@ -103,17 +104,19 @@ def _preshuffled_scale_rows(
     [
         (6610, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES),
         (6610, _M3_TOP_K, _M3_EXPERTS, _M3_K_SCALES),
+        # Decode: one token's 4 rows, while each slot strides by 32.
+        (1, _M3_TOP_K, _M3_EXPERTS, _M3_K_SCALES),
     ],
-    ids=["kimi_k3", "minimax_m3"],
+    ids=["kimi_k3", "minimax_m3", "minimax_m3_decode"],
 )
-def test_preshuffled_scale_buffer_defaults_to_the_post_expansion_count(
+def test_preshuffled_scale_buffer_defaults_to_the_padded_post_expansion_count(
     tokens: int, top_k: int, num_experts: int, k_scales: int
 ) -> None:
-    """Omitting the bound must reproduce the old shape byte for byte."""
-    assert (
-        _preshuffled_scale_rows(tokens, top_k, num_experts, k_scales, None)
-        == num_experts * tokens * top_k
-    )
+    """Without a bound, each slot holds the step's rows padded to 32."""
+    rows = _preshuffled_scale_rows(tokens, top_k, num_experts, k_scales, None)
+    assert rows == num_experts * ((tokens * top_k + 31) // 32) * 32
+    max_padded_m = ((tokens + 31) // 32) * 32
+    assert rows >= num_experts * max_padded_m
 
 
 @pytest.mark.parametrize(
@@ -234,7 +237,7 @@ def test_grouped_amd_matmul_dispatches_mixed_w4a8() -> None:
     (name,) = custom.call_args.args
     values = custom.call_args.kwargs["values"]
     (out_type,) = custom.call_args.kwargs["out_types"]
-    assert name == "mo.grouped.matmul.block.scaled.amd"
+    assert name == "matmul.grouped.block.scaled.amd"
     assert values[0].dtype == DType.float8_e4m3fn
     assert values[1].dtype == DType.uint8
     assert custom.call_args.kwargs["parameters"]["preshuffled_b"] is False
@@ -293,7 +296,7 @@ def test_grouped_amd_matmul_preshuffles_with_a_scale_row_bound() -> None:
         a_scales_max_rows_per_expert=64,
     )
     names = [call.args[0] for call in custom.call_args_list]
-    assert names[-1] == "mo.grouped.matmul.block.scaled.amd"
+    assert names[-1] == "matmul.grouped.block.scaled.amd"
     assert len(names) == 2
 
 
@@ -319,3 +322,66 @@ def test_grouped_amd_matmul_rejects_an_ignored_a_scale_row_bound(
             a_scales_max_rows_per_expert=64,
             **kwargs,
         )
+
+
+# Beam-1.0's router.
+_GROUP_LIMITED_ROUTER: dict[str, Any] = {
+    "n_routed_experts": 256,
+    "n_experts_per_tok": 8,
+    "n_groups": 8,
+    "topk_group": 4,
+    "hidden_size": 5120,
+    "warp_size": 32,
+    "weight_dtype": DType.float32,
+}
+
+
+def test_group_limited_router_takes_beam_routing() -> None:
+    assert (
+        _moe_sigmoid_gemv_group_limited_router_unsupported(
+            **_GROUP_LIMITED_ROUTER
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides, reason",
+    [
+        ({"weight_dtype": DType.bfloat16}, "float32"),
+        ({"n_groups": 0}, "split evenly"),
+        ({"n_groups": 1}, "divide the warp"),
+        ({"n_groups": 128}, "n_experts_per_tok must be in"),
+        ({"topk_group": 9}, "topk_group must be in"),
+        (
+            {"n_routed_experts": 96, "n_groups": 3, "topk_group": 2},
+            "n_groups must be a power of two",
+        ),
+        ({"topk_group": 3}, "candidates must be a power of two"),
+        # Two scores per group overrun the candidates' shared memory.
+        (
+            {"n_groups": 16, "topk_group": 4, "n_experts_per_tok": 4},
+            "shared memory",
+        ),
+        ({"topk_group": 1}, "shared memory"),
+    ],
+    ids=[
+        "bf16_ids",
+        "no_groups",
+        "group_wider_than_warp",
+        "top_k_wider_than_group",
+        "more_kept_than_groups",
+        "groups_not_power_of_two",
+        "candidates_not_power_of_two",
+        "group_scores_overrun_16",
+        "group_scores_overrun_8",
+    ],
+)
+def test_group_limited_router_rejects_unsupported_routing(
+    overrides: dict[str, Any], reason: str
+) -> None:
+    """Configs the kernel can't run fail at build, not as bad routing."""
+    result = _moe_sigmoid_gemv_group_limited_router_unsupported(
+        **{**_GROUP_LIMITED_ROUTER, **overrides}
+    )
+    assert result is not None and reason in result

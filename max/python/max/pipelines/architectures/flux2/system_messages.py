@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Flux2 system prompts and prompt-input formatting."""
 
 from typing import Any
 

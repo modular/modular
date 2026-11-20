@@ -39,13 +39,12 @@ from max.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from max.gpu.sync import named_barrier, syncwarp
-from layout import DefaultEngine, TensorLayout, TensorEngine, TileTensor
+from layout import DefaultEngine, TensorLayout, TensorEngine, TileTensor, Coord
 from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
 )
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
@@ -108,7 +107,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     static_N: Int,
     static_K: Int,
     # Cluster shape
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     b_scales_engine: TensorEngine = DefaultEngine[element_width=1],
     c_device_engine: TensorEngine = DefaultEngine[element_width=1],
     offsets_engine: TensorEngine = DefaultEngine[element_width=1],
@@ -225,7 +224,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -239,13 +242,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        IndexList[2](
-            Self.SmemType.Core.BM, Self.SmemType.Core.BK
-        ),  # A tile shape
-        IndexList[2](
-            Self.SmemType.Core.BN, Self.SmemType.Core.BK
-        ),  # B tile shape
-        IndexList[2](1, Self.SmemType.Core.BM),  # A-scales shape
+        (Self.SmemType.Core.BM, Self.SmemType.Core.BK),  # A tile shape
+        (Self.SmemType.Core.BN, Self.SmemType.Core.BK),  # B tile shape
+        (1, Self.SmemType.Core.BM),  # A-scales shape
         Self.SmemType.Core.num_pipeline_stages,
     ]
 
@@ -339,7 +338,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime accum_dims = get_accumulator_dims[
         c_smem_dim1=Self.OutputN,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         cta_group=Self.cta_group,
     ]()
 
@@ -349,7 +352,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.accum_dims[1],
         Self.is_lower_required,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         Self.CLUSTER_SIZE,
     ]
 
@@ -362,7 +369,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.accum_dims[0],
         Self.accum_dims[1],
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         is_lower_frag_required=Self.is_lower_required,
         cta_group=Self.cta_group,
         num_output_stages=Self.num_output_stages,
@@ -486,7 +497,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
@@ -541,7 +558,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             UInt8,
             address_space=.SHARED,
             alignment=128,
-        ]().bitcast[Self.SmemType]()[]
+        ]().unsafe_bitcast[Self.SmemType]()[]
 
         # Get typed tile arrays from SMEM
         var a_tiles = smem.a_tiles()
@@ -785,9 +802,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             elect_one_cta: True if this CTA is the elected CTA in a two-CTA
                 cluster; gates `expect_bytes` setup.
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n, peer_rank_m, peer_m_rank = peer_cta_coord
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
@@ -817,11 +832,15 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile._storage + peer_m_rank * Self.a_tma_load_size,
+                a_tile._storage.unsafe_offset(
+                    peer_m_rank * Self.a_tma_load_size
+                ),
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile._storage + peer_rank_m * Self.b_tma_load_size,
+                b_tile._storage.unsafe_offset(
+                    peer_rank_m * Self.b_tma_load_size
+                ),
                 b_tile.layout,
             )
 

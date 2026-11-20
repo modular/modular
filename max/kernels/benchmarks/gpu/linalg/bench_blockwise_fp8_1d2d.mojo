@@ -66,7 +66,7 @@ def bench_blockwise_fp8_1d2d[
     num_experts: Int,
     expert_shape: IndexList[2],  # (N, K)
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -187,8 +187,8 @@ def bench_blockwise_fp8_1d2d[
 
     # ===== Benchmark Legacy Kernel =====
     comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(1, 1, 1),
-        mma_shape=Index(64, 64, 32),
+        cluster_shape=(Int(1), Int(1), Int(1)),
+        mma_shape=(Int(64), Int(64), Int(32)),
         cta_group=1,
         AB_swapped=False,
         k_group_size=1,
@@ -208,7 +208,7 @@ def bench_blockwise_fp8_1d2d[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                 config=config,
             ](
@@ -248,7 +248,7 @@ def bench_blockwise_fp8_1d2d[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
                 a_scales_type=DType.float32,
                 b_scales_type=DType.float32,
@@ -295,7 +295,7 @@ def main() raises:
     comptime N = get_defined_int["N", 7168]()
     comptime K = get_defined_int["K", 2048]()
     comptime num_experts = get_defined_int["num_experts", 8]()
-    comptime expert_shape = IndexList[2](N, K)
+    comptime expert_shape = (N, K)
 
     var b = Bench()
 

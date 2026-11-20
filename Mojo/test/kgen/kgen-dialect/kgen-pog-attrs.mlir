@@ -4,11 +4,11 @@
 // CHECK-LABEL: "pog.metadata"
 // CHECK-SAME: pog1 = #kgen.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
 // CHECK-SAME: pog2 = #kgen.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
-// CHECK-SAME: pog3 = #kgen.pog_metadata<"some_default_param", pos_or_kw, not_vararg, default ?>
+// CHECK-SAME: pog3 = #kgen.pog_metadata<"some_default_param", pos_or_kw, not_vararg, default *?>
 "pog.metadata"() {
   pog1 = #kgen.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
   pog2 = #kgen.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>,
-  pog3 = #kgen.pog_metadata<"some_default_param", pos_or_kw, not_vararg, default :index ?>
+  pog3 = #kgen.pog_metadata<"some_default_param", pos_or_kw, not_vararg, default :index *?>
 } : () -> ()
 
 // CHECK-LABEL: "pogs.with_defaults"

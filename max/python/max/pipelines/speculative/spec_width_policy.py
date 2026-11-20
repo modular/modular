@@ -175,6 +175,14 @@ class SpecWidthPolicy:
         """Whether a mixed prefill+decode step verifies any drafts."""
         return self.mixed != 0
 
+    @property
+    def max_mixed_width(self) -> int:
+        """The most drafts a mixed step verifies per decode row.
+
+        ``mixed`` unset follows the schedule, which the draft depth caps.
+        """
+        return self.num_speculative_tokens if self.mixed is None else self.mixed
+
     def log_summary(self) -> None:
         """Logs every setting that narrows a step below the full draft depth."""
         if self.adaptive is not None:

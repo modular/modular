@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import copy
+from contextlib import nullcontext
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
-from max.experimental.validation import EagerUsageValidator
 from max.pipelines.context import (
     ImageMetadata,
     StructuredOutputRegionDelimiters,
@@ -34,6 +35,8 @@ from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
 )
+from max.pipelines.lib import graph_capture as capture_module
+from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     _OOB_IDX,
@@ -41,10 +44,12 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     AsyncBatch,
     _host_mirror_realized_drafts,
     _should_verify_drafts,
+    in_flight_draft_placeholders,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     _count_token_subsequence,
+    update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import (
@@ -54,6 +59,10 @@ from max.pipelines.modeling.types import (
 )
 from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
 from max.support.math import ceildiv
+from max.tensor.validation import EagerUsageValidator
+
+# Marks a request as constrained; the tests never compile it.
+_SCHEMA = '{"type": "object"}'
 
 
 @pytest.mark.parametrize(
@@ -168,11 +177,14 @@ def test_forward_launched_before_sampling_processor_build() -> None:
     pipeline._prev_batch = None
     pipeline._disable_overlap = False
     pipeline._kv_manager = MagicMock()
+    pipeline._pipeline_model = MagicMock()
     pipeline._request_validator = EagerUsageValidator(enabled=False)
 
     call_order: list[str] = []
 
     mock_model_outputs = MagicMock(name="model_outputs")
+    # A model that returns no tokens of its own takes the sampling path.
+    mock_model_outputs.next_tokens = None
     mock_sampling_processor = MagicMock(name="sampling_processor")
     mock_curr_batch = MagicMock(name="curr_batch")
 
@@ -215,6 +227,9 @@ def test_forward_launched_before_sampling_processor_build() -> None:
     ]
     pipeline._run_forward.assert_called_once_with(inputs)
     pipeline._create_sampling_processor.assert_called_once_with(
+        inputs.flat_batch
+    )
+    pipeline._pipeline_model.finalize_kv_cache_writes.assert_called_once_with(
         inputs.flat_batch
     )
     # Reorder must not clear the deferred (overlapped) current batch.
@@ -266,6 +281,8 @@ def test_warmup_graph_capture_batch_size(
         pipeline.warmup_graph_capture()
 
         assert pipeline.graph_capture_ready
+        mock_model.begin_captured_submission.assert_not_called()
+        mock_model.on_captured_submission_success.assert_not_called()
 
         call_kwargs = MockRunner.call_args.kwargs
         assert call_kwargs["model"] is mock_model.model
@@ -1611,6 +1628,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=rid,
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         # curr_ctx reuses the same request_id so it is a member of the
         # producing batch -- the steady aggregated decode path.
@@ -1709,6 +1727,7 @@ class TestEnqueuePrevBitmaskCallback:
                 request_id=rid,
                 max_length=100,
                 tokens=TokenBuffer(np.array([1])),
+                json_schema=_SCHEMA,
             )
             for rid in prev_rids
         ]
@@ -1888,6 +1907,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=rid_a,
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         ctx_b = TextContext(
             request_id=rid_b,
@@ -1922,6 +1942,7 @@ class TestEnqueuePrevBitmaskCallback:
             request_id=RequestID("producer"),
             max_length=100,
             tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
         )
         producer.update(new_token=10)
         padding = TextContext(
@@ -1949,6 +1970,75 @@ class TestEnqueuePrevBitmaskCallback:
         assert result is True
         assert mock_spec_state.has_precomputed_bitmask is True
         mock_overlap_state.enqueue_async_callback.assert_called_once()
+
+    def test_skips_callback_when_no_row_is_constrained(self) -> None:
+        """Steady decode with no grammar in either batch: no callback (its
+        host node would stall the stream), so the successor primes an
+        all-valid bitmask instead."""
+        ctx_a = TextContext(
+            request_id=RequestID("a"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx_a.update(new_token=10)
+        pipeline, mock_spec_state, mock_overlap_state = (
+            self._make_pipeline_with_spec_state([ctx_a])
+        )
+        mock_spec_state.bitmask_callback_enqueued = True
+
+        result = pipeline._enqueue_prev_bitmask_callback(
+            curr_context_batch=[ctx_a], curr_verify_width=2
+        )
+
+        assert result is False
+        mock_overlap_state.enqueue_async_callback.assert_not_called()
+        assert mock_spec_state.has_precomputed_bitmask is False
+        prev = pipeline._prev_batch
+        assert prev is not None and prev.spec_decode is not None
+        assert prev.spec_decode.fsm_advanced_by_callback is False
+        # The previous step's callback is remembered for the prime's signal.
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is True
+        assert mock_spec_state.bitmask_callback_enqueued is False
+
+    def test_records_enqueued_callback_for_next_step(self) -> None:
+        """An enqueued callback is recorded, and shifts to the previous-step
+        flag on the next call."""
+        ctx_a = TextContext(
+            request_id=RequestID("a"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+            json_schema=_SCHEMA,
+        )
+        ctx_a.update(new_token=10)
+        pipeline, mock_spec_state, _ = self._make_pipeline_with_spec_state(
+            [ctx_a]
+        )
+        mock_spec_state.bitmask_callback_enqueued = False
+
+        with patch.object(
+            pipeline, "_build_bitmask_callback", return_value=lambda: None
+        ):
+            assert pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[ctx_a], curr_verify_width=2
+            )
+        assert mock_spec_state.bitmask_callback_enqueued is True
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is False
+
+        # The constrained request finished; the next batch is unconstrained.
+        ctx_b = TextContext(
+            request_id=RequestID("b"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx_b.update(new_token=11)
+        pipeline._prev_batch = self._make_prev_batch(
+            [ctx_b], num_draft_to_verify=2, next_draft_k=2
+        )
+        assert not pipeline._enqueue_prev_bitmask_callback(
+            curr_context_batch=[ctx_b], curr_verify_width=2
+        )
+        assert mock_spec_state.bitmask_callback_enqueued is False
+        assert mock_spec_state.prev_step_enqueued_bitmask_callback is True
 
 
 class TestInitializeBitmaskWithGrammar:
@@ -2530,6 +2620,76 @@ class TestAssignBitmaskInputs:
             "The synchronous fill must feed the realized host drafts."
         )
 
+    def _unconstrained_ctx(self) -> TextContext:
+        ctx = TextContext(
+            request_id=RequestID("free"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        ctx.update(new_token=5)
+        return ctx
+
+    def test_unconstrained_cold_start_primes_all_valid(self) -> None:
+        """No constrained row and no callback ran: prime an all-valid bitmask
+        (no per-row compute) and signal the flag."""
+        pipeline, structured_output, spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[], has_precomputed_bitmask=False
+            )
+        )
+        spec_state.prev_step_enqueued_bitmask_callback = False
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        structured_output.compute_speculative_bitmasks.assert_not_called()
+        overlap_state.prime.assert_not_called()
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=True
+        )
+
+    def test_unconstrained_prime_leaves_flag_to_inflight_callback(
+        self,
+    ) -> None:
+        """The previous step enqueued a callback and its outputs are not
+        synced yet: that callback signals the flag, so the prime must not
+        (an early signal would let the previous graph read rows the callback
+        has not written)."""
+        pipeline, _, spec_state, overlap_state, _ = self._make_pipeline(
+            callback_request_ids=[], has_precomputed_bitmask=False
+        )
+        spec_state.prev_step_enqueued_bitmask_callback = True
+        prev_batch = MagicMock()
+        prev_batch._is_processed = False
+        pipeline._prev_batch = prev_batch
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=False
+        )
+
+        # Once the previous batch is synced its callback has retired.
+        overlap_state.prime_all_valid.reset_mock()
+        prev_batch._is_processed = True
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[self._unconstrained_ctx()],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+        overlap_state.prime_all_valid.assert_called_once_with(
+            1, self._NUM_POS, signal=True
+        )
+
 
 class TestHostMirrorRealizedDrafts:
     """Tests for ``_host_mirror_realized_drafts``.
@@ -2645,3 +2805,250 @@ class TestHostMirrorRealizedDrafts:
         assert np.array_equal(
             out, np.array([[80, 81, 82], [4, 5, 6], [70, 71, 72]])
         )
+
+
+def _captured_dispatch_fixture(
+    monkeypatch: pytest.MonkeyPatch, *, host: bool = False, pinned: bool = False
+) -> SimpleNamespace:
+    pipeline = object.__new__(OverlapTextGenerationPipeline)
+    pipeline._request_validator = EagerUsageValidator(enabled=False)
+    pipeline._spec_decode_state = None
+    pipeline._prev_batch = None
+    pipeline._disable_overlap = False
+    pipeline._synthesis_aligner = None
+    pipeline._encoder_cache = None
+    pipeline._realize_future_token_processor = None
+    pipeline._max_graph_capture_batch_size = 1
+    pipeline._pipeline_config = MagicMock(debug_verify_replay=True)
+    pipeline._structured_output = StructuredOutputHelper(enabled=False)
+    pipeline._kv_manager = MagicMock()
+    pipeline._kv_manager.params.num_draft_tokens = 0
+    monkeypatch.setattr(
+        pipeline,
+        "_create_sampling_processor",
+        MagicMock(return_value=(MagicMock(), None)),
+    )
+    monkeypatch.setattr(
+        pipeline, "_sample_logits", MagicMock(return_value=None)
+    )
+    ctx = TextContext(max_length=100, tokens=TokenBuffer(np.array([1, 2])))
+    ctx.update(new_token=3)
+    batch = TextGenerationInputs(batches=[[ctx]])
+    live, captured = MagicMock(), MagicMock()
+    live.device = captured.device
+    captured.device.is_host = host
+    captured.pinned = pinned
+    live.dtype = captured.dtype = "int64"
+    live.shape = captured.shape = (1,)
+    captured.to_numpy.return_value = np.array([1])
+    live.to_numpy.return_value = np.array([2])
+    inputs = MagicMock(
+        tokens=live, input_row_offsets=MagicMock(), buffers=(live,)
+    )
+    warmup_inputs = MagicMock(buffers=(captured,))
+    order: list[str] = []
+    submitted: list[object] = []
+    model = MagicMock()
+    model.prepare_initial_token_inputs.return_value = inputs
+    pipeline._pipeline_model = model
+
+    def begin(original: object) -> None:
+        assert any(original is item for item in submitted_inputs)
+        submitted.clear()
+        order.append("begin")
+
+    def success(original: object) -> None:
+        assert not submitted
+        assert any(original is item for item in submitted_inputs)
+        submitted.append(original)
+        order.append("success")
+
+    submitted_inputs: list[object] = [inputs]
+    model.begin_captured_submission.side_effect = begin
+    model.on_captured_submission_success.side_effect = success
+    model.finalize_kv_cache_writes.side_effect = lambda _: order.append(
+        "finalize"
+    )
+    pipeline._kv_manager.step.side_effect = lambda _: order.append("step")
+    runner = object.__new__(ServeGraphCaptureRunner)
+    runner._max_batch_size = 1
+    runner._verify_widths = [0]
+    runner._widths_by_batch_size = [[], [0]]
+    runner._max_cache_length_upper_bound = 128
+    runner._kv_params = MagicMock()
+    runner._kv_params.graph_capture_probe_cache_lengths.return_value = [128]
+    runner._is_spec_decode = False
+    runner._compiled = None
+    runner._records = {}
+    runner.graph_entries = {}
+    runner._host_input_guard_mode = "abort" if host or pinned else None
+    runner._host_inputs_reported = set()
+    engine = MagicMock()
+    engine.input_metadata = [SimpleNamespace(name="host_lengths")]
+    engine.capture.return_value = [MagicMock()]
+    runner._engine_model = engine
+    monkeypatch.setattr(
+        runner,
+        "_warmup_model_inputs",
+        lambda *_: nullcontext(warmup_inputs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner, "_resolve_graph_key", lambda *_: MagicMock(name="capture_key")
+    )
+
+    def refresh(*_: object) -> None:
+        assert not submitted
+        order.append("refresh")
+
+    monkeypatch.setattr(capture_module, "batch_inplace_copy", refresh)
+
+    def debug(*_: object) -> None:
+        assert not submitted
+        order.append("debug")
+
+    def selected(*_: object) -> None:
+        assert not submitted
+        order.append("selected")
+
+    engine.debug_verify_replay.side_effect = debug
+    engine.replay.side_effect = selected
+    runner.warmup_pre_ready()
+    engine.capture.assert_called_once()
+    model.begin_captured_submission.assert_not_called()
+    model.on_captured_submission_success.assert_not_called()
+    assert not submitted
+    submitted.append(object())
+    pipeline._graph_capture_runner = runner
+    return SimpleNamespace(
+        pipeline=pipeline,
+        model=model,
+        runner=runner,
+        engine=engine,
+        inputs=inputs,
+        batch=batch,
+        order=order,
+        submitted=submitted,
+        submitted_inputs=submitted_inputs,
+    )
+
+
+def test_captured_selected_dispatch_uses_live_inputs_not_reused_buffers_or_debug_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _captured_dispatch_fixture(monkeypatch)
+    second = copy.copy(fixture.inputs)
+    fixture.submitted_inputs.append(second)
+    fixture.model.prepare_initial_token_inputs.side_effect = [
+        fixture.inputs,
+        second,
+    ]
+    captured = next(iter(fixture.runner.graph_entries.values()))[0]
+    for original in (fixture.inputs, second):
+        fixture.order.clear()
+        fixture.pipeline.execute(fixture.batch)
+        assert fixture.order == [
+            "begin",
+            "refresh",
+            "debug",
+            "selected",
+            "success",
+            "finalize",
+            "step",
+        ]
+        assert fixture.submitted == [original]
+        assert fixture.model.begin_captured_submission.call_args.args == (
+            original,
+        )
+        assert fixture.model.on_captured_submission_success.call_args.args == (
+            original,
+        )
+        assert original is not captured
+    fixture.model.execute.assert_not_called()
+    assert fixture.engine.debug_verify_replay.call_count == 2
+    assert fixture.engine.replay.call_count == 2
+
+
+def test_debug_success_then_failed_selected_replay_has_no_witness_or_cache_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _captured_dispatch_fixture(monkeypatch)
+
+    def fail(*_: object) -> None:
+        fixture.order.append("selected")
+        raise RuntimeError("selected replay failed")
+
+    fixture.engine.replay.side_effect = fail
+    with pytest.raises(RuntimeError, match="selected replay failed"):
+        fixture.pipeline.execute(fixture.batch)
+    assert fixture.order == ["begin", "refresh", "debug", "selected"]
+    assert fixture.submitted == []
+    fixture.model.on_captured_submission_success.assert_not_called()
+    fixture.model.finalize_kv_cache_writes.assert_not_called()
+    fixture.pipeline._kv_manager.step.assert_not_called()
+    fixture.engine.debug_verify_replay.assert_called_once()
+
+
+@pytest.mark.parametrize("host,pinned", [(True, False), (False, True)])
+def test_existing_host_and_pinned_guard_fails_before_submission_association(
+    monkeypatch: pytest.MonkeyPatch, host: bool, pinned: bool
+) -> None:
+    fixture = _captured_dispatch_fixture(monkeypatch, host=host, pinned=pinned)
+    with pytest.raises(RuntimeError, match="Captured host input"):
+        fixture.pipeline.execute(fixture.batch)
+    assert fixture.order == ["begin"]
+    assert fixture.submitted == []
+    fixture.engine.debug_verify_replay.assert_not_called()
+    fixture.engine.replay.assert_not_called()
+    fixture.model.on_captured_submission_success.assert_not_called()
+    fixture.model.finalize_kv_cache_writes.assert_not_called()
+    fixture.pipeline._kv_manager.step.assert_not_called()
+
+
+def test_intermediate_chunk_in_mixed_verify_step_counts_no_drafts() -> None:
+    """An intermediate chunk in a mixed verify step counts no drafts.
+
+    The next step's cache length is ``processed_length`` plus the drafts the
+    launched step counted as cached, and only a row that sampled a token is
+    rolled back to its accepted count. The chunk row samples nothing, so it
+    must count no drafts; the decode row counts every verified draft until
+    its step syncs.
+    """
+    k = 3
+    chunked = TextContext(
+        request_id=RequestID("chunked"),
+        max_length=1000,
+        tokens=TokenBuffer(np.arange(100, 110, dtype=np.int64)),
+    )
+    chunked.tokens.chunk(4)
+    decode = TextContext(
+        request_id=RequestID("decode"),
+        max_length=1000,
+        tokens=TokenBuffer(np.array([5, 6, 7], dtype=np.int64)),
+    )
+    decode.update(8)
+    batch = [chunked, decode]
+
+    for ctx in batch:
+        ctx.update_with_future_token()
+        ctx.spec_decoding_state.maybe_accepted_draft_tokens = (
+            in_flight_draft_placeholders(ctx, k)
+        )
+    assert chunked.tokens.generated_length == 0
+    assert len(decode.spec_decoding_state.maybe_accepted_draft_tokens) == k
+
+    update_spec_decode_context_and_prepare_responses(
+        draft_tokens=np.array(
+            [[MAGIC_DRAFT_TOKEN_ID] * k, [11, 12, 13]], dtype=np.int32
+        ),
+        next_draft_tokens=np.zeros((2, k), dtype=np.int32),
+        num_accepted_draft_tokens=np.array([0, 1], dtype=np.int32),
+        next_tokens=np.array([50, 60], dtype=np.int32),
+        context_batch=batch,
+        max_seq_len=1000,
+    )
+
+    cache_length = chunked.tokens.processed_length + len(
+        chunked.spec_decoding_state.maybe_accepted_draft_tokens
+    )
+    assert cache_length == 4

@@ -25,7 +25,7 @@ from testdata.fused_qk_rope_goldens import (
 
 def test_rope_ragged[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert dtype == .float32, "goldens only for float32, currently"
 
@@ -142,13 +142,12 @@ def test_rope_ragged[
     def output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var q_out_tensor} -> None:
-        q_out_tensor.store[width=width](idx, val)
+        q_out_tensor.store(idx, val)
 
     rope_ragged[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
     ](
         x=q_tensor,
         input_row_offsets=input_row_offsets_tensor,
@@ -193,7 +192,7 @@ def test_rope_ragged[
 
 def test_rope_ragged_non_interleaved[
     dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Checks non-interleaved RoPE against a scalar rotate-half reference.
 
     `interleaved=False` is the only path that calls `output_fn` twice per
@@ -281,13 +280,12 @@ def test_rope_ragged_non_interleaved[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var q_out_tensor} -> None:
         comptime assert coords.rank == 3, "the rope output contract is rank 3"
-        q_out_tensor.store[width=width](coords, val)
+        q_out_tensor.store(coords, val)
 
     rope_ragged[
         dtype,
         dtype,
         interleaved=False,
-        target=StaticString("cpu"),
     ](
         x=q_tensor,
         input_row_offsets=input_row_offsets_tensor,
@@ -324,7 +322,7 @@ def test_rope_ragged_non_interleaved[
 
 def test_rope_ragged_rope_first[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Checks `rope_first` against an explicit slice -> RoPE -> concat.
 
     The Indexer fusion rewrites `concat(rope(x[..., :R]), x[..., R:])` into
@@ -422,19 +420,18 @@ def test_rope_ragged_rope_first[
     def full_output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var full_out_tensor} -> None:
-        full_out_tensor.store[width=width](idx, val)
+        full_out_tensor.store(idx, val)
 
     @inline(.always)
     def prefix_output_fn[
         width: SIMDLength, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var prefix_out_tensor} -> None:
-        prefix_out_tensor.store[width=width](idx, val)
+        prefix_out_tensor.store(idx, val)
 
     rope_ragged[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
         rope_first=True,
     ](
         x=q_tensor,
@@ -449,7 +446,6 @@ def test_rope_ragged_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
     ](
         x=prefix_tensor,
         input_row_offsets=input_row_offsets_tensor,
@@ -483,7 +479,7 @@ def test_rope_ragged_rope_first[
 
 
 def main() raises -> None:
-    with DeviceContext(api="cpu") as ctx:
+    with DeviceContext.cpu() as ctx:
         # Full head RoPE - this works correctly and is production ready
         print("Full head RoPE")
         test_rope_ragged[8, .float32](ctx)

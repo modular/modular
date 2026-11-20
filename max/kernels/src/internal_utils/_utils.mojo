@@ -13,7 +13,7 @@
 
 import std.time
 from std.collections import Optional
-from std.math import ceildiv, floor
+from std.math import ceildiv, floor, gcd
 from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -28,7 +28,12 @@ from std.benchmark import (
 )
 from std.compile import compile_info
 from max.gpu import block_dim, global_idx, grid_dim
-from max.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceFunction,
+    GridBlockLaunchConfig,
+)
 from std.random import Random
 from std.utils import IndexList
 
@@ -56,7 +61,7 @@ struct InitializationType(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].size, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -113,9 +118,10 @@ struct InitializationType(
 
 # TODO: refactor the following to run exactly once.
 def bench_compile_time[
-    func_type: TrivialRegisterPassable,
+    ret_type: AnyType,
+    declared_arg_types: TypeList[Trait=AnyType, ...],
     //,
-    func: func_type,
+    func: def(*args: *declared_arg_types) thin -> ret_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
     comptime assert emission_kind in ["asm", "llvm", "ptx"]
@@ -133,12 +139,12 @@ def bench_compile_time[
                     keep(s)
                 case "ptx":
                     with DeviceContext() as ctx:
-                        var func = DeviceFunction[
-                            func, TypeList.of[Trait=AnyType]()
-                        ](ctx)
+                        var func = DeviceFunction[func](ctx)
                         # Ensure that the compilation step is not optimized away.
-                        keep(UnsafePointer(to=func))
+                        keep(Pointer(to=func))
                         clobber_memory()
+                case _:
+                    pass
 
         b.iter(bench_iter)
 
@@ -261,6 +267,8 @@ def arg_parse(handle: String, default: Bool) raises -> Bool:
                 return True
             case "False":
                 return False
+            case _:
+                pass
     return default
 
 
@@ -299,6 +307,8 @@ struct Mode(TrivialRegisterPassable, Writable):
                     self.append(Self.BENCHMARK)
                 case == (String(Self.VERIFY.handle)):
                     self.append(Self.VERIFY)
+                case _:
+                    pass
 
     def append(mut self, other: Self):
         self._value |= other._value
@@ -368,16 +378,12 @@ struct Timer:
         var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
-        self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
+        self.report.append(String(t"[{msg}] {elapsed / 1e6} (ms)"))
 
     def print(self) raises:
         for i in range(len(self.report)):
             print(self.report[i])
-        print(
-            "[total-elapsed] "
-            + String((self.current - self.start) / 1e6)
-            + " (ms)"
-        )
+        print(t"[total-elapsed] {(self.current - self.start) / 1e6} (ms)")
         print(
             "-----------------------------------------------------------------------"
         )
@@ -387,7 +393,7 @@ struct Timer:
 def init_vector_gpu[
     dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    x: MutPointer[Scalar[dtype], MutAnyOrigin],
     len: Int32,
     mode: InitializationType,
     value: Scalar[dtype],
@@ -398,9 +404,11 @@ def init_vector_gpu[
 
     def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Every store is guarded, not just the last: the launch rounds the
+            # thread count up to a whole block, so a buffer shorter than four
+            # strides has threads whose first stores already land past the end.
+            if tid >= _len:
+                return
             x[tid] = values[i]
             tid += stride
 
@@ -434,6 +442,8 @@ def init_vector_gpu[
                 UInt64(tid + 2 * stride).cast[dtype](),
                 UInt64(tid + 3 * stride).cast[dtype](),
             )
+        case _:
+            pass
     apply(values)
 
 
@@ -455,8 +465,10 @@ def init_vector_launch[
         Int32(length),
         init_type,
         value.or_else(0),
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks),
+            block_dim=(block_dim),
+        ),
     )
 
 
@@ -466,16 +478,17 @@ def init_vector_launch[
 # Each thread processes 4 elements for better memory throughput.
 def _init_block_scaled_scales_gpu[
     dtype: DType
-](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int32):
+](x: MutPointer[Scalar[dtype], MutAnyOrigin], len: Int32):
     var _len = Int(len)
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
     def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Same short-buffer guard as `init_vector_gpu`: the last store's
+            # check does not protect the first three.
+            if tid >= _len:
+                return
             x[tid] = Scalar[dtype](values[i])
             tid += stride
 
@@ -505,8 +518,10 @@ def _init_block_scaled_scales_launch[
     context.enqueue_function[kernel](
         out_device,
         Int32(length),
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks),
+            block_dim=(block_dim),
+        ),
     )
 
 
@@ -536,9 +551,27 @@ def human_readable_size(size: Int) -> String:
     comptime GB = MB * KB
 
     if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GB"
+        return String(t"{_pretty_print_float(Float64(size) / GB)}GB")
     if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MB"
+        return String(t"{_pretty_print_float(Float64(size) / MB)}MB")
     if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KB"
-    return String(size) + "B"
+        return String(t"{_pretty_print_float(Float64(size) / KB)}KB")
+    return String(t"{size}B")
+
+
+def coprime_multiplier(n: Int) -> Int:
+    """Returns a stride that visits every position of a length-`n` ring.
+
+    A stride that shares a factor with `n` revisits a subset of the ring, so
+    synthetic top-k indices built from it would touch too few distinct keys.
+
+    Args:
+        n: Ring length to be coprime with.
+
+    Returns:
+        The first of 3, 5, 7, 11 and 13 coprime with `n`, else 1.
+    """
+    for m in [3, 5, 7, 11, 13]:
+        if gcd(m, n) == 1:
+            return m
+    return 1

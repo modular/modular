@@ -13,7 +13,7 @@
 
 """Tests for doc string validation diagnostics."""
 
-# RUN: %parse-mojo-isolated -o /dev/null -mojo-diagnose-missing-doc-strings -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -o /dev/null --diagnose-missing-doc-strings -verify-diagnostics %s
 
 
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
@@ -93,6 +93,27 @@ struct StructWithMissingMethod(Movable where False):
 
     # expected-warning @below {{public symbol '__init__' is missing a doc string}}
     def __init__(out self):
+        pass
+
+
+struct StructWithDocumentedSelf(Movable where False):
+    """Tests explicitly documenting a method's `self` argument."""
+
+    def method(self, arg: ArgStruct):
+        """Documents all method arguments.
+
+        Args:
+            self: The struct instance.
+            arg: The explicit argument.
+        """
+        pass
+
+    def method_without_self(self, arg: ArgStruct):
+        """Documents only the required method argument.
+
+        Args:
+            arg: The explicit argument.
+        """
         pass
 
 

@@ -35,12 +35,13 @@ var filled = Array[Int, 5](fill=42)
 
 from std.math import max, min, align_down
 import std.memory
+from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
-from std.hashlib.hasher import Hasher
+from std.hash.hasher import Hasher
 from std.sys import size_of
 from std.memory import (
     MaybeUninit,
@@ -209,16 +210,15 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
         return (remaining, {remaining})
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy an `Array` of"
-    " non-`Deinitable` elements"
-)
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Comparable where conforms_to(T, Comparable),
     Copyable where conforms_to(T, Copyable),
     Defaultable where conforms_to(T, Defaultable),
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy an `Array` of"
+        " non-`Deinitable` elements"
+    ),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
@@ -538,6 +538,59 @@ struct Array[T: AnyType, length: Int](
                 )
                 ptr = ptr.unsafe_offset(1)
 
+    # TODO(MOCO-4470): Merge into the non-raising overload above once a
+    # non-raising closure can be called as `raises E` with `E` bound to
+    # `Never`.
+    # TODO(https://github.com/modular/modular/issues/7637): Drop `Movable` from
+    # the `T` constraint once a raising call can construct its result in
+    # place behind a `Pointer`, and a raising closure can return a
+    # non-`Movable` type (https://github.com/modular/modular/issues/7636).
+    @inline(.always)
+    def __init__[
+        E: Movable, //
+    ](
+        out self, *, fill_with: Some[def(Int) raises E -> Self.T]
+    ) raises E where conforms_to(Self.T, Movable & Deinitable):
+        """Constructs an array by calling `fill_with(i)` for each index `i`,
+        where `fill_with` can raise.
+
+        If `fill_with` raises, the array destroys the elements it already
+        holds and propagates the error.
+
+        Parameters:
+            E: The type of error that `fill_with` raises.
+
+        Args:
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Raises:
+            E: If `fill_with` raises for any index.
+
+        Examples:
+
+        ```mojo
+        def num(i: Int) raises -> Int:
+            raise "error"
+
+        try:
+            var numbers = Array[Int, 3](fill_with=num)
+        except e:
+            print(e)  # error
+        ```
+        """
+        self = {uninitialized = True}
+        var ptr = self.unsafe_ptr()
+        var initialized = 0
+        try:
+            for i in range(Self.length):
+                ptr.unsafe_offset(i).unsafe_write(fill_with(i))
+                initialized += 1
+        except e:
+            unsafe_destroy_n(ptr, initialized)
+            forget_deinit(self^)
+            raise e^
+
     def __init__[
         *, __literal_size__: Int
     ](
@@ -681,22 +734,37 @@ struct Array[T: AnyType, length: Int](
     def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
 
+        Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
+
         Args:
             idx: The index to access (0 to len-1).
 
         Returns:
             A reference to the element at the specified index.
 
+        Examples:
+
+        ```mojo
+        var arr = [10, 20, 30]
+        var total = 0
+        # The index can be computed at run time.
+        for i in range(len(arr)):
+            total += arr[i]
+        print(total)  # 60
+        ```
+
         Notes:
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
     @inline(.always)
     def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
+
+        Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
 
         Args:
             idx: The index to access (0 to len-1).
@@ -717,8 +785,41 @@ struct Array[T: AnyType, length: Int](
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, len(self))
+        check_bounds(index(idx), length=len(self))
         return self._unchecked_get(idx)
+
+    @inline(.always)
+    def __getitem__(
+        ref self, slc: ContiguousSlice, /
+    ) -> Span[Self.T, origin_of(self)]:
+        """Gets a span over the elements at the specified slice positions.
+
+        Subscripting calls this method: `arr[1:5]` is `arr.__getitem__()`.
+
+        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        `0` to `len(self)`, inclusive). Negative indices are not supported:
+        they abort when bounds checking is enabled (the default on CPU) and
+        cause undefined behavior otherwise.
+
+        Args:
+            slc: The slice specifying the range of elements.
+
+        Returns:
+            A span over the specified slice of the array.
+
+        Examples:
+
+        ```mojo
+        var arr = [1, 2, 3, 4]
+        var middle = arr[1:3]
+        print(middle[0], middle[1])  # Prints 2 3
+        ```
+        """
+        var start, end = check_slice_bounds(slc, len(self))
+        return {
+            unsafe_ptr = self.unsafe_ptr().unsafe_offset(start),
+            length = end - start,
+        }
 
     @stable(since="1.0")
     @inline(.always)
@@ -789,7 +890,7 @@ struct Array[T: AnyType, length: Int](
     def _unchecked_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         var ptr = __mlir_op.`pop.array.gep`(
             Pointer(to=self._array)._get_kgen_pointer(),
-            index(idx).__mlir_index__(),
+            index(idx)._mlir_value,
         )
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
@@ -963,6 +1064,7 @@ struct Array[T: AnyType, length: Int](
         """
         return self._compare(other) >= 0
 
+    @stable(since="1.3")
     def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
@@ -1008,7 +1110,7 @@ struct Array[T: AnyType, length: Int](
             This is an unsafe method that skips bounds checking for performance.
             Users should prefer `__getitem__` instead for safety.
         """
-        check_bounds[cpu_default=False](idx, len(self))
+        check_bounds[cpu_default=False](index(idx), length=len(self))
         return self._unchecked_get(idx)
 
     @inline(.always)
@@ -1051,7 +1153,6 @@ struct Array[T: AnyType, length: Int](
             Pointer(to=self._array)
             .unsafe_bitcast[Self.T]()
             .unsafe_origin_cast[origin]()
-            .unsafe_address_space_cast[address_space]()
         )
 
     @inline(.always)

@@ -37,12 +37,12 @@ through that storage. Together those two accesses close the loop on the
   compile-time constants, so the kernel could "read" them without ever touching
   the `layout` field.)
 - The kernel reads the extents with `tile.dim[i]()` (a load from the `layout`
-  field) and writes through `tile.raw_store(...)` (the device pointer).
+  field) and writes through a flat `reshape` view (the device pointer).
   `DevicePointerEngine.unsafe_ptr` reinterprets the handle's first bytes as a
   bare device pointer — the cast pattern the lower-level probe validated in
   isolation. The two together prove the `layout` field decoded at the right
   device offset and the encoded pointer is the real device address. (We store
-  at linear indices via `raw_store` rather than via `tile[r, c]`: the variadic
+  at linear indices of a flat view rather than via `tile[r, c]`: the variadic
   indexer's `IndexTypes.length == flat_rank` constraint can't be proven while
   `LayoutType` is an abstract kernel parameter.)
 
@@ -78,22 +78,19 @@ comptime _ROWS = 4
 comptime _COLS = 8
 comptime _NUM_ELEMENTS = _ROWS * _COLS
 
-# The device-pointer-backed tile the probe exercises. The origin is erased to
-# `UnsafeAnyOrigin` so the host-constructed tile's type (from the
-# `DevicePointer` constructor, `TileTensor(buffer.device_ptr(), layout)`)
-# matches the origin-erased type the kernel parameter names after
-# `as_unsafe_any_origin()`.
-comptime _ProbeTile[LayoutType: TensorLayout] = TileTensor[
+# The device-pointer-backed tile the probe exercises.
+comptime _ProbeTile = TileTensor[
     .float32,
-    LayoutType,
-    UnsafeAnyOrigin[mut=True],
+    _,
+    _,
     Engine=DevicePointerEngine[element_width=1],
 ]
 
 
 def write_layout_dims_through_device_pointer_kernel[
     LayoutType: TensorLayout,
-](tile: _ProbeTile[LayoutType]):
+    tile_origin: MutOrigin,
+](tile: _ProbeTile[LayoutType, tile_origin]):
     """Writes each layout extent back through the device pointer.
 
     Reads `tile.dim[0]()`/`tile.dim[1]()` — runtime loads of the `layout`
@@ -102,13 +99,15 @@ def write_layout_dims_through_device_pointer_kernel[
     """
     if global_idx.x != 0:
         return
-    tile.raw_store[width=1](0, Float32(Int(tile.dim[0]())))
-    tile.raw_store[width=1](1, Float32(Int(tile.dim[1]())))
+    var flat = tile.reshape(row_major[_NUM_ELEMENTS]())
+    flat[0] = Float32(Int(tile.dim[0]()))
+    flat[1] = Float32(Int(tile.dim[1]()))
 
 
 def fill_tile_via_layout_and_device_pointer_kernel[
     LayoutType: TensorLayout,
-](tile: _ProbeTile[LayoutType]):
+    tile_origin: MutOrigin,
+](tile: _ProbeTile[LayoutType, tile_origin]):
     """Fills every element with its linear index.
 
     The element count is taken from the decoded dynamic layout
@@ -119,8 +118,9 @@ def fill_tile_via_layout_and_device_pointer_kernel[
     if global_idx.x != 0:
         return
     var count = Int(tile.dim[0]()) * Int(tile.dim[1]())
+    var flat = tile.reshape(row_major(count))
     for i in range(count):
-        tile.raw_store[width=1](i, Float32(i))
+        flat[i] = Float32(i)
 
 
 def test_kernel_reads_dynamic_layout_dims_after_device_pointer(
@@ -137,17 +137,15 @@ def test_kernel_reads_dynamic_layout_dims_after_device_pointer(
     # bytes (see module docstring for why static dims would defeat the probe).
     # `buffer.device_ptr()` selects the `DevicePointer` constructor (see
     # `TileTensor.DeviceGenericType`), producing a `DevicePointerEngine`-backed
-    # tile that `as_unsafe_any_origin()` casts to the kernel parameter type.
+    # tile.
     var rows = _ROWS
     var cols = _COLS
     var tile = TileTensor(buf.device_ptr(), row_major(rows, cols))
 
     comptime kernel = write_layout_dims_through_device_pointer_kernel[
-        tile.LayoutType
+        tile.LayoutType, tile_origin=tile.origin
     ]
-    ctx.enqueue_function[kernel](
-        tile.as_unsafe_any_origin(), grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel](tile, grid_dim=1, block_dim=1)
 
     var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
@@ -174,11 +172,9 @@ def test_kernel_fills_tile_via_dynamic_layout_and_device_pointer(
     var tile = TileTensor(buf.device_ptr(), row_major(rows, cols))
 
     comptime kernel = fill_tile_via_layout_and_device_pointer_kernel[
-        tile.LayoutType
+        tile.LayoutType, tile_origin=tile.origin
     ]
-    ctx.enqueue_function[kernel](
-        tile.as_unsafe_any_origin(), grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel](tile, grid_dim=1, block_dim=1)
 
     var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)

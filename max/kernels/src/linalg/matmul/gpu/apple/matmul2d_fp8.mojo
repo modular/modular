@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Apple M5 weight-only FP8 (W8A16) tiled matmul: bf16 A x fp8 B -> fp32.
 
-Target: Apple M5 (`compute_capability == 5`) only.
+Target: Apple M5 and newer (`compute_capability >= 5`).
 
 The DENSE W8A16 path (`enqueue_matmul2d_fp8`) now runs on the shared
 `AppleM5MatMul` simdgroup-tiled GEMM body (`matmul_kernel.mojo`) specialized on
@@ -62,16 +62,16 @@ accumulators.
 """
 
 from max.gpu import WARP_SIZE, block_idx, warp_id
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv
 from std.sys import align_of
 
 from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
-from layout.tile_layout import Layout, TensorLayout
+from layout.layout import Layout, TensorLayout
 
 from linalg.arch.apple.mma import MmaOpApple
-from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5
+from linalg.matmul.gpu.apple.matmul2d_fp4 import _require_apple_m5_or_newer
 from linalg.matmul.gpu.apple.matmul_kernel import AppleM5MatMul
 from linalg.utils import (
     ElementwiseComputeFn,
@@ -79,7 +79,6 @@ from linalg.utils import (
     no_compute_fn,
     no_epilogue_fn,
 )
-from std.utils import IndexList
 
 
 struct Matmul2dFp8[
@@ -312,17 +311,14 @@ struct Matmul2dFp8[
                     return
                 comptime if bounded:
                     if acol + 3 < N:
-                        c_vec.store[alignment=elem_align](
-                            Coord(lrow, lcol // 4), y
-                        )
+                        c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
                     else:
                         for e in range(min(4, N - acol)):
-                            c_sub.store[width=1, alignment=elem_align](
-                                Coord(lrow, lcol + e),
-                                SIMD[Self.c_type, 1](y[e]),
+                            c_sub.store[alignment=elem_align](
+                                (lrow, lcol + e), y[e]
                             )
                 else:
-                    c_vec.store[alignment=elem_align](Coord(lrow, lcol // 4), y)
+                    c_vec.store[alignment=elem_align]((lrow, lcol // 4), y)
 
             comptime for mi in range(Self.NUM_MMA_M):
                 comptime for ni in range(Self.NUM_MMA_N):
@@ -433,11 +429,13 @@ struct Matmul2dFp8[
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            var row = a_start + Int(idx[0].value())
-            var col = Int(idx[1].value())
+            var row = a_start + Int(idx[0])
+            var col = Int(idx[1])
             var row_idx = Coord(row, col)
             comptime if has_compute_fn:
-                (c_ptr + row * N + col).store[alignment=alignment](
+                c_ptr.unsafe_offset(row * N).unsafe_offset(col).unsafe_store[
+                    alignment=alignment
+                ](
                     rebind[SIMD[Self.c_type, width]](
                         compute_fn[dtype, width, alignment=alignment](
                             row_idx, val
@@ -489,9 +487,9 @@ def enqueue_matmul2d_fp8[
     `(row, col)` in `c` instead.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime assert (
         c_type == .float16 or c_type == .bfloat16 or c_type == .float32
@@ -555,9 +553,11 @@ def enqueue_matmul2d_fp8[
             weight.as_imm(),
             log2_m,
             log2_n,
-            host_arg=epilogue_fn,
-            grid_dim=(side_m * side_n),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(side_m * side_n),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
+            host_args=(epilogue_fn,),
         )
     else:
         comptime kernel = MM.run[
@@ -574,8 +574,10 @@ def enqueue_matmul2d_fp8[
             weight.as_imm(),
             log2_m,
             log2_n,
-            grid_dim=(side_m * side_n),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(side_m * side_n),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
         )
 
 
@@ -621,9 +623,9 @@ def enqueue_grouped_matmul2d_fp8[
     `has_compute_fn`, `compute_fn` maps each output before it is stored.
 
     Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+        If the attached GPU is older than Apple M5 (`compute_capability >= 5`).
     """
-    _require_apple_m5(ctx)
+    _require_apple_m5_or_newer(ctx)
 
     comptime assert (
         c_type == .float16 or c_type == .bfloat16 or c_type == .float32
@@ -674,8 +676,9 @@ def enqueue_grouped_matmul2d_fp8[
         expert_ids,
         Int32(n),
         Int32(k),
-        host_arg=epilogue_fn,
-        host_arg2=compute_fn,
-        grid_dim=(grid_n, grid_m, num_active_experts),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_n, grid_m, num_active_experts),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
+        host_args=(epilogue_fn, compute_fn),
     )

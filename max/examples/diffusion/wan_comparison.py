@@ -1084,6 +1084,7 @@ def _load_max_pipeline(
                 )
 
             field_info = MAXModelConfig.model_fields[field_name]
+            assert field_info.annotation is not None
             adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
             try:
                 parsed = json.loads(raw_value)

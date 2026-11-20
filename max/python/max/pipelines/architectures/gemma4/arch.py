@@ -10,8 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Gemma 4 with the pipeline registry."""
 
 import dataclasses
+import re
+from pathlib import Path
 
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
@@ -22,10 +25,10 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Gemma4BatchProcessor
 from .context import Gemma4Context
-from .memory_planner import Gemma4MemoryPlanner
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .tokenizer import Gemma4Tokenizer
+from .weight_adapters import gemma4_weight_rules
 
 example_repo_ids = [
     # it = Instruction tuned (recommended).
@@ -34,6 +37,7 @@ example_repo_ids = [
     # "google/gemma-4-26B-A4B-it"
     "nvidia/Gemma-4-31B-IT-NVFP4",
     # "nvidia/Gemma-4-26B-A4B-NVFP4"
+    "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
 ]
 
 gemma4_arch = SupportedArchitecture(
@@ -46,6 +50,8 @@ gemma4_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    weight_rules=gemma4_weight_rules,
+    use_weight_rules=True,
     multi_gpu_supported=True,
     input_modalities={
         InputModality.TEXT,
@@ -55,10 +61,17 @@ gemma4_arch = SupportedArchitecture(
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
+    format_spec=Path(__file__).parent / "formatspec.json",
+    tokenizer_family=lambda repo: (
+        "gemma4",
+        "nonthinking"
+        if re.search(r"(?<![a-z0-9])e[24]b(?![a-z0-9])", repo.repo_id.lower())
+        else "thinking",
+    ),
     reasoning_parser="gemma4",
-    memory_planner=Gemma4MemoryPlanner,
-    supports_device_graph_capture=False,
     cascade_pipeline_factory=CommonTextGenPipeline,
+    supports_spec_decode_mixed_batches=True,
+    spec_decode_graph_names={"mtp": "gemma4_with_mtp_graph"},
 )
 
 
@@ -72,5 +85,4 @@ gemma4_unified_arch = dataclasses.replace(
     example_repo_ids=["google/gemma-4-12B-it"],
     # Served text-only: the unified vision embedder is not implemented.
     input_modalities={InputModality.TEXT},
-    supports_device_graph_capture=True,
 )

@@ -19,8 +19,8 @@ Classes
    :toctree: generated
    :template: autosummary/class.rst
 
-   Batch
    BatchPipeline
+   GenerateIterator
    GenerateResult
 
 Functions

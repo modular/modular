@@ -41,7 +41,7 @@ def bench_concat[
 ](
     mut b: Bench,
     shapes: List[IndexList[rank]],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     axis: Int,
 ) raises:
     comptime type = DType.float32
@@ -139,7 +139,7 @@ def bench_concat[
         mut b: Bencher, shape: IndexList[rank]
     ) raises {mut output_device, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut output_device, imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut output_device, imm}:
             _concat_gpu_elementwise[has_epilogue=False](
                 output_device.as_unsafe_any_origin(),
                 axis,
@@ -175,12 +175,10 @@ def bench_concat[
             var out_coords = coord_to_index_list(coords)
             out_coords[axis] += offset
             var out_coord = Coord(out_coords)
-            if output_host.load[width=1](out_coord) != input.load[width=1](
-                coords
-            ):
+            if output_host[out_coord] != input[coords]:
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[1](check, Coord(input_shape), ctx)
+        elementwise[1](check, Coord(input_shape), DeviceContext.cpu())
         offset += input_shape[axis]
 
     _ = input0_device_buffer
@@ -206,7 +204,7 @@ def bench_concat_inner_most_single_dim[
     d4: Int,
     num_inputs: Int,
     static_shape: Bool = False,
-](mut b: Bench, ctx: DeviceContext) raises:
+](mut b: Bench, ctx: DeviceContext[]) raises:
     comptime rank = 5
     comptime n_rows = d0 * d1 * d2 * d3 * d4
     comptime n_out = n_rows * num_inputs
@@ -222,7 +220,7 @@ def bench_concat_inner_most_single_dim[
     @inline(.always)
     def bench_fn(mut b: Bencher) raises {mut out_dev, imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {mut out_dev, imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {mut out_dev, imm}:
             comptime if static_shape:
                 # Fully static layouts -> the row -> n-D divisors fold.
                 comptime input_layout = row_major[d0, d1, d2, d3, d4]()
@@ -262,7 +260,7 @@ def bench_concat_inner_most_single_dim[
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
-                    host_arg=_no_epilogue,
+                    host_args=(_no_epilogue,),
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )
@@ -304,7 +302,7 @@ def bench_concat_inner_most_single_dim[
                 ctx.enqueue_function[kernel](
                     output.as_unsafe_any_origin(),
                     inputs,
-                    host_arg=_no_epilogue,
+                    host_args=(_no_epilogue,),
                     grid_dim=(ceildiv(n_rows, B_SIZE)),
                     block_dim=(B_SIZE),
                 )

@@ -21,7 +21,7 @@ runtime, not just at compile time.
 from std.testing import TestSuite, assert_equal
 
 from comm.allreduce import AllReduceAlgorithm
-from layout.layout_tensor import ThreadScope
+from layout.tile_io import ThreadScope
 from linalg.fp6_utils import FP6Format
 from linalg.mx_format import MXFormat
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule, RasterOrder

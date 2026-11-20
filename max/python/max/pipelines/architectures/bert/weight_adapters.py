@@ -29,6 +29,7 @@ MAX naming convention:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 from max.graph.weights import WeightData, Weights
 
@@ -41,7 +42,9 @@ BERT_SAFETENSOR_MAP: dict[str, str | None] = {
 
 def convert_safetensor_state_dict(
     state_dict: Mapping[str, Weights],
+    **unused_kwargs: Any,
 ) -> dict[str, WeightData]:
+    """Renames the checkpoint's weights for the module tree."""
     new_state_dict: dict[str, WeightData] = {}
     value: Weights | None
 

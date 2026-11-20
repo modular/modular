@@ -15,6 +15,8 @@
 from test_utils.cabi_check import AbiConstant, AbiTypedef, AbiTypedefLike
 
 from std.net._sys.macos import (
+    AF_INET,
+    AF_INET6,
     SO_NOSIGPIPE,
     sa_family_t,
     sockaddr,
@@ -48,6 +50,8 @@ comptime CABI_TYPEDEFS = TypeList.of[
 """The type aliases to check."""
 
 comptime CABI_CONSTANTS = [
+    AbiConstant("AF_INET", AF_INET),
+    AbiConstant("AF_INET6", AF_INET6),
     AbiConstant("SO_NOSIGPIPE", SO_NOSIGPIPE),
 ]
 """The constants to check."""

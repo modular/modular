@@ -1,7 +1,12 @@
 ---
 title: Creating values
-description: Construct values with generated and custom initializers.
+description: >
+  Construct values with initializers, and create new values by copying or
+  moving existing ones.
 ---
+
+<!-- Compiler verified: 2026-10-16, Mojo 1.2.0.dev2026101520 (d2872eb2) -->
+<!-- Last updated: 2026-10-16 -->
 
 A value's life in Mojo begins when you construct it, directly or
 implicitly. The type uses an *initializer* to prepare the value for use.
@@ -10,13 +15,15 @@ Each constructible type provides one or more initializer overloads.
 Initializers set up the value's fields and perform any other required
 preparation.
 
-Initializers and deinitializers together define a value's lifecycle. This
-page covers value creation and initialization.
+You can also create values by copying or moving existing ones, depending on
+the capabilities of their types. This page covers the different ways Mojo
+creates values.
 
 ## Initializers {#constructor}
 
-For simple types, use `@fieldwise_init` to have Mojo generate an
-initializer:
+For simple types, use
+[`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/) to have Mojo
+generate an initializer:
 
 ```mojo
 @fieldwise_init
@@ -41,7 +48,8 @@ struct MyStruct:
 An initializer must set up every field in a value. If any field is
 uninitialized when the initializer finishes, the compiler reports an error.
 
-All initializers use the `out self` argument convention. The initializer
+All initializers use the [`out self` argument
+convention](/docs/reference/function-declarations/#out). The initializer
 constructs `self` rather than declaring or explicitly returning a result:
 
 ```mojo
@@ -72,7 +80,7 @@ struct RetryPolicy:
 
     # Factory-style convenience overload delegates to the core initializer
     def __init__(out self):
-        self = Self(3)  # Syntax sugar for `self.__init__(3)`
+        self = Self(3)  # Syntax sugar for `Self.__init__(3)`
 
     # Core initializer provides the default delay
     def __init__(out self, max_attempts: Int, delay_ms: Int = 1000):
@@ -88,7 +96,7 @@ var persistent = RetryPolicy(10)
 var aggressive = RetryPolicy(10, 250)
 ```
 
-### Initializers and implicit conversion
+### Initializers and implicit conversion {#constructors-and-implicit-conversion}
 
 Mojo can implicitly convert values when a different type is required during
 assignment or when passing or returning a value.
@@ -146,16 +154,16 @@ works whether the type provides implicit initialization or not:
 
 ```mojo
 # Instead of these full type construction calls:
-var result = magnitude_squared(Complex(real=3.0, imag=0.0))  # Full, keyword
-var result = magnitude_squared(Complex(3.0, 0.0))            # Full, positional
-var result = magnitude_squared(Complex(value=3.0))  # Convenience, keyword
-var result = magnitude_squared(Complex(3.0))        # Convenience, positional
+magnitude_squared(Complex(real=3.0, imag=0.0))  # Full, keyword
+magnitude_squared(Complex(3.0, 0.0))            # Full, positional
+magnitude_squared(Complex(value=3.0))  # Convenience, keyword
+magnitude_squared(Complex(3.0))        # Convenience, positional
 
 # With braced syntax:
-var result = magnitude_squared({real=3.0, imag=0.0})  # Full, keyword
-var result = magnitude_squared({3.0, 0.0})            # Full, positional
-var result = magnitude_squared({value=3.0})           # Convenience, keyword
-var result = magnitude_squared({3.0})                 # Convenience, positional
+magnitude_squared({real=3.0, imag=0.0})  # Full, keyword
+magnitude_squared({3.0, 0.0})            # Full, positional
+magnitude_squared({value=3.0})           # Convenience, keyword
+magnitude_squared({3.0})                 # Convenience, positional
 ```
 
 This is useful for compiler-inferred parameterized types, whose full type
@@ -199,12 +207,6 @@ initializer is called when a value is copied explicitly or implicitly:
 var the_copy = value.copy()  # AKA ValueType(copy=value)
 ```
 
-A standard transfer initializer may invoke a move initializer:
-
-```mojo
-var the_move = value^
-```
-
 You rarely need to call a move initializer directly:
 
 ```mojo
@@ -214,7 +216,9 @@ ValueType(move=value^)
 ### Copy initializer {#copy-constructor}
 
 `Copyable` establishes values that can be copied. It provides the `copy()`
-method and, when possible, Mojo synthesizes the required copy initializer:
+method and, when possible, Mojo
+[synthesizes](/docs/reference/struct-declarations/#synthesized-lifecycle-methods)
+the required copy initializer:
 
 ```mojo
 def __init__(out self, *, copy: Self):
@@ -229,8 +233,7 @@ def copy_return[T: Copyable](foo: T) -> T:
     return copy^
 ```
 
-All `Copyable` types are also `Movable`, so you can transfer ownership of
-the copy when returning it, as shown here.
+All `Copyable` types are also `Movable`.
 
 ### Implicitly-copyable types
 
@@ -259,7 +262,9 @@ var transferred = policy^
 Although `RetryPolicy` declared no conformances, the transfer operator
 still works here. Mojo synthesizes a move initializer for it.
 
-Define custom move initializers when transferring requires custom behavior:
+Define custom [move
+initializers](/docs/reference/function-declarations/#move-initializers) when
+transferring requires custom behavior:
 
 ```mojo
 def __init__(out self, *, deinit move: Self):
@@ -274,9 +279,9 @@ transfer ownership of its stored value but can't copy it.
 [`Atomic`](/docs/std/atomic/atomic/Atomic/) is also move-only, preventing
 copies that would duplicate its value.
 
-A type conforming to neither `Movable` nor `Copyable` is immovable.
-To opt out of `Movable`, write `not Movable` in your type's conformance
-list or define it with a non-movable field:
+Types are movable by default. A type that opts out with `not Movable`
+can't move in memory. In this example, `Pinned` stands for any value that
+must stay at one address for its whole life:
 
 ```mojo
 struct Pinned(not Movable):
@@ -286,7 +291,11 @@ struct Pinned(not Movable):
         self.n = n
 ```
 
-Mojo rejects `Pinned` value transfers.
+Mojo rejects any transfer that would relocate a `Pinned` value: into a new
+binding, into an existing one, or out of a function with `return p^`. You can
+still pass it to a [`var` parameter](/docs/reference/function-declarations/#var)
+with `p^`, refer to it through a `ref`, or reassign it a freshly constructed
+value.
 
 Immovable types are useful when a value must remain at a stable memory
 address. For example:

@@ -28,7 +28,7 @@ from max.pipelines.context import (
     SamplingParams,
     TextGenerationResponseFormat,
 )
-from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib import KVCacheConfig, VisionPreprocessCache
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -366,6 +366,32 @@ async def test_prompt_too_long(
         await tokenizer.new_context(request)
     assert exc_info.value.num_tokens == 10
     assert exc_info.value.max_length == 5
+
+
+@pytest.mark.asyncio
+async def test_token_id_prompt_must_fit_the_embedding(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Token ids are bounded by the text config's ``vocab_size``."""
+    vocab_size = 1000
+    mock_pipeline_config.model.huggingface_config.text_config.vocab_size = (
+        vocab_size
+    )
+    _patch_tokenizer_deps(mocker, _make_mock_delegate())
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    def request(prompt: list[int]) -> TextGenerationRequest:
+        return TextGenerationRequest(
+            prompt=prompt, request_id=RequestID(), model_name="test-model"
+        )
+
+    context = await tokenizer.new_context(request([2, vocab_size - 1]))
+    assert context.tokens.prompt.tolist() == [2, vocab_size - 1]
+
+    for bad_id in (-1, vocab_size):
+        with pytest.raises(InputError, match="out of range"):
+            await tokenizer.new_context(request([2, bad_id]))
 
 
 @pytest.mark.asyncio
@@ -1333,3 +1359,36 @@ async def test_image_bytes_are_hashed_once_per_request(
     # One digest, reused for both the preprocess cache and the context.
     assert spy.call_count == 1
     assert context.images[0].image_hash == hash_image(image_bytes, 280)
+
+
+def test_an_image_cap_of_zero_rejects_images_and_videos(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """The router reads both caps off the tokenizer."""
+    _patch_tokenizer_deps(mocker, _make_mock_delegate())
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    assert tokenizer.max_images_per_request is None
+    assert tokenizer.max_videos_per_request is None
+
+    mock_pipeline_config.model.vision_config_overrides = {
+        "max_images_per_request": 0
+    }
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    assert tokenizer.max_images_per_request == 0
+    assert tokenizer.max_videos_per_request == 0
+
+
+def test_text_only_requires_the_vision_cache_off(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    _patch_tokenizer_deps(mocker, _make_mock_delegate())
+    mock_pipeline_config.model.vision_config_overrides = {
+        "max_images_per_request": 0
+    }
+    mock_pipeline_config.runtime.vision_cache_utilization = 0.05
+
+    with pytest.raises(ValueError, match="--vision-cache-utilization 0"):
+        Gemma4Tokenizer("test-model", mock_pipeline_config)

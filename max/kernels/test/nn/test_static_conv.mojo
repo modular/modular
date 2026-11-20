@@ -16,7 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.itertools import product
-from layout import Coord, IntTuple, TileTensor, row_major
+from layout import Coord, TileTensor, coord, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -137,9 +137,9 @@ def test[
     )
 
     comptime conv_attr_static = ConvInfoStatic[2](
-        IntTuple(pad_h[0], pad_w[0], pad_h[1], pad_w[1]),
-        IntTuple(stride[0], stride[1]),
-        IntTuple(dilation[0], dilation[1]),
+        coord[pad_h[0], pad_h[1], pad_w[0], pad_w[1]],
+        coord[stride[0], stride[1]],
+        coord[dilation[0], dilation[1]],
         num_groups,
     )
 
@@ -191,14 +191,9 @@ def test[
             print("Input shape NHWC: ", Index(N, H, W, C))
             print("filter shape RSCF: ", Index(R, S, C, F))
             print(
-                "Failed at",
-                Index(n, ho, wo, f),
-                "expected",
-                expected,
-                "actual",
-                actual,
-                "rerr",
-                abs(actual - expected) / abs(expected + 1e-10),
+                t"Failed at {Index(n, ho, wo, f)} expected {expected} actual"
+                t" {actual} rerr"
+                t" {abs(actual - expected) / abs(expected + 1e-10)}"
             )
             return
 
@@ -221,10 +216,10 @@ def main() raises:
         3,  # R
         3,  # S
         256,  # F
-        Index(1, 1),  # stride
-        Index(1, 1),  # dilation
-        Index(1, 1),  # pad_h
-        Index(1, 1),  # pad_w
+        (1, 1),  # stride
+        (1, 1),  # dilation
+        (1, 1),  # pad_h
+        (1, 1),  # pad_w
     ]()
     test[
         1,  # N
@@ -234,8 +229,8 @@ def main() raises:
         3,  # R
         3,  # S
         64,  # F
-        Index(2, 2),  # stride
-        Index(1, 1),  # dilation
-        Index(1, 1),  # pad_h
-        Index(1, 1),  # pad_w
+        (2, 2),  # stride
+        (1, 1),  # dilation
+        (1, 1),  # pad_h
+        (1, 1),  # pad_w
     ]()
