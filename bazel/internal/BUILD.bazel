@@ -177,8 +177,11 @@ mojo_copts_toolchain(
             "-target-triple=aarch64-unknown-linux-gnu",
             "--target-cpu=neoverse-n1",
         ],
-        "@platforms//os:macos": [
+        "//:macos_arm64": [
             "--target-cpu=apple-m1",
+        ],
+        "//:macos_x86_64": [
+            "--target-cpu=x86-64-v3",
         ],
     }) + select({
         "//:asan": ["--sanitize=address"],
@@ -310,7 +313,8 @@ jemalloc_with_lg_page(
 alias(
     name = "tcmalloc_numa_aware",
     actual = select({
-        "@platforms//os:macos": "@gperftools-macos//:tcmalloc",
+        "//:macos_arm64": "@gperftools-macos//:tcmalloc",
+        "//:macos_x86_64": "@clang-macos-x86_64//:tcmalloc",
         # NOTE: This library doesn't override new/free globally, which the default library does
         "@platforms//os:linux": "@tcmalloc//tcmalloc:tcmalloc_internal_methods_only_numa_aware",
     }),

@@ -27,7 +27,9 @@ def _mojo_toolchain_impl(ctx):
     if is_macos:
         min_os = ctx.fragments.cpp.minimum_os_version() or ctx.fragments.apple.macos_minimum_os_flag
         if min_os:
-            copts.append("--target-triple=arm64-apple-macosx{}".format(min_os))
+            is_x86_64 = ctx.target_platform_has_constraint(ctx.attr._x86_64_constraint[platform_common.ConstraintValueInfo])
+            arch = "x86_64" if is_x86_64 else "arm64"
+            copts.append("--target-triple={}-apple-macosx{}".format(arch, min_os))
 
     hal_device_context = ctx.attr._hal_device_context[BuildSettingInfo].value
     if hal_device_context:
@@ -130,6 +132,9 @@ mojo_toolchain = rule(
         ),
         "_macos_constraint": attr.label(
             default = Label("@platforms//os:macos"),
+        ),
+        "_x86_64_constraint": attr.label(
+            default = Label("@platforms//cpu:x86_64"),
         ),
         "_hal_device_context": attr.label(
             default = Label("//:hal_device_context"),
