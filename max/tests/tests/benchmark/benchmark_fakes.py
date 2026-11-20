@@ -122,6 +122,51 @@ def write_blob(path: Path, **fields: object) -> None:
     path.write_text(json.dumps(fields))
 
 
+def write_engine_result_set(path: Path) -> None:
+    """Writes a minimal engine ResultSetInContext document."""
+    path.write_text(
+        json.dumps(
+            {
+                "run_context": {"config_id": None, "git_commit": "abc"},
+                "results": [
+                    {
+                        "iteration_config": {
+                            "batch_size": 4,
+                            "context_len": 0,
+                            "input_len": 128,
+                            "output_len": 64,
+                        },
+                        "result": {
+                            "total_latency_ms": {
+                                "mean": 10.0,
+                                "std": 1.0,
+                                "p50": 9.0,
+                                "p90": 12.0,
+                                "p95": 13.0,
+                                "p99": 15.0,
+                                "unit": "ms",
+                                "confidence_info": None,
+                            },
+                            "prefill_latency_ms": {"mean": 3.0, "p90": 3.5},
+                            "decode_latency_ms": {"mean": 7.0, "p90": 8.0},
+                            "tokens_per_second": 500.0,
+                            "input_tokens_per_second": 300.0,
+                            "output_tokens_per_second": 200.0,
+                            "gpu": {
+                                "peak_memory_mib": 40000.0,
+                                "avg_utilization_percent": 90.0,
+                                "kernel_time_ms": 5.0,
+                                "device_count": 1,
+                                "per_gpu_metrics": None,
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+    )
+
+
 def make_text_aggregates(**overrides: object) -> TextGenAggregates:
     """Returns the aggregates of a 100-request, 60 s run, with ``overrides``."""
     fields: dict[str, object] = {

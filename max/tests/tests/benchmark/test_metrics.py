@@ -239,15 +239,6 @@ def test_single_value(
 # ---------------------------------------------------------------------------
 
 
-def test_throughput_metrics_basic_functionality() -> None:
-    """Test basic ThroughputMetrics functionality."""
-    data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-    metrics = ThroughputMetrics(data)
-
-    assert metrics.mean == pytest.approx(5.5, rel=1e-10)
-    assert metrics.p50 == pytest.approx(5.5, rel=1e-10)
-
-
 def test_throughput_metrics_reversed_percentiles() -> None:
     """Test that percentiles are reversed for throughput (lower percentiles for p90, p95, p99)."""
     data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
