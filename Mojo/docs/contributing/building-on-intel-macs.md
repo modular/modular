@@ -45,8 +45,10 @@ normal `./bazelw` build.
 
 If the pinned LLVM version changes, run the script again.
 
-If the build fails while loading Python packages, add this line to
-`local.bazelrc`:
+Building needs a version of the repository whose Python lock file includes
+Intel Macs. If the build fails while loading Python packages, add this line to
+`local.bazelrc` as a fallback. It only helps in versions where that setting
+skips mypy's Python packages:
 
 ```text
 build --config=disable-mypy
@@ -60,6 +62,7 @@ compiling or linking fails with a message that tells you to run the script.
 - Community-supported, with no CI. Expect breakage.
 - The first build is slow. On one 6-core i7 (i7-9750H), LLVM took about an
   hour and the first Bazel build took about two more.
+- C++ coverage is not set up for Intel Macs.
 - The lint and format tools (`ruff`, `rumdl` and `shellcheck`) are not set up
   for Intel Macs.
 - Some targets need Python wheels that the pip lock file may not have for
