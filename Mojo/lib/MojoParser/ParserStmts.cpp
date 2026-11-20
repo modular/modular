@@ -5583,9 +5583,11 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   if (auto *structDecl = dyn_cast<StructASTDecl>(&getParentDecl());
       structDecl && structDecl->getOp().isEnumOrUnion()) {
     rejectDecorator();
-    emitError(loc, getEnumOrUnionNoun(structDecl->getOp()) +
-                       "s do not support 'var' fields; store state in a case "
-                       "payload");
+    emitError(loc, structDecl->getOp().isEnum()
+                       ? "enums do not support 'var' fields; use '__union' to "
+                         "store case payloads"
+                       : "unions do not support 'var' fields; store state in "
+                         "a case payload");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     StringRef ignoredDocString;
     parseDocString(ignoredDocString);
@@ -5872,17 +5874,20 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
   return success();
 }
 
-/// enum_case ::= "case" identifier ["(" expression ("," expression)* [","] ")"]
+/// enum_case  ::= "case" identifier
+/// union_case ::= "case" identifier "(" [type_list] ")"
+/// type_list  ::= expression ("," expression)* [","]
 ///
 /// As for a field, only the name is parsed here: the rest of the line is parsed
-/// when the enum resolves its cases, so that a payload can name any member.
+/// when the enum or union resolves its cases, so that a payload can name any
+/// member.
 ParseResult StmtParser::parseEnumCaseStmt(size_t stmtIndent) {
   LexerCursor caseCursor = getLexer().getCursor();
   consumeToken(Token::kw_case);
 
   if (!getToken().isIdentifier() || getToken().isStartOfLine()) {
     emitError(getTokenLocOrEndOfPreviousLineIfOnNewLine())
-        << getMalformedEnumCaseMessage(
+        << getMalformedCaseMessage(
                cast<StructASTDecl>(getParentDecl()).getOp());
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     StringRef ignoredDocString;

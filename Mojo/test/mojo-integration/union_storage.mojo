@@ -14,18 +14,18 @@
 
 # The hand-written form of the members the compiler generates for
 #
-#     __enum Token(ImplicitlyCopyable, Writable):
-#         case eof
+#     __union Token(ImplicitlyCopyable, Writable):
+#         case eof()
 #         case ident(String)
 #         case span(Int, Int)
 #
 # `std.builtin._enum` is written against exactly these members.
 
-from std.builtin._enum import __Enum, __UnionStorage
+from std.builtin._enum import __Union, __UnionStorage
 from std.builtin.variadics import ParameterList, TypeList
 
 
-struct Token(ImplicitlyCopyable, Writable, __Enum):
+struct Token(ImplicitlyCopyable, Writable, __Union):
     comptime _enum_case_names = ParameterList.of[
         "eof".value, "ident".value, "span".value
     ].values
@@ -77,5 +77,5 @@ def main():
     var moved = original^
     # CHECK-NEXT: Token.ident(copied) Token.ident(copied)
     print(copy, moved)
-    # CHECK-NEXT: Token.eof Token.span(1, 2)
+    # CHECK-NEXT: Token.eof() Token.span(1, 2)
     print(Token.eof, Token.span(1, 2))

@@ -14,7 +14,8 @@
 # union's tail padding.
 # RUN: %mojo %s | FileCheck %s
 
-from std.builtin._enum import __Enum, __UnionStorage
+from std.builtin._enum import __Union, __UnionStorage
+from std.reflection import reflect
 from std.sys import align_of, size_of
 
 
@@ -22,7 +23,7 @@ __enum Empty(Copyable):
     pass
 
 
-__enum Flags(ImplicitlyCopyable):
+__enum Flags(Movable):
     case a
     case b
 
@@ -65,7 +66,11 @@ __union Generic[T: Copyable & Deinitable](Copyable):
     case b()
 
 
-def report[T: __Enum](name: String):
+__enum Phantom[T: AnyType]:
+    case only
+
+
+def report[T: __Union](name: String):
     comptime Storage = __UnionStorage[T._enum_case_types]
     var storage = Storage(unsafe_uninitialized=())
     var tag_offset = Int(Pointer(to=storage._discriminant())) - Int(
@@ -76,10 +81,14 @@ def report[T: __Enum](name: String):
 
 
 def main():
+    comptime assert reflect[Empty].field_types()[0] == UInt8
+    comptime assert reflect[Flags].field_types()[0] == UInt8
+    comptime assert conforms_to(Empty, TrivialRegisterPassable)
+    comptime assert conforms_to(Phantom[List[Int]], TrivialRegisterPassable)
     # CHECK: Empty 1 1 0
-    report[Empty]("Empty")
+    print("Empty", size_of[Empty](), align_of[Empty](), 0)
     # CHECK-NEXT: Flags 1 1 0
-    report[Flags]("Flags")
+    print("Flags", size_of[Flags](), align_of[Flags](), 0)
     # CHECK-NEXT: Byte 2 1 1
     report[Byte]("Byte")
     # CHECK-NEXT: Word 16 8 8

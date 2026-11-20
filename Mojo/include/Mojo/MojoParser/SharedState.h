@@ -557,6 +557,7 @@ public:
   ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);
   ASTType getStandardCollectionType(llvm::SMLoc loc, StringRef name);
   ASTType getBuiltinSliceType(llvm::SMLoc loc, StringRef name);
+  ASTType getBuiltinEnumType(llvm::SMLoc loc, StringRef name);
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 
   /// Look up a named type's declaration in the given module, caching the

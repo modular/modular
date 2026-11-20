@@ -14,8 +14,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 # Checks:
-# 1. Reject an implicit copy of a payload binding of a `__union` or an
-#    `__enum`.
+# 1. Reject an implicit copy of a payload binding of a `__union`.
 # TODO(MOCO-5454): A payload `var` requires an implicit copy until moving a
 # part out of a value is sound.
 
@@ -47,19 +46,6 @@ def multi_moveonly_payload(var u: TwoMoveOnly):
         case .two(var a, var b):
             _ = a^
             _ = b^
-
-
-__enum EnumMove(Movable):
-    case value(MoveOnly)
-    case none
-
-
-def enum_moveonly_payload(var e: EnumMove):
-    match e^:
-        # CHECK: error: value of type 'MoveOnly' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'
-        # CHECK-NEXT: case .value(var payload):
-        case .value(var payload):
-            _ = payload^
 
 
 def main():

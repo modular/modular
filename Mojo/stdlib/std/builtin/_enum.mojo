@@ -45,11 +45,11 @@ struct Token(__Union):
 
 `__UnionStorage` holds the active payload and tag and supplies its lifecycle.
 The union's lifecycle uses ordinary struct synthesis over that field.
-`__Union` inherits `__Enum`'s initialization and access defaults, exposed
-through `EnumLike`. The compiler finds these declarations by module path.
+`__Union` supplies initialization and access defaults through `EnumLike`.
+The compiler finds these declarations by module path.
 
-An `__enum` uses the same declarations through `__Enum`. Its cases without a
-payload take no parentheses and become `comptime` values. For `case eof`, the
+An `__enum` stores only its scalar tag and conforms to `__Enum`. Its cases
+take no parentheses and become `comptime` values. For `case eof`, the
 compiler generates `comptime eof: Token = Token.__enum_init[0]()`.
 """
 
@@ -67,7 +67,7 @@ from std.traits import (
 @always_inline("builtin")
 def __enum_discriminant_dtype(num_cases: Int) -> DType:
     """Returns the discriminant type for `num_cases` cases."""
-    # `__UnionStorage.tag` has the type `Scalar[__enum_discriminant_dtype(n)]`.
+    # `__EnumTag[n]` is `Scalar[__enum_discriminant_dtype(n)]`.
     # In generic code `n` is unknown, so that dtype parameter stays an
     # unevaluated call. Printed IR does not parse such a call back to the same
     # type. The parser inlines a builtin function instead, so the parameter
@@ -80,6 +80,13 @@ def __enum_discriminant_dtype(num_cases: Int) -> DType:
             (num_cases <= 65536).__mlir_bool__(), DType.uint16, DType.uint32
         ),
     )
+
+
+comptime __EnumTag[num_cases: Int] = Scalar[
+    __enum_discriminant_dtype(num_cases)
+]
+"""The scalar that holds the index of one of `num_cases` cases: the type of a
+`__union`'s tag and of an `__enum`'s only field."""
 
 
 @doc_hidden
@@ -100,8 +107,7 @@ struct __UnionStorage[case_types: _MLIR.KGENParamListType[AnyType]](
         RegisterPassable
     ](),
 ):
-    """The storage of an `__enum` or a `__union`: the payload of its active case
-    and the index of that case.
+    """Stores a `__union`'s active payload and the index of that case.
 
     Cases are identified by index rather than by payload type, so several cases
     may share a payload type.
@@ -125,13 +131,11 @@ struct __UnionStorage[case_types: _MLIR.KGENParamListType[AnyType]](
         `)]>`,
     ]
 
-    # Build discriminants with `from_int=`, a plain `pop.cast`. Declaring an
-    # enum resolves its copy constructor, and a conversion through `SIMD.cast`
-    # there would pull in `String` and the atomics, so an enum could not
+    # Build discriminants with `from_int=`, a plain `pop.cast`. Declaring a
+    # union resolves its copy constructor, and a conversion through `SIMD.cast`
+    # there would pull in `String` and the atomics, so a union could not
     # appear in the signature of anything those depend on.
-    comptime _Discriminant = Scalar[
-        __enum_discriminant_dtype(Self._Cases.length)
-    ]
+    comptime _Discriminant = __EnumTag[Self._Cases.length]
 
     var untagged_union: Self._mlir_type
     var tag: Self._Discriminant
@@ -233,7 +237,61 @@ struct __UnionStorage[case_types: _MLIR.KGENParamListType[AnyType]](
 
 
 trait __Enum(EnumLike):
-    """Provides the defaults every `__enum` and `__union` gets.
+    """Provides the defaults of an `__enum` stored as its discriminant."""
+
+    comptime _EnumCases = TypeList[Trait=AnyType, Self._enum_case_types]
+    """The enum's cases, as a `TypeList` of their payload types."""
+
+    comptime _EnumStorage = __EnumTag[Self._EnumCases.length]
+    """The scalar an `__enum` stores its discriminant in."""
+
+    # The return type spells `Self._EnumStorage` out: with the alias here,
+    # `type_of(result.__get_enum_storage())` in `__enum_init` is an alias
+    # reference, and constructing the storage from it can no longer infer
+    # `Scalar`'s `dtype` parameter.
+    @inline(.always)
+    def __get_enum_storage(
+        ref self,
+    ) -> ref[self] Scalar[__enum_discriminant_dtype(Self._EnumCases.length)]:
+        comptime assert (
+            size_of[Self]() == size_of[Self._EnumStorage]()
+            and align_of[Self]() == align_of[Self._EnumStorage]()
+        ), "an '__enum' must have its discriminant as its only field"
+        return Pointer(to=self).unsafe_bitcast[Self._EnumStorage]()[]
+
+    @staticmethod
+    @inline(.always)
+    def __enum_init[id: Int](out result: Self):
+        comptime assert (
+            0 <= id < Self._EnumCases.length
+        ), "case index must be below the case count"
+        comptime assert (
+            Self._enum_elt_type_for_case[id] == Tuple[]
+        ), "an enum case must not have a payload"
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+        result.__get_enum_storage() = type_of(result.__get_enum_storage())(
+            from_int=id
+        )
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(mlir_value=self.__get_enum_storage().__mlir_index__())
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] Self._enum_elt_type_for_case[id]:
+        # TODO(MOCO-5080): remove the empty payload reference when `EnumLike`
+        # no longer requires payload access.
+        comptime Payload = Self._enum_elt_type_for_case[id]
+        comptime assert Payload == Tuple[]
+        return Pointer(to=self).unsafe_bitcast[Payload]()[]
+
+
+trait __Union(EnumLike):
+    """Provides the defaults every `__union` gets.
 
     The compiler generates each one's only field, `__union_storage`, an
     `__UnionStorage` over its case types. `__get_enum_storage` reaches that
@@ -244,15 +302,15 @@ trait __Enum(EnumLike):
     def __get_enum_storage(
         ref self,
     ) -> ref[self] __UnionStorage[Self._enum_case_types]:
-        """Returns the storage field, the enum's only field."""
+        """Returns the storage field, the union's only field."""
         comptime Storage = __UnionStorage[Self._enum_case_types]
         comptime assert (
             size_of[Self]() == size_of[Storage]()
             and align_of[Self]() == align_of[Storage]()
-        ), "an `__Enum` must have its storage as its only field"
-        # A cast, not a field access: a register-passable enum is lowered as
+        ), "a '__union' must have its storage as its only field"
+        # A cast, not a field access: a register-passable union is lowered as
         # its storage itself, and a field access on the generic `Self` relies
-        # on the compiler folding it away for such an enum.
+        # on the compiler folding it away for such a union.
         return Pointer(to=self).unsafe_bitcast[Storage]()[]
 
     @staticmethod
@@ -312,11 +370,3 @@ trait __Enum(EnumLike):
         id
     ]:
         return self.__get_enum_storage().payload_ptr[id]()[]
-
-
-trait __Union(__Enum):
-    """A `__union`: an `__Enum` whose every case is a constructor and whose
-    every payload is a `Tuple` of the case's arguments, `Tuple[]` for a case
-    without one."""
-
-    pass

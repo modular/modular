@@ -56,11 +56,6 @@ __union U(Copyable):
     case none()
 
 
-__enum EnumOne(ImplicitlyCopyable):
-    case one(Tracked)
-    case none
-
-
 __union WholeU(ImplicitlyCopyable):
     case one(Tracked)
 
@@ -113,21 +108,6 @@ def consume_nested(var u: U):
     # CHECK-NEXT: destroy 1008
     match u^:
         case .inner(.t(var x)):
-            print("bound", x.id)
-        case _:
-            pass
-    # CHECK-NOT: {{copy|destroy}}
-
-
-def consume_enum_var(var e: EnumOne):
-    # CHECK-LABEL: == enum var
-    print("== enum var")
-    # CHECK-NEXT: copy 9 1009
-    # CHECK-NEXT: destroy 9
-    # CHECK-NEXT: bound 1009
-    # CHECK-NEXT: destroy 1009
-    match e^:
-        case .one(var x):
             print("bound", x.id)
         case _:
             pass
@@ -229,21 +209,6 @@ def consume_guarded(var u: U):
     # CHECK-NOT: {{copy|destroy}}
 
 
-__enum Item:
-    case value(Int)
-
-
-def consume_enum_guarded():
-    # CHECK-LABEL: == enum guarded
-    print("== enum guarded")
-    # CHECK-NEXT: second 7
-    match Item.value(7):
-        case .value(var x) if x == 8:
-            print("first", x)
-        case .value(var x):
-            print("second", x)
-
-
 def consume_if_case():
     # CHECK-LABEL: == if case
     print("== if case")
@@ -308,7 +273,6 @@ def main():
     consume_var(U.t(Tracked(1)))
     consume_two_vars(U.two(Tracked(2), Tracked(3)))
     consume_nested(U.inner(Inner.t(Tracked(8))))
-    consume_enum_var(EnumOne.one(Tracked(9)))
     consume_ref(U.t(Tracked(10)))
     consume_tag_only(U.none())
     consume_tag_only(U.t(Tracked(42)))
@@ -317,7 +281,6 @@ def main():
     consume_or_var(U.t(Tracked(50)))
     consume_or_var(U.inner(Inner.t(Tracked(52))))
     consume_guarded(U.t(Tracked(60)))
-    consume_enum_guarded()
     consume_if_case()
     consume_while_case()
     consume_optional_moveonly(make_moveonly())

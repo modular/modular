@@ -121,7 +121,7 @@ StringRef getEnumOrUnionNoun(StructDeclOp structOp);
 
 /// Return the error for a malformed case of `structOp`, a struct declared with
 /// `__enum` or `__union`, which names the forms a case of it takes.
-StringRef getMalformedEnumCaseMessage(StructDeclOp structOp);
+StringRef getMalformedCaseMessage(StructDeclOp structOp);
 
 /// Generate the mangled name identifying the thunk that converts a value of
 /// signature `actual` into one of signature `expected`. The AST-level spelling

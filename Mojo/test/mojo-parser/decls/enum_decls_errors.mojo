@@ -12,19 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
+# RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s --check-prefix PAYLOAD
 
 # Checks:
 # 1. Reject `()` on an enum case without a payload.
 # 2. Select enum wording for shared diagnostics.
 
 __enum EmptyParens:
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
+    # PAYLOAD: "fixIts":[],"location":{"column":14,"line":[[#@LINE+3]]}
+    # PAYLOAD-SAME: "message":"enum case 'empty' must not have a payload; declare 'EmptyParens' with '__union'"
+    # expected-error @+1 {{enum case 'empty' must not have a payload; declare 'EmptyParens' with '__union'}}
     case empty()
+
+
+__enum Payload:
+    # expected-error @+1 {{enum case 'data' must not have a payload; declare 'Payload' with '__union'}}
+    case data(Int)
+
+
+__enum Malformed:
+    case value
+    # expected-error @+1 {{enum case must have the form 'case name'}}
+    case typed: Int
 
 
 __enum Stateful:
     case value
-    # expected-error @+1 {{enums do not support 'var' fields; store state in a case payload}}
+    # expected-error @+1 {{enums do not support 'var' fields; use '__union' to store case payloads}}
     var x: Int
 
 
@@ -68,6 +82,22 @@ def outer_function():
 def comptime_enum():
     # expected-error @+1 {{'comptime' cannot be used with '__enum'}}
     comptime __enum = 1
+
+
+__enum NotImplicitlyCopyable(not ImplicitlyCopyable):
+    case a
+
+
+def materialize_not_implicitly_copyable() -> NotImplicitlyCopyable:
+    # expected-error @+2 {{cannot materialize comptime value of type 'NotImplicitlyCopyable' to runtime because it is not 'ImplicitlyCopyable'}}
+    # expected-note @+1 {{use 'materialize' to explicitly materialize the value}}
+    return NotImplicitlyCopyable.a
+
+
+# expected-error @+2 {{trait 'TrivialRegisterPassable' requires ancestor trait 'Deinitable', which is opted out with 'not'; remove one of the entries}}
+# expected-note @+1 {{opted out here}}
+__enum NotDeinitableTrivial(not Deinitable, TrivialRegisterPassable):
+    case a
 
 
 # expected-error @+1 {{expected enum name}}

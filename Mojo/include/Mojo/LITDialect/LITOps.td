@@ -509,15 +509,10 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // Read back through `#kgen.get_annotation_value`, which the reflection
     // library wraps as `reflect[T].annotation[index]`.
     DefaultValuedAttr<ArrayAttr, "{}">:$annotations,
-    // Present if the struct is declared with `__enum`. Its cases are the
-    // `lit.enum.case` ops in its body. An enum uses the code of a union, with
-    // one difference: a case without a payload is a value, not a constructor.
-    // For `case red`:
-    //   - The struct gets the `comptime` member `red`. `case red()` is an
-    //     error.
-    //   - A pattern matches it as `.red`. `.red()` is an error.
-    //   - It prints as `Color.red`, without `()`.
-    // An enum conforms to `__Enum`, which `__Union` refines.
+    // Present for `__enum`: every case is a payload-free `comptime` value,
+    // spelled `case red`, matched as `.red` and printed as `Color.red`. The
+    // struct stores only a scalar tag and conforms to `__Enum`. `__Union`
+    // supplies the separate payload-storage defaults for unions.
     UnitAttr:$isEnum,
     // Present if the struct is declared with `__union`. Its cases are the
     // `lit.enum.case` ops in its body; every case takes parentheses, and its
@@ -675,7 +670,7 @@ def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
     ```mlir
     lit.struct.decl @Color {
       lit.enum.case red : []
-      lit.enum.case rgb : [!alias_Int1, !alias_Int1, !alias_Int1]
+      lit.enum.case green : []
     } {isEnum}
     ```
   }];

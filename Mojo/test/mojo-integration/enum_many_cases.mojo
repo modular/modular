@@ -18,11 +18,10 @@
 # 2. Copy and format a value with a wide tag.
 
 from std.builtin._enum import __enum_discriminant_dtype
+from std.reflection import reflect
 
 
-# TODO: `ImplicitlyCopyable` only so that the cases can be used as runtime
-# values. A `comptime` value of another type does not materialize.
-__enum Many(ImplicitlyCopyable, Writable):
+__enum Many(Writable):
     case c0
     case c1
     case c2
@@ -296,7 +295,7 @@ def describe(value: Many) -> String:
 
 
 def main():
-    # The widths change exactly where `!kgen.variant`'s do.
+    comptime assert reflect[Many].field_types()[0] == UInt16
     comptime assert __enum_discriminant_dtype(256) == DType.uint8
     comptime assert __enum_discriminant_dtype(257) == DType.uint16
     comptime assert __enum_discriminant_dtype(65536) == DType.uint16

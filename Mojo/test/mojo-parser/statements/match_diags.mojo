@@ -394,28 +394,6 @@ def subpattern_count(t: Tok):
         pass
 
 
-__enum EnumTok(ImplicitlyCopyable):
-    case empty
-    case word(String)
-    case span(Int, Int)
-
-
-# An enum case has one subpattern per element of its payload.
-def enum_subpattern_count(t: EnumTok):
-    match t:
-    # expected-error @+1 {{expected 1 subpattern for enum case 'word', found 2}}
-    case .word(a, b):
-        pass
-    # expected-error @+1 {{expected 2 subpatterns for enum case 'span', found 1}}
-    case .span(a):
-        pass
-    # expected-error @+1 {{expected 2 subpatterns for enum case 'span', found 3}}
-    case .span(a, b, c):
-        pass
-    case _:
-        pass
-
-
 def subpattern_forms(t: Tok):
     match t:
     # expected-error @+1 {{union case patterns do not support keyword arguments}}
@@ -431,13 +409,24 @@ def subpattern_forms(t: Tok):
         pass
 
 
-def enum_subpattern_forms(t: EnumTok):
-    match t:
+# An enum case of a hand-written `EnumLike` conformer has one subpattern per
+# element of its payload.
+def enum_subpattern_count(opt: Optional[Int]):
+    match opt:
+    # expected-error @+1 {{expected 1 subpattern for enum case 'Some', found 2}}
+    case .Some(a, b):
+        pass
+    case _:
+        pass
+
+
+def enum_subpattern_forms(opt: Optional[Int]):
+    match opt:
     # expected-error @+1 {{enum case patterns do not support keyword arguments}}
-    case .word(w=_):
+    case .Some(w=_):
         pass
     # expected-error @+1 {{enum case patterns do not support unpacked arguments}}
-    case .span(*rest):
+    case .Some(*rest):
         pass
     case _:
         pass

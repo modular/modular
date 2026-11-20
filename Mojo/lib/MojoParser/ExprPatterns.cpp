@@ -1425,12 +1425,12 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
            "a payload subpattern on a `Tuple[*Ts]` payload is rejected when "
            "the pattern is built");
     // TODO(MOCO-5454): Move payload elements out once moving a part out of a
-    // value is sound. Until then the elements of an `__enum` or `__union`
-    // payload, and of any multi-element payload, are copied, as the elements
-    // of a tuple subpattern are.
+    // value is sound. Until then the elements of a `__union` payload, and of a
+    // multi-element payload of a hand-written EnumLike type, are copied, as the
+    // elements of a tuple subpattern are.
     auto *subjectDecl = getStructDecl(emitter.shared, rootType);
     if (elementTypes.getValues().size() > 1 ||
-        (subjectDecl && subjectDecl->getOp().isEnumOrUnion()))
+        (subjectDecl && subjectDecl->getOp().isUnion()))
       return success();
     for (auto [index, type] : llvm::enumerate(elementTypes.getValues())) {
       PatternPath child{};

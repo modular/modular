@@ -169,9 +169,9 @@ StringRef LIT::getEnumOrUnionNoun(StructDeclOp structOp) {
   return structOp.isEnum() ? "enum" : "union";
 }
 
-StringRef LIT::getMalformedEnumCaseMessage(StructDeclOp structOp) {
+StringRef LIT::getMalformedCaseMessage(StructDeclOp structOp) {
   if (structOp.isEnum())
-    return "enum case must have the form 'case name' or 'case name(T, ...)'";
+    return "enum case must have the form 'case name'";
   return "union case must have the form 'case name()' or 'case name(T, ...)'";
 }
 

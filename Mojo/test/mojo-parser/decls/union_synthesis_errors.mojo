@@ -17,6 +17,14 @@
 # 1. Require payload conformances and reject reserved names.
 # 2. Honor manually supplied lifecycle methods.
 
+# An enum declared in `std.builtin.stubs`, which `std.builtin._enum`
+# imports, still compiles: demanding its members resolves `_enum`, which
+# imports that module.
+from std.builtin.stubs import _StubsEnum
+
+comptime _stubs_enum_case = _StubsEnum.a
+
+
 # Payloads must satisfy the union's derived lifecycle conformances.
 __union Copies(ImplicitlyCopyable):
     case empty()
@@ -110,15 +118,6 @@ __union Trivial[T: AnyType, U: TrivialRegisterPassable](
     case c(CopiedByHand)
     # expected-error @+1 {{case 'n' has non-'TrivialRegisterPassable' payload type 'LiteralCopiedByHand'}}
     case n(LiteralCopiedByHand)
-
-
-# A trivial enum requires `TrivialRegisterPassable` of each payload type as
-# well.
-__enum TrivialEnum(TrivialRegisterPassable):
-    case a
-    case b(Int)
-    # expected-error @+1 {{case 's' has non-'TrivialRegisterPassable' payload type 'String'}}
-    case s(String)
 
 
 # A case's constructor moves a nonmaterializable payload as the type it
@@ -232,6 +231,26 @@ __enum Open:
     case b
 
     comptime _enum_is_exhaustive = False
+
+
+# The support trait's associated comptimes are reserved, like its methods.
+__enum ReservedComptimes:
+    case a
+
+    # expected-error @+1 {{'_EnumStorage' is synthesized for enums and cannot be declared}}
+    comptime _EnumStorage = 1
+
+    # expected-error @+1 {{'_enum_has_no_payloads' is synthesized for enums and cannot be declared}}
+    comptime _enum_has_no_payloads = True
+
+
+# A case's name is reserved the same way: the member it generates would
+# collide with the support trait's.
+__enum ReservedCaseName:
+    case a
+
+    # expected-error @+1 {{'_EnumStorage' is synthesized for enums and cannot be declared}}
+    case _EnumStorage
 
 
 # A case generates a member, which must not collide with a member that is

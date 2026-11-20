@@ -134,21 +134,16 @@ public:
   /// Synthesize an unresolved alias into the struct with the specified name .
   AliasASTDecl *synthesizeUnresolvedAlias(StringRef name);
 
-  /// Synthesize the members of an `__enum` or a `__union` from the
-  /// `lit.enum.case` ops in its body: the `EnumLike` case lists, the storage
-  /// field, and a static method for each case of a union and each case with a
-  /// payload of an enum, and a `comptime` member for each payloadless case of
-  /// an enum.
+  /// Synthesize case metadata, the storage field, static constructors for
+  /// union cases and `comptime` values for enum cases.
   LogicalResult synthesizeEnumMembers();
-  /// Synthesize the `EnumLike` aliases `_enum_case_names` and
-  /// `_enum_case_types` with the given values, and the enum's only field,
-  /// `__union_storage`, of type `__UnionStorage[caseTypes]`. All three are
-  /// registered as resolved declarations and hidden from the docs.
-  void synthesizeEnumCaseListsAndStorage(StructDeclOp enumStorageDeclOp,
-                                         ParamListAttr caseNames,
-                                         ParamListAttr caseTypes);
-  /// Synthesize the static method that constructs case `caseName` of an
-  /// `__enum` or a `__union` from its `payload` types, documented by the case's
+  /// Synthesize `_enum_case_names`, `_enum_case_types` and the only field:
+  /// a scalar tag for an enum, or `__UnionStorage[caseTypes]` for a union.
+  LogicalResult
+  synthesizeEnumOrUnionCaseListsAndStorage(ParamListAttr caseNames,
+                                           ParamListAttr caseTypes);
+  /// Synthesize the static method that constructs case `caseName` of a
+  /// `__union` from its `payload` types, documented by the case's
   /// `docString`.
   LogicalResult synthesizeEnumCaseConstructor(StringRef caseName,
                                               ArrayRef<Type> payload,
