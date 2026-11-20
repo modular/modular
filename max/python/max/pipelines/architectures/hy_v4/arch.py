@@ -17,12 +17,12 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
-from . import weight_adapters
 from .decoder import HYV4Decoder
 from .model_config import HYV4Config
 from .reasoning import HYV4ReasoningParser  # noqa: F401  registers "hy_v4"
 from .tokenizer import HYV4Tokenizer
 from .tool_parser import HYV4ToolParser  # noqa: F401  registers "hy_v4"
+from .weight_adapters import hy_v4_weight_rules
 
 hy_v4_arch = SupportedArchitecture(
     name="HYV4ForCausalLM_ModuleV3",
@@ -36,10 +36,15 @@ hy_v4_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
+    # The DSA indexer picks its scorer and top-k arms from the host cache
+    # bound, so a capture keys and pins the bound's power-of-two bucket.
+    mla_decode_capture=True,
+    capture_cache_bound="bucketed",
+    # The indexer kernels size their own launches.
+    unread_dispatch_caches=("indexer",),
     checkpoint_drafts={"mtp": "MTPHYV4DraftModel"},
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=hy_v4_weight_rules,
+    use_weight_rules=True,
     config=HYV4Config,
     tool_parser="hy_v4",
     reasoning_parser="hy_v4",

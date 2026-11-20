@@ -77,6 +77,9 @@ from max.graph import (
     ops,
 )
 from max.nn.common_layers.context_parallel import (
+    PCP_MAX_BATCH_CONTEXT,
+    PCP_MIN_ROWS_PER_REQUEST,
+    PCP_MIN_STEP_TOKENS,
     dcp_ranks,
     dcp_view,
     to_dcp_mesh,
@@ -98,33 +101,6 @@ from max.tensor.sharding import (
     Unknown,
 )
 from max.tensor.sharding.action import PerShard
-
-PCP_MIN_ROWS_PER_REQUEST = 8
-"""A step takes the PCP path when its rows average more than this per
-request. Decode steps (one row) and the verify steps of every speculative
-width a DCP capture serves (at most eight rows) stay on the DCP path. Mach
-mirrors it (``PCP_MIN_ROWS_PER_REQUEST`` in ``kv_sizing.rs``, asserted
-against ``DCP_MAX_CAPTURED_VERIFY_ROW`` in ``config.rs``) so its captured
-verify width stays at or below it and a captured step never gives the PCP
-path its rows."""
-
-PCP_MIN_STEP_TOKENS = 7168
-"""A step takes the PCP path only with at least this many rows. PCP pays a
-mostly fixed cost per layer (the prefix fill and the row exchange): on
-8xB200 a PCP8 prefill step takes about 305 ms from 500 to 8000 new tokens,
-with or without a 32K prefix, while a DCP8 step grows from 87 ms (500)
-through 195 ms (4000) to 347 ms (8000). They cross near 7000 tokens, so
-shorter steps, chunked-prefill tails included, stay on the DCP path. These
-times were measured on the earlier build that branched (``ops.cond``) per
-layer; the predicated build inherits the crossover without re-measuring
-it."""
-
-PCP_MAX_BATCH_CONTEXT = 262144
-"""A step takes the PCP path only while every replica's page-aligned summed
-context is at most this many tokens. Each layer's whole-context scratch
-holds about 1 KB per context token per device, so this bounds it near
-270 MB, and keeps the sparse prefill on its convert-once arm (whose NVFP4
-conversion takes at most this context)."""
 
 __all__ = [
     "PCP_MAX_BATCH_CONTEXT",

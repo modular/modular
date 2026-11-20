@@ -1492,9 +1492,10 @@ static KGEN::StructType getMlirType(MLIRContext *ctx,
   return KGEN::StructType::get(ctx, mlirFieldTypes, isMemOnly);
 }
 
-bool ClosureEmitter::provenConformsToTrait(
-    ASTType type, TraitASTDecl &traitDecl, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) {
+bool ClosureEmitter::provenConformsToTrait(ASTType type,
+                                           TraitASTDecl &traitDecl,
+                                           SharedState &shared,
+                                           TypedAttr callerAssumptions) {
   TraitDeclOp trait = traitDecl.getOp();
   return type
       .doesConformTo(TraitType::get(getFullyResolvedSymbolRef(trait)), shared,
@@ -1508,8 +1509,7 @@ static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
       shared.getBuiltinDevicePassableTrait(scope.getLoc());
   assert(devicePassableDecl && "could not find device passable dependency");
 
-  SmallVector<ConstraintAttr> assumptions =
-      ASTDecl::getAssumptionsFromScope(&scope);
+  TypedAttr assumptions = scope.getScopeAssumptions();
 
   // A capture is device-encodable only if it conforms to DevicePassable;
   // resolve its device_type via GetWitness + fold attempt.
@@ -2007,8 +2007,7 @@ static TypeConvention typeConventionOf(SharedState &shared,
   // prove the conformance against its parameter bindings and the capturing
   // scope's `conforms_to` assumptions, as `isMovable`/`isCopyable` do.
   if (structDeclOp.getRegisterPassableConstraintAttr()) {
-    SmallVector<ConstraintAttr> assumptions =
-        ASTDecl::getAssumptionsFromScope(&nestedFnDecl);
+    TypedAttr assumptions = nestedFnDecl.getScopeAssumptions();
     if (ASTType(structType)
             .provenConformsToBuiltinTrait(
                 "RegisterPassable", nestedFnDecl.getLoc(), shared, assumptions))
@@ -2094,11 +2093,11 @@ Value ClosureEmitter::emitClosure(ModuleASTDecl &moduleDecl,
 
     SyntheticNode synthNode(nestedFnDecl.getLoc());
     ExprDest dest(anyType, EC_Type);
-    PValue captureTypeValue =
-        emitter
-            .emitImplicitConversionToType({value.getType(), &synthNode},
-                                          anyType, dest)
-            .getIfPValue();
+    PValue captureTypeValue = emitter
+                                  .emitImplicitConversionToType(
+                                      {value.getType(), &synthNode}, anyType,
+                                      dest, emitter.shared.noAssumptions)
+                                  .getIfPValue();
     auto captureTypeAttr = cast<TypedAttr>(captureTypeValue.get());
     auto captureName = StringAttr::get(ctx, capture.getSpelling());
     auto captureConvention = capture.getCaptureConvention();
@@ -2581,11 +2580,11 @@ PValue ClosureEmitter::createParamClosureExtensionType(
       GetWitnessAttr::get(newSelfVal, srcClosureInst, callName, srcSig);
 
   ExprDest dest(EC_TypeParamValue);
-  TypedAttr converted =
-      emitter
-          .emitImplicitConversionToType({PValue(toConvert), srcTypeVal.expr},
-                                        tgtSig, dest)
-          .getIfPValue();
+  TypedAttr converted = emitter
+                            .emitImplicitConversionToType(
+                                {PValue(toConvert), srcTypeVal.expr}, tgtSig,
+                                dest, emitter.shared.noAssumptions)
+                            .getIfPValue();
   assert(converted && "trait convertibility must have been tested");
 
   // This is the bridging thunk generated.

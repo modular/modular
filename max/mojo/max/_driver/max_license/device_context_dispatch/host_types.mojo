@@ -446,8 +446,14 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the launch fails.
         """
         comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_function(
-                f._impl,
+            _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
+                grid_dim, location=call_location()
+            )
+            _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
+                block_dim, location=call_location()
+            )
+            f._impl._call_with_pack_checked(
+                self._impl,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -455,6 +461,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=attributes^,
                 constant_memory=constant_memory^,
+                location=call_location(),
             )
             return
 

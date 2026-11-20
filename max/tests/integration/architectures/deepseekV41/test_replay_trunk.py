@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Checks cut-query gathering and absolute tail cache coordinates on CPU."""
+"""Checks cut-query gathering, absolute tail cache coordinates and the kept
+rows' mixed-step split record on CPU."""
 
 from __future__ import annotations
 
@@ -40,6 +41,9 @@ from max.pipelines.architectures.deepseekV41.layers.attention import (
     PendingCSA2Attention,
     gather_pending_attention,
     tail_cache_view,
+)
+from max.pipelines.architectures.deepseekV41.layers.csa2 import (
+    kept_rows_split_record,
 )
 from max.pipelines.architectures.deepseekV41.layers.ragged import (
     ReplayRows,
@@ -101,7 +105,14 @@ def _graph() -> Model:
             page_stride=ops.constant([1], DType.int64, cpu),
         )
         cache_values = CSA2Cache(leaf, {20: leaf}, {20: leaf}, {20: 0})
-        tail = tail_cache_view(cache_values, replay.rows, replay.longest)
+        original_rows = V41RaggedRows.from_offsets(
+            original,
+            9,
+            ops.cast(cache_lengths, DType.int32),
+        )
+        tail = tail_cache_view(
+            cache_values, replay.rows, replay.longest, original_rows.positions
+        )
         q = ops.constant(
             np.arange(18, dtype=np.int32).reshape(9, 2), DType.int32, cpu
         )
@@ -130,11 +141,6 @@ def _graph() -> Model:
         stream = _gather_streams(stream, indices)
         assert stream.pre is not None and stream.out is not None
         assert stream.post is not None and stream.comb is not None
-        original_rows = V41RaggedRows.from_offsets(
-            original,
-            9,
-            ops.cast(cache_lengths, DType.int32),
-        )
         attn = object.__new__(CSA2Attention)
         attn.layer_info = _layer()
         with (
@@ -368,3 +374,60 @@ def test_replay_rejects_a_tap_before_the_cut() -> None:
 def test_replay_rejects_a_cut_outside_the_trunk() -> None:
     with pytest.raises(ValueError, match="not a trunk layer"):
         _check_replay(_CONFIG, _trunk([1, 14], cut=10), [37])
+
+
+@cache
+def _kept_record_graph() -> Model:
+    cpu = DeviceRef.CPU()
+    with Graph(
+        "kept_rows_split_record",
+        input_types=[
+            TensorType(DType.uint32, [7], cpu),
+            TensorType(DType.int32, ["T"], cpu),
+            TensorType(DType.int32, ["kept"], cpu),
+            TensorType(DType.uint32, [1], cpu),
+        ],
+    ) as graph:
+        record, full, kept, longest = (x.tensor for x in graph.inputs)
+        graph.output(kept_rows_split_record(record, full, kept, longest))
+    return InferenceSession(devices=[CPU()]).load(graph)
+
+
+def _kept_record(
+    record: list[int], full: int, kept: int, longest: int
+) -> list[int]:
+    out = _kept_record_graph().execute(
+        Buffer.from_numpy(np.array(record, np.uint32)),
+        Buffer.from_numpy(np.zeros(full, np.int32)),
+        Buffer.from_numpy(np.zeros(kept, np.int32)),
+        Buffer.from_numpy(np.array([longest], np.uint32)),
+    )[0]
+    assert isinstance(out, Buffer)
+    return out.to_numpy().tolist()
+
+
+# Three decode rows of four tokens and one prompt row of 300, kept to 130.
+@pytest.mark.parametrize(
+    ("record", "kept_record"),
+    [
+        (
+            [3, 12, 4, 1000, 300, 2000, 1900],
+            [3, 12, 4, 1000, 130, 2000, 1900],
+        ),
+        (
+            [1, 300, 300, 2000, 4, 1000, 1900],
+            [1, 130, 130, 2000, 4, 1000, 1900],
+        ),
+        ([0] * 7, [0] * 7),
+    ],
+    ids=["decode_first", "decode_last", "no_split"],
+)
+def test_the_kept_rows_record_keeps_the_decode_view_whole(
+    record: list[int], kept_record: list[int]
+) -> None:
+    assert _kept_record(record, 312, 142, 130) == kept_record
+
+
+def test_a_plan_that_keeps_every_row_keeps_the_record() -> None:
+    record = [1, 300, 300, 2000, 4, 1000, 1900]
+    assert _kept_record(record, 312, 312, 300) == record

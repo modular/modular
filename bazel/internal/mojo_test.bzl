@@ -38,7 +38,7 @@ def mojo_test(
         data = data + RUNTIME_SANITIZER_DATA,
         target_compatible_with = target_compatible_with,
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
-        env = GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(exec_properties) | env,
+        env = GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(default_exec_properties | exec_properties) | env,
         size = size,
         exec_properties = default_exec_properties | resources_exec_properties | exec_properties,
         **kwargs

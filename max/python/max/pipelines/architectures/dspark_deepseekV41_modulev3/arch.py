@@ -28,8 +28,8 @@ from .model import (
 )
 
 # The same stages as the graph-API draft, drafting for a ModuleV3
-# DeepSeek-V4.1 trunk, which has no device graph capture. They are a
-# registered draft, named as the ModuleV3 stages name their weights.
+# DeepSeek-V4.1 trunk. They are a registered draft, named as the ModuleV3
+# stages name their weights, and capture with the trunk.
 dspark_deepseekV41_modulev3_draft_arch = replace(
     dspark_deepseekV41_draft_arch,
     name="DSparkDeepseekV41DraftModel_ModuleV3",
@@ -40,5 +40,4 @@ dspark_deepseekV41_modulev3_draft_arch = replace(
         WeightsFormat.safetensors: convert_dspark_modulev3_safetensor_state_dict,
     },
     checkpoint_draft_width=dspark_draft_width,
-    supports_device_graph_capture=False,
 )

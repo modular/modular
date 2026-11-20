@@ -29,8 +29,8 @@
 
 # A case with a payload is a static method taking it by `var`, positionally,
 # and passing it on in a pack.
-# CHECK: lit.fn @"ident(::String$)"{{.*}}(%payload: !lit.ref<!String, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!Token, {{.*}}> byref_result) {{.*}} attributes {isStatic, sourceName = "ident"
-# CHECK-NEXT: lit.ref.pack.create(%payload) : !lit.ref.pack<:param_list<!AnyType_Movable> [!String], {{.*}}>
+# CHECK: lit.fn @"ident(::String$)"{{.*}}(%payload0: !lit.ref<!String, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!Token, {{.*}}> byref_result) {{.*}} attributes {isStatic, sourceName = "ident"
+# CHECK-NEXT: lit.ref.pack.create(%payload0) : !lit.ref.pack<:param_list<!AnyType_Movable> [!String], {{.*}}>
 # The callee reads the pack, which lives in this frame, so this is not a tail
 # call.
 # CHECK: lit.call @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!String], :!Int {:scalar<index> 1}, {{.*}}>(%anonymous{{.*}}, %__result__)
@@ -87,7 +87,7 @@ __enum Uninhabited:
 # CHECK: lit.alias.decl _enum_case_types: param_list<!AnyType> = <[[[EMPTY]], [[JUST:@std::@builtin::@stubs::@Tuple<:param_list<!AnyType_Movable> \[upcast\(:.* T\)\],[^}]*}>]]]>
 # CHECK: lit.struct.field __enum_storage : !lit.struct<#EnumStorage <:param_list<!AnyType> [[[EMPTY]], [[JUST]]]>> <isDocHidden>
 # CHECK: lit.alias.decl nothing: !lit.struct<#Maybe <:[[BOUND]] T>> = <apply_result_slot(
-# CHECK: lit.fn @"just($0$)"{{.*}}(%payload: !lit.ref<:[[BOUND]] T, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!lit.struct<#Maybe <:[[BOUND]] T>>, {{.*}}> byref_result)
+# CHECK: lit.fn @"just($0$)"{{.*}}(%payload0: !lit.ref<:[[BOUND]] T, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!lit.struct<#Maybe <:[[BOUND]] T>>, {{.*}}> byref_result)
 __enum Maybe[T: Copyable & Deinitable](Copyable):
     case nothing
     case just(Self.T)

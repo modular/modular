@@ -1514,28 +1514,20 @@ class Graph:
         )
         outputs = cast(tuple[Value[Any], ...], outputs)
         # mo.output doesn't support infer_type
-        graph_body_args = self._graph_body.arguments
         output_values: list[Value[Any]] = list(outputs)
         if self._has_chain_input:
             output_values = self.device_chains.pack(output_values)
         mlir_values: list[_Value[Any]] = [v._mlir_value for v in output_values]
 
-        # We have a type mismatch now, these are MLIR types
-        # Convert from max._core.Type to mlir.Type using CAPI bridge
-        output_types = [
-            mlir.Type._CAPICreate(value.type._CAPIPtr)  # type: ignore[attr-defined]
-            for value in mlir_values
-        ]
-
-        # Need to set some more stuff.
-        function_type = mlir.FunctionType.get(
-            graph_body_args.types,
-            output_types,
+        op = Operation._from_cmlir(self._mlir_op)
+        assert isinstance(op, _mo.GraphOp)
+        function_type = builtin.FunctionType(
+            [arg.type for arg in op.regions[0].front.arguments],
+            [value.type for value in mlir_values],
         )
-        signature = mlir.Type.parse(f"!kgen.generator<{function_type}>")
-        self._mlir_op.attributes["signature"] = mlir.TypeAttr.get(signature)
-        self._mlir_op.attributes["functionType"] = mlir.TypeAttr.get(
-            function_type
+        op.function_type = builtin.TypeAttr(function_type)
+        op.signature = builtin.TypeAttr(
+            kgen.FuncTypeGeneratorType([], function_type)
         )
 
         self._add_op_generated(
@@ -1548,13 +1540,12 @@ class Graph:
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.
         # Note that result_names here needs to match kMgpModelResultNames.
-        input_names = [f'"input{i}"' for i in range(len(self.inputs))]
-        self._mlir_op.attributes["argument_names"] = mlir.Attribute.parse(
-            f"[{', '.join(input_names)}]"
+        attrs = op.discardable_attributes
+        attrs["argument_names"] = builtin.ArrayAttr(
+            [builtin.StringAttr(f"input{i}") for i in range(len(self.inputs))]
         )
-        output_names = [f'"output{i}"' for i in range(len(output_types))]
-        self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
-            f"[{', '.join(output_names)}]"
+        attrs["result_names"] = builtin.ArrayAttr(
+            [builtin.StringAttr(f"output{i}") for i in range(len(mlir_values))]
         )
 
         self._subgraphs = {}

@@ -24,7 +24,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceAffinity.h"
 #include "Support/RCRef.h"
 #include "Support/SymbolExport.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 
 using namespace M;
 
@@ -36,13 +36,13 @@ using namespace M;
 // `AnyAsyncValueRef` wrapper. A null handle is the empty/non-tracked reference,
 // so both are no-ops on null.
 MODULAR_EXPORT void AsyncRT_AsyncValue_retain(AsyncRT::AsyncValue *value) {
-  TRACY_ZONE_SCOPED_NC("AsyncRT_AsyncValue_retain", TRACY_COLOR_GRAY);
+  M_PROFILE_SPAN("AsyncRT_AsyncValue_retain", M_PROFILE_COLOR_GRAY);
   if (value)
     RCRef<AsyncRT::AsyncValue>::lowLevelAddRef(value);
 }
 
 MODULAR_EXPORT void AsyncRT_AsyncValue_release(AsyncRT::AsyncValue *value) {
-  TRACY_ZONE_SCOPED_NC("AsyncRT_AsyncValue_release", TRACY_COLOR_GRAY);
+  M_PROFILE_SPAN("AsyncRT_AsyncValue_release", M_PROFILE_COLOR_GRAY);
   if (value)
     RCRef<AsyncRT::AsyncValue>::lowLevelDropRef(value);
 }
@@ -54,8 +54,8 @@ MODULAR_EXPORT void AsyncRT_AsyncValue_release(AsyncRT::AsyncValue *value) {
 // null.
 MODULAR_EXPORT AsyncRT::AsyncValue *
 AsyncRT_AsyncValue_retainBufferStorage(AsyncRT::AsyncValue *value) {
-  TRACY_ZONE_SCOPED_NC("AsyncRT_AsyncValue_retainBufferStorage",
-                       TRACY_COLOR_GRAY);
+  M_PROFILE_SPAN("AsyncRT_AsyncValue_retainBufferStorage",
+                 M_PROFILE_COLOR_GRAY);
   if (!value)
     return nullptr;
   AsyncRT::AnyAsyncValueRef handle;
@@ -72,7 +72,7 @@ AsyncRT_AsyncValue_retainBufferStorage(AsyncRT::AsyncValue *value) {
 // Mojo destructors instead of an explicit async-delete pass.
 MODULAR_EXPORT AsyncRT::AsyncValue *
 AsyncRT_AsyncValue_takeHandle(AsyncRT::AnyAsyncValueRef *slot) {
-  TRACY_ZONE_SCOPED_NC("AsyncRT_AsyncValue_takeHandle", TRACY_COLOR_GRAY);
+  M_PROFILE_SPAN("AsyncRT_AsyncValue_takeHandle", M_PROFILE_COLOR_GRAY);
   if (!slot)
     return nullptr;
   AsyncRT::AnyAsyncValueRef taken = std::move(*slot);

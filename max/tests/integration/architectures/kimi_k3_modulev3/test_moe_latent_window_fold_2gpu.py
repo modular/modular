@@ -36,7 +36,7 @@ activation, and the exit GEMM then accumulates those one-ULP differences
 over its K. What that comparison cannot see -- both arms read the same
 window -- is whether the window carries the right numbers, so the test
 also grades the window the exit received against the shared expert's own
-``gate_up_proj`` of the same input, which is what the merged entry GEMM
+gate/up projection of the same input, which is what the merged entry GEMM
 computed those columns from.
 """
 
@@ -92,9 +92,9 @@ TP_AXIS = "tp"
 # of a value's magnitude.
 #
 # Measured on this fixture: the window is bit-identical to the shared
-# expert's own gate/up (the merged entry GEMM runs the same products as
-# `gate_up_proj` over the same rows), and the two exits' outputs differ by
-# 8.7e-3 -- one ULP at the output's magnitude, from the exit chain's own
+# expert's own gate/up (the merged entry GEMM runs the same products as the
+# shared gate/up GEMM over the same rows), and the two exits' outputs differ
+# by 8.7e-3 -- one ULP at the output's magnitude, from the exit chain's own
 # rounding. The bounds leave the window room for a rounding flip if a
 # kernel's tiling changes the accumulation order, and the exit ~2x.
 MAX_EXIT_REL_ERROR = 2e-2
@@ -260,7 +260,9 @@ def _build_layer(
     layer.routed_expert_down_proj.weight = bf16(weights["entry"])
     layer.routed_expert_up_proj.weight = bf16(weights["exit"])
     layer.routed_expert_norm.weight = bf16(weights["norm"])
-    layer.shared_experts.gate_up_proj.weight = bf16(weights["shared_gate_up"])
+    shared_gate, shared_up = np.split(weights["shared_gate_up"], 2)
+    layer.shared_experts.gate_proj.weight = bf16(shared_gate)
+    layer.shared_experts.up_proj.weight = bf16(shared_up)
     layer.shared_experts.down_proj.weight = bf16(weights["shared_down"])
     assign_experts(
         layer,
@@ -398,7 +400,9 @@ def _run(
         # The shared expert's own gate/up projection, over the same input
         # and this rank's own weight shard: the numbers the merged entry
         # GEMM computed the window's columns from.
-        reference = layer.shared_experts.gate_up_proj(x).cast(DType.float32)
+        reference = (x @ layer.shared_experts.gate_up_weight().T).cast(
+            DType.float32
+        )
         # numpy has no bfloat16; widening it to float32 is exact.
         return _Result(
             out=out.cast(DType.float32).to_numpy(),

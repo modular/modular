@@ -22,6 +22,7 @@
 #include "ParamMatcher.h"
 
 #include "Mojo/LITDialect/LITOps.h"
+#include "Mojo/MojoParser/ASTDecl.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -35,7 +36,8 @@ SpecializeInf::SpecializeInf(ASTDecl &declScope, const ExprNode *expr,
                              PogListAttr declaredParamPogs, SMLoc defaultLoc,
                              bool discardError)
     : InferenceState(declScope, declaredParamTypes, declaredParamPogs,
-                     defaultLoc, discardError),
+                     defaultLoc, discardError,
+                     declScope.getShared().noAssumptions),
       expr(expr) {}
 
 LogicalResult SpecializeInf::matchValueType(ASTType actualType, size_t argIdx,
@@ -110,7 +112,8 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
       expectedType = evaluator.getReboundType(expectedType);
       if (!hasReferences(expectedType)) {
         if (IREmitter::canZeroCostConvert(valueRefType, expectedType,
-                                          getShared(), getDeclScope())
+                                          getShared(), getDeclScope(),
+                                          getShared().noAssumptions)
                 .isTrue())
           return success();
         return failure();

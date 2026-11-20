@@ -255,13 +255,28 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
         state_dict: Mapping[str, Any],
         outputs: ModelOutputConfig,
     ) -> Self:
-        """Returns the config completed with the pipeline's outputs.
+        """Returns the config completed with the checkpoint and the outputs.
 
-        Routed experts that arrive packed take their MXFP4 quantization. A
-        speculative pairing's outputs carry the layers its draft taps, which
-        serving leaves unset.
+        Routed experts that arrive packed take their MXFP4 quantization. The
+        KDA layers declare ``A_log`` at the length the checkpoint stores it,
+        which may pad the per-head coefficients with zeros. A speculative
+        pairing's outputs carry the layers its draft taps, which serving
+        leaves unset.
         """
-        del huggingface_config, state_dict
+        del huggingface_config
+        model = self.model
+        if model.kda_layer_indices:
+            a_log = state_dict.get(
+                f"layers.{model.kda_layer_indices[0]}.attention.a_log"
+            )
+            if a_log is not None:
+                stored = int(a_log.shape[0])
+                if stored < model.kda_num_heads:
+                    raise ValueError(
+                        f"Kimi K3: A_log stores {stored} coefficients, fewer"
+                        f" than the {model.kda_num_heads} KDA heads."
+                    )
+                model = replace(model, kda_a_log_size=stored)
         quant_config = None
         if self.dtype == DType.uint8:
             quant_config = QuantConfig.mxfp4(
@@ -272,6 +287,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             )
         return replace(
             self,
+            model=model,
             quant_config=quant_config,
             return_logits=outputs.return_logits,
             return_hidden_states=outputs.return_hidden_states,

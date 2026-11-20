@@ -53,6 +53,7 @@ def test_indexer_capture_identity_matches_physical_mla(
     )
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.model.decode_context_parallel_degree = 1
     pipeline_config.speculative = None
     params = config_cls.construct_kv_params(
         huggingface_config=huggingface_config,

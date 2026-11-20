@@ -40,6 +40,7 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn._graph_ops import _mixed_step_split_value
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
@@ -346,7 +347,8 @@ def select_index_keys(
     """Returns ``[T, top_k]`` int32 visible key ids, unordered, ``-1``-padded.
 
     Args:
-        leaf: The index-key leaf.
+        leaf: The index-key leaf. Its mixed-step split record splits a
+            mixed step's decode rows from its prefill rows.
         q: :func:`quantize_queries`'s output.
         offsets: ``[B + 1]`` uint32 ragged row offsets.
         layer_idx: Host uint32 layer index within the leaf.
@@ -365,6 +367,7 @@ def select_index_keys(
             offsets,
             *_cache_values(leaf),
             layer_idx,
+            _mixed_step_split_value(leaf.mixed_step_split),
         ],
         out_types=[TensorType(DType.int32, [t, top_k], packed.device)],
         parameters={
@@ -410,7 +413,8 @@ def select_index_keys_block_topk(
     unspecified.
 
     Args:
-        leaf: The index-key leaf.
+        leaf: The index-key leaf. Its mixed-step split record splits a
+            mixed step's decode rows from its prefill rows.
         q: :func:`quantize_queries`'s output.
         offsets: ``[B + 1]`` uint32 ragged row offsets.
         positions: ``[T]`` query positions.
@@ -438,6 +442,7 @@ def select_index_keys_block_topk(
             offsets,
             *_cache_values(leaf),
             layer_idx,
+            _mixed_step_split_value(leaf.mixed_step_split),
         ],
         out_types=[
             TensorType(DType.int32, [t, top_k], device),
@@ -468,7 +473,8 @@ def select_index_keys_masked(
     """:func:`select_index_keys` among the keys of each row's kept blocks.
 
     Args:
-        leaf: The index-key leaf.
+        leaf: The index-key leaf. Its mixed-step split record splits a
+            mixed step's decode rows from its prefill rows.
         q: :func:`quantize_queries`'s output.
         offsets: ``[B + 1]`` uint32 ragged row offsets.
         kept: ``[T, kept]`` int32 kept block ids, ``-1`` for none; block
@@ -491,6 +497,7 @@ def select_index_keys_masked(
             offsets,
             *_cache_values(leaf),
             layer_idx,
+            _mixed_step_split_value(leaf.mixed_step_split),
         ],
         out_types=[TensorType(DType.int32, [t, top_k], packed.device)],
         parameters={

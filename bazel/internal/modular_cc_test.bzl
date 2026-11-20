@@ -62,7 +62,8 @@ def modular_cc_test(
     extra_data = RUNTIME_SANITIZER_DATA + [
         "@llvm-project//llvm:llvm-symbolizer",
     ]
-    extra_env = env_for_available_tools() | GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(exec_properties) | {
+    all_exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties
+    extra_env = env_for_available_tools() | GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(all_exec_properties) | {
         "GTEST_COLOR": "1",
         "CC_CODE_COVERAGE_SCRIPT": "bazel/internal/cc-toolchain/collect-cc-coverage.sh",
     }
@@ -106,7 +107,7 @@ def modular_cc_test(
 
     cc_test(
         name = name,
-        exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties,
+        exec_properties = all_exec_properties,
         tags = tags,
         timeout = timeout,
         toolchains = toolchains + extra_toolchains,

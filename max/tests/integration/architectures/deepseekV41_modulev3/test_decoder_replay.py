@@ -49,6 +49,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
     build_kv_params,
     extra_input_names,
+    extra_inputs,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (
     RaggedRows,
@@ -385,3 +386,36 @@ def test_batch_processor_stages_the_keep_all_plan_only_when_exported(
             np.testing.assert_array_equal(
                 extras["replay.rank_longest"].to_numpy(), [6]
             )
+
+
+def test_host_inputs_are_static_tables_or_capture_keyed_replay() -> None:
+    """Every host input of the decode graph is safe to bake into a capture.
+
+    The Engram tables are static pinned bytes. The two replay inputs are fixed
+    by the capture key on a decode step, the only step capture replays: every
+    row is one token and DP padding equalizes the replicas. Everything else is
+    a device input, which a replay refreshes.
+    """
+    config = V41Config.from_hf(
+        {
+            "text_config": vars(
+                _text(decoder_replay=True, engram_lookback_history=True)
+            )
+        }
+    )
+    for degree in (1, 4):
+        host = {
+            name
+            for name, kind in extra_inputs(
+                config,
+                [DeviceRef.GPU(r) for r in range(degree)],
+                degree,
+                verify_rows=True,
+            )
+            if kind.device == DeviceRef.CPU()
+            and not name.startswith("engram_table_")
+        }
+        assert host == {
+            "replay.rank_longest",
+            *(["replay.host_kept_offsets"] if degree > 1 else []),
+        }

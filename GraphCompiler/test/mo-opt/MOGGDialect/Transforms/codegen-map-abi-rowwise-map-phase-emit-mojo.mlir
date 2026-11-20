@@ -158,3 +158,80 @@ mo.graph @softmax(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   }
   mo.output %r : !mo.tensor<[8, 128], f32>
 }
+
+// rms_norm(rms_norm(x) + residual) written as MAP IR: a cache computes
+// h = rms_norm(x) + residual once per element, stores it, and the second fold
+// and the map phase read it back through the cached overloads, which take the
+// cache first and its `compute` last. The fold of the cache isn't a phase of
+// its own, and the row doesn't split.
+// CHECK-LABEL: def __iter_opaque_3(
+// CHECK:       var [[ROW7:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.bfloat16, 1, {{.*}}, keep_tile = True](row_coords, layout.Idx[128], row_ctx, [[LOAD7:load_+[0-9]+]])
+// CHECK:       [[ROW7]].reduce[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = params.simd_width]]({{contribute_+[0-9]+}}, [[LOAD7]])
+// CHECK:       var [[INV7:.*]] = builtin_kernels.elementwise.Rsqrt.elementwise
+// CHECK-NEXT:  @inline(.always)
+// CHECK-NEXT:  def [[COMPUTE7:compute_+[0-9]+]][w : Int](tile: SIMD[DType.bfloat16, w], idx: {{.*}}) {var} -> SIMD[DType.bfloat16, w]:
+// CHECK-NEXT:    comptime [[AL7:.*]] = algorithm.rowwise_types.Context[params].element_alignment[DType.bfloat16, w]()
+// CHECK-NEXT:    var [[XA7:.*]] = builtin_kernels.elementwise.Cast.elementwise[out_dtype = DType.float32](tile)
+// CHECK-NEXT:    builtin_kernels.elementwise.Mul.elementwise[dtype = DType.float32]([[XA7]], [[INV7]].slice[w]())
+// CHECK:         var [[H7:.*]] = builtin_kernels.elementwise.Add.elementwise[dtype = DType.bfloat16]
+// CHECK-NEXT:    managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}simd_width = w, element_alignment = [[AL7]]]({{.*}}idx{{.*}}[[H7]]))
+// CHECK-NEXT:    return [[H7]]
+// CHECK:       var [[CACHE7:.*]] = [[ROW7]].cache[DType.bfloat16]([[COMPUTE7]])
+// CHECK-NEXT:  @inline(.always)
+// CHECK-NEXT:  def [[C7:contribute_+[0-9]+]][w : Int](tile: SIMD[DType.bfloat16, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK:       [[ROW7]].reduce[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = params.simd_width]]([[CACHE7]], [[C7]], [[LOAD7]], [[COMPUTE7]])
+// CHECK:       def [[EW7:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.bfloat16, w], {{.*}}) {var}:
+// CHECK:       [[ROW7]].elementwise([[CACHE7]], [[EW7]], [[LOAD7]], [[COMPUTE7]])
+// CHECK:       _rowwise[{{.*}}num_phases = 2, computationally_expensive = True, dtype_size = 0]
+mo.graph @residual(%x: !mo.tensor<[8, 128], bf16>, %res: !mo.tensor<[8, 128], bf16>, %g1: !mo.tensor<[128], bf16>, %g2: !mo.tensor<[128], bf16>) -> (!mo.tensor<[8, 128], bf16>, !mo.tensor<[8, 128], bf16>) {
+  %n = mo.constant <#M.dense_array<1.280000e+02> : tensor<f32>> : !mo.tensor<[], f32>
+  %r:2 = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], bf16>, %res: !mo.tensor<[8, 128], bf16>, %g1: !mo.tensor<[128], bf16>, %g2: !mo.tensor<[128], bf16>, %n: !mo.tensor<[], f32>)
+      outputs (%out: !mo.tensor<[8, 128], bf16>, %h: !mo.tensor<[8, 128], bf16>)
+      row     (%row: !map.index<2>) -> (!mo.tensor<[8, 128], bf16>, !mo.tensor<[8, 128], bf16>) {
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], bf16>
+      %va = map.call.elementwise @builtin_kernels.elementwise.Cast(%i, %v) : !map.index<2>, bf16 -> f32
+      %sq = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %va, %va) : !map.index<2>, f32, f32 -> f32
+      map.yield %sq : f32
+    }
+    %si = map.index.broadcast<#map.index.broadcast.spec<[] -> [8, 1]>> (%row) : !map.index<2> -> !map.index<0>
+    %nv = map.load %n[%si] : !mo.tensor<[], f32>
+    %ms = map.call.elementwise @builtin_kernels.elementwise.Div(%row, %acc, %nv) : !map.index<2>, f32, f32 -> f32
+    %inv = map.call.elementwise @builtin_kernels.elementwise.Rsqrt(%row, %ms) : !map.index<2>, f32 -> f32
+    %c = map.iter.cache index (%k: !map.index<2>) -> bf16 {
+      %v = map.load %x[%k] : !mo.tensor<[8, 128], bf16>
+      %va = map.call.elementwise @builtin_kernels.elementwise.Cast(%k, %v) : !map.index<2>, bf16 -> f32
+      %nx = map.call.elementwise @builtin_kernels.elementwise.Mul(%k, %va, %inv) : !map.index<2>, f32, f32 -> f32
+      %gi = map.index.broadcast<#map.index.broadcast.spec<[128] -> [8, 128]>> (%k) : !map.index<2> -> !map.index<1>
+      %gv = map.load %g1[%gi] : !mo.tensor<[128], bf16>
+      %ga = map.call.elementwise @builtin_kernels.elementwise.Cast(%gi, %gv) : !map.index<1>, bf16 -> f32
+      %y = map.call.elementwise @builtin_kernels.elementwise.Mul(%k, %nx, %ga) : !map.index<2>, f32, f32 -> f32
+      %yb = map.call.elementwise @builtin_kernels.elementwise.Cast(%k, %y) : !map.index<2>, f32 -> bf16
+      %rv = map.load %res[%k] : !mo.tensor<[8, 128], bf16>
+      %hv = map.call.elementwise @builtin_kernels.elementwise.Add(%k, %yb, %rv) : !map.index<2>, bf16, bf16 -> bf16
+      map.store %h[%k] = %hv : !mo.tensor<[8, 128], bf16>
+      map.yield %hv : bf16
+    }
+    %acc2 = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %hv = map.iter.cache.load %c[%i] : !map.index<2>, bf16
+      %ha = map.call.elementwise @builtin_kernels.elementwise.Cast(%i, %hv) : !map.index<2>, bf16 -> f32
+      %sq = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %ha, %ha) : !map.index<2>, f32, f32 -> f32
+      map.yield %sq : f32
+    }
+    %ms2 = map.call.elementwise @builtin_kernels.elementwise.Div(%row, %acc2, %nv) : !map.index<2>, f32, f32 -> f32
+    %inv2 = map.call.elementwise @builtin_kernels.elementwise.Rsqrt(%row, %ms2) : !map.index<2>, f32 -> f32
+    map.iter.map index (%j: !map.index<2>) {
+      %hv = map.iter.cache.load %c[%j] : !map.index<2>, bf16
+      %ha = map.call.elementwise @builtin_kernels.elementwise.Cast(%j, %hv) : !map.index<2>, bf16 -> f32
+      %nh = map.call.elementwise @builtin_kernels.elementwise.Mul(%j, %ha, %inv2) : !map.index<2>, f32, f32 -> f32
+      %gi = map.index.broadcast<#map.index.broadcast.spec<[128] -> [8, 128]>> (%j) : !map.index<2> -> !map.index<1>
+      %gv = map.load %g2[%gi] : !mo.tensor<[128], bf16>
+      %ga = map.call.elementwise @builtin_kernels.elementwise.Cast(%gi, %gv) : !map.index<1>, bf16 -> f32
+      %y = map.call.elementwise @builtin_kernels.elementwise.Mul(%j, %nh, %ga) : !map.index<2>, f32, f32 -> f32
+      %yb = map.call.elementwise @builtin_kernels.elementwise.Cast(%j, %y) : !map.index<2>, f32 -> bf16
+      map.store %out[%j] = %yb : !mo.tensor<[8, 128], bf16>
+    }
+  }
+  mo.output %r#0, %r#1 : !mo.tensor<[8, 128], bf16>, !mo.tensor<[8, 128], bf16>
+}

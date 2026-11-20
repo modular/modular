@@ -934,6 +934,22 @@ logit_verification_pipelines:
     kl_div_threshold: 5.0e-02
     timeout: 3600
 
+  # GLM-5.3-Flash on an 8-layer cut of the checkpoint, against transformers
+  # 5.22.2 goldens. The transformers load keeps the KDA forget-gate
+  # projections in BF16 (its FP8 skip list misses them) and skips the MTP
+  # layer. Thresholds are vLLM 0.33.0's worst distance from the same goldens.
+  zai-org/GLM-5.3-Flash-8L-float8_e4m3fn:
+    pre_submit_agents: []
+    pipeline: "glm-5.3-flash/flash-8L"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-only]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/glm-5.3-flash_flash-8L_golden/1/aa2dc8a4007f1216d4c5372ff46acd6b52f4ead95df20361b7c999cb968d4db0/glm-5.3-flash_flash-8L_golden.tar.gz"
+      json_file: "torch_glm-5.3-flash_flash-8L_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 4.0e-03
+    kl_div_threshold: 1.1e-02
+
   # MiniMax-M3 (dense-only layers) on a trimmed checkpoint, compared
   # against goldens pregenerated from the mm-sglang MiniMax-M3 fork.
   minimax/minimax3-dense-only:

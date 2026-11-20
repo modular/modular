@@ -30,7 +30,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
 from std.memory import bitcast
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import is_cpu
 
 from layout import TileTensor
@@ -574,8 +574,10 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
             Int32(num_batches),
             Int32(logical_stride0),
             Int32(logical_stride1),
-            grid_dim=grid,
-            block_dim=BLOCK,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=grid,
+                block_dim=BLOCK,
+            ),
         )
 
 

@@ -41,10 +41,7 @@ using namespace nanobind::literals;
 using namespace M;
 using namespace Driver;
 
-#if MODULAR_HAL_DEVICE_CONTEXT
-extern "C" const char *MojoHAL_DeviceContext_enableAllPeerAccess();
-extern "C" void MojoHAL_strfree(const char *s);
-#else
+#if !MODULAR_HAL_DEVICE_CONTEXT
 extern "C" const char *AsyncRT_DeviceContext_enableAllPeerAccess();
 #endif
 
@@ -1069,12 +1066,9 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
       "enable_all_peer_access",
       []() {
 #if MODULAR_HAL_DEVICE_CONTEXT
-        const char *err = MojoHAL_DeviceContext_enableAllPeerAccess();
-        if (err) {
-          std::string message(err);
-          MojoHAL_strfree(err);
-          throw std::runtime_error(message);
-        }
+        M::ErrorOrSuccess enabled = M::Driver::Device::enableAllPeerAccess();
+        if (enabled.isError())
+          throw std::runtime_error(std::string(enabled.getError()));
 #else
         const char *err = AsyncRT_DeviceContext_enableAllPeerAccess();
         if (err)

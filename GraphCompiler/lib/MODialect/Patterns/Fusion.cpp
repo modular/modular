@@ -1154,77 +1154,11 @@ struct LayerNormPattern
   }
 };
 
-struct RMSNormFusedResidualAddPattern
-    : public MO::DeviceAwareRewritePattern<OpRewritePattern,
-                                           MO::Composite::ReduceRMSNormOp> {
-  RMSNormFusedResidualAddPattern(MLIRContext *ctx)
-      : DeviceAwareRewritePattern(ctx, 3) {}
-
-  LogicalResult
-  deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp op,
-                             MO::DeviceAwareRewriter &rewriter) const override {
-    // Matches rms_norm(rms_norm(input) + residual_input).
-    auto addOp = op.getInput().getDefiningOp<MO::AddOp>();
-    if (!addOp)
-      return rewriter.notifyMatchFailure(
-          op, "first operand not from add operation");
-
-    if (addOp.getOperands().size() != 2)
-      return rewriter.notifyMatchFailure(op,
-                                         "add operation expects 2 operands");
-
-    Value innerRmsNormResult = addOp.getOperand(0);
-    Value residualInput = addOp.getOperand(1);
-    auto innerRmsNorm =
-        innerRmsNormResult.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
-    if (!innerRmsNorm) {
-      innerRmsNormResult = addOp.getOperand(1);
-      residualInput = addOp.getOperand(0);
-      innerRmsNorm =
-          innerRmsNormResult.getDefiningOp<MO::Composite::ReduceRMSNormOp>();
-      if (!innerRmsNorm)
-        return rewriter.notifyMatchFailure(op, "inner rms_norm not found");
-    }
-
-    Value originalInput = innerRmsNorm.getInput();
-
-    Value gamma2 = op.getWeight();
-    ElementsAttr eps2 = op.getEpsilon();
-    ElementsAttr weightOffset2 = op.getWeightOffset();
-    // Use outer op's multiply_before_cast (inner assumed to match outer)
-    BoolAttr multiplyBeforeCast = op.getMultiplyBeforeCastAttr();
-
-    Value gamma1 = innerRmsNorm.getWeight();
-    ElementsAttr eps1 = innerRmsNorm.getEpsilon();
-    ElementsAttr weightOffset1 = innerRmsNorm.getWeightOffset();
-
-    if (!rewriter.addOps({addOp, innerRmsNorm})) {
-      return rewriter.notifyMatchFailure(
-          op, "matched ops have inconsistent devices");
-    }
-
-    // The fused operation returns two outputs: [output, intermediate]
-    // where output = rms_norm(rms_norm(input) + residual)
-    // and intermediate = rms_norm(input) + residual
-    auto fusedOp =
-        rewriter.create<MO::Composite::ReduceRMSNormFusedResidualAddOp>(
-            op.getLoc(), op.getResult().getType(), addOp.getResult().getType(),
-            originalInput, residualInput, gamma1, gamma2, eps1, eps2,
-            weightOffset1, weightOffset2, multiplyBeforeCast.getValue(),
-            op.getOutputParamDecls());
-
-    rewriter.replaceOp(op, fusedOp.getOutput());
-    rewriter.replaceAllUsesWith(addOp.getResult(), fusedOp.getIntermediate());
-
-    return mlir::success();
-  }
-};
-
 // Fuses the pre-norm boundary `rms_norm(add(a, b))` into one
 // `mo.composite.rms_norm_residual_add`, emitting both the normalized output and
 // the `a + b` intermediate so the carried residual needs no separate add. The
-// double-norm topology `rms_norm(rms_norm(x) + r)` is left to the
-// higher-benefit `RMSNormFusedResidualAddPattern`.
+// double-norm topology `rms_norm(rms_norm(x) + r)` is left to MAP fusion,
+// which makes it one rowwise kernel.
 struct RMSNormResidualAddPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
                                            MO::Composite::ReduceRMSNormOp> {
@@ -1246,8 +1180,8 @@ struct RMSNormResidualAddPattern
     Value rhs = addOp.getOperand(1);
     if (lhs.getDefiningOp<MO::Composite::ReduceRMSNormOp>() ||
         rhs.getDefiningOp<MO::Composite::ReduceRMSNormOp>())
-      return rewriter.notifyMatchFailure(
-          op, "double-norm topology handled by RMSNormFusedResidualAddPattern");
+      return rewriter.notifyMatchFailure(op,
+                                         "double-norm topology fused by MAP");
 
     if (!rewriter.addOps({addOp}))
       return rewriter.notifyMatchFailure(
@@ -3777,10 +3711,10 @@ void populateFusionPatterns(mlir::RewritePatternSet &patterns,
   patterns.add<GatherSumPattern, DecomposeSmallReduceAddPattern,
                MatmulTranspBPattern, ConcatZeroAxisPattern,
                ConvTransposeConstFilterPattern, SplitZeroAxisPattern,
-               LayerNormPattern, RMSNormFusedResidualAddPattern,
-               RMSNormResidualAddPattern, ReduceRMSNormRoPEPattern,
-               ReduceLayerNormRopeRaggedPattern, RopeRaggedSplitConcatPattern,
-               MatmulFusedPartialRMSNormPattern, BatchMatmulAdjBPattern>(ctx);
+               LayerNormPattern, RMSNormResidualAddPattern,
+               ReduceRMSNormRoPEPattern, ReduceLayerNormRopeRaggedPattern,
+               RopeRaggedSplitConcatPattern, MatmulFusedPartialRMSNormPattern,
+               BatchMatmulAdjBPattern>(ctx);
 
   patterns.add<ForceMatmulTransposeBForGPU,
                RMSNormFusedQuantizeDynamicScaledFP8Pattern,

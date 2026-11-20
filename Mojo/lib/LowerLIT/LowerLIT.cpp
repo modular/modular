@@ -29,6 +29,7 @@
 #include "Mojo/POPDialect/POPTypes.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
@@ -37,7 +38,6 @@
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
@@ -788,19 +788,6 @@ replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
   return std::make_pair(result, WalkResult::skip());
 }
 
-/// Splits `ops` into interleaved chunks and runs `fn` on each chunk in
-/// parallel, so per-chunk state such as a replacer cache is reused across ops.
-static void forEachChunk(MLIRContext *ctx, ArrayRef<Operation *> ops,
-                         llvm::function_ref<void(ArrayRef<Operation *>)> fn) {
-  size_t numChunks = std::min<size_t>(ops.size(), 512);
-  mlir::parallelFor(ctx, 0, numChunks, [&](size_t chunk) {
-    SmallVector<Operation *> chunkOps;
-    for (size_t i = chunk; i < ops.size(); i += numChunks)
-      chunkOps.push_back(ops[i]);
-    fn(chunkOps);
-  });
-}
-
 static LogicalResult lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols,
     SingletonTypeHelper &singletonTypeHelper,
@@ -1039,7 +1026,8 @@ static LogicalResult lowerAttributesAndTypes(
     for (Operation &child : region.getOps())
       topLevelOps.push_back(&child);
   }
-  forEachChunk(op->getContext(), topLevelOps, [&](ArrayRef<Operation *> ops) {
+  MLIRContext *ctx = op->getContext();
+  parallelForEachChunk(ctx, topLevelOps, [&](ArrayRef<Operation *> ops) {
     mlir::AttrTypeReplacer replacer;
     Location curOpLoc = op->getLoc();
     configure(replacer, curOpLoc);

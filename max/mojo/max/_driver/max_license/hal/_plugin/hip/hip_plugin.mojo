@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.info import CompilationTarget
 from .._trait import HalPluginHooks
 from ..._machine import DeviceRef
 from ...execution_config._amd import ExecutionConfigForTarget
 from ...extensions.hip import HIPHALExtensions
 
 
-struct HipHalPluginHooks[target: CompilationTarget](HalPluginHooks):
+struct HipHalPluginHooks(HalPluginHooks):
     comptime ExecutionConfigType[device: DeviceRef] = ExecutionConfigForTarget[
         device.spec.name
     ]

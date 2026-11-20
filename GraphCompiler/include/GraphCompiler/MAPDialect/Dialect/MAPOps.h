@@ -34,12 +34,30 @@
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+namespace M::MAP {
+template <typename ConcreteType>
+class StoresElements
+    : public mlir::OpTrait::TraitBase<ConcreteType, StoresElements> {};
+} // namespace M::MAP
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
 #include "GraphCompiler/MAPDialect/Dialect/MAP.h.inc"
+
+namespace M::MAP {
+// Defined here, where the cache ops are complete.
+inline IterCacheOp RowwisePhaseOpInterface::getReadCache() {
+  IterCacheOp cache;
+  (*this)->walk<mlir::WalkOrder::PreOrder>([&](IterCacheLoadOp load) {
+    cache = load.getCache().getDefiningOp<IterCacheOp>();
+    return mlir::WalkResult::interrupt();
+  });
+  return cache;
+}
+} // namespace M::MAP
 
 namespace M::MAP {
 

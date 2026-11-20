@@ -13,8 +13,8 @@
 """CPU checks of the DSpark draft's checkpoint contract. No graph, no GPU.
 
 Every tensor name below comes from the published checkpoint's safetensors
-header (read header-only; the file itself is 7 GB), so the round-trip pins
-the real names, and the module-tree check pins the real shapes.
+header (read header-only; the file itself is 7 GB), so the rules see the
+real names, and the module-tree check pins the real shapes.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import glob
 import json
 import os
 import struct
+from dataclasses import fields
 
 import numpy as np
 import pytest
@@ -36,12 +37,15 @@ from max.nn.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.dspark.config import (
     parse_k3_dspark_config,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.dspark.dspark import K3DSpark
-from max.pipelines.architectures.kimi_k3_modulev3.dspark.weight_adapters import (
-    convert_k3_dspark_state_dict,
-    expected_k3_dspark_weight_names,
+from max.pipelines.architectures.kimi_k3_modulev3.dspark.model_config import (
+    K3DSparkDraft,
+    K3DSparkModuleConfig,
 )
-from max.tensor import default_device, default_dtype
+from max.pipelines.architectures.kimi_k3_modulev3.dspark.weight_adapters import (
+    k3_dspark_weight_rules,
+)
+from max.pipelines.lib import WeightTransform
+from max.pipelines.lib.module_registration import construct_module, device_mesh
 
 CONFIG = parse_k3_dspark_config(DRAFT_CONFIG)
 CHECKPOINT = os.path.expanduser(
@@ -63,71 +67,37 @@ def _weight(name: str) -> WeightData:
     )
 
 
-def _checkpoint() -> dict[str, WeightData]:
-    return {name: _weight(name) for name in REAL_HEADER}
-
-
-def test_round_trips_every_real_checkpoint_name() -> None:
-    weights = convert_k3_dspark_state_dict(_checkpoint(), CONFIG)
-    expected = expected_k3_dspark_weight_names(CONFIG)
-    assert set(weights) == expected
-    # No renames: every loaded tensor keeps the name the checkpoint gave it.
-    for name, value in weights.items():
-        assert value.name == name
-
-
-def test_drops_the_confidence_head() -> None:
-    """The driver consumes no confidence head, so its tensors never load."""
-    weights = convert_k3_dspark_state_dict(_checkpoint(), CONFIG)
-    assert not any(name.startswith("confidence_head.") for name in weights)
-
-
-def test_expected_names_match_the_real_header() -> None:
-    expected = expected_k3_dspark_weight_names(CONFIG)
-    assert expected == {
-        name for name in REAL_HEADER if not name.startswith("confidence_head.")
-    }
-
-
-def test_refuses_a_missing_tensor() -> None:
-    state = _checkpoint()
-    del state["layers.3.self_attn.o_proj.weight"]
-    with pytest.raises(ValueError, match="Missing"):
-        convert_k3_dspark_state_dict(state, CONFIG)
-
-
-def test_refuses_an_unknown_tensor() -> None:
-    state = _checkpoint()
-    state["lm_head.weight"] = _weight("lm_head.weight")
-    with pytest.raises(ValueError, match="unexpected"):
-        convert_k3_dspark_state_dict(state, CONFIG)
-
-
-def test_module_tree_matches_the_real_header_shapes() -> None:
+def test_checkpoint_covers_the_registered_draft() -> None:
+    """The rules load the checkpoint as stored, minus the confidence head:
+    name for name and shape for shape, the parameters of the draft the
+    framework constructs."""
+    loaded = WeightTransform(k3_dspark_weight_rules(None)).apply_data(
+        {name: _weight(name) for name in REAL_HEADER}
+    )
     # The drafter serves only through the fused MLA kernels, so the leaf
-    # its module builds against is the latent one the kernels require,
-    # which also pins the latent-width contract the checkpoint must carry.
-    with F.lazy(), default_dtype(DType.bfloat16), default_device(CPU()):
-        draft = K3DSpark(
-            CONFIG,
-            MLAKVCacheParams(
-                dtype=DType.bfloat16,
-                head_dim=CONFIG.kv_lora_rank + CONFIG.qk_rope_head_dim,
-                num_layers=CONFIG.num_hidden_layers,
-                devices=[DeviceRef.CPU()],
-                page_size=128,
-                num_q_heads=CONFIG.num_attention_heads,
-            ),
-            max_seq_len=64,
-            mla_buffer_size=128,
+    # its module builds against is the latent one the kernels require.
+    config = K3DSparkModuleConfig(
+        **{f.name: getattr(CONFIG, f.name) for f in fields(CONFIG)},
+        kv_params=MLAKVCacheParams(
+            dtype=DType.bfloat16,
+            head_dim=CONFIG.kv_lora_rank + CONFIG.qk_rope_head_dim,
+            num_layers=CONFIG.num_hidden_layers,
+            devices=[DeviceRef.CPU()],
+            page_size=128,
+            num_q_heads=CONFIG.num_attention_heads,
+        ),
+        max_seq_len=64,
+        mla_buffer_size=128,
+    )
+    with F.lazy():
+        draft = construct_module(
+            K3DSparkDraft, config, device_mesh([CPU()], data_parallel_degree=1)
         )
-        state = dict(draft.parameters)
-    assert set(state) == expected_k3_dspark_weight_names(CONFIG)
-    for name, (_, shape) in REAL_HEADER.items():
-        if name.startswith("confidence_head."):
-            continue
-        got = tuple(int(dim) for dim in state[name].shape)
-        assert got == shape, f"{name}: module {got} vs checkpoint {shape}"
+    shapes = {
+        name: tuple(int(dim) for dim in value.shape)
+        for name, value in draft.parameters
+    }
+    assert shapes == {name: REAL_HEADER[name][1] for name in loaded}
 
 
 def test_real_header_matches_the_embedded_one() -> None:

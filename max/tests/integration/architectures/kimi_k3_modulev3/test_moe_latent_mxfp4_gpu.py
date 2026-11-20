@@ -251,9 +251,9 @@ def _build(
         weights["routed_expert_up_proj_weight"]
     )
     layer.routed_expert_norm.weight = bf16(weights["routed_expert_norm_weight"])
-    layer.shared_experts.gate_up_proj.weight = bf16(
-        weights["shared_gate_up_weight"]
-    )
+    shared_gate, shared_up = np.split(weights["shared_gate_up_weight"], 2)
+    layer.shared_experts.gate_proj.weight = bf16(shared_gate)
+    layer.shared_experts.up_proj.weight = bf16(shared_up)
     layer.shared_experts.down_proj.weight = bf16(weights["shared_down_weight"])
     if mxfp4 is not None:
         assign_experts(

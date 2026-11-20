@@ -343,12 +343,12 @@ def cast_uint_to_fp4e2m1[
     comptime for i in range(in_width):
         comptime for shift in range(0, num_fp4_values):
             comptime BitsType = type_of(x[i].to_bits())
-            var x = (
+            var nibble = (
                 x[i].to_bits() >> BitsType(shift * FP4_E2M1_WIDTH)
             ) & BitsType(FP4_E2M1_MASK)
-            result[i * num_fp4_values + shift] = E2M1_TO_FLOAT32[Int(x)].cast[
-                out_dtype
-            ]()
+            result[i * num_fp4_values + shift] = E2M1_TO_FLOAT32[
+                Int(nibble)
+            ].cast[out_dtype]()
     return result
 
 
@@ -574,6 +574,20 @@ def cast_float_to_fp4e2m1_amd[
     return packed
 
 
+@inline(.always)
+def _sf_coord[
+    SF_VECTOR_SIZE: Int
+](mn_idx: Int, k_idx: Int) -> Tuple[Int, Int, Int, Int, Int]:
+    """Maps an `(mn, k)` element position to its 5D scale-factor coordinate."""
+    return (
+        mn_idx // SF_MN_GROUP_SIZE,
+        k_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+        mn_idx % SF_ATOM_M[0],
+        (mn_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+        (k_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+    )
+
+
 def set_scale_factor[
     scales_dtype: DType,
     width: SIMDLength,
@@ -608,14 +622,7 @@ def set_scale_factor[
     comptime assert scales_tensor.flat_rank >= 5, "scales_tensor must be 5D"
 
     scales_tensor.store(
-        (
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE // SF_ATOM_M[0]),
-            (col_idx // SF_VECTOR_SIZE % SF_ATOM_K),
-        ),
-        scale_value,
+        _sf_coord[SF_VECTOR_SIZE](row_idx, col_idx), scale_value
     )
 
 
@@ -651,13 +658,7 @@ def get_scale_factor[
     ), "scales_tensor must be 5D for non-batched scales tensor"
 
     return rebind[Scalar[scales_dtype]](
-        scales_tensor[
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-        ]
+        scales_tensor[_sf_coord[SF_VECTOR_SIZE](row_idx, col_idx)]
     )
 
 
@@ -693,17 +694,8 @@ def set_batched_scale_factor[
         scales_tensor.flat_rank == 6
     ), "scales_tensor must be 6D for batched scales tensor"
 
-    scales_tensor.store(
-        (
-            batch_idx,
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE // SF_ATOM_M[0]),
-            (col_idx // SF_VECTOR_SIZE % SF_ATOM_K),
-        ),
-        scale_value,
-    )
+    var c = _sf_coord[SF_VECTOR_SIZE](row_idx, col_idx)
+    scales_tensor.store((batch_idx, c[0], c[1], c[2], c[3], c[4]), scale_value)
 
 
 def convert_ref_scales_to_mxfp8_format[

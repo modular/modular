@@ -15,8 +15,7 @@
 Graph-level checks, ahead of the end-to-end pair in
 ``test_spec_parity.py`` (neither of them needs an accelerator):
 
-* the adapter registry routes the ModuleV3 target to the K3 adapter, past
-  the V2 graph-API entry its base name maps to;
+* the adapter registry routes the ModuleV3 target to the K3 adapter;
 * the verify hands the target's ``forward`` the very graph inputs the
   driver decoded -- so the KDA pools the rollback folds are the buffers
   the forward mutated, never copies.
@@ -136,14 +135,7 @@ def _per_device_leaves(
 
 
 def test_the_registry_routes_the_modulev3_target_to_its_adapter() -> None:
-    """The ModuleV3 variant reaches the K3 adapter; the base name keeps the
-    V2 graph-API entry a private build serves."""
-    assert (
-        spec_adapters_registry._TARGET_ADAPTERS[
-            "KimiK3ForConditionalGeneration"
-        ]
-        == "kimi_k3_spec"
-    )
+    """The ModuleV3 variant reaches the K3 adapter."""
     # The production gate: the spec pipeline pairs this target only when
     # an adapter is registered under its exact architecture name.
     assert spec_adapters_registry.has_adapter(
@@ -286,13 +278,17 @@ def _pairing_kv_tree(
 def _declared_signature(
     kv_params: MultiKVCacheParams,
 ) -> list[TensorType | BufferType]:
-    """The declared input list the driver builds, extent pair last."""
+    """The declared input list the driver builds, distributed inputs and all."""
     device = kv_params.devices[0]
+    cpu = DeviceRef.CPU()
     return [
         TensorType(DType.int64, ["total_seq_len"], device=device),
         TensorType(DType.uint32, ["input_row_offsets_len"], device=device),
-        TensorType(DType.int64, ["return_n_logits"], device=DeviceRef.CPU()),
+        TensorType(DType.uint32, ["input_row_offsets_len"], device=cpu),
+        TensorType(DType.int64, ["return_n_logits"], device=cpu),
+        TensorType(DType.int64, [2], device=cpu),
         *kv_params.flattened_kv_inputs(),
+        *(TensorType(DType.int32, [1], device=cpu) for _ in kv_params.devices),
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
         TensorType(DType.uint64, ["batch_size"], device=device),
         TensorType(DType.float32, ["batch_size"], device=device),
@@ -300,7 +296,6 @@ def _declared_signature(
         TensorType(DType.int64, [], device=DeviceRef.CPU()),
         TensorType(DType.float32, ["batch_size"], device=device),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
-        TensorType(DType.int32, [2], device=DeviceRef.CPU()),
     ]
 
 
@@ -449,7 +444,7 @@ def test_the_export_contract_records_nothing_outside_the_frozen_contract() -> (
 
 
 def test_the_export_contract_raises_only_on_unbuildable_states() -> None:
-    """A block past the draft width, or no trailing extent."""
+    """A block past the draft width."""
     devices = [DeviceRef.CPU(0), DeviceRef.CPU(1)]
     speculative = SpeculativeConfig(
         speculative_method="dspark",
@@ -468,19 +463,11 @@ def test_the_export_contract_raises_only_on_unbuildable_states() -> None:
             _declared_signature(kv_params),
             False,
         )
-    signature = _declared_signature(kv_params)
-    with pytest.raises(ValueError, match="extent pair"):
-        export_contract(
-            speculative,
-            draft_config,
-            None,
-            kv_params,
-            signature[:-1],
-            False,
-        )
+
     # A stochastic build records the acceptance it verifies with, so the
     # frozen contract's validator can cross-check the sidecar's own claim
     # against it.
+    signature = _declared_signature(kv_params)
     stochastic = SpeculativeConfig(
         speculative_method="dspark",
         num_speculative_tokens=_DRAFT_WIDTH,

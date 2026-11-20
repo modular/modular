@@ -32,6 +32,21 @@ _transitioned_mojo_library = rule(
     },
 )
 
+# CI skips the parameter verifier when it precompiles a package outside
+# `Mojo/`. The checks find compiler bugs rather than errors in the package, and
+# the compiler's own tree keeps them. `--config=parameter-verifier` keeps them
+# everywhere, for the nightly job that still runs them.
+_CI_PRECOMPILE_COPTS = select({
+    "//:ci_skips_parameter_verifier": ["--run-parameter-verifier=false"],
+    "//conditions:default": [],
+})
+
+def _verify_parameters_copts():
+    package = native.package_name()
+    if package == "Mojo" or package.startswith("Mojo/"):
+        return []
+    return _CI_PRECOMPILE_COPTS
+
 def mojo_library(
         name,
         srcs,
@@ -99,7 +114,7 @@ def mojo_library(
         testonly = testonly,
         tags = ["mojo-fixits"] + tags,
         additional_compiler_inputs = additional_compiler_inputs,
-        copts = copts + ignore_deprecated_copts,
+        copts = copts + ignore_deprecated_copts + _verify_parameters_copts(),
         import_path = import_path,
         target_compatible_with = target_compatible_with,
         **library_kwargs

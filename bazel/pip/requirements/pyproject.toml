@@ -201,7 +201,7 @@ common = [
   "tqdm==4.66.5",
   # vllm 0.33.0 needs newer versions of these; same reason as above.
   "filelock==3.16.1",
-  "multidict==6.7.1",
+  "multidict==6.9.1",
   "requests==2.32.3",
   "safetensors==0.6.2",
 ]
@@ -336,7 +336,7 @@ nvidia-sglang = [
   "tqdm==4.66.5",
   # vllm 0.33.0 needs newer versions of these; same reason as above.
   "filelock==3.16.1",
-  "multidict==6.7.1",
+  "multidict==6.9.1",
   "requests==2.32.3",
   "safetensors==0.6.2",
   "tokenspeed-triton==3.8.10.post20260721",
@@ -347,7 +347,7 @@ aiperf = [
   # vllm 0.33.0 needs newer versions of these; pinning keeps aiperf on the
   # versions template.py's @multiple aliases select.
   "filelock==3.16.1",
-  "multidict==6.7.1",
+  "multidict==6.9.1",
   "requests==2.32.3",
   "safetensors==0.6.2",
   "transformers>=5.12.0,<5.13.0",

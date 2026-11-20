@@ -58,7 +58,7 @@ func.func @mapOutsideRowwise() {
 
 func.func @tileLoadOutsidePhase(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor) {
   mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cap = %x : !mogg.tensor} device = "cpu" {
-    // expected-error @below{{expects parent op to be one of 'mogg.rowwise.reduce, mogg.rowwise.map'}}
+    // expected-error @below{{expects parent op to be one of 'mogg.rowwise.reduce, mogg.rowwise.map, mogg.rowwise.cache'}}
     %v = mogg.rowwise.tile.load : !mogg.simd<f32>
   }
   return
@@ -210,6 +210,125 @@ func.func @staticAndDynamicLimit(%shape: !mogg.shape, %ctx: !mogg.context, %limi
       mogg.yield %v : !mogg.simd<f32>
     }
     mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+  }
+  return
+}
+
+// -----
+
+func.func @cacheBeforeTileFold(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.tile (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    // expected-error @below{{must follow a fold of the tile}}
+    %c = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load %c : !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// -----
+
+func.func @cacheWithoutMapPhase(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.tile (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    // expected-error @below{{must be followed by a map phase}}
+    %c = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.emit {
+      mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// -----
+
+func.func @cacheStoresAtRow(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.tile (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    // expected-error @below{{must store at its own index}}
+    %c = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.tensor.store %co[%row] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load %c : !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// -----
+
+func.func @cacheAndTileInOnePhase(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.tile (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %c = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      // expected-error @below{{must be the only source of its phase}}
+      %v = mogg.rowwise.cache.load %c : !mogg.simd<f32>
+      %t = mogg.rowwise.tile.load : !mogg.simd<f32>
+      %r = builtin.unrealized_conversion_cast %v, %t : !mogg.simd<f32>, !mogg.simd<f32> to !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %r : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// -----
+
+func.func @cacheLoadOfNonCache(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.tile (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      // expected-error @below{{reads a value that isn't a mogg.rowwise.cache}}
+      %v = mogg.rowwise.cache.load %p : !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
   }
   return
 }

@@ -1231,13 +1231,12 @@ StructDeclOp::getConformanceCondition(StringRef traitName) {
 
     // A constraint the struct's own trailing where-clause precludes is an
     // opt-out.
-    SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
-        getSignature().getParamListAttrs().getBodyConstraints(),
-        [](ConstraintAttr c) { return c.getProposition(); });
-    if (!bodyPropositions.empty() &&
+    ArrayRef<ConstraintAttr> bodyConstraints =
+        getSignature().getParamListAttrs().getBodyConstraints();
+    if (!bodyConstraints.empty() &&
         isPropositionPrecluded(IndexRefRemapper(getParamsAttr())
                                    .replace(constraint.getProposition()),
-                               bodyPropositions))
+                               buildAssumptions(bodyConstraints, getContext())))
       return std::nullopt;
 
     return constraint;

@@ -259,6 +259,8 @@ def DeviceGraphDeviceContextOp : MGP_DeviceGraphOp<"device_context", [
 
   let assemblyFormat =
     "$graphBuilder attr-dict `:` qualified(type($deviceContext))";
+
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//

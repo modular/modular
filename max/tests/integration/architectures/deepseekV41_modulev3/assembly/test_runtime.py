@@ -105,7 +105,7 @@ def test_registered_runtime_takes_text_and_images() -> None:
         GraphRole.DECODER,
         GraphRole.VISION,
     }
-    assert not deepseekV41_modulev3_arch.supports_device_graph_capture
+    assert deepseekV41_modulev3_arch.supports_device_graph_capture
     assert not deepseekV41_modulev3_arch.supports_empty_batches
     # The data/expert-parallel shapes are wired, so a multi-GPU launch
     # passes config validation and serves DP attention + EP MoE.

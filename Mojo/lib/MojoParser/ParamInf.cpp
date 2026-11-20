@@ -106,11 +106,11 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                    ArrayRef<Type> declaredParamTypes,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
                    ASTDecl *declIfDirect, bool discardError,
-                   DeferredTypingContext *deferredTypingContext,
-                   ArrayRef<ConstraintAttr> additionalAssumptions)
+                   TypedAttr additionalAssumptions,
+                   DeferredTypingContext *deferredTypingContext)
     : InferenceState(paramBinding.declScope, declaredParamTypes,
                      declaredParamPogs, paramBinding.getExprLoc(), discardError,
-                     deferredTypingContext, additionalAssumptions),
+                     additionalAssumptions, deferredTypingContext),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       deferredGivenParams(declaredParamTypes.size(), false),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
@@ -396,7 +396,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   if (!hasReferences(expectedType)) {
     auto conversion = IREmitter::classifyImplicitConversionWithDetails(
         {argVal, operand.expr}, expectedType, getDeclScope(),
-        /*additionalAssumptions=*/{}, /*deferralCtx=*/nullptr);
+        shared.noAssumptions, /*deferralCtx=*/nullptr);
     if (conversion.isYes())
       return success();
 
@@ -687,7 +687,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
 
     if (!IREmitter::canImplicitlyConvertToType(
             {candidate, binding.expr}, expectedType, emitter.getDeclScope(),
-            /*additionalAssumptions=*/{}, emitter.deferredTypingContext))
+            shared.noAssumptions, emitter.deferredTypingContext))
       return {};
 
     return emitter
@@ -1416,10 +1416,10 @@ CallParamInf::CallParamInf(const ParamBindings &paramBinding,
                            const CallOperands &callOperands,
                            const CallOperands::PogAssignment &pogAssignment,
                            OperandsNeedingOriginsList &operandsNeedingOrigins,
-                           ArrayRef<ConstraintAttr> additionalAssumptions)
+                           TypedAttr additionalAssumptions)
     : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
                allowImplicitConversions, declIfDirect, discardError,
-               /*deferredTypingContext=*/nullptr, additionalAssumptions),
+               additionalAssumptions),
       calleeSignature(calleeSignature), callOperands(callOperands),
       pogAssignment(pogAssignment),
       operandsNeedingOrigins(operandsNeedingOrigins) {}
@@ -1542,7 +1542,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       // arbitrary nested positions.
       if (!hasReferences(expectedType)) {
         if (!IREmitter::canZeroCostConvert(valueRefType, expectedType,
-                                           getShared(), getDeclScope())
+                                           getShared(), getDeclScope(),
+                                           getShared().noAssumptions)
                  .isTrue()) {
           emitWrongTypeDiag(expectedType);
           return failure();
@@ -2271,7 +2272,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
         // into matchType at some point!
         auto conversion = IREmitter::classifyImplicitConversionWithDetails(
             {eltTypeValue, operand.expr}, elementType, emitter.getDeclScope(),
-            /*additionalAssumptions=*/{},
+            shared.noAssumptions,
             /*deferralCtx=*/nullptr);
         if (!conversion.isYes()) {
           // Packs cannot be constrained by concrete types so elementType is

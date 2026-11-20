@@ -557,9 +557,8 @@ LogicalResult ListLiteralNode::buildCheckList(
   ASTType subjectType = path->type;
   auto sizedConformance =
       subjectType
-          .conformsToBuiltinTrait(
-              "Sized", getLoc(), builder.shared,
-              ASTDecl::getAssumptionsFromScope(&builder.declScope))
+          .conformsToBuiltinTrait("Sized", getLoc(), builder.shared,
+                                  builder.declScope.getScopeAssumptions())
           .first;
   if (!sizedConformance.isTrue()) {
     auto diag = builder.emitError(getLoc());
@@ -597,8 +596,8 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                          SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
 
-  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
-                                               builder.shared, {}))
+  if (subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", getLoc(), builder.shared, builder.shared.noAssumptions))
     return buildEnumCheckList(builder, subject, path, out);
 
   IREmitter emitter = builder.getParamEmitter();
@@ -721,7 +720,7 @@ LogicalResult LIT::checkEnumCaseNamesReadable(PatternMatchBuilder &builder,
   ASTType subjectType = rootPath->type;
   if (!subjectType.provenConformsToBuiltinTrait(
           "EnumLike", loc, builder.shared,
-          ASTDecl::getAssumptionsFromScope(&builder.declScope)))
+          builder.declScope.getScopeAssumptions()))
     return success();
   IREmitter emitter = builder.getParamEmitter();
   // A failed reading already reported its error.
@@ -956,8 +955,8 @@ LogicalResult AttributeRefNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
-  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
-                                               builder.shared, {})) {
+  if (subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", getLoc(), builder.shared, builder.shared.noAssumptions)) {
     IREmitter emitter = builder.getParamEmitter();
     if (subject && failed(checkEnumCaseTypeBase(emitter, subject, base, this)))
       return failure();
@@ -975,8 +974,8 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
-  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
-                                               builder.shared, {})) {
+  if (subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", getLoc(), builder.shared, builder.shared.noAssumptions)) {
     IREmitter emitter = builder.getParamEmitter();
     auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, spelling, this);
     if (!caseIndex)
@@ -2146,7 +2145,7 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
   ASTType type = path->type;
   if (type.provenConformsToBuiltinTrait(
           "EnumLike", loc, builder.shared,
-          ASTDecl::getAssumptionsFromScope(&builder.declScope))) {
+          builder.declScope.getScopeAssumptions())) {
     IREmitter emitter = builder.getParamEmitter();
     auto names = getEnumCaseNames(emitter, type, loc);
     auto isExhaustive = getEnumIsExhaustive(emitter, type, loc);
@@ -2210,7 +2209,7 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   // EnumLike root → closed or open constructor space.
   if (subjectType.provenConformsToBuiltinTrait(
           "EnumLike", matchLoc, builder.shared,
-          ASTDecl::getAssumptionsFromScope(&builder.declScope))) {
+          builder.declScope.getScopeAssumptions())) {
     IREmitter emitter = builder.getParamEmitter();
     auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
     auto isExhaustive = getEnumIsExhaustive(emitter, subjectType, matchLoc);

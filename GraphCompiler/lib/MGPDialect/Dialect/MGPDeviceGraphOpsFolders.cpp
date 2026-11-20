@@ -419,3 +419,55 @@ void DeviceGraphStagingOp::getCanonicalizationPatterns(
     RewritePatternSet &patterns, MLIRContext *ctx) {
   patterns.add<RemoveUnusedStagingResults, DeduplicateStagingResults>(ctx);
 }
+
+namespace {
+
+// The mgp.device_graph.device_context operation does not produce nodes on the
+// device graph, meaning it can be hoisted out of the device graph region.
+// This enables consumers of the context to be hoisted out as well, reducing
+// the size of the generated Mojo code.
+//
+// Given:
+//
+//  %node = mgp.device_graph.dependencies builder(%b) dependencies() {
+//  ^bb0(%builder: !mgp.device_graph.builder):
+//    %ctx = mgp.device_graph.device_context %builder : !mgp.device_context
+//    "test.record"(%builder, %ctx)
+//    mgp.device_graph.dependencies.yield
+//  }
+//
+// Produces:
+//
+//  %ctx = mgp.device_graph.device_context %b : !mgp.device_context
+//
+//  %node = mgp.device_graph.dependencies builder(%b) dependencies() {
+//  ^bb0(%builder: !mgp.device_graph.builder):
+//    "test.record"(%builder, %ctx)
+//    mgp.device_graph.dependencies.yield
+//  }
+struct HoistDeviceContextRead final
+    : public OpRewritePattern<DeviceGraphDeviceContextOp> {
+  using Base::Base;
+
+  LogicalResult matchAndRewrite(DeviceGraphDeviceContextOp op,
+                                PatternRewriter &rewriter) const override {
+    auto dependenciesOp = op->getParentOfType<DeviceGraphDependenciesOp>();
+    // Only the body's own builder reads the builder the enclosing op is
+    // recording into. A builder captured from further out is a different one.
+    if (!dependenciesOp ||
+        op.getGraphBuilder() != dependenciesOp.getBuilderBlockArgument())
+      return failure();
+
+    rewriter.modifyOpInPlace(op, [&] {
+      op.getGraphBuilderMutable().assign(dependenciesOp.getGraphBuilder());
+      rewriter.moveOpBefore(op, dependenciesOp);
+    });
+    return success();
+  }
+};
+} // namespace
+
+void DeviceGraphDeviceContextOp::getCanonicalizationPatterns(
+    RewritePatternSet &patterns, MLIRContext *ctx) {
+  patterns.add<HoistDeviceContextRead>(ctx);
+}

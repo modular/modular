@@ -114,8 +114,11 @@ def test_latent_moe_ep2_matches_single_device() -> None:
             experts_down_np,
             lambda a, device: Tensor(a, device=device).cast(DType.bfloat16),
         )
-        layer.shared_experts.gate_up_proj.weight = Tensor(
-            shared_gate_up_np, dtype=DType.float32
+        layer.shared_experts.gate_proj.weight = Tensor(
+            shared_gate_up_np[:shared_inter], dtype=DType.float32
+        ).cast(DType.bfloat16)
+        layer.shared_experts.up_proj.weight = Tensor(
+            shared_gate_up_np[shared_inter:], dtype=DType.float32
         ).cast(DType.bfloat16)
         layer.shared_experts.down_proj.weight = Tensor(
             shared_down_np, dtype=DType.float32

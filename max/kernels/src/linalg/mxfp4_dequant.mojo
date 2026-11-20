@@ -22,7 +22,7 @@ SF_VECTOR_SIZE (32) consecutive elements.
 from std.math import ceildiv
 from std.memory import bitcast
 from max.gpu import block_idx, thread_idx, grid_dim, block_dim
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig, get_gpu_target
 from max.gpu.host.info import get_gpu_info
 from max.gpu.primitives.grid_controls import (
     PDL,
@@ -417,6 +417,8 @@ def _cast_bf16_to_fp8_unit_scales(
         in_tt,
         Int32(num_rows),
         Int32(num_cols),
-        block_dim=(threads_per_row, 1, 1),
-        grid_dim=(ceildiv(blocks_per_row, threads_per_row), grid_y, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(blocks_per_row, threads_per_row), grid_y, 1),
+            block_dim=(threads_per_row, 1, 1),
+        ),
     )

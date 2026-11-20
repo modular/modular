@@ -158,6 +158,10 @@ public:
   /// skip extension lookups entirely in scopes that have none.
   const mlir::StringAttr extensionsScopeMarker;
 
+  /// The empty assumption set (True), built once since hot conversion and
+  /// conformance queries pass it on every call.
+  TypedAttr noAssumptions;
+
   /// Returns the name a scope registers extensions of `targetName` under
   /// ("extension:<targetName>"). Distinct targets with the same leaf name share
   /// it, so lookups must still check the extension's target symbol.

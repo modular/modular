@@ -63,9 +63,6 @@ from max.nn.kv_cache import (
     padded_lut_cols,
 )
 from max.nn.kv_cache.input_types import _mixed_step_decode_view
-from max.pipelines.architectures.kimi_k3_modulev3.dspark.mla_extent import (
-    spec_verify_extent,
-)
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
     kimi_k3_mla_prefill_plan,
@@ -76,8 +73,8 @@ from max.pipelines.architectures.kimi_k3_modulev3.spec_mla import (
     kimi_k3_mla_buffer_size,
     kimi_k3_mla_table_rows,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
+from max.pipelines.kv_cache.paged_kv_cache._common import (
+    cache_valid_length_for_context,
 )
 from max.pipelines.kv_cache.paged_kv_cache._mixed_step_split import (
     mixed_step_decode_width,
@@ -349,7 +346,6 @@ def _make_layer(
     heads: int,
     kv_params: MLAKVCacheParams,
     weights: dict[str, np.ndarray],
-    tp_size: int = 1,
 ) -> KimiK3MLAAttention:
     """Builds a random-weight MLA layer with production head geometry."""
     layer = KimiK3MLAAttention(
@@ -362,22 +358,12 @@ def _make_layer(
         kv_lora_rank=_KV_LORA_RANK,
         kv_params=kv_params,
         layer_idx=0,
-        tp_size=tp_size,
     )
-    layer.qkv_a_g_proj.weight = Tensor(
-        fuse_qkv_a_g_for_tp(
-            weights["q_a_proj"],
-            weights["kv_a_proj_with_mqa"],
-            weights["g_proj"],
-            tp_size,
-        ),
-        dtype=DType.float32,
-    ).cast(layer.qkv_a_g_proj.weight.dtype)
-    for name in ("q_b_proj", "kv_b_proj", "o_proj"):
+    for name, value in weights.items():
         weight = getattr(layer, name).weight
-        getattr(layer, name).weight = Tensor(
-            weights[name], dtype=DType.float32
-        ).cast(weight.dtype)
+        getattr(layer, name).weight = Tensor(value, dtype=DType.float32).cast(
+            weight.dtype
+        )
     layer.q_a_layernorm.weight = Tensor(
         np.ones(_Q_LORA_RANK, np.float32), dtype=DType.float32
     ).cast(layer.q_a_layernorm.weight.dtype)
@@ -403,9 +389,8 @@ def _plan_extent(cache_lengths: Sequence[int], rows_per_request: int) -> Tensor:
     """The host plan extent that production threads through the spec adapter.
 
     Each request's window -- its cached rows plus this call's rows --
-    page-aligned and summed, the value ``spec_verify_extent`` computes
-    for a real batch. The plan reads it host-side; passing it keeps the
-    test on the capture-safe path instead of reading the device plan
+    page-aligned and summed. The plan reads it host-side; passing it keeps
+    the test on the capture-safe path instead of reading the device plan
     back.
     """
     # The kernel reads the extent as a host scalar, so the tensor must not
@@ -651,7 +636,7 @@ def _build_tp2(
     weights: dict[str, np.ndarray],
 ) -> tuple[KimiK3MLAAttention, MLAKVCacheParams]:
     params = _kv_params(heads, devices)
-    layer = _make_layer(heads, params, weights, tp_size=len(devices))
+    layer = _make_layer(heads, params, weights)
     return tensor_parallel_mla_attention(layer, mesh), params
 
 
@@ -861,15 +846,15 @@ def test_verify8_prefill_arm_tp2_matches_tp1() -> None:
     "the fused MLA prefill/decode graph op is not interpreter-bindable"
 )
 def test_plan_extent_matches_the_host_helper_on_random_batches() -> None:
-    """The plan op's own extent equals ``spec_verify_extent`` term for term.
+    """The plan op's own extent is the host's per-request window sum.
 
-    The host helper the batch threads must reproduce what the plan kernel
-    computes on device from the runtime cache lengths and row offsets, or
-    the exact arm drifts from the plan it sizes. Random batches -- drafts
-    padded to the verify's width, as production pads them, windows
-    crossing 128-token pages -- run the real plan op and compare its
-    ``buffer_lengths`` output (the device extent the old readback arm used
-    to sync) against the helper.
+    ``k3_spec_mla_extent``'s arms are upper bounds on
+    ``sum(align_up(cache_valid_length_for_context(ctx, 0), page))``
+    (``test_spec_mla_verify_helpers.py``), so that sum must be what the
+    plan kernel computes on device from the runtime cache lengths and row
+    offsets. Random batches -- drafts padded to the verify's width, as
+    production pads them, windows crossing 128-token pages -- run the real
+    plan op and compare its ``buffer_lengths`` output against the sum.
     """
     rng = np.random.default_rng(20261118)
     device = Accelerator()
@@ -911,7 +896,7 @@ def test_plan_extent_matches_the_host_helper_on_random_batches() -> None:
             # The plan cap must not clamp the chunk (a clamped cap truncates
             # the extent itself), so charge the capture-style bound: one
             # batch of pages at the widest window -- an upper bound on the
-            # helper's per-request sum by construction.
+            # per-request sum by construction.
             widest = max(
                 cache + row
                 for cache, row in zip(cache_lengths, rows, strict=True)
@@ -926,9 +911,13 @@ def test_plan_extent_matches_the_host_helper_on_random_batches() -> None:
                 max_chunks=1,
             )
             got = int(device_length.to_numpy()[0])
-            want = spec_verify_extent(contexts, _PAGE_SIZE)
+            want = sum(
+                ceildiv(cache_valid_length_for_context(ctx, 0), _PAGE_SIZE)
+                * _PAGE_SIZE
+                for ctx in contexts
+            )
             assert got == want, (
-                f"the plan op's extent {got} differs from the host helper's"
+                f"the plan op's extent {got} differs from the host sum"
                 f" {want} on caches {cache_lengths} with rows {rows}"
             )
 

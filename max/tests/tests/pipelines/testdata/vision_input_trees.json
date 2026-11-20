@@ -333,5 +333,56 @@
         {"kind": "dict", "keys": [], "children": []}
       ]
     }
+  },
+  "lfm2_vl": {
+    "in_layouts": [
+      {"buffer": false, "dtype": "float32", "shape": ["num_patches", 768], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["num_patches", 4], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "float32", "shape": ["num_patches", 4], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["num_tiles_plus_one"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [1], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["num_image_tokens", 4], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]}
+    ],
+    "in_tree": {
+      "kind": "tuple",
+      "children": [
+        {
+          "kind": "tuple",
+          "children": [
+            {
+              "kind": "ordered_dict",
+              "keys": ["patches", "segments", "segment_bound", "fold"],
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["pixel_values", "pos_idx", "pos_w"],
+                  "children": [{"kind": "leaf"}, {"kind": "leaf"}, {"kind": "leaf"}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_segments",
+                  "keys": ["tile_offsets"],
+                  "children": [{"kind": "leaf"}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_host_max",
+                  "keys": ["max_tile_len"],
+                  "children": [{"kind": "leaf"}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_row_index",
+                  "keys": ["block_gather"],
+                  "children": [{"kind": "leaf"}]
+                }
+              ]
+            }
+          ]
+        },
+        {"kind": "dict", "keys": [], "children": []}
+      ]
+    }
   }
 }

@@ -466,8 +466,8 @@ Parameters:
     shape_types: The element types of the `shape` coordinate.
     input_shape_types: The element types of the `input_shape` coordinate.
     rank: Input and output domain rank.
-    stencil_rank: Rank of stencil subdomain slice.
-    stencil_axis: Stencil subdomain axes.
+    stencil_rank: Rank of stencil subdomain slice. Must be 2: the stencil
+        covers the spatial axes 1 and 2.
     simd_width: The SIMD vector width to use.
     dtype: The input and output data dtype.
     map_fn: A function that a point in the output domain to the input co-domain.
@@ -495,8 +495,8 @@ Parameters:
     shape_types: The element types of the `shape` coordinate.
     input_shape_types: The element types of the `input_shape` coordinate.
     rank: Input and output domain rank.
-    stencil_rank: Rank of stencil subdomain slice.
-    stencil_axis: Stencil subdomain axes.
+    stencil_rank: Rank of stencil subdomain slice. Must be 2: the stencil
+        covers the spatial axes 1 and 2.
     simd_width: The SIMD vector width to use.
     dtype: The input and output data dtype.
     MapFnType: A closure maps a point in the output domain to input co-domain bounds.

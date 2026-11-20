@@ -800,7 +800,7 @@ TriBool ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
   // If it doesn't conform to the corresponding trait. Only return `no`
   // (provably non-trivial) when we can definitively prove non-conformance.
   auto [conformanceResult, traitDecl] =
-      conformsToBuiltinTrait(traitName, loc, shared, {});
+      conformsToBuiltinTrait(traitName, loc, shared, shared.noAssumptions);
   if (conformanceResult.isFalse())
     return TriBool::no();
 
@@ -878,7 +878,7 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
   // depends on unresolved constraints (`unknown`), return false and let
   // the constraint system prove it in the appropriate context.
   return provenConformsToBuiltinTrait(traitName, typeDecl->getLoc(), shared,
-                                      ASTDecl::getAssumptionsFromScope(&scope));
+                                      scope.getScopeAssumptions());
 }
 
 /// Return true if this type is implicitly copyable, either because it is
@@ -915,7 +915,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
   // concrete parameter bindings are available to evaluate conditional
   // conformance constraints — matching isCopyable's behavior.
   return provenConformsToBuiltinTrait("Movable", typeDecl->getLoc(), shared,
-                                      ASTDecl::getAssumptionsFromScope(&scope));
+                                      scope.getScopeAssumptions());
 }
 
 TraitType ASTType::getProvidedTrait(SharedState &shared) {
@@ -938,9 +938,8 @@ TraitType ASTType::getProvidedTrait(SharedState &shared) {
   return evaluator.replace(trait);
 }
 
-TriBool
-ASTType::doesConformTo(TraitType trait, SharedState &shared,
-                       ArrayRef<ConstraintAttr> callerAssumptions) const {
+TriBool ASTType::doesConformTo(TraitType trait, SharedState &shared,
+                               TypedAttr callerAssumptions) const {
   // FIXME: this seems pretty wrong, `getDecl` is type depth insensitive,
   // meaning that it is true for `meta<meta<!struct>> conforms_to AnyType`...
   ASTDecl *typeDecl = getDecl(shared);
@@ -949,9 +948,9 @@ ASTType::doesConformTo(TraitType trait, SharedState &shared,
   return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions);
 }
 
-ConstraintResult ASTType::doesConformToWithDetails(
-    TraitType trait, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) const {
+ConstraintResult
+ASTType::doesConformToWithDetails(TraitType trait, SharedState &shared,
+                                  TypedAttr callerAssumptions) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return ConstraintResult::no({});
@@ -962,9 +961,10 @@ ConstraintResult ASTType::doesConformToWithDetails(
 /// Given a standard trait like Copyable, look up the conformance.  On
 /// success, the ASTDecl of the trait itself is returned, it is otherwise
 /// null.
-std::pair<TriBool, ASTDecl *> ASTType::conformsToBuiltinTrait(
-    StringRef traitName, llvm::SMLoc loc, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) const {
+std::pair<TriBool, ASTDecl *>
+ASTType::conformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                                SharedState &shared,
+                                TypedAttr callerAssumptions) const {
   TraitASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, loc);
   if (!traitDecl)
     return {TriBool::no(), {}};
@@ -980,9 +980,9 @@ std::pair<TriBool, ASTDecl *> ASTType::conformsToBuiltinTrait(
 
 /// This returns true if the current type unconditionally conforms to the
 /// specified builtin trait, e.g. "Movable".
-bool ASTType::provenConformsToBuiltinTrait(
-    StringRef traitName, llvm::SMLoc loc, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) const {
+bool ASTType::provenConformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                                           SharedState &shared,
+                                           TypedAttr callerAssumptions) const {
   auto [conformanceResult, traitDecl] =
       conformsToBuiltinTrait(traitName, loc, shared, callerAssumptions);
   return conformanceResult.isTrue();

@@ -18,7 +18,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from layout import (
@@ -695,10 +695,15 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     c_tma_op,
                     c_device.as_unsafe_any_origin(),
                     Index(M, N, K),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(
+                            grid_shape_adjusted[0],
+                            grid_shape_adjusted[1],
+                        ),
+                        block_dim=(num_threads),
+                        shared_mem_bytes=smem_size,
+                    ),
                     host_args=(epilogue_fn, compute_fn),
-                    grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
-                    block_dim=(num_threads),
-                    shared_mem_bytes=smem_size,
                 )
             else:
                 comptime kernel = matmul_kernel_regular[
@@ -727,10 +732,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     b_device.as_imm().as_unsafe_any_origin(),
                     c_device.as_unsafe_any_origin(),
                     lut_ptr,
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                        block_dim=(num_threads),
+                        shared_mem_bytes=smem_size,
+                    ),
                     host_args=(epilogue_fn, compute_fn),
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(num_threads),
-                    shared_mem_bytes=smem_size,
                 )
         else:
             var a_tma_op = create_tensor_tile[
@@ -774,10 +781,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
                     a_device.as_imm().as_unsafe_any_origin(),
                     c_device.as_unsafe_any_origin(),
                     lut_ptr,
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                        block_dim=(num_threads),
+                        shared_mem_bytes=smem_size,
+                    ),
                     host_args=(epilogue_fn, compute_fn),
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(num_threads),
-                    shared_mem_bytes=smem_size,
                 )
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
@@ -800,10 +809,12 @@ def _warp_specialize_gemm_with_multicasting_impl[
             a_device.as_imm().as_unsafe_any_origin(),
             b_device.as_imm().as_unsafe_any_origin(),
             c_device.as_unsafe_any_origin(),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(num_threads),
+                shared_mem_bytes=smem_size,
+            ),
             host_args=(epilogue_fn, compute_fn),
-            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-            block_dim=(num_threads),
-            shared_mem_bytes=smem_size,
         )
 
 
@@ -1120,14 +1131,16 @@ def warp_specialize_gemm_with_multicasting_splitk[
         workspace_ptr,
         locks_ptr,
         Index(M, N, K),
-        host_args=(epilogue_fn, compute_fn),
-        grid_dim=(
-            launch_grid_shape[0],
-            launch_grid_shape[1],
-            launch_grid_shape[2],
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                launch_grid_shape[0],
+                launch_grid_shape[1],
+                launch_grid_shape[2],
+            ),
+            block_dim=(num_threads),
+            shared_mem_bytes=smem_size,
         ),
-        block_dim=(num_threads),
-        shared_mem_bytes=smem_size,
+        host_args=(epilogue_fn, compute_fn),
     )
 
     _ = workspace_data^

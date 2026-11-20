@@ -61,9 +61,6 @@ class HYV4Model(
         if context.kv_params is not None:
             assert isinstance(context.kv_params, MultiKVCacheParams)
             config.kv_params = context.kv_params
-        config.max_batch_context_length = (
-            context.max_batch_total_tokens or config.max_batch_context_length
-        )
         config.quant_config = parse_quant_config(
             pipeline_config.model.huggingface_config,
             cls.checkpoint_weights(context, config),
@@ -98,10 +95,6 @@ class HYV4Model(
         check_parallelism(self.pipeline_config, len(self.devices))
         config = HYV4Config.initialize(
             self.pipeline_config, max_seq_len=self.max_seq_len
-        )
-        config.max_batch_context_length = (
-            self.planned_max_batch_total_tokens
-            or config.max_batch_context_length
         )
         config.quant_config = parse_quant_config(
             self.huggingface_config, state_dict, self.dtype

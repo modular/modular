@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Kimi K3's Kimi Delta Attention (ModuleV3).
 
-Direct V3 port of ``kimi_k3/layers/kda_attention.py``'s
-``kimi_k3_kda_attention`` orchestration, calling the same ``kda_decode``
+The ``KimiK3KDAAttention`` orchestration, calling the ``kda_decode``
 custom op via :func:`max.functional.inplace_custom`.
 
 Every batch takes ``kda_decode``, and the op itself picks the recurrence,
@@ -58,7 +57,7 @@ replay reads as its second output. The ring records and the fold contract
 are the unfused ops' own, so the rollback is unchanged; every other config
 keeps the four-launch chain, byte for byte.
 
-Both gate-lower-bound arms V2 supports are kept (not scoped out): the
+Both gate-lower-bound arms are kept (not scoped out): the
 "original" arm (``gate_lower_bound is None``, the kernel's own per-head
 ``-exp(A_log) * softplus(pre)``) and the "safe" arm
 (``log_alpha = bound * sigmoid(exp(A_log) * (raw_gate + dt_bias))``).
@@ -102,10 +101,10 @@ from max.tensor.sharding.action import PerShard
 
 from .norm import KimiRMSNormGated, kimi_rms_norm_gated
 from .short_conv import kimi_short_conv_qkv
-from .tensor_parallel import check_divisible, shard_interleaved_blocks
+from .tensor_parallel import check_divisible, fuse_rows
 
 _KIMI_O_NORM_EPS = 1e-5
-"""``KIMI_RMS_NORM_EPS`` in ``kimi_k3/layers/norm.py`` -- ``o_norm``'s eps,
+"""``KIMI_RMS_NORM_EPS`` in ``norm.py`` -- ``o_norm``'s eps,
 distinct from MLA's ``q_a_layernorm``/``kv_a_layernorm`` eps."""
 _FUSED_CONV_ARCH = "gfx950"
 """The one target the fused verify kernel is built for (CDNA4, MI355X)."""
@@ -394,10 +393,10 @@ def _kimi_short_conv_qkv_verify(
     """Runs the verify form of :func:`.short_conv.kimi_short_conv_qkv`.
 
     Kept here rather than in ``short_conv.py`` so the plain form stays the
-    V2 port alone. Same fp32 working dtype and the same raw fp32 output (the
-    caller applies ``silu`` per q/k/v slice); the kernel writes the live
-    window only at a verify width of zero, and with drafts it returns the
-    copy of its input the conv replay replays over instead.
+    shared-kernel bridge alone. Same fp32 working dtype and the same raw
+    fp32 output (the caller applies ``silu`` per q/k/v slice); the kernel
+    writes the live window only at a verify width of zero, and with drafts
+    it returns the copy of its input the conv replay replays over instead.
     """
     conv, window = gated_delta_conv1d_verify_fwd(
         qkv_input_ragged=ops.cast(TensorValue(x_qkv_ragged), DType.float32),
@@ -491,7 +490,7 @@ class KimiK3KDAAttention(
         gate_lower_bound: float | None,
         *,
         pin_fma: bool = False,
-        tp_size: int = 1,
+        a_log_size: int | None = None,
     ) -> None:
         """Builds the KDA attention.
 
@@ -508,9 +507,9 @@ class KimiK3KDAAttention(
             explicit ``fma``s, the bit-identity a speculative build's
             verify-ring and fold kernels need; plain serving keeps the
             kernel's default, which only AMD ever unpins.
-            tp_size: The TP degree the fused qkvg weight is sharded over. It
-                sets the stored weight's declared width, which must match
-                what the checkpoint adapter emits (see ``_fuse_qkvgb_proj``).
+            a_log_size: The length the checkpoint stores ``A_log`` at, which
+                may pad the per-head coefficients with zeros; ``None`` is
+                ``num_heads``.
         """
         super().__init__()
         if gate_lower_bound is not None and gate_lower_bound != -5.0:
@@ -524,46 +523,31 @@ class KimiK3KDAAttention(
         self.pin_fma = pin_fma
         inner = num_heads * head_dim
 
-        # One merged q/k/v/g/beta projection: separate GEMMs reading the
-        # same input cannot share a launch, one wide GEMM can. Under TP the
-        # merged weight is interleaved per rank exactly like `conv_weight`
-        # (see `_fuse_qkvgb_proj` in the weight adapter), so the `split`
-        # below still hands each rank its own q, k, v, g and beta, and the
-        # qkv prefix keeps the per-rank [q_r | k_r | v_r] order the packed
-        # conv weight expects. Beta leaves the GEMM rounded once to the
-        # model dtype and widens back to fp32 for the kda op. The declared
-        # width covers those five blocks plus the gate's sixth, which the
-        # checkpoint adapter appends while loading (see `_fuse_qkvgb_proj`).
-        # It has to be declared here, not inferred: the weight binder rejects
-        # a checkpoint tensor taller than the parameter it fills. Per device
-        # the gate's rows are replicated, so the global width carries one
-        # `head_dim` block per rank.
-        self.qkvg_proj = Linear(
-            in_dim=hidden_size,
-            out_dim=4 * inner + num_heads + tp_size * head_dim,
-            bias=False,
+        # The checkpoint's tensors as it stores them. The graph fuses the
+        # projections that read the layer input into one GEMM's weight and
+        # packs the three convs into one (`_packed_qkvg_weight`,
+        # `_conv_weight`); both depend only on weights, so they run once,
+        # at initialization.
+        self.q_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
+        self.k_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
+        self.v_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
+        self.g_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
+        self.b_proj = Linear(in_dim=hidden_size, out_dim=num_heads, bias=False)
+        self.q_conv1d = Tensor.zeros(
+            [inner, 1, conv_kernel_size], dtype=DType.float32
         )
-        # Fused q/k/v depthwise conv weight: see `_fuse_qkv_conv_weight`
-        # in the weight adapter, which concatenates the checkpoint's
-        # separate per-projection conv weights at load time. fp32 at load
-        # like `a_log`/`dt_bias`, the dtype the conv kernel binds, so a
-        # verify step does not widen the weight on every launch.
-        self.conv_weight = Tensor.zeros(
-            [3 * inner, conv_kernel_size], dtype=DType.float32
+        self.k_conv1d = Tensor.zeros(
+            [inner, 1, conv_kernel_size], dtype=DType.float32
         )
-
-        # The gate's down projection reads the same layer input as
-        # `qkvg_proj`, so the checkpoint adapter appends its rows to that
-        # weight once, at load time (`_fuse_qkvgb_proj`), and one GEMM
-        # produces both; on its own it was a `head_dim`-row GEMV, one launch
-        # per layer per step. The parameter stays separate, so the checkpoint
-        # mapping and the loaders that fill it are unchanged, and it is what
-        # a layer that did not load through the adapter still uses. The up
-        # projection then consumes that row in the graph (`raw_gate`).
+        self.v_conv1d = Tensor.zeros(
+            [inner, 1, conv_kernel_size], dtype=DType.float32
+        )
         self.f_a_proj = Linear(in_dim=hidden_size, out_dim=head_dim, bias=False)
         self.f_b_proj = Linear(in_dim=head_dim, out_dim=inner, bias=False)
-        self.a_log = Tensor.zeros([num_heads, head_dim], dtype=DType.float32)
-        self.dt_bias = Tensor.zeros([num_heads, head_dim], dtype=DType.float32)
+        self.a_log = Tensor.zeros(
+            [a_log_size or num_heads], dtype=DType.float32
+        )
+        self.dt_bias = Tensor.zeros([inner], dtype=DType.float32)
 
         self.o_norm = KimiRMSNormGated(head_dim, eps=_KIMI_O_NORM_EPS)
         self.o_proj = Linear(in_dim=inner, out_dim=hidden_size, bias=False)
@@ -574,6 +558,50 @@ class KimiK3KDAAttention(
     Bound per layer by ``spec_state``'s ``capturing`` context; see
     :class:`KdaVerifyBinding`.
     """
+
+    def _packed_qkvg_weight(self) -> Tensor:
+        """The fused input GEMM's weight, per rank ``[q | k | v | g | b | f_a]``.
+
+        The qkv prefix keeps the per-rank order the packed conv expects.
+        ``f_a_proj`` is replicated, so every rank's block holds all of it:
+        each rank's ``f_b_proj`` slice reads the whole gate row.
+        """
+        return fuse_rows(
+            [
+                self.q_proj.weight,
+                self.k_proj.weight,
+                self.v_proj.weight,
+                self.g_proj.weight,
+                self.b_proj.weight,
+                self.f_a_proj.weight,
+            ]
+        )
+
+    def _conv_weight(self) -> Tensor:
+        """The packed ``[3 * inner, kernel]`` conv weight, per rank ``[q | k | v]``."""
+        fused = fuse_rows([self.q_conv1d, self.k_conv1d, self.v_conv1d])
+        return F.reshape(
+            fused,
+            [3 * self.num_heads * self.head_dim, int(self.q_conv1d.shape[-1])],
+        )
+
+    def _gate_params(self) -> tuple[Tensor, Tensor]:
+        """``a_log`` and ``dt_bias`` per channel, both ``[num_heads, head_dim]``.
+
+        ``a_log`` holds one coefficient per head, past which a checkpoint may
+        pad it with zeros; each head's coefficient covers its channels.
+        """
+        a_log = F.broadcast_to(
+            F.reshape(self.a_log[: self.num_heads], [self.num_heads, 1]),
+            [self.num_heads, self.head_dim],
+        )
+        dt_bias = F.reshape(self.dt_bias, [self.num_heads, self.head_dim])
+        mesh = self.dt_bias.mesh
+        if TP in mesh.axis_names and mesh.axis_size(TP) > 1:
+            heads = NamedMapping(mesh, (TP, None))
+            a_log = a_log.to(heads)
+            dt_bias = dt_bias.to(heads)
+        return a_log, dt_bias
 
     def _fused_verify_eligible(
         self,
@@ -589,8 +617,8 @@ class KimiK3KDAAttention(
         The qkv family may be bf16 (production) or fp32 (the fp32-exact
         integration tests), and the op binds the o_norm weight and gate to
         that same dtype. Anything else -- the 32-wide head configs, the
-        "original" gate, another accelerator, an o_norm weight the binding
-        would reject -- keeps the unfused verify chain, byte for byte.
+        "original" gate, another accelerator -- keeps the unfused verify
+        chain, byte for byte.
 
         The batch must also be a uniform verify: the op holds every row to
         one token and its drafts. A mixed verify carries prompt rows, which
@@ -601,9 +629,8 @@ class KimiK3KDAAttention(
         if not (
             self.gate_lower_bound is not None
             and self.head_dim == 128
-            and int(self.conv_weight.shape[1]) == 4
+            and int(self.q_conv1d.shape[-1]) == 4
             and packed_qkvg.dtype in (DType.bfloat16, DType.float32)
-            and self.o_norm.weight.dtype == packed_qkvg.dtype
             and _on_fused_conv_arch()
         ):
             return False
@@ -622,65 +649,15 @@ class KimiK3KDAAttention(
         # A width of zero is the context step, whose arm takes any rows.
         return drafts == 0 or total == (batch - 1) * (drafts + 1)
 
-    def _fuses_gate_down(self, mesh_tp: int) -> bool:
-        """Whether ``f_a_proj``'s rows ride the fused input GEMM's weight.
-
-        The checkpoint adapter appends the gate's ``head_dim``-row down
-        projection to the fused q/k/v/g/beta weight once, at load time
-        (``_fuse_qkvgb_proj``), so the layer stores ONE weight -- declared
-        wide enough for it at construction -- and the graph runs one GEMM
-        over it with no weight concat of its own, since an in-graph transform
-        would give every layer a second resident copy of its fused weight.
-
-        A weight that carries only the five checkpoint blocks is the
-        fallback: some integration tests build a layer that way, and it keeps
-        its own ``head_dim``-row GEMM. Which one it is shows in the stored row
-        count -- the fused weight carries ``tp_size * head_dim`` more rows --
-        so no flag has to track the load.
-
-        Args:
-            mesh_tp: The tensor-parallel degree the layer is running over, so
-                the fused width it expects can be checked against the stored
-                one.
-
-        Returns:
-            Whether the stored weight already contains the gate's rows.
-
-        Raises:
-            ValueError: If the stored row count is neither the five blocks nor
-                those plus one replicated gate block per rank. A layer built
-                at one TP degree and sharded at another, or a narrow eager
-                weight loaded onto a fused layer, would otherwise take the
-                fused branch and fail later in a split with an unrelated
-                message.
-        """
-        # A `Tensor`'s shape is the whole tensor's, whatever its placement,
-        # so these are global row counts.
-        narrow_rows = 4 * self.num_heads * self.head_dim + self.num_heads
-        rows = int(self.qkvg_proj.weight.shape[0])
-        if rows == narrow_rows:
-            return False
-        fused_rows = narrow_rows + mesh_tp * self.head_dim
-        if rows != fused_rows:
-            raise ValueError(
-                f"Kimi K3 KDA: qkvg_proj holds {rows} rows, which is neither"
-                f" the {narrow_rows} of the five checkpoint blocks nor the"
-                f" {fused_rows} of those plus a replicated {self.head_dim}-row"
-                f" gate at TP {mesh_tp}. Build the layer with the TP degree it"
-                f" runs at, or load the fused weight the adapter emits."
-            )
-        return True
-
     def _folds_gate_up(self, mesh_tp: int) -> bool:
         """Whether the fused verify op runs ``f_b_proj`` itself.
 
         The op reads the gate's down projection from the fused input GEMM's
-        tail columns, so those columns must be there (``_fuses_gate_down``),
-        and it binds ``f_b_proj``'s weight to the packed row's dtype.
+        tail columns and binds ``f_b_proj``'s weight to the packed row's
+        dtype.
         """
         return (
-            self._fuses_gate_down(mesh_tp)
-            and self.f_b_proj.weight.dtype == self.qkvg_proj.weight.dtype
+            self.f_b_proj.weight.dtype == self.q_proj.weight.dtype
             and (self.num_heads // mesh_tp) % _GATE_UP_HEAD_MULTIPLE == 0
         )
 
@@ -713,7 +690,7 @@ class KimiK3KDAAttention(
         # The output type is the caller's declaration, as the unfused path's
         # own op call: under TP the op's output holds the per-device head
         # count, which only the layer knows.
-        mesh = self.conv_weight.mesh
+        mesh = self.q_proj.weight.mesh
         tp_active = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         tp_size = mesh.axis_size(TP) if tp_active else 1
         heads_per_device = self.num_heads // tp_size
@@ -737,21 +714,22 @@ class KimiK3KDAAttention(
                 self.f_b_proj(gate_down),
                 [1, total_seq_len, self.num_heads, self.head_dim],
             )
+        a_log, dt_bias = self._gate_params()
         normed, window = verify_op(
             packed_qkvg,
-            self.conv_weight,
+            self._conv_weight(),
             conv_pool,
             conv_row_id,
             gate_operand,
-            self.a_log,
-            self.dt_bias,
+            a_log,
+            dt_bias,
             input_row_offsets,
             state_pool,
             recurrent_row_id,
             binding.ring_pool,
             binding.ring_row_id,
             binding.verify_width,
-            self.o_norm.weight,
+            self.o_norm.weight.cast(packed_qkvg.dtype),
             out_type,
             gate_mode="safe",
             norm_eps=self.o_norm.eps,
@@ -807,40 +785,31 @@ class KimiK3KDAAttention(
         binding = self.verify_binding
         total_seq_len = x.shape[0]
         inner = self.num_heads * self.head_dim
-        mesh = self.conv_weight.mesh
+        mesh = self.q_proj.weight.mesh
         tp_active = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         tp_size = mesh.axis_size(TP) if tp_active else 1
 
-        # One fused GEMM for the q/k/v/g/beta projections and, when the
-        # checkpoint adapter fused them, the gate's rank-`head_dim` down
-        # projection, whose rows it appended to the same weight at load time
-        # (`_fuse_qkvgb_proj`): separate GEMMs reading the same input cannot
-        # share a launch, one wide GEMM can, and at decode row counts the
-        # down projection's own GEMM was a whole launch of a few microseconds
-        # for `head_dim` rows. The split sizes are GLOBAL (a distributed
-        # `split` sections each rank's own piece), so each rank lands its own
-        # q/k/v block, its own g, its own beta heads, and -- off the
-        # `tp_size *` width, the shape the replicated block is declared at --
-        # the whole gate row, which `f_b_proj` then reduces per head.
-        packed_qkvg = self.qkvg_proj(x)
-        if self._fuses_gate_down(tp_size):
-            qkv, gate_pre, beta_pre, gate_down = packed_qkvg.split(
-                [3 * inner, inner, self.num_heads, tp_size * self.head_dim],
-                axis=1,
+        # One GEMM for every projection that reads the layer input: separate
+        # GEMMs cannot share a launch, and at decode row counts the gate's
+        # `head_dim`-row down projection was a whole launch of its own. The
+        # split sizes are GLOBAL (a distributed `split` sections each rank's
+        # own piece), so each rank lands its own q/k/v block, its own g, its
+        # own beta heads, and -- off the `tp_size *` width -- the whole gate
+        # row, which `f_b_proj` then reduces per head.
+        weight = self._packed_qkvg_weight()
+        packed_qkvg = x.cast(weight.dtype) @ weight.T
+        qkv, gate_pre, beta_pre, gate_down = packed_qkvg.split(
+            [3 * inner, inner, self.num_heads, tp_size * self.head_dim],
+            axis=1,
+        )
+        if tp_active:
+            # `f_a_proj`'s rows are replicated, so its slice is whole on
+            # every device despite the GEMM's sharded columns: restate that
+            # placement (the `split` kept the shards local, a slice would
+            # have gathered them).
+            gate_down = gate_down.rebind_mapping(
+                NamedMapping(gate_down.mesh, (None, None))
             )
-            if tp_active:
-                # `f_a_proj`'s rows are replicated, so its slice is whole on
-                # every device despite the GEMM's sharded columns: restate
-                # that placement (the `split` kept the shards local, a slice
-                # would have gathered them).
-                gate_down = gate_down.rebind_mapping(
-                    NamedMapping(gate_down.mesh, (None, None))
-                )
-        else:
-            qkv, gate_pre, beta_pre = packed_qkvg.split(
-                [3 * inner, inner, self.num_heads], axis=1
-            )
-            gate_down = self.f_a_proj(x)
         if binding is not None and self._fused_verify_eligible(
             packed_qkvg, input_row_offsets, binding.verify_width
         ):
@@ -857,14 +826,15 @@ class KimiK3KDAAttention(
                 recurrent_row_id,
                 input_row_offsets,
             )
+        conv_weight = self._conv_weight()
         if binding is None:
             qkv = kimi_short_conv_qkv(
-                qkv, self.conv_weight, conv_pool, conv_row_id, input_row_offsets
+                qkv, conv_weight, conv_pool, conv_row_id, input_row_offsets
             )
         else:
             conv_out, window = kimi_short_conv_qkv_verify(
                 qkv,
-                self.conv_weight,
+                conv_weight,
                 conv_pool,
                 conv_row_id,
                 input_row_offsets,
@@ -879,8 +849,8 @@ class KimiK3KDAAttention(
             qkv = qkv.rebind_mapping(NamedMapping(qkv.mesh, (None, TP)))
         elif mesh.num_devices > 1:
             # Same restatement, for a mesh with no `tp` axis (pure EP).
-            # Here `qkvg_proj` is replicated rather than sharded, but the
-            # custom op's output still needs the mapping restated.
+            # Here the packed weight is replicated rather than sharded, but
+            # the custom op's output still needs the mapping restated.
             qkv = qkv.rebind_mapping(NamedMapping(qkv.mesh, (None, None)))
         q_flat, k_flat, v_flat = qkv.split([inner, inner, inner], axis=1)
 
@@ -928,8 +898,9 @@ class KimiK3KDAAttention(
             [1, total_seq_len, self.num_heads],
         )
 
-        a_log_f32 = F.cast(self.a_log, DType.float32)
-        dt_bias_f32 = F.cast(self.dt_bias, DType.float32)
+        a_log, dt_bias = self._gate_params()
+        a_log_f32 = F.cast(a_log, DType.float32)
+        dt_bias_f32 = F.cast(dt_bias, DType.float32)
         raw_gate_f32 = F.cast(raw_gate, DType.float32)
         if self.gate_lower_bound is None:
             kernel_a_log = a_log_f32[:, 0]
@@ -1021,7 +992,11 @@ class KimiK3KDAAttention(
         # Called as the function rather than through the module's forward
         # because the output dtype is this layer's per-call choice.
         normed = kimi_rms_norm_gated(
-            o, self.o_norm.weight, gate, self.o_norm.eps, out_dtype=x.dtype
+            o,
+            self.o_norm.weight.cast(x.dtype),
+            gate,
+            self.o_norm.eps,
+            out_dtype=x.dtype,
         )
         return self.o_proj(F.reshape(normed, [total_seq_len, inner]))
 
@@ -1031,34 +1006,31 @@ def tensor_parallel_kda_attention(
 ) -> KimiK3KDAAttention:
     """Shards a KDA layer by head along the ``tp`` mesh axis.
 
-    ``f_a_proj`` (the gate's rank-``head_dim`` down projection) and
-    ``o_norm`` (which normalizes within a head) stay replicated; ``f_a_proj``
-    rides the fused qkvg weight's per-device block as a whole (the adapter
-    put it there, see ``_fuse_qkvgb_proj``), because every rank's
-    ``f_b_proj`` slice needs the full ``head_dim`` gate row. ``o_proj``
-    is sharded on its input dim, so the caller must allreduce the output.
+    ``f_a_proj`` (the gate's rank-``head_dim`` down projection) stays
+    replicated, because every rank's ``f_b_proj`` slice needs the full
+    ``head_dim`` gate row; so do ``o_norm``, which normalizes within a head,
+    and ``a_log`` and ``dt_bias``, which the graph shards once it lays them
+    out per channel. ``o_proj`` is sharded on its input dim, so the caller
+    must allreduce the output.
     """
     tp_size = mesh.axis_size(TP)
     if tp_size == 1:
         return layer
     check_divisible("KDA head count", layer.num_heads, tp_size)
 
-    # The stored weight must be one of the two shapes this TP degree shards
-    # into whole rank blocks: the five checkpoint blocks, or those plus one
-    # replicated gate block per rank. Checked here as well as in `forward`,
-    # because a mismatch otherwise surfaces as a row-shard error from `.to`.
-    layer._fuses_gate_down(tp_size)
-
     row_mapping = NamedMapping(mesh, (TP, None))
-    # The adapter already interleaved the fused qkvg weight per rank, so a
-    # plain row mapping shards it; `shard_interleaved_blocks` cannot
-    # express its unequal [q_r | k_r | v_r | g_r | b_r] blocks.
-    layer.qkvg_proj.weight = layer.qkvg_proj.weight.to(row_mapping)
-    layer.f_b_proj.weight = layer.f_b_proj.weight.to(row_mapping)
-    layer.a_log = layer.a_log.to(row_mapping)
-    layer.dt_bias = layer.dt_bias.to(row_mapping)
+    for proj in (
+        layer.q_proj,
+        layer.k_proj,
+        layer.v_proj,
+        layer.g_proj,
+        layer.b_proj,
+        layer.f_b_proj,
+    ):
+        proj.weight = proj.weight.to(row_mapping)
+    conv_mapping = NamedMapping(mesh, (TP, None, None))
+    layer.q_conv1d = layer.q_conv1d.to(conv_mapping)
+    layer.k_conv1d = layer.k_conv1d.to(conv_mapping)
+    layer.v_conv1d = layer.v_conv1d.to(conv_mapping)
     layer.o_proj.weight = layer.o_proj.weight.to(NamedMapping(mesh, (None, TP)))
-    layer.conv_weight = shard_interleaved_blocks(
-        layer.conv_weight, mesh, num_blocks=3, axis=0
-    )
     return layer

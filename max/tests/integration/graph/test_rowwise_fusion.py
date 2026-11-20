@@ -189,3 +189,27 @@ def test_buffer_store_of_a_rowwise_sum(session: InferenceSession) -> None:
     np.testing.assert_allclose(
         buf.to_numpy(), x_np.sum(1, keepdims=True), rtol=1e-5, atol=1e-5
     )
+
+
+def test_rowwise_cache_with_side_output(session: InferenceSession) -> None:
+    """Two reductions, the second over a value the first scales and the
+    graph also outputs, fuse into one rowwise kernel: the scaled value is
+    cached, stored once, and read back by the second reduction and the
+    final scale."""
+    with Graph("cached_side_output", input_types=[_f32([4, 128])]) as graph:
+        x = graph.inputs[0].tensor
+        h = x * _sum_inner(x)
+        graph.output(h * _sum_inner(h), h)
+    model = session.load(graph)
+    rowwise = [s for s in model.kernel_summaries if "Rowwise(" in s]
+    assert len(rowwise) == 1, model.kernel_summaries
+
+    x_np = np.random.default_rng(0).standard_normal((4, 128))
+    x_np = x_np.astype(np.float32)
+    y, h_out = model(Buffer.from_numpy(x_np))
+    assert isinstance(y, Buffer) and isinstance(h_out, Buffer)
+    h_np = x_np * x_np.sum(1, keepdims=True)
+    np.testing.assert_allclose(h_out.to_numpy(), h_np, rtol=1e-5, atol=1e-4)
+    np.testing.assert_allclose(
+        y.to_numpy(), h_np * h_np.sum(1, keepdims=True), rtol=1e-4, atol=1e-3
+    )

@@ -14,7 +14,8 @@
 
 Selects between GEMV, split-K GEMV, small-MN GEMMs, heuristic outlier configs,
 and the warp-specialized TMA/UMMA tile GEMM based on problem shape and dtype,
-falling back to vendor BLAS only for untuned or low-performance shapes.
+falling back to vendor BLAS only for untuned or low-performance shapes and for
+operands that are not 16-byte aligned.
 """
 from std.math import align_up, ceildiv
 from std.sys import (
@@ -455,8 +456,9 @@ def matmul_dispatch_sm100[
     Routes the problem to GEMV for M=1 or N=1 shapes, to the IEEE-fp32 split-K
     GEMV for precise float32, or to the dtype-specific SM100 dispatcher (bf16,
     fp8, fp32) for general shapes, falling back to vendor BLAS when no Mojo
-    SM100 config applies. In autotuning mode, launches a single
-    compile-time-configured kernel from environment defines.
+    SM100 config applies or an operand is not 16-byte aligned. In autotuning
+    mode, launches a single compile-time-configured kernel from environment
+    defines.
 
     Parameters:
         c_type: Output element type (inferred).
@@ -652,6 +654,23 @@ def _matmul_dispatch_sm100_impl[
             ) if PROFILE_TILES
             > 0 else None,
         ](c, a, b, ctx)
+
+    # The GEMVs and TMA need 16-byte-aligned operands, and a graph can pass one
+    # that starts inside a larger buffer, such as one row of a column slice.
+    # Vendor BLAS takes any address, but it rounds fp32 to TF32 and its compute
+    # pass needs an aligned `c`, so those cases keep the paths below.
+    comptime if use_tf32 or a_type != .float32:
+        var c_aligned = Int(c.unsafe_ptr()) % 16 == 0
+        if (
+            Int(a.unsafe_ptr()) % 16 != 0
+            or Int(b.unsafe_ptr()) % 16 != 0
+            or not c_aligned
+        ) and (c_aligned or not has_compute_fn):
+            return _vendor_blas_matmul_sm100[
+                transpose_b=transpose_b,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](c, a, b, epilogue_fn, compute_fn, ctx)
 
     # M = 1 (or N = 1): dispatch to the GEMV, which routes the (N, K) shapes
     # in `SM100_GEMV_SHAPES` back to the SM100 GEMM.

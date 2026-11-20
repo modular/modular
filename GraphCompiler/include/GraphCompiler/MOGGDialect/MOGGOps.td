@@ -1108,6 +1108,7 @@ def MOGG_RoutineOp : MOGG_LowerableOp<"routine", [
 def MOGG_ShapeCreateOp : MOGG_Op<"shape.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Build a codegen shape from a static shape attr + dynamic dims.";
   let description = [{
@@ -1125,6 +1126,7 @@ def MOGG_ShapeCreateOp : MOGG_Op<"shape.create", [
 def MOGG_TensorCreateOp : MOGG_Op<"tensor.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor from a pointer, shape and static metadata.";
@@ -1158,6 +1160,7 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
   AttrSizedOperandSegments,
   NoTerminator,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_FusedEpilogueInterface>,
 ]> {
   let summary = "A fused-output tensor bound to its own epilogue body.";
@@ -1255,6 +1258,7 @@ def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
 def MOGG_TensorGetPtrOp : MOGG_Op<"tensor.get_ptr", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Extract the raw `!mogg.pointer` backing a codegen tensor.";
   let description = [{
@@ -1276,6 +1280,7 @@ def MOGG_TensorCreatePrologueOp : MOGG_Op<"tensor.create.prologue", [
   AttrSizedOperandSegments,
   SingleBlock,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "A fused-input tensor bound to its own prologue body.";
   let description = [{
@@ -1361,25 +1366,15 @@ def MOGG_CallOpaqueOp : MOGG_Op<"call.opaque", [
 def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
   MOGG_CallLike,
   AttrSizedOperandSegments,
-  // TRANSITIONAL(GEX-4588): `MOGG::GraphBlobOp` goes once graph blobs are
-  // lowered before emission.
-  ParentOneOf<["MOGG::GraphBlobOp", "MOGG::GraphBlobCallOp"]>,
+  HasParent<"MOGG::GraphBlobCallOp">,
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
 ]> {
-  let summary = "Run a declarative kernel as a call in a graph blob.";
+  let summary = "Run a declarative kernel as a call in a graph blob launch.";
   let description = [{
-    Runs `$callee`'s `execute_device` as one call of a graph blob.
-
-    TRANSITIONAL (GEX-4588): the op has two forms while graph blobs move to
-    lowering before emission. The `mogg.graph_blob` form, and with it
-    `$device_context`, goes once that is done.
-
-    In a `mogg.graph_blob`, the call takes `$device_context`, the context the
-    blob launches on, and also runs `$callee`'s `execute_configuration` on the
-    host. In a `mogg.graph_blob.call`, it takes no context and runs only
-    `execute_device`, in the enclosing launch's kernel. Outside a blob,
-    `mogg.call.opaque` launches a declarative kernel by itself.
+    Runs `$callee`'s `execute_device` in the enclosing launch's kernel, on
+    operands the kernel built. Outside a blob, `mogg.call.opaque` launches a
+    declarative kernel by itself.
 
     Example:
     ```mlir
@@ -1393,20 +1388,14 @@ def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
     FlatSymbolRefAttr:$callee,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar]>>:$inputs,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
-    // TRANSITIONAL(GEX-4588): only the `mogg.graph_blob` form has a context,
-    // and it goes with that form.
-    Optional<MOGG_Context>:$device_context,
     OptionalAttr<DictionaryAttr>:$kernel_param
   );
   let assemblyFormat = [{
     $callee `` custom<OptionalKernelParams>($kernel_param)
     (`inputs` `(` $inputs^ `:` type($inputs) `)`)?
     (`outputs` `(` $outputs^ `:` type($outputs) `)`)?
-    (`context` `(` $device_context^ `:` type($device_context) `)`)?
     attr-dict
   }];
-  // TRANSITIONAL(GEX-4588): checks the context against the form.
-  let hasVerifier = 1;
 }
 
 def MOGG_CallExecuteConfigurationOp
@@ -1443,24 +1432,19 @@ def MOGG_CallExecuteConfigurationOp
 
 def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   MOGG_CallLike,
-  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   NoTerminator,
   SingleBlock,
 ]> {
   let summary = "Launch several declarative kernels as one device kernel.";
   let description = [{
-    Runs the `mogg.call.execute_device`s in its body, in order, in one launch
-    on their shared device context, on every core and thread of the device:
-    `max._graph_blob.launch_config` of the context. Emit calls each
-    kernel's `execute_configuration` on the host, then compiles one kernel that
-    runs each `execute_device` only on the threads
-    `max._graph_blob.is_thread_active` accepts for its own grid, with
-    `max._graph_blob.barrier` between kernels.
+    Runs the declarative `mogg.call.opaque`s in its body, in order, as one
+    launch on their shared device context. Each call runs on the part of the
+    launch its own configuration asks for, and every call sees the writes of
+    the calls before it.
 
-    The body is host code: it holds only the ops that build the calls'
-    operands, and the calls. The kernel takes each operand as an argument
-    rather than capturing it, so the body can use the enclosing region's values
-    and the op isn't isolated from above.
+    The body holds the calls and the ops that build their operands, and can use
+    the enclosing region's values. `LowerGraphBlobs` writes the op as host ops
+    and a `mogg.graph_blob.launch` before emission.
   }];
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = "$body attr-dict";
@@ -1565,6 +1549,7 @@ def MOGG_GraphBlobBarrierOp : MOGG_Op<"graph_blob.barrier", [
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Pack a single-element tensor operand into a scalar operand.";
   let description = [{
@@ -1581,6 +1566,7 @@ def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
 def MOGG_TraitCreateOp : MOGG_Op<"trait.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Re-present a codegen tensor as its conforming trait argument.";
   let description = [{
@@ -1647,7 +1633,10 @@ def MOGG_RebindOp : MOGG_Op<"rebind", [Pure,
   }];
 }
 
-def MOGG_BufferConstantOp : MOGG_Op<"buffer.constant", [Pure]> {
+def MOGG_BufferConstantOp : MOGG_Op<"buffer.constant", [
+  Pure,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
+]> {
   let summary = "A constant buffer, as a raw codegen pointer.";
   let description = [{
     A `mo.constant` that `FuseConstantIterOpaqueInputs` folded into a
@@ -1875,19 +1864,23 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
     tensor, then the row index, which has the `$axis` coordinate pinned to
     0. Lowered from a `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
 
+    A `mogg.rowwise.cache` computes a value of the row that later phases
+    read instead of the tile.
+
     `mogg-legalize-rowwise-kernels` gives the body a `mogg.rowwise.tile`,
     the value every phase reads of the row, and sets the rest, which the Row
     API needs:
 
     - `$accum`: the type the folds' contributions are computed in.
-    - `$keep_tile`: whether more than one phase reads the tile, so the Row
-      may keep it instead of loading it again.
+    - `$keep_tile`: whether more than one phase reads the tile, or the body
+      has a cache, so the Row may keep the tile instead of loading it again.
     - `$cols`: the static size of `$axis`.
     - `$num_phases`: 1 when the body writes one value per row, else one per
-      fold plus one for the map phases, which write every element.
+      fold of the tile plus one for the map phases, which write every
+      element.
     - `$dtype_size`: the tile's byte size when the body writes every
-      element and every fold keeps one field, which lets the Row API split
-      a long row; else 0.
+      element, every fold keeps one field and there is no cache, which lets
+      the Row API split a long row; else 0.
     - `$computationally_expensive`: whether the body writes every element,
       or its per-element work reaches the pass's cost threshold.
     - `$max_simd_width` / `$dynamic_max_simd_width`: a number every SIMD
@@ -1960,7 +1953,8 @@ def MOGG_RowwiseTileOp : MOGG_Op<"rowwise.tile", [
 }
 
 def MOGG_RowwiseTileLoadOp : MOGG_Op<"rowwise.tile.load", [
-  ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp"]>,
+  ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp",
+               "MOGG::RowwiseCacheOp"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
   Pure,
 ]> {
@@ -1971,6 +1965,45 @@ def MOGG_RowwiseTileLoadOp : MOGG_Op<"rowwise.tile.load", [
   }];
   let results = (outs MOGG_Simd:$result);
   let assemblyFormat = "attr-dict `:` qualified(type($result))";
+}
+
+def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  SingleBlock,
+  MOGG_RowwisePhaseOpInterface,
+]> {
+  let summary = "Compute once a value of the row that later phases read.";
+  let description = [{
+    Computes, at the element index in its argument, a value later phases
+    read with `mogg.rowwise.cache.load` instead of computing it again. It
+    reads the tile and the row's values computed before it, and may store
+    each element. It prints as the Row's `cache`, and a phase that reads it
+    as the cached overload of its Row call.
+  }];
+  let results = (outs MOGG_Simd:$result);
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def MOGG_RowwiseCacheLoadOp : MOGG_Op<"rowwise.cache.load", [
+  ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp"]>,
+  AllTypesMatch<["cache", "result"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  Pure,
+]> {
+  let summary = "Read a row cache at the current element.";
+  let description = [{
+    Reads the value the `mogg.rowwise.cache` `$cache` computes, at the
+    phase's own index. A phase reads either the tile or one cache: the value
+    the Row hands its closure.
+  }];
+  let arguments = (ins MOGG_Simd:$cache);
+  let results = (outs MOGG_Simd:$result);
+  let assemblyFormat = "$cache attr-dict `:` qualified(type($cache))";
+  let hasVerifier = 1;
 }
 
 def MOGG_RowwiseEmitOp : MOGG_Op<"rowwise.emit", [
@@ -2144,6 +2177,7 @@ def MOGG_CallElementwiseOp : MOGG_Op<"call.elementwise", [
 def MOGG_TensorCreateSliceOp : MOGG_Op<"tensor.create.slice", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a strided slice view of another codegen tensor.";
@@ -2177,6 +2211,7 @@ def MOGG_TensorCreateSliceOp : MOGG_Op<"tensor.create.slice", [
 def MOGG_TensorCreateBroadcastOp : MOGG_Op<"tensor.create.broadcast", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a broadcast view of another codegen tensor.";
@@ -2207,6 +2242,7 @@ def MOGG_TensorCreateBroadcastOp : MOGG_Op<"tensor.create.broadcast", [
 def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a transpose view of another codegen tensor.";
@@ -2237,6 +2273,7 @@ def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
 def MOGG_TensorCreateReshapeOp : MOGG_Op<"tensor.create.reshape", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a reshape view of another codegen tensor.";

@@ -86,11 +86,16 @@ def modular_cc_library(name, **kwargs):
     # TODO(SDLC-4549): the profiler (Tracy) is still stubbed in OSS; source-build
     # it in a follow-up (needs the tracy deps wired in OSS).
     if name == "Profiling":
-        # Headers only, with every Tracy backend compiled out (no @tracy dep).
+        # Headers only, with every Tracy backend and M_PROFILE_RANGE compiled
+        # out (no @tracy dep).
         _modular_cc_library(
             name = name,
             hdrs = kwargs.get("hdrs", []),
-            defines = ["TRACY_CUDA_ENABLE=0", "TRACY_ROCM_ENABLE=0"],
+            defines = [
+                "TRACY_CUDA_ENABLE=0",
+                "TRACY_ROCM_ENABLE=0",
+                "MODULAR_PROFILE_RANGES=0",
+            ],
             deps = ["//Support:TimeProfiler", "@llvm-project//llvm:Support"],
         )
         return

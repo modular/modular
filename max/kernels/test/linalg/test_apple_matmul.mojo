@@ -35,7 +35,7 @@ from linalg.packing import (
 )
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils.index import IndexList
+from std.utils.coord import DynamicCoord
 
 comptime alignment = 64
 comptime some_constant = 20
@@ -262,7 +262,7 @@ def test_matmul[
         row_major(n, k) if transpose_b else row_major(k, n),
     )
 
-    var padded_n_k: IndexList[2]
+    var padded_n_k: DynamicCoord[.int, 2]
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,

@@ -533,10 +533,12 @@ static TraitType refineWithContextualWhereClauses(
     return curTrait;
 
   // Collect assumptions from signature metadata (see StructEmitter.cpp).
-  SmallVector<ConstraintAttr> assumptions =
+  SmallVector<ConstraintAttr> constraints =
       getConstraintsFromContext(fnContext);
-  if (assumptions.empty())
+  if (constraints.empty())
     return curTrait;
+  TypedAttr assumptions =
+      buildAssumptions(constraints, genericOfTraitType.getContext());
 
   TypedAttr paramRef = genericOfTraitType.getParam();
   TypedAttr lookupAttr = extractParamDeclRef(paramRef);
@@ -655,15 +657,9 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
           evaluator.getReboundAttribute(constraints[i].getProposition());
       conformanceCondition = getCanonicalAttr(conformanceCondition);
 
-      SmallVector<ConstraintAttr> assumptions =
-          getConstraintsFromContext(fnContext);
-      TypedAttr overallAssumption =
-          SIMDAttr::getScalarBool(structType.getContext(), true);
-      for (auto assumption : assumptions)
-        overallAssumption = ParamOperatorAttr::get(
-            POC::And, {overallAssumption, assumption.getProposition()});
-
-      return isPropositionImplied(conformanceCondition, overallAssumption);
+      TypedAttr assumptions = buildAssumptions(
+          getConstraintsFromContext(fnContext), structType.getContext());
+      return isPropositionImplied(conformanceCondition, assumptions);
     }
     return TriBool::no();
   };

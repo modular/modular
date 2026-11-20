@@ -12163,3 +12163,123 @@ diff --git a/cpp/grammar_impl.h b/cpp/grammar_impl.h
     * \brief The new state ids of each FSM's states.
     */
    std::vector<std::vector<std::pair<int32_t, int32_t>>> per_rule_fsm_new_state_ids;
+diff --git a/cpp/grammar_compiler.cc b/cpp/grammar_compiler.cc
+index 75c3d63..78dc070 100644
+--- a/cpp/grammar_compiler.cc
++++ b/cpp/grammar_compiler.cc
+@@ -1541,7 +1541,9 @@ void GrammarCompilerSub::TagDispatchOptimization(
+   using GrammarExprType = Grammar::Impl::GrammarExprType;
+   tag_dispatch_rule_id_to_second_slicing_bitset->clear();
+ 
+-  // Optimization for TagDispatch: Precompute the definitely accepted tokens.
++  // Optimization for TagDispatch: Precompute the definitely accepted tokens. The set depends
++  // only on the tag and exclude strings, which a many-tool grammar repeats in every tool.
++  std::map<std::pair<std::vector<std::string>, std::vector<std::string>>, DynamicBitset> by_strings;
+   for (int i = 0; i < compiled_grammar_impl->grammar->NumRules(); i++) {
+     const auto& rule = compiled_grammar_impl->grammar->GetRule(i);
+     const auto& rule_body = compiled_grammar_impl->grammar->GetGrammarExpr(rule.body_expr_id);
+@@ -1555,6 +1557,14 @@ void GrammarCompilerSub::TagDispatchOptimization(
+     if (tag_dispatch.IsConstrained()) {
+       continue;
+     }
++    std::pair<std::vector<std::string>, std::vector<std::string>> key{{}, tag_dispatch.excludes};
++    for (const auto& [trigger, rule_id] : tag_dispatch.tag_rule_pairs) {
++      key.first.push_back(trigger);
++    }
++    if (auto it = by_strings.find(key); it != by_strings.end()) {
++      (*tag_dispatch_rule_id_to_second_slicing_bitset)[i] = it->second;
++      continue;
++    }
+     const auto& sorted_decoded_vocab = tokenizer_info_.GetSortedDecodedVocab();
+     DynamicBitset definite_accepted_tokens_since_second_char(sorted_decoded_vocab.size());
+     for (int j = 0; j < static_cast<int32_t>(sorted_decoded_vocab.size()); j++) {
+@@ -1587,6 +1597,7 @@ void GrammarCompilerSub::TagDispatchOptimization(
+     }
+     (*tag_dispatch_rule_id_to_second_slicing_bitset)[i] =
+         definite_accepted_tokens_since_second_char;
++    by_strings.emplace(std::move(key), std::move(definite_accepted_tokens_since_second_char));
+   }
+ }
+ 
+diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
+index b6930d5..fe69fef 100644
+--- a/cpp/json_schema_converter_ext.cc
++++ b/cpp/json_schema_converter_ext.cc
+@@ -186,8 +186,8 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+       xml_require_paired_tags_(xml_require_paired_tags) {
+   xml_tag_prefix_literal_ = "\"" + JSONStrToPrintableStr(xml_tag_prefix_) + "\"";
+   // A bare-value string runs up to a close delimiter: the tag-prefix when set,
+-  // else the wrapper's parameter_suffix, else a resolved kValueClose special
+-  // token (ExcludeToken path in AddBasicRules). Only fail when all three are
++  // else the wrapper's parameter_suffix, else a resolved kValueClose marker
++  // token (see AddBasicRules). Only fail when all three are
+   // absent — then TagDispatch's exclude set is empty and the value is unbounded.
+   if (xml_tag_prefix_.empty() && xml_wrapper_.parameter_suffix.empty() &&
+       MarkerTokenId(kValueClose) < 0) {
+@@ -420,33 +420,24 @@ void XMLToolCallingConverter::AddBasicRules() {
+   nested_object_level_ = 1;
+   // The outer part, xml format, is at level 1.
+   // Add XML string rule: the content of a bare value up to (not including) the
+-  // value close marker, which FormatProperty appends. When the markers resolved
+-  // to atomic special tokens, the content is any token except those markers
+-  // (they are masked out of byte content), mirroring the base token-delimited
+-  // string; otherwise fall back to a byte-level TagDispatch on the close literal.
+-  if (MarkerTokenId(kValueClose) >= 0) {
+-    std::string exclude_args;
+-    for (XMLMarker marker : {kKeyOpen, kKeyClose, kValueOpen, kValueClose}) {
+-      int id = MarkerTokenId(marker);
+-      if (id >= 0) {
+-        if (!exclude_args.empty()) {
+-          exclude_args += ", ";
+-        }
+-        exclude_args += std::to_string(id);
++  // value close marker, which FormatProperty appends. Readers split arguments on
++  // marker text, so when the markers resolved to tokens the value excludes every
++  // marker's text, which also keeps the marker tokens out.
++  std::string excludes;
++  if (MarkerTokenId(kValueClose) < 0) {
++    excludes = ValueExcludesTuple();
++  } else {
++    for (const std::string* text :
++         {&xml_wrapper_.key_wrapper_prefix, &xml_wrapper_.key_wrapper_suffix,
++          &xml_wrapper_.value_wrapper_prefix, &xml_wrapper_.parameter_suffix}) {
++      if (!text->empty()) {
++        excludes += (excludes.empty() ? "\"" : ", \"") + EscapeString(*text) + "\"";
+       }
+     }
+-    ebnf_script_creator_.AddRule(kXMLString, "ExcludeToken(" + exclude_args + ")*");
+-  } else {
+-    ebnf_script_creator_.AddRule(
+-        kXMLString,
+-        "TagDispatch("
+-        "loop_after_dispatch=false,"
+-        "excludes=(" +
+-            ValueExcludesTuple() +
+-            ")"
+-            ")"
+-    );
+   }
++  ebnf_script_creator_.AddRule(
++      kXMLString, "TagDispatch(loop_after_dispatch=false, excludes=(" + excludes + "))"
++  );
+   constexpr const char* kStringCacheKey = "{\"type\":\"string\"}";
+   AddCache(kStringCacheKey, kXMLString);
+ 
+@@ -594,12 +585,13 @@ std::string XMLToolCallingConverter::GenerateString(
+     }
+ 
+     // The bare value runs up to the value close marker that FormatProperty
+-    // appends. A close that resolved to an atomic special token has its bytes
+-    // masked out of byte content, so a plain run is exact. A byte-literal close
+-    // sits inside the run's alphabet, so the run has to exclude it while it
+-    // counts.
++    // appends. A byte-literal close sits inside the run's alphabet, so the run
++    // has to exclude it while it counts.
+     if (spec.min_length != 0 || spec.max_length != -1) {
+       if (MarkerTokenId(kValueClose) >= 0) {
++        // TODO: this run can still spell a marker's text, which readers split on.
++        // Excluding four markers while counting costs about 30 automaton states per
++        // character, past the budget for most bounds.
+         const std::string ch = "[^\\0-\\x1f]";
+         return ch + RepeatExpr(spec.min_length, spec.max_length);
+       }

@@ -201,9 +201,8 @@ class InferenceState {
 public:
   InferenceState(ASTDecl &declScope, ArrayRef<Type> declaredParamTypes,
                  PogListAttr declaredParamPogs, SMLoc defaultLoc,
-                 bool discardError,
-                 DeferredTypingContext *deferredTypingContext = nullptr,
-                 ArrayRef<ConstraintAttr> additionalAssumptions = {});
+                 bool discardError, TypedAttr additionalAssumptions,
+                 DeferredTypingContext *deferredTypingContext = nullptr);
   virtual ~InferenceState() = default;
 
   ASTDecl &getDeclScope() const { return declScope; }
@@ -241,8 +240,8 @@ public:
 
   /// Facts that hold at the site driving this inference but are not reachable
   /// from `declScope`'s lexical assumptions. This is set once for the lifetime
-  /// of an inference operation. The storage is owned by the caller.
-  ArrayRef<ConstraintAttr> additionalAssumptions;
+  /// of an inference operation.
+  TypedAttr additionalAssumptions;
 
   // Debug util.
   void dump() const;

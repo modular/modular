@@ -242,9 +242,10 @@ def MAP_RowwiseOpInterface : OpInterface<"RowwiseOpInterface"> {
 
 def MAP_RowwisePhaseOpInterface : OpInterface<"RowwisePhaseOpInterface"> {
   let description = [{
-    A phase of a `map.iter.rowwise` row: a fold (`map.iter.reduce`) or a
-    per-element phase (`map.iter.map`). Its body runs once per element of the
-    row, at the index in its only block argument.
+    A phase of a `map.iter.rowwise` row: a fold (`map.iter.reduce`), a
+    per-element phase (`map.iter.map`) or a row cache (`map.iter.cache`). Its
+    body runs once per element of the row, at the index in its only block
+    argument.
   }];
 
   let cppNamespace = "::M::MAP";
@@ -256,6 +257,11 @@ def MAP_RowwisePhaseOpInterface : OpInterface<"RowwisePhaseOpInterface"> {
       "return $_op.getBody().front().getArgument(0);"
     >,
   ];
+
+  let extraClassDeclaration = [{
+    /// The cache the phase reads in place of the row's tile, or null.
+    IterCacheOp getReadCache();
+  }];
 }
 
 def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {

@@ -37,9 +37,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
     KimiK3DenseMLP,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    interleave_for_tp,
-)
 from max.tensor import Tensor, default_device
 
 _RNG = np.random.default_rng(20261022)
@@ -65,16 +62,17 @@ def _build_layer() -> KimiK3DecoderLayer:
         conv_kernel_size=_CONV_KERNEL,
         gate_lower_bound=None,
     )
-    attention.qkvg_proj.weight = Tensor(
-        interleave_for_tp(
-            [_arr(inner, _HIDDEN) for _ in range(4)] + [_arr(_HEADS, _HIDDEN)],
-            1,
-        ),
-        dtype=DType.float32,
-    )
-    attention.f_a_proj.weight = Tensor(
-        _arr(_HEAD_DIM, _HIDDEN), dtype=DType.float32
-    )
+    for name, rows in (
+        ("q_proj", inner),
+        ("k_proj", inner),
+        ("v_proj", inner),
+        ("g_proj", inner),
+        ("b_proj", _HEADS),
+        ("f_a_proj", _HEAD_DIM),
+    ):
+        getattr(attention, name).weight = Tensor(
+            _arr(rows, _HIDDEN), dtype=DType.float32
+        )
     attention.f_b_proj.weight = Tensor(
         _arr(inner, _HEAD_DIM), dtype=DType.float32
     )
@@ -83,23 +81,25 @@ def _build_layer() -> KimiK3DecoderLayer:
         (1.0 + 0.1 * _RNG.standard_normal(_HEAD_DIM)).astype(np.float32),
         dtype=DType.float32,
     )
-    attention.conv_weight = Tensor(
-        _arr(3 * inner, _CONV_KERNEL), dtype=DType.float32
+    attention.q_conv1d, attention.k_conv1d, attention.v_conv1d = (
+        Tensor(conv.reshape(inner, 1, _CONV_KERNEL), dtype=DType.float32)
+        for conv in np.split(_arr(3 * inner, _CONV_KERNEL), 3)
     )
+    # One coefficient per head.
     attention.a_log = Tensor(
-        np.linspace(-1.0, 0.5, _HEADS * _HEAD_DIM, dtype=np.float32).reshape(
-            _HEADS, _HEAD_DIM
+        np.ascontiguousarray(
+            np.linspace(-1.0, 0.5, inner, dtype=np.float32)[::_HEAD_DIM]
         ),
         dtype=DType.float32,
     )
-    attention.dt_bias = Tensor(_arr(_HEADS, _HEAD_DIM), dtype=DType.float32)
+    attention.dt_bias = Tensor(_arr(inner), dtype=DType.float32)
 
     ffn = KimiK3DenseMLP(
         hidden_size=_HIDDEN, intermediate_size=_INTER, beta=1.5, linear_beta=1.5
     )
-    ffn.gate_up_proj.weight = Tensor(
-        _arr(2 * _INTER, _HIDDEN), dtype=DType.float32
-    )
+    gate, up = np.split(_arr(2 * _INTER, _HIDDEN), 2)
+    ffn.gate_proj.weight = Tensor(gate, dtype=DType.float32)
+    ffn.up_proj.weight = Tensor(up, dtype=DType.float32)
     ffn.down_proj.weight = Tensor(_arr(_HIDDEN, _INTER), dtype=DType.float32)
 
     layer = KimiK3DecoderLayer(

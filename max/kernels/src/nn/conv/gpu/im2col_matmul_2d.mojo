@@ -29,7 +29,7 @@ from std.math import ceildiv, divmod
 from std.math.uutils import udivmod
 from std.sys.info import size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -656,8 +656,10 @@ def dispatch_fused_im2col_conv2d_apple[
         Int32(S_dim),
         Int32(C_dim),
         Int32(F_dim),
-        grid_dim=transpose_grid,
-        block_dim=transpose_block,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=transpose_grid,
+            block_dim=transpose_block,
+        ),
     )
 
     # The Apple conv launcher takes a single `in_type` for input and filter

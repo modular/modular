@@ -59,7 +59,7 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of
 
 from max.algorithm import sync_parallelize
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu import (
     block_dim,
     block_idx,
@@ -1413,8 +1413,10 @@ def enqueue_causal_conv1d_update_gpu[
             output,
             bias,
             Int8(silu_activation),
-            grid_dim=(batch, ceildiv(dim, threads)),
-            block_dim=(threads,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(batch, ceildiv(dim, threads)),
+                block_dim=(threads,),
+            ),
         )
     else:
         ctx.enqueue_copy(
@@ -1453,8 +1455,10 @@ def enqueue_causal_conv1d_update_gpu[
             output,
             bias,
             Int8(silu_activation),
-            grid_dim=(batch, ceildiv(dim, threads)),
-            block_dim=(threads,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(batch, ceildiv(dim, threads)),
+                block_dim=(threads,),
+            ),
         )
 
 

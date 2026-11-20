@@ -47,17 +47,19 @@ gh workflow run minimaxM3AgentClassDatasetEval.yaml --ref <branch> \
 `$OUT/deepswe/<trial>/` (agent trajectory with per-turn token counts, verifier
 output, `result.json`) and `$OUT/score.json`; `pier view $OUT` browses them.
 `$OUT/results.jsonl` (a row per trial) and `$OUT/config.json` are what
-`internal/upload_results.py` loads into S3 and BigQuery, as the weekly
-eval in `mcloudEvalMaxModel.yaml` does; that workflow also packs the
-scrubbed `$OUT/deepswe` into `trials.tar.gz`, which S3 keeps beside them. The
-agent can print its environment, so the endpoint's API key is scrubbed from
-everything under `$OUT` when the run exits (`deepswe_redact.py`). A file that
-cannot be scrubbed even as root is deleted and listed in
-`$OUT/REMOVED_UNSCRUBBABLE_FILES.txt`, and the run fails only if such a file
-cannot be deleted either; a self-launched server needs no real key at all.
-Scoring (`deepswe_score.py`) follows the leaderboard: graded trials count,
-including agent timeouts, and trials with no verifier reward are excluded as
-infra errors. A run with no graded trial fails.
+`internal/upload_results.py` loads into S3 and BigQuery, as the weekly eval in
+`mcloudEvalMaxModel.yaml` does; that workflow also packs the scrubbed
+`$OUT/deepswe` into `trials.tar.gz`, which S3 keeps beside them. A row also
+carries the trial's turns from its trajectory, one per model call with the
+commands it ran and their output, which the uploader writes to `turns.parquet`
+beside the responses. The agent can print its environment, so the endpoint's API
+key is scrubbed from everything under `$OUT` when the run exits
+(`deepswe_redact.py`). A file that cannot be scrubbed even as root is deleted
+and listed in `$OUT/REMOVED_UNSCRUBBABLE_FILES.txt`, and the run fails only if
+such a file cannot be deleted either; a self-launched server needs no real key
+at all. Scoring (`deepswe_score.py`) follows the leaderboard: graded trials
+count, including agent timeouts, and trials with no verifier reward are excluded
+as infra errors. A run with no graded trial fails.
 
 Host requirements, all handled or diagnosed by the scripts: a podman or docker
 engine (`DOCKER_HOST`), `uv`, `curl`, `git`, `sudo` for the podman socket, and

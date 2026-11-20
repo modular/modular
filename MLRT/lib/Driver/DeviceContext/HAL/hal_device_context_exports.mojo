@@ -31,6 +31,7 @@ from std.ffi import c_char, CStringSpan, external_call
 # backend, where each wrapper holds the HAL implementation.
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
+    _wrap_hal_memory,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
@@ -100,7 +101,7 @@ comptime _RawMemoryPtr = Pointer[Byte, MutUntrackedOrigin]
 comptime _OutPtr = Pointer[mut=True, _, MutUntrackedOrigin]
 
 
-def _err_cstr(msg: String) -> _CString[]:
+def _alloc_cstr(msg: String) -> Pointer[c_char, MutUntrackedOrigin]:
     """Copies `msg` into a heap-allocated null-terminated C string.
 
     Freed by the C++ caller via `MojoHAL_strfree`.
@@ -109,13 +110,17 @@ def _err_cstr(msg: String) -> _CString[]:
     var p = alloc[UInt8]({length = n + 1}).unsafe_leak()
     unsafe_memcpy(dest=p, src=msg.unsafe_ptr(), count=n)
     p[unsafe_offset=n] = 0
-    return CStringSpan(unsafe_from_ptr=p.unsafe_bitcast[c_char]().as_imm())
+    return p.unsafe_bitcast[c_char]()
+
+
+def _err_cstr(msg: String) -> _CString[]:
+    return CStringSpan(unsafe_from_ptr=_alloc_cstr(msg).as_imm())
 
 
 @export
 def MojoHAL_strfree(s: _CString[]) abi("C"):
     if case .Some(s) = s:
-        # `_err_cstr` allocated this via `alloc[UInt8]`. `CStringSpan` hands
+        # `_alloc_cstr` allocated this via `alloc[UInt8]`. `CStringSpan` hands
         # back a safe immutable pointer, so rebuild the matching mutable,
         # untracked `UInt8` allocation pointer from its address and free that.
         var addr = Int(s.ptr())
@@ -242,14 +247,6 @@ def MojoHAL_DeviceContext_synchronize(
         return _err_cstr(String(e))
 
 
-def _alloc_cstr(msg: String) -> Pointer[c_char, MutUntrackedOrigin]:
-    var n = msg.byte_length()
-    var p = alloc[UInt8]({length = n + 1}).unsafe_leak()
-    unsafe_memcpy(dest=p, src=msg.unsafe_ptr(), count=n)
-    p[unsafe_offset=n] = 0
-    return p.unsafe_bitcast[c_char]()
-
-
 # ===---------------------------------------------------------------------=== #
 # Buffers
 # ===---------------------------------------------------------------------=== #
@@ -281,11 +278,14 @@ def MojoHAL_DeviceContext_createBufferOwning(
     byte_size: UInt64,
     owning: Bool,
 ) abi("C") -> _CString[]:
-    var buf = DeviceBuffer[.uint8](ctx[], ptr, Int(byte_size), owning=owning)
-    var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
-    boxed.unsafe_ptr().unsafe_write(buf^)
-    out_buf[] = boxed^.unsafe_leak()
-    return None
+    try:
+        var buf = _wrap_hal_memory(ctx[], ptr, Int(byte_size), owning=owning)
+        var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
+        boxed.unsafe_ptr().unsafe_write(buf^)
+        out_buf[] = boxed^.unsafe_leak()
+        return None
+    except e:
+        return _err_cstr(String(e))
 
 
 @export
@@ -395,7 +395,7 @@ def MojoHAL_DeviceContext_enqueueCopyToDevice(
         return None
     try:
         var ctxref = ctx[]
-        var dst_buf = DeviceBuffer[.uint8](
+        var dst_buf = _wrap_hal_memory(
             ctxref, dst, Int(byte_size), owning=False
         )
         ctxref.enqueue_copy(dst_buf, src)
@@ -418,7 +418,7 @@ def MojoHAL_DeviceContext_enqueueCopyFromDevice(
         return None
     try:
         var ctxref = ctx[]
-        var src_buf = DeviceBuffer[.uint8](
+        var src_buf = _wrap_hal_memory(
             ctxref, src, Int(byte_size), owning=False
         )
         ctxref.enqueue_copy(dst, src_buf)
@@ -441,7 +441,7 @@ def MojoHAL_DeviceContext_enqueueSetMemory(
         return None
     try:
         ref device_ctx = ctx[]
-        var view = DeviceBuffer[.uint8](
+        var view = _wrap_hal_memory(
             device_ctx, dst, Int(byte_size), owning=False
         )
         device_ctx.unwrap_hal()._stream[].fill(
@@ -499,6 +499,21 @@ def MojoHAL_DeviceContext_maxAllocationSize(
         ](device._handle)
         out_has_limit[] = Bool(size)
         out_size[] = size.or_else(0)
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_maxContextsPerDevice(
+    out_has_limit: _OutPtr[Bool],
+    out_limit: _OutPtr[Int64],
+    ctx: _DeviceContextBoxPtr,
+) abi("C") -> _CString[]:
+    try:
+        var limit = ctx[].unwrap_hal()._device[].max_contexts_per_device()
+        out_has_limit[] = Bool(limit)
+        out_limit[] = Int64(limit.or_else(0))
         return None
     except e:
         return _err_cstr(String(e))
@@ -586,7 +601,7 @@ def MojoHAL_DeviceContext_getAttribute(
 
 
 # ===---------------------------------------------------------------------=== #
-# Sub-buffers / ownership / memmap (phase 2)
+# Sub-buffers / ownership / memmap
 # ===---------------------------------------------------------------------=== #
 
 
@@ -605,19 +620,24 @@ def MojoHAL_HostBuffer_createSubBuffer(
     var parent_size = UInt64(len(parent_buf))
     if byte_size > parent_size or parent_size - byte_size < byte_offset:
         return _err_cstr("offset, len and elem_size are out of range")
-    var view = DeviceBuffer[.uint8](
-        rebind_var[DeviceContext[]](parent_buf.unwrap_hal()._ctx),
-        parent_buf.unsafe_ptr().unsafe_offset(Int(byte_offset)),
-        Int(byte_size),
-        owning=False,
-    )
-    # The view's wrapper is non-owning; retaining the parent's inner keeps
-    # the pinned allocation alive for the view's lifetime.
-    view.unwrap_hal()._inner[]._parent_host = [parent_buf.unwrap_hal()._inner]
-    var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
-    boxed.unsafe_ptr().unsafe_write(view^)
-    out_buf[] = boxed^.unsafe_leak()
-    return None
+    try:
+        var view = _wrap_hal_memory(
+            rebind_var[DeviceContext[]](parent_buf.unwrap_hal()._ctx),
+            parent_buf.unsafe_ptr().unsafe_offset(Int(byte_offset)),
+            Int(byte_size),
+            owning=False,
+        )
+        # The view's wrapper is non-owning; retaining the parent's inner keeps
+        # the pinned allocation alive for the view's lifetime.
+        view.unwrap_hal()._inner[]._parent_host = [
+            parent_buf.unwrap_hal()._inner
+        ]
+        var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
+        boxed.unsafe_ptr().unsafe_write(view^)
+        out_buf[] = boxed^.unsafe_leak()
+        return None
+    except e:
+        return _err_cstr(String(e))
 
 
 @export
@@ -634,18 +654,21 @@ def MojoHAL_DeviceBuffer_createSubBuffer(
     var parent_size = UInt64(len(parent_buf))
     if byte_size > parent_size or parent_size - byte_size < byte_offset:
         return _err_cstr("offset, len and elem_size are out of range")
-    var view = DeviceBuffer[.uint8](
-        rebind_var[DeviceContext[]](parent_buf.unwrap_hal()._ctx),
-        parent_buf.unwrap_hal()._device_ptr.unsafe_offset(Int(byte_offset)),
-        Int(byte_size),
-        owning=False,
-    )
-    # The plugin may have given the view an address of its own.
-    out_ptr[] = view.unwrap_hal()._device_ptr
-    var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
-    boxed.unsafe_ptr().unsafe_write(view^)
-    out_buf[] = boxed^.unsafe_leak()
-    return None
+    try:
+        var view = _wrap_hal_memory(
+            rebind_var[DeviceContext[]](parent_buf.unwrap_hal()._ctx),
+            parent_buf.unwrap_hal()._device_ptr.unsafe_offset(Int(byte_offset)),
+            Int(byte_size),
+            owning=False,
+        )
+        # The plugin may have given the view an address of its own.
+        out_ptr[] = view.unwrap_hal()._device_ptr
+        var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
+        boxed.unsafe_ptr().unsafe_write(view^)
+        out_buf[] = boxed^.unsafe_leak()
+        return None
+    except e:
+        return _err_cstr(String(e))
 
 
 @export
@@ -722,13 +745,17 @@ def MojoHAL_DeviceContext_memmapFile(
     if Int(base) == -1:  # MAP_FAILED
         return _err_cstr("failed to mmap file")
 
-    var view = DeviceBuffer[.uint8](ctx[], base, Int(size), owning=False)
-    var boxed = alloc(Layout[_MmapBox].single())
-    boxed.unsafe_ptr().unsafe_write(_MmapBox(view^, base, UInt64(size)))
-    out_buf[] = boxed^.unsafe_leak().unsafe_bitcast[DeviceBuffer[.uint8]]()
-    out_ptr[] = base
-    out_size[] = UInt64(size)
-    return None
+    try:
+        var view = _wrap_hal_memory(ctx[], base, Int(size), owning=False)
+        var boxed = alloc(Layout[_MmapBox].single())
+        boxed.unsafe_ptr().unsafe_write(_MmapBox(view^, base, UInt64(size)))
+        out_buf[] = boxed^.unsafe_leak().unsafe_bitcast[DeviceBuffer[.uint8]]()
+        out_ptr[] = base
+        out_size[] = UInt64(size)
+        return None
+    except e:
+        _ = external_call["munmap", Int32](base, UInt64(size))
+        return _err_cstr(String(e))
 
 
 @export
@@ -746,7 +773,7 @@ def MojoHAL_MmapBuffer_release(buf: _DeviceBufferBoxPtr) abi("C"):
 
 
 # ===---------------------------------------------------------------------=== #
-# Streams / events / thread binding (phase 3)
+# Streams / events / thread binding
 # ===---------------------------------------------------------------------=== #
 
 
@@ -990,23 +1017,15 @@ def MojoHAL_DeviceContextScope_pop(scope: _DeviceContextScopeBoxPtr) abi("C"):
 
 @export
 def MojoHAL_DeviceContext_getDLPackStream(
-    out_stream: _OutPtr[_RawMemoryPtr],
+    out_stream: _OutPtr[Int],
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> Bool:
     # Returns False when the backend exposes no native stream handle (the C++
     # shim maps that to std::nullopt).
     try:
-        # The handle's tied origin (and its immutability, from the borrow of
-        # the temporary `DeviceStream`) ends at the C ABI: the C++ caller's
-        # wrapper keeps the stream alive.
-        out_stream[] = (
-            ctx[]
-            .stream()
-            ._native_stream()
-            .unsafe_bitcast[Byte]()
-            .unsafe_mut_cast[True]()
-            .unsafe_origin_cast[MutUntrackedOrigin]()
-        )
+        # DLPack takes the stream as an integer. The context keeps the stream
+        # alive, so the address outlives the temporary `DeviceStream`.
+        out_stream[] = Int(ctx[].stream()._native_stream())
         return True
     except:
         return False

@@ -84,6 +84,7 @@ from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host._legacy.device_context import (
     LegacyDeviceClosureFunction,
     LegacyDeviceContext,
+    LegacyDeviceFunction,
     _LegacyDeviceContextScope,
 )
 from max.gpu.host._driver_common import _DumpPath
@@ -441,9 +442,6 @@ struct _HALDeviceContext[target: CompilationTarget = default_accelerator()](
     var _device: ArcPointer[_HALDevice[Self.device_spec]]
     var _context: ArcPointer[Context[Self.device_spec]]
     var _stream: ArcPointer[Stream[Self.device_spec]]
-    # Null until the C++ runtime shim provides it; read by the CUDA/HIP
-    # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
-    var _handle: _DeviceContextPtr[mut=True]
 
 
 struct DeviceContext[target: CompilationTarget = default_accelerator()](
@@ -746,7 +744,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             var hal_context = hal_device[].get_context()
             var hal_stream = hal_context[].create_stream()
             self._impl = Self._HAL(
-                hal_driver^, hal_device^, hal_context^, hal_stream^, None
+                hal_driver^, hal_device^, hal_context^, hal_stream^
             )
 
     # ===-------------------------------------------------------------------===#
@@ -863,6 +861,17 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self._impl = _impl^
 
     @doc_hidden
+    def __init__(out self, *, _legacy: Self._Legacy) where use_legacy_backend():
+        """Wraps a legacy context.
+
+        Only available in a build whose backend is the legacy one.
+
+        Args:
+            _legacy: The legacy device context to wrap.
+        """
+        self._impl = _legacy
+
+    @doc_hidden
     def __init__(out self, ctx_ptr: _DeviceContextPtr[mut=True]):
         """Wraps the runtime's native context handle.
 
@@ -928,12 +937,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         make on the context directly.
 
         Returns:
-            The handle of the backend context this wrapper holds.
+            The handle of the backend context this wrapper holds, or null for
+            the HAL backend, which has no native context handle.
         """
         comptime if use_legacy_backend():
             return self._impl._handle
         else:
-            return self._impl._handle
+            return None
 
     # ===-------------------------------------------------------------------===#
     # Function enqueuer
@@ -2377,6 +2387,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ) raises:
         """Enqueues a closure kernel compiled by `compile_function[ClosureType]`.
 
+        The target's MAX plugin defines what `grid_dim` and `block_dim` mean
+        for a closure kernel.
+
         Parameters:
             ClosureType: The closure's type.
 
@@ -2393,12 +2406,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "closure kernels are only available on the legacy DeviceContext"
-        self._impl.enqueue_function[ClosureType](
-            f,
+        MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
+            self._impl,
+            f.kernel,
             closure,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            location=location,
+            location=location.or_else(call_location()),
         )
 
     def load_function[
@@ -2467,6 +2481,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ) raises:
         """Enqueues a loaded external function for execution on this device.
 
+        This overload accepts a `DeviceExternalFunction` that was loaded from
+        assembly code (PTX/SASS). External functions are pre-compiled GPU
+        kernels that can be integrated with Mojo code.
+
         Parameters:
             Ts: The types of the arguments.
 
@@ -2481,12 +2499,48 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             constant_memory: The constant memory mappings.
             location: The source location of the call.
 
+        Example:
+
+        ```text
+        from max.gpu.host import DeviceContext
+
+        def vec_add_sig(
+            in0: Pointer[Float32],
+            in1: Pointer[Float32],
+            out: Pointer[Float32],
+            len: Int,
+        ):
+            pass
+
+        with DeviceContext() as ctx:
+            var func = ctx.load_function[vec_add_sig](
+                function_name="vectorAdd",
+                asm=ptx_code,
+            )
+            ctx.enqueue_function(
+                func,
+                in0_buf,
+                in1_buf,
+                out_buf,
+                1024,
+                grid_dim=Dim(32),
+                block_dim=Dim(32),
+            )
+            ctx.synchronize()
+        ```
+
         Raises:
             If the launch fails.
         """
         comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_function(
-                f._impl,
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
+                grid_dim, location=call_location()
+            )
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
+                block_dim, location=call_location()
+            )
+            f._impl._call_with_pack(
+                self._impl,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -2494,7 +2548,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=attributes^,
                 constant_memory=constant_memory^,
-                location=location,
+                location=location.or_else(call_location()),
             )
             return
 
@@ -2536,7 +2590,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *Ts: DevicePassable
     ](
         self,
-        f: DeviceFunction,
+        f: DeviceFunction[target=Self.target, ...],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -2550,7 +2604,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         The function must have been compiled with type checking enabled (via
         `compile_function`), which verifies at compile time that the argument
-        types match the declared types.
+        types match the declared types. When the MAX plugin for `f`'s target
+        handles launches, the plugin's `enqueue_function_fn` launches it
+        instead.
 
         ```mojo
         from max.gpu.host import DeviceContext
@@ -2582,17 +2638,38 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the launch fails.
         """
         comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_function(
-                f._impl,
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location,
-            )
+            comptime plugin = MaxPluginForTarget[Self.target]
+            comptime if plugin._handles_enqueue_function:
+                plugin.enqueue_function_fn(
+                    self,
+                    f,
+                    *args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    location=location.or_else(call_location()),
+                )
+            else:
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceContext.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
+                f._impl._call_with_pack_checked(
+                    self._impl,
+                    *args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    location=location.or_else(call_location()),
+                )
             return
 
         var hal_f: _HALDeviceFunction[...] = f._impl
@@ -2703,49 +2780,25 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation or the launch fails.
         """
         comptime __guard not use_legacy_backend() else:
-            # Leaving `host_args` out when there are none lets a plugin's own
-            # `enqueue_function[func]` overload, which takes no host arguments,
-            # win over the base one that raises for targets that launch through
-            # their own overloads.
-            comptime if HostArgs.length == 0:
-                self._impl.enqueue_function[
-                    func,
-                    link_options=link_options,
-                    dump_asm=dump_asm,
-                    dump_llvm=dump_llvm,
-                    _dump_sass=_dump_sass,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](
-                    *encoded_args,
-                    grid_dim=grid_dim,
-                    block_dim=block_dim,
-                    cluster_dim=cluster_dim,
-                    shared_mem_bytes=shared_mem_bytes,
-                    attributes=attributes^,
-                    constant_memory=constant_memory^,
-                    func_attribute=func_attribute,
-                    location=location,
-                )
-            else:
-                self._impl.enqueue_function[
-                    func,
-                    link_options=link_options,
-                    dump_asm=dump_asm,
-                    dump_llvm=dump_llvm,
-                    _dump_sass=_dump_sass,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](
-                    *encoded_args,
-                    host_args=host_args,
-                    grid_dim=grid_dim,
-                    block_dim=block_dim,
-                    cluster_dim=cluster_dim,
-                    shared_mem_bytes=shared_mem_bytes,
-                    attributes=attributes^,
-                    constant_memory=constant_memory^,
-                    func_attribute=func_attribute,
-                    location=location,
-                )
+            self._impl.enqueue_function[
+                func,
+                link_options=link_options,
+                dump_asm=dump_asm,
+                dump_llvm=dump_llvm,
+                _dump_sass=_dump_sass,
+                _ptxas_info_verbose=_ptxas_info_verbose,
+            ](
+                *encoded_args,
+                host_args=host_args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                func_attribute=func_attribute,
+                location=location,
+            )
             return
 
         comptime if Self._HALHooks.Enqueuer.overrides:
@@ -2807,6 +2860,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """Compiles and enqueues a capturing kernel whose captures are device
         passable.
 
+        This overload is for kernels that capture variables from their
+        enclosing scope. The closure is encoded through `DevicePassable` before
+        launch so host handles such as `DevicePointer` become device addresses,
+        matching explicit kernel arguments.
+
         Parameters:
             FuncType: The type of the capturing kernel.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
@@ -2829,25 +2887,76 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             func_attribute: An attribute to use when compiling the function.
             location: The source location of the call.
 
+        Most parameters are inferred automatically. This overload is selected
+        when your kernel captures variables from its surrounding scope:
+
+        ```text
+        from max.gpu import global_idx
+        from max.gpu.host import DeviceContext
+        from layout import TileTensor, row_major
+
+
+        def main() raises:
+            with DeviceContext() as ctx:
+                var scale_factor: Float32 = 2.0
+
+                var data_buffer = ctx.enqueue_create_buffer[.float32](100)
+                var data = TileTensor(data_buffer, row_major[100]())
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        h[i] = Float32(i)
+
+                # This kernel captures 'scale_factor' from the enclosing scope
+                def scale_kernel() {var}:
+                    var i = global_idx.x
+                    if i >= 100:
+                        return
+                    data[i] = data[i] * scale_factor
+
+                ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
+                ctx.synchronize()
+                with data_buffer.map_to_host() as h:
+                    for i in range(data.num_elements()):
+                        print(h[i])
+        ```
+
         Raises:
             If the compilation or the launch fails.
         """
         comptime if use_legacy_backend():
-            self._impl.enqueue_function[
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
+                grid_dim, location=call_location()
+            )
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
+                block_dim, location=call_location()
+            )
+
+            var gpu_kernel = LegacyDeviceFunction[
+                FuncType.__call__,
+                target=Self.target,
+                _ptxas_info_verbose=_ptxas_info_verbose,
+            ](
+                self._impl,
+                func_attribute=self._impl._func_attribute_for_launch(
+                    func_attribute, shared_mem_bytes
+                ),
+            )
+            gpu_kernel.dump_rep[
                 dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
                 _dump_sass=_dump_sass,
-                _ptxas_info_verbose=_ptxas_info_verbose,
-            ](
+            ]()
+
+            gpu_kernel._call_with_pack_checked(
+                self._impl,
                 func,
-                grid_dim,
-                block_dim,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
                 cluster_dim=cluster_dim,
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=attributes^,
                 constant_memory=constant_memory^,
-                func_attribute=func_attribute,
-                location=location,
+                location=location.or_else(call_location()),
             )
         else:
             comptime assert conforms_to(
@@ -2892,6 +3001,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """Compiles and enqueues a capturing kernel whose captures are plain
         register-passable values.
 
+        Callable structs that store a capturing function value cannot implement
+        `DevicePassable` (that generic bound makes every method `capturing
+        thin`). This overload compiles `FuncType.__call__` and passes `func`
+        by its host layout as the kernel's single argument. Capturing closures
+        that do conform to `DevicePassable` use the encoding overload instead.
+
         Parameters:
             FuncType: The type of the capturing kernel.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
@@ -2918,21 +3033,39 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation or the launch fails.
         """
         comptime if use_legacy_backend():
-            self._impl.enqueue_function[
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
+                grid_dim, location=call_location()
+            )
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
+                block_dim, location=call_location()
+            )
+
+            var gpu_kernel = LegacyDeviceFunction[
+                FuncType.__call__,
+                target=Self.target,
+                _ptxas_info_verbose=_ptxas_info_verbose,
+            ](
+                self._impl,
+                func_attribute=self._impl._func_attribute_for_launch(
+                    func_attribute, shared_mem_bytes
+                ),
+            )
+            gpu_kernel.dump_rep[
                 dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
                 _dump_sass=_dump_sass,
-                _ptxas_info_verbose=_ptxas_info_verbose,
-            ](
-                func,
-                grid_dim,
-                block_dim,
+            ]()
+
+            gpu_kernel._call_with_pack_checked(
+                self._impl,
+                host_args=(func,),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
                 cluster_dim=cluster_dim,
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=attributes^,
                 constant_memory=constant_memory^,
-                func_attribute=func_attribute,
-                location=location,
+                location=location.or_else(call_location()),
             )
         else:
             self._enqueue_closure_hal(

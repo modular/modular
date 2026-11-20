@@ -255,6 +255,28 @@ def ReuseGraphBlobBuffers : Pass<"mogg-reuse-graph-blob-buffers"> {
   ];
 }
 
+def LowerGraphBlobs : Pass<"mogg-lower-graph-blobs"> {
+  let summary = "Write each graph blob as host ops and one kernel launch.";
+  let description = [{
+    Replaces each `mogg.graph_blob` with the host ops that launch it and a
+    `mogg.graph_blob.launch` whose region is the kernel. The host computes each
+    declarative call's configuration, the blob's launch configuration, and the
+    part of the launch each call runs on. The kernel runs each call in a
+    `mogg.graph_blob.call`, in the blob's order, with a barrier between
+    consecutive calls.
+
+    Each call builds its operands from the values that cross the launch. A
+    value crosses when the kernel can't build it: a routine argument, or the
+    result of an op whose results are built on the host. A value that several
+    calls use crosses once. A value the host builds that can't cross is an
+    error.
+
+    Assumes every call in a blob runs on the blob's device context.
+  }];
+
+  let dependentDialects = ["M::MOGG::MOGGDialect"];
+}
+
 def OutlineRoutines
     : Pass<"mogg-outline-routines", "mlir::ModuleOp"> {
   let summary = "Outline each `mogg.routine` body into a `mogg.func`.";
@@ -300,7 +322,8 @@ def RowwiseCreateTile
     skipped `map-rcse`) a tile that loads the capture its first fold reads
     at the element index, and turns those loads, in every phase, into
     `mogg.rowwise.tile.load`. Sets `keep_tile` when more than one phase
-    reads the tile.
+    reads the tile, or the kernel has a `mogg.rowwise.cache`, which computes
+    from the kept tile.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];
@@ -342,10 +365,11 @@ def RowwiseSetLaunchParams
     - A body that writes one value per row has `num_phases` 1 and
       `dtype_size` 0, and is expensive when its per-element cost reaches
       the threshold.
-    - A body that writes every element has `num_phases` folds + 1, and is
-      expensive. `dtype_size` is the row's element size, which lets a long
-      row split, when every fold keeps one field (as in rms_norm and
-      softmax), else 0 (as in layer_norm).
+    - A body that writes every element has `num_phases` folds + 1, not
+      counting folds of a `mogg.rowwise.cache`, and is expensive.
+      `dtype_size` is the row's element size, which lets a long row split,
+      when every fold keeps one field (as in rms_norm and softmax) and
+      there is no cache, else 0 (as in layer_norm).
 
     Runs after `mogg-rowwise-group-row-stores`, which leaves no store
     directly in the body.
@@ -365,9 +389,10 @@ def RowwiseSetLaunchParams
 def AnonymizeDimNames: Pass<"mogg-anonymize-dim-names", "ModuleOp"> {
   let summary = "Drop symbolic dim names from every kernel stub's signature.";
   let description = [{
-    Turns every `!mogg.dim<name>` in a `mogg.func` signature into
-    `!mogg.dim`, so `MergeIdenticalFuncs` can merge stubs that differ
-    only in dim names. Runs inside `EmitMojo` just before that merge.
+    Turns every `!mogg.dim<name>` in a `mogg.func` signature, and every one
+    that a block nested in its body takes, into `!mogg.dim`, so
+    `MergeIdenticalFuncs` can merge stubs that differ only in dim names. Runs
+    inside `EmitMojo` just before that merge.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];

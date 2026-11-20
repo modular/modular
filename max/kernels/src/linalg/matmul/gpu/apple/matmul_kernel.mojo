@@ -29,7 +29,7 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 from std.collections import Array, Optional
 from max.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
 from std.math import align_down, ceildiv, divmod
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.sys import align_of, size_of
 from layout import TensorEngine, TileTensor, Idx
 from layout.layout import Layout, TensorLayout, row_major
@@ -2375,9 +2375,11 @@ def enqueue_apple_matmul[
                 b,
                 log2_m,
                 log2_n,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(grid_dim),
+                    block_dim=(MM.THREADS_PER_BLOCK),
+                ),
                 host_args=(epilogue_fn,),
-                grid_dim=(grid_dim),
-                block_dim=(MM.THREADS_PER_BLOCK),
             )
         elif has_compute_fn:
             comptime kernel = MMT.run_with_compute_fn[
@@ -2395,9 +2397,11 @@ def enqueue_apple_matmul[
                 b,
                 log2_m,
                 log2_n,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(grid_dim),
+                    block_dim=(MM.THREADS_PER_BLOCK),
+                ),
                 host_args=(compute_fn,),
-                grid_dim=(grid_dim),
-                block_dim=(MM.THREADS_PER_BLOCK),
             )
         else:
             comptime kernel = MMT.run[
@@ -2414,8 +2418,10 @@ def enqueue_apple_matmul[
                 b,
                 log2_m,
                 log2_n,
-                grid_dim=(grid_dim),
-                block_dim=(MM.THREADS_PER_BLOCK),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(grid_dim),
+                    block_dim=(MM.THREADS_PER_BLOCK),
+                ),
             )
 
     if fits_i32:
@@ -2581,9 +2587,11 @@ def enqueue_apple_conv2d[
                 conv,
                 log2_m,
                 log2_n,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(grid_dim),
+                    block_dim=(MM.THREADS_PER_BLOCK),
+                ),
                 host_args=(epilogue_fn,),
-                grid_dim=(grid_dim),
-                block_dim=(MM.THREADS_PER_BLOCK),
             )
         elif has_compute_fn:
             comptime kernel = MM.run_conv_with_compute_fn[
@@ -2603,9 +2611,11 @@ def enqueue_apple_conv2d[
                 conv,
                 log2_m,
                 log2_n,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(grid_dim),
+                    block_dim=(MM.THREADS_PER_BLOCK),
+                ),
                 host_args=(compute_fn,),
-                grid_dim=(grid_dim),
-                block_dim=(MM.THREADS_PER_BLOCK),
             )
         else:
             comptime kernel = MM.run_conv[
@@ -2624,8 +2634,10 @@ def enqueue_apple_conv2d[
                 conv,
                 log2_m,
                 log2_n,
-                grid_dim=(grid_dim),
-                block_dim=(MM.THREADS_PER_BLOCK),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(grid_dim),
+                    block_dim=(MM.THREADS_PER_BLOCK),
+                ),
             )
 
     if Int(conv.C) % 8 == 0:
@@ -2795,8 +2807,10 @@ def enqueue_apple_matmul_split_k[
             log2_m,
             log2_n,
             Int32(k_per_split),
-            grid_dim=(side_m * side_n * actual_splits),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(side_m * side_n * actual_splits),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
         )
     else:
         ctx.enqueue_function[partial_kernel_i64](
@@ -2806,8 +2820,10 @@ def enqueue_apple_matmul_split_k[
             log2_m,
             log2_n,
             Int32(k_per_split),
-            grid_dim=(side_m * side_n * actual_splits),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(side_m * side_n * actual_splits),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
         )
     var n_elems = m * n
     comptime if has_epilogue_fn:
@@ -2818,9 +2834,11 @@ def enqueue_apple_matmul_split_k[
             c,
             partials.unsafe_ptr(),
             Int32(actual_splits),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
+                block_dim=(MM.REDUCE_BLOCK),
+            ),
             host_args=(epilogue_fn,),
-            grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
-            block_dim=(MM.REDUCE_BLOCK),
         )
     elif has_compute_fn:
         comptime reduce_kernel = MM.run_split_k_reduce_with_compute_fn[
@@ -2830,9 +2848,11 @@ def enqueue_apple_matmul_split_k[
             c,
             partials.unsafe_ptr(),
             Int32(actual_splits),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
+                block_dim=(MM.REDUCE_BLOCK),
+            ),
             host_args=(compute_fn,),
-            grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
-            block_dim=(MM.REDUCE_BLOCK),
         )
     else:
         comptime reduce_kernel = MM.run_split_k_reduce[
@@ -2842,8 +2862,10 @@ def enqueue_apple_matmul_split_k[
             c,
             partials.unsafe_ptr(),
             Int32(actual_splits),
-            grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
-            block_dim=(MM.REDUCE_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
+                block_dim=(MM.REDUCE_BLOCK),
+            ),
         )
     # Keep the workspace alive until both launches are enqueued.
     _ = partials^
@@ -2978,8 +3000,10 @@ def enqueue_apple_matmul_clamp_chain[
             log2_n,
             Int32(0),
             Int32(strips_pass0),
-            grid_dim=(grid_dim),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(grid_dim),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
         )
         ctx.enqueue_function[pass1_i32](
             c,
@@ -2989,8 +3013,10 @@ def enqueue_apple_matmul_clamp_chain[
             log2_n,
             Int32(strips_pass0),
             Int32(num_strips),
-            grid_dim=(grid_dim),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(grid_dim),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
         )
         return
     ctx.enqueue_function[pass0_i64](
@@ -3001,8 +3027,10 @@ def enqueue_apple_matmul_clamp_chain[
         log2_n,
         Int32(0),
         Int32(strips_pass0),
-        grid_dim=(grid_dim),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_dim),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )
     ctx.enqueue_function[pass1_i64](
         c,
@@ -3012,6 +3040,8 @@ def enqueue_apple_matmul_clamp_chain[
         log2_n,
         Int32(strips_pass0),
         Int32(num_strips),
-        grid_dim=(grid_dim),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_dim),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )

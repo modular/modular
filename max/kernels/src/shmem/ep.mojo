@@ -17,7 +17,7 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 """
 
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute, GridBlockLaunchConfig
 from max.gpu.host.info import is_gpu
 from std.math import ceildiv
 from layout import DefaultEngine, TensorEngine, TensorLayout, TileTensor
@@ -697,9 +697,11 @@ def ep_dispatch_wait_kernel_api[
             ep_counters,
             my_rank,
             expert_load,
-            grid_dim=grid_dim_x,
-            block_dim=hw_info.max_thread_block_size,
-            shared_mem_bytes=Int(smem_size),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=grid_dim_x,
+                block_dim=hw_info.max_thread_block_size,
+                shared_mem_bytes=Int(smem_size),
+            ),
         )
 
 

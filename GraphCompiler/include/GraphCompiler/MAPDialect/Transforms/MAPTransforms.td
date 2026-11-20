@@ -150,10 +150,13 @@ def FuseReductions : Pass<"map-fuse-reductions", "MO::GraphOp"> {
     reads is cloned at each load of its result. A consumer over the per-row
     shape that reads a per-row result at its own index becomes row-level
     ops, and its result a rowwise output. A consumer over the rowwise shape
-    that reads per-row results at its own row becomes a map phase. A rowwise
+    that reads per-row results at its own row becomes a map phase, unless a
+    later reduction takes it as a producer, which it may when its other
+    readers all end up in that reduction's kernel. A rowwise
     kernel whose per-row results only a later rowwise kernel over the same
     rows, with a map phase, reads at its own row runs at the start of that
-    kernel's row.
+    kernel's row; its own map phase, if the later kernel reads its output at
+    the same element, becomes a `map.iter.cache`.
   }];
 
   let dependentDialects = [

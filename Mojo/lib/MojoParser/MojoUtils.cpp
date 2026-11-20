@@ -83,7 +83,8 @@ ASTType LIT::specializeStruct(const ParamBindings &bindings,
   TypeSignatureType sig = structOp.getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, declIfKnown,
-                     /*discardError=*/false);
+                     /*discardError=*/false,
+                     bindings.declScope.getShared().noAssumptions);
   VerifiedParamBindings verified = inference.inferForStruct();
   if (!verified)
     return {};

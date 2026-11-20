@@ -91,20 +91,16 @@ def _params(device: Accelerator, cache_dtype: DType) -> MLAKVCacheParams:
 
 
 def _weights(seed: int) -> dict[str, np.ndarray]:
-    """Draws the layer's six weights at the layer's small-Gaussian scale."""
+    """Draws the layer's weights at the layer's small-Gaussian scale."""
     rng = np.random.default_rng(seed)
 
     def draw(*shape: int) -> np.ndarray:
         return (rng.standard_normal(shape) * 0.02).astype(np.float32)
 
     return {
-        "qkv_a_g": draw(
-            _Q_LORA_RANK
-            + _KV_LORA_RANK
-            + _QK_ROPE_HEAD_DIM
-            + _NUM_HEADS * _V_HEAD_DIM,
-            _HIDDEN,
-        ),
+        "q_a": draw(_Q_LORA_RANK, _HIDDEN),
+        "kv_a": draw(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN),
+        "g": draw(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN),
         "q_a_norm": np.ones(_Q_LORA_RANK, dtype=np.float32),
         "q_b": draw(
             _NUM_HEADS * (_QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM), _Q_LORA_RANK
@@ -120,16 +116,12 @@ def _weights(seed: int) -> dict[str, np.ndarray]:
 def _weight_layouts(device: Device) -> dict[str, TensorLayout]:
     """The layouts of the weights `_weights` draws, in its order."""
     return {
-        "qkv_a_g": TensorLayout(
-            DType.bfloat16,
-            [
-                _Q_LORA_RANK
-                + _KV_LORA_RANK
-                + _QK_ROPE_HEAD_DIM
-                + _NUM_HEADS * _V_HEAD_DIM,
-                _HIDDEN,
-            ],
-            device,
+        "q_a": TensorLayout(DType.bfloat16, [_Q_LORA_RANK, _HIDDEN], device),
+        "kv_a": TensorLayout(
+            DType.bfloat16, [_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN], device
+        ),
+        "g": TensorLayout(
+            DType.bfloat16, [_NUM_HEADS * _V_HEAD_DIM, _HIDDEN], device
         ),
         "q_a_norm": TensorLayout(DType.bfloat16, [_Q_LORA_RANK], device),
         "q_b": TensorLayout(
@@ -213,7 +205,9 @@ def _compile_step(
     cache_types = _cache_layouts(params, device, widths)
 
     def forward(
-        w_qkv_a_g: Tensor,
+        w_q_a: Tensor,
+        w_kv_a: Tensor,
+        w_g: Tensor,
         w_q_a_norm: Tensor,
         w_q_b: Tensor,
         w_kv_a_norm: Tensor,
@@ -244,7 +238,9 @@ def _compile_step(
             kv_params=params,
             layer_idx=0,
         )
-        layer.qkv_a_g_proj.weight = w_qkv_a_g
+        layer.q_a_proj.weight = w_q_a
+        layer.kv_a_proj_with_mqa.weight = w_kv_a
+        layer.g_proj.weight = w_g
         layer.q_a_layernorm.weight = w_q_a_norm
         layer.q_b_proj.weight = w_q_b
         layer.kv_a_layernorm.weight = w_kv_a_norm

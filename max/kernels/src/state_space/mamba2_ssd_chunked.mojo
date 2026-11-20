@@ -45,7 +45,7 @@ launches.
 
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.compute.mma import ld_matrix, mma
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.sync import barrier
 from std.math import ceildiv, divmod, exp2, fma
 from std.memory import unsafe_stack_allocation
@@ -1220,8 +1220,10 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         Int32(num_draft_tokens),
         info,
         query_start_loc,
-        grid_dim=(1, 1, 1),
-        block_dim=(1, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(1, 1, 1),
+            block_dim=(1, 1, 1),
+        ),
     )
 
     comptime cumsum_kernel = ssd_chunk_cumsum[
@@ -1243,9 +1245,11 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         info,
         cs,
         delta,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(slots, nheads, 1),
+            block_dim=(CHUNK, 1, 1),
+        ),
         host_args=(dt_fn,),
-        grid_dim=(slots, nheads, 1),
-        block_dim=(CHUNK, 1, 1),
     )
 
     def launch_pass[VPT: Int, entry_bf16: Bool](entry_addr: Int) raises {imm}:
@@ -1276,13 +1280,15 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             has_initial_state,
             update_state,
             Int64(entry_addr),
-            host_args=(slot_fn,),
-            grid_dim=(
-                ceildiv(head_dim * DSTATE // F32_VEC, NUM_THREADS * VPT),
-                nheads,
-                batch,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    ceildiv(head_dim * DSTATE // F32_VEC, NUM_THREADS * VPT),
+                    nheads,
+                    batch,
+                ),
+                block_dim=(NUM_THREADS, 1, 1),
             ),
-            block_dim=(NUM_THREADS, 1, 1),
+            host_args=(slot_fn,),
         )
 
     def state_pass[entry_bf16: Bool](entry_addr: Int) raises {imm}:
@@ -1428,9 +1434,11 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             cs,
             delta,
             states,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(slots, nheads, head_dim // TILE),
+                block_dim=(OUT_THREADS, 1, 1),
+            ),
             host_args=(x_fn, b_fn),
-            grid_dim=(slots, nheads, head_dim // TILE),
-            block_dim=(OUT_THREADS, 1, 1),
         )
 
         state_pass[False](0)
@@ -1471,9 +1479,11 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                     Int32(ngroups),
                     info.as_imm(),
                     cb,
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(slots, ngroups, CHUNK // TILE),
+                        block_dim=(OUT_THREADS, 1, 1),
+                    ),
                     host_args=(b_fn, c_fn),
-                    grid_dim=(slots, ngroups, CHUNK // TILE),
-                    block_dim=(OUT_THREADS, 1, 1),
                 )
                 ctx.enqueue_function[out_kernel](
                     Int32(slots),
@@ -1487,13 +1497,15 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                     delta,
                     states,
                     cb.as_imm(),
-                    host_args=(x_fn, b_fn, c_fn),
-                    grid_dim=(
-                        slots,
-                        nheads,
-                        (CHUNK // TILE) * (head_dim // TILE),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(
+                            slots,
+                            nheads,
+                            (CHUNK // TILE) * (head_dim // TILE),
+                        ),
+                        block_dim=(OUT_THREADS, 1, 1),
                     ),
-                    block_dim=(OUT_THREADS, 1, 1),
+                    host_args=(x_fn, b_fn, c_fn),
                 )
                 return
             ctx.enqueue_function[out_kernel](
@@ -1508,9 +1520,15 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                 delta,
                 states,
                 cs.as_imm(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(
+                        slots,
+                        nheads,
+                        (CHUNK // TILE) * (head_dim // TILE),
+                    ),
+                    block_dim=(OUT_THREADS, 1, 1),
+                ),
                 host_args=(x_fn, b_fn, c_fn),
-                grid_dim=(slots, nheads, (CHUNK // TILE) * (head_dim // TILE)),
-                block_dim=(OUT_THREADS, 1, 1),
             )
 
         comptime if grouped_cb_mode == GROUPED_CB_ON:

@@ -81,7 +81,6 @@ HAS_FALLBACK(MO::LayerNormOp)
 HAS_FALLBACK(MO::ReduceMinAndMaxOp)
 HAS_FALLBACK(MO::Composite::ReduceRMSNormOp)
 HAS_FALLBACK(MO::Composite::ReduceRMSNormRoPEOp)
-HAS_FALLBACK(MO::Composite::ReduceRMSNormFusedResidualAddOp)
 HAS_FALLBACK(MO::Composite::RMSNormResidualAddOp)
 HAS_FALLBACK(MO::MaxPoolOp)
 HAS_FALLBACK(MO::MaxPoolCeilOp)
@@ -178,7 +177,6 @@ struct AddFallbackShapeFunctions
       CALL_FALLBACK(MO::ReduceMinAndMaxOp)
       CALL_FALLBACK(MO::Composite::ReduceRMSNormOp)
       CALL_FALLBACK(MO::Composite::ReduceRMSNormRoPEOp)
-      CALL_FALLBACK(MO::Composite::ReduceRMSNormFusedResidualAddOp)
       CALL_FALLBACK(MO::Composite::RMSNormResidualAddOp)
       CALL_FALLBACK(MO::MaxPoolOp)
       CALL_FALLBACK(MO::MaxPoolCeilOp)
@@ -926,19 +924,6 @@ Fallback<MO::ReduceMinAndMaxOp>::build(GraphOp &graph, OpBuilder &builder,
                    op.getOutputParamDecls(),
                    /*kgenParams=*/{{"axis", op.getAxisAttr()}},
                    /*dataDepInputIdxs=*/{});
-  return success();
-}
-
-ErrorOrSuccess Fallback<MO::Composite::ReduceRMSNormFusedResidualAddOp>::build(
-    GraphOp &graph, OpBuilder &builder,
-    MO::Composite::ReduceRMSNormFusedResidualAddOp op) {
-  // Both output and intermediate have the same shape as input.
-  buildForOpResult(
-      graph, builder, op.getOutput(),
-      MO::Composite::ReduceRMSNormFusedResidualAddOp::getOperationName(),
-      op.getOperands(), op.getOutputParamDecls(),
-      /*kgenParams=*/{},
-      /*dataDepInputIdxs=*/{});
   return success();
 }
 

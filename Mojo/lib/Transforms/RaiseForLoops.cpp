@@ -19,6 +19,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/POPDialect/POPOps.h"
+#include "Mojo/TransformUtils/LoopUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Dominance.h"
@@ -26,6 +27,7 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/RegionUtils.h"
 
 #define DEBUG_TYPE "raise-for-loops"
@@ -694,6 +696,21 @@ reorderValueIntoGroups(ValueRange values,
   return result;
 }
 
+/// Return whether an effect runs ahead of the loop's test. A raised
+/// `hlcf.for` tests its bound before the body, so the ops ahead of an exiting
+/// test lose the execution the `hlcf.loop` gave them on the iteration that
+/// exits.
+/// Rotation is what normally clears this; it reports what it could not move.
+static bool effectsPrecedeTest(LoopOp loop, Operation *ifOp) {
+  Block &body = loop.getBody().front();
+  if (ifOp->getBlock() != &body)
+    return true;
+
+  return llvm::any_of(
+      llvm::make_range(body.begin(), ifOp->getIterator()),
+      [](Operation &op) { return !isDroppableOnExitIteration(&op); });
+}
+
 /// Return whether the if/elif exit test has complex logic that is not supported
 /// for raising.
 template <typename IfLikeOp>
@@ -828,6 +845,13 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
     // TODO: handle exit logic in loop unrolling and lower loops, which requires
     // raise ForOp to keep track of the exit block.
     return diag.attachNote(loop->getLoc()) << "loop has complex exit logic";
+  }
+
+  // Whatever `rotate-loops` left ahead of the test still loses its last
+  // execution here, so the loop only raises when that is unobservable.
+  if (effectsPrecedeTest(loop, ifOp)) {
+    return diag.attachNote(loop->getLoc())
+           << "loop runs part of its body before its test";
   }
 
   std::optional<ForLoopBoundsAndSteps> loopInfo =
@@ -1168,6 +1192,15 @@ void RaiseForLoops::runOnOperation() {
   }
 
   simplifyTrivialLitTries(getOperation());
+
+  // An exiting test that follows part of the body raises to the wrong trip
+  // count, so move it to the top of the body first. What `rotate-loops`
+  // declines to move stays ahead of the test, and `raiseForLoops` leaves those
+  // loops alone.
+  mlir::OpPassManager rotation(FuncOp::getOperationName());
+  rotation.addPass(createRotateLoops());
+  if (failed(runPipeline(rotation, getOperation())))
+    return signalPassFailure();
 
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
 

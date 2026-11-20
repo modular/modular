@@ -40,3 +40,22 @@ def test_commands_that_compile_refuse_eager(
     )
     assert result.exit_code == 2, result.output
     assert refusal in result.output
+
+
+@pytest.mark.parametrize("command", ["serve", "generate"])
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ["--decode-context-parallel-degree", "4"],
+        ["--prefill-context-parallel"],
+    ],
+)
+def test_commands_on_max_kv_cache_refuse_context_parallelism(
+    command: str, flag: list[str]
+) -> None:
+    result = CliRunner().invoke(
+        pipelines.main,
+        [command, "--model-path", "HuggingFaceTB/SmolLM2-135M", *flag],
+    )
+    assert result.exit_code == 2, result.output
+    assert "serve the artifact on Mach" in result.output

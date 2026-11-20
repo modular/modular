@@ -20,7 +20,7 @@ a magic-multiply + shift, but the *result* must stay bit-identical to the
 MAX algorithm baseline for every shape and `subvolume_rank`.
 
 This is a pure host-side check (no device launch): it compares the two
-functions' `IndexList` outputs directly. It covers `subvolume_rank` in
+functions' outputs element by element. It covers `subvolume_rank` in
 {0, 1, 2}, ranks 2/3/4, over a sweep of flat indices, and runs each shape both
 as an all-static `Coord` (the fold fires) and an all-dynamic `Coord` (degrades
 to the runtime-divide path). All four must agree with the MAX reference.
@@ -55,14 +55,14 @@ def _check[
         var got_dynamic = _get_start_indices_of_nth_subvolume_static[
             subvolume_rank=subvolume_rank
         ](n, dynamic_shape)
-        for d in range(rank):
+        comptime for d in range(rank):
             assert_equal(
-                got_static[d],
+                Int(got_static[d]),
                 expected[d],
                 msg="static-Coord fold diverged from stdlib reference",
             )
             assert_equal(
-                got_dynamic[d],
+                Int(got_dynamic[d]),
                 expected[d],
                 msg="dynamic-Coord path diverged from stdlib reference",
             )

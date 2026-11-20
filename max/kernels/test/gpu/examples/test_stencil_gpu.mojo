@@ -14,11 +14,11 @@
 from max.algorithm.functional import stencil, stencil_gpu
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
+from std.utils.coord import DynamicCoord
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_almost_equal
 
-from std.utils import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -47,6 +47,7 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool")
     comptime rank = 4
     comptime stencil_rank = 2
+    comptime StencilPoint = DynamicCoord[DType.int, stencil_rank]
     comptime dtype = DType.float32
     comptime simd_width = 1
 
@@ -86,10 +87,10 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
     var d_output = d_output_managed.device_tensor()
 
     def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](point[0], point[1])
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0], point[1])
+        var upper_bound = StencilPoint(
             point[0] + pool_window_h, point[1] + pool_window_w
         )
         return lower_bound, upper_bound
@@ -126,11 +127,9 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         var res = val / (pool_window_h * pool_window_w)
         d_output.store(point, res)
 
-    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -148,10 +147,10 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
     d_output_managed.to_host()
 
     def map_fn_cpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](point[0], point[1])
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0], point[1])
+        var upper_bound = StencilPoint(
             point[0] + pool_window_h, point[1] + pool_window_w
         )
         return lower_bound, upper_bound
@@ -191,7 +190,6 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
     stencil[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -217,6 +215,7 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool_padded")
     comptime rank = 4
     comptime stencil_rank = 2
+    comptime StencilPoint = DynamicCoord[DType.int, stencil_rank]
     comptime dtype = DType.float32
     comptime simd_width = 1
 
@@ -258,12 +257,10 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     var d_output = d_output_managed.device_tensor()
 
     def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](
-            point[0] - pad_h, point[1] - pad_w
-        )
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0] - pad_h, point[1] - pad_w)
+        var upper_bound = StencilPoint(
             point[0] + pool_window_h - pad_h, point[1] + pool_window_w - pad_w
         )
         return lower_bound, upper_bound
@@ -300,11 +297,9 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         var res = val / (pool_window_h * pool_window_w)
         d_output.store(point, res)
 
-    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -322,12 +317,10 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     d_output_managed.to_host()
 
     def map_fn_cpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](
-            point[0] - pad_h, point[1] - pad_w
-        )
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0] - pad_h, point[1] - pad_w)
+        var upper_bound = StencilPoint(
             point[0] + pool_window_h - pad_h, point[1] + pool_window_w - pad_w
         )
         return lower_bound, upper_bound
@@ -367,7 +360,6 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     stencil[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -394,6 +386,7 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool_stride_2")
     comptime rank = 4
     comptime stencil_rank = 2
+    comptime StencilPoint = DynamicCoord[DType.int, stencil_rank]
     comptime dtype = DType.float32
     comptime simd_width = 1
 
@@ -433,12 +426,10 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     var d_output = d_output_managed.device_tensor()
 
     def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](
-            point[0] * stride, point[1] * stride
-        )
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0] * stride, point[1] * stride)
+        var upper_bound = StencilPoint(
             point[0] * stride + pool_window_h,
             point[1] * stride + pool_window_w,
         )
@@ -476,11 +467,9 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         var res = val / (pool_window_h * pool_window_w)
         d_output.store(point, res)
 
-    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -498,12 +487,10 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     d_output_managed.to_host()
 
     def map_fn_cpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](
-            point[0] * stride, point[1] * stride
-        )
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0] * stride, point[1] * stride)
+        var upper_bound = StencilPoint(
             point[0] * stride + pool_window_h,
             point[1] * stride + pool_window_w,
         )
@@ -544,7 +531,6 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     stencil[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -571,6 +557,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     print("== test_stencil_gpu_max_pool")
     comptime rank = 4
     comptime stencil_rank = 2
+    comptime StencilPoint = DynamicCoord[DType.int, stencil_rank]
     comptime dtype = DType.float32
     comptime simd_width = 1
 
@@ -615,12 +602,10 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     var d_output = d_output_managed.device_tensor()
 
     def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](
-            point[0] * stride, point[1] * stride
-        )
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0] * stride, point[1] * stride)
+        var upper_bound = StencilPoint(
             (point[0] * stride + pool_window_h * dilation),
             (point[1] * stride + pool_window_w * dilation),
         )
@@ -657,11 +642,9 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     ](point: Coord, val: SIMD[dtype, simd_width]) {var d_output,}:
         d_output.store(point, val)
 
-    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     stencil_gpu[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -679,12 +662,10 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     d_output_managed.to_host()
 
     def map_fn_cpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](
-            point[0] * stride, point[1] * stride
-        )
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0] * stride, point[1] * stride)
+        var upper_bound = StencilPoint(
             (point[0] * stride + pool_window_h * dilation),
             (point[1] * stride + pool_window_w * dilation),
         )
@@ -724,7 +705,6 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     stencil[
         rank,
         stencil_rank,
-        stencil_axis,
         simd_width,
         dtype,
     ](
@@ -757,6 +737,7 @@ def test_stencil_gpu_max_pool_vectorized_channels(ctx: DeviceContext) raises:
     print("== test_stencil_gpu_max_pool_vectorized_channels")
     comptime rank = 4
     comptime stencil_rank = 2
+    comptime StencilPoint = DynamicCoord[DType.int, stencil_rank]
     comptime dtype = DType.float32
     comptime input_height = 7
     comptime input_width = 7
@@ -795,10 +776,10 @@ def test_stencil_gpu_max_pool_vectorized_channels(ctx: DeviceContext) raises:
     )
 
     def map_fn_gpu(
-        point: IndexList[stencil_rank, ...],
-    ) {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
-        var lower_bound = IndexList[stencil_rank](point[0], point[1])
-        var upper_bound = IndexList[stencil_rank](
+        point: StencilPoint,
+    ) {} -> Tuple[StencilPoint, StencilPoint]:
+        var lower_bound = StencilPoint(point[0], point[1])
+        var upper_bound = StencilPoint(
             point[0] + pool_window_h, point[1] + pool_window_w
         )
         return lower_bound, upper_bound
@@ -836,7 +817,6 @@ def test_stencil_gpu_max_pool_vectorized_channels(ctx: DeviceContext) raises:
 
     # Compare a width above 1 and the scalar kernel against a plain host
     # reference, so a wrong channel-vector offset fails the test.
-    comptime stencil_axis = IndexList[stencil_rank](1, 2)
     comptime widths = [4, 1]
     comptime for width in widths:
         _ = h_output.fill(0)
@@ -844,7 +824,6 @@ def test_stencil_gpu_max_pool_vectorized_channels(ctx: DeviceContext) raises:
         stencil_gpu[
             rank,
             stencil_rank,
-            stencil_axis,
             width,
             dtype,
         ](

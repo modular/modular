@@ -341,18 +341,8 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
         # serve` must not offer it.
         skip_fields.add("sparse_offload")
     elif cls is MAXModelConfig:
-        # Only the gen-mef export sets the decode context parallel fields
-        # and prefill_context_parallel: MAX's own KV cache manager doesn't
-        # shard a request's positions, so `max serve` must not offer them.
-        skip_fields.update(
-            {
-                "kv_cache",
-                "decode_context_parallel_degree",
-                "decode_context_parallel_interleave",
-                "dcp_q_replicate",
-                "prefill_context_parallel",
-            }
-        )
+        # dcp_q_replicate is graph-internal; gen-mef alone sets it.
+        skip_fields.update({"kv_cache", "dcp_q_replicate"})
     elif cls is ProfilingConfig:
         # Kernel-tracing limits are set only from a config file.
         skip_fields.update(

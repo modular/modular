@@ -30,7 +30,7 @@
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/ML/Fill.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "llvm/ADT/Twine.h"
 
 #include <chrono>
@@ -230,7 +230,7 @@ CpuDeviceContext::~CpuDeviceContext() {
 
 ErrorOrSuccess CpuDeviceContext::memAlloc(void **ptr, size_t byteSize,
                                           Device::AllocMode mode) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::memAlloc", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::memAlloc", M_PROFILE_COLOR_PURPLE);
   assert(byteSize != 0);
   *ptr = cpuDevice->getAllocator()->allocateBytes(byteSize, /*alignment=*/1);
   if (*ptr == nullptr) {
@@ -240,7 +240,7 @@ ErrorOrSuccess CpuDeviceContext::memAlloc(void **ptr, size_t byteSize,
 }
 
 ErrorOrSuccess CpuDeviceContext::memFree(void *ptr, Device::FreeKind kind) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::memFree", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::memFree", M_PROFILE_COLOR_PURPLE);
   // A CPU device's allocations are already host memory; nothing to wrap.
   if (kind == Device::FreeKind::WRAPPED)
     RETURN_ERROR("CpuDeviceContext::memFree: WRAPPED memory is not supported");
@@ -277,16 +277,16 @@ ErrorOrSuccess CpuDeviceContext::enqueueWork(AsyncRT::TaskFunction &&work) {
 
 ErrorOrSuccess CpuDeviceContext::enqueueCopyToDevice(void *dst, const void *src,
                                                      size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueCopyToDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueCopyToDevice",
+                 M_PROFILE_COLOR_PURPLE);
   return enqueueWork([=]() { memcpy(dst, src, byteSize); });
 }
 
 ErrorOrSuccess CpuDeviceContext::enqueueCopyFromDevice(void *dst,
                                                        const void *src,
                                                        size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueCopyFromDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueCopyFromDevice",
+                 M_PROFILE_COLOR_PURPLE);
   return enqueueWork([=]() { memcpy(dst, src, byteSize); });
 }
 
@@ -295,7 +295,7 @@ ErrorOrSuccess CpuDeviceContext::memCopyDtoD(DeviceBuffer &dst,
                                              size_t srcByteOffset,
                                              size_t srcByteSize,
                                              bool /*crossStreamSync*/) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::memCopyDtoD", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::memCopyDtoD", M_PROFILE_COLOR_PURPLE);
   CHECK_IS_CPU_ERR(src.context().device());
   CHECK_IS_CPU_ERR(dst.context().device());
   void *srcPtr = (uint8_t *)src.ptr() + srcByteOffset;
@@ -309,8 +309,7 @@ ErrorOrSuccess CpuDeviceContext::memCopyDtoD(DeviceBuffer &dst,
 ErrorOrSuccess CpuDeviceContext::enqueueSetMemory(void *dst, size_t byteSize,
                                                   uint64_t val,
                                                   size_t valSize) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueSetMemory",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueSetMemory", M_PROFILE_COLOR_PURPLE);
 
   if (valSize > sizeof(uint64_t))
     return Error("unsupported val size");
@@ -383,7 +382,7 @@ CpuDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
                                StringRef code, int32_t maxDynamicSharedBytes,
                                StringRef debugLevel,
                                int32_t optimizationLevel) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::loadFunction", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   // Currently not implemented. Maybe never to be implemented.
   RETURN_ERROR("Unimplemented");
 }
@@ -393,8 +392,8 @@ ErrorOrSuccess CpuDeviceContext::enqueueFunctionExecDirect(
     uint32_t blockX, uint32_t blockY, uint32_t blockZ, uint32_t sharedMemBytes,
     void *attrs, uint32_t numAttrs, void **args, uint32_t argCount,
     const size_t *argSizes) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueFunctionExecDirect",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueFunctionExecDirect",
+                 M_PROFILE_COLOR_PURPLE);
   // Currently not implemented. Maybe never to be implemented.
   RETURN_ERROR("Unimplemented");
 }
@@ -403,8 +402,8 @@ ErrorOrSuccess
 CpuDeviceContext::enqueueHostFunction(void (*resumeFunc)(int8_t *),
                                       void (*destroyFunc)(int8_t *),
                                       int8_t *coroHandle) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueHostFunction",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueHostFunction",
+                 M_PROFILE_COLOR_PURPLE);
   // Resume the coroutine to execute the enqueued function, then immediately
   // destroy the coroutine as ownership of it has been transferred from Mojo by
   // this point.
@@ -417,8 +416,8 @@ CpuDeviceContext::enqueueHostFunction(void (*resumeFunc)(int8_t *),
 ErrorOrSuccess CpuDeviceContext::enqueueHostFunctionRange(
     void (*resumeFunc)(int8_t *), void (*destroyFunc)(int8_t *),
     int8_t **coroHandles, size_t numHandles) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueHostFunctionRange",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueHostFunctionRange",
+                 M_PROFILE_COLOR_PURPLE);
   RETURN_IF_PENDING_ERROR(*this);
 
   if (numHandles == 0)
@@ -473,7 +472,7 @@ CpuDeviceContext::createExternalStream(void *externalStream) {
 }
 
 ErrorOrSuccess CpuDeviceContext::synchronize() {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::synchronize", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::synchronize", M_PROFILE_COLOR_PURPLE);
   RETURN_IF_PENDING_ERROR(*this);
   AsyncRT::AnyAsyncValueRef head;
   {
@@ -486,14 +485,14 @@ ErrorOrSuccess CpuDeviceContext::synchronize() {
 }
 
 ErrorOr<DeviceEventRef> CpuDeviceContext::enqueueEvent() {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueEvent", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueEvent", M_PROFILE_COLOR_PURPLE);
   std::lock_guard<std::mutex> streamLock{streamChainMutex};
   return CpuDeviceEventRef::create(static_cast<CpuDevice &>(device()),
                                    cpuDevice, streamChain.copy());
 }
 
 ErrorOrSuccess CpuDeviceContext::enqueueEvent(const DeviceEvent &event) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueEvent", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueEvent", M_PROFILE_COLOR_PURPLE);
   auto &cpuEvent =
       const_cast<CpuDeviceEvent &>(static_cast<const CpuDeviceEvent &>(event));
   std::lock_guard<std::mutex> streamLock{streamChainMutex};
@@ -502,14 +501,14 @@ ErrorOrSuccess CpuDeviceContext::enqueueEvent(const DeviceEvent &event) {
 }
 
 ErrorOr<DeviceEventRef> CpuDeviceContext::eventCreate(bool enableTiming) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::eventCreate", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::eventCreate", M_PROFILE_COLOR_PURPLE);
   return CpuDeviceEventRef::create(static_cast<CpuDevice &>(device()),
                                    cpuDevice,
                                    cpuDevice->getReadyChain().copy());
 }
 
 ErrorOrSuccess CpuDeviceContext::enqueueWaitFor(DeviceEvent &event) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueWaitFor", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueWaitFor", M_PROFILE_COLOR_PURPLE);
   RETURN_IF_PENDING_ERROR(*this);
 
   auto &cpuEvent = static_cast<CpuDeviceEvent &>(event);
@@ -527,7 +526,7 @@ ErrorOrSuccess CpuDeviceContext::enqueueWaitFor(DeviceEvent &event) {
 }
 
 ErrorOrSuccess CpuDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
-  TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueWaitFor", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("CpuDeviceContext::enqueueWaitFor", M_PROFILE_COLOR_PURPLE);
   RETURN_IF_PENDING_ERROR(*this);
 
   // Waiting for this context is already satisfied: everything queued here is

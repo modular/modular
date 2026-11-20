@@ -23,6 +23,7 @@
 #include "HAL/M_driver_context.h"
 #include "MLRT/Driver/DeviceContext/BinaryID.h"
 #include "MLRT/Driver/DeviceContext/DeviceAPINames.h"
+#include "MojoHALExports.h"
 #include "Support/BinaryID.h"
 #include "Support/Configuration.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -31,6 +32,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <atomic>
 #include <functional>
@@ -40,139 +42,6 @@
 #include <shared_mutex>
 #include <string>
 #include <utility>
-
-extern "C" {
-void MojoHAL_strfree(const char *s);
-int32_t MojoHAL_Device_numberOfDevices(const char *api);
-const char *MojoHAL_Device_getApiAndArch(char **out_api, char **out_arch,
-                                         int32_t device_id);
-const char *MojoHAL_DeviceContext_enableAllPeerAccess();
-const char *MojoHAL_DeviceContext_allPeerAccessEnabled(bool *out_enabled);
-const char *MojoHAL_DeviceContext_create(MojoHALContextBox **out_ctx,
-                                         const char *api, int32_t device_id);
-void MojoHAL_DeviceContext_copy(MojoHALContextBox **out_ctx,
-                                MojoHALContextBox *ctx);
-void MojoHAL_DeviceContext_release(MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_synchronize(MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_createBuffer(MojoHALBufferBox **out_buf,
-                                               void **out_ptr,
-                                               MojoHALContextBox *ctx,
-                                               uint64_t byteSize);
-const char *MojoHAL_DeviceContext_createBufferOwning(MojoHALBufferBox **out_buf,
-                                                     MojoHALContextBox *ctx,
-                                                     void *ptr,
-                                                     uint64_t byteSize,
-                                                     bool owning);
-void MojoHAL_DeviceBuffer_release(MojoHALBufferBox *buf);
-const char *MojoHAL_DeviceBuffer_relinquishOwnership(MojoHALBufferBox *buf);
-const char *MojoHAL_DeviceContext_createHostBuffer(MojoHALBufferBox **out_buf,
-                                                   void **out_ptr,
-                                                   MojoHALContextBox *ctx,
-                                                   uint64_t byteSize);
-void MojoHAL_HostBuffer_release(MojoHALBufferBox *buf);
-const char *MojoHAL_DeviceContext_enqueueCopy(MojoHALContextBox *ctx, void *dst,
-                                              const void *src,
-                                              uint64_t byteSize);
-const char *MojoHAL_DeviceContext_enqueueCopyToDevice(MojoHALContextBox *ctx,
-                                                      void *dst,
-                                                      const void *src,
-                                                      uint64_t byteSize);
-const char *MojoHAL_DeviceContext_enqueueCopyFromDevice(MojoHALContextBox *ctx,
-                                                        void *dst,
-                                                        const void *src,
-                                                        uint64_t byteSize);
-const char *MojoHAL_DeviceContext_enqueueSetMemory(MojoHALContextBox *ctx,
-                                                   void *dst, uint64_t byteSize,
-                                                   uint64_t value,
-                                                   uint64_t valueSize);
-const char *MojoHAL_DeviceContext_getArchName(char **out_name,
-                                              MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_getName(char **out_name,
-                                          MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_getApi(char **out_api,
-                                         MojoHALContextBox *ctx);
-int64_t MojoHAL_DeviceContext_id(MojoHALContextBox *ctx);
-bool MojoHAL_DeviceContext_canAccess(MojoHALContextBox *ctx,
-                                     MojoHALContextBox *peer);
-const char *MojoHAL_DeviceContext_enablePeerAccess(MojoHALContextBox *ctx,
-                                                   MojoHALContextBox *peer);
-bool MojoHAL_DeviceContext_isCompatible(MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_isHostUnified(bool *out_unified,
-                                                MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_maxAllocationSize(bool *out_has_limit,
-                                                    uint64_t *out_size,
-                                                    MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_getMemoryInfo(uint64_t *out_free,
-                                                uint64_t *out_total,
-                                                MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_getAttribute(int32_t *out_value,
-                                               MojoHALContextBox *ctx,
-                                               int32_t attr);
-const char *MojoHAL_DeviceBuffer_createSubBuffer(MojoHALBufferBox **out_buf,
-                                                 void **out_ptr,
-                                                 MojoHALBufferBox *parent,
-                                                 uint64_t byteOffset,
-                                                 uint64_t byteSize);
-const char *MojoHAL_HostBuffer_createSubBuffer(MojoHALBufferBox **out_buf,
-                                               MojoHALBufferBox *parent,
-                                               uint64_t byteOffset,
-                                               uint64_t byteSize);
-const char *MojoHAL_DeviceContext_reassignWait(MojoHALContextBox *dst_ctx,
-                                               MojoHALContextBox *src_ctx);
-bool MojoHAL_DeviceContext_sameStream(MojoHALContextBox *a,
-                                      MojoHALContextBox *b);
-const char *MojoHAL_DeviceContext_memmapFile(MojoHALBufferBox **out_buf,
-                                             void **out_ptr, uint64_t *out_size,
-                                             MojoHALContextBox *ctx,
-                                             const char *path);
-void MojoHAL_MmapBuffer_release(MojoHALBufferBox *buf);
-const char *MojoHAL_DeviceContext_stream(MojoHALStreamBox **out_stream,
-                                         MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_createStream(MojoHALStreamBox **out_stream,
-                                               MojoHALContextBox *ctx,
-                                               int32_t priority);
-const char *MojoHAL_DeviceContext_withStream(MojoHALContextBox **out_ctx,
-                                             MojoHALContextBox *ctx,
-                                             MojoHALStreamBox *stream);
-void MojoHAL_DeviceStream_release(MojoHALStreamBox *stream);
-const char *MojoHAL_DeviceStream_synchronize(MojoHALStreamBox *stream);
-const char *MojoHAL_DeviceStream_waitForEvent(MojoHALStreamBox *stream,
-                                              MojoHALEventBox *event);
-const char *MojoHAL_DeviceStream_nativeHandle(void **out_handle,
-                                              MojoHALStreamBox *stream);
-const char *MojoHAL_DeviceContext_eventCreate(MojoHALEventBox **out_event,
-                                              MojoHALContextBox *ctx,
-                                              bool record);
-void MojoHAL_DeviceEvent_release(MojoHALEventBox *event);
-const char *MojoHAL_DeviceEvent_synchronize(MojoHALEventBox *event);
-const char *MojoHAL_DeviceEvent_isReady(bool *out_ready,
-                                        MojoHALEventBox *event);
-const char *MojoHAL_DeviceContext_enqueueEventRecord(MojoHALContextBox *ctx,
-                                                     MojoHALEventBox *event);
-const char *MojoHAL_DeviceContext_enqueueWaitForEvent(MojoHALContextBox *ctx,
-                                                      MojoHALEventBox *event);
-const char *MojoHAL_DeviceContext_bindToCurrentThread(MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_pushContext(MojoHALScopeBox **out_scope,
-                                              MojoHALContextBox *ctx);
-void MojoHAL_DeviceContextScope_pop(MojoHALScopeBox *scope);
-bool MojoHAL_DeviceContext_getDLPackStream(MojoHALStreamBox **out_stream,
-                                           MojoHALContextBox *ctx);
-const char *MojoHAL_DeviceContext_allocateCompletionFlag(
-    MojoHALCompletionFlagBox **out_flag, MojoHALContextBox *ctx);
-bool MojoHAL_DeviceContext_supportsCompletionFlags(MojoHALContextBox *ctx);
-void MojoHAL_CompletionFlag_release(MojoHALCompletionFlagBox *flag);
-const char *MojoHAL_CompletionFlag_signal(MojoHALCompletionFlagBox *flag,
-                                          uint64_t value);
-const char *MojoHAL_CompletionFlag_load(MojoHALCompletionFlagBox *flag,
-                                        uint64_t *out_value);
-const char *MojoHAL_CompletionFlag_reset(MojoHALCompletionFlagBox *flag);
-const char *MojoHAL_DeviceStream_launchHostFunc(MojoHALStreamBox *stream,
-                                                void (*fn)(void *),
-                                                void *userData);
-const char *MojoHAL_DeviceStream_waitOnFlag(MojoHALStreamBox *stream,
-                                            MojoHALCompletionFlagBox *flag,
-                                            uint64_t value);
-}
 
 namespace M {
 namespace Driver {
@@ -229,12 +98,11 @@ Device::API mapAPI(StringRef api) {
     if (api == known)
       return known;
   // Plugins are few and loaded once, so the set stays small, and every call
-  // after a plugin's first device takes only the shared lock: `adoptMojoBox`
-  // calls this on the kernel-execution hot path. Both are leaked so that a
-  // driver call during static destruction still finds them alive, and so that
-  // a leaked `Device`'s `api_` never dangles. Each shared library that links
-  // this file gets its own copy, which is harmless: callers compare names by
-  // content, never by pointer.
+  // after a plugin's first device takes only the shared lock. Both are leaked
+  // so that a driver call during static destruction still finds them alive,
+  // and so that a leaked `Device`'s `api_` never dangles. Each shared library
+  // that links this file gets its own copy, which is harmless: callers compare
+  // names by content, never by pointer.
   static auto &mutex = *new std::shared_mutex;
   static auto &names = *new llvm::StringSet<>;
   {
@@ -323,23 +191,25 @@ ErrorOr<DeviceContextRef> Device::createContext() {
   if (isVirtual())
     return DeviceContextRef::take(
         new DeviceContext(/*mojoCtx=*/nullptr, DeviceRef::copy(this)));
+  bool hasLimit = false;
+  int64_t limit = 0;
+  if (const char *err = MojoHAL_DeviceContext_maxContextsPerDevice(
+          &hasLimit, &limit, mojoCtx_))
+    return takeError(err);
   MojoHALContextBox *ctx = nullptr;
-  if (const char *err =
-          MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
-    // Metadata-only Devices (see adoptMojoBox) have no context to fall back
-    // on.
-    if (!mojoCtx_)
-      return takeError(err);
-    // Some plugins allow one context per device, and this Device already
-    // holds it, so share that one (and its stream) instead.
-    MojoHAL_strfree(err);
+  if (hasLimit && limit == 1) {
+    // This Device holds the device's only context, so share it (and its
+    // stream).
     MojoHAL_DeviceContext_copy(&ctx, mojoCtx_);
+  } else if (const char *err =
+                 MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
+    return takeError(err);
   }
   return DeviceContextRef::take(new DeviceContext(ctx, DeviceRef::copy(this)));
 }
 
 Device::~Device() {
-  // Metadata-only Devices (see adoptMojoBox) own no context.
+  // A virtual Device owns no context.
   if (mojoCtx_)
     MojoHAL_DeviceContext_release(mojoCtx_);
 }
@@ -501,6 +371,11 @@ DeviceBuffer::~DeviceBuffer() {
     MojoHALBufferBox *owner = nullptr;
     if (const char *err = MojoHAL_DeviceContext_createBufferOwning(
             &owner, context_->mojoCtx_, ptr_, byteSize_, /*owning=*/true)) {
+      // The plugin has no entry point that frees memory it refuses to wrap
+      // as owning, so the memory leaks.
+      llvm::errs() << "warning: leaking a DeviceBuffer the driver plugin "
+                      "would not free: "
+                   << err << "\n";
       MojoHAL_strfree(err);
       return;
     }
@@ -543,9 +418,12 @@ ErrorOr<DeviceBufferRef> DeviceBuffer::createSubBuffer(size_t byteOffset,
 }
 
 void *DeviceBuffer::releasePtr() {
-  if (const char *err = MojoHAL_DeviceBuffer_relinquishOwnership(mojoBox_))
-    MojoHAL_strfree(err); // Cannot fail in practice (plugin-side flag flip);
-                          // the legacy signature is non-failing.
+  // The buffer still owns the memory after a refusal, so handing out the
+  // pointer would free it twice.
+  if (const char *err = MojoHAL_DeviceBuffer_relinquishOwnership(mojoBox_)) {
+    MojoHAL_strfree(err);
+    return nullptr;
+  }
   freeOnDestroy_ = false;
   auto tmp = ptr_;
   ptr_ = nullptr;
@@ -643,39 +521,6 @@ ErrorOr<DeviceContextRef> DeviceContext::getOrCreate(StringRef api, int id) {
   }
   contextMap.insert({requestedKey, iter->second});
   return DeviceContextRef::copy(iter->second);
-}
-
-ErrorOr<DeviceContextRef> DeviceContext::adoptMojoBox(void *mojoBox) {
-  auto *box = static_cast<MojoHALContextBox *>(mojoBox);
-  // The box is an owned copy of a Mojo DeviceContext (from the Mojo
-  // `mojoHandle()` exchange); this is on the kernel-execution hot path. Build a
-  // METADATA-ONLY Device by cheaply querying the existing box (api/id/name) —
-  // do NOT call Device::create, which reloads the plugin (dlopen/dlsym) and
-  // crashes when run mid-execution. The Device carries no box of its own
-  // (mojoCtx_ == null) and is used only for cached `device().api()`/`id()`
-  // (e.g. the copyTo direction dispatch); box-backed device queries are not
-  // reachable on this path. The new DeviceContext takes ownership of the box
-  // and releases it when its refcount drops to zero.
-  char *apiName = nullptr;
-  if (const char *err = MojoHAL_DeviceContext_getApi(&apiName, box)) {
-    MojoHAL_DeviceContext_release(box);
-    return takeError(err);
-  }
-  std::string apiStr = apiName;
-  MojoHAL_strfree(apiName);
-
-  char *name = nullptr;
-  if (const char *err = MojoHAL_DeviceContext_getName(&name, box)) {
-    MojoHAL_DeviceContext_release(box);
-    return takeError(err);
-  }
-  std::string nameStr = name;
-  MojoHAL_strfree(name);
-
-  DeviceRef device = DeviceRef::take(new Device(
-      /*mojoCtx=*/nullptr, mapAPI(apiStr), apiStr,
-      static_cast<int>(MojoHAL_DeviceContext_id(box)), std::move(nameStr)));
-  return DeviceContextRef::take(new DeviceContext(box, std::move(device)));
 }
 
 DeviceContext::DeviceContext(MojoHALContextBox *mojoCtx, DeviceRef device)
@@ -1195,7 +1040,12 @@ ErrorOr<DeviceContextRef> DeviceContext::selectStream(unsigned streamId) {
 }
 
 bool DeviceContext::operator==(const DeviceContext &other) const {
-  return this == &other;
+  if (this == &other)
+    return true;
+  // A virtual context has no stream to share.
+  if (!mojoCtx_ || !other.mojoCtx_)
+    return false;
+  return MojoHAL_DeviceContext_sameStream(mojoCtx_, other.mojoCtx_);
 }
 
 ErrorOr<DeviceEventRef> DeviceContext::enqueueEvent() {
@@ -1260,10 +1110,10 @@ ErrorOrSuccess DeviceContext::bindToCurrentThread() const {
 std::optional<intptr_t> DeviceContext::getDLPackStream() const {
   if (device_->isVirtual())
     return std::nullopt;
-  MojoHALStreamBox *stream = nullptr;
+  intptr_t stream = 0;
   if (!MojoHAL_DeviceContext_getDLPackStream(&stream, mojoCtx_))
     return std::nullopt;
-  return reinterpret_cast<intptr_t>(stream);
+  return stream;
 }
 
 Error DeviceContext::formatError(const char *file, int line, const char *func,

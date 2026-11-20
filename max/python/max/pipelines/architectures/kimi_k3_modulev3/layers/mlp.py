@@ -27,7 +27,7 @@ from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
-from .tensor_parallel import shard_interleaved_blocks
+from .tensor_parallel import check_divisible, fuse_rows
 
 
 def kimi_situ_and_mul(
@@ -35,10 +35,9 @@ def kimi_situ_and_mul(
 ) -> Tensor:
     """Applies ``SituAndMul`` to a fused ``[gate ; up]`` tensor.
 
-    Direct V3 port of ``kimi_k3/layers/mlp.py``'s ``kimi_situ_and_mul`` --
-    same math (``beta * tanh(gate / beta) * sigmoid(gate)``, optionally
-    ``linear_beta * tanh(up / linear_beta)`` on the up half), both halves
-    upcast to fp32 for the activation and cast back at the end.
+    ``beta * tanh(gate / beta) * sigmoid(gate)`` on the gate half,
+    optionally ``linear_beta * tanh(up / linear_beta)`` on the up half,
+    both halves upcast to fp32 for the activation and cast back at the end.
 
     Args:
         gate_up: Concatenation of the gate and up projections along the LAST
@@ -112,11 +111,11 @@ class KimiK3DenseMLP(Module[[Tensor], Tensor]):
         self.beta = beta
         self.linear_beta = linear_beta
         self.intermediate_size = intermediate_size
-        # One fused projection rather than two: see `fuse_gate_up` in the V2
-        # weight adapter, which concatenates the checkpoint's separate
-        # gate_proj/up_proj at load time to match this layout.
-        self.gate_up_proj = Linear(
-            in_dim=hidden_size, out_dim=2 * intermediate_size, bias=False
+        self.gate_proj = Linear(
+            in_dim=hidden_size, out_dim=intermediate_size, bias=False
+        )
+        self.up_proj = Linear(
+            in_dim=hidden_size, out_dim=intermediate_size, bias=False
         )
         self.down_proj = Linear(
             in_dim=intermediate_size, out_dim=hidden_size, bias=False
@@ -132,10 +131,18 @@ class KimiK3DenseMLP(Module[[Tensor], Tensor]):
         Lets a caller that owns the down projection -- the latent MoE's
         merged exit GEMM -- read the shared expert's activation on its own.
         """
-        return self.situ_and_mul(self.gate_up_proj(x))
+        weight = self.gate_up_weight()
+        return self.situ_and_mul(x.cast(weight.dtype) @ weight.T)
+
+    def gate_up_weight(self) -> Tensor:
+        """The one GEMM's weight, per rank ``[gate | up]``.
+
+        Weight-only, so it runs once, at initialization.
+        """
+        return fuse_rows([self.gate_proj.weight, self.up_proj.weight])
 
     def situ_and_mul(self, gate_up: Tensor) -> Tensor:
-        """Runs SiTU-and-mul over a ``gate_up_proj`` output.
+        """Runs SiTU-and-mul over the gate/up GEMM's output.
 
         Lets a caller that computes the gate/up projection in a merged GEMM
         -- the latent MoE's entry -- apply the activation on its own.
@@ -153,11 +160,13 @@ def tensor_parallel_dense_mlp(
     ``down_proj`` is sharded on its input dim, so the caller must allreduce
     the output.
     """
-    if mesh.axis_size(TP) == 1:
+    tp_size = mesh.axis_size(TP)
+    if tp_size == 1:
         return layer
-    layer.gate_up_proj.weight = shard_interleaved_blocks(
-        layer.gate_up_proj.weight, mesh, num_blocks=2, axis=0
-    )
+    check_divisible("Dense FFN width", layer.intermediate_size, tp_size)
+    row_mapping = NamedMapping(mesh, (TP, None))
+    layer.gate_proj.weight = layer.gate_proj.weight.to(row_mapping)
+    layer.up_proj.weight = layer.up_proj.weight.to(row_mapping)
     layer.down_proj.weight = layer.down_proj.weight.to(
         NamedMapping(mesh, (None, TP))
     )

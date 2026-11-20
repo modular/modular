@@ -47,10 +47,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.model import (
     KimiK3Model,
     tensor_parallel_kimi_k3_model,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
-    interleave_for_tp,
-)
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -58,15 +54,9 @@ from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh
 
 
-def _assign_weights(
-    model: KimiK3Model, raw: dict[str, np.ndarray], tp_size: int
-) -> None:
+def _assign_weights(model: KimiK3Model, raw: dict[str, np.ndarray]) -> None:
     """Assigns each array directly, skipping ``load_kimi_k3_weights``'s
-    ``language_model.model`` checkpoint key prefix.
-
-    Fused weights are interleaved per TP rank, as the weight adapter writes
-    them for a ``tp_size``-way TP model.
-    """
+    ``language_model.model`` checkpoint key prefix."""
     model.embed_tokens.weight = Tensor(
         raw["embed_tokens.weight"], dtype=DType.float32
     )
@@ -104,82 +94,54 @@ def _assign_weights(
         ap = f"{p}.self_attn"
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.qkvg_proj.weight = Tensor(
-                interleave_for_tp(
-                    [
-                        raw[f"{ap}.q_proj.weight"],
-                        raw[f"{ap}.k_proj.weight"],
-                        raw[f"{ap}.v_proj.weight"],
-                        raw[f"{ap}.g_proj.weight"],
-                        raw[f"{ap}.b_proj.weight"],
-                    ],
-                    tp_size,
-                ),
-                dtype=DType.float32,
+            for name in (
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "g_proj",
+                "b_proj",
+                "f_a_proj",
+                "f_b_proj",
+                "o_proj",
+                "o_norm",
+            ):
+                getattr(attn, name).weight = Tensor(
+                    raw[f"{ap}.{name}.weight"], dtype=DType.float32
+                )
+            attn.q_conv1d = Tensor(
+                raw[f"{ap}.q_conv1d.weight"], dtype=DType.float32
             )
-            attn.f_a_proj.weight = Tensor(
-                raw[f"{ap}.f_a_proj.weight"], dtype=DType.float32
+            attn.k_conv1d = Tensor(
+                raw[f"{ap}.k_conv1d.weight"], dtype=DType.float32
             )
-            attn.f_b_proj.weight = Tensor(
-                raw[f"{ap}.f_b_proj.weight"], dtype=DType.float32
+            attn.v_conv1d = Tensor(
+                raw[f"{ap}.v_conv1d.weight"], dtype=DType.float32
             )
-            attn.o_proj.weight = Tensor(
-                raw[f"{ap}.o_proj.weight"], dtype=DType.float32
-            )
-            attn.o_norm.weight = Tensor(
-                raw[f"{ap}.o_norm.weight"], dtype=DType.float32
-            )
-            attn.conv_weight = Tensor(
-                interleave_for_tp(
-                    np.split(raw[f"{ap}.conv_weight"], 3), tp_size
-                ),
-                dtype=DType.float32,
-            )
-            attn.a_log = Tensor(raw[f"{ap}.a_log"], dtype=DType.float32)
+            attn.a_log = Tensor(raw[f"{ap}.A_log"], dtype=DType.float32)
             attn.dt_bias = Tensor(raw[f"{ap}.dt_bias"], dtype=DType.float32)
         else:
             assert isinstance(attn, KimiK3MLAAttention)
-            attn.qkv_a_g_proj.weight = Tensor(
-                fuse_qkv_a_g_for_tp(
-                    raw[f"{ap}.q_a_proj.weight"],
-                    raw[f"{ap}.kv_a_proj_with_mqa.weight"],
-                    raw[f"{ap}.g_proj.weight"],
-                    tp_size,
-                ),
-                dtype=DType.float32,
-            )
-            attn.q_a_layernorm.weight = Tensor(
-                raw[f"{ap}.q_a_layernorm.weight"], dtype=DType.float32
-            )
-            attn.q_b_proj.weight = Tensor(
-                raw[f"{ap}.q_b_proj.weight"], dtype=DType.float32
-            )
-            attn.kv_a_layernorm.weight = Tensor(
-                raw[f"{ap}.kv_a_layernorm.weight"], dtype=DType.float32
-            )
-            attn.kv_b_proj.weight = Tensor(
-                raw[f"{ap}.kv_b_proj.weight"], dtype=DType.float32
-            )
-            attn.o_proj.weight = Tensor(
-                raw[f"{ap}.o_proj.weight"], dtype=DType.float32
-            )
+            for name in (
+                "q_a_proj",
+                "kv_a_proj_with_mqa",
+                "g_proj",
+                "q_a_layernorm",
+                "q_b_proj",
+                "kv_a_layernorm",
+                "kv_b_proj",
+                "o_proj",
+            ):
+                getattr(attn, name).weight = Tensor(
+                    raw[f"{ap}.{name}.weight"], dtype=DType.float32
+                )
 
         ffn = layer.ffn
         if layer.is_dense:
             assert isinstance(ffn, KimiK3DenseMLP)
-            ffn.gate_up_proj.weight = Tensor(
-                interleave_for_tp(
-                    [
-                        raw[f"{p}.mlp.gate_proj.weight"],
-                        raw[f"{p}.mlp.up_proj.weight"],
-                    ],
-                    tp_size,
-                ),
-                dtype=DType.float32,
-            )
-            ffn.down_proj.weight = Tensor(
-                raw[f"{p}.mlp.down_proj.weight"], dtype=DType.float32
-            )
+            for name in ("gate_proj", "up_proj", "down_proj"):
+                getattr(ffn, name).weight = Tensor(
+                    raw[f"{p}.mlp.{name}.weight"], dtype=DType.float32
+                )
         else:
             assert isinstance(ffn, KimiK3LatentMoE)
             mp = f"{p}.block_sparse_moe"
@@ -206,20 +168,11 @@ def _assign_weights(
                         dtype=DType.float32,
                         device=projection.weight.device,
                     )
-            ffn.shared_experts.gate_up_proj.weight = Tensor(
-                interleave_for_tp(
-                    [
-                        raw[f"{mp}.shared_experts.gate_proj.weight"],
-                        raw[f"{mp}.shared_experts.up_proj.weight"],
-                    ],
-                    tp_size,
-                ),
-                dtype=DType.float32,
-            )
-            ffn.shared_experts.down_proj.weight = Tensor(
-                raw[f"{mp}.shared_experts.down_proj.weight"],
-                dtype=DType.float32,
-            )
+            for name in ("gate_proj", "up_proj", "down_proj"):
+                getattr(ffn.shared_experts, name).weight = Tensor(
+                    raw[f"{mp}.shared_experts.{name}.weight"],
+                    dtype=DType.float32,
+                )
 
 
 def test_model_tp1_matches_tp2() -> None:
@@ -244,7 +197,7 @@ def test_model_tp1_matches_tp2() -> None:
         kv_params1 = kv_params_only(config, [device0])
         with F.lazy():
             model1 = KimiK3Model(config, kv_params=kv_params1)
-            _assign_weights(model1, raw, 1)
+            _assign_weights(model1, raw)
         run1 = model1.compile(
             *modulev3_ragged_kv_symbolic_inputs(
                 kv_params=kv_params1,
@@ -259,10 +212,8 @@ def test_model_tp1_matches_tp2() -> None:
     with default_device(mesh):
         kv_params2 = kv_params_only(config, devices)
         with F.lazy():
-            model2 = KimiK3Model(
-                config, kv_params=kv_params2, tp_size=len(devices)
-            )
-            _assign_weights(model2, raw, len(devices))
+            model2 = KimiK3Model(config, kv_params=kv_params2)
+            _assign_weights(model2, raw)
             tensor_parallel_kimi_k3_model(model2, mesh)
         run2 = model2.compile(
             *modulev3_ragged_kv_symbolic_inputs(

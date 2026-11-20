@@ -21,7 +21,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TileTensor, coord, flatten_leading
 from layout.tma_async import create_tensor_tile
@@ -247,13 +247,15 @@ def grouped_matmul_sm90[
         a_offsets,
         expert_ids,
         c.as_unsafe_any_origin(),
-        host_args=(epilogue_fn, compute_fn),
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(max_num_tokens_per_expert, BM),
-            num_active_experts,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(N, BN),
+                ceildiv(max_num_tokens_per_expert, BM),
+                num_active_experts,
+            ),
+            block_dim=(num_threads),
+            shared_mem_bytes=smem_size,
         ),
-        block_dim=(num_threads),
-        shared_mem_bytes=smem_size,
+        host_args=(epilogue_fn, compute_fn),
     )
     _ = c_desc_scratch^

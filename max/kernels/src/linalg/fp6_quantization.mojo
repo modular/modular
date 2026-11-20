@@ -25,7 +25,7 @@ scale, so the group reduction stays in registers and the store is three aligned
 
 from std.math import ceildiv, isfinite, recip
 from max.gpu import block_idx, thread_idx, grid_dim, block_dim
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.memory import bitcast
 from std.utils import StaticTuple
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
@@ -220,8 +220,10 @@ def quantize_mxfp6_amd[
         input_tt,
         Int32(num_rows),
         Int32(num_cols),
-        block_dim=block_dim_val,
-        grid_dim=grid_dim_val,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid_dim_val,
+            block_dim=block_dim_val,
+        ),
     )
 
 

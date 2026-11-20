@@ -14,8 +14,7 @@
 
 from std.math import ceildiv
 
-from std.utils.coord import Coord, CoordLike
-from std.utils.index import IndexList
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 from std.algorithm.backend.vectorize import vectorize
 
 from .parallelize import _get_num_workers, sync_parallelize
@@ -33,12 +32,11 @@ def _stencil_impl_cpu[
     //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank, element_type=_],
     simd_width: Int,
     dtype: DType,
-    map_fn: def(IndexList[stencil_rank, element_type=_]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
+    map_fn: def(DynamicCoord[DType.int, stencil_rank]) -> Tuple[
+        DynamicCoord[DType.int, stencil_rank],
+        DynamicCoord[DType.int, stencil_rank],
     ],
     map_strides: def(dim: Int) -> Int,
     load_fn: def[simd_width: Int, dtype: DType](Coord) -> SIMD[
@@ -73,8 +71,8 @@ def _stencil_impl_cpu[
         shape_types: The element types of the `shape` coordinate.
         input_shape_types: The element types of the `input_shape` coordinate.
         rank: Input and output domain rank.
-        stencil_rank: Rank of stencil subdomain slice.
-        stencil_axis: Stencil subdomain axes.
+        stencil_rank: Rank of stencil subdomain slice. Must be 2: the stencil
+            covers the spatial axes 1 and 2.
         simd_width: The SIMD vector width to use.
         dtype: The input and output data dtype.
         map_fn: A function that a point in the output domain to the input co-domain.
@@ -96,8 +94,8 @@ def _stencil_impl_cpu[
     """
     comptime assert rank == 4, "Only stencil of rank-4 supported"
     comptime assert (
-        stencil_axis[0] == 1 and stencil_axis[1] == 2
-    ), "Only stencil spatial axes [1, 2] are supported"
+        stencil_rank == 2
+    ), "Only stencils over the spatial axes [1, 2] are supported"
     comptime assert (
         type_of(shape).rank == rank and type_of(input_shape).rank == rank
     ), "shape and input_shape must have rank `rank`"
@@ -146,12 +144,15 @@ def _stencil_impl_cpu[
                 imm compute_finalize_fn_closure,
             }:
                 indices.replace_dynamic[rank - 1](idx)
-                var stencil_indices = IndexList[
-                    stencil_rank, element_type=stencil_axis.element_type
-                ](Int(indices[stencil_axis[0]]), Int(indices[stencil_axis[1]]))
-                var bounds = map_fn_closure(stencil_indices)
-                var lower_bound = bounds[0]
-                var upper_bound = bounds[1]
+                var bounds = map_fn_closure(
+                    rebind[DynamicCoord[DType.int, stencil_rank]](
+                        Coord(Int(indices[1]), Int(indices[2]))
+                    )
+                )
+                var lower_i = Int(bounds[0][0])
+                var lower_j = Int(bounds[0][1])
+                var upper_i = Int(bounds[1][0])
+                var upper_j = Int(bounds[1][1])
                 var step_i = map_strides_closure(0)
                 var step_j = map_strides_closure(1)
                 var result = compute_init_fn_closure[simd_width]()
@@ -183,28 +184,18 @@ def _stencil_impl_cpu[
                 #  CCCCCCCC
                 #  CCCCCCCC
 
-                # Calculation for lower_bound below takes into account dilation
-                # across rows dimension.
+                # Calculation for lower_i and lower_j below takes into account
+                # dilation across rows dimension.
                 # Will be the zero if dilation is 1, or the closest point >0 if
                 # dilation > 1
-                if lower_bound[0] < 0:
-                    var mul_i = ceildiv(-lower_bound[0], step_i)
-                    lower_bound[0] = lower_bound[0] + mul_i * step_i
-                if lower_bound[1] < 0:
-                    var mul_j = ceildiv(-lower_bound[1], step_j)
-                    lower_bound[1] = lower_bound[1] + mul_j * step_j
+                if lower_i < 0:
+                    lower_i += ceildiv(-lower_i, step_i) * step_i
+                if lower_j < 0:
+                    lower_j += ceildiv(-lower_j, step_j) * step_j
 
                 # Part X (inner part)
-                for i in range(
-                    lower_bound[0],
-                    min(input_height, upper_bound[0]),
-                    step_i,
-                ):
-                    for j in range(
-                        lower_bound[1],
-                        min(input_width, upper_bound[1]),
-                        step_j,
-                    ):
+                for i in range(lower_i, min(input_height, upper_i), step_i):
+                    for j in range(lower_j, min(input_width, upper_j), step_j):
                         var point_idx = Coord(indices[0], i, j, indices[3])
 
                         var val = load_fn_closure[simd_width, dtype](point_idx)

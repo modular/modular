@@ -143,6 +143,17 @@ private:
       llvm::TargetMachine &targetMachine,
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
 
+  /// Whether `emitArchive` splits `module` per exported function in the LLVM
+  /// dialect and translates each slice to LLVM IR in its own task. Otherwise
+  /// it translates the whole module and splits the LLVM IR.
+  bool splitsInLLVMDialect(ModuleOp module);
+
+  /// Like `emitArchiveParallelCompilation`, for a module in the LLVM dialect.
+  ErrorOr<SmallVector<AsyncRT::AnyAsyncValueRef>> emitArchiveSlices(
+      OwningOpRef<ModuleOp> module, Location opLoc,
+      llvm::TargetMachine &targetMachine,
+      llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
+
   /// Link parallel compilation results and call AsmPrint to generate one object
   /// file.
   ErrorOr<WriteableBufferRef> emitArchiveMCLinking(

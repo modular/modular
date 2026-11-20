@@ -16,8 +16,7 @@ Under TP each device holds ``vocab / n`` rows of ``lm_head``, and an
 allgather joins the logits. At TP=1 the weight is not sharded and the
 allgather is skipped.
 
-Three details this mirrors exactly from V2's own docstring, easy to get wrong
-by reaching for a framework default:
+Three details, easy to get wrong by reaching for a framework default:
 
 * ``lm_head`` is NOT tied to ``embed_tokens`` on this checkpoint
   (``config.tie_word_embeddings`` is False) even though the official
@@ -36,8 +35,8 @@ by reaching for a framework default:
 
 Scope cut, explicit: ``return_hidden_states`` (``ReturnHiddenStates``'s
 ``LAST``/``LAST_PER_DEVICE``/``ALL_NORMALIZED``/``ALL``/``SELECTED_LAYERS``
-variants) is not ported -- this always returns ``ReturnHiddenStates.NONE``
-behavior. V2's multi-device variants of that enum have no single-device
+variants) is not implemented -- this always returns ``ReturnHiddenStates.NONE``
+behavior. The multi-device variants of that enum have no single-device
 meaning to reduce to, and the capture-based variants are an advanced serving
 feature this layer does not implement.
 """
@@ -107,7 +106,7 @@ def kimi_k3_output_head(
     if return_logits == ReturnLogits.VARIABLE:
         n = return_n_logits[0]
         # One sequence's own last `n` rows: `row_offsets[1:]` (exclusive end)
-        # minus `n, n-1, ..., 1`, mirroring V2's `range(n, 0, -1)` offset.
+        # minus `n, n-1, ..., 1`.
         # `n` is a runtime scalar here, so both ranges name their output
         # length the way `transformer.logits_postprocess`'s same-shaped
         # branch does, whose int64 offsets they also match -- a

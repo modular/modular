@@ -266,17 +266,12 @@ def _k3_variant_mismatches_draft(
 ) -> bool:
     """Returns whether a Kimi K3 variant cannot pair with ``draft_arch``.
 
-    Only the ModuleV3 K3 adapter drives the ``K3DSparkModel`` drafter, and
-    only the graph-API K3 serves every other draft. Config resolution may
-    already have renamed the draft to the graph-API K3's own architecture,
-    so the routing keys on the ModuleV3 drafter's name, not on the raw one.
+    The ModuleV3 K3 target pairs with the ``K3DSparkModel`` drafter alone.
     """
     if draft_arch is None:
         return False
     if arch_name == "KimiK3ForConditionalGeneration_ModuleV3":
         return draft_arch != "K3DSparkModel"
-    if arch_name == "KimiK3ForConditionalGeneration":
-        return draft_arch == "K3DSparkModel"
     return False
 
 

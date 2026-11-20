@@ -22,9 +22,9 @@ q/k L2-normalization and folded query scale, so using it for V3 avoids
 re-deriving that math by hand.
 
 Weights are constructed once as NumPy arrays and assigned directly onto the
-V3 layer's attributes (``Linear.weight``, ``conv_weight``, ``a_log``,
-``dt_bias``, ``o_norm.weight``) rather than letting the layer randomly
-initialize its own. All in float32, matching V2's
+V3 layer's attributes (``Linear.weight``, the ``q/k/v_conv1d`` weights,
+``a_log``, ``dt_bias``, ``o_norm.weight``) rather than letting the layer
+randomly initialize its own. All in float32, matching V2's
 ``test_kda_attention_gpu.py``'s own float32 case and its 1e-2 tolerance,
 derived there from the hardware's tf32 GEMM path, not from this reference.
 
@@ -49,9 +49,6 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
-)
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    interleave_for_tp,
 )
 from max.tensor import Tensor, default_device
 
@@ -81,9 +78,10 @@ _WEIGHT_SHAPES: dict[str, tuple[int, ...]] = {
 }
 
 
-def _random_weights(gate_lower_bound: float | None) -> dict[str, np.ndarray]:
-    """Copied from V2's test_kda_attention_gpu.py::_random_weights verbatim
-    (same seed), so V2 and V3 start from identical weights."""
+def _random_weights() -> dict[str, np.ndarray]:
+    """Copied from V2's test_kda_attention_gpu.py::_random_weights (same
+    seed), except that ``a_log`` varies only per head in both gate arms: the
+    layer stores one coefficient per head."""
     rng = np.random.default_rng(20260821)
     weights = {
         name: (rng.standard_normal(shape) / np.sqrt(shape[-1])).astype(
@@ -91,15 +89,10 @@ def _random_weights(gate_lower_bound: float | None) -> dict[str, np.ndarray]:
         )
         for name, shape in _WEIGHT_SHAPES.items()
     }
-    ramp = np.linspace(-1.0, 0.5, NUM_HEADS * HEAD_DIM, dtype=np.float32)
-    weights["a_log"] = (
-        np.broadcast_to(
-            np.linspace(-1.0, 0.5, NUM_HEADS, dtype=np.float32)[:, None],
-            (NUM_HEADS, HEAD_DIM),
-        ).copy()
-        if gate_lower_bound is None
-        else ramp.reshape(NUM_HEADS, HEAD_DIM)
-    )
+    weights["a_log"] = np.broadcast_to(
+        np.linspace(-1.0, 0.5, NUM_HEADS, dtype=np.float32)[:, None],
+        (NUM_HEADS, HEAD_DIM),
+    ).copy()
     weights["o_norm_weight"] = (
         1.0 + 0.1 * weights["o_norm_weight"] * np.sqrt(HEAD_DIM)
     ).astype(np.float32)
@@ -197,30 +190,26 @@ def _make_v3_layer_with_weights(
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=gate_lower_bound,
     )
-    layer.qkvg_proj.weight = Tensor(
-        interleave_for_tp(
-            [
-                weights["q_proj_weight"],
-                weights["k_proj_weight"],
-                weights["v_proj_weight"],
-                weights["g_proj_weight"],
-                weights["b_proj_weight"],
-            ],
-            1,
-        ),
-        dtype=DType.float32,
+    for name in (
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "g_proj",
+        "b_proj",
+        "f_a_proj",
+        "f_b_proj",
+        "o_proj",
+    ):
+        getattr(layer, name).weight = Tensor(
+            weights[f"{name}_weight"], dtype=DType.float32
+        )
+    layer.q_conv1d, layer.k_conv1d, layer.v_conv1d = (
+        Tensor(conv.reshape(INNER, 1, CONV_KERNEL), dtype=DType.float32)
+        for conv in np.split(weights["conv_weight"], 3)
     )
-    layer.conv_weight = Tensor(weights["conv_weight"], dtype=DType.float32)
-    layer.f_a_proj.weight = Tensor(
-        weights["f_a_proj_weight"], dtype=DType.float32
-    )
-    layer.f_b_proj.weight = Tensor(
-        weights["f_b_proj_weight"], dtype=DType.float32
-    )
-    layer.a_log = Tensor(weights["a_log"], dtype=DType.float32)
-    layer.dt_bias = Tensor(weights["dt_bias"], dtype=DType.float32)
+    layer.a_log = Tensor(weights["a_log"][:, 0], dtype=DType.float32)
+    layer.dt_bias = Tensor(weights["dt_bias"].reshape(-1), dtype=DType.float32)
     layer.o_norm.weight = Tensor(weights["o_norm_weight"], dtype=DType.float32)
-    layer.o_proj.weight = Tensor(weights["o_proj_weight"], dtype=DType.float32)
     return layer
 
 
@@ -264,7 +253,7 @@ def test_kda_v3_matches_v2_reference_original_gate() -> None:
     fixture actually exercises -- so both of V2's supported arms are
     checked, not just one."""
     gate_lower_bound = None
-    weights = _random_weights(gate_lower_bound)
+    weights = _random_weights()
     rng = np.random.default_rng(12)
     seq_len = 4
     x_np = rng.standard_normal((seq_len, HIDDEN)).astype(np.float32)

@@ -35,6 +35,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )

@@ -145,6 +145,7 @@ def _config(
     hf = _huggingface_config()
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = data_parallel_degree
+    pipeline_config.model.decode_context_parallel_degree = 1
     pipeline_config.speculative = None
     config = Glm5_1Config(
         dtype=cache_dtype,

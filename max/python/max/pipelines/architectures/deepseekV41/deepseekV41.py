@@ -492,7 +492,7 @@ def _csa2_end(
             state,
             replay.indices,
             replay.rows,
-            tail_cache_view(cache, replay.rows, replay.longest),
+            tail_cache_view(cache, replay.rows, replay.longest, rows.positions),
             attn.layer_info,
         )
         rows = replay.rows
@@ -1204,9 +1204,11 @@ class DeepseekV41Trunk(Module):
             )
             if replay is not None and layer_info.layer_id == cut:
                 tokens = ops.gather(tokens, replay.indices, axis=1)
-                rows = replay.rows
                 assert isinstance(cache, CSA2Cache)
-                cache = tail_cache_view(cache, rows, replay.longest)
+                cache = tail_cache_view(
+                    cache, replay.rows, replay.longest, rows.positions
+                )
+                rows = replay.rows
             if tapped:
                 taps.append(_hc_mean(entry))
         return streams.collapse(), (ops.concat(taps, axis=-1) if taps else None)
@@ -1325,11 +1327,13 @@ class DeepseekV41Trunk(Module):
                     ops.gather(tok, rp.indices, axis=1)
                     for tok, rp in zip(tokens, replay, strict=True)
                 ]
-                rows = [rp.rows for rp in replay]
                 caches = [
-                    tail_cache_view(cache, rp.rows, rp.longest)
-                    for cache, rp in zip(caches, replay, strict=True)
+                    tail_cache_view(cache, rp.rows, rp.longest, full.positions)
+                    for cache, rp, full in zip(
+                        caches, replay, rows, strict=True
+                    )
                 ]
+                rows = [rp.rows for rp in replay]
             if tapped:
                 for per_dev, entry in zip(taps, entries, strict=True):
                     per_dev.append(_hc_mean(entry))
@@ -1470,11 +1474,13 @@ class DeepseekV41Trunk(Module):
                     ops.gather(tok, rp.indices, axis=1)
                     for tok, rp in zip(tokens, replay, strict=True)
                 ]
-                rows = [rp.rows for rp in replay]
                 caches = [
-                    tail_cache_view(cache, rp.rows, rp.longest)
-                    for cache, rp in zip(caches, replay, strict=True)
+                    tail_cache_view(cache, rp.rows, rp.longest, full.positions)
+                    for cache, rp, full in zip(
+                        caches, replay, rows, strict=True
+                    )
                 ]
+                rows = [rp.rows for rp in replay]
                 batch_tokens = kept_batch_tokens
                 replica_tokens = current_replica_tokens
             if tapped:

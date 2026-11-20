@@ -34,7 +34,7 @@
 # CHECK-NEXT: "sinceVersion": "",
 # CHECK-NEXT: "summary": "",
 # CHECK: "functions": [
-# CHECK: "signature": "def circle(var payload: Float64, /) -> Self",
+# CHECK: "signature": "def circle(var payload0: Float64, /) -> Self",
 # CHECK-NEXT: "sinceVersion": "",
 # CHECK-NEXT: "summary": "A circle with the given radius."
 # CHECK: "name": "Shape",

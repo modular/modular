@@ -1013,7 +1013,9 @@ void RowwiseReduceOp::getAsmBlockArgumentNames(Region &region,
   nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);
 }
 
-ParseResult RowwiseTileOp::parse(OpAsmParser &parser, OperationState &result) {
+// `(%i : !map.index<N>) -> T { ... }`
+static ParseResult parseRowValueOp(OpAsmParser &parser,
+                                   OperationState &result) {
   SmallVector<OpAsmParser::Argument> entryArgs;
   if (parseLeadingArgs(parser, entryArgs) ||
       parser.parseArrowTypeList(result.types) ||
@@ -1022,17 +1024,37 @@ ParseResult RowwiseTileOp::parse(OpAsmParser &parser, OperationState &result) {
   return parser.parseOptionalAttrDict(result.attributes);
 }
 
-void RowwiseTileOp::print(OpAsmPrinter &p) {
+static void printRowValueOp(OpAsmPrinter &p, Operation *op) {
+  Region &body = op->getRegion(0);
   p << " ";
-  printLeadingArgs(p, getBody().front().getArguments());
-  p.printArrowTypeList(getOperation()->getResultTypes());
+  printLeadingArgs(p, body.front().getArguments());
+  p.printArrowTypeList(op->getResultTypes());
   p << " ";
-  p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
-  p.printOptionalAttrDict((*this)->getAttrs());
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
+  p.printOptionalAttrDict(op->getAttrs());
 }
+
+ParseResult RowwiseTileOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseRowValueOp(parser, result);
+}
+
+void RowwiseTileOp::print(OpAsmPrinter &p) { printRowValueOp(p, *this); }
 
 void RowwiseTileOp::getAsmBlockArgumentNames(Region &region,
                                              OpAsmSetValueNameFn setNameFn) {
+  if (region.empty())
+    return;
+  nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);
+}
+
+ParseResult RowwiseCacheOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseRowValueOp(parser, result);
+}
+
+void RowwiseCacheOp::print(OpAsmPrinter &p) { printRowValueOp(p, *this); }
+
+void RowwiseCacheOp::getAsmBlockArgumentNames(Region &region,
+                                              OpAsmSetValueNameFn setNameFn) {
   if (region.empty())
     return;
   nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);

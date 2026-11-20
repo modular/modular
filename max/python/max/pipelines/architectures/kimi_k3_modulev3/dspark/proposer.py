@@ -30,7 +30,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol, runtime_checkable
 
 from max import functional as F
-from max.graph import BufferValue, TensorValue, ops
+from max.graph import BufferValue, TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.speculative.block_driver import (
@@ -46,7 +46,7 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .config import K3DSparkDraftConfig
 from .dspark import K3DSpark
-from .mla_extent import MLA_SPEC_EXTENTS, k3_spec_mla_extent
+from .mla_extent import k3_spec_mla_extent
 
 __all__ = ["K3DSparkProposer", "k3_dspark_block_proposer"]
 
@@ -169,16 +169,16 @@ class K3DSparkProposer:
     ) -> list[TensorValue]:
         """Runs the drafter over the embedded block.
 
-        The block's plan extent is the batch's block bound on the exact
-        arm and the batch-size-keyed bound otherwise, selected in-graph on
-        the host; the block cache's own lengths still depend on the
-        verify's device-side commit, so no host value can be exact.
+        The block's plan extent is the batch's context length plus an
+        allowance per request on a prompt step, and the batch-size-keyed
+        bound otherwise, selected in-graph on the host; the block cache's
+        own lengths still depend on the verify's device-side commit, so no
+        host value can be exact.
         """
         params = self.draft.kv_params
         extent = k3_spec_mla_extent(
-            exact=ops.slice_tensor(
-                batch.extra[MLA_SPEC_EXTENTS], [slice(1, 2)]
-            ),
+            context_length=batch.batch_context_lengths[0],
+            reach=params.num_draft_tokens,
             kv=batch.draft_kv_collections[0],
             input_row_offsets=batch.input_row_offsets,
             num_draft_tokens=params.num_draft_tokens,

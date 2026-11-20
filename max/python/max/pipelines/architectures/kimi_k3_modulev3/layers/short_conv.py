@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Kimi K3's fused q/k/v short convolution (ModuleV3).
 
-Direct V3 port of ``kimi_k3/layers/short_conv.py``'s ``kimi_short_conv_qkv``:
-three depthwise causal convs (one each on q, k, v, no bias) fused into one
-call over the concatenated ``[q ; k ; v]`` channels, reusing MAX's shared
-``gated_delta_conv1d_fwd`` kernel (also used by Qwen3.5) rather than adding
-a new one. Bridges ``Tensor`` to the kernel's ``TensorValue``/``BufferValue``
+``kimi_short_conv_qkv`` fuses three depthwise causal convs (one each on
+q, k, v, no bias) into one call over the concatenated ``[q ; k ; v]``
+channels, reusing MAX's shared ``gated_delta_conv1d_fwd`` kernel (also used
+by Qwen3.5) rather than adding a new one. Bridges ``Tensor`` to the kernel's ``TensorValue``/``BufferValue``
 interface the same way ``nemotron_h_modulev3/layers/mamba2.py`` bridges its
 own conv/SSM pools.
 

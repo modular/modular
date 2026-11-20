@@ -433,7 +433,7 @@ def bench_manual[
         ](coords: Coord) {var score_3d} -> SIMD[qkv_type, _simd_width]:
             return score_3d.load[width=_simd_width, alignment=1](coords)
 
-        softmax_inline[qkv_type, 1, 3](
+        softmax_inline[qkv_type, 1](
             input_fn,
             Coord(total_heads, seq_len, num_keys),
             score_3d,

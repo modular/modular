@@ -30,7 +30,6 @@ from layout.layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from structured_kernels.amd_tile_io import RegTileLoader
 
-from std.utils import IndexList
 
 from .config import RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K
 from .utils import get_warp_coords, pad, wmma_acc_row
@@ -572,7 +571,7 @@ struct VBufferRDNA[
 
 struct QRegisterBufferRDNA[
     dtype: DType,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     WM: Int,
     WN: Int,
@@ -585,8 +584,7 @@ struct QRegisterBufferRDNA[
 
     Parameters:
         dtype: Element type of the Q tensor and register fragments.
-        mma_shape: `(M, N, K)` shape of a single MMA instruction as an
-            `IndexList[3]`.
+        mma_shape: `(M, N, K)` shape of a single MMA instruction.
         k_group_size: Grouping factor for the MMA K dimension.
         WM: M (query) tile height owned by each warp, in elements.
         WN: N tile width owned by each warp, in elements.
@@ -804,7 +802,7 @@ struct PRegisterBufferRDNA[
     WN: Int,
     num_m_mmas: Int,
     num_n_mmas: Int,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     k_group_size: Int,
 ]:
     """P register buffer (post-softmax scores). Holds the accumulator
@@ -822,8 +820,7 @@ struct PRegisterBufferRDNA[
         WN: N tile width owned by each warp, in elements.
         num_m_mmas: Number of MMA tiles along the M axis per warp.
         num_n_mmas: Number of MMA tiles along the N axis per warp.
-        mma_shape: `(M, N, K)` shape of a single MMA instruction as an
-            `IndexList[3]`.
+        mma_shape: `(M, N, K)` shape of a single MMA instruction.
         k_group_size: Grouping factor for the MMA K dimension.
     """
 

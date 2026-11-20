@@ -68,6 +68,7 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerRaiseForLoops();
   KGEN::registerRemoveUnusedParams();
   KGEN::registerReorderParamOps();
+  KGEN::registerRotateLoops();
   KGEN::registerSROA();
   KGEN::registerSetFastMathFlags();
   KGEN::registerSimplifyCF();

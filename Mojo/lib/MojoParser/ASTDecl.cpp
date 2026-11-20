@@ -857,6 +857,13 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
   return result;
 }
 
+/// Returns the scope assumptions of `decl`'s parent, or True at the root.
+static TypedAttr getParentScopeAssumptions(const ASTDecl &decl) {
+  if (const ASTDecl *parent = decl.getParentDecl())
+    return parent->getScopeAssumptions();
+  return decl.getShared().noAssumptions;
+}
+
 void ASTDecl::takeDecls(ASTDecl &src) {
   if (src.isErroneous())
     setErroneous();
@@ -865,8 +872,12 @@ void ASTDecl::takeDecls(ASTDecl &src) {
       child->parentDecl = this;
   declsInScope = std::move(src.declsInScope);
   counter = src.counter;
-  assert(!knownAssumptions && "assumptions should be empty before overwriting");
-  knownAssumptions = std::move(src.knownAssumptions);
+  assert(!scopeAssumptions && "assumptions should be empty before overwriting");
+  assert((!src.scopeAssumptions ||
+          getParentScopeAssumptions(*this) == getParentScopeAssumptions(src)) &&
+         "moving assumptions under a parent with different assumptions");
+  scopeAssumptions = src.scopeAssumptions;
+  src.scopeAssumptions = {};
 }
 
 DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
@@ -876,29 +887,23 @@ TypeScopeASTDecl::getTraitConformanceLineage(bool createIfMissing) {
   return traitConformanceLineage.get();
 }
 
-void ASTDecl::getKnownAssumptionsIncludingParents(
-    SmallVectorImpl<ConstraintAttr> &assumptions) const {
-  const ASTDecl *decl = this;
-  while (decl) {
-    if (decl->knownAssumptions)
-      assumptions.append(decl->knownAssumptions->begin(),
-                         decl->knownAssumptions->end());
-    decl = decl->getParentDecl();
-  }
-}
-
-llvm::SmallVector<ConstraintAttr>
-ASTDecl::getAssumptionsFromScope(const ASTDecl *scope) {
-  llvm::SmallVector<ConstraintAttr> assumptions;
-  if (scope)
-    scope->getKnownAssumptionsIncludingParents(assumptions);
-  return assumptions;
+TypedAttr ASTDecl::getScopeAssumptions() const {
+  TypedAttr result;
+  for (const ASTDecl *decl = this; decl && !result;
+       decl = decl->getParentDecl())
+    result = decl->scopeAssumptions;
+  if (!result)
+    result = getShared().noAssumptions;
+  return result;
 }
 
 void ASTDecl::insertKnownAssumptions(ArrayRef<ConstraintAttr> assumptions) {
-  if (!knownAssumptions)
-    knownAssumptions.reset(new llvm::SetVector<ConstraintAttr>());
-  knownAssumptions->insert(assumptions.begin(), assumptions.end());
+  if (assumptions.empty())
+    return;
+  TypedAttr seed = scopeAssumptions;
+  if (!seed)
+    seed = getParentScopeAssumptions(*this);
+  scopeAssumptions = LIT::conjoinAssumptions(seed, assumptions);
 }
 
 /// Return the nearest parameter scope (i.e. DeclInterface) for the given decl,

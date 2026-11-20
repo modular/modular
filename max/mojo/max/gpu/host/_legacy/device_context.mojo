@@ -77,6 +77,13 @@ from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
 from ..info import _device_type_encoder_target
+from max._driver.max_license.device_context_dispatch.device_context import (
+    DeviceContext,
+    use_legacy_backend,
+)
+from max._driver.max_license.device_context_dispatch.device_function import (
+    DeviceFunction,
+)
 from max._plugin import MaxPluginForTarget
 
 from ..info import get_gpu_info, default_accelerator
@@ -114,7 +121,6 @@ from ..nvidia.launch_config import (
     _holds_cluster_dim_attribute,
 )
 
-from ._device_context_extras import *
 from max.gpu.host._driver_handles import (
     _CompletionFlagCpp,
     _DeviceContextPtr,
@@ -2553,58 +2559,6 @@ struct LegacyDeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         """
         self.wait_for_flag(flag, value)
 
-    @inline(.always)
-    def enqueue_function[
-        *Ts: DevicePassable
-    ](
-        self,
-        f: LegacyDeviceFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-    ) raises:
-        """Enqueues a checked compiled function for execution on this stream.
-
-        Parameters:
-            Ts: Argument types (must be DevicePassable).
-
-        Args:
-            f: The checked compiled function to execute.
-            args: Arguments to pass to the function.
-            grid_dim: Dimensions of the compute grid, made up of thread blocks.
-            block_dim: Dimensions of each thread block in the grid.
-            cluster_dim: Dimensions of clusters (if the thread blocks are
-                grouped into clusters).
-            shared_mem_bytes: Amount of shared memory per thread block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mapping.
-
-        Raises:
-            If the operation fails.
-        """
-        _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        f._call_with_pack_checked(
-            self,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=call_location(),
-        )
-
 
 struct LegacyCompletionFlag(ImplicitlyCopyable):
     """Refcounted handle to a host-signaled flag that streams wait on.
@@ -4133,7 +4087,9 @@ struct LegacyDeviceClosureFunction[
     # Launches match on `ClosureType` through this wrapper: matching the
     # plugin's kernel type against a launch argument fails to unify for
     # nested captures.
-    var kernel: MaxPluginForTarget[Self.target].ClosureKernel[Self.ClosureType]
+    var kernel: MaxPluginForTarget[Self.target].ClosureKernel[
+        Self.ClosureType, Self.target
+    ]
     """The plugin's compiled kernel."""
 
 
@@ -5084,185 +5040,7 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             plugin._handles_closure_kernels
         ), "compile_function[ClosureType] is not supported on this target"
-        return {
-            plugin.compile_closure_fn[ClosureType](self.assert_default_target())
-        }
-
-    @inline(.always)
-    def enqueue_function[
-        *Ts: AnyType
-    ](
-        self,
-        f: LegacyDeviceExternalFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Enqueues an external device function for execution on this device.
-
-        This overload accepts a `DeviceExternalFunction` that was loaded from
-        assembly code (PTX/SASS). External functions are pre-compiled GPU kernels
-        that can be integrated with Mojo code.
-
-        Parameters:
-            Ts: Argument types to pass to the external function.
-
-        Args:
-            f: The external device function to execute.
-            args: Arguments to pass to the function.
-            grid_dim: Dimensions of the compute grid, made up of thread blocks.
-            block_dim: Dimensions of each thread block in the grid.
-            cluster_dim: Dimensions of clusters (if the thread blocks are
-                grouped into clusters).
-            shared_mem_bytes: Amount of shared memory per thread block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mapping.
-            location: Source location for the function call.
-
-        Example:
-
-        ```text
-        from max.gpu.host import DeviceContext
-
-        def vec_add_sig(
-            in0: Pointer[Float32],
-            in1: Pointer[Float32],
-            out: Pointer[Float32],
-            len: Int,
-        ):
-            pass
-
-        with DeviceContext() as ctx:
-            var func = ctx.load_function[vec_add_sig](
-                function_name="vectorAdd",
-                asm=ptx_code,
-            )
-            ctx.enqueue_function(
-                func,
-                in0_buf,
-                in1_buf,
-                out_buf,
-                1024,
-                grid_dim=Dim(32),
-                block_dim=Dim(32),
-            )
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-        """
-        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        f._call_with_pack(
-            self,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
-
-    @inline(.always)
-    def enqueue_function[
-        *Ts: DevicePassable
-    ](
-        self,
-        f: LegacyDeviceFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Enqueues a pre-compiled checked function for execution on this device.
-
-        This overload requires a `DeviceFunction` that was compiled with
-        type checking enabled (via `compile_function`). The function
-        will verify that the argument types match the declared types at
-        compile time. When the MAX plugin for `f`'s target handles launches,
-        the plugin's `enqueue_function_fn` launches it instead.
-
-        Parameters:
-            Ts: Argument dtypes.
-
-        Args:
-            f: The compiled function to execute.
-            args: Arguments to pass to the function.
-            grid_dim: Dimensions of the compute grid, made up of thread
-                blocks.
-            block_dim: Dimensions of each thread block in the grid.
-            cluster_dim: Dimensions of clusters (if the thread blocks are
-                grouped into clusters).
-            shared_mem_bytes: Amount of shared memory per thread block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mapping.
-            location: Source location for the function call.
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        def kernel(x: Int):
-            print("Value:", x)
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, 42, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-        """
-        comptime plugin = MaxPluginForTarget[type_of(f).target]
-        comptime if plugin._handles_enqueue_function:
-            plugin.enqueue_function_fn(
-                rebind[LegacyDeviceContext[plugin.hooks_target]](self),
-                f,
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
-        else:
-            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-                grid_dim, location=call_location()
-            )
-            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-                block_dim, location=call_location()
-            )
-
-            f._call_with_pack_checked(
-                self,
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        return {plugin.compile_closure_fn[ClosureType](self)}
 
     @inline(.always)
     def enqueue_function[
@@ -5384,13 +5162,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             block_dim, location=call_location()
         )
         comptime plugin = MaxPluginForTarget[Self.target]
-        # Raise rather than assert, so target-generic callers still compile
-        # for a target that launches through its own overloads.
-        comptime if not plugin._supports_default_compile_function:
-            raise Error(
-                "compile-and-enqueue is not supported on this target; use the"
-                " target's compile_function overload"
-            )
         var inferred_func_attribute = self._func_attribute_for_launch(
             func_attribute, shared_mem_bytes
         )
@@ -5406,9 +5177,18 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             comptime assert (
                 HostArgs.length == 0
             ), "host_args is not supported on this target"
+            comptime assert (
+                use_legacy_backend()
+            ), "the legacy compile-and-enqueue path needs the legacy backend"
             plugin.enqueue_function_fn(
-                rebind[LegacyDeviceContext[plugin.hooks_target]](self),
-                gpu_kernel,
+                DeviceContext[Self.target](_legacy=self),
+                DeviceFunction[
+                    func,
+                    Self.FunctionWrapper,
+                    target=Self.target,
+                    link_options=link_options,
+                    _ptxas_info_verbose=_ptxas_info_verbose,
+                ](_legacy=gpu_kernel),
                 *encoded_args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -5431,261 +5211,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
                 constant_memory=constant_memory^,
                 location=location.or_else(call_location()),
             )
-
-    @inline(.always)
-    def enqueue_function[
-        ClosureType: RegisterPassable & def() -> None,
-    ](
-        self,
-        f: LegacyDeviceClosureFunction[ClosureType, Self.target],
-        closure: ClosureType,
-        *,
-        grid_dim: Dim,
-        block_dim: Dim,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Enqueues a closure kernel compiled by `compile_function[ClosureType]`.
-
-        The target's MAX plugin defines what `grid_dim` and `block_dim` mean
-        for a closure kernel.
-
-        Parameters:
-            ClosureType: The closure's type.
-
-        Args:
-            f: The compiled kernel.
-            closure: The closure whose captures to launch with.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            location: Source location for the function call.
-
-        Raises:
-            If the launch fails.
-        """
-        MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
-            self.assert_default_target(),
-            f.kernel,
-            closure,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            location=location.or_else(call_location()),
-        )
-
-    @inline(.always)
-    def enqueue_function[
-        FuncType: DevicePassable & def() -> None,
-        //,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        func: FuncType,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a capturing kernel for execution on this device.
-
-        This overload is for kernels that capture variables from their enclosing
-        scope. The closure is encoded through `DevicePassable` before launch so
-        host handles such as `DevicePointer` become device addresses, matching
-        explicit kernel arguments.
-
-        Parameters:
-            FuncType: The type of the function to launch (usually inferred).
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func: The capturing kernel function to compile and launch.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            cluster_dim: The cluster dimensions.
-            shared_mem_bytes: Per-block memory shared between blocks.
-            attributes: A `List` of launch attributes.
-            constant_memory: A `List` of constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        Most parameters are inferred automatically. This overload is selected when
-        your kernel captures variables from its surrounding scope:
-
-        ```text
-        from max.gpu import global_idx
-        from max.gpu.host import DeviceContext
-        from layout import TileTensor, row_major
-
-
-        def main() raises:
-            with DeviceContext() as ctx:
-                var scale_factor: Float32 = 2.0
-
-                var data_buffer = ctx.enqueue_create_buffer[.float32](100)
-                var data = TileTensor(data_buffer, row_major[100]())
-                with data_buffer.map_to_host() as h:
-                    for i in range(data.num_elements()):
-                        h[i] = Float32(i)
-
-                # This kernel captures 'scale_factor' from the enclosing scope
-                def scale_kernel() {var}:
-                    var i = global_idx.x
-                    if i >= 100:
-                        return
-                    data[i] = data[i] * scale_factor
-
-                ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
-                ctx.synchronize()
-                with data_buffer.map_to_host() as h:
-                    for i in range(data.num_elements()):
-                        print(h[i])
-        ```
-
-        Raises:
-            If the operation fails.
-        """
-        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        comptime launch_target = Self.target
-
-        var gpu_kernel = LegacyDeviceFunction[
-            FuncType.__call__,
-            target=launch_target,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](
-            self,
-            func_attribute=self._func_attribute_for_launch(
-                func_attribute, shared_mem_bytes
-            ),
-        )
-        gpu_kernel.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
-
-        gpu_kernel._call_with_pack_checked(
-            self,
-            func,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
-
-    @inline(.always)
-    def enqueue_function[
-        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
-        //,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        func: FuncType,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises where not conforms_to(FuncType, DevicePassable):
-        """Compiles and enqueues a register-passable callable kernel.
-
-        Callable structs that store a capturing function value cannot implement
-        `DevicePassable` (that generic bound makes every method `capturing
-        thin`). This overload compiles `FuncType.__call__` and passes `func`
-        by its host layout as the kernel's single argument. Capturing closures
-        that do conform to `DevicePassable` use the encoding overload instead.
-
-        Parameters:
-            FuncType: The type of the function to launch (usually inferred).
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func: The register-passable kernel to compile and launch.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            cluster_dim: The cluster dimensions.
-            shared_mem_bytes: Per-block memory shared between blocks.
-            attributes: A `List` of launch attributes.
-            constant_memory: A `List` of constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        Raises:
-            If the operation fails.
-        """
-        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        comptime launch_target = Self.target
-
-        var gpu_kernel = LegacyDeviceFunction[
-            FuncType.__call__,
-            target=launch_target,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](
-            self,
-            func_attribute=self._func_attribute_for_launch(
-                func_attribute, shared_mem_bytes
-            ),
-        )
-        gpu_kernel.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
-
-        gpu_kernel._call_with_pack_checked(
-            self,
-            host_args=(func,),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
 
     @inline(.always)
     def enqueue_function[

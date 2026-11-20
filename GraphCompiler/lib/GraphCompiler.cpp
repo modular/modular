@@ -371,6 +371,7 @@ void M::MO::buildMoggPipeline(mlir::OpPassManager &pm,
   if (opts.graphBlobMaxCalls) {
     pm.addPass(MOGG::createFormGraphBlobs({opts.graphBlobMaxCalls}));
     pm.addNestedPass<GraphOp>(MOGG::createReuseGraphBlobBuffers());
+    pm.addNestedPass<GraphOp>(MOGG::createLowerGraphBlobs());
   }
   pm.addPass(MOGG::createOutlineRoutines());
   pm.addPass(MOGG::createWrapFuncsWithTrace());

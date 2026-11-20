@@ -44,9 +44,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.model import (
     KimiK3Model,
     KimiK3ModelConfig,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
-)
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -137,16 +134,15 @@ def _assign_weights(model: KimiK3Model, rng: np.random.Generator) -> None:
         attn.kv_b_proj.weight = bf16(
             _NUM_HEADS * (_QK_NOPE_HEAD_DIM + _V_HEAD_DIM), _KV_LORA_RANK
         )
-        attn.qkv_a_g_proj.weight = as_bf16(
-            fuse_qkv_a_g_for_tp(
-                q_a, kv_a, draw(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), 1
-            )
-        )
+        attn.q_a_proj.weight = as_bf16(q_a)
+        attn.kv_a_proj_with_mqa.weight = as_bf16(kv_a)
+        attn.g_proj.weight = bf16(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN)
         attn.o_proj.weight = bf16(_HIDDEN, _NUM_HEADS * _V_HEAD_DIM)
 
         ffn = layer.ffn
         assert isinstance(ffn, KimiK3DenseMLP)
-        ffn.gate_up_proj.weight = bf16(2 * 48, _HIDDEN)
+        ffn.gate_proj.weight = bf16(48, _HIDDEN)
+        ffn.up_proj.weight = bf16(48, _HIDDEN)
         ffn.down_proj.weight = bf16(_HIDDEN, 48)
 
 

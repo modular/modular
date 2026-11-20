@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """One Kimi K3 decoder layer (ModuleV3), batch-size-1 scope.
 
-Direct V3 port of ``kimi_k3/kimi_k3.py``'s ``KimiK3DecoderLayer.__call__``.
 This file's job is ONLY the assembly order, which this model gets uniquely
 wrong if copied from a plain transformer: there is no additive residual (see
 ``attn_residual.py``), and each layer's sublayer type (KDA vs MLA, dense MLP

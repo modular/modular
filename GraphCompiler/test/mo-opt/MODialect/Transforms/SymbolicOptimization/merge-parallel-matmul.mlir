@@ -276,3 +276,27 @@ mo.graph @cyclic_permutation(%a: !mo.tensor<[2, 3, 4], f32>, %b: !mo.tensor<[2, 
   %both = mo.concat[1] (%at, %bt) : (!mo.tensor<[3, 4, 2], f32>, !mo.tensor<[3, 4, 2], f32>) -> (!mo.tensor<[3, 8, 2], f32>)
   mo.output %both : !mo.tensor<[3, 8, 2], f32>
 }
+
+// -----
+
+// Matmuls that differ in result dtype stay apart: the merged matmul would have
+// one result dtype.
+//
+// CHECK-LABEL: mo.graph @mixed_result_dtypes
+// CHECK: mo.matmul({{.*}}) : (!mo.tensor<[4, 2], bf16>, !mo.tensor<[2, 3], bf16>) -> !mo.tensor<[4, 3], f32>
+// CHECK: mo.matmul({{.*}}) : (!mo.tensor<[4, 2], bf16>, !mo.tensor<[2, 3], bf16>) -> !mo.tensor<[4, 3], bf16>
+// CHECK-NOT: mo.concat
+// CHECK-NOT: mo.split
+
+mo.graph @mixed_result_dtypes(%arg0: !mo.tensor<[4, 2], bf16>) -> (!mo.tensor<[4, 3], f32>, !mo.tensor<[4, 3], bf16>) {
+  %perm = mo.constant <#M.dense_array<1, 0> : tensor<2xsi32>> : !mo.tensor<[2], si32>
+  %w1 = mo.constant <#M.dense_array<1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00> : !M.array<6xbf16>> : !mo.tensor<[3, 2], bf16>
+  %w2 = mo.constant <#M.dense_array<2.000000e+00, 2.000000e+00, 2.000000e+00, 2.000000e+00, 2.000000e+00, 2.000000e+00> : !M.array<6xbf16>> : !mo.tensor<[3, 2], bf16>
+  %w1t = mo.transpose(%w1, %perm) : (!mo.tensor<[3, 2], bf16>, !mo.tensor<[2], si32>) -> !mo.tensor<[2, 3], bf16>
+  %mm1 = mo.matmul(%arg0, %w1t) : (!mo.tensor<[4, 2], bf16>, !mo.tensor<[2, 3], bf16>) -> !mo.tensor<[4, 3], f32>
+  %w2t = mo.transpose(%w2, %perm) : (!mo.tensor<[3, 2], bf16>, !mo.tensor<[2], si32>) -> !mo.tensor<[2, 3], bf16>
+  %mm2 = mo.matmul(%arg0, %w2t) : (!mo.tensor<[4, 2], bf16>, !mo.tensor<[2, 3], bf16>) -> !mo.tensor<[4, 3], bf16>
+  %r1 = mo.mul(%mm1, %mm1) : !mo.tensor<[4, 3], f32>
+  %r2 = mo.mul(%mm2, %mm2) : !mo.tensor<[4, 3], bf16>
+  mo.output %r1, %r2 : !mo.tensor<[4, 3], f32>, !mo.tensor<[4, 3], bf16>
+}

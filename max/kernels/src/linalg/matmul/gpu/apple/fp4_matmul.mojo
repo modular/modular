@@ -47,7 +47,7 @@ tail loop, cast/epilogue store). The dense fp16/bf16/fp32 path is untouched.
 
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of
@@ -780,9 +780,11 @@ def _enqueue_apple_fp4_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
+                block_dim=(4 * WARP_SIZE,),
+            ),
             host_args=(no_epilogue_fn, no_compute_fn),
-            grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
-            block_dim=(4 * WARP_SIZE,),
         )
 
     # Keep the transient weight alive through the async materialize + GEMM
@@ -854,8 +856,10 @@ def _launch_apple_fp4_matmul[
         scales.as_imm(),
         log2_m,
         log2_n,
-        grid_dim=(grid_dim),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_dim),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )
 
 

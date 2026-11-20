@@ -673,6 +673,7 @@ modular_cc_library(
         "internal/Tracy/TracyRocm.cpp",
     ],
     hdrs = [
+        "max_license/Profiling/ProfileRange.h",
         "max_license/Tracy/Tracy.h",
         "max_license/Tracy/TracyCuda.h",
         "max_license/Tracy/TracyRocm.h",
@@ -681,8 +682,13 @@ modular_cc_library(
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
     copts = ["-Wno-global-constructors"],
-    defines = PROFILING_DEFINES,
-    deps = PROFILING_DEPS,
+    # Passed as defines so every M_PROFILE_RANGE call site sees the same
+    # expansion.
+    defines = PROFILING_DEFINES + select({
+        "//:profile_ranges_disabled": ["MODULAR_PROFILE_RANGES=0"],
+        "//conditions:default": ["MODULAR_PROFILE_RANGES=1"],
+    }),
+    deps = PROFILING_DEPS + [":ProfilingRanges"],
 )
 
 modular_cc_library(

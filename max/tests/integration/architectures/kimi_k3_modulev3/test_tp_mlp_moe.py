@@ -32,9 +32,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     tensor_parallel_latent_moe,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    interleave_for_tp,
-)
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import (
     DeviceMesh,
@@ -70,12 +67,12 @@ TP_RTOL = 1e-3
 
 
 def _latent_moe_layer(
-    tp_size: int, dtype: DType, seed: int, hidden: int = HIDDEN
+    dtype: DType, seed: int, hidden: int = HIDDEN
 ) -> tuple[KimiK3LatentMoE, np.ndarray]:
     """A latent-MoE layer over seeded random weights, plus its input.
 
-    The same ``seed`` regenerates identical weights for every ``tp_size``,
-    so layers built for different tensor-parallel sizes stay comparable.
+    The same ``seed`` regenerates identical weights, so layers sharded over
+    different tensor-parallel sizes stay comparable.
     """
     latent = 24
     moe_inter = 16
@@ -130,9 +127,9 @@ def _latent_moe_layer(
         experts_down_np,
         lambda a, device: Tensor(a, device=device).cast(dtype),
     )
-    layer.shared_experts.gate_up_proj.weight = Tensor(
-        interleave_for_tp(np.split(shared_gate_up_np, 2), tp_size)
-    ).cast(dtype)
+    shared_gate_np, shared_up_np = np.split(shared_gate_up_np, 2)
+    layer.shared_experts.gate_proj.weight = Tensor(shared_gate_np).cast(dtype)
+    layer.shared_experts.up_proj.weight = Tensor(shared_up_np).cast(dtype)
     layer.shared_experts.down_proj.weight = Tensor(shared_down_np).cast(dtype)
     return layer, x_np
 
@@ -150,6 +147,7 @@ def test_dense_mlp_tp2_matches_tp1(dtype: DType, tolerance: float) -> None:
     )
     down_np = (rng.standard_normal((hidden, inter)) * 0.02).astype(np.float32)
     x_np = rng.standard_normal((5, hidden)).astype(np.float32)
+    gate_np, up_np = np.split(gate_up_np, 2)
 
     with default_device(Accelerator(0)):
         layer1 = KimiK3DenseMLP(
@@ -158,7 +156,8 @@ def test_dense_mlp_tp2_matches_tp1(dtype: DType, tolerance: float) -> None:
             beta=beta,
             linear_beta=linear_beta,
         )
-        layer1.gate_up_proj.weight = Tensor(gate_up_np).cast(dtype)
+        layer1.gate_proj.weight = Tensor(gate_np).cast(dtype)
+        layer1.up_proj.weight = Tensor(up_np).cast(dtype)
         layer1.down_proj.weight = Tensor(down_np).cast(dtype)
         x1 = Tensor(x_np).cast(dtype)
         out1 = layer1(x1).cast(DType.float32).to_numpy()
@@ -171,11 +170,8 @@ def test_dense_mlp_tp2_matches_tp1(dtype: DType, tolerance: float) -> None:
             beta=beta,
             linear_beta=linear_beta,
         )
-        # The TP layer takes the per-rank interleave the weight adapter
-        # writes.
-        layer2.gate_up_proj.weight = Tensor(
-            interleave_for_tp(np.split(gate_up_np, 2), 2)
-        ).cast(dtype)
+        layer2.gate_proj.weight = Tensor(gate_np).cast(dtype)
+        layer2.up_proj.weight = Tensor(up_np).cast(dtype)
         layer2.down_proj.weight = Tensor(down_np).cast(dtype)
         layer2 = tensor_parallel_dense_mlp(layer2, mesh)
         x2 = Tensor(x_np).cast(dtype)
@@ -192,10 +188,10 @@ def test_dense_mlp_rejects_width_not_divisible_by_tp() -> None:
         layer = KimiK3DenseMLP(
             hidden_size=8, intermediate_size=5, beta=1.5, linear_beta=None
         )
-        weight = layer.gate_up_proj.weight
+        weight = layer.gate_proj.weight
         with pytest.raises(ValueError, match="not divisible"):
             tensor_parallel_dense_mlp(layer, mesh)
-        assert layer.gate_up_proj.weight is weight
+        assert layer.gate_proj.weight is weight
 
 
 @pytest.mark.compile_on_gpu(
@@ -211,15 +207,13 @@ def test_dense_mlp_rejects_width_not_divisible_by_tp() -> None:
 )
 def test_latent_moe_tp2_matches_tp1(dtype: DType, hidden: int) -> None:
     with default_device(Accelerator(0)):
-        layer1, x_np = _latent_moe_layer(
-            1, DType.float32, seed=1, hidden=hidden
-        )
+        layer1, x_np = _latent_moe_layer(DType.float32, seed=1, hidden=hidden)
         x1 = Tensor(x_np, dtype=DType.float32).cast(dtype)
         out1 = layer1(x1).to_numpy()
 
     mesh = _tp2_mesh()
     with default_device(mesh):
-        layer2, _ = _latent_moe_layer(2, DType.float32, seed=1, hidden=hidden)
+        layer2, _ = _latent_moe_layer(DType.float32, seed=1, hidden=hidden)
         layer2 = tensor_parallel_latent_moe(layer2, mesh)
         x2 = Tensor(x_np, dtype=DType.float32).cast(dtype)
         # This layer reduces internally, so the caller does not allreduce.
@@ -254,7 +248,7 @@ def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm(
     # arrays to `dtype` eagerly (a graph constant would reject the dtype it
     # has to convert).
     with default_device(mesh):
-        layer, _ = _latent_moe_layer(2, dtype, seed=4)
+        layer, _ = _latent_moe_layer(dtype, seed=4)
         layer = tensor_parallel_latent_moe(layer, mesh)
         staged, _weights = layer.stage(
             TensorLayout(dtype, [SEQ_LEN, HIDDEN], mesh)

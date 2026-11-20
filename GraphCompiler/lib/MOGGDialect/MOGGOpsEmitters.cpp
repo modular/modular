@@ -26,6 +26,7 @@
 #include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/Support/AsmSyntax.h"
+#include "GraphCompiler/MOGGDialect/Support/EmitMojoDeclarativeCall.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/MOGGDialect/Support/LegacyTileMojoTraits.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoBuilder.h"
@@ -994,109 +995,19 @@ static SmallVector<MojoValue> declarativeOperands(EmitMojoState &state,
   return operands;
 }
 
-// With a context, emits the call's `execute_configuration` and adds the call to
-// the enclosing `mogg.graph_blob`, which launches it. Without one, the call is
-// already in a launch's kernel, with operands it built there in their roles:
+// The call is in a launch's kernel, with operands it built there in their
+// roles:
 //
 //   Kernel[...].execute_device[...](output0, input0, ...)
-//
-// TRANSITIONAL(GEX-4588): a temporary branch on the op's form, needed only
-// while both forms exist. It goes with the context form once graph blobs are
-// lowered before emission.
 LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
   KernelDeclAdaptor adaptor(state.registry.lookupKernelBySymName(getCallee()));
-  if (!getDeviceContext()) {
-    FailureOr<KernelCallee> executeDevice = resolveKernelCallee(
-        *this, state, adaptor, KernelFunctionKind::ExecuteDevice,
-        getKernelParamAttr());
-    if (failed(executeDevice))
-      return failure();
-    state.file->call(executeDevice->function, executeDevice->parameters,
-                     declarativeOperands(state, getOutputs(), getInputs()));
-    return success();
-  }
-  FailureOr<DeclarativeCall> call = prepareDeclarativeCall(
-      *this, state, getOutputs(), getInputs(), adaptor, getKernelParamAttr());
-  if (failed(call))
+  FailureOr<KernelCallee> executeDevice = resolveKernelCallee(
+      *this, state, adaptor, KernelFunctionKind::ExecuteDevice,
+      getKernelParamAttr());
+  if (failed(executeDevice))
     return failure();
-
-  // The call's parent blob pushed its context before emitting its body, and
-  // the blob's verifier gave every call the same context.
-  GraphBlobRegion &blob = state.currentRegion<GraphBlobRegion>();
-  blob.ctx = getDeviceContext();
-  MojoBuilder &builder = *state.file;
-  MojoValue config =
-      builder.var(call->executeConfiguration(call->operands), /*cache=*/false);
-  SmallVector<unsigned> indices = blob.args.add(builder, *call);
-  blob.calls.push_back({std::move(*call), std::move(indices), config});
-  return success();
-}
-
-// Emits the body's declarative calls as one launch on every core and thread of
-// the device, which `_graph_blob.launch_config` gets from the device's target.
-// Each call runs its `execute_device` only on the first blocks of the launch,
-// as many as its own grid has:
-//
-//   var config0 = Kernel0[...].execute_configuration[...](operands0...)
-//   var config1 = Kernel1[...].execute_configuration[...](operands1...)
-//   comptime T0 = type_of(operand0)  # one per distinct operand
-//   var launch = _graph_blob.launch_config(ctx)
-//   def execute_device_N(a0: T0.device_type, ..., a5: Int32, a6: Int32):
-//       if _graph_blob.is_thread_active(a5):
-//           Kernel0[...].execute_device[...](T0(a0), ...)
-//       _graph_blob.barrier()
-//       if _graph_blob.is_thread_active(a6):
-//           Kernel1[...].execute_device[...](...)
-//   mogg_launch_declarative[execute_device_N](
-//       ctx, launch, operand0, ...,
-//       _graph_blob.active_threads(config0.get_grid_dim(),
-//                                  config0.get_block_dim(),
-//                                  launch.get_grid_dim(),
-//                                  launch.get_block_dim()), ...)
-//
-// Every thread reaches every barrier, so a barrier sits outside the guards.
-LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
-  // Each body op emits through `lowerOpToMojo`, which passes it only the state,
-  // so the state carries the blob for each call to add itself to. The scope
-  // pops it on every return; nothing needs the outer value back, because the
-  // verifier keeps a blob out of another.
-  auto blobScope = state.enterRegion<GraphBlobRegion>();
-  for (Operation &op : getBody().getOps())
-    if (failed(state.lowerOpToMojo(&op)))
-      return failure();
-  GraphBlobRegion &blob = state.currentRegion<GraphBlobRegion>();
-  ASSERT_STREAM(!blob.calls.empty(), "the verifier requires a call");
-
-  MojoBuilder &builder = *state.file;
-  MojoValue graphBlob(kGraphBlobModuleAlias);
-  MojoValue ctx = state.getMojoValueFor(blob.ctx);
-  MojoValue launch =
-      builder.var(graphBlob.get("launch_config")({ctx}), /*cache=*/false);
-
-  SmallVector<unsigned> active;
-  for (const GraphBlobRegion::BlobCall &blobCall : blob.calls) {
-    MojoValue threads = graphBlob.get("active_threads")(
-        {blobCall.config.get("get_grid_dim")(),
-         blobCall.config.get("get_block_dim")(), launch.get("get_grid_dim")(),
-         launch.get("get_block_dim")()});
-    active.push_back(blob.args.addScalar(threads, "Int32"));
-  }
-
-  MojoValue kernel = emitDeviceKernel(
-      builder, blob.args.parameters, [&](const FunctionBody &body) {
-        for (auto [i, blobCall] : llvm::enumerate(blob.calls)) {
-          if (i > 0)
-            builder.call(graphBlob.get("barrier"));
-          MojoValue isActive = graphBlob.get("is_thread_active")(
-              {body.arguments[active[i]].resolvedName});
-          const KernelCallee &executeDevice = blobCall.call.executeDevice;
-          builder.if_(isActive, [&] {
-            builder.call(executeDevice.function, executeDevice.parameters,
-                         blob.args.rebuild(body, blobCall.indices));
-          });
-        }
-      });
-  emitLaunch(state, ctx, kernel, blob.args.launchArgs, launch);
+  state.file->call(executeDevice->function, executeDevice->parameters,
+                   declarativeOperands(state, getOutputs(), getInputs()));
   return success();
 }
 
@@ -1714,6 +1625,41 @@ static LogicalResult lowerPhaseBody(EmitMojoState &state,
   return success();
 }
 
+// What a phase's closure reads as `tile`: the row's tile, or the cache it
+// reads. A phase that reads a cache calls the Row's cached overload, which
+// takes the cache first and the cache's `compute` last:
+//
+//   row.<call>(<closure>, load)                     the tile
+//   row.<call>(cache, <closure>, load, compute)     a cache
+struct PhaseTile {
+  MojoValue dtype;
+  RowwiseCacheOp cache;
+
+  SmallVector<MojoValue> callArgs(EmitMojoState &state,
+                                  const MojoValue &closure) {
+    const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+    if (!cache)
+      return {closure, info.load};
+    return {state.getMojoValueFor(cache.getResult()), closure, info.load,
+            info.cacheComputes.lookup(cache.getResult())};
+  }
+};
+
+// The Mojo dtype `cache` keeps; its verifier checks it is one.
+static MojoValue cachedDType(EmitMojoState &state, RowwiseCacheOp cache) {
+  ErrorOr<DType> dtype = M::MO::fromMLIRType(cache.getType().getElementType());
+  ASSERT_STREAM(!dtype.isError(), << "a verified cache keeps a dtype");
+  return state.mlirDTypeToMojoType(*dtype);
+}
+
+static PhaseTile phaseTile(EmitMojoState &state,
+                           RowwisePhaseOpInterface phase) {
+  RowwiseCacheOp cache = phase.getReadCache();
+  return {cache ? cachedDType(state, cache)
+                : state.currentRegion<RowwiseBodyRegion>().dtype,
+          cache};
+}
+
 // Appends a launch's width limit to its arguments: a static one as an `Idx`,
 // a run-time one as the largest power of two dividing its dims (widths are
 // powers of two, so that is all the launch needs, not their GCD).
@@ -1936,11 +1882,15 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 //     <fold body, reading `tile`>
 //   var acc = row.reduce[Monoid[..., W = params.simd_width]](           (2)
 //       contribute, load)
+//
+// `dtype` and the call's arguments are a cache's when the fold reads one
+// (`PhaseTile`).
 LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
   if (!getFieldsAttr())
     return emitOpError("has no bound fields");
   const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
   auto yield = cast<YieldOp>(getBody().front().getTerminator());
+  PhaseTile tile = phaseTile(state, *this);
 
   // (1) def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:
   bool failedToLower = false;
@@ -1948,7 +1898,7 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
       "contribute_",
       {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
       {NamedMojoDef::asVerbatim("tile",
-                                kStructSIMD[{info.dtype, kParameterTileWidth}]),
+                                kStructSIMD[{tile.dtype, kParameterTileWidth}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       kStructSIMD[{info.accum, kParameterTileWidth}],
       MojoBuilder::LambdaInline::kAlways, false, false, "var",
@@ -1971,9 +1921,9 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
       monoidType(state, *this, info.params.get(kParameterSimdWidth));
   if (failed(monoid))
     return failure();
-  MojoValue folded =
-      state.file->var(info.row.get("reduce")[*monoid]({contribute, info.load}),
-                      /*cache=*/false);
+  MojoValue folded = state.file->var(
+      info.row.get("reduce")[*monoid](tile.callArgs(state, contribute)),
+      /*cache=*/false);
   // acc.<field>
   for (auto [result, field] : llvm::zip(getResults(), getFieldsAttr()))
     state.setMojoValueFor(result,
@@ -1990,6 +1940,7 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
 //   row.elementwise(elementwise, load)                                  (2)
 LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
   const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+  PhaseTile tile = phaseTile(state, *this);
 
   // (1) def elementwise[w](tile: SIMD[dtype, w], idx):
   bool failedToLower = false;
@@ -1997,7 +1948,7 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
       "elementwise_",
       {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
       {NamedMojoDef::asVerbatim("tile",
-                                kStructSIMD[{info.dtype, kParameterTileWidth}]),
+                                kStructSIMD[{tile.dtype, kParameterTileWidth}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAlways, false,
       false, "var", [&](const FunctionBody &functionBody) {
@@ -2015,7 +1966,65 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
     return failure();
 
   // (2) row.elementwise(elementwise, load)
-  state.file->call(info.row.get("elementwise"), {}, {elementwise, info.load});
+  state.file->call(info.row.get("elementwise"), {},
+                   tile.callArgs(state, elementwise));
+  return success();
+}
+
+// Prints the cache as the Row's `cache`, which runs `compute` once per
+// element and keeps the result for the phases that read it:
+//
+//   @inline(.always)
+//   def compute[w](tile: SIMD[dtype, w], idx) -> SIMD[T, w]:           (1)
+//     comptime al = Context[params].element_alignment[dtype, w]()
+//     <cache body, reading `tile` and row values as .slice[w]()>
+//     return <the yielded value>
+//   var cache = row.cache[T](compute)                                   (2)
+LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
+  RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+  MojoValue cached = cachedDType(state, *this);
+  auto yield = cast<YieldOp>(getBody().front().getTerminator());
+
+  // (1) def compute[w](tile: SIMD[dtype, w], idx) -> SIMD[T, w]:
+  bool failedToLower = false;
+  MojoValue compute = state.file->lambda(
+      "compute_", {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
+      {NamedMojoDef::asVerbatim("tile",
+                                kStructSIMD[{info.dtype, kParameterTileWidth}]),
+       NamedMojoDef::asVerbatim("idx", info.rowCoord)},
+      kStructSIMD[{cached, kParameterTileWidth}],
+      MojoBuilder::LambdaInline::kAlways, false, false, "var",
+      [&](const FunctionBody &functionBody) {
+        EmitMojoState::ValueScope scope(state);
+        MojoValue width = functionBody.parameter(kParameterTileWidth);
+        // comptime al = Context[params].element_alignment[dtype, w]()
+        MojoValue alignment =
+            state.file->comptime(kStructRowwiseContext[info.params].get(
+                kParameterElementAlignment)[{info.dtype, width}]({}));
+        if (failed(lowerPhaseBody(state, *this, width, alignment,
+                                  functionBody.arguments[0].resolvedName))) {
+          failedToLower = true;
+          return;
+        }
+        // return <the yielded value>
+        state.file->returnsValue(state.getMojoValueFor(yield.getOperand(0)));
+      });
+  if (failedToLower)
+    return failure();
+
+  // (2) var cache = row.cache[T](compute)
+  info.cacheComputes[getResult()] = compute;
+  state.setMojoValueFor(
+      getResult(), state.file->var(info.row.get("cache")[cached]({compute}),
+                                   /*cache=*/false));
+  return success();
+}
+
+// The phase's closure gets the cached value as its argument; the read prints
+// nothing: tile
+LogicalResult RowwiseCacheLoadOp::emitMojo(EmitMojoState &state) {
+  state.setMojoValueFor(getResult(),
+                        state.currentRegion<RowwiseBodyRegion>().tile);
   return success();
 }
 

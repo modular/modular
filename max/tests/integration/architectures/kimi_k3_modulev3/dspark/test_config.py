@@ -368,8 +368,8 @@ def _load_context(
                 runtime=PipelineRuntimeConfig(max_batch_size=max_batch_size)
             ),
         ),
-        # `weights` is only read by `checkpoint_weights`, which these tests
-        # never call; the context field just has to exist.
+        # `weights` is only read when the draft loads, which these tests
+        # never do; the context field just has to exist.
         weights=cast(Weights, None),
         adapter=None,
         memory_plan=MemoryPlan(

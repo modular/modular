@@ -10,9 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Target-specific `DeviceContext` extensions.
+# RUN: %mojo %s | FileCheck %s
 
-A plugin overlay replaces this file wholesale to add overloads for its target.
-Per-target behavior that base code dispatches on belongs in the plugin's
-`MaxPluginHooks` instead, so an overlay only carries what base can't express.
-"""
+# A closure returning `None` passed where the result type is a generic
+# `R: AnyType` binds `R` to `__MLIRType[none]`. Its byref result slot must
+# still match the closure's conversion to `def() -> R`.
+
+
+def run[R: AnyType, //, F: def() -> R](f: F) -> R:
+    return f()
+
+
+def main():
+    var n = 3
+
+    def attempt() {imm} -> None:
+        print(n)
+
+    # CHECK: 3
+    run(attempt)

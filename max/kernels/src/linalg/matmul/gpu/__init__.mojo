@@ -29,7 +29,7 @@ from max.algorithm.functional import elementwise
 from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.primitives.grid_controls import PDLLevel
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import A100, B200, H100, MI355X, get_gpu_info
 from layout import (
     Coord,
@@ -483,9 +483,11 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
             host_args=(epilogue_fn,),
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
     elif has_compute_fn:
         comptime kernel = matmul_kernel_naive_compute_fn[
@@ -509,9 +511,11 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
             host_args=(compute_fn,),
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
     else:
         comptime kernel = matmul_kernel_naive[
@@ -534,8 +538,10 @@ def enqueue_matmul_kernel_naive[
             Int32(m),
             Int32(n),
             Int32(k),
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
         )
 
 
@@ -2020,9 +2026,11 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                        block_dim=(NUM_WARPS * warp_size,),
+                    ),
                     host_args=(epilogue_fn,),
-                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                    block_dim=(NUM_WARPS * warp_size,),
                 )
             elif has_compute_fn:
                 comptime rdna_kernel = gemm_kernel_rdna_compute_fn[
@@ -2052,9 +2060,11 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                        block_dim=(NUM_WARPS * warp_size,),
+                    ),
                     host_args=(compute_fn,),
-                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                    block_dim=(NUM_WARPS * warp_size,),
                 )
             else:
                 comptime rdna_kernel = gemm_kernel_rdna[
@@ -2083,8 +2093,10 @@ def _matmul_gpu_impl[
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                    block_dim=(NUM_WARPS * warp_size,),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                        block_dim=(NUM_WARPS * warp_size,),
+                    ),
                 )
 
         # Large transpose_b shapes with BK=64. Two A+B tiles don't fit LDS at
@@ -2343,9 +2355,11 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=kernel_config.num_threads(),
+                ),
                 host_args=(epilogue_fn,),
-                grid_dim=grid,
-                block_dim=kernel_config.num_threads(),
             )
         elif has_compute_fn:
             comptime k = kernel_type.run_with_compute_fn[
@@ -2361,9 +2375,11 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=kernel_config.num_threads(),
+                ),
                 host_args=(compute_fn,),
-                grid_dim=grid,
-                block_dim=kernel_config.num_threads(),
             )
         else:
             comptime k = kernel_type.run[
@@ -2378,8 +2394,10 @@ def _multistage_gemm_amd[
                 a,
                 b,
                 c,
-                grid_dim=grid,
-                block_dim=kernel_config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=kernel_config.num_threads(),
+                ),
             )
 
     @inline(.always)
@@ -2407,9 +2425,11 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=matmul_config.grid_dim(M, N),
+                    block_dim=matmul_config.block_dim(),
+                ),
                 host_args=(epilogue_fn,),
-                grid_dim=matmul_config.grid_dim(M, N),
-                block_dim=matmul_config.block_dim(),
             )
         elif has_compute_fn:
             comptime k = kernel_type.run_with_compute_fn[
@@ -2425,9 +2445,11 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=matmul_config.grid_dim(M, N),
+                    block_dim=matmul_config.block_dim(),
+                ),
                 host_args=(compute_fn,),
-                grid_dim=matmul_config.grid_dim(M, N),
-                block_dim=matmul_config.block_dim(),
             )
         else:
             comptime k = kernel_type.run[
@@ -2442,8 +2464,10 @@ def _multistage_gemm_amd[
                 c,
                 a,
                 b,
-                grid_dim=matmul_config.grid_dim(M, N),
-                block_dim=matmul_config.block_dim(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=matmul_config.grid_dim(M, N),
+                    block_dim=matmul_config.block_dim(),
+                ),
             )
 
     comptime if a_type.is_float8():
@@ -2558,9 +2582,11 @@ def multistage_gemm[
             c,
             a,
             b,
-            grid_dim=config.grid_dim(M, N),
-            block_dim=config.block_dim(),
-            shared_mem_bytes=config.shared_mem_usage(),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=config.grid_dim(M, N),
+                block_dim=config.block_dim(),
+                shared_mem_bytes=config.shared_mem_usage(),
+            ),
         )
 
 
@@ -2635,10 +2661,12 @@ def multistage_gemm[
             c,
             a,
             b,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=config.grid_dim(M, N),
+                block_dim=config.block_dim(),
+                shared_mem_bytes=config.shared_mem_usage(),
+            ),
             host_args=(epilogue_fn,),
-            grid_dim=config.grid_dim(M, N),
-            block_dim=config.block_dim(),
-            shared_mem_bytes=config.shared_mem_usage(),
         )
 
 
@@ -2712,10 +2740,12 @@ def multistage_gemm[
             c,
             a,
             b,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=config.grid_dim(M, N),
+                block_dim=config.block_dim(),
+                shared_mem_bytes=config.shared_mem_usage(),
+            ),
             host_args=(compute_fn,),
-            grid_dim=config.grid_dim(M, N),
-            block_dim=config.block_dim(),
-            shared_mem_bytes=config.shared_mem_usage(),
         )
 
 
@@ -2929,8 +2959,10 @@ def _multistage_gemm_runtime_impl[
                 b,
                 tensor_work_space,
                 Int32(runtime_config.num_k_partitions),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                ),
             )
         else:
             ctx.enqueue_function[gemm_kernel_type](
@@ -2939,9 +2971,11 @@ def _multistage_gemm_runtime_impl[
                 b,
                 tensor_work_space,
                 Int32(runtime_config.num_k_partitions),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
+                ),
             )
 
         _split_k_reduce_impl[
@@ -2984,10 +3018,12 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
+                ),
                 host_args=(epilogue_fn,),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
             )
         elif has_compute_fn:
             comptime gemm_kernel_type = multistage_gemm_kernel_compute_fn[
@@ -3007,10 +3043,12 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
+                ),
                 host_args=(compute_fn,),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
             )
         else:
             comptime gemm_kernel_type = multistage_gemm_kernel[
@@ -3029,7 +3067,9 @@ def _multistage_gemm_runtime_impl[
                 c,
                 a,
                 b,
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=runtime_config.grid_dim(M, N),
+                    block_dim=runtime_config.block_dim(),
+                    shared_mem_bytes=runtime_config.shared_mem_usage(),
+                ),
             )

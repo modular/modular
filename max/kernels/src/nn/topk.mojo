@@ -518,7 +518,7 @@ def _top_k_cpu[
 
     parallelize_over_rows(
         process_rows,
-        coord_to_index_list(shape),
+        shape,
         axis,
         parallelism_grain_size,
         ctx,

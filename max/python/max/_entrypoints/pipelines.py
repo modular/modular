@@ -321,6 +321,27 @@ def _refuse_eager(eager: object, reason: str) -> None:
         raise click.UsageError(reason)
 
 
+def _refuse_context_parallel(
+    degree: int | None, prefill: bool | None, command: str
+) -> None:
+    """Fails a command whose KV cache can't split positions across ranks.
+
+    MAX's own KV cache manager holds every position on every rank, so a graph
+    built for decode or prefill context parallelism would read positions its
+    rank never stored.
+
+    Raises:
+        click.UsageError: If ``degree`` is above 1 or ``prefill`` is set.
+    """
+    if (degree or 1) > 1 or prefill:
+        raise click.UsageError(
+            f"max {command} runs MAX's own KV cache manager, which doesn't"
+            " split token positions across ranks, so it can't take"
+            " --decode-context-parallel-degree or --prefill-context-parallel."
+            " Export the model with max export and serve the artifact on Mach."
+        )
+
+
 def click_option_requires(
     requires: str,
 ) -> Callable[..., Callable[..., Any]]:
@@ -515,8 +536,18 @@ def cli_serve(
         "serve."
     )
     _refuse_eager(config_kwargs.get("eager"), refusal)
+    _refuse_context_parallel(
+        config_kwargs.get("decode_context_parallel_degree"),
+        config_kwargs.get("prefill_context_parallel"),
+        "serve",
+    )
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
     _refuse_eager(pipeline_args.runtime.eager, refusal)
+    _refuse_context_parallel(
+        pipeline_args.decode_context_parallel_degree,
+        pipeline_args.prefill_context_parallel,
+        "serve",
+    )
     if not pipeline_args.model_path:
         raise click.UsageError(
             "No model specified. Pass --model with a Hugging Face repo ID "
@@ -771,6 +802,11 @@ def cli_pipeline(
         and ctx.get_parameter_source(param.name)
         not in (None, click.core.ParameterSource.DEFAULT)
     }
+    _refuse_context_parallel(
+        config_kwargs.get("decode_context_parallel_degree"),
+        config_kwargs.get("prefill_context_parallel"),
+        "generate",
+    )
     # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec
     # under nsys *before* loading any model state. The child process picks
     # up the same argv, detects it is running under nsys, and runs normally.
@@ -816,6 +852,11 @@ def cli_pipeline(
         config_kwargs.pop("disable_vendor_blas_fallback", None)
 
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_context_parallel(
+        pipeline_args.decode_context_parallel_degree,
+        pipeline_args.prefill_context_parallel,
+        "generate",
+    )
     image_model = is_image_generation_model(pipeline_args)
     check_flags_fit_model(set_flags, image_model, pipeline_args.model_path)
     if image_model:
@@ -1160,8 +1201,21 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
         " one the architecture names for the checkpoint."
     ),
 )
+@click.option(
+    "--target",
+    type=str,
+    default=None,
+    help=(
+        "Target API and architecture to compile for (e.g., cuda, cuda:sm_90, "
+        "hip:gfx942, metal). When specified, uses virtual devices for "
+        "compilation without requiring physical hardware."
+    ),
+)
 def cli_export(
-    output: Path, format_spec: Path | None, **config_kwargs: Any
+    output: Path,
+    format_spec: Path | None,
+    target: str | None,
+    **config_kwargs: Any,
 ) -> None:
     """Build the pipeline and export it as a ``.m`` pipeline artifact.
 

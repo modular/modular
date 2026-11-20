@@ -338,7 +338,7 @@ def modular_py_test(
     )
 
     default_exec_properties = get_default_exec_properties(tags, gpu_constraints)
-    extra_env |= get_default_test_env(exec_properties)
+    extra_env |= get_default_test_env(default_exec_properties | exec_properties)
 
     # Assume networking is used for huggingface and add the cache
     hf_env = {"HF_ESCAPES_SANDBOX": "1"} if "requires-network" in tags else {}

@@ -16,8 +16,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.utils.coord import Coord, CoordLike
-from std.utils.index import IndexList
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 
 
 # ===-----------------------------------------------------------------------===#
@@ -31,14 +30,13 @@ def _stencil_impl_gpu[
     //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank, element_type=_],
     simd_width: Int,
     dtype: DType,
     MapFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def(IndexList[stencil_rank, element_type=_]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
+    & def(DynamicCoord[DType.int, stencil_rank]) -> Tuple[
+        DynamicCoord[DType.int, stencil_rank],
+        DynamicCoord[DType.int, stencil_rank],
     ],
     MapStridesType: ImplicitlyCopyable
     & RegisterPassable
@@ -74,8 +72,8 @@ def _stencil_impl_gpu[
         shape_types: The element types of the `shape` coordinate.
         input_shape_types: The element types of the `input_shape` coordinate.
         rank: Input and output domain rank.
-        stencil_rank: Rank of stencil subdomain slice.
-        stencil_axis: Stencil subdomain axes.
+        stencil_rank: Rank of stencil subdomain slice. Must be 2: the stencil
+            covers the spatial axes 1 and 2.
         simd_width: The SIMD vector width to use.
         dtype: The input and output data dtype.
         MapFnType: Maps a point in the output domain to input co-domain bounds.
@@ -104,8 +102,8 @@ def _stencil_impl_gpu[
         type_of(shape).rank == rank and type_of(input_shape).rank == rank
     ), "shape and input_shape must have rank `rank`"
     comptime assert (
-        stencil_axis[0] == 1 and stencil_axis[1] == 2
-    ), "Only stencil spatial axes [1, 2] are supported"
+        stencil_rank == 2
+    ), "Only stencils over the spatial axes [1, 2] are supported"
 
     # A vector spans `simd_width` adjacent channels, so it must not run past the
     # end of the channel axis: the channel count has to be a multiple of the
@@ -164,12 +162,13 @@ def _stencil_impl_gpu[
         var indices = Coord(batch_idx, y, x, channel)
 
         # Process stencil for this point
-        var stencil_indices = IndexList[
-            stencil_rank, element_type=stencil_axis.element_type
-        ](Int(indices[stencil_axis[0]]), Int(indices[stencil_axis[1]]))
-        var bounds = map_func(stencil_indices)
-        var lower_bound = bounds[0]
-        var upper_bound = bounds[1]
+        var bounds = map_func(
+            rebind[DynamicCoord[DType.int, stencil_rank]](Coord(y, x))
+        )
+        var lower_i = Int(bounds[0][0])
+        var lower_j = Int(bounds[0][1])
+        var upper_i = Int(bounds[1][0])
+        var upper_j = Int(bounds[1][1])
         var step_i = map_strides_func(0)
         var step_j = map_strides_func(1)
         var result = compute_init_func[simd_width]()
@@ -177,24 +176,14 @@ def _stencil_impl_gpu[
         var input_width = Int(input_shape[2])
 
         # Handle boundary conditions
-        if lower_bound[0] < 0:
-            var mul_i = ceildiv(-lower_bound[0], step_i)
-            lower_bound[0] = lower_bound[0] + mul_i * step_i
-        if lower_bound[1] < 0:
-            var mul_j = ceildiv(-lower_bound[1], step_j)
-            lower_bound[1] = lower_bound[1] + mul_j * step_j
+        if lower_i < 0:
+            lower_i += ceildiv(-lower_i, step_i) * step_i
+        if lower_j < 0:
+            lower_j += ceildiv(-lower_j, step_j) * step_j
 
         # Process stencil window
-        for i in range(
-            lower_bound[0],
-            min(input_height, upper_bound[0]),
-            step_i,
-        ):
-            for j in range(
-                lower_bound[1],
-                min(input_width, upper_bound[1]),
-                step_j,
-            ):
+        for i in range(lower_i, min(input_height, upper_i), step_i):
+            for j in range(lower_j, min(input_width, upper_j), step_j):
                 var point_idx = Coord(indices[0], i, j, indices[3])
                 var val = load_func[simd_width, dtype](point_idx)
                 result = compute_func[simd_width](point_idx, result, val)

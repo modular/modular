@@ -18,7 +18,7 @@ import itertools
 import json
 from collections import OrderedDict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -31,15 +31,21 @@ from max._artifact import ArtifactError, HuggingFaceRef
 from max._artifact import export as export_module
 from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.engine_config import (
+    EngineCaptureConfig,
     EngineConfig,
+    EnginePrefillContextParallel,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
     SpecGraphFacts,
 )
 from max._artifact.export import (
     SupportsCompiledModules,
+    _check_batch_context_window,
+    _prefill_context_parallel,
     _takes_mrope_positions,
     _verify_facts,
+    _warn_unhonored_context_parallel,
+    architecture_capture,
     batch_processor_dims,
     checkpoint_format_spec,
     checkpoint_tokenizer,
@@ -52,6 +58,8 @@ from max._artifact.export import (
     vision_preprocess_modules,
 )
 from max._artifact.kv_cache import (
+    ContextParallel,
+    KVCacheLayout,
     KVCacheQuantization,
     KVPoolLeaf,
     MHAKVCache,
@@ -77,6 +85,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn.kv_cache import (
+    KVCacheContextParallel,
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MLAKVCacheParams,
@@ -714,6 +723,20 @@ def _pipeline_config(
     )
 
 
+def test_export_refuses_a_window_that_holds_no_max_length_request() -> None:
+    """The window's page-aligned floor must hold one request at max length."""
+    plan = replace(_PLAN, planned_max_length=4100)
+    for short in (0, 4096, 4100):
+        with pytest.raises(ArtifactError, match="at least 4224"):
+            _check_batch_context_window(
+                replace(plan, planned_max_batch_total_tokens=short), 128
+            )
+    for fits in (None, 4224):
+        _check_batch_context_window(
+            replace(plan, planned_max_batch_total_tokens=fits), 128
+        )
+
+
 def test_engine_config_copies_the_planned_settings() -> None:
     config = _pipeline_config(
         sampling=SamplingConfig.model_construct(
@@ -743,6 +766,20 @@ def test_engine_config_records_device_graph_capture() -> None:
     assert pipeline_engine_config(
         config, _PLAN, device_graph_capture=True
     ).device_graph_capture
+
+
+def test_engine_config_records_the_architectures_capture() -> None:
+    config = _pipeline_config(sampling=SamplingConfig.model_construct())
+    arch = _fake(mla_decode_capture=True, capture_cache_bound="bucketed")
+    assert pipeline_engine_config(
+        config, _PLAN, capture=architecture_capture(arch)
+    ).capture == EngineCaptureConfig(mla_decode=True, cache_bound="bucketed")
+    assert (
+        pipeline_engine_config(
+            config, _PLAN, capture=architecture_capture(None)
+        ).capture
+        == EngineCaptureConfig()
+    )
 
 
 @pytest.mark.parametrize("greedy", [False, True])
@@ -1090,6 +1127,36 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
     )
 
 
+def test_kv_cache_records_the_unread_dispatch_of_named_mla_caches() -> None:
+    mla = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        num_q_heads=16,
+    )
+    params = MultiKVCacheParams.from_params(
+        {
+            "target": MultiKVCacheParams.from_params(
+                {"mla": mla, "indexer": mla}
+            ),
+            "draft": MultiKVCacheParams.from_params(
+                {"mla": mla, "indexer": mla}
+            ),
+        }
+    )
+    layout = pipeline_kv_cache(params, ("indexer",))
+    assert [
+        (cache.name, isinstance(cache, MLAKVCache) and cache.dispatch_unread)
+        for cache in layout.caches
+    ] == [
+        ("target.mla", False),
+        ("target.indexer", True),
+        ("draft.mla", False),
+        ("draft.indexer", True),
+    ]
+
+
 class _CustomKVCacheParams(MHAKVCacheParams):
     pass
 
@@ -1105,3 +1172,87 @@ def test_kv_cache_refuses_a_cache_type_it_does_not_record() -> None:
     params = MultiKVCacheParams.from_params({"custom": custom})
     with pytest.raises(ArtifactError, match="_CustomKVCacheParams"):
         pipeline_kv_cache(params)
+
+
+def _dcp_latent(degree: int = 4) -> MLAKVCacheParams:
+    return MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+        num_q_heads=64,
+        context_parallel=KVCacheContextParallel(degree=degree, interleave=128),
+    )
+
+
+def test_kv_cache_records_how_a_cache_splits_positions() -> None:
+    unsplit = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.GPU(i) for i in range(8)],
+    )
+    params = MultiKVCacheParams.from_params(
+        {"latent": _dcp_latent(), "plain": unsplit}
+    )
+    latent, plain = pipeline_kv_cache(params).caches
+    assert isinstance(latent, MLAKVCache) and isinstance(plain, MHAKVCache)
+    assert latent.context_parallel == ContextParallel(degree=4, interleave=128)
+    assert plain.context_parallel is None
+
+
+@pytest.mark.parametrize("degree", [1, 3])
+def test_a_context_parallel_degree_must_split_a_replica(degree: int) -> None:
+    with pytest.raises(ValueError, match="context parallel degree"):
+        _dcp_latent(degree)
+
+
+def _pcp_config(
+    prefill_context_parallel: bool, decode_context_parallel_degree: int = 1
+) -> PipelineConfig:
+    config = _pipeline_config(sampling=SamplingConfig.model_construct())
+    model = config.model.model_copy(
+        update={
+            "prefill_context_parallel": prefill_context_parallel,
+            "decode_context_parallel_degree": decode_context_parallel_degree,
+        }
+    )
+    return config.model_copy(update={"models": ModelManifest({"main": model})})
+
+
+def test_engine_config_records_prefill_context_parallel_over_split_caches() -> (
+    None
+):
+    split = pipeline_kv_cache(_dcp_latent())
+    unsplit = KVCacheLayout(page_size=128, caches=())
+    assert _prefill_context_parallel(
+        _pcp_config(True), split
+    ) == EnginePrefillContextParallel(
+        min_step_tokens=7168, min_rows_per_request=8, max_batch_context=262144
+    )
+    # An architecture that splits no cache builds no PCP path.
+    assert _prefill_context_parallel(_pcp_config(True), unsplit) is None
+    assert _prefill_context_parallel(_pcp_config(False), split) is None
+    assert _prefill_context_parallel(_pcp_config(True), None) is None
+
+
+@pytest.mark.parametrize(
+    ("config", "warns"),
+    [
+        (_pcp_config(False, decode_context_parallel_degree=4), True),
+        (_pcp_config(True), True),
+        (_pcp_config(False), False),
+    ],
+)
+def test_export_warns_when_no_cache_splits_the_positions_asked_for(
+    config: PipelineConfig, warns: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    unsplit = KVCacheLayout(page_size=128, caches=())
+    _warn_unhonored_context_parallel(config, "LlamaForCausalLM", unsplit)
+    assert ("ignores the context parallel flags" in caplog.text) == warns
+    caplog.clear()
+    _warn_unhonored_context_parallel(
+        config, "GlmMoeDsaForCausalLM", pipeline_kv_cache(_dcp_latent())
+    )
+    assert "ignores the context parallel flags" not in caplog.text

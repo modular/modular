@@ -28,7 +28,7 @@
 #include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
 #include "Support/ErrorOr.h"
 #include "Support/HashUtils.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "Support/max_license/Tracy/TracyRocm.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -1422,8 +1422,8 @@ const std::string &HIPDeviceFunction::name() const {
 ErrorOrSuccess HIPDeviceFunction::copyToNamedConstant(const char *name,
                                                       const void *data,
                                                       size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceFunction::copyToNamedConstant",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceFunction::copyToNamedConstant",
+                 M_PROFILE_COLOR_PURPLE);
   hipDeviceptr_t devicePtr;
   size_t deviceSize;
   auto &hipContext = HIPDeviceContext::cast(context());
@@ -1566,7 +1566,7 @@ HIPDeviceContext::HIPDeviceContext(HIPDevice &device,
 
 ErrorOrSuccess HIPDeviceContext::memAlloc(void **ptr, size_t byteSize,
                                           Device::AllocMode mode) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::memAlloc", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::memAlloc", M_PROFILE_COLOR_PURPLE);
 
   assert(byteSize != 0);
   HIP_WITH_CTX_ERR(*this);
@@ -1598,7 +1598,7 @@ ErrorOrSuccess HIPDeviceContext::memAlloc(void **ptr, size_t byteSize,
 
 ErrorOrSuccess HIPDeviceContext::memWrap(void **devPtr, void *hostPtr,
                                          size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::memWrap", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::memWrap", M_PROFILE_COLOR_PURPLE);
   HIP_WITH_CTX_ERR(*this);
   // hipHostRegisterPortable (0x1): the registration is visible from every
   // device in the process, matching the hipHostMalloc host-alloc path.
@@ -1621,7 +1621,7 @@ ErrorOrSuccess HIPDeviceContext::memWrap(void **devPtr, void *hostPtr,
 }
 
 ErrorOrSuccess HIPDeviceContext::memFree(void *ptr, Device::FreeKind kind) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::memFree", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::memFree", M_PROFILE_COLOR_PURPLE);
 
   // Ahead of the context macro, whose pending error check would skip the
   // unregister and leave the range pinned until the process exits. The CUDA
@@ -1650,8 +1650,8 @@ ErrorOrSuccess HIPDeviceContext::memFree(void *ptr, Device::FreeKind kind) {
 }
 
 ErrorOr<CompletionFlagRef> HIPDeviceContext::allocateCompletionFlag() {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::allocateCompletionFlag",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::allocateCompletionFlag",
+                 M_PROFILE_COLOR_PURPLE);
   HIP_WITH_CTX_ERR(*this);
   POLL_PENDING_EVENTS(*this);
   void *hostPtr = nullptr;
@@ -1676,8 +1676,8 @@ ErrorOr<CompletionFlagRef> HIPDeviceContext::allocateCompletionFlag() {
 }
 
 ErrorOrSuccess HIPDeviceContext::freeCompletionFlag(void *hostPtr) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::freeCompletionFlag",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::freeCompletionFlag",
+                 M_PROFILE_COLOR_PURPLE);
   HIP_WITH_CTX_ERR(*this);
   POLL_PENDING_EVENTS(*this);
   HIP_CHECK_ERR(driver_.hipHostFree(hostPtr));
@@ -1690,8 +1690,8 @@ void *HIPDeviceContext::driverContext() const {
 
 ErrorOrSuccess HIPDeviceContext::enqueueCopyToDevice(void *dst, const void *src,
                                                      size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueCopyToDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueCopyToDevice",
+                 M_PROFILE_COLOR_PURPLE);
   HIP_WITH_CTX_ERR(*this);
 
   HIP_CHECK_ERR(driver_.hipMemcpyHtoDAsync(dst, src, byteSize, stream_));
@@ -1711,8 +1711,8 @@ ErrorOrSuccess HIPDeviceContext::enqueueCopyToDevice(void *dst, const void *src,
 ErrorOrSuccess HIPDeviceContext::enqueueCopyFromDevice(void *dst,
                                                        const void *src,
                                                        size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueCopyFromDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueCopyFromDevice",
+                 M_PROFILE_COLOR_PURPLE);
   HIP_WITH_CTX_ERR(*this);
 
   HIP_CHECK_ERR(driver_.hipMemcpyDtoHAsync(dst, const_cast<void *>(src),
@@ -1735,7 +1735,7 @@ ErrorOrSuccess HIPDeviceContext::memCopyDtoD(DeviceBuffer &dst,
                                              size_t srcByteOffset,
                                              size_t srcByteSize,
                                              bool crossStreamSync) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::memCopyDtoD", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::memCopyDtoD", M_PROFILE_COLOR_PURPLE);
 
   CHECK_IS_HIP_ERR(src.context().device());
   CHECK_IS_HIP_ERR(dst.context().device());
@@ -1803,7 +1803,7 @@ ErrorOrSuccess HIPDeviceContext::memCopyDtoD(DeviceBuffer &dst,
 ErrorOrSuccess
 HIPDeviceContext::memBatchCopy(llvm::ArrayRef<DeviceBuffer *> dsts,
                                llvm::ArrayRef<DeviceBuffer *> srcs) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::memBatchCopy", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::memBatchCopy", M_PROFILE_COLOR_PURPLE);
   const size_t count = dsts.size();
 
   // No hipMemcpyBatchAsync: use the scalar loop.
@@ -1893,8 +1893,7 @@ HIPDeviceContext::memBatchCopy(llvm::ArrayRef<DeviceBuffer *> dsts,
 ErrorOrSuccess HIPDeviceContext::enqueueSetMemory(void *dst, size_t byteSize,
                                                   uint64_t val,
                                                   size_t valSize) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueSetMemory",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueSetMemory", M_PROFILE_COLOR_PURPLE);
 
   if (valSize == 1) {
     HIP_CHECK_ERR(driver_.hipMemsetD8Async(dst, static_cast<uint8_t>(val),
@@ -1980,7 +1979,7 @@ HIPDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
                                StringRef code, int32_t maxDynamicSharedBytes,
                                StringRef debugLevel,
                                int32_t optimizationLevel) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::loadFunction", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   Device::FunctionCacheKey key{
       /*name=*/Device::FunctionCacheKey::moduleCacheName(moduleName, code),
       /*functionName=*/functionName.str(),
@@ -2037,8 +2036,8 @@ ErrorOrSuccess HIPDeviceContext::enqueueFunctionExecDirect(
     uint32_t blockX, uint32_t blockY, uint32_t blockZ, uint32_t sharedMemBytes,
     void *attrs, uint32_t numAttrs, void **args, uint32_t argCount,
     const size_t *argSizes) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueFunctionExecDirect",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueFunctionExecDirect",
+                 M_PROFILE_COLOR_PURPLE);
 
   const auto &hipFunc = HIPDeviceFunction::cast(func);
   if (numAttrs > 0)
@@ -2161,7 +2160,7 @@ HIPDeviceContext::createExternalStream(void *externalStream) {
 }
 
 ErrorOrSuccess HIPDeviceContext::synchronize() {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::synchronize", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::synchronize", M_PROFILE_COLOR_PURPLE);
 
   HIP_WITH_CTX_ERR(*this);
   HIP_CHECK_ERR(driver_.hipStreamSynchronize(stream_));
@@ -2172,7 +2171,7 @@ ErrorOrSuccess HIPDeviceContext::synchronize() {
 }
 
 ErrorOr<DeviceEventRef> HIPDeviceContext::enqueueEvent() {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueEvent", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueEvent", M_PROFILE_COLOR_PURPLE);
 
   const bool recordedDuringCapture = isStreamCapturing(driver_, stream_);
 
@@ -2185,7 +2184,7 @@ ErrorOr<DeviceEventRef> HIPDeviceContext::enqueueEvent() {
 }
 
 ErrorOrSuccess HIPDeviceContext::enqueueEvent(const DeviceEvent &event) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueEvent", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueEvent", M_PROFILE_COLOR_PURPLE);
 
   HIP_WITH_CTX_ERR(*this);
   HIP_CHECK_ERR(
@@ -2194,7 +2193,7 @@ ErrorOrSuccess HIPDeviceContext::enqueueEvent(const DeviceEvent &event) {
 }
 
 ErrorOr<DeviceEventRef> HIPDeviceContext::eventCreate(bool enableTiming) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::eventCreate", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::eventCreate", M_PROFILE_COLOR_PURPLE);
 
   const bool recordedDuringCapture = isStreamCapturing(driver_, stream_);
 
@@ -2213,7 +2212,7 @@ ErrorOr<DeviceEventRef> HIPDeviceContext::eventCreate(bool enableTiming) {
 }
 
 ErrorOrSuccess HIPDeviceContext::enqueueWaitFor(DeviceEvent &event) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueWaitFor", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueWaitFor", M_PROFILE_COLOR_PURPLE);
 
   const auto &hipEvent = HIPDeviceEvent::cast(event);
   HIP_WITH_CTX_ERR(*this);
@@ -2222,7 +2221,7 @@ ErrorOrSuccess HIPDeviceContext::enqueueWaitFor(DeviceEvent &event) {
 }
 
 ErrorOrSuccess HIPDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
-  TRACY_ZONE_SCOPED_NC("HIPDeviceContext::enqueueWaitFor", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("HIPDeviceContext::enqueueWaitFor", M_PROFILE_COLOR_PURPLE);
 
   DEFINE_OR_RETURN_ERROR(DeviceEventRef, event, ctx.enqueueEvent());
   RETURN_IF_ERROR(enqueueWaitFor(*event));

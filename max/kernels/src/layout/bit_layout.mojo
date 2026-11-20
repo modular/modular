@@ -21,13 +21,14 @@ encoding the domain and codomain spaces define.
 You can import these APIs from the `layout.bit_layout` module:
 
 ```mojo
-from layout.bit_layout import BitLayout, placement
+from layout.bit_layout import BitLayout, BitLinear, placement
 
 comptime pairs = BitLayout().run(0, 1, 0).run(16, 5, 1)
 ```
 """
 
 from std.bit import count_trailing_zeros
+from std.builtin.rebind import downcast
 
 from layout.layout import TensorLayout
 
@@ -227,12 +228,31 @@ def _power_of_two(n: Int) -> Bool:
     return n > 0 and n & (n - 1) == 0
 
 
+trait BitLinear:
+    """A layout that states its own placement as a `BitLayout`.
+
+    `placement` and `is_bit_linear` read a layout's strides when it does not
+    conform. A layout whose offsets are not a sum of coordinate times stride,
+    such as a swizzled `TwoLevelLayout`, conforms to say what they are.
+    """
+
+    comptime bit_images: BitLayout
+    """The image of each coordinate bit, numbered as `placement` numbers
+    them. A layout value can add a runtime XOR base, such as the `x0` of a
+    `TwoLevelLayout` sub-tile, so these images are exact only up to that
+    base."""
+
+    comptime bit_linear: Bool
+    """Whether `bit_images` describes the layout exactly."""
+
+
 def is_bit_linear[L: TensorLayout]() -> Bool:
     """Returns whether a static layout is linear over F2.
 
     It is when every mode's extent is a power of two, every stride is zero or
     a power of two, and no two coordinate bits reach the same offset bit, so
-    adding offsets never carries.
+    adding offsets never carries. A layout that conforms to `BitLinear`
+    answers with its own `bit_linear`. A nested layout is never bit-linear.
 
     Parameters:
         L: The layout.
@@ -240,6 +260,10 @@ def is_bit_linear[L: TensorLayout]() -> Bool:
     Returns:
         True when `placement[L]()` describes `L` exactly.
     """
+    comptime if conforms_to(L, BitLinear):
+        return downcast[L, BitLinear].bit_linear
+    comptime if L.rank != L.flat_rank:
+        return False
     if not L.all_dims_known:
         return False
     var reached: UInt64 = 0
@@ -264,7 +288,8 @@ def placement[L: TensorLayout]() -> BitLayout:
 
     Coordinate bits number the layout's points colexicographically: mode 0's
     bits are the lowest. Bit `b` of mode `i` goes to `stride_i << b`, or
-    nowhere for a stride of zero.
+    nowhere for a stride of zero. A layout that conforms to `BitLinear`
+    gives its own `bit_images`.
 
     Parameters:
         L: The layout, which `is_bit_linear`.
@@ -272,6 +297,9 @@ def placement[L: TensorLayout]() -> BitLayout:
     Returns:
         The layout's placement.
     """
+    comptime if conforms_to(L, BitLinear):
+        return downcast[L, BitLinear].bit_images
+    comptime assert L.rank == L.flat_rank, "placement takes flat layouts"
     var m = BitLayout()
     var d = 0
     comptime for i in range(L.rank):

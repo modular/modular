@@ -661,6 +661,21 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
     op->erase();
   }
 
+  // (4) Insert state updates.
+  int susId = 0;
+  Value continuation = resumeFunction.getBodyRegion().getArgument(0);
+  resumeFunction.walk([&](SuspendOp suspendOp) {
+    if (frame.firstSuspends().contains(suspendOp)) {
+      ++susId;
+      return;
+    }
+    builder.setInsertionPoint(suspendOp);
+    Value newState =
+        ParamConstantOp::create(builder, builder.getI32IntegerAttr(++susId));
+    Value stateSlot = StructGEPOp::create(builder, continuation, State);
+    StoreOp::create(builder, newState, stateSlot);
+  });
+
   llvm::BitVector args(resumeFunction.getBodyRegion().front().getNumArguments(),
                        true);
   args.reset(0);

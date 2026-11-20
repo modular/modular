@@ -13,7 +13,7 @@
 
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 #include "Support/AssertStream.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "llvm/ADT/StringRef.h"
 
 using namespace M;
@@ -34,7 +34,7 @@ struct PrimitiveRegistry::Impl {
 //===----------------------------------------------------------------------===//
 
 static void mef_model() {
-  TRACY_ZONE_SCOPED_NC("mef_model", TRACY_COLOR_TEAL);
+  M_PROFILE_RANGE("mef_model", M_PROFILE_COLOR_TEAL);
 
   ASSERT_STREAM(false, << "mef.model should never be invoked");
 }

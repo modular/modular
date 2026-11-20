@@ -41,9 +41,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
     KimiK3DenseMLP,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
-)
 from max.tensor import Tensor, default_device
 
 _RNG = np.random.default_rng(20261022)
@@ -93,15 +90,16 @@ def _build_layer(
     kv_a = _arr(kv_lora + qk_rope, hidden)
     attention.kv_a_layernorm.weight = bf16(np.ones(kv_lora, dtype=np.float32))
     attention.kv_b_proj.weight = bf16(_arr(heads * (qk_nope + v_head), kv_lora))
-    attention.qkv_a_g_proj.weight = bf16(
-        fuse_qkv_a_g_for_tp(q_a, kv_a, _arr(heads * v_head, hidden), 1)
-    )
+    attention.q_a_proj.weight = bf16(q_a)
+    attention.kv_a_proj_with_mqa.weight = bf16(kv_a)
+    attention.g_proj.weight = bf16(_arr(heads * v_head, hidden))
     attention.o_proj.weight = bf16(_arr(hidden, heads * v_head))
 
     ffn = KimiK3DenseMLP(
         hidden_size=hidden, intermediate_size=inter, beta=1.5, linear_beta=1.5
     )
-    ffn.gate_up_proj.weight = bf16(_arr(2 * inter, hidden))
+    ffn.gate_proj.weight = bf16(_arr(inter, hidden))
+    ffn.up_proj.weight = bf16(_arr(inter, hidden))
     ffn.down_proj.weight = bf16(_arr(hidden, inter))
 
     layer = KimiK3DecoderLayer(

@@ -41,7 +41,11 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from max.gpu.compute.mma import mma as gpu_mma
-from max.gpu.host import DeviceContext, default_accelerator
+from max.gpu.host import (
+    DeviceContext,
+    GridBlockLaunchConfig,
+    default_accelerator,
+)
 from max.gpu.intrinsics import AMDBufferResource, permlane_swap, readfirstlane
 from max.gpu.sync import barrier, s_waitcnt
 from max.gpu.memory import external_memory
@@ -900,12 +904,14 @@ def fp8_index_score_amd[
         Int32(chunk_begin),
         Int32(chunk_rows),
         Int32(kv_splits),
-        grid_dim=(
-            row_groups,
-            kv_splits,
-            1,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                row_groups,
+                kv_splits,
+                1,
+            ),
+            block_dim=(2 * ctx.default_device_info.warp_size, 1, 1),
         ),
-        block_dim=(2 * ctx.default_device_info.warp_size, 1, 1),
     )
 
 

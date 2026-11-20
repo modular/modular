@@ -19,6 +19,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.common_layers.linear import col_parallel
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.norm import RMSNorm
@@ -39,7 +40,7 @@ def _slot(index: int) -> Tensor:
 
 
 class HYV4TextModel(Module[..., Tensor]):
-    """Embedding, iHC decoder stack, iHC head, norm and fp32 ``lm_head``."""
+    """Embedding, iHC decoder stack, iHC head, norm and fp32-out ``lm_head``."""
 
     def __init__(self, config: HYV4Config) -> None:
         super().__init__()
@@ -68,14 +69,17 @@ class HYV4TextModel(Module[..., Tensor]):
         self.lm_head = Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def shard(self) -> None:
-        """Splits attention by heads and the routed experts by expert.
+        """Splits attention, the routed experts, the MLPs and ``lm_head``.
 
-        Both split over the one-axis mesh the model was built on. Everything
-        else stays replicated, the iHC weights, indexers, routers, norms,
-        embedding and ``lm_head`` included.
+        Attention splits by heads, the routed experts by expert, the dense
+        MLP and shared experts by width, and ``lm_head`` by vocabulary row,
+        all over the one-axis mesh the model was built on. Everything else
+        stays replicated, the iHC weights, indexers, routers, norms and
+        embedding included.
         """
         for layer in self.layers:
             layer.shard()
+        col_parallel(self.lm_head)
 
     def forward(
         self,
@@ -138,7 +142,16 @@ class HYV4TextModel(Module[..., Tensor]):
         return self.hc_head(streams, self.norm)
 
     def logits(self, h: Tensor) -> Tensor:
-        return self.lm_head(h).cast(DType.float32)
+        """Returns the float32 logits of ``h``, whole on the first device.
+
+        The GEMM always writes its float32 accumulator, which matches the
+        ``enable_lm_head_fp32`` that Hy4 checkpoints set. A split head
+        gathers its rank-ordered vocabulary columns.
+        """
+        logits = F.matmul(h, self.lm_head.weight.T, out_dtype=DType.float32)
+        if logits.is_distributed:
+            logits = F.allgather(logits, tensor_axis=-1).local_shards[0]
+        return logits
 
 
 class HYV4(Module[..., ModuleV3Outputs]):

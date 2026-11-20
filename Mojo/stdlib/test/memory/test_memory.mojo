@@ -854,6 +854,44 @@ def test_memmove_overlapping_regions() raises:
     assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
 
 
+def shift_up_with_memmove() -> List[Int]:
+    var list: List[Int] = [1, 2, 3, 4, 5, 6, 7]
+    # UntrackedOrigin is needed to prevent exclusivity violations
+    var ptr = list.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+    unsafe_memmove(dest=ptr.unsafe_offset(2), src=ptr, count=5)
+    return list^
+
+
+def shift_down_with_memmove() -> List[Int]:
+    var list: List[Int] = [1, 2, 3, 4, 5, 6, 7]
+    # UntrackedOrigin is needed to prevent exclusivity violations
+    var ptr = list.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+    unsafe_memmove(dest=ptr, src=ptr.unsafe_offset(2), count=5)
+    return list^
+
+
+def shift_strings_up_with_memmove() -> List[String]:
+    var list: List[String] = ["a", "b", "c"]
+    # UntrackedOrigin is needed to prevent exclusivity violations
+    var ptr = list.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+    var last = ptr.unsafe_offset(2).unsafe_take_pointee()
+    unsafe_memmove(dest=ptr.unsafe_offset(1), src=ptr, count=2)
+    ptr.unsafe_write(last^)
+    return list^
+
+
+def test_memmove_overlapping_regions_at_compile_time() raises:
+    comptime shifted_up = shift_up_with_memmove()
+    comptime shifted_down = shift_down_with_memmove()
+    assert_equal(materialize[shifted_up](), [1, 2, 1, 2, 3, 4, 5])
+    assert_equal(materialize[shifted_down](), [3, 4, 5, 6, 7, 6, 7])
+
+
+def test_memmove_pointer_holding_type_at_compile_time() raises:
+    comptime rotated = shift_strings_up_with_memmove()
+    assert_equal(materialize[rotated](), ["c", "a", "b"])
+
+
 def test_memmove_non_overlapping_regions() raises:
     var list1 = [1, 2, 3]
     var list2 = [4, 5, 6]

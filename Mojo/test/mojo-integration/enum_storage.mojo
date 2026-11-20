@@ -36,8 +36,8 @@ struct Token(ImplicitlyCopyable, Writable, __Enum):
     comptime eof: Self = Self.__enum_init[0]()
 
     @staticmethod
-    def ident(var payload: String) -> Self:
-        return Self.__enum_init[1](payload^)
+    def ident(var payload0: String) -> Self:
+        return Self.__enum_init[1](payload0^)
 
     @staticmethod
     def span(var payload0: Int, var payload1: Int) -> Self:

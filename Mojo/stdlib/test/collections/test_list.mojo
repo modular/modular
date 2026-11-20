@@ -534,6 +534,30 @@ def test_list_append() raises:
     assert_equal(items, [UInt32(1), 2, 3])
 
 
+def insert_at_front[T: Copyable](var list: List[T], value: T) -> List[T]:
+    list.insert(0, value.copy())
+    return list^
+
+
+def pop_front[T: Copyable & Deinitable](var list: List[T]) -> List[T]:
+    _ = list.pop(0)
+    return list^
+
+
+def test_list_insert_and_pop_at_compile_time() raises:
+    comptime ints = insert_at_front[Int]([1, 2, 3, 4, 5], 9)
+    assert_equal(materialize[ints](), [9, 1, 2, 3, 4, 5])
+
+    comptime strings = insert_at_front[String](["a", "b", "c"], "z")
+    assert_equal(materialize[strings](), ["z", "a", "b", "c"])
+
+    comptime popped_ints = pop_front[Int]([1, 2, 3])
+    assert_equal(materialize[popped_ints](), [2, 3])
+
+    comptime popped_strings = pop_front[String](["a", "b", "c"])
+    assert_equal(materialize[popped_strings](), ["b", "c"])
+
+
 def test_list_insert_move_count() raises:
     # Preallocate so reallocation does not contribute moves.
     var vec = List[MoveCounter[Int]](capacity=4)

@@ -17,6 +17,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -1557,6 +1558,69 @@ class NemotronHOracle(GenericOracle):
         return super().create_torch_pipeline(encoding=encoding, device=device)
 
 
+def _glm5_3_flash_prompts() -> list[str]:
+    """Returns the GLM-5.3-Flash chat-template text the goldens were made from.
+
+    The long prompt passes 2048 tokens, so the sparse-MLA indexer selects
+    instead of keeping every pool. The tool prompt holds a tool call and its
+    result. The seeded ledger keeps the long prompt out of the source.
+    """
+    rng = random.Random(20261111)
+    towns = ["Port Alder", "Kessick", "Varrow", "Elm Hollow", "Thistlebay"]
+    towns += ["Corran", "Midfen", "Ashgate"]
+    jobs = ["lighthouse keeper", "harbour master", "ferry pilot"]
+    jobs += ["net mender", "salt merchant", "tide clerk"]
+    items = ["ships", "crates of herring", "barrels of tar", "sacks of grain"]
+    items += ["bales of wool"]
+    ledger = "\n".join(
+        f"Entry {i}. The {rng.choice(jobs)} of {rng.choice(towns)} recorded "
+        f"{rng.randint(10, 999)} {rng.choice(items)} in month"
+        f" {rng.randint(1, 12)}, noted wind from the"
+        f" {rng.choice(['north', 'south', 'east', 'west'])} on"
+        f" {rng.randint(1, 28)} days, and paid {rng.randint(2, 90)} silver"
+        " marks in harbour dues."
+        for i in range(1, 131)
+    )
+    long_question = (
+        "Below is a harbour ledger. Read it carefully.\n\n"
+        f"{ledger}\n\nQuestion: according to entry 3, how many silver marks"
+        " were paid in harbour dues, and which town was it? Answer in one"
+        " sentence."
+    )
+    tool_call = (
+        "<tool_call>get_weather<arg_key>city</arg_key><arg_value>Paris"
+        "</arg_value><arg_key>unit</arg_key><arg_value>c</arg_value>"
+        "</tool_call>"
+    )
+    tools = (
+        "<|system|>\n# Tools\n\nYou may call one or more functions to assist"
+        " with the user query.\n\nYou are provided with function signatures"
+        " within <tools></tools> XML tags:\n<tools>\n"
+        '{"name": "get_weather", "description": "Get the current weather for'
+        ' a city.", "parameters": {"type": "object", "properties": {"city":'
+        ' {"type": "string"}, "unit": {"type": "string", "enum": ["c", "f"]}},'
+        ' "required": ["city"]}}\n</tools>\n\nFor each function call, output'
+        " the function name and arguments within the following XML format:\n"
+        "<tool_call>{function-name}<arg_key>{arg-key-1}</arg_key><arg_value>"
+        "{arg-value-1}</arg_value><arg_key>{arg-key-2}</arg_key><arg_value>"
+        "{arg-value-2}</arg_value>...</tool_call>"
+    )
+    tool_turns = (
+        "<|user|>What is the weather in Paris right now, in celsius?"
+        f"<|assistant|><think></think>{tool_call}<|observation|>"
+        '<tool_response>{"city": "Paris", "temp": 18, "unit": "c",'
+        ' "condition": "cloudy"}</tool_response>'
+    )
+    system = "[gMASK]<sop><|system|>Reasoning Effort: Max"
+    reply = "<|assistant|><think>"
+    return [
+        f"{system}<|user|>What is the capital of France? Answer in one"
+        f" sentence.{reply}",
+        f"{system}<|user|>{long_question}{reply}",
+        f"{system}{tools}{tool_turns}{reply}",
+    ]
+
+
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "google/gemma-4-26B-A4B-it": GenericOracle(
         model_path="google/gemma-4-26B-A4B-it",
@@ -2134,6 +2198,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "The capital of France is",
             "Quantum computing is",
         ],
+        apply_chat_template=False,
+    ),
+    # GLM-5.3-Flash cut to 8 layers (6 KDA, 2 MLA) plus the MTP layer and 8
+    # routed experts, every width at the real value, so it runs on one GPU.
+    "glm-5.3-flash/flash-8L": GenericOracle(
+        model_path="s3://modular-bazel-artifacts-public/artifacts/glm-5.3-flash_flash-8L_fixture/1/2fae666394acb6bdb6c5082dc99b86ff59cd77c62fe2c480e3d2e4288ebf86c4",
+        config_params={
+            "max_length": 8192,
+            "enable_prefix_caching": False,
+            "device_memory_utilization": 0.8,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        prompts=_glm5_3_flash_prompts(),
         apply_chat_template=False,
     ),
     # MiniMax-M3-MXFP8, compared against goldens pregenerated

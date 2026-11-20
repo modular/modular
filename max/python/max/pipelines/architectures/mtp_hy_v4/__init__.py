@@ -14,10 +14,8 @@
 
 from .arch import mtp_hy_v4_draft_arch
 from .model_config import MTPHYV4DraftArchConfig
-from .weight_adapters import convert_hy_v4_mtp_state_dict
 
 __all__ = [
     "MTPHYV4DraftArchConfig",
-    "convert_hy_v4_mtp_state_dict",
     "mtp_hy_v4_draft_arch",
 ]

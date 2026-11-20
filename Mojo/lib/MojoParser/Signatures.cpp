@@ -1357,7 +1357,7 @@ void TypeCheckedParamList::emitBodyConstraints() {
     TriBool result = LIT::canDischargeConstraintsInScope(
         declScope, /*paramListAttr=*/PogListAttr(), {deferral.constraint},
         /*origConstraints=*/{}, getDiag, &stillUnprovable,
-        /*evaluator=*/nullptr);
+        /*evaluator=*/nullptr, shared.noAssumptions);
     if (result.isTrue())
       continue;
 

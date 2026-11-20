@@ -20,7 +20,7 @@
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 
 #include <cassert>
 #include <string>
@@ -199,16 +199,16 @@ VirtualDeviceContext::~VirtualDeviceContext() = default;
 ErrorOrSuccess VirtualDeviceContext::enqueueCopyToDevice(void *dst,
                                                          const void *src,
                                                          size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::enqueueCopyToDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::enqueueCopyToDevice",
+                 M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support memory operations");
 }
 
 ErrorOrSuccess VirtualDeviceContext::enqueueCopyFromDevice(void *dst,
                                                            const void *src,
                                                            size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::enqueueCopyFromDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::enqueueCopyFromDevice",
+                 M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support memory operations");
 }
 
@@ -217,7 +217,7 @@ ErrorOrSuccess VirtualDeviceContext::memCopyDtoD(DeviceBuffer &dst,
                                                  size_t srcByteOffset,
                                                  size_t srcByteSize,
                                                  bool /*crossStreamSync*/) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::memCopyDtoD", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::memCopyDtoD", M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support memory operations");
 }
 
@@ -225,8 +225,8 @@ ErrorOrSuccess VirtualDeviceContext::enqueueSetMemory(void *dst,
                                                       size_t byteSize,
                                                       uint64_t val,
                                                       size_t valSize) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::enqueueSetMemory",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::enqueueSetMemory",
+                 M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support memory operations");
 }
 
@@ -234,8 +234,7 @@ ErrorOr<DeviceFunctionRef> VirtualDeviceContext::loadFunction(
     StringRef moduleName, StringRef functionName, StringRef code,
     int32_t maxDynamicSharedBytes, StringRef debugLevel,
     int32_t optimizationLevel) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::loadFunction",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support function loading");
 }
 
@@ -244,8 +243,8 @@ ErrorOrSuccess VirtualDeviceContext::enqueueFunctionExecDirect(
     uint32_t blockX, uint32_t blockY, uint32_t blockZ, uint32_t sharedMemBytes,
     void *attrs, uint32_t numAttrs, void **args, uint32_t argCount,
     const size_t *argSizes) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::enqueueFunctionExecDirect",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::enqueueFunctionExecDirect",
+                 M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support function execution");
 }
 
@@ -264,7 +263,7 @@ ErrorOr<DeviceStreamRef> VirtualDeviceContext::createStream(int priority) {
 }
 
 ErrorOrSuccess VirtualDeviceContext::synchronize() {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::synchronize", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::synchronize", M_PROFILE_COLOR_PURPLE);
   // No-op for virtual devices
   return success();
 }
@@ -337,12 +336,12 @@ VirtualDeviceContext::verified_cast(const DeviceContext *ctx) {
 
 ErrorOrSuccess VirtualDeviceContext::memAlloc(void **ptr, size_t byteSize,
                                               Device::AllocMode mode) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::memAlloc", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::memAlloc", M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support memory allocation");
 }
 
 ErrorOrSuccess VirtualDeviceContext::memFree(void *ptr, Device::FreeKind kind) {
-  TRACY_ZONE_SCOPED_NC("VirtualDeviceContext::memFree", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("VirtualDeviceContext::memFree", M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support memory deallocation");
 }
 

@@ -50,9 +50,12 @@ std::optional<CallRange> unionRanges(std::optional<CallRange> a,
 class BlobCalls {
 public:
   explicit BlobCalls(GraphBlobOp blob) {
-    for (auto [index, call] :
-         llvm::enumerate(blob.getBody().getOps<CallExecuteDeviceOp>()))
-      calls[call] =
+    auto blobCalls =
+        llvm::make_filter_range(blob.getBody().front(), [](Operation &op) {
+          return op.hasTrait<CallLike>();
+        });
+    for (auto [index, call] : llvm::enumerate(blobCalls))
+      calls[&call] =
           CallRange{static_cast<unsigned>(index), static_cast<unsigned>(index)};
   }
 

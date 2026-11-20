@@ -380,9 +380,8 @@ CValue ListPatternDLValue::emitStore(ASTExprAnd<CValue> value,
   ASTType valueType = value.ir.getRValueType();
   auto sizedConformance =
       valueType
-          .conformsToBuiltinTrait(
-              "Sized", value.expr->getLoc(), emitter.shared,
-              ASTDecl::getAssumptionsFromScope(&emitter.getDeclScope()))
+          .conformsToBuiltinTrait("Sized", value.expr->getLoc(), emitter.shared,
+                                  emitter.getDeclScope().getScopeAssumptions())
           .first;
   if (!sizedConformance.isTrue()) {
     auto diag = emitter.emitError(value.expr->getLoc());

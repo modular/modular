@@ -35,10 +35,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
     tensor_parallel_mla_attention,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
-    interleave_for_tp,
-)
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -95,7 +91,7 @@ def test_mla_tp1_matches_tp2() -> None:
     weights = make(heads)
     x_np = _RNG.standard_normal((2, 5, hidden)).astype(np.float32)
 
-    def build(tp_size: int) -> KimiK3MLAAttention:
+    def build() -> KimiK3MLAAttention:
         layer = KimiK3MLAAttention(
             hidden_size=hidden,
             num_heads=heads,
@@ -104,18 +100,8 @@ def test_mla_tp1_matches_tp2() -> None:
             v_head_dim=v_head,
             q_lora_rank=q_lora,
             kv_lora_rank=kv_lora,
-            tp_size=tp_size,
         )
-        layer.qkv_a_g_proj.weight = Tensor(
-            fuse_qkv_a_g_for_tp(
-                weights["q_a_proj"],
-                weights["kv_a_proj_with_mqa"],
-                weights["g_proj"],
-                tp_size,
-            ),
-            dtype=DType.float32,
-        ).cast(layer.qkv_a_g_proj.weight.dtype)
-        for name in ("q_b_proj", "kv_b_proj", "o_proj"):
+        for name in weights:
             w = getattr(layer, name)
             w.weight = Tensor(weights[name], dtype=DType.float32).cast(
                 w.weight.dtype
@@ -124,7 +110,7 @@ def test_mla_tp1_matches_tp2() -> None:
 
     # TP=1.
     with default_device(Accelerator(0)):
-        layer1 = build(1)
+        layer1 = build()
         x1 = Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16)
         out1 = layer1(x1).cast(DType.float32).to_numpy()
 
@@ -134,7 +120,7 @@ def test_mla_tp1_matches_tp2() -> None:
         devices=tuple(devices), mesh_shape=(2,), axis_names=("tp",)
     )
     with default_device(mesh):
-        layer2 = build(len(devices))
+        layer2 = build()
         tensor_parallel_mla_attention(layer2, mesh)
         x2 = Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16)
         partial = layer2(x2)
@@ -180,9 +166,10 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     conv_weight_np = _RNG.standard_normal((3 * inner, conv_kernel)).astype(
         np.float32
     ) / np.sqrt(np.float32(conv_kernel))
-    a_log_np = np.linspace(
-        -1.0, 0.5, heads * head_dim, dtype=np.float32
-    ).reshape(heads, head_dim)
+    # One coefficient per head.
+    a_log_np = np.ascontiguousarray(
+        np.linspace(-1.0, 0.5, heads * head_dim, dtype=np.float32)[::head_dim]
+    )
     dt_bias_np = _RNG.standard_normal((heads, head_dim)).astype(np.float32)
     o_norm_np = (
         1.0 + 0.1 * _RNG.standard_normal(head_dim).astype(np.float32)
@@ -201,29 +188,18 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     )
     slot_idx_np = np.arange(batch_size, dtype=np.uint32)
 
-    def assign(layer: KimiK3KDAAttention, tp_size: int) -> None:
-        layer.qkvg_proj.weight = Tensor(
-            interleave_for_tp(
-                [
-                    weights["q_proj"],
-                    weights["k_proj"],
-                    weights["v_proj"],
-                    weights["g_proj"],
-                    weights["b_proj"],
-                ],
-                tp_size,
-            ),
-            dtype=DType.float32,
+    def assign(layer: KimiK3KDAAttention) -> None:
+        for name, weight in weights.items():
+            getattr(layer, name).weight = Tensor(weight, dtype=DType.float32)
+        q_conv, k_conv, v_conv = (
+            Tensor(conv.reshape(inner, 1, conv_kernel), dtype=DType.float32)
+            for conv in np.split(conv_weight_np, 3)
         )
-        layer.f_a_proj.weight = Tensor(weights["f_a_proj"], dtype=DType.float32)
-        layer.f_b_proj.weight = Tensor(weights["f_b_proj"], dtype=DType.float32)
-        layer.o_proj.weight = Tensor(weights["o_proj"], dtype=DType.float32)
-        layer.conv_weight = Tensor(
-            interleave_for_tp(np.split(conv_weight_np, 3), tp_size),
-            dtype=DType.float32,
-        )
+        layer.q_conv1d = q_conv
+        layer.k_conv1d = k_conv
+        layer.v_conv1d = v_conv
         layer.a_log = Tensor(a_log_np, dtype=DType.float32)
-        layer.dt_bias = Tensor(dt_bias_np, dtype=DType.float32)
+        layer.dt_bias = Tensor(dt_bias_np.reshape(-1), dtype=DType.float32)
         layer.o_norm.weight = Tensor(o_norm_np, dtype=DType.float32)
 
     def run(
@@ -244,7 +220,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
             outs.append(out.to_numpy())
         return outs
 
-    def build(tp_size: int) -> KimiK3KDAAttention:
+    def build() -> KimiK3KDAAttention:
         layer = KimiK3KDAAttention(
             hidden_size=hidden,
             num_heads=heads,
@@ -252,7 +228,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
             conv_kernel_size=conv_kernel,
             gate_lower_bound=gate_lower_bound,
         )
-        assign(layer, tp_size)
+        assign(layer)
         return layer
 
     conv_pool_shape = [max_slots, 3 * inner, conv_kernel - 1]
@@ -261,7 +237,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     # TP=1.
     with default_device(Accelerator(0)):
         outs1 = run(
-            build(1),
+            build(),
             Tensor.zeros(conv_pool_shape, dtype=DType.float32),
             Tensor.zeros(state_pool_shape, dtype=DType.float32),
         )
@@ -274,7 +250,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     with default_device(mesh):
         pool_mapping = NamedMapping(mesh, (None, "tp"))
         outs2 = run(
-            tensor_parallel_kda_attention(build(len(devices)), mesh),
+            tensor_parallel_kda_attention(build(), mesh),
             Tensor.zeros(
                 conv_pool_shape, dtype=DType.float32, device=pool_mapping
             ),

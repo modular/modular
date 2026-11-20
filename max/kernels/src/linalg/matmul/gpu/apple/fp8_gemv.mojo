@@ -70,7 +70,7 @@ load is an inline TileTensor access (no special decode to own), matching
 """
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv
 import max.gpu.primitives.warp as warp
 
@@ -292,9 +292,11 @@ def enqueue_apple_fp8_gemv[
         weight,
         Int32(n),
         Int32(k),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid,
+            block_dim=BLK,
+        ),
         host_args=(epilogue_fn,),
-        grid_dim=grid,
-        block_dim=BLK,
     )
 
 
@@ -368,8 +370,10 @@ def enqueue_fp8_materialize[
     ctx.enqueue_function[kernel](
         out_w,
         weight.as_imm(),
-        grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
-        block_dim=(BLK, BLK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
+            block_dim=(BLK, BLK),
+        ),
     )
 
 
@@ -438,9 +442,11 @@ def _enqueue_apple_fp8_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
+                block_dim=(4 * WARP_SIZE,),
+            ),
             host_args=(no_epilogue_fn, no_compute_fn),
-            grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
-            block_dim=(4 * WARP_SIZE,),
         )
 
     # Keep the transient weight alive through the async materialize + GEMM

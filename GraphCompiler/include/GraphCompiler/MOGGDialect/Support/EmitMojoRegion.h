@@ -13,16 +13,15 @@
 #ifndef GENERICML_GRAPHCOMPILER_SUPPORT_EMITMOJOREGION_H
 #define GENERICML_GRAPHCOMPILER_SUPPORT_EMITMOJOREGION_H
 
-#include "GraphCompiler/MOGGDialect/Support/EmitMojoDeclarativeCall.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoBuilder.h"
 #include "Support/AssertStream.h"
 
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Value.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <memory>
-#include <vector>
 
 namespace M::MOGG {
 
@@ -34,12 +33,10 @@ enum class EmitMojoRegionKind {
   kElementwiseLambda,
   /// What the ops of a `mogg.call.rowwise` body print against.
   kRowwiseBody,
-  /// The declarative calls of the `mogg.graph_blob` being emitted.
-  kGraphBlob,
 };
 
 /// A construct whose data the ops emitted inside it read: an elementwise
-/// lambda's parameters, a rowwise body, a graph blob. Regions inherit from
+/// lambda's parameters, a rowwise body. Regions inherit from
 /// `EmitMojoRegion<Region, Kind>`, so the state holds all of them on one stack
 /// and finds one by its kind.
 class EmitMojoRegionBase {
@@ -151,30 +148,9 @@ public:
   MojoValue row;
   /// The tile the phase printing now reads.
   MojoValue tile;
-};
-
-/// The declarative calls of the `mogg.graph_blob` being emitted, gathered as
-/// each emits its host part. `GraphBlobOp::emitMojo` launches them.
-class GraphBlobRegion
-    : public EmitMojoRegion<GraphBlobRegion, EmitMojoRegionKind::kGraphBlob> {
-public:
-  GraphBlobRegion() = default;
-
-  struct BlobCall {
-    // The call, whose `execute_device` the kernel runs.
-    DeclarativeCall call;
-    // The indices in `args` of the arguments that carry the call's operands, in
-    // the call's operand order.
-    SmallVector<unsigned> indices;
-    // The value the call's `execute_configuration` returned.
-    MojoValue config;
-  };
-  // The device context every call launches on.
-  Value ctx;
-  // The kernel's arguments, which the calls share.
-  DeviceKernelArgs args;
-  // The calls, in the order the kernel runs them.
-  std::vector<BlobCall> calls;
+  /// Each `mogg.rowwise.cache`'s `compute` closure, which the cached Row
+  /// overloads take again to recompute off the register tier.
+  llvm::DenseMap<Value, MojoValue> cacheComputes;
 };
 
 } // namespace M::MOGG

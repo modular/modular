@@ -19,9 +19,9 @@ from max.pipelines.modeling.types import PipelineTask
 
 from ..hy_v4.model_config import HYV4Config
 from ..hy_v4.tokenizer import HYV4Tokenizer
+from ..hy_v4.weight_adapters import hy_v4_mtp_weight_rules
 from .draft import HYV4MTPDraft, mtp_draft_registration
 from .model_config import MTPHYV4DraftArchConfig
-from .weight_adapters import convert_hy_v4_mtp_state_dict
 
 __all__ = ["mtp_hy_v4_draft_arch"]
 
@@ -41,8 +41,7 @@ mtp_hy_v4_draft_arch = SupportedArchitecture(
     tokenizer=HYV4Tokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_hy_v4_mtp_state_dict,
-    },
+    weight_rules=hy_v4_mtp_weight_rules,
+    use_weight_rules=True,
     config=MTPHYV4DraftArchConfig,
 )

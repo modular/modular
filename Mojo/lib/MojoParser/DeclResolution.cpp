@@ -4062,13 +4062,6 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
       setErroneous();
       return failure();
     }
-    // An enum's storage has non-trivial copy, move and destruction.
-    if (structOp.isEnum()) {
-      shared.emitError(getLoc())
-          << "enums cannot conform to 'TrivialRegisterPassable'";
-      setErroneous();
-      return failure();
-    }
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
   }
 
@@ -4247,6 +4240,12 @@ processRegisterPassableDecorator(StructASTDecl &structDecl,
                                  TypeConvention structPassability) {
   StructDeclOp structOp = structDecl.getOp();
   SharedState &shared = structDecl.getShared();
+  // An enum's storage is at most conditionally `RegisterPassable`, so a trivial
+  // enum's cases check each payload type against `TrivialRegisterPassable`
+  // instead.
+  if (structOp.isEnum() &&
+      structPassability == TypeConvention::RegisterPassableTrivial)
+    structPassability = TypeConvention::RegisterPassable;
   bool isTrivial = structPassability == TypeConvention::RegisterPassableTrivial;
   for (StructFieldASTDecl *fieldDecl : structFields) {
     StructFieldOp fieldOp = fieldDecl->getOp();
@@ -4286,12 +4285,16 @@ processRegisterPassableDecorator(StructASTDecl &structDecl,
 
 LogicalResult EnumCaseASTDecl::resolveAndCheckRedefinition(
     EnumCaseASTDecl *previousDefinition) {
+  EnumCaseOp caseOp = getOp();
   if (previousDefinition) {
-    EnumCaseOp caseOp = getOp();
     auto diag = shared.emitError(getLoc())
                 << "invalid redefinition of '" << caseOp.getName() << "'";
     diag.attachNote(previousDefinition->getLoc()) << "previous definition here";
-    // The duplicate does not declare a case.
+  }
+  // A case whose name is taken, by an earlier case or by a member, does not
+  // declare a case.
+  if (previousDefinition ||
+      failed(checkEnumCaseName(getEnumDecl(), caseOp.getName(), getLoc()))) {
     caseOp.erase();
     setErroneous();
     resolvedness = DeclResolvedness::body;
@@ -4473,17 +4476,16 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
   // symbols.
   ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
   bool hasConstraints = !constraints.empty();
-  SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
-      structOp.getSignature().getParamListAttrs().getBodyConstraints(),
-      [&](ConstraintAttr constraint) { return constraint.getProposition(); });
+  ArrayRef<ConstraintAttr> bodyConstraints =
+      structOp.getSignature().getParamListAttrs().getBodyConstraints();
   IndexRefRemapper remapper(structOp.getParamsAttr());
   for (auto [i, parent] : llvm::enumerate(symbols)) {
     // A conformance whose condition the struct's own where-clause precludes is
     // an opt-out.
-    if (hasConstraints && !bodyPropositions.empty() &&
+    if (hasConstraints && !bodyConstraints.empty() &&
         isPropositionPrecluded(
             remapper.replace(constraints[i].getProposition()),
-            bodyPropositions))
+            buildAssumptions(bodyConstraints, structOp.getContext())))
       continue;
 
     TraitSymbolAttr traitSymbol = parent;
@@ -4801,32 +4803,69 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
     return failure();
   }
 
+  // A trivial enum is copied bit for bit and never destroyed, so it requires
+  // `TrivialRegisterPassable` of each payload type in place of the
+  // conformances below.
+  bool isTrivial = enumDecl.getOp().isRegisterPassableTrivial();
+
   // A conformance the enum declares that copies, moves or destroys it requires
   // the same of every payload type, as for a struct's fields. A hand-written
   // copy constructor, move constructor or `__deinit__` lifts the requirement
   // for its conformance. `RegisterPassable` is about the representation,
   // hence, when declared, requires the payloads to conform to it as well.
-  SmallVector<StringRef, 5> traitsRequiredOfPayloads;
-  if (!shared.typeHasMember(enumDecl, "__deinit__", enumDecl.getLoc()))
-    traitsRequiredOfPayloads.push_back("Deinitable");
-  if (!lookupSpecialInit(enumDecl, SpecialFunctionKind::kMoveCtor))
-    traitsRequiredOfPayloads.push_back("Movable");
-  if (!lookupSpecialInit(enumDecl, SpecialFunctionKind::kCopyCtor))
-    traitsRequiredOfPayloads.append({"Copyable", "ImplicitlyCopyable"});
-  traitsRequiredOfPayloads.push_back("RegisterPassable");
-  SmallVector<std::pair<StringRef, SmallVector<ConstraintAttr>>, 5>
-      payloadRequirements;
-  for (StringRef traitName : traitsRequiredOfPayloads) {
-    std::optional<ConstraintAttr> whereClauseForTrait =
-        enumDecl.getOp().getConformanceCondition(traitName);
-    if (!whereClauseForTrait)
-      continue;
-    SmallVector<ConstraintAttr> assumptions;
-    enumDecl.getKnownAssumptionsIncludingParents(assumptions);
-    if (!isTriviallyTrueConstraint(*whereClauseForTrait))
-      assumptions.push_back(*whereClauseForTrait);
-    payloadRequirements.push_back({traitName, std::move(assumptions)});
+  SmallVector<std::pair<StringRef, TypedAttr>, 5> payloadRequirements;
+  if (!isTrivial) {
+    SmallVector<StringRef, 5> traitsRequiredOfPayloads;
+    if (!shared.typeHasMember(enumDecl, "__deinit__", enumDecl.getLoc()))
+      traitsRequiredOfPayloads.push_back("Deinitable");
+    if (!lookupSpecialInit(enumDecl, SpecialFunctionKind::kMoveCtor))
+      traitsRequiredOfPayloads.push_back("Movable");
+    if (!lookupSpecialInit(enumDecl, SpecialFunctionKind::kCopyCtor))
+      traitsRequiredOfPayloads.append({"Copyable", "ImplicitlyCopyable"});
+    traitsRequiredOfPayloads.push_back("RegisterPassable");
+    for (StringRef traitName : traitsRequiredOfPayloads) {
+      std::optional<ConstraintAttr> whereClauseForTrait =
+          enumDecl.getOp().getConformanceCondition(traitName);
+      if (!whereClauseForTrait)
+        continue;
+      TypedAttr assumptions = enumDecl.getScopeAssumptions();
+      if (!isTriviallyTrueConstraint(*whereClauseForTrait))
+        assumptions = conjoinAssumptions(
+            assumptions, buildAssumptions(ArrayRef(*whereClauseForTrait),
+                                          enumDecl.getContext()));
+      payloadRequirements.push_back({traitName, assumptions});
+    }
   }
+
+  TraitType movableTrait =
+      shared.lookupBuiltinTraitType("Movable", enumDecl.getLoc());
+  // Checks whether `asked` conforms to `trait`. Unlike
+  // `conformsToBuiltinTrait`, it also answers for a type that is not a struct.
+  auto checkBinding = [&](ExprNode *typeExpr, ASTType type, ASTType asked,
+                          TraitType trait,
+                          StringRef traitName) -> LogicalResult {
+    TypedAttr askedValue = TypeParamAttr::get(asked, asked.extractMetaType());
+    IREmitter::ImplicitConversionResult result =
+        trait ? IREmitter::classifyImplicitConversionWithDetails(
+                    {askedValue, typeExpr}, trait, enumDecl,
+                    shared.noAssumptions, /*deferralCtx=*/nullptr)
+              : IREmitter::ImplicitConversionResult::no({});
+    if (result.isYes())
+      return success();
+    auto diag = shared.emitError(typeExpr->getLoc())
+                << "case '" << caseName << "' has ";
+    if (asked.mlirType == type.mlirType)
+      diag << "non-'" << traitName << "' payload type " << type;
+    else
+      diag << "payload type " << type << ", which materializes to non-'"
+           << traitName << "' type " << asked;
+    diag << typeExpr->getRange();
+    if (result.isNo())
+      std::move(result).getNo().addExplanation(diag);
+    else
+      attachConstraintNotes(diag, result.getUnknown(), "unproven");
+    return failure();
+  };
 
   SmallVector<Type> payloadTypes;
   for (ExprNode *typeExpr : payload) {
@@ -4847,16 +4886,36 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
           << typeExpr->getRange();
       return failure();
     }
-    for (auto &[traitName, assumptions] : payloadRequirements) {
-      if (type.conformsToBuiltinTrait(traitName, typeExpr->getLoc(), shared,
-                                      assumptions)
-              .first.isTrue())
-        continue;
-      shared.emitError(typeExpr->getLoc())
-          << "case '" << caseName << "' has non-'" << traitName
-          << "' payload type " << type << typeExpr->getRange();
-      return failure();
+    // The storage is declared with this type, not with its nonmaterializable
+    // target. No value of such a type can be stored, because `__enum_init`
+    // materializes its argument to the target.
+    if (isTrivial) {
+      TraitType trivialTrait = shared.lookupBuiltinTraitType(
+          "TrivialRegisterPassable", enumDecl.getLoc());
+      if (failed(checkBinding(typeExpr, type, type, trivialTrait,
+                              "TrivialRegisterPassable")))
+        return failure();
+    } else {
+      for (auto &[traitName, assumptions] : payloadRequirements) {
+        if (type.conformsToBuiltinTrait(traitName, typeExpr->getLoc(), shared,
+                                        assumptions)
+                .first.isTrue())
+          continue;
+        shared.emitError(typeExpr->getLoc())
+            << "case '" << caseName << "' has non-'" << traitName
+            << "' payload type " << type << typeExpr->getRange();
+        return failure();
+      }
     }
+    // The case's constructor moves the payload into the enum, so a payload
+    // type must be `Movable` even in an enum that is not. It is asked as that
+    // constructor's `__enum_init` call binds its `*Ts: Movable` pack, which
+    // infers a nonmaterializable argument as its target.
+    ASTType eltType = type;
+    if (ASTType target = type.getNonmaterializableTarget(shared))
+      eltType = target;
+    if (failed(checkBinding(typeExpr, type, eltType, movableTrait, "Movable")))
+      return failure();
     payloadTypes.push_back(type);
   }
   caseOp.setPayloadTypesAttr(

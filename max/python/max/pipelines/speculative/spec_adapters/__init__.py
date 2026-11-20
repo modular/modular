@@ -116,7 +116,6 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
         ".inkling_modulev3.spec_adapters"
     ),
     "KimiK25ForConditionalGeneration": ".kimik2_5.spec_adapters",
-    "KimiK3ForConditionalGeneration": "kimi_k3_spec",
     "KimiK3ForConditionalGeneration_ModuleV3": (
         ".kimi_k3_modulev3.dspark.spec_adapters"
     ),

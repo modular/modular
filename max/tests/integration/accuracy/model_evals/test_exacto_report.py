@@ -877,3 +877,160 @@ def test_rejected_requests_within_the_budget_pass(
 
 def test_vgi_bench_is_a_known_dataset() -> None:
     assert "vgi_bench" in exacto_report.DATASETS
+
+
+TAU2_REQUEST = {
+    "role": "user",
+    "content": "Cancel booking ABC.",
+    "usage": {"completion_tokens": 8, "prompt_tokens": 400},
+    "raw_data": {"finish_reason": "stop"},
+}
+TAU2_ANSWER = {
+    "role": "assistant",
+    "content": "That booking cannot be cancelled.",
+    "timestamp": "2026-11-04T22:05:20.369381",
+    "usage": {"completion_tokens": 9, "prompt_tokens": 1000},
+    "raw_data": {"finish_reason": "stop", "message": {}},
+}
+TAU2_MESSAGES: list[dict[str, Any]] = [
+    GREETING,
+    TAU2_REQUEST,
+    {
+        "role": "assistant",
+        "content": None,
+        "timestamp": "2026-11-04T22:05:13.128012",
+        "usage": {"completion_tokens": 40, "prompt_tokens": 900},
+        "tool_calls": [
+            {"id": "t1", "name": "get_reservation", "arguments": {"id": "ABC"}},
+            {"id": "t2", "name": "cancel", "arguments": {"id": "ABC"}},
+        ],
+        "raw_data": {
+            "finish_reason": "tool_calls",
+            "message": {"reasoning_content": "Look it up first."},
+        },
+    },
+    {
+        "role": "tool",
+        "id": "t1",
+        "content": '{"id": "ABC"}',
+        "requestor": "assistant",
+        "error": False,
+    },
+    {
+        "role": "tool",
+        "id": "t2",
+        "content": "Error: basic economy cannot be cancelled",
+        "requestor": "assistant",
+        "error": True,
+    },
+    TAU2_ANSWER,
+    {"role": "user", "content": "OK, thanks.\n\n###STOP###"},
+]
+
+
+def test_tau2_turns_are_the_agents_model_calls() -> None:
+    opening, turns = exacto_report.tau2_turns(TAU2_MESSAGES)
+
+    assert opening == [
+        {"role": "assistant", "content": "Hi! How can I help you today?"},
+        {"role": "user", "content": "Cancel booking ABC."},
+    ]
+    assert turns == [
+        {
+            "timestamp": "2026-11-04T22:05:13.128012",
+            "finish_reason": "tool_calls",
+            "prompt_tokens": 900,
+            "completion_tokens": 40,
+            "reasoning": "Look it up first.",
+            "response": None,
+            "tool_calls": [
+                {
+                    "id": "t1",
+                    "name": "get_reservation",
+                    "arguments": '{"id": "ABC"}',
+                    "output": '{"id": "ABC"}',
+                    "error": None,
+                },
+                {
+                    "id": "t2",
+                    "name": "cancel",
+                    "arguments": '{"id": "ABC"}',
+                    "output": "Error: basic economy cannot be cancelled",
+                    "error": "Error: basic economy cannot be cancelled",
+                },
+            ],
+            "reply": None,
+        },
+        {
+            "timestamp": "2026-11-04T22:05:20.369381",
+            "finish_reason": "stop",
+            "prompt_tokens": 1000,
+            "completion_tokens": 9,
+            "reasoning": None,
+            "response": "That booking cannot be cancelled.",
+            "tool_calls": [],
+            "reply": "OK, thanks.\n\n###STOP###",
+        },
+    ]
+
+
+def test_tau2_rows_carry_the_conversation_their_counts_describe() -> None:
+    log = _tau2_log_with_messages(
+        TAU2_MESSAGES,
+        # The simulated user can end the conversation before the agent answers.
+        [GREETING, {"role": "user", "content": "Cancel ABC.\n\n###STOP###"}],
+    )
+
+    rows, _ = exacto_report.parse_tau2_log(log)
+
+    opening, turns = exacto_report.tau2_turns(TAU2_MESSAGES)
+    assert (rows[0]["opening"], rows[0]["turns"]) == (opening, turns)
+    assert (
+        rows[0]["agent_turns"],
+        rows[0]["completion_tokens"],
+        rows[0]["max_turn_completion_tokens"],
+    ) == (len(turns), 49, 40)
+    assert len(rows[1]["opening"]) == 2
+    assert (rows[1]["turns"], rows[1]["agent_turns"]) == ([], 0)
+
+
+def test_tau2_tool_output_the_user_asked_for_is_a_reply() -> None:
+    _, turns = exacto_report.tau2_turns(
+        [
+            TAU2_ANSWER,
+            {"role": "user", "content": None, "tool_calls": [{"id": "u1"}]},
+            {
+                "role": "tool",
+                "id": "u1",
+                "content": "Airplane mode is off.",
+                "requestor": "user",
+                "error": False,
+            },
+        ]
+    )
+
+    assert turns[0]["tool_calls"] == []
+    assert turns[0]["reply"] == "Airplane mode is off."
+
+
+def test_tau2_outputs_with_no_matching_call_are_kept() -> None:
+    opening, turns = exacto_report.tau2_turns(
+        [
+            {"role": "tool", "id": "early", "content": "before any call"},
+            {
+                **TAU2_ANSWER,
+                # MAX names the field reasoning, other servers reasoning_content.
+                "raw_data": {
+                    "finish_reason": "stop",
+                    "message": {"reasoning": "Plan."},
+                },
+            },
+            {"role": "tool", "id": "stray", "content": "x", "error": False},
+        ]
+    )
+
+    assert opening == [{"role": "tool", "content": "before any call"}]
+    assert turns[0]["reasoning"] == "Plan."
+    assert turns[0]["tool_calls"] == [
+        {"id": "stray", "output": "x", "error": None}
+    ]

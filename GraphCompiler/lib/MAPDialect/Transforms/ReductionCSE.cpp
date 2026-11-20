@@ -246,7 +246,12 @@ void createRowTile(RowwiseOpInterface row) {
   Block &body = row->getRegion(0).front();
   if (!body.getOps<IterTileOp>().empty())
     return;
-  auto phases = llvm::to_vector(body.getOps<RowwisePhaseOpInterface>());
+  // A phase that reads a cache gets the cache, not the tile, so it keeps its
+  // own loads of the input.
+  SmallVector<RowwisePhaseOpInterface> phases;
+  for (RowwisePhaseOpInterface phase : body.getOps<RowwisePhaseOpInterface>())
+    if (!phase.getReadCache())
+      phases.push_back(phase);
   if (phases.empty() || !isa<IterReduceOp>(phases.front()))
     return;
 

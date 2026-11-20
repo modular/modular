@@ -49,6 +49,10 @@ from max.graph import (
 )
 from max.nn._graph_ops import _block_scaled_quantize_out_types
 from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache.input_types import (
+    _MIXED_STEP_SPLIT_DECODE_CAP,
+    MIXED_STEP_SPLIT_SIZE,
+)
 
 HEAD_DIM = 512
 """Channels of a query head, a latent and a dequantized record."""
@@ -701,6 +705,54 @@ def csa2_attention_mxfp8(
         rope_q=rope_q,
     )[:2]
     return data, scales
+
+
+def kept_rows_split_record(
+    record: TensorValue,
+    full_positions: TensorValue,
+    kept_positions: TensorValue,
+    longest: TensorValue,
+) -> TensorValue:
+    """Returns a decoder replay's mixed-step split record for its kept rows.
+
+    ``record`` cuts the full batch. The replay keeps a suffix of each
+    request's rows and keeps a decode row whole, so the decode view keeps
+    its tokens and only the prefill view shrinks: to the kept rows that are
+    not the decode view's, the longest of them ``longest`` tokens. A record
+    the ops refuse stays one they refuse.
+
+    Args:
+        record: Host ``uint32[7]`` split record of the full batch.
+        full_positions: ``[T]`` positions of the full batch's rows.
+        kept_positions: ``[T']`` positions of the kept rows.
+        longest: Host ``[1]``, the longest kept row's tokens.
+
+    Returns:
+        The host ``uint32[7]`` record of the kept rows.
+    """
+    host = DeviceRef.CPU()
+    u32 = DType.uint32
+    record = ops.cast(record, u32)
+    slot = [record[i : i + 1] for i in range(MIXED_STEP_SPLIT_SIZE)]
+    full = ops.cast(ops.shape_to_tensor([full_positions.shape[0]]), u32)
+    kept = ops.cast(ops.shape_to_tensor([kept_positions.shape[0]]), u32)
+    longest = ops.reshape(ops.cast(longest, u32), [1])
+    head_decodes = slot[2] <= ops.constant(
+        _MIXED_STEP_SPLIT_DECODE_CAP, u32, device=host
+    )
+    decode_tokens = ops.where(head_decodes, slot[1], full - slot[1])
+    return ops.concat(
+        [
+            slot[0],
+            ops.where(head_decodes, slot[1], kept - decode_tokens),
+            ops.where(head_decodes, slot[2], ops.min(slot[2], longest)),
+            slot[3],
+            ops.where(head_decodes, ops.min(slot[4], longest), slot[4]),
+            slot[5],
+            slot[6],
+        ],
+        axis=0,
+    )
 
 
 def _csa2_op(

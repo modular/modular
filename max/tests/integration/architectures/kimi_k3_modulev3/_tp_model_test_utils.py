@@ -110,6 +110,10 @@ def tiny_model_config(hidden: int, vocab: int) -> KimiK3ModelConfig:
 
 
 def random_weights(config: KimiK3ModelConfig) -> dict[str, np.ndarray]:
+    """Random weights in the checkpoint's shapes, named as the checkpoint
+    names them past ``language_model.model.`` (``language_model.`` for
+    ``lm_head``)."""
+
     def arr(*shape: int) -> np.ndarray:
         return (_RNG.standard_normal(shape) * 0.02).astype(np.float32)
 
@@ -154,18 +158,18 @@ def random_weights(config: KimiK3ModelConfig) -> dict[str, np.ndarray]:
             w[f"{attn_prefix}.g_proj.weight"] = arr(kda_inner, hidden)
             w[f"{attn_prefix}.o_proj.weight"] = arr(hidden, kda_inner)
             w[f"{attn_prefix}.o_norm.weight"] = ones(config.kda_head_dim)
-            w[f"{attn_prefix}.conv_weight"] = arr(
-                3 * kda_inner, config.kda_conv_kernel_size
+            conv = arr(3 * kda_inner, config.kda_conv_kernel_size)
+            for axis, part in zip("qkv", np.split(conv, 3), strict=True):
+                w[f"{attn_prefix}.{axis}_conv1d.weight"] = part.reshape(
+                    kda_inner, 1, config.kda_conv_kernel_size
+                )
+            # One coefficient per head.
+            w[f"{attn_prefix}.A_log"] = np.ascontiguousarray(
+                np.linspace(-1.0, 0.5, kda_inner, dtype=np.float32)[
+                    :: config.kda_head_dim
+                ]
             )
-            w[f"{attn_prefix}.a_log"] = np.linspace(
-                -1.0,
-                0.5,
-                config.kda_num_heads * config.kda_head_dim,
-                dtype=np.float32,
-            ).reshape(config.kda_num_heads, config.kda_head_dim)
-            w[f"{attn_prefix}.dt_bias"] = arr(
-                config.kda_num_heads, config.kda_head_dim
-            )
+            w[f"{attn_prefix}.dt_bias"] = arr(kda_inner)
         else:
             w[f"{attn_prefix}.q_a_proj.weight"] = arr(
                 config.q_lora_rank, hidden

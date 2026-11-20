@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/TransformUtils/SlicingUtils.h"
+#include "Mojo/TransformUtils/SplitPlanner.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -40,6 +41,9 @@ class LLVMDialectModuleSplitterTest : public Test {
 protected:
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
   std::string errors;
+  /// The slices of the last `split`, and the functions it outlined.
+  std::vector<OwningOpRef<ModuleOp>> sliceModules;
+  std::vector<std::string> outlined;
 
   LLVMDialectModuleSplitterTest() { ctx.loadDialect<LLVM::LLVMDialect>(); }
 
@@ -49,7 +53,8 @@ protected:
   /// function.
   std::optional<SliceNames>
   split(StringRef source,
-        function_ref<bool(LLVM::GlobalOp)> isSliceLocal = noSliceLocalGlobals) {
+        function_ref<bool(LLVM::GlobalOp)> isSliceLocal = noSliceLocalGlobals,
+        unsigned outlineThreads = 0) {
     OwningOpRef<ModuleOp> module = parseSourceString<ModuleOp>(
         source, ParserConfig(&ctx, /*verifyAfterParse=*/false));
     if (!module) {
@@ -62,12 +67,15 @@ protected:
       return llvm::success();
     });
     LLVMDialectModuleSplitter splitter(std::move(module));
-    if (failed(splitter.plan(isSliceLocal)))
+    if (failed(splitter.plan(isSliceLocal, outlineThreads)))
       return std::nullopt;
+    for (StringAttr name : splitter.getOutlinedFunctions())
+      outlined.push_back(name.str());
 
     SliceNames names;
     for (size_t idx = 0, e = splitter.getNumSlices(); idx != e; ++idx) {
-      OwningOpRef<ModuleOp> slice = splitter.takeSlice(idx);
+      OwningOpRef<ModuleOp> &slice =
+          sliceModules.emplace_back(splitter.takeSlice(idx));
       EXPECT_TRUE(succeeded(verify(*slice))) << "slice " << idx;
       std::vector<std::string> &sliceNames = names.emplace_back();
       for (Operation &op : *slice->getBody()) {
@@ -77,6 +85,10 @@ protected:
       }
     }
     return names;
+  }
+
+  LLVM::LLVMFuncOp lookupFunc(size_t slice, StringRef name) {
+    return sliceModules[slice]->lookupSymbol<LLVM::LLVMFuncOp>(name);
   }
 };
 
@@ -155,6 +167,92 @@ TEST_F(LLVMDialectModuleSplitterTest, KeepsExportedCalleeWithItsCaller) {
   EXPECT_EQ(*slices, (SliceNames{{"helper", "kernel_a"}, {"kernel_b"}}));
 }
 
+constexpr const char *kKernelsSharingAFunction = R"mlir(
+  llvm.func internal @shared(%arg0: i32) -> i32 {
+    %0 = llvm.add %arg0, %arg0 : i32
+    %1 = llvm.mul %0, %0 : i32
+    llvm.return %1 : i32
+  }
+  llvm.func @kernel_a(%arg0: i32) -> i32 {
+    %0 = llvm.call @shared(%arg0) : (i32) -> i32
+    llvm.return %0 : i32
+  }
+  llvm.func @kernel_b(%arg0: i32) -> i32 {
+    %0 = llvm.call @shared(%arg0) : (i32) -> i32
+    llvm.return %0 : i32
+  }
+)mlir";
+
+TEST_F(LLVMDialectModuleSplitterTest, OutlinesSharedFunction) {
+  std::optional<SliceNames> slices =
+      split(kKernelsSharingAFunction, noSliceLocalGlobals, /*threads=*/2);
+  ASSERT_TRUE(slices) << errors;
+  EXPECT_EQ(
+      *slices,
+      (SliceNames{{"shared"}, {"shared", "kernel_a"}, {"shared", "kernel_b"}}));
+  EXPECT_EQ(outlined, std::vector<std::string>{"shared"});
+
+  LLVM::LLVMFuncOp definition = lookupFunc(0, "shared");
+  EXPECT_FALSE(definition.isExternal());
+  EXPECT_EQ(definition.getLinkage(), LLVM::Linkage::WeakODR);
+  EXPECT_TRUE(definition.getDsoLocal());
+  for (size_t slice : {1, 2}) {
+    LLVM::LLVMFuncOp declaration = lookupFunc(slice, "shared");
+    EXPECT_TRUE(declaration.isExternal()) << "slice " << slice;
+    EXPECT_EQ(declaration.getLinkage(), LLVM::Linkage::External);
+    EXPECT_FALSE(declaration.getDsoLocal());
+  }
+}
+
+TEST_F(LLVMDialectModuleSplitterTest, DropsSubprogramFromDeclaration) {
+  std::optional<SliceNames> slices = split(R"mlir(
+    #file = #llvm.di_file<"shared.mojo" in "">
+    #cu = #llvm.di_compile_unit<
+      id = distinct[0]<>, sourceLanguage = DW_LANG_C, file = #file,
+      isOptimized = true, emissionKind = Full>
+    #sp = #llvm.di_subprogram<
+      id = distinct[1]<>, compileUnit = #cu, scope = #file, name = "shared",
+      file = #file, subprogramFlags = Definition>
+    llvm.func internal @shared(%arg0: i32) -> i32 {
+      %0 = llvm.add %arg0, %arg0 : i32
+      %1 = llvm.mul %0, %0 : i32
+      llvm.return %1 : i32
+    } loc(fused<#sp>["shared.mojo":1:1])
+    llvm.func @kernel_a(%arg0: i32) -> i32 {
+      %0 = llvm.call @shared(%arg0) : (i32) -> i32
+      llvm.return %0 : i32
+    }
+    llvm.func @kernel_b(%arg0: i32) -> i32 {
+      %0 = llvm.call @shared(%arg0) : (i32) -> i32
+      llvm.return %0 : i32
+    }
+  )mlir",
+                                           noSliceLocalGlobals, /*threads=*/2);
+  ASSERT_TRUE(slices) << errors;
+  ASSERT_EQ(slices->size(), 3u);
+
+  auto hasSubprogram = [](LLVM::LLVMFuncOp func) {
+    return isa<FusedLocWith<LLVM::DISubprogramAttr>>(func.getLoc());
+  };
+  EXPECT_TRUE(hasSubprogram(lookupFunc(0, "shared")));
+  for (size_t slice : {1, 2})
+    EXPECT_FALSE(hasSubprogram(lookupFunc(slice, "shared")))
+        << "slice " << slice;
+}
+
+TEST_F(LLVMDialectModuleSplitterTest, ClonesAlwaysInlineSharedFunction) {
+  std::string source = kKernelsSharingAFunction;
+  StringRef signature = "-> i32 {";
+  source.replace(source.find(signature), signature.size(),
+                 "-> i32 attributes {always_inline} {");
+  std::optional<SliceNames> slices =
+      split(source, noSliceLocalGlobals, /*threads=*/2);
+  ASSERT_TRUE(slices) << errors;
+  EXPECT_EQ(*slices,
+            (SliceNames{{"shared", "kernel_a"}, {"shared", "kernel_b"}}));
+  EXPECT_TRUE(outlined.empty());
+}
+
 TEST_F(LLVMDialectModuleSplitterTest, IgnoresUnresolvedDiscardableReference) {
   std::optional<SliceNames> slices = split(R"mlir(
     llvm.func @kernel_a() attributes {test.ref = @elsewhere} {
@@ -217,6 +315,38 @@ TEST_F(LLVMDialectModuleSplitterTest, RejectsCallToUndefinedFunction) {
                         "in the module"),
             std::string::npos)
       << errors;
+}
+
+using Slices = std::vector<std::vector<unsigned>>;
+
+SplitSymbol makeFunction(SmallVector<unsigned, 4> dependencies) {
+  SplitSymbol symbol;
+  symbol.dependencies = std::move(dependencies);
+  symbol.isFunction = true;
+  symbol.isAnchor = true;
+  return symbol;
+}
+
+SplitSymbol makeMutableGlobal() {
+  SplitSymbol symbol;
+  symbol.tiesUsers = true;
+  return symbol;
+}
+
+TEST(PlanSplitPerFunctionTest, KeepsUserOfMutableGlobalWithItsCaller) {
+  // 1 is a leaf, 2 uses the global 0, and 3 calls both.
+  std::vector<SplitSymbol> symbols = {makeMutableGlobal(), makeFunction({}),
+                                      makeFunction({0}), makeFunction({1, 2})};
+  SplitPlan plan = planSplitPerFunction(symbols);
+  EXPECT_EQ(plan.slices, (Slices{{1}, {0, 2, 3}}));
+  EXPECT_TRUE(plan.outlineRoots.empty());
+}
+
+TEST(PlanSplitPerFunctionTest, GivesRecursiveUserOfMutableGlobalItsOwnSlice) {
+  // 1 uses the global 0 and calls itself.
+  std::vector<SplitSymbol> symbols = {makeMutableGlobal(), makeFunction({0, 1}),
+                                      makeFunction({})};
+  EXPECT_EQ(planSplitPerFunction(symbols).slices, (Slices{{0, 1}, {2}}));
 }
 
 } // namespace

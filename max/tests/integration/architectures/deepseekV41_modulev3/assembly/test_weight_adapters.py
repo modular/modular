@@ -47,8 +47,11 @@ from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
     _engram_tables,
     convert_safetensor_state_dict,
     convert_weight_data,
+    deepseek_v41_weight_rules,
+    dspark_v41_weight_rules,
     stack_projections,
 )
+from max.pipelines.lib.weight_transform import WeightTransform
 from transformers import PretrainedConfig
 
 
@@ -799,3 +802,167 @@ def test_convert_weight_data_maps_mxfp4_experts_byte_for_byte() -> None:
         )
         assert leaf.dtype == expected, name
         np.testing.assert_array_equal(_leaf_u8(leaf), array)
+
+
+@pytest.mark.parametrize(
+    "name, stored_dtype, expected_name, expected_dtype",
+    [
+        (
+            "layers.0.attn.wo_a.scale",
+            DType.uint8,
+            "layers.0.attn.wo_a.scale",
+            DType.float8_e8m0fnu,
+        ),
+        (
+            "layers.0.ffn.experts.0.w1.scale",
+            DType.uint8,
+            "layers.0.ffn.experts.0.w1.weight_scale",
+            DType.float8_e8m0fnu,
+        ),
+        (
+            "layers.0.ffn.experts.0.w1.weight",
+            DType.int8,
+            "layers.0.ffn.experts.0.w1.weight",
+            DType.uint8,
+        ),
+        (
+            "layers.0.ffn.experts.0.w1.weight_scale",
+            DType.float8_e4m3fn,
+            "layers.0.ffn.experts.0.w1.weight_scale",
+            DType.float8_e4m3fn,
+        ),
+        # A native NVFP4 ``weight_scale`` holds E4M3 bytes even when the
+        # checkpoint stores it as ``U8``: never relabeled to E8M0.
+        (
+            "layers.0.ffn.experts.0.w1.weight_scale",
+            DType.uint8,
+            "layers.0.ffn.experts.0.w1.weight_scale",
+            DType.uint8,
+        ),
+        (
+            "layers.0.ffn.experts.0.w1.input_scale",
+            DType.float32,
+            "layers.0.ffn.experts.0.w1.input_scale",
+            DType.float32,
+        ),
+        (
+            "layers.0.engram.embed.weight",
+            DType.float8_e4m3fn,
+            "layers.0.engram.embed.weight",
+            DType.uint8,
+        ),
+        (
+            "layers.0.engram.embed.scale",
+            DType.uint8,
+            "layers.0.engram.embed.scale",
+            DType.uint8,
+        ),
+        (
+            "layers.0.engram.embed.scale",
+            DType.float8_e8m0fnu,
+            "layers.0.engram.embed.scale",
+            DType.uint8,
+        ),
+        (
+            "vision.blocks.0.attn.wo.weight",
+            DType.bfloat16,
+            "vision.blocks.0.attn.wo.weight",
+            DType.bfloat16,
+        ),
+    ],
+)
+def test_raw_target_rules_preserve_checkpoint_storage(
+    name: str, stored_dtype: DType, expected_name: str, expected_dtype: DType
+) -> None:
+    weight = _wd(
+        np.zeros((2, 4), dtype=f"u{stored_dtype.size_in_bits // 8}"),
+        name,
+        stored_dtype,
+    )
+    transform = WeightTransform(deepseek_v41_weight_rules(PretrainedConfig()))
+    result = transform.apply_data({name: weight})
+    assert set(result) == {expected_name}
+    adapted = result[expected_name]
+    assert adapted.dtype == expected_dtype
+    assert adapted.shape == weight.shape
+    assert adapted.name == weight.name
+    assert isinstance(adapted.data, Buffer)
+    assert isinstance(weight.data, Buffer)
+    assert np.shares_memory(
+        np.from_dlpack(adapted.data.view(DType.uint8)),
+        np.from_dlpack(weight.data.view(DType.uint8)),
+    )
+    assert (
+        WeightTransform.__deserialize__(transform.__serialize__()) == transform
+    )
+
+
+def test_raw_target_rules_ignore_draft_without_reading() -> None:
+    draft = Mock(spec=Weights)
+    transform = WeightTransform(deepseek_v41_weight_rules(PretrainedConfig()))
+    assert transform({"mtp.0.attn.wq_a.weight": draft}) == {}
+    draft.data.assert_not_called()
+
+
+@pytest.mark.parametrize("stage_count", [1, 3])
+def test_raw_dspark_rules_name_stages_and_hoisted_weights(
+    stage_count: int,
+) -> None:
+    config = PretrainedConfig(n_mtp_layers=stage_count)
+    last = stage_count - 1
+    names = {
+        "mtp.0.main_proj.scale": (
+            "main_proj.scale",
+            DType.uint8,
+            DType.float8_e8m0fnu,
+        ),
+        "mtp.0.main_norm.weight": (
+            "main_norm.weight",
+            DType.bfloat16,
+            DType.bfloat16,
+        ),
+        f"mtp.{last}.norm.weight": (
+            "norm.weight",
+            DType.bfloat16,
+            DType.bfloat16,
+        ),
+        f"mtp.{last}.markov_head.head.weight": (
+            "markov_head.head.weight",
+            DType.bfloat16,
+            DType.bfloat16,
+        ),
+        "mtp.0.ffn.experts.0.w1.weight": (
+            "stages.0.ffn.experts.0.w1.weight",
+            DType.int8,
+            DType.uint8,
+        ),
+        "mtp.0.ffn.experts.0.w1.scale": (
+            "stages.0.ffn.experts.0.w1.scale",
+            DType.uint8,
+            DType.float8_e8m0fnu,
+        ),
+    }
+    transform = WeightTransform(dspark_v41_weight_rules(config))
+    source = {
+        name: _wd(
+            np.zeros((2, 4), dtype=f"u{dtype.size_in_bits // 8}"), name, dtype
+        )
+        for name, (_, dtype, _) in names.items()
+    }
+    result = transform.apply_data(source)
+    assert set(result) == {name for name, _, _ in names.values()}
+    for original, (name, _, dtype) in names.items():
+        assert result[name].dtype == dtype
+        assert result[name].shape == source[original].shape
+    ignored = {
+        name: Mock(spec=Weights)
+        for name in (
+            "layers.0.attn.wq_a.weight",
+            "image_start",
+            "mtp.0.ffn.gate.bias_vl",
+            f"mtp.{last}.confidence_head.proj.weight",
+        )
+    }
+    assert transform(ignored) == {}
+    for weight in ignored.values():
+        weight.data.assert_not_called()

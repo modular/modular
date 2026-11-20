@@ -87,19 +87,12 @@ def _virtual_gfx950(n_devices: int) -> Iterator[None]:
         set_virtual_device_count(0)
 
 
-def _trace_layer(
-    n_devices: int, axis: str, shard_heads: bool, narrow_weight: bool = False
-) -> str:
+def _trace_layer(n_devices: int, axis: str, shard_heads: bool) -> str:
     """Traces the KDA layer over a mesh of ``n_devices`` virtual devices.
 
     ``shard_heads`` splits the 96 heads across a ``tp`` axis, as the model
     does under tensor parallelism; otherwise the layers run replicated on an
     ``ep`` axis, as the pure-EP deployment builds them.
-
-    A layer declares its fused q/k/v/g/beta weight wide enough for the gate's
-    rows, the width the checkpoint adapter fills (``fuse_qkvgb_for_tp``).
-    ``narrow_weight`` replaces it with the five-block weight a loader that
-    does not fuse the gate leaves behind, which keeps the gate's own GEMV.
     """
     with _virtual_gfx950(n_devices):
         mesh = DeviceMesh(
@@ -108,19 +101,13 @@ def _trace_layer(
             axis_names=(axis,),
         )
         with F.lazy(), default_device(mesh):
-            tp_size = n_devices if shard_heads else 1
             layer = KimiK3KDAAttention(
                 hidden_size=HIDDEN,
                 num_heads=HEADS,
                 head_dim=HEAD_DIM,
                 conv_kernel_size=CONV_KERNEL,
                 gate_lower_bound=-5.0,
-                tp_size=tp_size,
             )
-            if narrow_weight:
-                layer.qkvg_proj.weight = Tensor.zeros(
-                    [narrow_qkvg_rows(tp_size), HIDDEN], dtype=DType.bfloat16
-                )
             if shard_heads:
                 layer = tensor_parallel_kda_attention(layer, mesh)
             inner = HEADS * HEAD_DIM
@@ -148,14 +135,12 @@ def _trace_layer(
 
 
 def fused_qkvg_rows(tp_size: int) -> int:
-    """The row count of the fused q/k/v/g/beta weight, gate rows included."""
+    """The global row count of the fused input GEMM's weight.
+
+    Every rank's block holds its q/k/v/g/beta rows and the whole replicated
+    gate down projection.
+    """
     return 4 * HEADS * HEAD_DIM + HEADS + tp_size * HEAD_DIM
-
-
-def narrow_qkvg_rows(tp_size: int) -> int:
-    """The five checkpoint blocks only: q, k, v, g and beta."""
-    del tp_size  # the five blocks are TP-independent in the global weight
-    return 4 * HEADS * HEAD_DIM + HEADS
 
 
 def _assert_one_decode_per_device(mlir: str, n_devices: int) -> None:
@@ -212,33 +197,23 @@ def test_gate_down_row_rides_the_fused_input_gemm() -> None:
     """``f_a_proj`` is not a launch of its own.
 
     The gate's ``head_dim``-row down projection reads the same ``x`` as the
-    fused q/k/v/g/beta projection, so the checkpoint adapter appends its rows
-    to that weight once, at load time (``fuse_qkvgb_for_tp``), and one GEMM
-    produces both -- a whole decode launch per layer per step less. Pinned at
-    the production per-device shape: each rank's fused weight is its own
-    ``q_r | k_r | v_r | g_r | b_r`` block plus the WHOLE replicated gate row
-    (``f_a_proj`` is not head-sharded, because every rank's ``f_b_proj`` slice
-    needs all ``head_dim`` of it), the GEMM's output is correspondingly wider,
-    and the layer traces three matmuls per device -- this GEMM, ``f_b_proj``
-    and ``o_proj`` -- instead of four.
-
-    No weight concat appears in the graph: the stored weight already carries
-    the gate's rows, so no layer holds a second resident copy of its fused
-    weight.
+    q/k/v/g/beta projections, so the layer fuses its rows into their weight
+    and one GEMM produces both -- a whole decode launch per layer per step
+    less. Pinned at the production per-device shape: each rank's fused weight
+    is its own ``q_r | k_r | v_r | g_r | b_r`` block plus the WHOLE
+    replicated gate row (``f_a_proj`` is not head-sharded, because every
+    rank's ``f_b_proj`` slice needs all ``head_dim`` of it), the GEMM's output
+    is correspondingly wider, and the layer traces three matmuls per device
+    -- this GEMM, ``f_b_proj`` and ``o_proj`` -- instead of four.
     """
     n_devices = 8
     mlir = _trace_layer(n_devices, "tp", shard_heads=True)
     per_rank = fused_qkvg_rows(n_devices) // n_devices
     assert per_rank == (4 * HEADS * HEAD_DIM + HEADS) // n_devices + HEAD_DIM
-    # The stored per-device weight, gate rows included: no concat of it.
     assert f"!mo.tensor<[{per_rank}, {HIDDEN}], bf16, gpu:0>" in mlir, (
         "the per-device fused weight does not carry the gate's rows"
     )
-    assert (
-        f"!mo.tensor<[{HEAD_DIM}, {HIDDEN}], bf16, gpu:0>"
-        f" -> !mo.tensor<[{per_rank}, {HIDDEN}], bf16, gpu:0>"
-    ) not in mlir, "the graph still concatenates the gate into the weight"
-    # The one GEMM over the layer input, now `head_dim` columns wider.
+    # The one GEMM over the layer input, `head_dim` columns wider.
     assert f"!mo.tensor<[total_seq_len, {per_rank}], bf16, gpu:0>" in mlir, (
         "the fused input GEMM does not carry the gate's down projection"
     )
@@ -252,50 +227,6 @@ def test_gate_down_row_rides_the_fused_input_gemm() -> None:
         f"each device must trace 3 matmuls (fused qkvg+gate, f_b, o_proj),"
         f" got {n_matmul} over {n_devices} devices"
     )
-
-
-def test_unfused_layer_keeps_its_own_gate_gemm() -> None:
-    """A layer loaded without the fused weight still projects the gate.
-
-    The integration tests build a layer directly, and a checkpoint whose gate
-    did not merge leaves ``f_a_proj`` on its own: that path must keep working,
-    one launch heavier, rather than reading rows the weight does not have.
-    """
-    n_devices = 8
-    mlir = _trace_layer(n_devices, "tp", shard_heads=True, narrow_weight=True)
-    per_rank = (4 * HEADS * HEAD_DIM + HEADS) // n_devices
-    assert f"!mo.tensor<[{per_rank}, {HIDDEN}], bf16, gpu:0>" in mlir, (
-        "the narrow fused weight is not the five checkpoint blocks"
-    )
-    n_matmul = mlir.count("rmo.matmul")
-    assert n_matmul == 4 * n_devices, (
-        f"each device must trace 4 matmuls (qkvg, f_a, f_b, o_proj),"
-        f" got {n_matmul} over {n_devices} devices"
-    )
-
-
-def test_declared_weight_width_matches_the_adapter() -> None:
-    """The declared ``qkvg_proj`` width is the adapter's, or the load fails.
-
-    ``check_fits`` rejects a checkpoint tensor whose shape differs from the
-    parameter it fills, so the layer has to declare the fused width the
-    adapter emits -- gate rows included, one replicated block per rank.
-    """
-    with _virtual_gfx950(1), F.lazy():
-        for tp_size in (1, 2, 8):
-            layer = KimiK3KDAAttention(
-                hidden_size=HIDDEN,
-                num_heads=HEADS,
-                head_dim=HEAD_DIM,
-                conv_kernel_size=CONV_KERNEL,
-                gate_lower_bound=-5.0,
-                tp_size=tp_size,
-            )
-            declared = int(layer.qkvg_proj.weight.shape[0])
-            assert declared == fused_qkvg_rows(tp_size), (
-                f"at tp={tp_size} the layer declares {declared} rows but the"
-                f" adapter emits {fused_qkvg_rows(tp_size)}"
-            )
 
 
 def test_ep_mesh_fuses_the_gate_down_row_replicated() -> None:
@@ -350,6 +281,26 @@ def _trace_verify_layer(dtype: DType, folds_gate_up: bool) -> str:
             up_dtype = (
                 DType.bfloat16 if dtype != DType.bfloat16 else DType.float32
             )
+        # The layer's weights, by attribute, as the checkpoint stores them.
+        module_weights = {
+            "q_proj": TensorLayout(dtype, [inner, HIDDEN], replicated),
+            "k_proj": TensorLayout(dtype, [inner, HIDDEN], replicated),
+            "v_proj": TensorLayout(dtype, [inner, HIDDEN], replicated),
+            "g_proj": TensorLayout(dtype, [inner, HIDDEN], replicated),
+            "b_proj": TensorLayout(dtype, [HEADS, HIDDEN], replicated),
+            "f_a_proj": TensorLayout(dtype, [HEAD_DIM, HIDDEN], replicated),
+            "f_b_proj": TensorLayout(up_dtype, [inner, HEAD_DIM], replicated),
+            "o_proj": TensorLayout(dtype, [HIDDEN, inner], replicated),
+            "o_norm": TensorLayout(DType.float32, [HEAD_DIM], replicated),
+        }
+        conv = TensorLayout(DType.float32, [inner, 1, CONV_KERNEL], replicated)
+        tensors = {
+            "q_conv1d": conv,
+            "k_conv1d": conv,
+            "v_conv1d": conv,
+            "a_log": TensorLayout(DType.float32, [HEADS], replicated),
+            "dt_bias": TensorLayout(DType.float32, [inner], replicated),
+        }
 
         def build_graph(
             x: Tensor,
@@ -360,14 +311,8 @@ def _trace_verify_layer(dtype: DType, folds_gate_up: bool) -> str:
             input_row_offsets: Tensor,
             ring_pool: Tensor,
             ring_row_id: Tensor,
-            qkvg_weight: Tensor,
-            gate_down_weight: Tensor,
-            gate_up_weight: Tensor,
-            o_proj_weight: Tensor,
-            o_norm_weight: Tensor,
-            conv_weight: Tensor,
-            a_log: Tensor,
-            dt_bias: Tensor,
+            weights: dict[str, Tensor],
+            layer_tensors: dict[str, Tensor],
         ) -> Tensor:
             # The layer's own initializers draw from the graph's seed.
             ops.random.set_seed(0)
@@ -378,14 +323,10 @@ def _trace_verify_layer(dtype: DType, folds_gate_up: bool) -> str:
                 conv_kernel_size=CONV_KERNEL,
                 gate_lower_bound=-5.0,
             )
-            layer.qkvg_proj.weight = qkvg_weight
-            layer.f_a_proj.weight = gate_down_weight
-            layer.f_b_proj.weight = gate_up_weight
-            layer.o_proj.weight = o_proj_weight
-            layer.o_norm.weight = o_norm_weight
-            layer.conv_weight = conv_weight
-            layer.a_log = a_log
-            layer.dt_bias = dt_bias
+            for name, weight in weights.items():
+                getattr(layer, name).weight = weight
+            for name, tensor in layer_tensors.items():
+                setattr(layer, name, tensor)
             layer.verify_binding = KdaVerifyBinding(
                 verify_width=verify_width_operand(VERIFY_WINDOW - 1),
                 ring_pool=ring_pool,
@@ -423,18 +364,8 @@ def _trace_verify_layer(dtype: DType, folds_gate_up: bool) -> str:
                     replicated,
                 ),
                 TensorLayout(DType.uint32, [BATCH], replicated),
-                # The fused weight the checkpoint adapter emits: the five
-                # blocks plus `f_a_proj`'s `head_dim` rows.
-                TensorLayout(dtype, [fused_qkvg_rows(1), HIDDEN], replicated),
-                TensorLayout(dtype, [HEAD_DIM, HIDDEN], replicated),
-                TensorLayout(up_dtype, [inner, HEAD_DIM], replicated),
-                TensorLayout(dtype, [HIDDEN, inner], replicated),
-                TensorLayout(dtype, [HEAD_DIM], replicated),
-                TensorLayout(
-                    DType.float32, [3 * inner, CONV_KERNEL], replicated
-                ),
-                TensorLayout(DType.float32, [HEADS, HEAD_DIM], replicated),
-                TensorLayout(DType.float32, [HEADS, HEAD_DIM], replicated),
+                module_weights,
+                tensors,
             )
         return str(staged)
 

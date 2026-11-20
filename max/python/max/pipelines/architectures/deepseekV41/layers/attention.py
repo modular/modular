@@ -78,6 +78,7 @@ from .csa2 import (
     csa2_attention_mxfp8,
     index_list,
     index_list_ops,
+    kept_rows_split_record,
     leaf_slots,
     store_compressed_kv,
 )
@@ -202,7 +203,10 @@ class CSA2Cache:
 
 
 def tail_cache_view(
-    cache: CSA2Cache, rows: RaggedRows, longest: TensorValue
+    cache: CSA2Cache,
+    rows: RaggedRows,
+    longest: TensorValue,
+    full_positions: TensorValue,
 ) -> CSA2Cache:
     """Rebases query positions to the retained tail rows.
 
@@ -210,7 +214,10 @@ def tail_cache_view(
     be the exact per-device longest retained row count: the prefill bound is
     not monotone in ``max_prompt_length``, so a conservative value is
     unsound. ``max_cache_length`` is the max context end, which trimming
-    does not change. No cache allocation or lookup table is changed.
+    does not change. No cache allocation or lookup table is changed. Each
+    leaf's mixed-step split record is recut from the full batch, whose rows'
+    positions are ``full_positions``, to the retained rows
+    (:func:`kept_rows_split_record`).
     """
 
     def leaf_view(leaf: PagedCacheValues) -> PagedCacheValues:
@@ -219,6 +226,11 @@ def tail_cache_view(
             leaf,
             cache_lengths=ops.cast(rows.starts, leaf.cache_lengths.dtype),
             max_prompt_length=longest,
+            mixed_step_split=None
+            if leaf.mixed_step_split is None
+            else kept_rows_split_record(
+                leaf.mixed_step_split, full_positions, rows.positions, longest
+            ),
         )
 
     return replace(

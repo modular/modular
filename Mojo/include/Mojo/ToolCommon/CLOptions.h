@@ -101,6 +101,7 @@ public:
   DEFINE_CL_OPTION_GETTER(uint64_t, parametricInlineEstimatedLoopTripCount);
   DEFINE_CL_OPTION_GETTER(size_t, stackReusePromoteToGlobalThreshold);
   DEFINE_CL_OPTION_GETTER(size_t, kgenVerifierMaxErrors);
+  DEFINE_CL_OPTION_GETTER(size_t, rotateLoopsMaxOps);
 
 private:
   struct PassOptions {
@@ -133,6 +134,13 @@ private:
                                   "Specify maximum number of errors "
                                   "KGENVerifier pass can emit at once.",
                                   10)
+
+    DEFINE_CL_OPTION_WITH_DEFAULT(size_t, rotateLoopsMaxOps,
+                                  "kgen-rotate-loops-max-ops",
+                                  "Maximum number of operations RotateLoops "
+                                  "pass duplicates to move a loop's test to "
+                                  "the top of its body.",
+                                  16)
   };
 
   static llvm::ManagedStatic<PassOptions> passOptions;

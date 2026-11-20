@@ -896,31 +896,44 @@ void IterReduceOp::getAsmResultNames(
 }
 
 //===----------------------------------------------------------------------===//
-// map.iter.tile
+// map.iter.tile, map.iter.cache
 //===----------------------------------------------------------------------===//
 
-ParseResult IterTileOp::parse(OpAsmParser &parser, OperationState &state) {
+// `index (%i: !map.index<N>) -> T { ... }`
+static ParseResult parseRowValueOp(OpAsmParser &parser, OperationState &state) {
   SmallVector<OpAsmParser::Argument> indexArgInfo;
   if (parser.parseKeyword("index") || parseBlockArgList(parser, indexArgInfo))
     return mlir::failure();
   if (indexArgInfo.size() != 1)
-    return parser.emitError(parser.getCurrentLocation(),
-                            "'map.iter.tile' expects exactly one index "
-                            "argument");
+    return parser.emitError(parser.getCurrentLocation(), "'")
+           << state.name << "' expects exactly one index argument";
   if (parser.parseArrowTypeList(state.types) ||
       parser.parseRegion(*state.addRegion(), indexArgInfo))
     return mlir::failure();
   return parser.parseOptionalAttrDict(state.attributes);
 }
 
-void IterTileOp::print(OpAsmPrinter &p) {
+static void printRowValueOp(OpAsmPrinter &p, Operation *op) {
+  Region &body = op->getRegion(0);
   p << " index ";
-  printBlockArgList(p, getBody().front().getArguments());
-  p.printArrowTypeList(getOperation()->getResultTypes());
+  printBlockArgList(p, body.front().getArguments());
+  p.printArrowTypeList(op->getResultTypes());
   p << " ";
-  p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
-  p.printOptionalAttrDict(getOperation()->getAttrs());
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
+  p.printOptionalAttrDict(op->getAttrs());
 }
+
+ParseResult IterTileOp::parse(OpAsmParser &parser, OperationState &state) {
+  return parseRowValueOp(parser, state);
+}
+
+void IterTileOp::print(OpAsmPrinter &p) { printRowValueOp(p, *this); }
+
+ParseResult IterCacheOp::parse(OpAsmParser &parser, OperationState &state) {
+  return parseRowValueOp(parser, state);
+}
+
+void IterCacheOp::print(OpAsmPrinter &p) { printRowValueOp(p, *this); }
 
 //===----------------------------------------------------------------------===//
 // map.iter.map

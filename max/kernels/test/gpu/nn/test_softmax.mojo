@@ -77,7 +77,7 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     ](coords: Coord) {var in_host} -> SIMD[type, _simd_width]:
         return in_host.load[width=_simd_width](coords)
 
-    _softmax_gpu[type, 1, rank](
+    _softmax_gpu[type, 1](
         input_fn_device,
         Coord(shape),
         TileTensor(out_device_ptr, row_major(Coord(shape))),
@@ -85,7 +85,7 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
         ctx,
     )
 
-    _softmax_cpu[type, 1, rank](
+    _softmax_cpu[type, 1](
         input_fn_host,
         Coord(shape),
         TileTensor(out_ref_ptr, row_major(Coord(shape))),
@@ -162,7 +162,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     ](coords: Coord) {var in_device_test} -> SIMD[test_type, _simd_width]:
         return in_device_test.load[width=_simd_width](coords)
 
-    _softmax_gpu[ref_type, 1, rank](
+    _softmax_gpu[ref_type, 1](
         input_fn_ref,
         Coord(shape),
         TileTensor(out_device_ref_ptr, row_major(Coord(shape))),
@@ -170,7 +170,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    _softmax_gpu[test_type, 1, rank](
+    _softmax_gpu[test_type, 1](
         input_fn_test,
         Coord(shape),
         TileTensor(out_device_test_ptr, row_major(Coord(shape))),
@@ -251,7 +251,6 @@ def test_gpu_softmax_warp_short_axis[
     _softmax_gpu[
         test_type,
         1,
-        rank,
         has_prologue_fusion=has_prologue_fusion,
     ](
         input_fn_device,
@@ -261,7 +260,7 @@ def test_gpu_softmax_warp_short_axis[
         ctx,
     )
 
-    _softmax_cpu[ref_type, 1, rank](
+    _softmax_cpu[ref_type, 1](
         input_fn_host,
         Coord(shape),
         TileTensor(out_ref_ptr, row_major(Coord(shape))),
@@ -370,7 +369,6 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
     _softmax_gpu[
         ref_type,
         simd_width_of[ref_type, target=ctx.target](),
-        rank,
     ](
         input_fn_ref,
         Coord(shape),
@@ -382,7 +380,6 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
     _softmax_gpu[
         test_type,
         simd_width_of[test_type, target=ctx.target](),
-        rank,
     ](
         input_fn_test,
         Coord(shape),
@@ -466,7 +463,6 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
     _softmax_gpu[
         test_type,
         simd_width_of[test_type, target=ctx.target](),
-        rank,
     ](
         input_fn_device,
         Coord(shape),
@@ -475,7 +471,7 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
         ctx,
     )
 
-    _softmax_cpu[ref_type, 1, rank](
+    _softmax_cpu[ref_type, 1](
         input_fn_host,
         Coord(shape),
         TileTensor(out_ref_ptr, row_major(Coord(shape))),
@@ -551,7 +547,7 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
         ](coords: Coord) {var in_host} -> SIMD[type, _simd_width]:
             return in_host.load[width=_simd_width](coords)
 
-        _softmax_gpu[type, 1, rank, logsoftmax=True](
+        _softmax_gpu[type, 1, logsoftmax=True](
             input_fn_device,
             Coord(shape),
             TileTensor(out_device_ptr, row_major(Coord(shape))),
@@ -559,7 +555,7 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
             ctx,
         )
 
-        _softmax_cpu[type, 1, rank, logsoftmax=True](
+        _softmax_cpu[type, 1, logsoftmax=True](
             input_fn_host,
             Coord(shape),
             TileTensor(out_ref_ptr, row_major(Coord(shape))),
@@ -630,7 +626,7 @@ def test_gpu_softmax_static_dims[
     ](coords: Coord) {var in_host} -> SIMD[type, _simd_width]:
         return in_host.load[width=_simd_width](coords)
 
-    _softmax_gpu[type, 1, rank, logsoftmax=logsoftmax](
+    _softmax_gpu[type, 1, logsoftmax=logsoftmax](
         input_fn_device,
         shape,
         TileTensor(out_device_ptr, row_major(shape)),
@@ -638,7 +634,7 @@ def test_gpu_softmax_static_dims[
         ctx,
     )
 
-    _softmax_cpu[type, 1, rank, logsoftmax=logsoftmax](
+    _softmax_cpu[type, 1, logsoftmax=logsoftmax](
         input_fn_host,
         shape,
         TileTensor(out_ref_ptr, row_major(shape)),

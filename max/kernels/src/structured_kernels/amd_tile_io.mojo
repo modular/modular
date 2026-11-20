@@ -84,7 +84,6 @@ from std.memory.unsafe import bitcast
 from std.math import ceildiv, min
 from std.math.uutils import udivmod, umod, ufloordiv
 from std.sys._assembly import inlined_assembly
-from std.utils import IndexList
 from layout import Coord, Idx, TileTensor, TensorLayout
 from layout.coord import crd2idx
 from layout._utils import make_amd_buffer_resource
@@ -420,7 +419,7 @@ def ds_read_tr16_b64_row(
 
 @inline(.always)
 def ds_read_tr16_b64_warp[
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
 ](tile: TileTensor[_, _, address_space=.SHARED, ...],) -> SIMD[tile.dtype, 4]:
     """Warp-level transposed LDS read distributing across 16-lane rows.
 
@@ -456,7 +455,7 @@ def ds_read_tr16_b64_warp[
 
 struct TiledMmaLoader[
     in_type: DType,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
     swizzle2: Optional[Swizzle] = Optional[Swizzle](),
 ]:
@@ -552,8 +551,10 @@ struct TiledMmaLoader[
                     # FP8: MMA K (128) = 2 * SMEM load width (64 elements
                     # per 16-element lane SIMD). Load two [MMA_M, MMA_K/2]
                     # halves and join so the K-dim permutation matches Q.
-                    comptime half_k_shape = IndexList[3](
-                        MMA_M, Self.mma_shape[1], MMA_K // 2
+                    comptime half_k_shape = (
+                        MMA_M,
+                        Self.mma_shape[1],
+                        MMA_K // 2,
                     )
                     var lo = Self._load_b_tile[
                         half_k_shape, Int(j) * 2, imm_offset_bytes
@@ -582,9 +583,10 @@ struct TiledMmaLoader[
         Returns:
             A SIMD[in_type, 8] vector with both halves concatenated.
         """
-        comptime assert Self.mma_shape in (
-            IndexList[3](32, 32, 16),
-            IndexList[3](16, 16, 32),
+        comptime assert Self.mma_shape == (32, 32, 16) or Self.mma_shape == (
+            16,
+            16,
+            32,
         )
         comptime assert Self.in_type == .bfloat16
         comptime MMA_K = Self.mma_shape[2]
@@ -815,7 +817,7 @@ struct TiledMmaLoader[
     @staticmethod
     @inline(.always)
     def _load_b_tile[
-        tile_mma_shape: IndexList[3],
+        tile_mma_shape: Tuple[Int, Int, Int],
         k_tile_idx: Int,
         imm_offset_bytes: Int = 0,
     ](

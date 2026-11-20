@@ -1109,6 +1109,7 @@ modular_cc_library(
         "MODULAR_KGEN_PROFILING_ENABLED=1",
     ],
     tags = ["no-clang-tidy-headers"],
+    textual_hdrs = glob(["lib/Support/*.inc"]),
     visibility = [
         "//Mojo:consumers",
         "//Mojo:plugin_consumers",
@@ -1247,6 +1248,7 @@ modular_cc_library(
         ":HLCFDialectAnalysis",
         ":KGENDialect",
         ":ObjectCompiler.headers",  # For MetalAddressSpace.h
+        ":Support",
         ":TargetLowering",
         ":ToolCommon",
         "//Support:Compiler",
@@ -1338,6 +1340,7 @@ modular_cc_library(
         ":HLCFDialect",
         ":Support",
         "//AsyncRT:Runtime",
+        "//Support:DebugInfoDialect",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
         "@llvm-project//mlir:LLVMDialect",
@@ -1470,6 +1473,7 @@ modular_cc_library(
         "//Support:CacheLog",
         "//Support:Context",
         "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:LLVMConversionIncGen",
         "@llvm-project//mlir:ROCDLTarget",
     ],
     # TargetBackend implementations self-register via a

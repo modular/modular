@@ -71,6 +71,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/laguna",
     "//max/python/max/pipelines/architectures/laguna_modulev3",
     "//max/python/max/pipelines/architectures/lfm2",
+    "//max/python/max/pipelines/architectures/lfm2_vl",
     "//max/python/max/pipelines/architectures/lfm3",
     "//max/python/max/pipelines/architectures/lfm3_audio",
     "//max/python/max/pipelines/architectures/lfm3_omni",

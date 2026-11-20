@@ -36,12 +36,15 @@ from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.block_diffusion import BlockDiffusionMetadata
 from max._artifact.codec import encode, prefix_files
 from max._artifact.engine_config import (
+    EngineCaptureConfig,
     EngineConfig,
+    EnginePrefillContextParallel,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
 )
 from max._artifact.format_spec import FormatSpec
 from max._artifact.kv_cache import (
+    ContextParallel,
     KVCacheLayout,
     KVPoolLeaf,
     MHAKVCache,
@@ -617,7 +620,13 @@ ENGINE_CONFIG = EngineConfig(
         verify_commits_long_rows=False,
         successor_replay=True,
     ),
+    capture=EngineCaptureConfig(mla_decode=True, cache_bound="bucketed"),
     device_graph_capture=True,
+    prefill_context_parallel=EnginePrefillContextParallel(
+        min_step_tokens=7168,
+        min_rows_per_request=8,
+        max_batch_context=262144,
+    ),
 )
 
 
@@ -648,10 +657,37 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                 "verify_commits_long_rows": False,
                 "successor_replay": True,
             },
+            "capture": {"mla_decode": True, "cache_bound": "bucketed"},
             "device_graph_capture": True,
+            "prefill_context_parallel": {
+                "min_step_tokens": 7168,
+                "min_rows_per_request": 8,
+                "max_batch_context": 262144,
+            },
         }
     }
     assert deserialize(dest).engine_config == ENGINE_CONFIG
+
+
+def test_an_artifact_before_the_capture_record_qualifies_nothing(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    del sections["engine_config"]["capture"]
+    _rewrite_sections(dest, sections)
+    engine_config = deserialize(dest).engine_config
+    assert engine_config is not None
+    assert engine_config.capture == EngineCaptureConfig()
+
+
+def test_an_unknown_capture_cache_bound_is_rejected(tmp_path: Path) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    sections["engine_config"]["capture"]["cache_bound"] = "sometimes"
+    _rewrite_sections(dest, sections)
+    with pytest.raises(ArtifactError, match="component 'engine_config'"):
+        deserialize(dest)
 
 
 def test_an_artifact_before_device_graph_capture_reads_false(
@@ -664,6 +700,18 @@ def test_an_artifact_before_device_graph_capture_reads_false(
     engine_config = deserialize(dest).engine_config
     assert engine_config is not None
     assert not engine_config.device_graph_capture
+
+
+def test_an_artifact_before_prefill_context_parallel_reads_none(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    del sections["engine_config"]["prefill_context_parallel"]
+    _rewrite_sections(dest, sections)
+    engine_config = deserialize(dest).engine_config
+    assert engine_config is not None
+    assert engine_config.prefill_context_parallel is None
 
 
 def test_an_artifact_before_the_verify_facts_reads_all_false(
@@ -718,6 +766,10 @@ def test_engine_config_reads_an_artifact_exported_before_the_mode(
         ),
         lambda section: section["speculative"].update(draft_proposal="greedy"),
         lambda section: section.update(device_graph_capture=1),
+        lambda section: section["prefill_context_parallel"].pop(
+            "max_batch_context"
+        ),
+        lambda section: section["prefill_context_parallel"].update(bogus=1),
     ],
 )
 def test_malformed_engine_config_rejected(
@@ -775,7 +827,9 @@ KV_CACHE = KVCacheLayout(
             **_attention_fields("latent", "full_group"),
             num_q_heads=16,
             sparse_indices_stride=2048,
+            dispatch_unread=True,
             sparse_kv_form="plain",
+            context_parallel=ContextParallel(degree=4, interleave=128),
         ),
         RecurrentStateCache(
             name="state",
@@ -846,8 +900,25 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
                 "stride_alignment": None,
             }
         ],
+        "context_parallel": None,
     }
+    assert caches[2]["context_parallel"] == {"degree": 4, "interleave": 128}
     assert deserialize(dest).kv_cache == KV_CACHE
+
+
+def test_an_artifact_before_context_parallel_reads_unsplit(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    for cache in sections["kv_cache"]["caches"]:
+        cache.pop("context_parallel", None)
+    _rewrite_sections(dest, sections)
+    kv_cache = deserialize(dest).kv_cache
+    assert kv_cache is not None
+    latent = kv_cache.caches[2]
+    assert isinstance(latent, MLAKVCache)
+    assert latent.context_parallel is None
 
 
 @pytest.mark.parametrize(
@@ -860,6 +931,7 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
         lambda section: section["caches"][2]["leaves"][0].update(group="lru"),
         lambda section: section["caches"][2].update(sparse_kv_form="fp4"),
         lambda section: section["caches"][3]["regions"][0].pop("row_shape"),
+        lambda section: section["caches"][2]["context_parallel"].pop("degree"),
     ],
 )
 def test_malformed_kv_cache_rejected(

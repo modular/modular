@@ -1103,19 +1103,14 @@ static TraitType getTypeValueTraitBound(Type metaType) {
 /// TODO(MOCO-4110): This selects arms by hand because the parameter evaluator
 /// does not understand the assumptions of the current scope. Evaluating
 /// conditional types through it would unify this with other type refinement.
-static TypedAttr selectCondTypeArm(TypedAttr typeValue,
-                                   ArrayRef<ConstraintAttr> assumptions) {
-  SmallVector<TypedAttr> propositions;
-  for (ConstraintAttr assumption : assumptions)
-    propositions.push_back(assumption.getProposition());
-
+static TypedAttr selectCondTypeArm(TypedAttr typeValue, TypedAttr assumptions) {
   TypedAttr selected;
   TypedAttr current = typeValue;
   while (auto condOp = dyn_cast<ParamOperatorAttr>(getCanonicalAttr(current))) {
     if (condOp.getOpcode() != POC::Cond || condOp.getOperands().size() != 3)
       break;
     ArrayRef<TypedAttr> operands = condOp.getOperands();
-    TriBool decided = isPropositionImplied(operands[0], propositions);
+    TriBool decided = isPropositionImplied(operands[0], assumptions);
     if (decided.isUnknown())
       break;
     selected = decided.isTrue() ? operands[1] : operands[2];
@@ -1124,10 +1119,9 @@ static TypedAttr selectCondTypeArm(TypedAttr typeValue,
   return selected;
 }
 
-Type LIT::maybeRefineCondTypeWithAssumptions(
-    Type type, ArrayRef<ConstraintAttr> assumptions) {
+Type LIT::maybeRefineCondTypeWithAssumptions(Type type, TypedAttr assumptions) {
   auto paramType = sugarDynCast<ParamType>(type);
-  if (!paramType || assumptions.empty())
+  if (!paramType || isTriviallyTrueProposition(assumptions))
     return type;
   if (TypedAttr arm = selectCondTypeArm(paramType.getParam(), assumptions))
     return ASTType(arm);
@@ -1137,14 +1131,10 @@ Type LIT::maybeRefineCondTypeWithAssumptions(
 /// Refine a non-reference ParamType using assumptions in `declScope`.
 static Type maybeRefineParamType(Type varType, ParamType paramType,
                                  ASTDecl &declScope) {
-  {
-    SmallVector<ConstraintAttr> condAssumptions;
-    declScope.getKnownAssumptionsIncludingParents(condAssumptions);
-    Type condRefined =
-        maybeRefineCondTypeWithAssumptions(varType, condAssumptions);
-    if (condRefined != varType)
-      return condRefined;
-  }
+  TypedAttr assumptions = declScope.getScopeAssumptions();
+  Type condRefined = maybeRefineCondTypeWithAssumptions(varType, assumptions);
+  if (condRefined != varType)
+    return condRefined;
 
   // Resolve the underlying ParamDeclRefAttr so assumption lookup matches
   // against the plain type parameter. `extractParamDeclRef` peels UpcastAttr
@@ -1159,9 +1149,7 @@ static Type maybeRefineParamType(Type varType, ParamType paramType,
   ParamDeclRefAttr paramDeclRef = extractParamDeclRef(unwrapped);
   TypedAttr lookupAttr = paramDeclRef ? TypedAttr(paramDeclRef) : paramRef;
 
-  SmallVector<ConstraintAttr> assumptions;
-  declScope.getKnownAssumptionsIncludingParents(assumptions);
-  if (assumptions.empty())
+  if (isTriviallyTrueProposition(assumptions))
     return varType;
 
   TraitType refinedBound = getTraitBoundFromAssumptions(
@@ -1889,7 +1877,7 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
                      sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true,
                      /*declIfDirect=*/typeDecl,
-                     /*discardError=*/false,
+                     /*discardError=*/false, emitter.shared.noAssumptions,
                      /*deferredTypingContext=*/emitter.deferredTypingContext);
   VerifiedParamBindings newBindings = inference.inferForStruct();
   if (!newBindings)

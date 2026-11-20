@@ -57,8 +57,8 @@
 #include <vector>
 
 // Opaque handles to the heap allocated wrapped Mojo values the MojoHAL_*
-// exports create and release. The Mojo side types the same handles as
-// `_DeviceContextBoxPtr` etc. in hal_device_context_exports.mojo.
+// exports create and release; the exports are declared in
+// MLRT/lib/Driver/DeviceContext/HAL/MojoHALExports.h.
 struct MojoHALContextBox;
 struct MojoHALBufferBox;
 struct MojoHALScopeBox;
@@ -178,7 +178,9 @@ public:
   /// report false.
   ErrorOr<bool> isHostUnified() const;
 
-  /// Creates a new context (with its own stream) on this device.
+  /// Creates a new context (with its own stream) on this device. A device
+  /// whose plugin reports `max_contexts_per_device` of 1 shares this Device's
+  /// own context instead.
   ErrorOr<DeviceContextRef> createContext();
 
   /// DLPack device descriptor for this device. Mirrors the legacy
@@ -290,7 +292,8 @@ public:
 
   void *ptr() const { return ptr_; }
   /// Relinquishes ownership of the underlying allocation to the caller and
-  /// returns its pointer; destroying the buffer then frees nothing.
+  /// returns its pointer; destroying the buffer then frees nothing. Returns
+  /// null, and keeps ownership, if the driver plugin refuses to release it.
   void *releasePtr();
 
   /// Wraps a heap-boxed Mojo `DeviceBuffer` surrendered by the Mojo side (the
@@ -819,13 +822,6 @@ public:
       reportNoMojoHandle();
     return mojoCtx_;
   }
-
-  /// Adopts a heap-boxed Mojo `DeviceContext` produced by the Mojo
-  /// a boxed Mojo `DeviceContext` (the reverse of `mojoHandle()`): the returned
-  /// C++ context takes ownership of `mojoBox` and releases it when its
-  /// refcount reaches zero. Used by the graph runtime to materialize a C++
-  /// `DeviceContext` from the opaque handle a kernel hands back.
-  static ErrorOr<DeviceContextRef> adoptMojoBox(void *mojoBox);
 
 private:
   friend class Device;

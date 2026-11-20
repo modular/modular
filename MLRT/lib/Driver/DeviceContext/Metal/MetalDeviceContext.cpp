@@ -26,7 +26,7 @@
 #include "MetalDriver.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 
 #include "llvm/ADT/Twine.h"
 #include <CoreFoundation/CoreFoundation.h>
@@ -601,8 +601,8 @@ MetalDeviceContext::MetalDeviceContext(MetalDevice &device,
 ErrorOrSuccess MetalDeviceContext::enqueueCopyToDevice(void *dst,
                                                        const void *src,
                                                        size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueCopyToDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueCopyToDevice",
+                 M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -679,8 +679,8 @@ ErrorOrSuccess MetalDeviceContext::enqueueCopyToDevice(void *dst,
 ErrorOrSuccess MetalDeviceContext::enqueueCopyFromDevice(void *dst,
                                                          const void *src,
                                                          size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueCopyFromDevice",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueCopyFromDevice",
+                 M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -731,7 +731,7 @@ ErrorOrSuccess MetalDeviceContext::memCopyDtoD(DeviceBuffer &dst,
                                                size_t srcByteOffset,
                                                size_t srcByteSize,
                                                bool crossStreamSync) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::memCopyDtoD", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::memCopyDtoD", M_PROFILE_COLOR_PURPLE);
 
   // 1) Basic validation
   if (src.byteSize() == 0 || dst.byteSize() == 0)
@@ -817,8 +817,8 @@ kernel void pattern_fill(device uint4 *dst [[buffer(0)]],
 ErrorOrSuccess MetalDeviceContext::enqueueSetMemory(void *dst, size_t byteSize,
                                                     uint64_t val,
                                                     size_t valSize) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueSetMemory",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueSetMemory",
+                 M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -934,7 +934,7 @@ MetalDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
                                  StringRef code, int32_t maxDynamicSharedBytes,
                                  StringRef debugLevel,
                                  int32_t optimizationLevel) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::loadFunction", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
 
   // Return the cached compute pipeline state if this exact (module, code,
   // entry point) has already been compiled. Metal pipeline-state creation
@@ -1056,8 +1056,8 @@ ErrorOrSuccess MetalDeviceContext::enqueueFunctionExecDirect(
     uint32_t blockX, uint32_t blockY, uint32_t blockZ, uint32_t sharedMemBytes,
     void *attrs, uint32_t numAttrs, void **args, uint32_t argCount,
     [[maybe_unused]] const size_t *argSizes) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueFunctionExecDirect",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueFunctionExecDirect",
+                 M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1320,7 +1320,7 @@ ErrorOr<CompletionFlagRef> MetalDeviceContext::allocateCompletionFlag() {
 void *MetalDeviceStream::ptr() const { return metalCtx_.commandQueue(); }
 
 ErrorOrSuccess MetalDeviceContext::synchronize() {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::synchronize", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::synchronize", M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1340,7 +1340,7 @@ ErrorOrSuccess MetalDeviceContext::synchronize() {
 }
 
 ErrorOr<DeviceEventRef> MetalDeviceContext::eventCreate(bool enableTiming) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::eventCreate", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::eventCreate", M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1359,7 +1359,7 @@ ErrorOr<DeviceEventRef> MetalDeviceContext::eventCreate(bool enableTiming) {
 }
 
 ErrorOr<DeviceEventRef> MetalDeviceContext::enqueueEvent() {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueEvent", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueEvent", M_PROFILE_COLOR_PURPLE);
 
   // TODO(DRIV-419): allocates a fresh MTLSharedEvent per call; add an event
   // cache like CUDA's if this shows up hot.
@@ -1370,7 +1370,7 @@ ErrorOr<DeviceEventRef> MetalDeviceContext::enqueueEvent() {
 }
 
 ErrorOrSuccess MetalDeviceContext::enqueueEvent(const DeviceEvent &event) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueEvent", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueEvent", M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1402,8 +1402,7 @@ ErrorOrSuccess MetalDeviceContext::enqueueEvent(const DeviceEvent &event) {
 }
 
 ErrorOrSuccess MetalDeviceContext::enqueueWaitFor(DeviceEvent &event) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueWaitFor",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueWaitFor", M_PROFILE_COLOR_PURPLE);
 
   MetalDeviceEvent &metalEvent = MetalDeviceEvent::cast(event);
   uint64_t target = metalEvent.waitValue();
@@ -1440,8 +1439,7 @@ MetalDeviceContext::enqueueWaitOnSharedEvent(MTL::SharedEvent *event,
 }
 
 ErrorOrSuccess MetalDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueWaitFor",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueWaitFor", M_PROFILE_COLOR_PURPLE);
 
   if (&ctx == this)
     return success();
@@ -1456,7 +1454,7 @@ ErrorOrSuccess MetalDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
 // earlier work and the elapsed time is read from the GPU timeline, so it covers
 // the work enqueued between them rather than the host's enqueue time.
 ErrorOr<DeviceTimerRef> MetalDeviceContext::startTimer() {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::startTimer", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::startTimer", M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1470,7 +1468,7 @@ ErrorOr<DeviceTimerRef> MetalDeviceContext::startTimer() {
 
 ErrorOr<std::chrono::nanoseconds>
 MetalDeviceContext::stopTimer(const DeviceTimer &timer) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::stopTimer", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::stopTimer", M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1497,7 +1495,7 @@ ErrorOr<Device::MemInfo> MetalDeviceContext::getDeviceMemoryInfo() const {
 
 ErrorOrSuccess MetalDeviceContext::memAlloc(void **ptr, size_t byteSize,
                                             Device::AllocMode mode) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::memAlloc", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::memAlloc", M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1562,7 +1560,7 @@ ErrorOrSuccess MetalDeviceContext::memAlloc(void **ptr, size_t byteSize,
 
 ErrorOrSuccess MetalDeviceContext::memWrap(void **devPtr, void *hostPtr,
                                            size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::memWrap", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::memWrap", M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1615,7 +1613,7 @@ ErrorOrSuccess MetalDeviceContext::memWrap(void **devPtr, void *hostPtr,
 }
 
 ErrorOrSuccess MetalDeviceContext::memFree(void *ptr, Device::FreeKind kind) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::memFree", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::memFree", M_PROFILE_COLOR_PURPLE);
 
   if (ptr == nullptr)
     return success();
@@ -1676,8 +1674,8 @@ ErrorOrSuccess MetalDeviceContext::enqueueMetalCopy(MTL::Buffer *src,
                                                     size_t srcOffset,
                                                     size_t dstOffset,
                                                     size_t size) const {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueMetalCopy",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::enqueueMetalCopy",
+                 M_PROFILE_COLOR_PURPLE);
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
@@ -1789,8 +1787,8 @@ ErrorOr<const char *> MetalDevice::getArchName() const {
 }
 
 ErrorOrSuccess MetalDeviceContext::startMetalTraceCapture(const char *path) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::startMetalTraceCapture",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::startMetalTraceCapture",
+                 M_PROFILE_COLOR_PURPLE);
   if (captureActive_)
     RETURN_ERROR("a Metal capture is already in progress");
 
@@ -1832,8 +1830,8 @@ ErrorOrSuccess MetalDeviceContext::startMetalTraceCapture(const char *path) {
 }
 
 ErrorOrSuccess MetalDeviceContext::stopMetalTraceCapture() {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceContext::stopMetalTraceCapture",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceContext::stopMetalTraceCapture",
+                 M_PROFILE_COLOR_PURPLE);
   if (!captureActive_)
     RETURN_ERROR("no Metal capture is in progress");
   // Committed command buffers are async; drain them before stopping or the
@@ -1980,8 +1978,8 @@ const std::string &MetalDeviceFunction::name() const {
 ErrorOrSuccess MetalDeviceFunction::copyToNamedConstant(const char *name,
                                                         const void *data,
                                                         size_t byteSize) {
-  TRACY_ZONE_SCOPED_NC("MetalDeviceFunction::copyToNamedConstant",
-                       TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("MetalDeviceFunction::copyToNamedConstant",
+                 M_PROFILE_COLOR_PURPLE);
   // Metal doesn't support named constants in the same way as CUDA/HIP
   RETURN_ERROR("Named constants not supported in Metal");
 }

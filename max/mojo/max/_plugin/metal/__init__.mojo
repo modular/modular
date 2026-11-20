@@ -110,14 +110,13 @@ struct MetalMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for Metal targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["metal"]()
-    comptime HookFor = MetalMaxPluginHooks[_]
+    comptime HookFor[target: CompilationTarget] = MetalMaxPluginHooks
 
 
-struct MetalMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
-    comptime _raw_mlir_target = Self.target._mlir_value
+struct MetalMaxPluginHooks(MaxPluginHooks):
     comptime warp_size = 32
 
-    comptime HalHooks = MetalHalPluginHooks[Self.target]
+    comptime HalHooks = MetalHalPluginHooks
     comptime barrier_fn: OptionalReg[_BarrierPluginHookFnType] = _barrier
     comptime syncwarp_fn: OptionalReg[_SyncwarpPluginHookFnType] = _syncwarp
 

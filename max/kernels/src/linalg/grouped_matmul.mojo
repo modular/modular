@@ -21,7 +21,12 @@ from std.sys.info import (
     has_amd_rdna_gpu_accelerator,
 )
 
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    GridBlockLaunchConfig,
+    get_gpu_target,
+)
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100, _is_sm10x_gpu, is_gpu
 from max.gpu import (
@@ -665,9 +670,11 @@ def grouped_matmul_amd[
             a_offsets,
             expert_ids,
             Int32(num_active_experts),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, config.block_tile_shape[1]), grid_y, 1),
+                block_dim=(block_dim),
+            ),
             host_args=(epilogue_fn, compute_fn),
-            grid_dim=(ceildiv(N, config.block_tile_shape[1]), grid_y, 1),
-            block_dim=(block_dim),
         )
 
     # Dispatch to the best configuration based on runtime dimensions
@@ -1216,13 +1223,15 @@ def naive_grouped_matmul[
         b.as_imm(),
         a_offsets,
         expert_ids,
-        host_args=(epilogue_fn, compute_fn),
-        grid_dim=(
-            ceildiv(Int(c.dim[1]()), 32),
-            ceildiv(max_num_tokens_per_expert, 16),
-            num_active_experts,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(Int(c.dim[1]()), 32),
+                ceildiv(max_num_tokens_per_expert, 16),
+                num_active_experts,
+            ),
+            block_dim=(32, 16, 1),
         ),
-        block_dim=(32, 16, 1),
+        host_args=(epilogue_fn, compute_fn),
     )
 
 

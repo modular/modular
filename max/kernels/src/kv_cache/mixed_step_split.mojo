@@ -22,7 +22,7 @@ operand it cannot use.
 """
 
 from max.gpu import block_dim, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 
 from layout import TensorLayout, TileTensor
 from layout.tile_tensor import row_major as tt_row_major
@@ -243,7 +243,9 @@ def rebase_row_offsets[
         Int32(view.first_row),
         Int32(num_entries),
         UInt32(view.first_token),
-        grid_dim=1,
-        block_dim=128,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=1,
+            block_dim=128,
+        ),
     )
     return rebased^

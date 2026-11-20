@@ -21,7 +21,7 @@ from typing import Any
 import eval_common
 import httpx
 import pytest
-from openai import BadRequestError
+from openai import BadRequestError, RateLimitError
 from openai.types.chat import ChatCompletion
 
 # An endpoint that rejects every request: the score is 0.0 not because the model
@@ -688,3 +688,121 @@ def test_chat_completion_raises_other_rejections() -> None:
         )
     assert params.return_token_ids
     assert len(client.sent) == 1
+
+
+def _rate_limited() -> RateLimitError:
+    request = httpx.Request("POST", "http://host/v1/chat/completions")
+    return RateLimitError(
+        "Error code: 429 - Server is at capacity",
+        response=httpx.Response(429, request=request),
+        body=None,
+    )
+
+
+class _RateLimitedCompletions:
+    """Refuses the first ``refusals`` requests with HTTP 429."""
+
+    def __init__(self, refusals: int) -> None:
+        self.refusals = refusals
+        self.calls = 0
+        self.chat = SimpleNamespace(completions=self)
+
+    def create(self, **kwargs: Any) -> str:
+        self.calls += 1
+        if self.calls <= self.refusals:
+            raise _rate_limited()
+        return "response"
+
+
+class _FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_429_is_resent_with_backoff_until_it_succeeds() -> None:
+    client = _RateLimitedCompletions(refusals=3)
+    clock = _FakeClock()
+    params = eval_common.GenParams(rate_limit_retry_s=600)
+    result = eval_common._create_retrying_429(
+        client, "m", [], params, sleep=clock.sleep, clock=clock
+    )
+    assert result == "response"
+    assert clock.sleeps == [5.0, 10.0, 20.0]
+
+
+def test_429_retry_gives_up_at_the_deadline() -> None:
+    client = _RateLimitedCompletions(refusals=100)
+    clock = _FakeClock()
+    params = eval_common.GenParams(rate_limit_retry_s=100)
+    with pytest.raises(RateLimitError):
+        eval_common._create_retrying_429(
+            client, "m", [], params, sleep=clock.sleep, clock=clock
+        )
+    assert clock.now == 100
+    assert max(clock.sleeps) <= 60
+
+
+def test_429_is_not_retried_by_default() -> None:
+    client = _RateLimitedCompletions(refusals=1)
+    with pytest.raises(RateLimitError):
+        eval_common.chat_completion(client, "m", [], eval_common.GenParams())
+    assert client.calls == 1
+
+
+def test_config_json_leaves_out_the_retry_setting(tmp_path: Path) -> None:
+    params = eval_common.GenParams(rate_limit_retry_s=1800)
+    eval_common.dump_config(str(tmp_path), "http://host", params, [1], [1])
+    config = json.loads((tmp_path / "config.json").read_text())
+    assert "rate_limit_retry_s" not in config
+
+
+def _rows(correct_by_question: list[list[bool]]) -> list[dict[str, Any]]:
+    return [
+        {"prompt_index": q, "repeat_index": r, "correct": c}
+        for q, repeats in enumerate(correct_by_question)
+        for r, c in enumerate(repeats)
+    ]
+
+
+def test_clustered_stderr_measures_spread_between_questions() -> None:
+    # Two questions always right, two always wrong: repeats add no
+    # information, so the SE is that of 4 independent questions.
+    rows = _rows([[True] * 8, [True] * 8, [False] * 8, [False] * 8])
+    summary = eval_common.exact_match_score(rows, total=32, errors=0)
+    assert summary["accuracy"] == 0.5
+    assert summary["stderr_binomial"] == pytest.approx(
+        (0.25 / 32) ** 0.5, abs=1e-6
+    )
+    assert summary["stderr_clustered"] == pytest.approx(
+        (0.25 / 3) ** 0.5, abs=1e-6
+    )
+
+
+def test_clustered_stderr_is_zero_when_every_question_scores_the_same() -> None:
+    rows = _rows([[True, False]] * 5)
+    assert eval_common.clustered_stderr(rows, 10) == 0.0
+
+
+def test_clustered_stderr_needs_every_row_and_question_index() -> None:
+    rows = _rows([[True], [False]])
+    assert eval_common.clustered_stderr(rows, 3) is None
+    del rows[0]["prompt_index"]
+    assert eval_common.clustered_stderr(rows, 2) is None
+    assert eval_common.clustered_stderr(_rows([[True, False]]), 2) is None
+
+
+def test_p90_output_tokens_skips_errored_rows() -> None:
+    rows: list[dict[str, Any]] = [
+        {"completion_tokens": t} for t in range(1, 11)
+    ]
+    rows.append({"completion_tokens": 10_000, "error": "boom"})
+    assert eval_common.p90_output_tokens(rows) == pytest.approx(9.1)
+    assert eval_common.p90_output_tokens([]) == 0.0

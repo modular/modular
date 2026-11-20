@@ -73,6 +73,31 @@ struct _HALBufferInner(Movable):
         _ = self._parent^
 
 
+def _sub_buffer_byte_range(
+    offset: Int, size: Int, elem_size: Int, parent_byte_size: UInt64
+) raises -> Tuple[Int, Int]:
+    """Returns the byte offset and byte size of a sub-buffer view.
+
+    Args:
+        offset: The view's first element.
+        size: The view's element count.
+        elem_size: The size of one view element, in bytes.
+        parent_byte_size: The size of the parent buffer, in bytes.
+
+    Returns:
+        The view's byte offset and byte size within the parent.
+
+    Raises:
+        If the view does not fit inside the parent.
+    """
+    # Check in elements so a huge `offset` or `size` can't wrap the byte
+    # arithmetic back into range.
+    var max_elems = Int(parent_byte_size) // elem_size
+    if offset < 0 or size < 0 or size > max_elems or offset > max_elems - size:
+        raise Error("create_sub_buffer: view is out of range")
+    return (offset * elem_size, size * elem_size)
+
+
 @fieldwise_init
 struct _HALDeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable):
     """The state of a `DeviceBuffer` on the HAL backend."""
@@ -87,6 +112,71 @@ struct _HALDeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable):
     # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
     # a reference to the same underlying buffer.
     var _inner: ArcPointer[_HALBufferInner]
+
+
+def _wrap_hal_memory[
+    dtype: DType
+](
+    ctx: DeviceContext,
+    ptr: Pointer[Scalar[dtype], ...],
+    size: Int,
+    *,
+    owning: Bool,
+) raises -> DeviceBuffer[dtype]:
+    """Wraps an externally-managed device pointer in a HAL buffer.
+
+    Parameters:
+        dtype: The buffer's element dtype.
+
+    Args:
+        ctx: The device context the pointer belongs to.
+        ptr: The device pointer to wrap.
+        size: Number of elements addressable through the pointer.
+        owning: Whether releasing the buffer should free the pointer.
+
+    Returns:
+        The buffer that wraps `ptr`.
+
+    Raises:
+        If the plugin refuses to wrap the memory.
+    """
+    comptime assert (
+        not use_legacy_backend()
+    ), "_wrap_hal_memory is only available in a HAL DeviceContext build"
+    var byte_size = UInt64(size * size_of[dtype]())
+    var addr = UInt64(Int(ptr))
+    try:
+        # The plugin rejects wrapping a null address; represent the empty
+        # buffer the way a zero-byte allocation does (null memory handle).
+        var buffer = ctx._impl._context[].alloc_sync(
+            0
+        ) if addr == 0 else ctx._impl._context[].wrap_memory(
+            addr, byte_size, owning=owning
+        )
+        # The plugin may give the wrapped region an address of its own.
+        # If it can't report one, keep the address we were given.
+        if addr != 0:
+            try:
+                addr = ctx._impl._context[].memory_get_address(buffer)
+            except:
+                pass
+        return DeviceBuffer[dtype](
+            _impl=rebind_var[DeviceBuffer[dtype]._Impl](
+                _HALDeviceBuffer[dtype](
+                    _HALDeviceBuffer[dtype]._DevicePtr(
+                        unsafe_from_address=Int(addr)
+                    ),
+                    ctx.into_unknown_target(),
+                    ArcPointer(
+                        _HALBufferInner(
+                            buffer^, ctx._impl._context, addr, [], []
+                        )
+                    ),
+                )
+            )
+        )
+    except e:
+        raise Error(t"DeviceBuffer: failed to wrap external memory: {e}")
 
 
 struct DeviceBuffer[dtype: DType](
@@ -177,7 +267,8 @@ struct DeviceBuffer[dtype: DType](
         underlying pointer to whoever allocated it.
 
         This mirrors the non-raising legacy constructor; a wrap failure
-        aborts rather than raising.
+        aborts rather than raising. The HAL C exports call
+        `_wrap_hal_memory` instead, to return the failure to their caller.
 
         Args:
             ctx: The device context the pointer belongs to.
@@ -194,32 +285,12 @@ struct DeviceBuffer[dtype: DType](
             )
             return
 
-        var byte_size = UInt64(size * size_of[Self.dtype]())
-        var addr = UInt64(Int(ptr))
+        # The HAL plugin can refuse the wrap, and this signature has no error
+        # channel.
         try:
-            # The plugin rejects wrapping a null address; represent the empty
-            # buffer the way a zero-byte allocation does (null memory handle).
-            var buffer = ctx._impl._context[].alloc_sync(
-                0
-            ) if addr == 0 else ctx._impl._context[].wrap_memory(
-                addr, byte_size, owning=owning
-            )
-            # The plugin may give the wrapped region an address of its own.
-            # If it can't report one, keep the address we were given.
-            if addr != 0:
-                try:
-                    addr = ctx._impl._context[].memory_get_address(buffer)
-                except:
-                    pass
-            self._impl = Self._HAL(
-                Self._DevicePtr(unsafe_from_address=Int(addr)),
-                ctx.into_unknown_target(),
-                ArcPointer(
-                    _HALBufferInner(buffer^, ctx._impl._context, addr, [], [])
-                ),
-            )
+            self = _wrap_hal_memory(ctx, ptr, size, owning=owning)
         except e:
-            abort(String(t"DeviceBuffer: failed to wrap external memory: {e}"))
+            abort(String(e))
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend buffer.
@@ -364,16 +435,17 @@ struct DeviceBuffer[dtype: DType](
                 _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
 
-        comptime elem_size = size_of[view_type]()
-        var byte_offset = UInt64(offset * elem_size)
-        var byte_size = UInt64(size * elem_size)
-        if byte_offset + byte_size > self._impl._inner[]._buffer.byte_size:
-            raise Error("create_sub_buffer: view is out of range")
+        var byte_range = _sub_buffer_byte_range(
+            offset,
+            size,
+            size_of[view_type](),
+            self._impl._inner[]._buffer.byte_size,
+        )
         var view = DeviceBuffer[view_type](
             self.context(),
             Pointer[Scalar[view_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(
-                    self._impl._inner[]._device_addr + byte_offset
+                    self._impl._inner[]._device_addr + UInt64(byte_range[0])
                 )
             ),
             size,

@@ -15,6 +15,7 @@
 #define KGEN_TRANSFORMUTILS_SLICINGUTILS_H
 
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "Mojo/TransformUtils/SplitPlanner.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -51,9 +52,10 @@ produceStandaloneModule(const SymbolTable &symtab,
 /// so that each slice translates to LLVM IR in its own LLVM context and on its
 /// own thread.
 ///
-/// The partition matches `KGEN::splitPerExported` on LLVM IR. A slice is the
-/// transitive closure of one exported symbol, and the users of a mutable global
-/// or of another exported symbol share a slice.
+/// The partition is `planSplitPerExported`, which `KGEN::splitPerExported`
+/// also uses on LLVM IR. A slice is the transitive closure of one exported
+/// symbol, and the users of a mutable global or of another exported symbol
+/// share a slice.
 ///
 /// `produceStandaloneModule` clones one closure for each call. This class
 /// walks the module once for all slices, and clones only the symbols that
@@ -73,11 +75,24 @@ public:
   /// `isSliceLocalGlobal` names the globals that each slice can hold its own
   /// copy of, such as one in the shared memory of a GPU block. Such a global
   /// neither roots a slice nor ties its users together.
+  ///
+  /// A nonzero `outlineThreads` lets an internal function that several
+  /// exported symbols reach get a slice of its own, by the rule of
+  /// `planSplitPerExported`. Its linkage becomes weak_odr, and the slices that
+  /// call it declare it.
+  /// Such slices are not self-contained, so only a target that links them
+  /// back into one object can use this.
   LogicalResult
-  plan(function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal);
+  plan(function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal,
+       unsigned outlineThreads = 0);
 
   size_t getNumSlices() const { return slices.size(); }
   size_t getNumSymbols(size_t idx) const { return slices[idx].members.size(); }
+
+  /// The internal functions that `plan` gave a slice of their own.
+  ArrayRef<StringAttr> getOutlinedFunctions() const {
+    return outlinedFunctions;
+  }
 
   /// Returns slice `idx`. Call once per slice. Calls for different slices may
   /// run on different threads.
@@ -88,32 +103,37 @@ private:
     OwningOpRef<ModuleOp> module;
     /// Indices into `symbols`, in module order.
     std::vector<unsigned> members;
+    /// The symbols that members reference but the slice does not hold, in
+    /// module order.
+    std::vector<unsigned> declared;
   };
 
   LogicalResult collectSymbols();
-  LogicalResult collectDependencies();
+  LogicalResult collectDependencies(bool countInstructions);
   void
   classifySymbols(function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal);
-  std::vector<std::vector<unsigned>> partition();
 
   OwningOpRef<ModuleOp> module;
 
   /// The functions and globals of the module, in module order.
   std::vector<Operation *> symbols;
   DenseMap<StringAttr, unsigned> symbolIndex;
-  /// The symbols that each symbol references, sorted.
-  std::vector<SmallVector<unsigned, 4>> dependencies;
+  /// What `planSplitPerExported` reads of each symbol.
+  std::vector<SplitSymbol> splitSymbols;
   /// Module-level ops that are not symbols. Every slice gets a copy.
   SmallVector<Operation *> moduleOps;
 
-  /// A symbol that roots a slice.
-  std::vector<bool> isAnchor;
-  std::vector<bool> isMutableGlobal;
+  SmallVector<StringAttr> outlinedFunctions;
 
   /// The number of slices that hold each symbol. A symbol in one slice moves
   /// there; a symbol in several stays in the module and each slice clones it.
   std::vector<unsigned> numSlicesUsing;
   std::vector<Slice> slices;
+
+  /// One declaration of each symbol in a `Slice::declared`, for the slices to
+  /// clone. The definition may already be in another slice's module.
+  OwningOpRef<ModuleOp> declarations;
+  DenseMap<unsigned, Operation *> declarationOf;
 };
 } // namespace M
 

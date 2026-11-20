@@ -36,7 +36,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig, get_gpu_target
 from max.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -865,8 +865,10 @@ def _reducescatter_p2p_relay[
         Int32(recipe.relay_percent),
         Int32(num_direct_blocks),
         Int32(my_rank),
-        grid_dim=num_direct_blocks + num_relay_blocks,
-        block_dim=BLOCK_SIZE,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=num_direct_blocks + num_relay_blocks,
+            block_dim=BLOCK_SIZE,
+        ),
     )
 
 

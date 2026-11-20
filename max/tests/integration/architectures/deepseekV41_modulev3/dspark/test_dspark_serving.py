@@ -286,8 +286,9 @@ def test_dspark_pairs_the_modulev3_trunk_with_its_modulev3_draft() -> None:
     assert issubclass(paired.pipeline_model, SpecDecodePipelineModel)
     assert paired.weight_adapters == deepseekV41_modulev3_arch.weight_adapters
     assert paired.checkpoint_draft_width is dspark_draft_width
-    # The trunk captures no device graph, so neither does the pairing.
-    assert not paired.supports_device_graph_capture
+    # The pairing captures its decode steps, as the trunk and draft do.
+    assert paired.supports_device_graph_capture
+    assert dspark_deepseekV41_modulev3_draft_arch.supports_device_graph_capture
     assert (
         ARCH_LOOKUP.find("DSparkDeepseekV41DraftModel", prefer_module_v3=True)
         is dspark_deepseekV41_modulev3_draft_arch

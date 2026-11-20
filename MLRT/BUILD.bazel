@@ -793,6 +793,16 @@ alias(
     ],
 )
 
+# The two sides of the HAL C++ compatibility layer's C ABI, which
+# //MLRT/unittests/Driver:test_mojohal_exports_abi checks against each other.
+exports_files(
+    [
+        "lib/Driver/DeviceContext/HAL/MojoHALExports.h",
+        "lib/Driver/DeviceContext/HAL/hal_device_context_exports.mojo",
+    ],
+    visibility = ["//MLRT/unittests/Driver:__pkg__"],
+)
+
 # The Mojo side of the HAL C++ compatibility layer. The C++ shim links this
 # and forwards each DeviceContext.h method to a MojoHAL_* symbol. Only
 # meaningful under --config=hal-device-context.
@@ -925,7 +935,10 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Driver/DeviceContextImplHAL",
-    srcs = ["lib/Driver/DeviceContext/HAL/HALDeviceContext.cpp"],
+    srcs = [
+        "lib/Driver/DeviceContext/HAL/HALDeviceContext.cpp",
+        "lib/Driver/DeviceContext/HAL/MojoHALExports.h",
+    ],
     hdrs = ["include/MLRT/Driver/DeviceContext/BinaryID.h"],
     visibility = [
         "//GraphCompiler:__subpackages__",

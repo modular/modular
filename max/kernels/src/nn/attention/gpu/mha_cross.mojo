@@ -392,7 +392,7 @@ def mha_cross_gpu_naive[
         comptime assert p_buffer.flat_rank >= coords.flat_rank
         return p_buffer.load[width=_simd_width](coords)
 
-    _softmax_gpu[p_type, 1, 3](
+    _softmax_gpu[p_type, 1](
         input_fn_device,
         Coord(batch_size * num_heads, q_max_seq_len, num_keys),
         p_buffer,

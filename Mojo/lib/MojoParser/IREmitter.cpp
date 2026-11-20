@@ -932,8 +932,8 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
         // The constructor call must have resolved the dest.
         assert(!dest.isSpecified());
       } else {
-        cValue =
-            emitImplicitConversionToType({cValue, expr}, requiredType, dest);
+        cValue = emitImplicitConversionToType({cValue, expr}, requiredType,
+                                              dest, shared.noAssumptions);
       }
       // If this resolved the value dest, then we're done.   This handles the
       // null result case as well.
@@ -1982,7 +1982,7 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   ParamInf inference(bindings, tupleGenType.getInputParamTypes(),
                      tupleGenType.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
-                     /*discardError=*/false,
+                     /*discardError=*/false, shared.noAssumptions,
                      /*deferredTypingContext=*/deferredTypingContext);
   VerifiedParamBindings verifiedBindings = inference.inferForStruct();
   if (!verifiedBindings)
@@ -2229,9 +2229,9 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
         emitter.getDeclScope().getShared().diags.convertLocToSMLoc(
             opForRaise->getLoc()));
     for (MLValue errorSlot : errorSlots) {
-      if (IREmitter::canImplicitlyConvertToType({CValue(errorSlot), &source},
-                                                requiredErrorType,
-                                                emitter.getDeclScope()))
+      if (IREmitter::canImplicitlyConvertToType(
+              {CValue(errorSlot), &source}, requiredErrorType,
+              emitter.getDeclScope(), emitter.shared.noAssumptions))
         continue;
 
       std::string errorTypes;

@@ -46,7 +46,7 @@ public:
   /// Return true if \p type provably conforms to \p traitDecl.
   static bool provenConformsToTrait(ASTType type, TraitASTDecl &traitDecl,
                                     SharedState &shared,
-                                    ArrayRef<ConstraintAttr> callerAssumptions);
+                                    TypedAttr callerAssumptions);
 
   struct PromotedClosureSelfArg {
     Type type;

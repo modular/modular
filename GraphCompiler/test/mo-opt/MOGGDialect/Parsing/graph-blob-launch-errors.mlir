@@ -100,29 +100,6 @@ func.func @call_with_two_calls(%ctx: !mogg.context, %cfg: !mogg.launch_config, %
 
 // -----
 
-// A formed blob's calls carry its context; a launch carries the context itself.
-func.func @execute_device_without_context_in_blob() {
-  mogg.graph_blob {
-    // expected-error@+1 {{takes a device context in a 'mogg.graph_blob'}}
-    mogg.call.execute_device @missing.kernel
-  }
-  return
-}
-
-// -----
-
-func.func @execute_device_with_context_in_call(%ctx: !mogg.context, %cfg: !mogg.launch_config, %act: i32) {
-  mogg.graph_blob.launch context(%ctx) config(%cfg) args {%c = %ctx : !mogg.context, %a = %act : i32} {
-    mogg.graph_blob.call active(%a) {
-      // expected-error@+1 {{takes no device context in a 'mogg.graph_blob.call'}}
-      mogg.call.execute_device @missing.kernel context(%c : !mogg.context)
-    }
-  }
-  return
-}
-
-// -----
-
 func.func @execute_configuration_missing_decl() {
   // expected-error@+1 {{'missing.kernel' does not refer to a kernel.decl op}}
   %cfg = mogg.call.execute_configuration @missing.kernel

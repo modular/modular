@@ -57,7 +57,7 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
             config.hidden_size, config.rms_norm_eps
         )
         self.self_attn = HYV4Attention(config, layer_idx)
-        self.mlp: Module[[Tensor], Tensor] = (
+        self.mlp: HYV4MoE | HYV4MLP = (
             HYV4MoE(config)
             if config.mlp_layer_types[layer_idx] == "sparse"
             else HYV4MLP(
@@ -71,14 +71,14 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
             self.hc_mlp = HYV4HyperConnection(config)
 
     def shard(self) -> None:
-        """Splits attention by heads and the routed experts by expert.
+        """Splits attention, the routed experts and the MLP widths over the mesh.
 
-        Both split over the mesh the layer was built on; the rest stays
-        replicated.
+        Attention splits by heads, the routed experts by expert, and the
+        dense MLP or shared expert by width, over the mesh the layer was
+        built on; the rest stays replicated.
         """
         self.self_attn.shard_heads()
-        if isinstance(self.mlp, HYV4MoE):
-            self.mlp.shard_experts()
+        self.mlp.shard()
 
     def forward(
         self,

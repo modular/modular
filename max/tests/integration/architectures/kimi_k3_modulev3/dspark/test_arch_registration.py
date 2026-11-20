@@ -28,6 +28,9 @@ def test_draft_arch_is_registered() -> None:
     assert arch is not None
     assert arch.pipeline_model is None
     assert "bfloat16" in arch.supported_encodings
+    # A registered draft loads through rules, so an export names its weights.
+    assert arch.draft is not None
+    assert arch.use_weight_rules
 
 
 def _paired_arch(monkeypatch: pytest.MonkeyPatch) -> SupportedArchitecture:

@@ -48,7 +48,7 @@ static_assert(
 #include "Support/HashUtils.h"
 #include "Support/Profiling/CaptureLabels.h"
 #include "Support/SymbolExport.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "Target/DriverPlugin.h"
 #include "Virtual/VirtualDeviceContext.h"
 
@@ -426,7 +426,7 @@ std::string Device::FunctionCacheKey::moduleCacheName(StringRef moduleName,
 
 DeviceFunctionCacheEntryRef
 Device::findInFunctionCache(const FunctionCacheKey &key) const {
-  TRACY_ZONE_SCOPED_NC("Device::findInFunctionCache", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("Device::findInFunctionCache", M_PROFILE_COLOR_PURPLE);
   std::scoped_lock<std::mutex> lock(mu_);
   return funcMap_.lookup(key);
 }
@@ -434,7 +434,7 @@ Device::findInFunctionCache(const FunctionCacheKey &key) const {
 DeviceFunctionCacheEntryRef
 Device::insertInFunctionCache(const FunctionCacheKey &key,
                               const DeviceFunctionCacheEntry &entry) {
-  TRACY_ZONE_SCOPED_NC("Device::insertInFunctionCache", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("Device::insertInFunctionCache", M_PROFILE_COLOR_PURPLE);
   {
     std::scoped_lock<std::mutex> lock(mu_);
     auto iter = funcMap_.find(key);
@@ -1638,7 +1638,7 @@ void DeviceContext::setPendingEventHandler(PendingEventHandler *h) {
 }
 
 ErrorOrSuccess DeviceContext::checkPendingError() {
-  TRACY_ZONE_SCOPED_NC("DeviceContext::checkPendingError", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("DeviceContext::checkPendingError", M_PROFILE_COLOR_PURPLE);
 
   // Quickly check if we should check for a pending error.
   if (hasPendingError_.load(std::memory_order_acquire) == 0) {
@@ -1665,7 +1665,7 @@ ErrorOrSuccess DeviceContext::checkPendingError() {
 }
 
 ErrorOrSuccess DeviceContext::pollPendingEvents() {
-  TRACY_ZONE_SCOPED_NC("DeviceContext::pollPendingEvents", TRACY_COLOR_PURPLE);
+  M_PROFILE_SPAN("DeviceContext::pollPendingEvents", M_PROFILE_COLOR_PURPLE);
 
   // During graph capture, events aren't executing - they're graph nodes.
   // cuEventQuery is prohibited during capture, so skip polling. Handlers

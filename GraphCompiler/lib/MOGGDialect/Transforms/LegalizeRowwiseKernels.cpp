@@ -43,7 +43,9 @@
 //
 // 4. `mogg-rowwise-set-launch-params`: the Row API's launch parameters,
 //    `num_phases`, `dtype_size` and `computationally_expensive` among them,
-//    set as the hand-written kernels set them.
+//    set as the hand-written kernels set them. A fold that reads a
+//    `mogg.rowwise.cache` doesn't count as a phase, and a cache keeps the
+//    row whole (`dtype_size = 0`).
 //
 //===----------------------------------------------------------------------===//
 
@@ -96,11 +98,18 @@ auto phases(CallRowwiseOp op) {
   return op.getBody().front().getOps<RowwisePhaseOpInterface>();
 }
 
+bool hasCache(CallRowwiseOp op) {
+  return !op.getBody().front().getOps<RowwiseCacheOp>().empty();
+}
+
 // Loads of `tensor` at `phase`'s own index.
 SmallVector<TensorLoadOp> elementLoads(RowwisePhaseOpInterface phase,
                                        Value tensor) {
-  Value index = phase.getIndexArg();
   SmallVector<TensorLoadOp> loads;
+  // A phase that reads a cache gets the cache, not the tile.
+  if (phase.getReadCache())
+    return loads;
+  Value index = phase.getIndexArg();
   phase->getRegion(0).walk([&](TensorLoadOp load) {
     if (load.getTensor() == tensor && load.getIndex() == index)
       loads.push_back(load);
@@ -238,7 +247,9 @@ LogicalResult createTile(CallRowwiseOp op) {
         .walk([](RowwiseTileLoadOp) { return WalkResult::interrupt(); })
         .wasInterrupted();
   });
-  op.setKeepTile(readers > 1);
+  // `Row.cache` computes from the kept tile; without it, every read of the
+  // cache computes it again.
+  op.setKeepTile(readers > 1 || hasCache(op));
   return success();
 }
 
@@ -392,21 +403,26 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
   // The Row API's launch parameters, set as the hand-written kernels set
   // them (rowwise_reductions.mojo and rowwise_normalization.mojo):
   //
-  //   body writes              num_phases  dtype_size       expensive
-  //   one value per row (sum)  1           0                cost >= threshold
-  //   every element (rms_norm) folds + 1   row bytes or 0   true
+  //   body writes     num_phases      dtype_size      expensive
+  //   one per row     1               0               cost >= threshold
+  //   every element   tile folds + 1  row bytes or 0  true
   //
-  // `dtype_size` > 0 lets a long row split across blocks. rms_norm and
-  // softmax, whose folds keep one field, opt in; layer_norm, whose Welford
-  // fold keeps three, doesn't, so neither does a body with a multi-field
-  // fold. Every hand-written body that writes every element is expensive:
-  // it reads the row once per fold and writes it once.
+  // A fold of a cache isn't a phase of its own: the Row reads the cache
+  // back from registers. `dtype_size` > 0 lets a long row split across
+  // blocks. rms_norm and softmax, whose folds keep one field, opt in;
+  // layer_norm, whose Welford fold keeps three, doesn't, so neither does a
+  // body with a multi-field fold, nor one with a cache, which can't split.
+  // Every hand-written body that writes every element is expensive: it
+  // reads the row once per fold and writes it once.
   bool writesEveryElement = !body.getOps<RowwiseMapOp>().empty();
   bool oneFieldFolds = llvm::all_of(
       rowFolds, [](RowwiseReduceOp fold) { return fold.getNumResults() == 1; });
-  op.setNumPhases(writesEveryElement ? rowFolds.size() + 1 : 1);
+  unsigned tileFolds = llvm::count_if(rowFolds, [](RowwiseReduceOp fold) {
+    return !cast<RowwisePhaseOpInterface>(*fold).getReadCache();
+  });
+  op.setNumPhases(writesEveryElement ? tileFolds + 1 : 1);
   op.setDtypeSize(0);
-  if (writesEveryElement && oneFieldFolds) {
+  if (writesEveryElement && oneFieldFolds && !hasCache(op)) {
     ASSERT_STREAM(op.getTile(), << "the tile is created first");
     op.setDtypeSize(
         (op.getTile().getType().getElementType().getIntOrFloatBitWidth() + 7) /

@@ -33,7 +33,7 @@ from std.math import ceildiv, rsqrt
 from algorithm.bisect import bisect_right
 from internal_utils.fp8_utils import cast_saturating
 from max.gpu import WARP_SIZE, block_idx, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.primitives import warp
 
 from nn.activations import sigmoid
@@ -300,8 +300,10 @@ def qk_norm_rope_store[
         ]
     ](
         a,
-        grid_dim=ceildiv(lanes, THREADS),
-        block_dim=THREADS,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=ceildiv(lanes, THREADS),
+            block_dim=THREADS,
+        ),
     )
 
 
@@ -317,6 +319,8 @@ def head_norm_gate[
         return
     ctx.enqueue_function[_gate_kernel[n_heads=n_heads, poison=poison]](
         a,
-        grid_dim=ceildiv(lanes, THREADS),
-        block_dim=THREADS,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=ceildiv(lanes, THREADS),
+            block_dim=THREADS,
+        ),
     )

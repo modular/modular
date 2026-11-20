@@ -177,6 +177,12 @@ public:
 /// emitting an error if it is missing.
 ASTDecl *lookupEnumSupportDecl(SharedState &shared, StringRef name, SMLoc loc);
 
+/// Report a clash between the member that the case `caseName` of `enumDecl`
+/// generates and a member that every enum gets or one written in `enumDecl`;
+/// failure if there is one.
+LogicalResult checkEnumCaseName(ASTDecl &enumDecl, StringRef caseName,
+                                SMLoc caseLoc);
+
 } // namespace M::KGEN::LIT
 
 #endif // CLOSUREEMITTER_H

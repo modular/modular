@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "mojo_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "modular_py_test", "mojo_test")
 
 # gazelle:default_visibility //visibility:private
 
@@ -862,6 +862,70 @@ modular_cc_test(
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
     ],
+)
+
+# A driver plugin's refusals surface as errors through the HAL DeviceContext.
+# HAL-only: the mock plugin refuses on demand, and the legacy driver has no
+# plugin to load.
+modular_cc_test(
+    name = "HALBridgeErrorTest",
+    size = "small",
+    srcs = [
+        "HALBridgeErrorTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    data = ["//MLRT/test/Driver/HAL:MockPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+    },
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "HALContextEqualityTest",
+    size = "small",
+    srcs = [
+        "HALContextEqualityTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    data = ["//MLRT/test/Driver/HAL:MockPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+    },
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# Source-only, so it runs in every configuration.
+modular_py_test(
+    name = "test_mojohal_exports_abi",
+    size = "small",
+    srcs = ["test_mojohal_exports_abi.py"],
+    data = [
+        "//MLRT:lib/Driver/DeviceContext/HAL/MojoHALExports.h",
+        "//MLRT:lib/Driver/DeviceContext/HAL/hal_device_context_exports.mojo",
+    ],
+    env = {
+        "MOJOHAL_EXPORTS_H": "$(rootpath //MLRT:lib/Driver/DeviceContext/HAL/MojoHALExports.h)",
+        "MOJOHAL_EXPORTS_MOJO": "$(rootpath //MLRT:lib/Driver/DeviceContext/HAL/hal_device_context_exports.mojo)",
+    },
 )
 
 modular_cc_test(

@@ -50,16 +50,11 @@ from max.benchmark.benchmark_shared.serving_result_output import (
     print_workload_stats,
 )
 from pytest_mock import MockerFixture
-from tests.benchmark.benchmark_fakes import CapturingDriver, FakeTokenizer
-
-
-def _fake_loader(
-    name_or_path: str,
-    model_max_length: int | None,
-    trust_remote_code: bool,
-    revision: str | None,
-) -> FakeTokenizer:
-    return FakeTokenizer(model_max_length=model_max_length or 50_000)
+from tests.benchmark.benchmark_fakes import (
+    CapturingDriver,
+    FakeTokenizer,
+    fake_loader,
+)
 
 
 def test_image_mixing_pipeline_end_to_end(
@@ -71,7 +66,7 @@ def test_image_mixing_pipeline_end_to_end(
     tok = FakeTokenizer(model_max_length=50_000)
     pool_texts = [f"turn body {i} " * 20 for i in range(6)]
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = build_fitted_chat_samples(
             pool=pool,
             user_text_pool=pool_texts,

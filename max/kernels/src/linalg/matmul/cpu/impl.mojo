@@ -31,7 +31,6 @@ from std.memory import alloc, dealloc, Allocation
 from std.memory.alloc import Alignment, Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from ...gemv import _gemv_cpu
@@ -374,8 +373,8 @@ struct TiledMatmul[
 
         var b_packed_tile = self.b_tile_generator.get_tile[tile_kernel_cols](
             global_offset,
-            Index(sub_tile_n, sub_tile_k),
-            Index(knm_bounds.N, knm_bounds.K),
+            Coord(sub_tile_n, sub_tile_k),
+            Coord(knm_bounds.N, knm_bounds.K),
         )
 
         # Launch the MLoop

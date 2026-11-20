@@ -332,6 +332,11 @@ def register_all_models() -> None:
             "laguna_modulev3_arch",
         ),
         _LazyArch("Lfm2ForCausalLM", ".lfm2", "lfm2_arch"),
+        _LazyArch(
+            "Lfm2VlForConditionalGeneration",
+            ".lfm2_vl",
+            "lfm2_vl_arch",
+        ),
         _LazyArch("Lfm3ForCausalLM", ".lfm3", "lfm3_arch"),
         _LazyArch(
             "Lfm3AudioForConditionalGeneration",
@@ -529,21 +534,6 @@ def register_all_models() -> None:
     # Optional: pull in private tool parsers.
     try:
         import tool_parsers  # type: ignore[import-not-found]
-    except ModuleNotFoundError:
-        pass
-
-    # Optional: import the Kimi K3 model if available.
-    try:
-        from kimi_k3 import kimi_k3_arch  # type: ignore[import-not-found]
-
-        PIPELINE_REGISTRY.register(kimi_k3_arch)
-    except ModuleNotFoundError:
-        pass
-
-    # Optional: import the Kimi K3 DSpark draft if available.
-    try:
-        kimi_k3_dspark = importlib.import_module("kimi_k3_spec.dspark")
-        PIPELINE_REGISTRY.register(kimi_k3_dspark.dspark_kimi_k3_draft_arch)
     except ModuleNotFoundError:
         pass
 

@@ -38,6 +38,12 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 class MAP_Op<string mnemonic, list<Trait> traits = []>
     : Op<MAPDialect, mnemonic, traits>;
 
+// A rowwise phase that stores at its element, into tensors of the rowwise
+// shape. A fold only reads the row.
+def MAP_StoresElements : NativeOpTrait<"StoresElements"> {
+  let cppNamespace = "::M::MAP";
+}
+
 // Type constraint matching the `map.index<N>` type.
 def MAP_AnyIndex : Type<
     CPred<"::llvm::isa<::M::MAP::IndexType>($_self)">,
@@ -452,8 +458,9 @@ def MAP_IterRowwiseOp : MAP_Op<"iter.rowwise", [
   let summary = "A kernel that runs its body once per row of a shape";
   let description = [{
     Iterates over the rows of `shape` along `axis`. The body runs once per row
-    and holds the row's phases in order: folds (`map.iter.reduce`), row-scalar
-    ops on their results, and stores.
+    and holds the row's phases in order: folds (`map.iter.reduce`), row caches
+    (`map.iter.cache`) and per-element phases (`map.iter.map`), row-scalar ops
+    on their results, and stores.
 
     The row index `%row` indexes the per-row space, `shape` with the `axis`
     coordinate pinned to 0, so it addresses a per-row (`axis` size 1) output
@@ -679,7 +686,7 @@ def MAP_IterTileOp : MAP_Op<"iter.tile", [
 }
 
 def MAP_IterTileLoadOp : MAP_Op<"iter.tile.load", [
-  ParentOneOf<["IterReduceOp", "IterMapOp"]>,
+  ParentOneOf<["IterReduceOp", "IterMapOp", "IterCacheOp"]>,
   AllTypesMatch<["tile", "result"]>,
   Pure,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
@@ -697,6 +704,69 @@ def MAP_IterTileLoadOp : MAP_Op<"iter.tile.load", [
   let hasVerifier = 1;
 }
 
+def MAP_IterCacheOp : MAP_Op<"iter.cache", [
+  // Its index is the rowwise kernel's; the ops it holds limit the width.
+  MAP_MaxSimdWidthInterface,
+  ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
+  SingleBlock,
+  RecursiveMemoryEffects,
+  MAP_RowwisePhaseOpInterface,
+  MAP_StoresElements,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "A per-element value of the row that later phases read";
+  let description = [{
+    Computes, at index `%i`, a value of the row that later phases read with
+    `map.iter.cache.load` instead of computing it again: the Row's `cache`.
+    Unlike the tile, it comes after folds and may read their results, and it
+    may store at `%i` into tensors of the rowwise shape, such as a side
+    output. A phase reads either the tile or one cache, and a row with a
+    cache ends with a map phase.
+
+    Example:
+    ```mlir
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum
+        index (%i: !map.index<2>) -> f32 { ... }
+    %c = map.iter.cache index (%i: !map.index<2>) -> f32 {
+      %x = map.iter.tile.load %t[%i] : !map.index<2>, f32
+      %h = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %x, %acc)
+          : !map.index<2>, f32, f32 -> f32
+      map.store %h_out[%i] = %h : !mo.tensor<[M, N], f32>
+      map.yield %h : f32
+    }
+    map.iter.map index (%i: !map.index<2>) {
+      %h = map.iter.cache.load %c[%i] : !map.index<2>, f32
+      ...
+    }
+    ```
+  }];
+
+  let results = (outs AnyType:$result);
+  let regions = (region SizedRegion<1>:$body);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
+  ParentOneOf<["IterReduceOp", "IterMapOp"]>,
+  AllTypesMatch<["cache", "result"]>,
+  Pure,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "Read a row cache at the current phase's element";
+  let description = [{
+    Reads the value the `map.iter.cache` `$cache` computes at `$index`, the
+    enclosing phase's index.
+  }];
+  let arguments = (ins AnyType:$cache, MAP_AnyIndex:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $cache `[` $index `]` attr-dict `:` type($index) `,` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
 def MAP_IterMapOp : MAP_Op<"iter.map", [
   // Its index is the rowwise kernel's; the ops it holds limit the width.
   MAP_MaxSimdWidthInterface,
@@ -705,6 +775,7 @@ def MAP_IterMapOp : MAP_Op<"iter.map", [
   NoTerminator,
   RecursiveMemoryEffects,
   MAP_RowwisePhaseOpInterface,
+  MAP_StoresElements,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
 ]> {
   let summary = "A per-element phase over the current row";

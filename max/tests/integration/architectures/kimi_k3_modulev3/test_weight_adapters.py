@@ -10,20 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``convert_kimi_k3_state_dict`` (ModuleV3): key naming and shape transforms.
+"""``kimi_k3_weight_rules``: a Kimi K3 checkpoint's names on the text tower.
 
-CPU-only: everything here is dict-to-dict conversion over real (small,
-synthetic) tensors, not graph construction. The shape transforms (fused qkv
-projection, fused qkv conv, fused gate/up, de-padded ``A_log``) are checked
-numerically against ``model.py``'s own numpy helpers -- the same transforms
-applied to the same raw arrays -- rather than against a hand-computed
-expectation, so the two implementations cannot silently drift apart. The
-routed experts load per expert, and the per-device stacks the graph builds
-from them are checked on a CPU mesh against :func:`interleave_for_tp`.
+CPU-only. The modules declare every tensor as the checkpoint stores it, so
+the rules only rename, relabel the MXFP4 scales and drop the vision tower.
+A small synthetic checkpoint under the real checkpoint's names must cover a
+lazily built text tower name for name and shape for shape. The per-device
+expert stacks the graph builds from the routed experts are checked on a CPU
+mesh.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -31,26 +31,36 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from max import functional as F
-from max.driver import CPU, Buffer
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.kimi_k3_modulev3 import model as km
-from max.pipelines.architectures.kimi_k3_modulev3 import (
-    weight_adapters as wa,
-)
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    convert_kimi_k3_state_dict,
-    fuse_qkvgb_for_tp,
-    interleave_for_tp,
-    tp_degree,
+from max.pipelines.architectures.kimi_k3_modulev3.model import (
+    KimiK3Model,
+    KimiK3ModelConfig,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.model_config import (
+    KimiK3Config,
+)
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    kimi_k3_weight_rules,
+)
+from max.pipelines.lib import WeightTransform
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.support.math import ceildiv
-from max.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 
 _HIDDEN_SIZE = 16
@@ -83,6 +93,13 @@ _MOE_INTERMEDIATE_SIZE = 5
 _NUM_EXPERTS = 3
 _NUM_EXPERTS_PER_TOKEN = 2
 _NUM_SHARED_EXPERTS = 1
+
+# Even, so both axes a packed expert splits land on a whole byte and a
+# whole 32-element E8M0 scale block.
+_PACKED_ROUTED_EXPERT_HIDDEN_SIZE = 8
+_PACKED_MOE_INTERMEDIATE_SIZE = 4
+
+_MAX_SEQ_LEN = 128
 
 _TEXT = "language_model.model"
 _RNG = np.random.default_rng(0)
@@ -133,6 +150,16 @@ def _text_config(
     )
 
 
+def _expert_sizes(packed: bool) -> dict[str, int]:
+    """The routed expert widths; a packed checkpoint needs both even."""
+    if not packed:
+        return {}
+    return {
+        "routed_expert_hidden_size": _PACKED_ROUTED_EXPERT_HIDDEN_SIZE,
+        "moe_intermediate_size": _PACKED_MOE_INTERMEDIATE_SIZE,
+    }
+
+
 def _fp32(shape: tuple[int, ...]) -> np.ndarray:
     return _RNG.standard_normal(shape).astype(np.float32)
 
@@ -141,8 +168,8 @@ def _weight(array: np.ndarray, name: str, dtype: DType = DType.float32) -> Any:
     """A stand-in ``Weights`` whose ``data()`` returns real ``WeightData``."""
     if dtype == DType.bfloat16:
         # Truncate each fp32 value to its bf16 bit pattern, the same
-        # round-to-16-bits a real bf16 checkpoint stores -- built without a
-        # numpy bfloat16 dtype, matching `_rewrap`'s own view-based pattern.
+        # round-to-16-bits a real bf16 checkpoint stores, built without a
+        # numpy bfloat16 dtype.
         bits = (array.astype(np.float32).view(np.uint32) >> 16).astype(
             np.uint16
         )
@@ -166,8 +193,8 @@ def _weight_u8(array: np.ndarray, name: str) -> Any:
     """A stand-in ``Weights`` whose ``data()`` returns raw ``uint8`` data.
 
     Mirrors the real checkpoint's MXFP4 ``weight_packed``/``weight_scale``
-    storage: both ship as plain ``U8`` bytes (safetensors has no packed-FP4
-    or E8M0 dtype); `_as_e8m0` relabels `weight_scale`.
+    storage: both ship as plain ``U8`` bytes, since safetensors has no
+    packed-FP4 or E8M0 dtype.
     """
     shape = tuple(int(d) for d in array.shape)
     weight_data = WeightData(
@@ -179,16 +206,6 @@ def _weight_u8(array: np.ndarray, name: str) -> Any:
     weights = MagicMock(spec=Weights)
     weights.data.return_value = weight_data
     return weights
-
-
-def _to_numpy(data: WeightData) -> np.ndarray:
-    """Decodes a (possibly bf16) ``WeightData`` back to fp32 numpy, for
-    assertions. Mirrors ``_elements``' bf16-as-uint16 view, then widens."""
-    buffer = Buffer.from_dlpack(data.data)
-    if data.dtype == DType.bfloat16:
-        bits = np.from_dlpack(buffer.view(DType.uint16)).astype(np.uint32)
-        return (bits << 16).view(np.float32)
-    return np.from_dlpack(buffer)
 
 
 def _to_numpy_u8(data: WeightData) -> np.ndarray:
@@ -203,23 +220,26 @@ def _checkpoint(
     moe_intermediate_size: int = _MOE_INTERMEDIATE_SIZE,
     packed_experts: bool = False,
 ) -> dict[str, Any]:
-    """A small, real Kimi K3 checkpoint: layer 0 is KDA + dense MLP, layer 1
-    is MLA + MoE. Stored fp32 throughout except where a comment says
-    otherwise, matching the real checkpoint, so the adapter's dtype
-    resolution (see `test_o_norm_weight_follows_the_working_dtype`) is
-    exercised rather than hidden behind an already-bf16 fixture.
+    """A small Kimi K3 checkpoint under the real checkpoint's names: layer 0
+    is KDA + dense MLP, layer 1 is MLA + MoE, beside a vision tower the text
+    tower does not load.
 
     Args:
         routed_expert_hidden_size, moe_intermediate_size: Override the module
             globals -- the MXFP4 packed case needs both even (two 4-bit
-            values per packed byte), which the globals (picked for the dense
-            tests) are not.
+            values per packed byte), which the globals are not.
         packed_experts: Builds the routed experts MXFP4-packed
             (``weight_packed``/``weight_scale``) instead of dense ``.weight``.
     """
     bf16 = DType.bfloat16
     shared_intermediate_size = moe_intermediate_size * _NUM_SHARED_EXPERTS
     ck: dict[str, Any] = {
+        "vision_tower.patch_embed.proj.weight": _weight(
+            _fp32((_HIDDEN_SIZE, 3)), "vision", bf16
+        ),
+        "mm_projector.proj.0.weight": _weight(
+            _fp32((_HIDDEN_SIZE, _HIDDEN_SIZE)), "projector", bf16
+        ),
         f"{_TEXT}.embed_tokens.weight": _weight(
             _fp32((_VOCAB_SIZE, _HIDDEN_SIZE)), "embed", bf16
         ),
@@ -256,20 +276,15 @@ def _checkpoint(
                 ("v_proj", (_KDA_INNER, _HIDDEN_SIZE)),
                 ("f_a_proj", (_KDA_HEAD_DIM, _HIDDEN_SIZE)),
                 ("f_b_proj", (_KDA_INNER, _KDA_HEAD_DIM)),
+                ("b_proj", (_KDA_NUM_HEADS, _HIDDEN_SIZE)),
                 ("g_proj", (_KDA_INNER, _HIDDEN_SIZE)),
                 ("o_proj", (_HIDDEN_SIZE, _KDA_INNER)),
             ):
                 ck[f"{attn_src}.{leaf}.weight"] = _weight(
                     _fp32(shape), leaf, bf16
                 )
-            # The published checkpoint stores this one bf16; storing it fp32
-            # here proves the adapter resolves it to the model dtype like
-            # everything else.
-            ck[f"{attn_src}.b_proj.weight"] = _weight(
-                _fp32((_KDA_NUM_HEADS, _HIDDEN_SIZE)), "b_proj"
-            )
             ck[f"{attn_src}.o_norm.weight"] = _weight(
-                _fp32((_KDA_HEAD_DIM,)), "o_norm", bf16
+                _fp32((_KDA_HEAD_DIM,)), "o_norm"
             )
             for axis in ("q", "k", "v"):
                 ck[f"{attn_src}.{axis}_conv1d.weight"] = _weight(
@@ -317,11 +332,8 @@ def _checkpoint(
                 )
         else:
             moe = f"{src}.block_sparse_moe"
-            # The real checkpoint stores the router gate bf16 (the gate
-            # GEMV computes bf16 x bf16 -> fp32); the adapter must pass it
-            # through at the working dtype without an fp32 detour.
             ck[f"{moe}.gate.weight"] = _weight(
-                _fp32((_NUM_EXPERTS, _HIDDEN_SIZE)), "gate", DType.bfloat16
+                _fp32((_NUM_EXPERTS, _HIDDEN_SIZE)), "gate", bf16
             )
             ck[f"{moe}.gate.e_score_correction_bias"] = _weight(
                 _fp32((_NUM_EXPERTS,)), "bias"
@@ -371,9 +383,7 @@ def _checkpoint(
                         )
                         ck[f"{moe}.experts.{e}.{leaf}.weight_scale"] = (
                             _weight_u8(
-                                # Real E8M0 bias is 127; stay near it so a
-                                # decode doesn't overflow fp64 in tests that
-                                # read these back.
+                                # Real E8M0 bias is 127; stay near it.
                                 _RNG.integers(
                                     120, 134, size=(rows, ceildiv(k, 32))
                                 ).astype(np.uint8),
@@ -408,559 +418,114 @@ def _checkpoint(
     return ck
 
 
-@pytest.fixture
-def checkpoint() -> dict[str, Any]:
-    return _checkpoint()
+def _convert(checkpoint: Mapping[str, Weights]) -> dict[str, WeightData]:
+    return WeightTransform(kimi_k3_weight_rules(_text_config()))(checkpoint)
 
 
-@pytest.fixture
-def converted(checkpoint: dict[str, Any]) -> dict[str, WeightData]:
-    return convert_kimi_k3_state_dict(checkpoint, _text_config())
+def _shape(shape: Sequence[Any]) -> tuple[int, ...]:
+    return tuple(int(dim) for dim in shape)
 
 
-def test_key_set_matches_the_module_tree(
-    converted: dict[str, WeightData],
-) -> None:
-    expected = {
-        "embed_tokens.weight",
-        "lm_head_weight",
-        "final_norm_weight",
-        "output_attn_res_proj_weight",
-        "output_attn_res_norm_weight",
-    }
-    for i in range(_NUM_HIDDEN_LAYERS):
-        dst = f"layers.{i}"
-        expected |= {
-            f"{dst}.input_layernorm_weight",
-            f"{dst}.post_attention_layernorm_weight",
-            f"{dst}.self_attention_res_proj_weight",
-            f"{dst}.self_attention_res_norm_weight",
-            f"{dst}.mlp_res_proj_weight",
-            f"{dst}.mlp_res_norm_weight",
-        }
-        is_kda = i in {j - 1 for j in _KDA_LAYERS}
-        attn = f"{dst}.attention"
-        if is_kda:
-            expected |= {
-                f"{attn}.qkvg_proj.weight",
-                f"{attn}.f_a_proj.weight",
-                f"{attn}.f_b_proj.weight",
-                f"{attn}.o_norm.weight",
-                f"{attn}.o_proj.weight",
-                f"{attn}.conv_weight",
-                f"{attn}.a_log",
-                f"{attn}.dt_bias",
-            }
-        else:
-            expected |= {
-                f"{attn}.qkv_a_g_proj.weight",
-                f"{attn}.q_a_layernorm.weight",
-                f"{attn}.q_b_proj.weight",
-                f"{attn}.kv_a_layernorm.weight",
-                f"{attn}.kv_b_proj.weight",
-                f"{attn}.o_proj.weight",
-            }
-        ffn = f"{dst}.ffn"
-        if i < _FIRST_K_DENSE_REPLACE:
-            expected |= {
-                f"{ffn}.gate_up_proj.weight",
-                f"{ffn}.down_proj.weight",
-            }
-        else:
-            expected |= {
-                f"{ffn}.gate.gate_score.weight",
-                f"{ffn}.gate.e_score_correction_bias",
-                f"{ffn}.routed_expert_down_proj.weight",
-                f"{ffn}.routed_expert_up_proj.weight",
-                f"{ffn}.routed_expert_norm.weight",
-                f"{ffn}.shared_experts.gate_up_proj.weight",
-                f"{ffn}.shared_experts.down_proj.weight",
-            }
-            expected |= {
-                f"{ffn}.experts.{e}.{w}.weight"
-                for e in range(_NUM_EXPERTS)
-                for w in ("w1", "w2", "w3")
-            }
-    assert set(converted) == expected
-
-
-def test_fused_qkvg_proj_matches_model_py(
-    checkpoint: dict[str, Any], converted: dict[str, WeightData]
-) -> None:
-    """At the loader's own TP degree (1) the adapter's merged ``qkvg_proj``
-    must agree with ``model.py``'s eager-loader helper."""
-    attn_src = f"{_TEXT}.layers.0.self_attn"
-    q, k, v, g, b, f_a = (
-        _to_numpy(checkpoint[f"{attn_src}.{axis}.weight"].data())
-        for axis in (
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "g_proj",
-            "b_proj",
-            "f_a_proj",
-        )
+def _finalized_config(
+    packed: bool, state_dict: Mapping[str, WeightData]
+) -> KimiK3Config:
+    """The registry config, completed with the converted checkpoint."""
+    text_config = _text_config(**_expert_sizes(packed))
+    config = KimiK3Config(
+        # A packed checkpoint's routed experts resolve to uint8.
+        dtype=DType.uint8 if packed else DType.bfloat16,
+        kv_params=MagicMock(),
+        devices=[DeviceRef.CPU()],
+        max_seq_len=_MAX_SEQ_LEN,
+        model=KimiK3ModelConfig.from_huggingface_config(
+            {"text_config": text_config.to_dict()}
+        ),
+        max_batch_context_length=_MAX_SEQ_LEN,
     )
-    expected = _to_numpy(
-        WeightData.from_numpy(
-            km._fuse_qkvgb_proj(q, k, v, g, b, f_a), "ref"
-        ).astype(DType.bfloat16)
-    )
-    actual = _to_numpy(converted["layers.0.attention.qkvg_proj.weight"])
-    np.testing.assert_array_equal(actual, expected)
+    return config.finalize(text_config, state_dict, ModelOutputConfig())
 
 
-@pytest.mark.parametrize("tp_size", [1, 2, 8])
-def test_fused_qkvg_proj_interleaves_per_rank(tp_size: int) -> None:
-    """Rank ``r``'s contiguous shard of the merged weight is its slice of
-    q, k, v and g -- not whole projections.
-
-    Parts carry disjoint values, so a plain ``[q; k; v; g]`` concat is
-    distinguishable from the interleave at every TP degree above 1, and a
-    wrong block order (g before qkv, say) fails the per-block asserts.
-    """
-    rows, cols = 8, 5
-    arrays = [
-        _RNG.standard_normal((rows, cols)).astype(np.float32) + 100 * i
-        for i in range(4)
-    ]
-    arrays.append(_RNG.standard_normal((16, cols)).astype(np.float32) + 400)
-    q, k, v, g, b = (
-        WeightData.from_numpy(a, axis)
-        for a, axis in zip(arrays, ("q", "k", "v", "g", "b"), strict=True)
-    )
-    fused = wa._fuse_qkvgb_proj(q, k, v, g, b, "qkvg_proj.weight", tp_size)
-    actual = _to_numpy(fused)
-    np.testing.assert_array_equal(actual, interleave_for_tp(arrays, tp_size))
-    # The production property, stated directly: each rank's contiguous
-    # shard holds its rows of every part, in q, k, v, g, b order -- the
-    # beta block's rows are its own (2 of 16 at TP8), not a slice of a
-    # wider block.
-    per_rank = rows // tp_size
-    beta_per_rank = arrays[4].shape[0] // tp_size
-    for r in range(tp_size):
-        shard = actual[r * (4 * per_rank + beta_per_rank) :]
-        shard = shard[: 4 * per_rank + beta_per_rank]
-        for p, part in enumerate(arrays):
-            part_per_rank = per_rank if p < 4 else beta_per_rank
-            off = p * part_per_rank if p < 4 else 4 * per_rank
-            np.testing.assert_array_equal(
-                shard[off : off + part_per_rank],
-                part[r * part_per_rank : (r + 1) * part_per_rank],
-            )
+@contextmanager
+def _virtual_gfx950() -> Iterator[None]:
+    """A gfx950 virtual device: the MXFP4 experts resolve their AMD path
+    with no GPU attached."""
+    set_virtual_device_api("hip")
+    set_virtual_device_target_arch("gfx950")
+    set_virtual_device_count(1)
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
 
 
-def test_fused_qkvg_proj_rejects_mismatched_parts() -> None:
-    """A checkpoint whose q/k/v/g projections disagree in shape or dtype
-    must fail loudly, not produce a silently mis-merged weight."""
-    q = _weight(_fp32((8, 5)), "q_proj").data()
-    k_bad_shape = _weight(_fp32((8, 4)), "k_proj").data()
-    g_bad_dtype = _weight(_fp32((8, 5)), "g_proj", DType.bfloat16).data()
-    b_bad_dtype = _weight(_fp32((8, 5)), "b_proj", DType.bfloat16).data()
-    k = _weight(_fp32((8, 5)), "k_proj").data()
-    b = _weight(_fp32((8, 5)), "b_proj").data()
-    with pytest.raises(ValueError, match="k_proj has dtype"):
-        wa._fuse_qkvgb_proj(q, k_bad_shape, k, k, b, "qkvg_proj.weight", 2)
-    with pytest.raises(ValueError, match="g_proj has dtype"):
-        wa._fuse_qkvgb_proj(q, k, k, g_bad_dtype, b, "qkvg_proj.weight", 2)
-    with pytest.raises(ValueError, match="b_proj has dtype"):
-        wa._fuse_qkvgb_proj(q, k, k, k, b_bad_dtype, "qkvg_proj.weight", 2)
-
-
-def test_fused_qkvg_proj_casts_mixed_float_parts_to_the_model_dtype() -> None:
-    """Parts stored in different float dtypes each cast to the model dtype
-    before merging, as the final cast pass would; a non-float part still
-    fails loudly."""
-    arrays = [_fp32((8, 5)) + 100 * i for i in range(4)]
-    q = _weight(arrays[0], "q_proj", DType.float32).data()
-    k = _weight(arrays[1], "k_proj", DType.bfloat16).data()
-    v = _weight(arrays[2], "v_proj", DType.float16).data()
-    g = _weight(arrays[3], "g_proj", DType.bfloat16).data()
-    b = _weight(_fp32((8, 5)), "b_proj", DType.float32).data()
-    fused = wa._fuse_qkvgb_proj(
-        q, k, v, g, b, "qkvg_proj.weight", 2, DType.float32
-    )
-    assert fused.dtype == DType.float32
-    expected = interleave_for_tp(
-        [_to_numpy(part.astype(DType.float32)) for part in (q, k, v, g, b)], 2
-    )
-    np.testing.assert_array_equal(_to_numpy(fused), expected)
-
-    b_int = _weight_u8(np.zeros((8, 5), np.uint8), "b_proj").data()
-    with pytest.raises(ValueError, match="b_proj has dtype"):
-        wa._fuse_qkvgb_proj(
-            q, k, v, g, b_int, "qkvg_proj.weight", 2, DType.float32
-        )
-
-
-def _rank_blocks(
-    q_a: np.ndarray, kv_a: np.ndarray, g: np.ndarray, tp_size: int
-) -> np.ndarray:
-    """The fused MLA weight built by hand: per rank, q_a and kv_a whole, then
-    that rank's contiguous slice of the gate rows."""
-    gate_rows = g.shape[0] // tp_size
-    blocks = []
-    for r in range(tp_size):
-        blocks += [q_a, kv_a, g[r * gate_rows : (r + 1) * gate_rows]]
-    return np.concatenate(blocks, axis=0)
-
-
-def test_fused_qkv_a_g_proj_matches_model_py(
-    checkpoint: dict[str, Any], converted: dict[str, WeightData]
-) -> None:
-    """At the loader's own TP degree (1) the adapter's merged
-    ``qkv_a_g_proj`` must agree with ``model.py``'s eager-loader helper."""
-    attn_src = f"{_TEXT}.layers.1.self_attn"
-    q_a, kv_a, g = (
-        _to_numpy(checkpoint[f"{attn_src}.{name}.weight"].data())
-        for name in ("q_a_proj", "kv_a_proj_with_mqa", "g_proj")
-    )
-    expected = _to_numpy(
-        WeightData.from_numpy(
-            km._fuse_qkv_a_g_proj(q_a, kv_a, g), "ref"
-        ).astype(DType.bfloat16)
-    )
-    actual = _to_numpy(converted["layers.1.attention.qkv_a_g_proj.weight"])
-    assert converted["layers.1.attention.qkv_a_g_proj.weight"].dtype == (
-        DType.bfloat16
-    )
-    np.testing.assert_array_equal(actual, expected)
-
-
-@pytest.mark.parametrize("tp_size", [1, 2, 8])
-def test_fused_qkv_a_g_proj_replicates_the_latents_per_rank(
-    tp_size: int,
-) -> None:
-    """Rank ``r``'s contiguous shard of the merged weight is ``[q_a | kv_a |
-    g_r]``: whole copies of the replicated latent projections, then its own
-    gate rows, so the fused weight holds ``tp_size`` copies of q_a and kv_a.
-
-    Parts carry disjoint values, so sharding a latent, dropping a copy, or
-    swapping blocks fails the bit-exact comparison against the hand-built
-    layout at every TP degree; TP1 is the plain concat ``model.py`` writes.
-    """
-    hidden = 5
-    q_rows, kv_rows, g_rows = 6, 4, 16
-    q_a, kv_a, g = (
-        _weight(_fp32((rows, hidden)) + 100 * i, name, DType.bfloat16).data()
-        for i, (rows, name) in enumerate(
-            (
-                (q_rows, "q_a_proj"),
-                (kv_rows, "kv_a_proj_with_mqa"),
-                (g_rows, "g_proj"),
-            )
-        )
-    )
-    fused = wa._fuse_qkv_a_g_proj(
-        q_a, kv_a, g, "qkv_a_g_proj.weight", tp_size, DType.bfloat16
-    )
-    assert fused.dtype == DType.bfloat16
-    assert tuple(fused.shape) == (
-        tp_size * (q_rows + kv_rows) + g_rows,
-        hidden,
-    )
-    q_a_np, kv_a_np, g_np = _to_numpy(q_a), _to_numpy(kv_a), _to_numpy(g)
-    actual = _to_numpy(fused)
-    np.testing.assert_array_equal(
-        actual, _rank_blocks(q_a_np, kv_a_np, g_np, tp_size)
-    )
-    # The row shard the loader hands each rank is exactly its own block.
-    gate_rows = g_rows // tp_size
-    block = q_rows + kv_rows + gate_rows
-    for r in range(tp_size):
-        shard = actual[r * block : (r + 1) * block]
-        np.testing.assert_array_equal(shard[:q_rows], q_a_np)
-        np.testing.assert_array_equal(shard[q_rows : q_rows + kv_rows], kv_a_np)
-        np.testing.assert_array_equal(
-            shard[q_rows + kv_rows :], g_np[r * gate_rows : (r + 1) * gate_rows]
-        )
-    if tp_size == 1:
-        np.testing.assert_array_equal(
-            actual, km._fuse_qkv_a_g_proj(q_a_np, kv_a_np, g_np)
-        )
-
-
-@pytest.mark.parametrize("tp_size", [1, 8])
-def test_fused_qkv_a_g_proj_shape_at_kimi_k3_geometry(tp_size: int) -> None:
-    """At the published geometry (q_lora 1536, kv_lora + rope 576, 96 heads
-    of v_head_dim 128) the global row count is ``tp * 2112 + 12288``, and
-    each rank's row shard is one ``2112 + 12288 / tp`` block -- the
-    per-rank GEMM width the layer's split reads."""
-    hidden = 1
-    q_a, kv_a, g = (
-        WeightData.from_numpy(np.zeros((rows, hidden), np.float32), name)
-        for rows, name in (
-            (1536, "q_a_proj"),
-            (576, "kv_a_proj_with_mqa"),
-            (96 * 128, "g_proj"),
-        )
-    )
-    fused = wa._fuse_qkv_a_g_proj(q_a, kv_a, g, "qkv_a_g_proj.weight", tp_size)
-    assert tuple(fused.shape) == (tp_size * 2112 + 12288, hidden)
-    assert int(fused.shape[0]) // tp_size == 2112 + 12288 // tp_size
-
-
-def test_fused_qkv_a_g_proj_casts_mixed_float_parts_to_the_model_dtype() -> (
-    None
-):
-    """Parts stored in different float dtypes each narrow to the model dtype
-    before merging, bit-exactly as their own cast would round them; a
-    non-float part still fails loudly."""
-    arrays = [_fp32((rows, 5)) for rows in (6, 4, 8)]
-    q_a = _weight(arrays[0], "q_a_proj", DType.float32).data()
-    kv_a = _weight(arrays[1], "kv_a_proj_with_mqa", DType.bfloat16).data()
-    g = _weight(arrays[2], "g_proj", DType.float32).data()
-    fused = wa._fuse_qkv_a_g_proj(
-        q_a, kv_a, g, "qkv_a_g_proj.weight", 2, DType.bfloat16
-    )
-    assert fused.dtype == DType.bfloat16
-    expected = _rank_blocks(
-        _to_numpy(q_a.astype(DType.bfloat16)),
-        _to_numpy(kv_a.astype(DType.bfloat16)),
-        _to_numpy(g.astype(DType.bfloat16)),
-        2,
-    )
-    np.testing.assert_array_equal(_to_numpy(fused), expected)
-
-    g_int = _weight_u8(np.zeros((8, 5), np.uint8), "g_proj").data()
-    with pytest.raises(ValueError, match="g_proj has dtype"):
-        wa._fuse_qkv_a_g_proj(
-            q_a, kv_a, g_int, "qkv_a_g_proj.weight", 2, DType.bfloat16
-        )
-
-
-def test_fused_qkv_a_g_proj_rejects_mismatched_parts() -> None:
-    """A part with another input width or (uncast) dtype, or a gate that
-    does not split over the TP degree, fails loudly rather than producing a
-    silently mis-merged weight."""
-    q_a = _weight(_fp32((6, 5)), "q_a_proj").data()
-    kv_a = _weight(_fp32((4, 5)), "kv_a_proj_with_mqa").data()
-    g = _weight(_fp32((8, 5)), "g_proj").data()
-    kv_a_wide = _weight(_fp32((4, 6)), "kv_a_proj_with_mqa").data()
-    g_bf16 = _weight(_fp32((8, 5)), "g_proj", DType.bfloat16).data()
-    with pytest.raises(ValueError, match="kv_a_proj_with_mqa has dtype"):
-        wa._fuse_qkv_a_g_proj(q_a, kv_a_wide, g, "qkv_a_g_proj.weight", 2)
-    with pytest.raises(ValueError, match="g_proj has dtype"):
-        wa._fuse_qkv_a_g_proj(q_a, kv_a, g_bf16, "qkv_a_g_proj.weight", 2)
-    with pytest.raises(ValueError, match="not divisible by the TP degree 3"):
-        wa._fuse_qkv_a_g_proj(q_a, kv_a, g, "qkv_a_g_proj.weight", 3)
-
-
-def test_fused_qkv_conv_matches_model_py(
-    checkpoint: dict[str, Any], converted: dict[str, WeightData]
-) -> None:
-    attn_src = f"{_TEXT}.layers.0.self_attn"
-    q, k, v = (
-        _to_numpy(checkpoint[f"{attn_src}.{axis}_conv1d.weight"].data())
-        for axis in ("q", "k", "v")
-    )
-    fused = km._fuse_qkv_conv_weight(q, k, v)
-    # `conv_weight` is fp32-pinned and the checkpoint stores it fp32, so the
-    # adapter passes the fused values through unchanged: the conv kernel
-    # binds fp32, and rounding at load would move the weight off the
-    # checkpoint's own value.
-    expected = _to_numpy(
-        WeightData.from_numpy(fused, "ref").astype(DType.float32)
-    )
-    actual = _to_numpy(converted["layers.0.attention.conv_weight"])
-    np.testing.assert_array_equal(actual, expected)
-
-
-def test_fused_gate_up_matches_model_py(
-    checkpoint: dict[str, Any], converted: dict[str, WeightData]
-) -> None:
-    gate = _to_numpy(
-        checkpoint[f"{_TEXT}.layers.0.mlp.gate_proj.weight"].data()
-    )
-    up = _to_numpy(checkpoint[f"{_TEXT}.layers.0.mlp.up_proj.weight"].data())
-    expected = km._fuse_gate_up(gate, up)
-    actual = _to_numpy(converted["layers.0.ffn.gate_up_proj.weight"])
-    np.testing.assert_array_equal(actual, expected)
-
-
-def test_canonical_a_log_matches_model_py(
-    checkpoint: dict[str, Any], converted: dict[str, WeightData]
-) -> None:
-    raw = _to_numpy(checkpoint[f"{_TEXT}.layers.0.self_attn.A_log"].data())
-    expected = km._canonical_a_log(raw, _KDA_NUM_HEADS, _KDA_HEAD_DIM)
-    actual = _to_numpy(converted["layers.0.attention.a_log"])
-    np.testing.assert_array_equal(actual, expected)
-    assert actual.shape == (_KDA_NUM_HEADS, _KDA_HEAD_DIM)
-
-
-def test_dt_bias_reshaped_to_heads_by_head_dim(
-    checkpoint: dict[str, Any], converted: dict[str, WeightData]
-) -> None:
-    raw = _to_numpy(checkpoint[f"{_TEXT}.layers.0.self_attn.dt_bias"].data())
-    actual = _to_numpy(converted["layers.0.attention.dt_bias"])
-    np.testing.assert_array_equal(
-        actual, raw.reshape(_KDA_NUM_HEADS, _KDA_HEAD_DIM)
-    )
-
-
-def test_routed_experts_are_the_checkpoints_own_buffers(
-    checkpoint: dict[str, Any], converted: dict[str, WeightData]
-) -> None:
-    """Each expert is renamed, not copied: ``w1`` is gate, ``w3`` is up and
-    ``w2`` is down, and the graph stacks them at init."""
-    moe = f"{_TEXT}.layers.1.block_sparse_moe"
-    for e in range(_NUM_EXPERTS):
-        for w in ("w1", "w2", "w3"):
-            assert (
-                converted[f"layers.1.ffn.experts.{e}.{w}.weight"]
-                is checkpoint[f"{moe}.experts.{e}.{w}.weight"].data()
-            )
-
-
-def test_routed_entry_and_exit_are_not_swapped(
-    converted: dict[str, WeightData],
-) -> None:
-    """``routed_expert_down_proj`` is the ENTRY (hidden -> latent); a swap
-    with ``routed_expert_up_proj`` would show up as a transposed shape."""
-    down = converted["layers.1.ffn.routed_expert_down_proj.weight"]
-    up = converted["layers.1.ffn.routed_expert_up_proj.weight"]
-    assert down.shape == Shape((_ROUTED_EXPERT_HIDDEN_SIZE, _HIDDEN_SIZE))
-    assert up.shape == Shape((_HIDDEN_SIZE, _ROUTED_EXPERT_HIDDEN_SIZE))
+def _module_shapes(config: KimiK3Config) -> dict[str, tuple[int, ...]]:
+    """The text tower's parameters, built lazily from ``config``."""
+    with (
+        _virtual_gfx950(),
+        F.lazy(),
+        default_device(Accelerator(0)),
+        default_dtype(DType.bfloat16),
+    ):
+        model = KimiK3Model(config.model, quant_config=config.quant_config)
+    return {name: _shape(weight.shape) for name, weight in model.parameters}
 
 
 @pytest.mark.parametrize(
-    "key",
-    [
-        "layers.0.attention.a_log",
-        "layers.0.attention.dt_bias",
-        "layers.0.attention.conv_weight",
-        "layers.1.ffn.gate.e_score_correction_bias",
-    ],
+    "packed", [False, True], ids=["bf16_experts", "mxfp4_experts"]
 )
-def test_fp32_pins_are_forced_even_from_bf16(
-    converted: dict[str, WeightData], key: str
-) -> None:
-    """Every pinned tensor is fp32 on output, whatever dtype it arrived in.
-    The router's ``gate_score.weight`` is deliberately NOT pinned: it
-    follows the working dtype (bf16) like every other unpinned tensor."""
-    assert converted[key].dtype == DType.float32
+def test_checkpoint_covers_the_module(packed: bool) -> None:
+    """The renamed checkpoint is the module's parameters, name for name and
+    shape for shape, and the vision tower drops out.
 
-
-def test_gate_score_weight_follows_the_working_dtype(
-    converted: dict[str, WeightData],
-) -> None:
-    """The router gate weight is NOT fp32-pinned: the checkpoint stores it
-    bf16 and the gate GEMV computes bf16 x bf16 -> fp32, so the adapter
-    resolves it to the working dtype like every other castable tensor."""
-    assert (
-        converted["layers.1.ffn.gate.gate_score.weight"].dtype == DType.bfloat16
+    A missing parameter already fails ``Module.compile``; this also catches
+    a checkpoint tensor the module would silently skip.
+    """
+    converted = _convert(
+        _checkpoint(packed_experts=packed, **_expert_sizes(packed))
     )
+    expected = _module_shapes(_finalized_config(packed, converted))
+    assert {
+        name: _shape(data.shape) for name, data in converted.items()
+    } == expected
 
 
-def test_o_norm_weight_follows_the_working_dtype(
-    converted: dict[str, WeightData],
-) -> None:
-    """`o_norm.weight` follows the model's working dtype: the fused verify
-    kernel binds it to the qkv family's dtype, so a wider one would only
-    break that binding's dtype grouping. `b_proj` rides inside the fused
-    qkvg weight now; its fp32-stored rows resolving to the model dtype is
-    covered by the fused weight's own dtype test below."""
-    assert converted["layers.0.attention.o_norm.weight"].dtype == (
-        DType.bfloat16
+def test_finalize_takes_the_stored_a_log_length() -> None:
+    """The KDA layers declare ``A_log`` at the length the checkpoint stores
+    it, zero tail included, so the load binds it whole."""
+    config = _finalized_config(False, _convert(_checkpoint()))
+    assert config.model.kda_a_log_size == _A_LOG_STORED_LEN
+
+
+def test_finalize_refuses_a_short_a_log() -> None:
+    """Fewer coefficients than heads would leave a head on a stale decay."""
+    checkpoint = _checkpoint()
+    checkpoint[f"{_TEXT}.layers.0.self_attn.A_log"] = _weight(
+        np.ones(_KDA_NUM_HEADS - 1, dtype=np.float32), "A_log"
     )
+    with pytest.raises(ValueError, match="fewer than"):
+        _finalized_config(False, _convert(checkpoint))
 
 
-def test_non_pinned_weights_keep_their_stored_dtype(
-    converted: dict[str, WeightData],
-) -> None:
-    assert converted["layers.0.attention.qkvg_proj.weight"].dtype == (
-        DType.bfloat16
-    )
-    assert converted["embed_tokens.weight"].dtype == DType.bfloat16
-
-
-# Even, so both axes a packed expert splits land on a whole byte and a
-# whole 32-element E8M0 scale block.
-_PACKED_ROUTED_EXPERT_HIDDEN_SIZE = 8
-_PACKED_MOE_INTERMEDIATE_SIZE = 4
-
-
-@pytest.fixture
-def packed_checkpoint() -> dict[str, Any]:
-    return _checkpoint(
-        routed_expert_hidden_size=_PACKED_ROUTED_EXPERT_HIDDEN_SIZE,
-        moe_intermediate_size=_PACKED_MOE_INTERMEDIATE_SIZE,
-        packed_experts=True,
-    )
-
-
-@pytest.fixture
-def packed_converted(
-    packed_checkpoint: dict[str, Any],
-) -> dict[str, WeightData]:
-    return convert_kimi_k3_state_dict(
-        packed_checkpoint,
-        _text_config(
-            routed_expert_hidden_size=_PACKED_ROUTED_EXPERT_HIDDEN_SIZE,
-            moe_intermediate_size=_PACKED_MOE_INTERMEDIATE_SIZE,
-        ),
-    )
-
-
-def test_loads_mxfp4_packed_experts(
-    packed_checkpoint: dict[str, Any],
-    packed_converted: dict[str, WeightData],
-) -> None:
-    """Packed weights load as the checkpoint's own buffers, and their scales
-    as zero-copy E8M0 views of the checkpoint's ``uint8`` bytes."""
+def test_mxfp4_scales_are_relabeled_e8m0() -> None:
+    """The scales load as zero-copy E8M0 views of the checkpoint's ``uint8``
+    bytes, and the packed weights as the checkpoint's own buffers."""
+    checkpoint = _checkpoint(packed_experts=True, **_expert_sizes(True))
+    converted = _convert(checkpoint)
     moe = f"{_TEXT}.layers.1.block_sparse_moe"
     for e in range(_NUM_EXPERTS):
         for w in ("w1", "w2", "w3"):
             dst = f"layers.1.ffn.experts.{e}.{w}"
             src = f"{moe}.experts.{e}.{w}"
             assert (
-                packed_converted[f"{dst}.weight"]
-                is packed_checkpoint[f"{src}.weight_packed"].data()
+                converted[f"{dst}.weight"]
+                is checkpoint[f"{src}.weight_packed"].data()
             )
-            scale = packed_converted[f"{dst}.weight_scale"]
+            scale = converted[f"{dst}.weight_scale"]
             assert scale.dtype == DType.float8_e8m0fnu
-            raw = _to_numpy_u8(packed_checkpoint[f"{src}.weight_scale"].data())
+            raw = _to_numpy_u8(checkpoint[f"{src}.weight_scale"].data())
             got = _to_numpy_u8(scale)
             np.testing.assert_array_equal(got, raw)
             assert np.shares_memory(got, raw)
-
-
-def test_dense_checkpoint_has_no_quantized_expert_keys(
-    converted: dict[str, WeightData],
-) -> None:
-    """The existing dense (BF16) fixture never produces scale tensors."""
-    assert not any(name.endswith(".weight_scale") for name in converted)
-
-
-@pytest.mark.parametrize(
-    "tp_size, expected",
-    [
-        (1, [0, 1, 2, 3, 10, 11, 12, 13]),
-        (2, [0, 1, 10, 11, 2, 3, 12, 13]),
-        (4, [0, 10, 1, 11, 2, 12, 3, 13]),
-    ],
-)
-def test_interleave_for_tp_groups_rows_per_rank(
-    tp_size: int, expected: list[int]
-) -> None:
-    gate = np.arange(4)[:, None] + np.zeros((1, 3), dtype=np.int64)
-    up = gate + 10
-    fused = interleave_for_tp([gate, up], tp_size)
-    np.testing.assert_array_equal(fused[:, 0], expected)
-    assert fused.shape == (8, 3)
-
-
-def test_interleave_for_tp_three_blocks_on_a_later_axis() -> None:
-    q, k, v = (np.arange(4)[None, :] + 10 * b for b in range(3))
-    fused = interleave_for_tp([q, k, v], 2, axis=1)
-    np.testing.assert_array_equal(
-        fused[0], [0, 1, 10, 11, 20, 21, 2, 3, 12, 13, 22, 23]
-    )
-
-
-def test_interleave_for_tp_rejects_a_non_divisible_width() -> None:
-    with pytest.raises(ValueError, match="not divisible by the TP degree 4"):
-        interleave_for_tp([np.zeros((6, 2)), np.zeros((6, 2))], 4)
 
 
 def _cpu_mesh_moe(tp_size: int) -> KimiK3LatentMoE:
@@ -992,11 +557,20 @@ def _cpu_mesh_moe(tp_size: int) -> KimiK3LatentMoE:
         )
 
 
+def _rank_interleaved(parts: Sequence[np.ndarray], tp_size: int) -> np.ndarray:
+    """``parts`` stacked rank by rank: each rank's rows of every part, in
+    order, so rank ``r``'s contiguous slice is its share of each."""
+    shards = [np.split(part, tp_size) for part in parts]
+    return np.concatenate(
+        [shard[rank] for rank in range(tp_size) for shard in shards]
+    )
+
+
 @pytest.mark.parametrize("tp_size", [1, 2, 4])
-def test_graph_expert_stacks_match_interleave_for_tp(tp_size: int) -> None:
-    """Each device's gate/up stack is its rank's slice of the
-    :func:`interleave_for_tp` layout the adapter used to write, and its down
-    stack is its slice of the FFN (K) axis, for weights and scales alike.
+def test_graph_expert_stacks_split_per_rank(tp_size: int) -> None:
+    """Each device's gate/up stack holds, per expert, its rank's rows of the
+    gate and then of the up projection, and its down stack its slice of the
+    FFN (K) axis, for weights and scales alike.
 
     The host backend cannot compile E8M0, so random ``uint8`` codes stand in
     for the scales: the stacking only moves bytes.
@@ -1016,7 +590,7 @@ def test_graph_expert_stacks_match_interleave_for_tp(tp_size: int) -> None:
     for leaf, suffix in (("weight", ""), ("weight_scale", "_scale")):
         gate_up = np.stack(
             [
-                interleave_for_tp([g, u], tp_size)
+                _rank_interleaved([g, u], tp_size)
                 for g, u in zip(ref["w1", leaf], ref["w3", leaf], strict=True)
             ]
         )
@@ -1036,176 +610,3 @@ def test_graph_expert_stacks_match_interleave_for_tp(tp_size: int) -> None:
                     np.take(want, range(d * width, (d + 1) * width), axis),
                     err_msg=f"{name}{suffix} on device {d}",
                 )
-
-
-def _pipeline_config(
-    n_devices: int, ep_size: int = 1, data_parallel_degree: int = 1
-) -> Any:
-    return SimpleNamespace(
-        model=SimpleNamespace(
-            device_specs=[object()] * n_devices,
-            data_parallel_degree=data_parallel_degree,
-            quantization_encoding="bfloat16",
-            _resolved_dtype_cast=(None, None),
-        ),
-        runtime=SimpleNamespace(ep_size=ep_size),
-    )
-
-
-def test_tp_degree_follows_the_mesh() -> None:
-    assert tp_degree(None) == 1
-    assert tp_degree(_pipeline_config(8)) == 8
-    # An ``ep`` mesh shards nothing along TP.
-    assert tp_degree(_pipeline_config(8, ep_size=8)) == 1
-    assert tp_degree(_pipeline_config(8, data_parallel_degree=8)) == 1
-
-
-# Both widths must divide by 8 for the merged exit's TP=8 layout below.
-_MERGED_LATENT = 8
-_MERGED_SHARED = 8
-
-
-def _ramp(rows: int, cols: int, base: int) -> np.ndarray:
-    """A column-ramped block, integer-valued so a bf16 cast is exact."""
-    return np.tile(np.arange(base, base + cols, dtype=np.float32), (rows, 1))
-
-
-def _moe_only_checkpoint(latent: int, shared: int) -> dict[str, Any]:
-    """`_checkpoint` with every layer an MLA + latent MoE layer.
-
-    The default fixture's KDA layer fuses a 2-row ``b_proj`` block and its
-    single dense layer a 12-wide FFN, so neither splits over a TP degree
-    above 2 and the adaptation raises before the exit weights are reached.
-    """
-    checkpoint = _checkpoint(
-        routed_expert_hidden_size=latent, moe_intermediate_size=shared
-    )
-    # Layer 1 is already the layer shape wanted; give layer 0 its tensors.
-    src = f"{_TEXT}.layers.1"
-    dst = f"{_TEXT}.layers.0"
-    for key in [
-        k
-        for k in checkpoint
-        if k.startswith((f"{dst}.self_attn.", f"{dst}.mlp."))
-    ]:
-        del checkpoint[key]
-    for key in [k for k in checkpoint if k.startswith(f"{src}.")]:
-        checkpoint[key.replace(f"{src}.", f"{dst}.")] = checkpoint[key]
-    return checkpoint
-
-
-@pytest.mark.parametrize("tp_size", [2, 8])
-def test_merged_exit_weights_shard_into_one_gemm_per_rank(tp_size: int) -> None:
-    """The TP path runs the routed exit and the shared expert's down
-    projection as one GEMM over `[W_exit_r | W_sdown_r]`.
-
-    The loader splits a weight contiguously along its input axis, so rank
-    ``r`` lands on exactly `[W_exit[:, r] | W_sdown[:, r]]` only if neither
-    weight is interleaved per TP rank -- unlike the fused gate/up, which
-    must be.
-    """
-    checkpoint = _moe_only_checkpoint(_MERGED_LATENT, _MERGED_SHARED)
-    moe = f"{_TEXT}.layers.1.block_sparse_moe"
-    checkpoint[f"{moe}.routed_expert_up_proj.weight"] = _weight(
-        _ramp(_HIDDEN_SIZE, _MERGED_LATENT, 1), "up_proj", DType.bfloat16
-    )
-    checkpoint[f"{moe}.shared_experts.down_proj.weight"] = _weight(
-        _ramp(_HIDDEN_SIZE, _MERGED_SHARED, 64), "sd", DType.bfloat16
-    )
-    text_config = _text_config(
-        routed_expert_hidden_size=_MERGED_LATENT,
-        moe_intermediate_size=_MERGED_SHARED,
-    )
-    text_config.first_k_dense_replace = 0
-    text_config.linear_attn_config["kda_layers"] = []
-    text_config.linear_attn_config["full_attn_layers"] = list(
-        range(1, _NUM_HIDDEN_LAYERS + 1)
-    )
-    converted = convert_kimi_k3_state_dict(
-        checkpoint,
-        text_config,
-        pipeline_config=_pipeline_config(tp_size),
-    )
-    exit_w = _to_numpy(converted["layers.1.ffn.routed_expert_up_proj.weight"])
-    down_w = _to_numpy(
-        converted["layers.1.ffn.shared_experts.down_proj.weight"]
-    )
-    latent_per_rank = _MERGED_LATENT // tp_size
-    shared_per_rank = _MERGED_SHARED // tp_size
-    assert exit_w.shape == (_HIDDEN_SIZE, _MERGED_LATENT)
-    assert down_w.shape == (_HIDDEN_SIZE, _MERGED_SHARED)
-
-    for rank in range(tp_size):
-        got = np.concatenate(
-            [
-                exit_w[:, rank * latent_per_rank :][:, :latent_per_rank],
-                down_w[:, rank * shared_per_rank :][:, :shared_per_rank],
-            ],
-            axis=-1,
-        )
-        want = np.concatenate(
-            [
-                _ramp(
-                    _HIDDEN_SIZE, latent_per_rank, 1 + rank * latent_per_rank
-                ),
-                _ramp(
-                    _HIDDEN_SIZE, shared_per_rank, 64 + rank * shared_per_rank
-                ),
-            ],
-            axis=-1,
-        )
-        np.testing.assert_array_equal(
-            got, want, err_msg=f"rank {rank}'s merged exit weight"
-        )
-
-
-def test_fuse_qkvgb_for_tp_appends_the_gate_to_every_rank() -> None:
-    """The fused qkvg weight carries the gate's rows once, at load time.
-
-    The layer's input GEMM also produces the gate's down projection, so the
-    checkpoints' ``f_a_proj`` rides the fused weight instead of a launch of
-    its own. It is replicated -- each rank's ``f_b_proj`` slice needs all of
-    it -- so every rank's contiguous block ends with the whole ``f_a``, and
-    the stored weight is the only place those rows live.
-    """
-    tp_size = 4
-    rows, hidden = 8, 4
-    gate_down = _ramp(3, hidden, 900)
-    parts = [_ramp(rows, hidden, 100 * i) for i in range(5)]
-
-    got = fuse_qkvgb_for_tp(parts, gate_down, tp_size)
-    per_rank = rows // tp_size
-    want = np.concatenate(
-        [
-            np.concatenate(
-                [
-                    *(
-                        part[r * per_rank : (r + 1) * per_rank]
-                        for part in parts
-                    ),
-                    gate_down,
-                ],
-                axis=0,
-            )
-            for r in range(tp_size)
-        ],
-        axis=0,
-    )
-    np.testing.assert_array_equal(got, want, err_msg="the fused qkvg weight")
-    assert got.shape == (5 * rows + tp_size * 3, hidden)
-    # Each rank's shard is its own five blocks plus the whole gate row, so a
-    # plain row shard of this weight is what the layer's split expects.
-    shard = got.shape[0] // tp_size
-    for r in range(tp_size):
-        block = got[r * shard : (r + 1) * shard]
-        np.testing.assert_array_equal(block[-3:], gate_down)
-
-
-def test_fuse_qkvgb_for_tp_without_a_gate_is_the_plain_interleave() -> None:
-    """A checkpoint that does not fuse the gate keeps the five-block weight."""
-    tp_size = 2
-    parts = [_ramp(8, 4, 100 * i) for i in range(5)]
-    np.testing.assert_array_equal(
-        fuse_qkvgb_for_tp(parts, None, tp_size),
-        interleave_for_tp(parts, tp_size),
-    )

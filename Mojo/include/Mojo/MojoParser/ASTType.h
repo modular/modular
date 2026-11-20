@@ -170,7 +170,7 @@ public:
   /// 3-state result. This uses the concrete type's parameter bindings to
   /// evaluate any conditional trait conformances.
   ///
-  /// When callerAssumptions is non-empty, where-clause assumptions are used
+  /// The `callerAssumptions` set (see `LIT::buildAssumptions`) is used
   /// to prove unfoldable conformance constraints (e.g., a where clause
   /// `AllWritable[*types]` can prove a Tuple's conditional Writable
   /// conformance).
@@ -181,13 +181,13 @@ public:
   /// - `unknown` if conformance depends on constraints that cannot be
   ///   evaluated statically
   TriBool doesConformTo(TraitType trait, SharedState &shared,
-                        ArrayRef<ConstraintAttr> callerAssumptions) const;
+                        TypedAttr callerAssumptions) const;
 
   /// Same, additionally collecting the problematic constraints so a diagnosing
   /// caller can name them.
-  ConstraintResult
-  doesConformToWithDetails(TraitType trait, SharedState &shared,
-                           ArrayRef<ConstraintAttr> callerAssumptions) const;
+  ConstraintResult doesConformToWithDetails(TraitType trait,
+                                            SharedState &shared,
+                                            TypedAttr callerAssumptions) const;
 
   /// Given a standard trait like Copyable, look up the conformance.  On
   /// success, the ASTDecl of the trait itself is returned, it is otherwise
@@ -195,13 +195,13 @@ public:
   std::pair<TriBool, ASTDecl *>
   conformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
                          SharedState &shared,
-                         ArrayRef<ConstraintAttr> callerAssumptions) const;
+                         TypedAttr callerAssumptions) const;
 
   /// This returns true if the current type unconditionally conforms to the
   /// specified builtin trait, e.g. "Movable".
-  bool provenConformsToBuiltinTrait(
-      StringRef traitName, llvm::SMLoc loc, SharedState &shared,
-      ArrayRef<ConstraintAttr> callerAssumptions) const;
+  bool provenConformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                                    SharedState &shared,
+                                    TypedAttr callerAssumptions) const;
 
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.

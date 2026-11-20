@@ -56,6 +56,10 @@ void printWidthLimit(::mlir::AsmPrinter &printer, ::mlir::TypedAttr limit);
 /// index or hands one to its regions: index computation the width inference
 /// can't follow.
 bool computesIndex(::mlir::Operation *op);
+
+// What `RowwisePhaseOpInterface::getReadCache` returns.
+class IterCacheOp;
+
 } // namespace M::MAP
 
 //===----------------------------------------------------------------------===//

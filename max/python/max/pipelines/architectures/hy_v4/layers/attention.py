@@ -29,7 +29,7 @@ import math
 from typing import Any
 
 from max import functional as F
-from max.driver import CPU, Device
+from max.driver import Device
 from max.dtype import DType
 from max.nn import Linear, Module
 from max.nn.attention_mask import MHAMaskVariant
@@ -37,8 +37,8 @@ from max.nn.common_layers import quant_ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.common_layers.quant_tensor import MXFP8Tensor
 from max.nn.kernels import (
-    flare_mla_prefill_plan,
     mla_decode_graph,
     mla_prefill_decode_graph,
 )
@@ -75,9 +75,9 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
     Args:
         config: The model config; ``config.kv_params`` holds the ``mla`` and
             ``indexer`` caches, and ``config.quant_config`` decides whether
-            the MLA projections, ``o_proj`` and the indexer's ``wq_b``/``wk``
-            are quantized. ``kv_b_proj`` and ``linear_gate`` are BF16 either
-            way.
+            the MLA projections, ``o_proj`` and the indexer's ``wq_b`` are
+            quantized. ``kv_b_proj`` and the indexer's ``wk`` run BF16,
+            dequantized in the graph; ``linear_gate`` is BF16.
         layer_idx: The decoder layer, which picks its indexer kind.
         graph_mode: ``"auto"`` runs ``mla_prefill_decode_graph``, which picks
             the sparse prefill or decode kernel per batch; ``"decode"`` runs
@@ -105,7 +105,6 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         kv_params = config.kv_params.children["mla"]
         assert isinstance(kv_params, KVCacheParams)
         self.kv_params = kv_params
-        self.max_batch_context_length = config.max_batch_context_length
         self.graph_mode = graph_mode
         self.rope_interleave = rope_interleave
         self.n_heads = config.num_attention_heads
@@ -128,16 +127,16 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
                 out_dim, in_dim, config.quant_config
             )
 
+        # Both read x, so the graph stacks them for one matmul.
         self.q_a_proj = weight(self.q_lora_rank, hidden)
+        self.kv_a_proj_with_mqa = weight(self.cache_head_dim, hidden)
         self.q_a_layernorm = RMSNorm(self.q_lora_rank, eps=_EPS)
         self.q_b_proj = weight(q_dim, self.q_lora_rank)
-        self.kv_a_proj_with_mqa = weight(self.cache_head_dim, hidden)
         self.kv_a_proj_layernorm = Tensor.ones([self.kv_lora_rank])
-        self.kv_b_proj = Tensor.zeros(
-            [
-                self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
-                self.kv_lora_rank,
-            ]
+        # MLA absorb has no MXFP8 path: the graph dequantizes it.
+        self.kv_b_proj = weight(
+            self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
+            self.kv_lora_rank,
         )
         self.o_proj = QuantizedLinear(
             o_dim, hidden, bias=False, quant_config=config.quant_config
@@ -154,8 +153,9 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         # A quantized weight's ``to`` returns a copy, which ``Module.to``
         # drops for child modules.
         self.q_a_proj = self.q_a_proj.to(target)
-        self.q_b_proj = self.q_b_proj.to(target)
         self.kv_a_proj_with_mqa = self.kv_a_proj_with_mqa.to(target)
+        self.q_b_proj = self.q_b_proj.to(target)
+        self.kv_b_proj = self.kv_b_proj.to(target)
         return self
 
     def shard_heads(self) -> None:
@@ -166,7 +166,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         the indexer stay replicated, since every device needs the full
         latent, its own cache copy and the shared top-k.
         """
-        mesh = self.kv_b_proj.mesh
+        mesh = self.linear_gate.weight.mesh
         rows = NamedMapping(mesh, (TP, None))
         self.q_b_proj = self.q_b_proj.to(rows)
         self.kv_b_proj = self.kv_b_proj.to(rows)
@@ -178,10 +178,22 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             NamedMapping(mesh, (TP,))
         )
 
+    @property
+    def _qkv_a(self) -> quant_ops.QuantAwareTensor:
+        q_a, kv_a = self.q_a_proj, self.kv_a_proj_with_mqa
+        if isinstance(q_a, MXFP8Tensor) and isinstance(kv_a, MXFP8Tensor):
+            return mxfp8.concat_rows([q_a, kv_a])
+        assert isinstance(q_a, Tensor) and isinstance(kv_a, Tensor)
+        return F.concat([q_a, kv_a])
+
     # The absorbed kv_b_proj views, as LatentAttentionWithRope builds them.
     @property
     def _kv_b(self) -> Tensor:
-        return self.kv_b_proj.T.reshape([self.kv_lora_rank, self.n_heads, -1])
+        kv_b = self.kv_b_proj
+        if isinstance(kv_b, MXFP8Tensor):
+            kv_b = mxfp8.dequantize(kv_b)
+        assert isinstance(kv_b, Tensor)
+        return kv_b.T.reshape([self.kv_lora_rank, self.n_heads, -1])
 
     @property
     def w_uk(self) -> Tensor:
@@ -203,22 +215,15 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         )
 
     def _prefill_kwargs(
-        self,
-        input_row_offsets: Tensor,
-        kv_collection: PagedCacheValues,
-        buffer_length: Tensor,
+        self, input_row_offsets: Tensor, buffer_length: Tensor
     ) -> dict[str, Any]:
-        buffer_row_offsets, cache_offsets, _ = flare_mla_prefill_plan(
-            self.kv_params,
-            input_row_offsets,
-            kv_collection,
-            F.constant(0, DType.uint32, device=CPU()),
-            self.max_batch_context_length,
-            max_chunks=1,
-        )
+        # Only the dense prefill branch reads these operands, and Hy4 always
+        # runs the sparse one, so a view of the row offsets fills them in
+        # place of a per-layer flare_mla_prefill_plan launch.
+        unused_offsets = input_row_offsets.reshape([1, -1])
         return {
-            "buffer_row_offsets": buffer_row_offsets,
-            "cache_offsets": cache_offsets,
+            "buffer_row_offsets": unused_offsets,
+            "cache_offsets": unused_offsets,
             "buffer_length": buffer_length,
             "w_k": self.w_k,
         }
@@ -251,12 +256,16 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             prev_topk_indices: The previous full layer's top-k, read by a
                 ``shared`` layer.
             buffer_length: ``[1]`` int32 on the host, the batch's prefill
-                buffer length as the plan kernel computes it; the graph never
-                reads the plan's own back, which capture would reject.
+                buffer length. The sparse kernels do not read it; the op
+                takes it.
         """
-        q_resid = self.q_a_layernorm(mxfp8.matmul(x, self.q_a_proj))
+        q_a, kv = F.split(
+            mxfp8.matmul(x, self._qkv_a),
+            [self.q_lora_rank, self.cache_head_dim],
+            axis=-1,
+        )
+        q_resid = self.q_a_layernorm(q_a)
         q = mxfp8.matmul(q_resid, self.q_b_proj)
-        kv = mxfp8.matmul(x, self.kv_a_proj_with_mqa)
         if not self.rope_interleave:
             q = _neox_to_interleaved(
                 q.reshape([-1, self.n_heads, self.qk_head_dim]),
@@ -297,7 +306,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             num_partitions_scalar=kv_collection.mla_num_partitions,
             sparse_indices=topk,
             physical_indices=True,
-            sparse_attn_sink=self.learnable_sink_param,
+            sparse_attn_sink=self.learnable_sink_param.cast(DType.float32),
             sparse_indices_stride=self.index_topk,
         )
         if self.graph_mode == "decode":
@@ -305,9 +314,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         else:
             attn = mla_prefill_decode_graph(
                 **kwargs,
-                **self._prefill_kwargs(
-                    input_row_offsets, kv_collection, buffer_length
-                ),
+                **self._prefill_kwargs(input_row_offsets, buffer_length),
             )
         # The kernels run per device on its heads.
         attn = attn.rebind_mapping(q.mapping)

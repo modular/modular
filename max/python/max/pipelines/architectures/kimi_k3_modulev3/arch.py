@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Kimi K3 on ModuleV3.
 
-Selected over the Graph-API architecture (``kimi_k3.arch.kimi_k3_arch``) by
-``prefer_module_v3``; both read the same checkpoint and the same cache tree.
+The only Kimi K3 architecture: a checkpoint that names
+``KimiK3ForConditionalGeneration`` resolves to it.
 
-TP, EP and MXFP4 are all wired (see ``layers/ep.py``, ``layers/moe_latent.py``
-and ``weight_adapters.py``); EP and MXFP4 are mutually exclusive, matching
+TP, EP and MXFP4 are all wired (see ``layers/ep.py`` and
+``layers/moe_latent.py``); EP and MXFP4 are mutually exclusive, matching
 ``moonshotai/Kimi-K3`` (MXFP4) vs ``moonshotai/Kimi-K3-ep`` (EP, bf16).
 The tower builds for a speculative pairing through the framework's
 registered builder, on a config the pairing stamped with the draft's
@@ -35,7 +35,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .kimi_k3 import KimiK3Decoder
 from .model_config import KimiK3Config
-from .weight_adapters import convert_kimi_k3_state_dict
+from .weight_adapters import kimi_k3_weight_rules
 
 __all__ = ["kimi_k3_modulev3_arch"]
 
@@ -49,9 +49,8 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     modules={GraphRole.DECODER: KimiK3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_kimi_k3_state_dict,
-    },
+    weight_rules=kimi_k3_weight_rules,
+    use_weight_rules=True,
     required_arguments={
         # The KDA recurrent state is not reconstructible from a page table,
         # so a prefix hit would resume from the wrong state.
@@ -61,10 +60,9 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
     # The fused graph the `Inferact/Kimi-K3-DSpark` drafter builds with this
-    # target. Named apart from the graph API path's `unified_dspark_kimi_k3`
-    # because the two ABIs share nothing but arity: the ModuleV3 graph ends
-    # its declared inputs with the PR7 extent pair and takes its traced signal
-    # buffers after it (mach/docs/models/kimi-k3-inferact-dspark.md). The
-    # exporter selects the fused submodel by this name.
+    # target: the ModuleV3 graph takes the distributed inputs and its traced
+    # signal buffers after every declared input
+    # (mach/docs/models/kimi-k3-inferact-dspark.md). The exporter selects the
+    # fused submodel by this name.
     spec_decode_graph_names={"dspark": "unified_dspark_kimi_k3_modulev3"},
 )

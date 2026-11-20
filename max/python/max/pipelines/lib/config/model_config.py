@@ -764,9 +764,10 @@ class MAXModelConfig(MAXModelConfigBase):
             "Decode context parallelism: the number of attention "
             "tensor-parallel ranks that split each request's KV cache by "
             "token position instead of replicating it. Must divide the "
-            "attention tensor-parallel degree; 1 disables it. Set only by "
-            "the gen-mef export: it is not a `max serve` flag, because "
-            "MAX's own KV cache manager doesn't shard by position."
+            "attention tensor-parallel degree; 1 disables it. Only an engine "
+            "serving the model's pipeline artifact honors it: MAX's own KV "
+            "cache manager doesn't split positions yet, so max serve and max "
+            "generate refuse it."
         ),
     )
     """The decode context parallel degree within each attention replica."""
@@ -779,8 +780,8 @@ class MAXModelConfig(MAXModelConfigBase):
             "position p lives on rank (p // interleave) % degree. 1 stripes "
             "tokens; the KV page size stripes whole pages, which lets "
             "disaggregated inference move pages between ranks unchanged. "
-            "Must divide the KV page size and needs a degree above 1. Set "
-            "only by the gen-mef export, like decode_context_parallel_degree."
+            "Must divide the KV page size and needs a degree above 1. Honored "
+            "where decode_context_parallel_degree is."
         ),
     )
     """Consecutive positions a decode context parallel rank owns in turn."""
@@ -805,8 +806,8 @@ class MAXModelConfig(MAXModelConfigBase):
             "their query rows over each DCP group's ranks (prefill context "
             "parallelism) instead of running DCP's per-rank attention over "
             "every row. Needs a replicated query. None takes the default, "
-            "off: PCP is opt-in. Set only by the gen-mef export, like "
-            "decode_context_parallel_degree."
+            "off: PCP is opt-in. Honored where "
+            "decode_context_parallel_degree is."
         ),
     )
     """Whether prefill steps run prefill context parallelism over DCP."""
@@ -1271,6 +1272,9 @@ class MAXModelConfig(MAXModelConfigBase):
             chat_template=args.chat_template,
             use_subgraphs=args.use_subgraphs,
             data_parallel_degree=args.data_parallel_degree,
+            decode_context_parallel_degree=args.decode_context_parallel_degree,
+            decode_context_parallel_interleave=args.decode_context_parallel_interleave,
+            prefill_context_parallel=args.prefill_context_parallel,
             pool_embeddings=args.pool_embeddings,
             max_length=args.max_length,
             kv_cache=args.kv_cache.model_copy(deep=True),

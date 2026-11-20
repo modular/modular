@@ -34,7 +34,7 @@ not here -- this routine produces the per-element dequantized weight only.
 
 from max.gpu import global_idx
 from std.math import ceildiv
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 
 from layout import TensorEngine, TileTensor
 from layout.layout import TensorLayout
@@ -177,6 +177,8 @@ def enqueue_fp4_materialize[
         out_w,
         packed.as_imm(),
         scales.as_imm(),
-        grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
-        block_dim=(BLK, BLK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
+            block_dim=(BLK, BLK),
+        ),
     )

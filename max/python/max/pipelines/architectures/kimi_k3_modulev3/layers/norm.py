@@ -18,18 +18,17 @@ The real Triton kernel (fla's ``fla/modules/fused_norm_gate.py``)
 normalizes in fp32 (``b_x_hat = b_x * b_rstd``), multiplies by the weight
 (``b_y = b_x_hat * b_w``), THEN multiplies by ``sigmoid(gate)``
 (``b_y = b_y * tl.sigmoid(b_g)``), with a single cast to the output dtype at
-the store. Weight-multiply strictly precedes the gate -- this is why K3's own
-V2 code (``kimi_k3/layers/norm.py``) builds it from the general
-``ops.rms_norm`` primitive rather than ``max.nn._graph_ops.state_space.gated_group_rmsnorm``,
-whose kernel gates the INPUT (with ``silu``, before normalizing) rather than
-the weighted output (with ``sigmoid``) -- a genuinely different operation, not
-an interchangeable fused form of the same math.
+the store. Weight-multiply strictly precedes the gate -- this is why
+:func:`kimi_rms_norm_gated` builds from the general ``rms_norm`` primitive
+rather than ``max.nn._graph_ops.state_space.gated_group_rmsnorm``, whose
+kernel gates the INPUT (with ``silu``, before normalizing) rather than
+the weighted output (with ``sigmoid``) -- a genuinely different operation,
+not an interchangeable fused form of the same math.
 
 This operates on whatever shape ``x``'s last axis is, matching
 :class:`~max.nn.norm.RMSNorm`'s generic last-axis behavior: KDA's
 ``o_norm`` normalizes per-head over a ``[T, num_heads, head_dim]`` tensor with
-a ``[head_dim]`` weight, broadcasting across ``num_heads`` for free, the same
-way K3's V2 code does.
+a ``[head_dim]`` weight, broadcasting across ``num_heads`` for free.
 """
 
 from __future__ import annotations
@@ -48,9 +47,8 @@ KIMI_RMS_NORM_EPS = 1e-5
 def kimi_rms_norm(x: Tensor, weight: Tensor, eps: float) -> Tensor:
     """Applies ``KimiRMSNorm``: cast-then-multiply, not Gemma-style.
 
-    Direct V3 port of ``kimi_k3/layers/norm.py``'s ``kimi_rms_norm``: the
-    same ``rms_norm`` primitive :func:`kimi_rms_norm_gated` builds on, with
-    ``weight_offset=0.0`` (no Gemma-style ``+1`` gain) and
+    The same ``rms_norm`` primitive :func:`kimi_rms_norm_gated` builds on,
+    with ``weight_offset=0.0`` (no Gemma-style ``+1`` gain) and
     ``multiply_before_cast=False`` (normalize, cast back to ``x``'s dtype,
     THEN multiply by weight -- not the reverse).
     """
@@ -97,7 +95,8 @@ class KimiRMSNormGated(Module[[Tensor, Tensor], Tensor]):
     eps: float
 
     def __init__(self, dim: int, eps: float) -> None:
-        self.weight = Tensor.ones([dim])
+        # Float32, as checkpoints store it.
+        self.weight = Tensor.ones([dim], dtype=DType.float32)
         self.eps = eps
 
     def forward(self, x: Tensor, gate: Tensor) -> Tensor:

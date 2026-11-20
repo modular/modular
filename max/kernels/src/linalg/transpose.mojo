@@ -30,7 +30,7 @@ from layout import TileTensor
 from std.memory import unsafe_memcpy
 from max.runtime.asyncrt import parallelism_level
 
-from std.utils.index import IndexList, StaticTuple
+from std.utils.index import StaticTuple
 
 
 def _transpose_inplace_4x4[
@@ -420,8 +420,8 @@ def _fill_strides[
 def _collapse_unpermuted_dims[
     rank: Int, tuple_size: Int
 ](
-    mut simplified_shape: IndexList[tuple_size],
-    mut simplified_perms: IndexList[tuple_size],
+    mut simplified_shape: Array[Int, tuple_size],
+    mut simplified_perms: Array[Int, tuple_size],
     dim: Int,
 ):
     var merged_dim = simplified_perms[dim]
@@ -445,8 +445,8 @@ def _collapse_unpermuted_dims[
 def _devare_size_1_dim[
     rank: Int, tuple_size: Int
 ](
-    mut simplified_shape: IndexList[tuple_size],
-    mut simplified_perms: IndexList[tuple_size],
+    mut simplified_shape: Array[Int, tuple_size],
+    mut simplified_perms: Array[Int, tuple_size],
     dim: Int,
 ):
     for i in range(dim, rank - 1):
@@ -470,8 +470,8 @@ def _simplify_transpose_perms_impl[
     rank: Int, tuple_size: Int
 ](
     mut simplified_rank: Int,
-    mut simplified_shape: IndexList[tuple_size],
-    mut simplified_perms: IndexList[tuple_size],
+    mut simplified_shape: Array[Int, tuple_size],
+    mut simplified_perms: Array[Int, tuple_size],
 ):
     comptime if rank < 2:
         return
@@ -504,8 +504,8 @@ def _simplify_transpose_perms[
     rank: Int
 ](
     mut simplified_rank: Int,
-    mut simplified_shape: IndexList[rank],
-    mut simplified_perms: IndexList[rank],
+    mut simplified_shape: Array[Int, rank],
+    mut simplified_perms: Array[Int, rank],
 ):
     """Simplify the given permutation pattern.
 
@@ -528,12 +528,12 @@ def _simplify_transpose_perms[
 @inline(.always)
 def _convert_transpose_perms_to_static_int_tuple[
     rank: Int
-](perms: ImmPointer[Int, _]) -> IndexList[rank]:
-    var simplified_perms = IndexList[rank]()
+](perms: ImmPointer[Int, _]) -> Array[Int, rank]:
+    var simplified_perms = Array[Int, rank](fill=0)
     # TODO: unroll
     for j in range(rank):
         simplified_perms[j] = Int(perms.unsafe_load(j)[0])
-    return simplified_perms
+    return simplified_perms^
 
 
 # ===------------------------------------------------------------------=== #
@@ -575,7 +575,7 @@ def _transpose_2d_serial_tiled[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: Pointer[Int, _],
-    simplified_input_shape: IndexList[rank],
+    simplified_input_shape: Array[Int, rank],
     simplified_rank: Int,
     offset: Int,
 ):
@@ -639,7 +639,7 @@ def _transpose_2d_parallel_tiled[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: Pointer[Int, _],
-    simplified_input_shape: IndexList[rank],
+    simplified_input_shape: Array[Int, rank],
     simplified_rank: Int,
     offset: Int,
     ctx: Optional[DeviceContext.CPU] = None,
@@ -703,7 +703,7 @@ def transpose_2d[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: Pointer[Int, _],
-    simplified_input_shape: IndexList[rank],
+    simplified_input_shape: Array[Int, rank],
     simplified_rank: Int,
     offset: Int,
     ctx: Optional[DeviceContext.CPU] = None,
@@ -828,7 +828,7 @@ def transpose_4d_swap_middle[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: Pointer[Int, _],
-    simplified_input_shape: IndexList[rank],
+    simplified_input_shape: Array[Int, rank],
     simplified_rank: Int,
     ctx: Optional[DeviceContext.CPU] = None,
 ):
@@ -870,7 +870,7 @@ def transpose_3d_swap_outer[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: Pointer[Int, _],
-    simplified_input_shape: IndexList[rank],
+    simplified_input_shape: Array[Int, rank],
     simplified_rank: Int,
 ):
     """Transposes the outer two axes of a rank-3 tensor.
@@ -911,7 +911,7 @@ def transpose_3d_swap_inner[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: Pointer[Int, _],
-    simplified_input_shape: IndexList[rank],
+    simplified_input_shape: Array[Int, rank],
     simplified_rank: Int,
 ):
     """Transposes the inner two axes of a batched rank-3 tensor.
@@ -1007,7 +1007,7 @@ def _copy_with_strides[
 ](
     axis: Int,
     output_ptr: MutPointer[Scalar[dtype], _],
-    output_shape: IndexList[rank],
+    output_shape: Array[Int, rank],
     output_bytecount: Int,
     input_ptr: ImmPointer[Scalar[dtype], _],
     input_strides: ImmPointer[Int, _],
@@ -1196,7 +1196,7 @@ def transpose_strided[
         ](Int(output.dim[axis + 1]()))
 
     # Build output shape for _copy_with_strides.
-    var output_shape = IndexList[rank]()
+    var output_shape = Array[Int, rank](fill=0)
     comptime for i in range(rank):
         output_shape[i] = Int(output.dim[i]())
 
@@ -1264,10 +1264,9 @@ def transpose[
 
     comptime rank = output.rank
 
-    # Build the input shape as an IndexList for simplification logic.
-    var input_shape = IndexList[rank]()
+    var simplified_shape = Array[Int, rank](fill=0)
     comptime for i in range(rank):
-        input_shape[i] = Int(input.dim[i]())
+        simplified_shape[i] = Int(input.dim[i]())
 
     # Try to recognize common special cases in the desired permutation.
     # E.g.
@@ -1279,7 +1278,6 @@ def transpose[
     var simplified_perms = _convert_transpose_perms_to_static_int_tuple[rank](
         perms
     )
-    var simplified_shape = input_shape
     var simplified_rank = rank
     _simplify_transpose_perms[rank](
         simplified_rank, simplified_shape, simplified_perms
@@ -1299,47 +1297,49 @@ def transpose[
     #         simplified_rank,
     #         0,
     #     )
-    elif rank >= 3 and simplified_rank == 3:
-        if (
-            simplified_perms[0] == 0
-            and simplified_perms[1] == 2
-            and simplified_perms[2] == 1
-        ):
-            # batched tiled transpose
-            return transpose_3d_swap_inner(
-                output,
-                input,
-                perms,
-                simplified_shape,
-                simplified_rank,
-            )
-        elif (
-            simplified_perms[0] == 1
-            and simplified_perms[1] == 0
-            and simplified_perms[2] == 2
-        ):
-            return transpose_3d_swap_outer(
-                output,
-                input,
-                perms,
-                simplified_shape,
-                simplified_rank,
-            )
-    elif rank >= 4 and simplified_rank == 4:
-        if (
-            simplified_perms[0] == 0
-            and simplified_perms[1] == 2
-            and simplified_perms[2] == 1
-            and simplified_perms[3] == 3
-        ):
-            return transpose_4d_swap_middle(
-                output,
-                input,
-                perms,
-                simplified_shape,
-                simplified_rank,
-                ctx,
-            )
+    elif simplified_rank == 3:
+        comptime if rank >= 3:
+            if (
+                simplified_perms[0] == 0
+                and simplified_perms[1] == 2
+                and simplified_perms[2] == 1
+            ):
+                # batched tiled transpose
+                return transpose_3d_swap_inner(
+                    output,
+                    input,
+                    perms,
+                    simplified_shape,
+                    simplified_rank,
+                )
+            elif (
+                simplified_perms[0] == 1
+                and simplified_perms[1] == 0
+                and simplified_perms[2] == 2
+            ):
+                return transpose_3d_swap_outer(
+                    output,
+                    input,
+                    perms,
+                    simplified_shape,
+                    simplified_rank,
+                )
+    elif simplified_rank == 4:
+        comptime if rank >= 4:
+            if (
+                simplified_perms[0] == 0
+                and simplified_perms[1] == 2
+                and simplified_perms[2] == 1
+                and simplified_perms[3] == 3
+            ):
+                return transpose_4d_swap_middle(
+                    output,
+                    input,
+                    perms,
+                    simplified_shape,
+                    simplified_rank,
+                    ctx,
+                )
 
     # Fall back to the generic strided implementation.
     transpose_strided[rank](output, input, perms, ctx)

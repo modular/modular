@@ -31,8 +31,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.dspark.config import (
     K3_BLOCK_SIZE,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.dspark.mla_extent import (
-    spec_block_extent_bound,
-    spec_verify_extent,
+    k3_spec_draft_allowance,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.spec_mla import (
     kimi_k3_mla_buffer_size,
@@ -291,39 +290,14 @@ def _align_up(length: int, page: int) -> int:
     return ceildiv(length, page) * page
 
 
-def test_spec_verify_extent_is_the_plans_own_extent() -> None:
-    """The helper computes what the plan kernel computes, term for term.
-
-    The plan sums each request's ``align_up(cache + merged rows, page)``
-    over the same runtime tensors; the helper must read the same terms off
-    the context -- committed and maybe-accepted rows, this step's active
-    rows, the drafts merged after scheduling -- or the host extent drifts
-    from what the device plan builds.
-    """
-    lengths = [125, 128, 129, 3, 200, 260, 512, 0]
-    contexts = [
-        spec_decode_context(
-            cached=lengths[i],
-            active=1 + (i % 2),
-            drafts=_NUM_DRAFT_TOKENS - (i % 3),
-            maybe_accepted=(i % 5),
-        )
-        for i in range(len(lengths))
-    ]
-    expected = sum(
+def _plan_extent(contexts: list[TextContext], num_draft_tokens: int) -> int:
+    """The extent a plan reads: each request's window, page-aligned."""
+    return sum(
         _align_up(
-            ctx.tokens.processed_length
-            + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
-            + ctx.tokens.active_length
-            + len(ctx.spec_decoding_state.draft_tokens_to_verify),
-            _PAGE_SIZE,
+            cache_valid_length_for_context(ctx, num_draft_tokens), _PAGE_SIZE
         )
         for ctx in contexts
     )
-    assert spec_verify_extent(contexts, _PAGE_SIZE) == expected
-
-    # Edge: an empty prompt-chunk batch still plans zero rows' extent.
-    assert spec_verify_extent([], _PAGE_SIZE) == 0
 
 
 def _mla_leaf(num_q_heads: int) -> MLAKVCacheParams:
@@ -393,10 +367,8 @@ def test_capture_bound_covers_both_extents() -> None:
         captured_max = _max_cache_length(captured)
         bound = count * _align_up(captured_max, _PAGE_SIZE)
         for contexts in (captured, replayed):
-            verify = spec_verify_extent(contexts, _PAGE_SIZE)
-            block = spec_block_extent_bound(
-                contexts, _PAGE_SIZE, _NUM_DRAFT_TOKENS
-            )
+            verify = _plan_extent(contexts, 0)
+            block = _plan_extent(contexts, _NUM_DRAFT_TOKENS)
             assert bound >= verify, (
                 f"capture bound {bound} below the verify extent {verify}"
                 f" for {count} requests at max cache length {captured_max}"
@@ -407,57 +379,43 @@ def test_capture_bound_covers_both_extents() -> None:
             )
 
 
-def test_block_extent_bound_covers_the_drivers_block_windows() -> None:
-    """The block bound covers the block driver's real block windows.
+def test_exact_arm_covers_both_plans() -> None:
+    """The context length plus the draft allowance covers each plan.
 
-    The block cache's length after a verify is the pre-iteration length
-    plus the commit, and the block queries its own rows on top. ``pre``
-    and the window are read off the context's raw fields -- the driver's
-    own quantities, not the helper's term function -- and the commit is
-    drawn anywhere in the merged window the verify can accept, so every
-    partial acceptance is covered, not just the full one; at a full
-    accept the bound is tight, not merely safe.
+    MAX stages ``sum(align_up(processed + active, page))``, which leaves out
+    the drafts each request carries -- lazily committed and under
+    verification. The exact arm adds :func:`k3_spec_draft_allowance` per
+    request, and must cover each call's own window: the verify's at no
+    reach, the drafter block's at the draft width. Batches mix decode rows,
+    full accepts and a long prompt row, across page boundaries.
     """
-    assert K3_BLOCK_SIZE == _NUM_DRAFT_TOKENS, (
-        "the block bound charges the pairing's draft width; a drafter whose"
-        " block ran wider would need its own bound"
+    prompt_row = spec_decode_context(
+        cached=70, active=200, drafts=_NUM_DRAFT_TOKENS
     )
-    for _ in range(64):
-        contexts = _random_batch(
-            int(_EXTENT_RNG.integers(1, 9)),
-            max_drafts=_NUM_DRAFT_TOKENS,
-            maybe_accepted=True,
+    for reach in (0, _NUM_DRAFT_TOKENS):
+        allowance = k3_spec_draft_allowance(
+            num_draft_tokens=_NUM_DRAFT_TOKENS,
+            reach=reach,
+            page_size=_PAGE_SIZE,
         )
-        pre = [
-            ctx.tokens.processed_length
-            + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
-            for ctx in contexts
-        ]
-        windows = [
-            ctx.tokens.active_length
-            + len(ctx.spec_decoding_state.draft_tokens_to_verify)
-            for ctx in contexts
-        ]
-        commits = [
-            int(_EXTENT_RNG.integers(0, window + 1)) for window in windows
-        ]
-        real = sum(
-            _align_up(p + commit + K3_BLOCK_SIZE, _PAGE_SIZE)
-            for p, commit in zip(pre, commits, strict=True)
-        )
-        bound = spec_block_extent_bound(contexts, _PAGE_SIZE, _NUM_DRAFT_TOKENS)
-        assert bound >= real, (
-            f"block bound {bound} below the block window {real} at commits"
-            f" {commits} over pre-iteration lengths {pre}"
-        )
-        # At a full accept -- commit the whole merged window -- the bound
-        # is tight, since the drafter's block width is the pairing's draft
-        # width.
-        full = sum(
-            _align_up(p + window + K3_BLOCK_SIZE, _PAGE_SIZE)
-            for p, window in zip(pre, windows, strict=True)
-        )
-        assert bound == full
+        for i in range(64):
+            contexts = _random_batch(
+                int(_EXTENT_RNG.integers(1, 9)),
+                max_drafts=_NUM_DRAFT_TOKENS,
+                maybe_accepted=True,
+            )
+            if i % 2:
+                contexts.append(prompt_row)
+            staged = sum(
+                _align_up(ctx.tokens.current_position, _PAGE_SIZE)
+                for ctx in contexts
+            )
+            exact = staged + len(contexts) * allowance
+            window = _plan_extent(contexts, reach)
+            assert exact >= window, (
+                f"the exact arm {exact} is below the plan window {window}"
+                f" at reach {reach}"
+            )
 
 
 def test_dspark_leaf_covers_the_committed_block_window() -> None:

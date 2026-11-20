@@ -19,7 +19,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.compute.arch.mma_apple import _mma_apple_8x8
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from layout import Idx, TensorLayout, TensorEngine, TileTensor
 from layout.coord import Coord
 from std.math import ceildiv
@@ -491,7 +491,9 @@ def enqueue_apple_matmul_8x8[
                 Int32(m),
                 Int32(n),
                 Int32(k),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
+                    block_dim=(4 * WARP_SIZE,),
+                ),
                 host_args=(epilogue_fn, compute_fn),
-                grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
-                block_dim=(4 * WARP_SIZE,),
             )
