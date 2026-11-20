@@ -3004,7 +3004,7 @@ def mogg_tensor_create_reshape[
     comptime assert (
         out_rank == output_static_shape.rank
     ), "out_rank must match output_static_shape's own rank"
-    var view = reshape(input.to_tile_tensor[DType.int64](), output_shape)
+    var view = reshape(input.to_tile_tensor[DType.int64](), Coord(output_shape))
     return {
         view._storage,
         rebind[IndexList[out_rank]](

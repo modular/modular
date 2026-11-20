@@ -507,12 +507,14 @@ def max_pool_shape(
         and type_of(paddings).dtype == type_of(filter).dtype
     ), "filter, strides, dilations, and paddings must share a dtype"
     return rebind[IndexList[type_of(input).rank]](
-        pool_shape(
-            input.to_tile_tensor(),
-            filter.to_tile_tensor(),
-            strides.to_tile_tensor(),
-            dilations.to_tile_tensor(),
-            paddings.to_tile_tensor(),
+        coord_to_index_list(
+            pool_shape(
+                input.to_tile_tensor(),
+                filter.to_tile_tensor(),
+                strides.to_tile_tensor(),
+                dilations.to_tile_tensor(),
+                paddings.to_tile_tensor(),
+            )
         )
     )
 
@@ -590,12 +592,14 @@ def max_pool_ceil_mode_true_shape(
         and type_of(paddings).dtype == type_of(filter).dtype
     ), "filter, strides, dilations, and paddings must share a dtype"
     return rebind[IndexList[type_of(input).rank]](
-        pool_shape_ceil(
-            input.to_tile_tensor(),
-            filter.to_tile_tensor(),
-            strides.to_tile_tensor(),
-            dilations.to_tile_tensor(),
-            paddings.to_tile_tensor(),
+        coord_to_index_list(
+            pool_shape_ceil(
+                input.to_tile_tensor(),
+                filter.to_tile_tensor(),
+                strides.to_tile_tensor(),
+                dilations.to_tile_tensor(),
+                paddings.to_tile_tensor(),
+            )
         )
     )
 
@@ -846,12 +850,14 @@ def repeat_interleave_kernel_shape(
     comptime assert axis.dtype.is_integral(), "axis value must be integer type"
     comptime assert type_of(repeats).rank == 1, "repeats must be rank 1"
 
-    return repeat_interleave_shape(
-        rebind[IndexList[type_of(input).rank]](
-            coord_to_index_list(input.shape())
-        ),
-        repeats.to_tile_tensor(),
-        Int(normalize_neg_index(axis, type_of(input).rank)),
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(
+            repeat_interleave_shape(
+                input.shape(),
+                repeats.to_tile_tensor(),
+                Int(normalize_neg_index(axis, type_of(input).rank)),
+            )
+        )
     )
 
 

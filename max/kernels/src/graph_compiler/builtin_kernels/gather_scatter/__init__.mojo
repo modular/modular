@@ -1526,9 +1526,13 @@ def reshape_shape_fn[
 ]:
     """Computes the output shape for the `mo.reshape` graph op."""
     comptime assert type_of(shape).rank == 1, "shape must be rank 1"
-    return reshape_shape[output_rank=output_rank](
-        input.to_tile_tensor(),
-        shape.to_tile_tensor(),
+    return rebind[IndexList[output_rank]](
+        coord_to_index_list(
+            reshape_shape[output_rank=output_rank](
+                input.to_tile_tensor(),
+                shape.to_tile_tensor(),
+            )
+        )
     )
 
 
@@ -1577,11 +1581,13 @@ def slice_shape_fn(
     comptime assert type_of(stops).rank == 1, "stops must be rank 1"
     comptime assert type_of(steps).rank == 1, "steps must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        slice_shape(
-            input.to_tile_tensor(),
-            starts.to_tile_tensor(),
-            stops.to_tile_tensor(),
-            steps.to_tile_tensor(),
+        coord_to_index_list(
+            slice_shape(
+                input.to_tile_tensor(),
+                starts.to_tile_tensor(),
+                stops.to_tile_tensor(),
+                steps.to_tile_tensor(),
+            )
         )
     )
 
@@ -1850,9 +1856,11 @@ def tile_shape_fn(
     """Computes the output shape for the `mo.tile` graph op."""
     comptime assert type_of(repeats).rank == 1, "repeats must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        tile_shape(
-            input.to_tile_tensor(),
-            repeats.to_tile_tensor(),
+        coord_to_index_list(
+            tile_shape(
+                input.to_tile_tensor(),
+                repeats.to_tile_tensor(),
+            )
         )
     )
 

@@ -47,7 +47,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.coord import CoordLike, DynamicCoord
@@ -805,9 +804,7 @@ def _top_k_sampling[
     )
 
     var reshaped_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-    var reshaped_out_vals = reshape(
-        out_vals, coord_to_index_list(internal_out_shape)
-    )
+    var reshaped_out_vals = reshape(out_vals, internal_out_shape)
 
     var out_idxs_tmp_alloc = alloc(
         AllocLayout[Int64](length=out_vals.num_elements())

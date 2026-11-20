@@ -177,12 +177,14 @@ def avg_pool_shape(
         type_of(filter).dtype == type_of(paddings).dtype
     ), "filter dtype must match paddings dtype"
     return rebind[IndexList[type_of(input).rank]](
-        pool_shape(
-            input.to_tile_tensor(),
-            filter.to_tile_tensor(),
-            strides.to_tile_tensor(),
-            dilations.to_tile_tensor(),
-            paddings.to_tile_tensor(),
+        coord_to_index_list(
+            pool_shape(
+                input.to_tile_tensor(),
+                filter.to_tile_tensor(),
+                strides.to_tile_tensor(),
+                dilations.to_tile_tensor(),
+                paddings.to_tile_tensor(),
+            )
         )
     )
 
@@ -251,12 +253,14 @@ def avg_pool_ceil_mode_true_shape(
         type_of(filter).dtype == type_of(paddings).dtype
     ), "filter dtype must match paddings dtype"
     return rebind[IndexList[type_of(input).rank]](
-        pool_shape_ceil(
-            input.to_tile_tensor(),
-            filter.to_tile_tensor(),
-            strides.to_tile_tensor(),
-            dilations.to_tile_tensor(),
-            paddings.to_tile_tensor(),
+        coord_to_index_list(
+            pool_shape_ceil(
+                input.to_tile_tensor(),
+                filter.to_tile_tensor(),
+                strides.to_tile_tensor(),
+                dilations.to_tile_tensor(),
+                paddings.to_tile_tensor(),
+            )
         )
     )
 

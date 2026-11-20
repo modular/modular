@@ -20,10 +20,9 @@ from nn.reshape import reshape
 from max.algorithm import elementwise, sync_parallelize
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
-from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, row_major
+from layout.coord import DynamicCoord
 from max.runtime.asyncrt import parallelism_level
-
-from std.utils import IndexList
 
 
 @inline(.always)
@@ -35,7 +34,7 @@ def index_tensor_shape[
 ](
     input_buf: TileTensor[mut=False, input_type, ...],
     indices_buf: TileTensor[mut=False, indices_type, ...],
-) raises -> IndexList[output_rank]:
+) raises -> DynamicCoord[.int, output_rank]:
     """
     Compute the output shape of a `index_tensor` operation, and assert the
     inputs are compatible.
@@ -66,7 +65,7 @@ def index_tensor_shape[
     # not need to be materialized), we need to construct the indices_shape as
     # follows for the purposes of calculating the index.tensor shape:
     comptime combined_indices_rank = batch_dims + indices_buf.rank
-    var indices_shape = IndexList[combined_indices_rank]()
+    var indices_shape = Array[Int, combined_indices_rank](fill=0)
 
     comptime for i in range(batch_dims):
         indices_shape[i] = Int(input_buf.dim[i]())
@@ -88,10 +87,8 @@ def index_tensor_shape[
         )
 
     # compute and return the output shape
-    var output_shape = IndexList[output_rank]()
+    var output_shape = Array[Int, output_rank](fill=0)
     var next_out_dim = 0
-
-    var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
 
     comptime for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
@@ -102,17 +99,15 @@ def index_tensor_shape[
         next_out_dim += 1
 
     if indices_shape[combined_indices_rank - 1] == input_buf.rank - batch_dims:
-        return output_shape
+        return Coord(output_shape)
 
     # TODO: Revisit cases where/if this applies for generalized index_tensor.
-    for i in range(
-        batch_dims + indices_shape[combined_indices_rank - 1],
-        len(input_shape),
-    ):
-        output_shape[next_out_dim] = input_shape[i]
-        next_out_dim += 1
+    comptime for i in range(input_buf.rank):
+        if i >= batch_dims + indices_shape[combined_indices_rank - 1]:
+            output_shape[next_out_dim] = Int(input_buf.dim[i]())
+            next_out_dim += 1
 
-    return output_shape
+    return Coord(output_shape)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -200,25 +195,22 @@ def _index_tensor_1d[
         last_index_dim + batch_dims == data.rank
     ), "kernel doesn't support slicing after specified dims"
 
-    var data_shape = coord_to_index_list(data.layout.shape_coord())
     var batch_volume: Int = 1
 
     comptime for i in range(batch_dims):
-        batch_volume *= data_shape[i]
+        batch_volume *= Int(data.dim[i]())
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
     comptime reshaped_data_rank = data.rank - batch_dims + 1
-    var reshaped_data_tuple = IndexList[reshaped_data_rank]()
+    var reshaped_data_shape = DynamicCoord[.int, reshaped_data_rank]()
+    reshaped_data_shape.replace_dynamic[0](batch_volume)
+    comptime for i in range(batch_dims, data.rank):
+        reshaped_data_shape.replace_dynamic[i - batch_dims + 1](
+            Int(data.dim[i]())
+        )
 
-    reshaped_data_tuple[0] = batch_volume
-    var counter = 1
-    for i in range(batch_dims, data.rank):
-        reshaped_data_tuple[counter] = data_shape[i]
-        counter += 1
-
-    var reshaped_data = reshape[reshaped_data_rank](
-        data.make_dynamic[.int64](),
-        reshaped_data_tuple,
+    var reshaped_data = reshape(
+        data.make_dynamic[.int64](), reshaped_data_shape
     )
 
     # TODO: Find a heuristic to replace the magic number
@@ -244,15 +236,14 @@ def _index_tensor_1d[
 
         for i in range(work_start, work_end):
             for j in range(Int(indices.dim(0))):
-                var data_coord = IndexList[reshaped_data_rank]()
+                var data_coord = Array[Int, reshaped_data_rank](fill=0)
                 data_coord[0] = i
                 for k in range(last_index_dim):
                     data_coord[k + 1] = Int(indices.load((j, k)))
 
-                var rd_coord = Coord(data_coord)
                 output_flat.store(
                     (i * Int(indices.dim(0)) + j,),
-                    reshaped_data.load(rd_coord),
+                    reshaped_data.load(Coord(data_coord)),
                 )
 
     sync_parallelize(calc_batch_dim, num_tasks, ctx)
@@ -278,11 +269,11 @@ def _index_tensor_impl[
     def index_tensor_elementwise_fn[
         simd_width: Int, alignment: Int = 1
     ](output_idx_arg: Coord) {var}:
-        var output_idx = IndexList[output.rank]()
+        var output_idx = Array[Int, output.rank](fill=0)
         comptime for i in range(output.rank):
             output_idx[i] = Int(output_idx_arg[i])
-        var data_idx = IndexList[data.rank]()
-        var indices_idx = IndexList[indices.rank]()
+        var data_idx = Array[Int, data.rank](fill=0)
+        var indices_idx = Array[Int, indices.rank](fill=0)
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
 
         # Fill in the known dimensions in our batch_dim
@@ -306,10 +297,9 @@ def _index_tensor_impl[
         for i in range(0, num_tail_elems):
             data_idx[src_start + i] = output_idx[output_start + i]
 
-        var data_coord = Coord(data_idx)
-        var out_coord = Coord(output_idx)
         output.store[alignment=1](
-            out_coord, data.load[width=simd_width, alignment=1](data_coord)
+            output_idx_arg,
+            data.load[width=simd_width, alignment=1](Coord(data_idx)),
         )
 
     comptime target_simd_width = simd_width_of[dtype, target=ctx.T.target]()
