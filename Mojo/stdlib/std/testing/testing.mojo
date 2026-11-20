@@ -523,7 +523,9 @@ def _assert_cmp_error[
     return _assert_error(err, loc)
 
 
-struct assert_raises:
+struct assert_raises[T: Equatable & Copyable & Deinitable = String](
+  Writable where conforms_to(T, Writable)
+):
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
@@ -548,8 +550,14 @@ struct assert_raises:
     # This will let the underlying error propagate, failing the test
     with assert_raises(contains="Some"):
         raise Error("OtherError")
+
+    with assert_raises[IoError](error=IoError("error reading input stream")):
+      raise IoError("error reading input stream")
     ```
     """
+
+    var error: Optional[Self.T]
+    """If present, check that the error type is equal to this error."""
 
     var message_contains: Optional[String]
     """If present, check that the error message contains this literal string."""
@@ -565,6 +573,7 @@ struct assert_raises:
             location: The location of the error (defaults to `call_location`).
         """
         self.message_contains = None
+        self.error = None
         self.call_location = location.or_else(call_location())
 
     @inline(.always)
@@ -582,6 +591,24 @@ struct assert_raises:
             location: The location of the error (defaults to `call_location`).
         """
         self.message_contains = contains
+        self.error = None
+        self.call_location = location.or_else(call_location())
+
+    @inline(.always)
+    def __init__(
+        out self,
+        *,
+        error: Self.T,
+        location: Optional[SourceLocation] = None,
+    ):
+        """Construct a context manager matching specific errors.
+
+        Args:
+            error: The test will only pass if the error is an instnace of Self.T.
+            location: The location of the error (defaults to `call_location`).
+        """
+        self.message_contains = None
+        self.error = error.copy()
         self.call_location = location.or_else(call_location())
 
     def __enter__(self):
