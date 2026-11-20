@@ -40,8 +40,6 @@ from std.sys.intrinsics import strided_load, strided_store
 from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
 
-from max.runtime.tracing import trace_arg
-
 from layout import (
     Coord,
     CoordLike,
@@ -2082,22 +2080,6 @@ struct ManagedTensorSlice[
             writer: The object to write to.
         """
         self.write_to(writer)
-
-
-# TODO: Move to Mojo/stdlib/stdlib/runtime/tracing.mojo and
-# rename to trace_arg
-@inline(.always)
-def trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
-    """Helper to stringify the type and shape of a kernel argument for tracing.
-
-    Args:
-        name: The name of the argument.
-        buf: The tensor to trace.
-
-    Returns:
-        A string representation of the buffer with its shape and data type.
-    """
-    return trace_arg(name, buf.shape_coord(), buf.dtype)
 
 
 # ===----------------------------------------------------------------------=== #

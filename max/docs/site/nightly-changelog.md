@@ -534,6 +534,10 @@ This version is still a work in progress.
   `max.runtime.tracing` no longer accept an `IndexList` shape. Pass a `Coord`
   instead, for example `Coord(shape)` or a tensor's `shape_coord()`.
 
+- Removed `trace_slice_arg()` from `extensibility`. Call
+  `trace_arg(name, tensor.shape_coord(), tensor.dtype)` from
+  `max.runtime.tracing` instead.
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,
