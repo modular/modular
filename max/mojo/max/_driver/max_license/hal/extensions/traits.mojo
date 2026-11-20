@@ -219,7 +219,7 @@ trait SupportsCompletionFlagAddressV1(SupportsCompletionFlagV1):
 
 
 struct DefaultHALExtensions(HALExtensions):
-    """`HALExtensions` implementation used when no plugin is active."""
+    """`HALExtensions` implementation for targets no plugin claims."""
 
     def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         pass

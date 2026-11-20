@@ -57,6 +57,7 @@ from max.gpu.sync.sync import (
     _SyncwarpPluginHookFnType,
 )
 from max._driver.max_license.hal._plugin._trait import (
+    CPUHalPluginHooks,
     DefaultHalPluginHooks,
     HalPluginHooks,
 )
@@ -575,11 +576,20 @@ struct DefaultMaxPlugin(MaxPlugin):
     """Provides the default MAX plugin behavior."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor[target: CompilationTarget] = DefaultMaxPluginHooks
+    # No plugin claims the host CPU, so the default names its HAL hooks.
+    comptime HookFor[target: CompilationTarget] = (
+        _CPUMaxPluginHooks if target.is_cpu() else DefaultMaxPluginHooks
+    )
 
 
 struct DefaultMaxPluginHooks(MaxPluginHooks):
     comptime warp_size = _accelerator_warp_size()
+
+
+struct _CPUMaxPluginHooks(MaxPluginHooks):
+    comptime warp_size = _accelerator_warp_size()
+
+    comptime HalHooks: HalPluginHooks = CPUHalPluginHooks
 
 
 def _accelerator_warp_size() -> Int:
