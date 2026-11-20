@@ -354,6 +354,10 @@ This version is still a work in progress.
           raise e
   ```
 
+- `open()`, `FileHandle`, and the `Path` methods that read, write, or list
+  files now raise `IOError` too. `FileHandle.read()` and `Path.read_text()`
+  still raise `Error`, because decoding UTF-8 can fail.
+
 - Added `BorrowedFileDescriptor` to `std.io`, a copyable, non-owning view
   of a `FileDescriptor` that carries the owner's origin, so it can be
   passed around without closing the descriptor or outliving its owner.
