@@ -57,6 +57,7 @@ from max._artifact.export import (
     pipeline_kv_cache,
     pipeline_modules,
     pipeline_sampling_defaults,
+    serves_prefix_caching,
     ships_overlap_helpers,
     verify_step_prefill_budget,
     vision_preprocess_modules,
@@ -882,6 +883,21 @@ def test_engine_config_copies_the_planned_settings() -> None:
     )
     off = pipeline_engine_config(config, _PLAN, prefix_caching=False)
     assert not off.prefix_caching
+
+
+def test_prefix_caching_follows_the_checkpoint_architecture() -> None:
+    """The record is false only where the architecture requires prefix
+    caching off; a speculative pairing's own requirement, which MAX Serve
+    adds for recurrent targets, is read from the checkpoint's architecture
+    instead and so stays on."""
+    assert serves_prefix_caching(None)
+    assert serves_prefix_caching(replace(llama_arch, required_arguments={}))
+    assert serves_prefix_caching(
+        replace(llama_arch, required_arguments={"enable_prefix_caching": True})
+    )
+    assert not serves_prefix_caching(
+        replace(llama_arch, required_arguments={"enable_prefix_caching": False})
+    )
 
 
 def test_a_speculative_expert_parallel_export_leaves_room_for_verify_rows() -> (

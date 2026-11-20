@@ -383,6 +383,29 @@ and ``return_n_logits`` as direct leaves, which the engine reads as
 ``ragged_batch`` fields (``input_tree`` in ``engine-batch``)."""
 
 
+def serves_prefix_caching(arch: SupportedArchitecture | None) -> bool:
+    """Whether an engine may serve ``arch`` with prefix caching.
+
+    False only where the architecture itself requires prefix caching off. A
+    speculative pairing of a recurrent target turns it off for MAX Serve,
+    whose pipeline checkpoints the recurrent state at page boundaries only;
+    a serving engine that keeps its own checkpoints under speculation serves
+    the prefix cache the checkpoint's architecture allows, so the pairing's
+    requirement is not recorded.
+
+    Args:
+        arch: The checkpoint's architecture, or ``None`` when it is not
+            registered.
+
+    Returns:
+        Whether the exported artifact records prefix caching as served.
+    """
+    return (
+        arch is None
+        or arch.required_arguments.get("enable_prefix_caching") is not False
+    )
+
+
 def captured_host_inputs(
     graphs: Iterable[CompiledCallable[..., Any]],
 ) -> dict[str, CapturedHostInput]:
@@ -1312,9 +1335,7 @@ def export_pipeline(
             pipeline_config,
             retrieved.memory_plan,
             verify_facts=_verify_facts(pipeline),
-            prefix_caching=arch is None
-            or arch.required_arguments.get("enable_prefix_caching")
-            is not False,
+            prefix_caching=serves_prefix_caching(checkpoint_arch),
             prefill_token_budget=prefill_token_budget,
             prefill_capture_tokens=prefill_capture_tokens,
             capture_cache_bound=arch.capture_cache_bound

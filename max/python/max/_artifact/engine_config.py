@@ -373,8 +373,10 @@ class EngineConfig:
         speculative: The speculative-decoding settings, or ``None`` for a
             pipeline that doesn't decode speculatively.
         prefix_caching: Whether the architecture serves prefix caching:
-            ``False`` where MAX Serve turns it off for the architecture, and
-            an engine then serves without it.
+            ``False`` where the checkpoint's architecture requires it off,
+            and an engine then serves without it. A speculative pairing's
+            own requirement, which MAX Serve adds for its recurrent-state
+            checkpoints, is not recorded.
         prefill_context_parallel: When a prefill step takes the PCP path,
             or ``None`` for graphs without one. Recorded exactly when
             ``parallel.pcp`` is above 1.
