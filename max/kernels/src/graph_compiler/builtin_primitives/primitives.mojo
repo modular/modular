@@ -49,15 +49,6 @@ from max.gpu.host import (
 )
 from max.gpu.host import _DeviceContextPtr
 
-# A target can add `DeviceContext` methods as `__extension`s, which only an
-# import of a name brings in, and `mogg_launch_declarative` calls them.
-# TODO(DRIV-491): These are the legacy context's extensions, which don't apply
-# when `DeviceContext` is the HAL context. Once targets launch through the HAL
-# context, import their extensions through `max.gpu.host`, or drop this import
-# if HAL launches need none.
-from max.gpu.host._legacy.device_context import (
-    LegacyDeviceContext as _DeviceContextExtensions,
-)
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import OwnedPointer, MaybeUninit, alloc
 from std.builtin.device_passable import DevicePassable
