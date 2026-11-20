@@ -172,9 +172,11 @@ MODELS: Mapping[str, set[str]] = {
     "XiaomiMiMo/MiMo-V2.6-Flash-RL": NIGHTLY | _2xB200,
     "XiaomiMiMo/MiMo-V2.6-Flash-RL__dflash": NIGHTLY | VARIANT | _2xB200,
     "zai-org/GLM-5.3-Flash__mtp_tpep_4xb200": NIGHTLY | VARIANT | MACH | _4xB200,
-    "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": NIGHTLY | VARIANT | _2xMI355,
+    "zai-org/GLM-5.3-Flash__mtp_tpep_4xmi355": NIGHTLY | VARIANT | MACH | _4xMI355,
+    "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": VARIANT | _2xMI355,
     "zai-org/GLM-5.3-Flash__tpep": NIGHTLY | VARIANT | _4xB200,
-    "zai-org/GLM-5.3-Flash__tpep_mi355": NIGHTLY | VARIANT | _2xMI355,
+    "zai-org/GLM-5.3-Flash__tpep_4xmi355": NIGHTLY | VARIANT | MACH | _4xMI355,
+    "zai-org/GLM-5.3-Flash__tpep_mi355": VARIANT | _2xMI355,
     "zai-org/GLM-5.3__fp8_tpep_mi355": NIGHTLY | VARIANT | _8xMI355,
 }
 # fmt: on
