@@ -198,8 +198,9 @@ static void eraseIndices(SmallVectorImpl<TypedAttr> &clauses,
 
 /// Inserts one non-AND leaf. The identity, conformance, NOT and OR phases only
 /// queue indices in `erase`, so each sees the same unmodified `clauses`; the
-/// erasures are committed together, then stored NOTs are shrunk in place, and
-/// the final check decides Redundant or Added. A Contradiction can return
+/// erasures are committed together, then stored NOTs that the new facts shrink
+/// are taken out, and the final check decides Redundant or Added. Each shrunk
+/// NOT is then inserted again as an incoming NOT. A Contradiction can return
 /// after erasures or NOT rewrites, leaving `clauses` partially modified.
 static ClauseInsertResult insertLeaf(SmallVectorImpl<TypedAttr> &clauses,
                                      TypedAttr leaf) {
@@ -318,6 +319,7 @@ static ClauseInsertResult insertLeaf(SmallVectorImpl<TypedAttr> &clauses,
 
   // A newly added positive (or a restated one) can shrink stored NOTs.
   SmallVector<unsigned> notErase;
+  SmallVector<TypedAttr> shrunkNots;
   for (auto [index, clause] : llvm::enumerate(clauses)) {
     TypedAttr storedInner = getNotOperand(clause);
     if (!storedInner)
@@ -335,19 +337,27 @@ static ClauseInsertResult insertLeaf(SmallVectorImpl<TypedAttr> &clauses,
     TypedAttr shrunk = ParamOperatorAttr::getNot(residual);
     if (isTriviallyFalseProposition(shrunk))
       return ClauseInsertResult::Contradiction;
-    if (isTriviallyTrueProposition(shrunk) ||
-        llvm::is_contained(clauses, shrunk) || entailedBy(facts, shrunk))
-      notErase.push_back(index);
-    else
-      clauses[index] = shrunk;
+    notErase.push_back(index);
+    if (!isTriviallyTrueProposition(shrunk) &&
+        !llvm::is_contained(clauses, shrunk) && !entailedBy(facts, shrunk))
+      shrunkNots.push_back(shrunk);
   }
   eraseIndices(clauses, notErase);
 
-  if (llvm::is_contained(clauses, leaf) || entailedBy(clauses, leaf))
-    return ClauseInsertResult::Redundant;
+  ClauseInsertResult result = ClauseInsertResult::Redundant;
+  if (!llvm::is_contained(clauses, leaf) && !entailedBy(clauses, leaf)) {
+    clauses.push_back(leaf);
+    result = ClauseInsertResult::Added;
+  }
 
-  clauses.push_back(leaf);
-  return ClauseInsertResult::Added;
+  // A shrunk NOT is stronger, so it can drop stored NOTs and ORs that it
+  // implies, as an incoming NOT does, so insert it again. This recursion is
+  // bounded because the stored NOT inners gets smaller at each step.
+  for (TypedAttr shrunk : shrunkNots)
+    if (insertLeaf(clauses, shrunk) == ClauseInsertResult::Contradiction)
+      return ClauseInsertResult::Contradiction;
+
+  return result;
 }
 
 ClauseInsertResult KGEN::insertClause(SmallVectorImpl<TypedAttr> &clauses,
