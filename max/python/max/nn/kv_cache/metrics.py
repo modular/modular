@@ -154,6 +154,15 @@ class KVCacheMetrics:
     request's prefix. A transport fault rather than a miss, so any of these is
     worth chasing.
     """
+    connector_quarantined_blocks: int = 0
+    """Device blocks kept out of use because a connector gave up on a load whose
+    copy may still write them.
+
+    A level the cache manager reads fresh for every snapshot rather than a
+    per-window delta, summed over replicas. The blocks never go back to the
+    pool, so the count only grows, and each one is KV capacity lost until the
+    engine restarts.
+    """
     connector_offload_blocks_dropped: int = 0
     """Number of offloaded blocks the connector's host pool had no room for.
 
@@ -627,6 +636,8 @@ class KVCacheMetrics:
             + other.connector_loads_refused,
             connector_load_failures=self.connector_load_failures
             + other.connector_load_failures,
+            connector_quarantined_blocks=self.connector_quarantined_blocks
+            + other.connector_quarantined_blocks,
             connector_offload_blocks_dropped=self.connector_offload_blocks_dropped
             + other.connector_offload_blocks_dropped,
             connector_lookup_drops=_add_by_key(

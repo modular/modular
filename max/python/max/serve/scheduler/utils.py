@@ -443,6 +443,9 @@ class BatchMetrics:
     # Connector loads whose copy failed, counted by the cache manager for any
     # connector. Each is served by recomputing the request's prefix.
     connector_load_failures: int = 0
+    # Device blocks the cache manager keeps out of use for good because a
+    # connector gave up on a load whose copy may still write them. A level.
+    connector_quarantined_blocks: int = 0
 
     # Connector lookup answers the Jenga block manager dropped, for any
     # connector. Empty, or 0, when none was dropped this window. See
@@ -653,6 +656,7 @@ class BatchMetrics:
         connector_loads_refused = 0
         connector_offload_blocks_dropped = 0
         connector_load_failures = 0
+        connector_quarantined_blocks = 0
         connector_lookup_drops: dict[
             tuple[ConnectorLookupDrop, ConnectorLookupAnswer, bool], int
         ] = {}
@@ -735,6 +739,9 @@ class BatchMetrics:
                 metrics_agg.connector_offload_blocks_dropped
             )
             connector_load_failures = metrics_agg.connector_load_failures
+            connector_quarantined_blocks = (
+                metrics_agg.connector_quarantined_blocks
+            )
             connector_lookup_drops = metrics_agg.connector_lookup_drops
             connector_lookup_dropped_blocks = (
                 metrics_agg.connector_lookup_dropped_blocks
@@ -1054,6 +1061,7 @@ class BatchMetrics:
             connector_loads_refused=connector_loads_refused,
             connector_offload_blocks_dropped=connector_offload_blocks_dropped,
             connector_load_failures=connector_load_failures,
+            connector_quarantined_blocks=connector_quarantined_blocks,
             connector_lookup_drops=connector_lookup_drops,
             connector_lookup_dropped_blocks=connector_lookup_dropped_blocks,
             connector_lookup_shrink_depths=connector_lookup_shrink_depths,
@@ -1423,6 +1431,13 @@ class BatchMetrics:
         if self.connector_load_failures:
             extra["connector_load_failures"] = self.connector_load_failures
 
+        # A level that never falls, so it is logged wherever dKV is attached,
+        # zero included, and wherever any block is held.
+        if self.dkv_total_clients > 0 or self.connector_quarantined_blocks:
+            extra["connector_quarantined_blocks"] = (
+                self.connector_quarantined_blocks
+            )
+
         # One scalar key per label, as publish_metrics sends. The block
         # manager only keeps labels that moved.
         for key, drops in self.connector_lookup_drops.items():
@@ -1752,6 +1767,13 @@ class BatchMetrics:
         # Outside the host tier's guard: dKV reports no host tier.
         if self.connector_load_failures:
             METRICS.cache_connector_load_failures(self.connector_load_failures)
+
+        # A level, so it is sent wherever dKV is attached, zero included, and
+        # a dashboard has the series before the first block is held.
+        if self.dkv_total_clients > 0 or self.connector_quarantined_blocks:
+            METRICS.cache_connector_quarantined_blocks(
+                self.connector_quarantined_blocks
+            )
 
         # Per-window deltas the block manager only fills when something was
         # dropped, so publishing what is there loses nothing, and a window

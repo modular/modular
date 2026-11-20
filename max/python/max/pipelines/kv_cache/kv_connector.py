@@ -56,11 +56,23 @@ class KVLoadFailed(Exception):
     Raised by ``load`` when posting the copy fails, and by the
     :class:`KVTransfer` it returned once a posted copy fails. Either way
     nothing is still writing into the destination blocks by the time it is
-    raised, so the caller may free them. The cache manager frees them without
-    committing and recomputes the request's prefix without the connector.
+    raised, so the caller may free them, unless it is a
+    :class:`KVLoadAbandoned`. The cache manager frees them without committing,
+    or keeps them for good on a :class:`KVLoadAbandoned`, and recomputes the
+    request's prefix without the connector.
 
     A transport fault, where :class:`KVLoadRefused` is the connector declining
     before it moves anything.
+    """
+
+
+class KVLoadAbandoned(KVLoadFailed):
+    """A load the connector gave up on while its copy may still be running.
+
+    The transport took the copy and never reported that it ended, so it may
+    write the destination blocks at any later time. The cache manager keeps
+    those blocks out of use for the life of the engine rather than freeing
+    them, and recomputes the request's prefix as it does for any failed load.
     """
 
 
@@ -174,8 +186,9 @@ class KVTransfer(Protocol):
         Raising :class:`KVLoadFailed` is how a connector reports a load that
         failed terminally rather than completed: the destination blocks then
         hold no valid KV, so reading ``True`` would publish garbage. The
-        manager unpins that transfer's blocks without committing them and
-        rolls the request's prefix back at its next ``alloc``.
+        manager unpins that transfer's blocks without committing them, or
+        keeps them pinned for good on a :class:`KVLoadAbandoned`, and rolls
+        the request's prefix back at its next ``alloc``.
         """
         ...
 
@@ -474,7 +487,9 @@ class KVConnector(Protocol):
             KVLoadRefused: If it cannot move every block it was asked for.
                 Loading less is not an option -- see :class:`KVLoadRefused`.
             KVLoadFailed: If posting the copy failed. A copy that fails after
-                it was posted raises from the returned transfer instead.
+                it was posted raises from the returned transfer instead. It is
+                a :class:`KVLoadAbandoned` when a copy already posted for the
+                load may still write the destination blocks.
         """
         ...
 

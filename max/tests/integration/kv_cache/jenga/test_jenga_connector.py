@@ -53,6 +53,7 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedLookup,
     KVConnector,
     KVConnectorTransfer,
+    KVLoadAbandoned,
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
@@ -227,8 +228,10 @@ class FakeConnector:
         self.evict_before_load: set[bytes] = set()
         # Raised by the next `load` in place of posting anything.
         self.load_error: Exception | None = None
-        # Whether the next load's transfer fails on its very first poll.
+        # Whether the next load's transfer fails on its very first poll, and
+        # what that poll raises in place of a plain ``KVLoadFailed``.
         self.fail_on_first_poll = False
+        self.first_poll_error: Exception | None = None
         # Hashes a load reports a remote peer served rather than this tier.
         self.peer_served: set[bytes] = set()
         self.asynchronous = asynchronous
@@ -395,6 +398,8 @@ class FakeConnector:
             for leaf_id, hashes in block_hashes.items()
         }
         transfer.fails = self.fail_on_first_poll
+        if self.first_poll_error is not None:
+            transfer.error = self.first_poll_error
         if not self.asynchronous:
             transfer.done = True
         self.transfers.append(transfer)
@@ -1092,6 +1097,98 @@ def test_a_failed_poll_unpins_without_publishing() -> None:
     assert not manager.pending_transfers_exist(0)
     assert all(block.ref_cnt == 1 for block in onloaded), (
         "the failed transfer's pin is released, leaving the allocation's own"
+    )
+
+
+def test_an_abandoned_onload_keeps_its_pages_pinned_for_good() -> None:
+    """A poll that reports an abandoned copy keeps the onload's pages pinned.
+
+    The connector gave up on a copy the transport may still be running, so it
+    can write those pages at any later time. They are neither published nor
+    freed, and they stay out of the pool after the request lets them go,
+    while the request still rolls back and recomputes as on any failure.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    asked = _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    transfer.error = KVLoadAbandoned("transfer abandoned")
+
+    pool = manager.pools[0]
+    onloaded = [pool.block(FULL, bid) for bid in connector.loads[-1][0][FULL]]
+    assert onloaded, "no onload issued"
+
+    manager.poll_transfers()
+
+    assert not manager.pending_transfers_exist(0)
+    assert all(h not in pool.prefix_caches[FULL] for h in asked), (
+        "an abandoned onload's pages must not be published"
+    )
+    assert all(block.ref_cnt == 2 for block in onloaded), (
+        "the transfer's pin stays on beside the allocation's own"
+    )
+    assert manager.take_metrics().connector_load_failures == 1
+
+    lookups = len(connector.lookups)
+    resumed = manager.alloc(ctx)
+
+    assert resumed.is_complete()
+    assert len(connector.lookups) == lookups, (
+        "the recompute skips the connector"
+    )
+    assert ctx.tokens.processed_length == 0
+    assert ctx.cached_prefix_length == 0
+    assert all(block.ref_cnt == 1 for block in onloaded), (
+        "the rollback lets go of the pages and the pin holds them"
+    )
+    assert not set(manager.get_req_blocks_per_leaf(ctx)[FULL]) & {
+        block.bid for block in onloaded
+    }, "the recompute writes fresh pages"
+
+    manager.release(ctx)
+    assert all(block.ref_cnt == 1 for block in onloaded), (
+        "the pin outlives the request, so the pages never reach the pool"
+    )
+
+
+def test_a_load_abandoned_on_its_first_poll_keeps_its_rows() -> None:
+    """A copy abandoned on the manager's first poll keeps its rows out.
+
+    The request is served as a miss as on any failed load, but its rows do
+    not go back, because the transport never reported the copy stopped.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+    connector.fail_on_first_poll = True
+    connector.first_poll_error = KVLoadAbandoned("transfer abandoned")
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    abandoned = len(connector.loads[-1][1][FULL])
+
+    assert abandoned, "no onload issued"
+    assert transfer.is_complete()
+    assert ctx.cached_prefix_length == 0
+    assert not pool.prefix_caches[FULL]
+    assert manager.take_metrics().connector_load_failures == 1
+
+    manager.release(ctx)
+    assert pool.num_free_blocks(FULL) == free_before - abandoned, (
+        "the abandoned rows stay out of the pool"
+    )
+    assert manager.metrics.connector_quarantined_blocks == abandoned
+    assert manager.take_metrics().connector_quarantined_blocks == abandoned
+    assert manager.take_metrics().connector_quarantined_blocks == abandoned, (
+        "a level outlives take_metrics"
     )
 
 

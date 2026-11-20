@@ -64,6 +64,7 @@
 /bazel/public-patches/nixl-libfabric-vmm-cuda-ctx.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-reestablish-reply.patch @modular/runtime
+/bazel/public-patches/nixl-libfabric-parked-posts.patch @modular/runtime
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-hexagon-qfp-pair-refill.patch @modular/mojo-compiler
 /bazel/public-patches/llvm-hexagon-store-merge-no-autohvx.patch @modular/mojo-compiler

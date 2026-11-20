@@ -26,8 +26,8 @@ import logging
 import os
 import time
 from bisect import bisect_left
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from itertools import chain
 
 from max._core.driver import _batch_copy_rows
@@ -46,6 +46,7 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedLookup,
     CompletedTransfer,
     KVConnector,
+    KVLoadAbandoned,
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
@@ -895,6 +896,8 @@ class JengaBlockManager:
         # on every replica. While none exist nothing can be held, so the hold
         # scans are skipped, as with the option off.
         self._holders_outstanding = 0
+        # Blocks of abandoned loads, kept out of use for the life of the engine.
+        self._quarantined_blocks = 0
 
     # ============================================================================
     # Request Lifecycle APIs
@@ -1825,10 +1828,15 @@ class JengaBlockManager:
                 try:
                     complete = pending.event.is_complete()
                 except KVLoadFailed as failure:
-                    # Settled on the way to failing, so its pages can go back,
-                    # unpublished: they hold no valid KV.
-                    for block in pending.pinned_blocks():
-                        pool.free_block(block)
+                    # The pages hold no valid KV, so none is published. A copy
+                    # that settled on the way to failing lets them go back, and
+                    # one the connector abandoned may still write them, so they
+                    # keep their pin for good instead.
+                    if isinstance(failure, KVLoadAbandoned):
+                        self._quarantine(pool, pending.pinned_blocks(), failure)
+                    else:
+                        for block in pending.pinned_blocks():
+                            pool.free_block(block)
                     self._holders_outstanding -= bool(pending.publishes)
                     if pending.splice is not None:
                         self._fail_onload(pending.splice, failure)
@@ -2212,8 +2220,9 @@ class JengaBlockManager:
         except (KVLoadRefused, KVLoadFailed) as err:
             # Evicted between the two calls, no room to stage the copy, or a
             # transport fault while posting or on this first poll; nothing is
-            # in flight into the rows either way, and nothing is spliced yet.
-            # There is no shorter hit to fall back to: a windowed leaf's
+            # spliced yet, and nothing is in flight into the rows unless the
+            # connector abandoned a copy it posted, whose rows it may still
+            # write. There is no shorter hit to fall back to: a windowed leaf's
             # remaining run no longer ends where the prefix does.
             if isinstance(err, KVLoadFailed):
                 self._skip_connector_after_failure(request_id, err)
@@ -2227,9 +2236,12 @@ class JengaBlockManager:
                 self._record_lookup_drop(
                     reason, "offered", aligned, hinted=self._routes_hint(hint)
                 )
-            for blocks in rows.values():
-                for block in blocks:
-                    pool.free_block(block)
+            if isinstance(err, KVLoadAbandoned):
+                self._quarantine(pool, chain.from_iterable(rows.values()), err)
+            else:
+                for blocks in rows.values():
+                    for block in blocks:
+                        pool.free_block(block)
             return miss
 
         # Every leaf's row has to be `aligned` long: the groups splice them onto
@@ -2407,6 +2419,38 @@ class JengaBlockManager:
         if state is not None:
             state.skips_connector = True
 
+    def _quarantine(
+        self,
+        pool: JengaBlockPool,
+        blocks: Iterable[LittleKVCacheBlock],
+        failure: KVLoadAbandoned,
+    ) -> None:
+        """Keeps the blocks of an abandoned load out of use for good.
+
+        They are never freed, so neither the free list nor eviction can hand
+        them to another request while the copy the connector gave up on may
+        still write them. Nothing reports when it stops, so they stay out for
+        the life of the engine. A null block pads a windowed leaf and no copy
+        writes it, so it goes back as usual and is not counted.
+        """
+        count = 0
+        for block in blocks:
+            if block.is_null:
+                pool.free_block(block)
+            else:
+                count += 1
+        self._quarantined_blocks += count
+        assert self._connector is not None
+        logger.warning(
+            "%s gave up on a load whose copy may still write its %d device "
+            "blocks, so they stay out of use for the life of the engine, "
+            "%d blocks in all: %s",
+            self._connector.name,
+            count,
+            self._quarantined_blocks,
+            failure,
+        )
+
     def _fail_onload(
         self, splice: _OnloadSplice, failure: KVLoadFailed
     ) -> None:
@@ -2512,7 +2556,7 @@ class JengaBlockManager:
         metrics = self._metrics
         if self._connector is not None:
             metrics += self._connector.metrics
-        return metrics
+        return self._with_levels(metrics)
 
     def take_metrics(self) -> KVCacheMetrics:
         """Reads and clears this manager's and its connector's metrics."""
@@ -2520,7 +2564,17 @@ class JengaBlockManager:
         self._metrics = KVCacheMetrics()
         if self._connector is not None:
             metrics += self._connector.take_metrics()
-        return metrics
+        return self._with_levels(metrics)
+
+    def _with_levels(self, metrics: KVCacheMetrics) -> KVCacheMetrics:
+        """Returns a copy of ``metrics`` carrying this manager's levels.
+
+        Levels are read fresh for every snapshot rather than kept in the
+        per-window deltas that ``take_metrics`` clears.
+        """
+        return replace(
+            metrics, connector_quarantined_blocks=self._quarantined_blocks
+        )
 
     @property
     def effective_max_seq_length(self) -> int | None:

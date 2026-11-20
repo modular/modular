@@ -980,6 +980,16 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "any of these is a transport fault rather than a cache miss."
         ),
     ),  # type: ignore
+    "max.cache.connector_quarantined_blocks": _meter.create_gauge(
+        "max.cache.connector_quarantined_blocks",
+        unit="blocks",
+        description=(
+            "Device KV blocks kept out of use for the life of the engine "
+            "because a connector gave up on a load whose copy may still "
+            "write them, summed over replicas. A level that only grows, and "
+            "each block is KV capacity lost until the engine restarts."
+        ),
+    ),  # type: ignore
     "max.cache.connector_offload_blocks_dropped": _meter.create_counter(
         "max.cache.connector_offload_blocks_dropped",
         unit="blocks",
@@ -3098,6 +3108,15 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "max.cache.connector_load_failures",
                 count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_quarantined_blocks(self, blocks: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.cache.connector_quarantined_blocks",
+                blocks,
                 self.extra_attributes,
             ),
         )

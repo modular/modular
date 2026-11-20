@@ -52,6 +52,7 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedProbe,
     KVConnector,
     KVConnectorTransfer,
+    KVLoadAbandoned,
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
@@ -978,13 +979,50 @@ def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
     return admission_s
 
 
+def _left_copy_in_flight(err: BaseException) -> bool:
+    """Returns whether ``err`` gave up on a copy that may still write its pages.
+
+    The binding marks such a failure with a true ``copy_in_flight``
+    attribute, and :func:`_as_load_failure` turns it into a
+    :class:`KVLoadAbandoned`.
+    """
+    return isinstance(err, KVLoadAbandoned) or bool(
+        getattr(err, "copy_in_flight", False)
+    )
+
+
+def _failure_to_raise(
+    kept: BaseException | None, err: BaseException, what: str
+) -> BaseException:
+    """Picks which of two failures one transfer raises and logs the other.
+
+    The first failure wins unless only the later one left a copy running,
+    because the caller has to keep the pages of such a copy out of use, and
+    the failure it is handed is all it decides that from. A keyboard
+    interrupt or a system exit kept first still wins, so a copy left running
+    never swallows it.
+    """
+    if kept is None:
+        return err
+    if (
+        not isinstance(kept, (KeyboardInterrupt, SystemExit))
+        and _left_copy_in_flight(err)
+        and not _left_copy_in_flight(kept)
+    ):
+        kept, err = err, kept
+    _logger.error(what, exc_info=err)
+    return kept
+
+
 def _drain(transfers: Sequence[KVTransfer]) -> None:
     """Waits for every transfer in ``transfers``, draining all of them.
 
     Guarded per transfer with the first failure re-raised at the END rather
     than immediately: this is what stands between a short delivery and the
     caller freeing a page with an H2D still landing in it, so one leaf's
-    transport error must not skip the leaves after it.
+    transport error must not skip the leaves after it. A failure that left a
+    copy running is raised ahead of the others, since the caller must then
+    keep the pages.
 
     ``synchronize`` takes its handles out, so draining the same transfer twice
     is a no-op and the unwind path can drain blindly.
@@ -994,10 +1032,9 @@ def _drain(transfers: Sequence[KVTransfer]) -> None:
         try:
             transfer.synchronize()
         except BaseException as err:
-            if first is None:
-                first = err
-            else:
-                _logger.exception("dkv transfer synchronize failed")
+            first = _failure_to_raise(
+                first, err, "dkv transfer synchronize failed"
+            )
     if first is not None:
         raise first
 
@@ -1009,11 +1046,16 @@ def _as_load_failure(err: BaseException) -> BaseException:
     condition and ``ValueError`` for a caller bug. Anything else comes back
     unchanged, a ``RuntimeError`` subclass included, so a bug in the shim or
     the binding still crashes rather than reading as a copy the manager can
-    recompute.
+    recompute. A failure the binding marks as having left its copy running
+    becomes :class:`KVLoadAbandoned`, so the manager keeps its pages.
     """
     if type(err) is not RuntimeError:
         return err
-    failure = KVLoadFailed(str(err))
+    failure = (
+        KVLoadAbandoned(str(err))
+        if _left_copy_in_flight(err)
+        else KVLoadFailed(str(err))
+    )
     failure.__cause__ = err
     return failure
 
@@ -1090,23 +1132,25 @@ class _DkvBatchTransfer:
                 if not transfer.is_complete():
                     self._pending.append(transfer)
             except BaseException as err:
-                if first is None:
-                    first = err
-                else:
-                    _logger.exception("dkv transfer poll failed")
+                first = _failure_to_raise(
+                    first, err, "dkv transfer poll failed"
+                )
         if first is not None:
             # The caller unpins this transfer's blocks on the failure, so a
             # leaf still in flight has to be waited out first or its copy
-            # lands in a page that has been freed and reused.
-            self._failure = _as_load_failure(first)
+            # lands in a page that has been freed and reused. A leaf the drain
+            # gives up on while it still runs makes the whole load abandoned.
             still_flying = self._pending
             self._pending = []
             try:
                 _drain(still_flying)
-            except BaseException:
-                _logger.exception(
-                    "draining the surviving leaves of a failed dkv load failed"
+            except BaseException as err:
+                first = _failure_to_raise(
+                    first,
+                    err,
+                    "draining the surviving leaves of a failed dkv load failed",
                 )
+            self._failure = _as_load_failure(first)
             raise self._failure
         return not self._pending
 
@@ -2288,7 +2332,8 @@ class DKVConnector(KVConnector):
                 promised.
             KVLoadFailed: If posting a leaf's copy failed, or a copy that a
                 short delivery drained did. Every leaf that posted has been
-                drained by then.
+                drained by then, and it is a :class:`KVLoadAbandoned` when the
+                drain gave up on a copy that was still running.
         """
         clients = self._clients[replica_idx]
         depths = self._leased_depths.pop(replica_idx, None)
@@ -2590,15 +2635,23 @@ class DKVConnector(KVConnector):
             abandon_all()
             # A leaf that posted has reads landing into rows the caller frees
             # as soon as this raises. Swallowing: the original exception is
-            # the one worth propagating.
+            # the one worth propagating, except that a drain which gave up on
+            # a copy still running makes the load abandoned, so the caller
+            # keeps the rows that copy may write.
+            left_running = False
             try:
                 _drain(posted_transfers)
-            except BaseException:
+            except BaseException as drain_err:
+                left_running = _left_copy_in_flight(drain_err)
                 _logger.exception(
                     "dkv transfer drain failed while unwinding a load; its "
                     "reads may still be landing"
                 )
             failure = _as_load_failure(err)
+            if left_running and isinstance(
+                failure, (KVLoadFailed, KVLoadRefused)
+            ):
+                raise KVLoadAbandoned(str(err)) from err
             if failure is err:
                 raise
             raise failure from err

@@ -2242,6 +2242,62 @@ def test_connector_load_failures_are_silent_while_none_fail() -> None:
     assert "connector_load_failures" not in metrics.to_log_extra()
 
 
+def test_create_carries_connector_quarantined_blocks_through() -> None:
+    """The managers' quarantined block count reaches the batch."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        connector_quarantined_blocks=12
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.connector_quarantined_blocks == 12
+
+
+def test_connector_quarantined_blocks_are_sent_wherever_dkv_is_attached() -> (
+    None
+):
+    """The level is sent with dKV attached, zero included, so a dashboard
+    has the series before the first block is held."""
+    for held in (0, 12):
+        metrics = _make_metrics(
+            dkv_total_clients=1, connector_quarantined_blocks=held
+        )
+
+        with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+            metrics.publish_metrics()
+
+        mock_metrics.cache_connector_quarantined_blocks.assert_called_once_with(
+            held
+        )
+        assert metrics.to_log_extra()["connector_quarantined_blocks"] == held
+
+
+def test_connector_quarantined_blocks_are_silent_without_dkv_or_any_held() -> (
+    None
+):
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_quarantined_blocks.assert_not_called()
+    assert "connector_quarantined_blocks" not in metrics.to_log_extra()
+
+
 def test_create_carries_dkv_fail_open_counters_through() -> None:
     """The connector's fail-open counts reach the batch, with no host tier."""
     kv_cache = MagicMock()
