@@ -17242,7 +17242,7 @@ def mtp_eh_norm(
     enorm_weight: TensorValue,
     hnorm_weight: TensorValue,
     epsilon: float,
-    block_threads: int = 256,
+    block_threads: int | None = None,
 ) -> TensorValue:
     """Normalizes both inputs of an MTP draft layer into one projection input.
 
@@ -17263,6 +17263,11 @@ def mtp_eh_norm(
         hnorm_weight: Hidden-state norm weight ``[hidden_size]``.
         epsilon: Added inside the square root.
         block_threads: Threads per block; must be a whole number of warps.
+            ``None`` picks ``hidden_size // 16``, at which each thread holds
+            its 16 columns of the row in registers, when ``hidden_size`` is a
+            multiple of 1024 (whole 64-lane warps, so whole warps on 32- and
+            64-lane GPUs alike) and that width is at most 1024; otherwise it
+            picks 256.
 
     Returns:
         ``[num_tokens, 2 * hidden_size]`` with the normalized embedding in the
@@ -17312,6 +17317,19 @@ def mtp_eh_norm(
             f"mtp_eh_norm does not support {embed.dtype}: it accumulates in"
             " float32, where ops.rms_norm reduces float8 in float16"
         )
+    if not isinstance(embed.shape[1], StaticDim):
+        raise ValueError(
+            "the hidden size (embed.shape[1]) must be statically known, got"
+            f" {embed.shape[1]}"
+        )
+    hidden_size = int(embed.shape[1])
+    if block_threads is None:
+        register_width = hidden_size // 16
+        block_threads = (
+            register_width
+            if hidden_size % (16 * 64) == 0 and register_width <= 1024
+            else 256
+        )
     if block_threads <= 0 or block_threads % 32 != 0:
         raise ValueError(
             "block_threads must be a positive multiple of 32, got"
@@ -17322,13 +17340,6 @@ def mtp_eh_norm(
             "block_threads must not exceed 1024, the largest block any"
             f" supported GPU allows, got {block_threads}"
         )
-
-    if not isinstance(embed.shape[1], StaticDim):
-        raise ValueError(
-            "the hidden size (embed.shape[1]) must be statically known, got"
-            f" {embed.shape[1]}"
-        )
-    hidden_size = int(embed.shape[1])
 
     return ops.custom(
         "speculative.mtp.eh_norm",
