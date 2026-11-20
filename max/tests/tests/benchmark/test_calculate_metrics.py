@@ -1390,6 +1390,11 @@ def test_build_text_generation_result_filtering_disabled_uses_skip_counts() -> (
     assert result.text_data is not None
     assert result.text_data.completed == 185
     assert result.to_result_dict()["steady_state_mode"] == "disabled"
+    # Steady-state fields are attached after the result is built, so they reach
+    # ``result_groups`` only because the update rebuilds the groups.
+    groups = result.result_groups
+    assert groups is not None and groups.diagnostics is not None
+    assert groups.diagnostics.steady_state_mode == "disabled"
 
 
 def test_build_text_generation_result_filtering_disabled_keeps_all_requests() -> (

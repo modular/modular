@@ -64,6 +64,7 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
+from typing_extensions import Self
 
 __all__ = [
     "ConfidenceInfo",
@@ -1093,6 +1094,20 @@ class BenchmarkResult(BaseModel):
     # (bounded by the request count). See build_text_generation_result.
     num_outliers_rejected: int | None = None
 
+    # The benchmark client's own event loop over the measured window. The two
+    # percentile fields are ``csv_mode=opaque`` so the type-driven CSV keeps
+    # one cell each rather than a dozen per-stat columns. Lag is milliseconds
+    # and the busy share is percent; ``client_loop_lag_max_ms`` is the worst
+    # single wakeup, so a process pause sets it.
+    client_loop_lag_ms: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"csv_mode": "opaque"}
+    )
+    client_loop_lag_max_ms: float | None = None
+    client_loop_busy: RatePercentileMetrics | None = Field(
+        default=None, json_schema_extra={"csv_mode": "opaque"}
+    )
+    client_warning: str | None = None
+
     # Namespaced presentation groups (summary / gpu / latency / …). Part of
     # the stored result — console, local JSON, and BigQuery all serialize
     # this field directly. Auto-filled when omitted so constructors and
@@ -1196,6 +1211,24 @@ class BenchmarkResult(BaseModel):
             # validator is ignored for ``__init__`` construction in pydantic.
             self.result_groups = build_result_groups(self)
         return self
+
+    def updated(self, **fields: object) -> Self:
+        """Returns a copy with ``fields`` replaced and the groups rebuilt.
+
+        ``model_copy`` skips validation and the after-validators, so a bare
+        copy keeps the pre-update ``result_groups``. A name that is not a
+        model field would be stored nowhere and read as the old value: fail
+        here instead, and raise rather than assert so the check survives
+        ``python -O``.
+        """
+        unknown = sorted(set(fields) - set(type(self).model_fields))
+        if unknown:
+            raise ValueError(
+                f"updated() got fields that are not model fields: {unknown}"
+            )
+        copy = self.model_copy(update=fields)
+        copy.result_groups = build_result_groups(copy)
+        return copy
 
     @property
     def aggregates(self) -> _CompletedRunBase | None:
@@ -1340,6 +1373,17 @@ class BenchmarkResult(BaseModel):
             d["steady_state_mode"] = self.steady_state_mode
             d["steady_state_warning"] = self.steady_state_warning
             d["num_outliers_rejected"] = self.num_outliers_rejected
+        for name, pm in [
+            ("client_loop_lag_ms", self.client_loop_lag_ms),
+            ("client_loop_busy", self.client_loop_busy),
+        ]:
+            if pm is not None:
+                d.update(pm.to_flat_dict(name))
+                d.update(pm.confidence_to_flat_dict(name))
+        if self.client_loop_lag_max_ms is not None:
+            d["client_loop_lag_max_ms"] = self.client_loop_lag_max_ms
+        if self.client_warning is not None:
+            d["client_warning"] = self.client_warning
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
         if self.session_server_stats is not None:
@@ -1500,6 +1544,10 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         or result.steady_state_mode is not None
         or result.steady_state_warning is not None
         or result.num_outliers_rejected is not None
+        or result.client_loop_lag_ms is not None
+        or result.client_loop_lag_max_ms is not None
+        or result.client_loop_busy is not None
+        or result.client_warning is not None
         or real_errors
     ):
         diagnostics = DiagnosticsGroup(
@@ -1509,6 +1557,10 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
             steady_state_mode=result.steady_state_mode,
             steady_state_warning=result.steady_state_warning,
             num_outliers_rejected=result.num_outliers_rejected,
+            client_loop_lag_ms=result.client_loop_lag_ms,
+            client_loop_lag_max_ms=result.client_loop_lag_max_ms,
+            client_loop_busy=result.client_loop_busy,
+            client_warning=result.client_warning,
             errors=real_errors,
         )
 

@@ -1214,18 +1214,16 @@ def build_text_generation_result(
     else:
         aggregate_server_stats = [out.server_token_stats for out in outputs]
 
-    return text_metrics.model_copy(
-        update={
-            "session_server_stats": session_server_stats,
-            "aggregate_server_stats": aggregate_server_stats,
-            "steady_state_detected": steady.detected if steady else None,
-            "steady_state_window_count": (
-                steady.steady_state_count if steady else None
-            ),
-            "steady_state_mode": mode,
-            "steady_state_warning": steady.warning if steady else None,
-            "num_outliers_rejected": num_outliers_rejected,
-            "spec_decode_stats": spec_decode_stats,
-            "task_type": "text",
-        }
+    return text_metrics.updated(
+        session_server_stats=session_server_stats,
+        aggregate_server_stats=aggregate_server_stats,
+        steady_state_detected=steady.detected if steady else None,
+        steady_state_window_count=(
+            steady.steady_state_count if steady else None
+        ),
+        steady_state_mode=mode,
+        steady_state_warning=steady.warning if steady else None,
+        num_outliers_rejected=num_outliers_rejected,
+        spec_decode_stats=spec_decode_stats,
+        task_type="text",
     )

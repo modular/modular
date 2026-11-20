@@ -46,6 +46,10 @@ from transformers import PreTrainedTokenizerBase
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
 
+from max.benchmark.benchmark_shared.client_health import (
+    ClientLoopProbe,
+    client_loop_warning,
+)
 from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
     PIXEL_GENERATION_ENDPOINTS,
@@ -577,6 +581,10 @@ async def benchmark(
             f"request_rate={request_rate}) ==="
         )
         benchmark_start_time = time.perf_counter_ns()
+        # Probes the client's own loop over the measured window only.
+        client_probe = ClientLoopProbe()
+        client_probe.start()
+        benchmark_stack.callback(client_probe.stop)
         if args.max_benchmark_duration_s is None:
             benchmark_should_end_time = None
         else:
@@ -714,6 +722,7 @@ async def benchmark(
         benchmark_duration = (
             time.perf_counter_ns() - benchmark_start_time
         ) / 1e9
+        await client_probe.aclose()
 
     if session.benchmark_task == "text-generation":
         spec_decode_metrics_after = fetch_spec_decode_metrics(
@@ -835,6 +844,29 @@ async def benchmark(
     result.record_run_cache_hit_rate(run_cache_hit_rate(all_outputs))
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics
+
+    # The client's own delay is judged against the latencies this run reports:
+    # the probe only measured the loop, so the result has to exist first.
+    client_stats = client_probe.stats()
+    text_data = result.text_data
+    ttft_p50_ms = (
+        text_data.ttft_ms.p50
+        if text_data is not None and text_data.ttft_ms is not None
+        else None
+    )
+    itl_p50_ms = (
+        text_data.itl_ms.p50
+        if text_data is not None and text_data.itl_ms is not None
+        else None
+    )
+    result = result.updated(
+        client_loop_lag_ms=client_stats.lag_ms,
+        client_loop_lag_max_ms=client_stats.lag_max_ms,
+        client_loop_busy=client_stats.busy,
+        client_warning=client_loop_warning(
+            client_stats, ttft_p50_ms=ttft_p50_ms, itl_p50_ms=itl_p50_ms
+        ),
+    )
 
     ok = report_and_validate(
         result,

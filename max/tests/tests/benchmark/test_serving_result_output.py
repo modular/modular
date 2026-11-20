@@ -35,6 +35,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     PercentileMetrics,
+    RatePercentileMetrics,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
@@ -337,6 +338,39 @@ def test_print_benchmark_summary_splits_gpu_utilization_by_role(
         row = re.search(rf"│\s*GPU utilization, {label} \(%\)\s*│([^│]+)│", out)
         assert row is not None, label
         assert float(row.group(1).strip()) == mean
+
+
+def test_print_benchmark_summary_reports_the_client_loop(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A probed run shows the client's loop and one saturation warning."""
+    saturate = "The benchmark client's event loop saturated (lag p90 120 ms)."
+    _print_summary(
+        _gpu_benchmark_result().updated(
+            client_loop_lag_ms=StandardPercentileMetrics(
+                [0.002, 0.120], scale_factor=1000.0, unit="ms"
+            ),
+            client_loop_lag_max_ms=412.5,
+            client_loop_busy=RatePercentileMetrics([0.6, 0.97]),
+            client_warning=saturate,
+        )
+    )
+    out = capsys.readouterr().out
+    assert "Client event-loop lag (ms)" in out
+    assert "Client loop thread busy (%)" in out
+    assert re.search(
+        r"Worst client loop lag \(ms, incl\. pauses\):\s+412\.50", out
+    )
+    assert f"WARNING: {saturate}" in out
+
+
+def test_print_benchmark_summary_omits_the_client_rows_without_a_probe(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result())
+    out = capsys.readouterr().out
+    assert "Client event-loop lag" not in out
+    assert "WARNING:" not in out
 
 
 def _make_request(

@@ -168,7 +168,7 @@ class CacheStatsGroup(BaseModel):
 
 
 class DiagnosticsGroup(BaseModel):
-    """Steady-state detection and error diagnostics for the iteration."""
+    """Steady-state detection, client health and error diagnostics."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -178,6 +178,14 @@ class DiagnosticsGroup(BaseModel):
     steady_state_mode: str | None = None
     steady_state_warning: str | None = None
     num_outliers_rejected: int | None = None
+    # The benchmark client's own event loop: how late its timer ran in ms,
+    # the worst single wakeup (process pauses included), the loop thread's
+    # CPU share in percent, and a warning when the client's delay reached
+    # the latencies the run reports.
+    client_loop_lag_ms: PercentileMetrics | None = None
+    client_loop_lag_max_ms: float | None = None
+    client_loop_busy: PercentileMetrics | None = None
+    client_warning: str | None = None
     errors: list[str] = Field(default_factory=list)
 
 
