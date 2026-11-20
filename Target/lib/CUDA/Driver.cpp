@@ -51,9 +51,10 @@ DriverResult<M_driver_driver_t> M_driver_driver::create() {
 }
 
 DriverResult<int64_t> M_driver_driver::deviceCount() {
-  unsigned int nvmlCount = 0;
-  if (nvmlReturn_t r = rawNvml.nvmlDeviceGetCount_v2(&nvmlCount);
-      r != NVML_SUCCESS)
-    return tl::unexpected(nvmlErrorStatus(this, r, "nvmlDeviceGetCount_v2"));
-  return static_cast<int64_t>(nvmlCount);
+  // NVML counts every GPU on the host. cuDeviceGet takes only the ones
+  // CUDA_VISIBLE_DEVICES leaves.
+  int count = 0;
+  if (CUresult r = rawCuda.cuDeviceGetCount(&count); r != CUDA_SUCCESS)
+    return tl::unexpected(cudaErrorStatus(this, r, "cuDeviceGetCount"));
+  return static_cast<int64_t>(count);
 }
