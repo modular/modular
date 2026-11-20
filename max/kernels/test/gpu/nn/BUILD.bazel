@@ -31,6 +31,8 @@ _EXTRA_CONSTRAINTS = {
     }),
     # The key tail's LayerNorm tree asserts a 32-lane warp.
     "test_indexer_k_quantize_store.mojo": ["//:nvidia_gpu"],
+    # The query tail runs on the same 32-lane head layout as the key tail.
+    "test_indexer_q_rope_quantize.mojo": ["//:nvidia_gpu"],
     # MXFP4 packing uses SM100 conversion instructions.
     "test_indexer_k_store.mojo": select({
         "//:b200_gpu": [],

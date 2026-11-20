@@ -1169,6 +1169,65 @@ def indexer_k_quantize_store(
     )
 
 
+def _indexer_q_quantize(
+    op_name: str,
+    q: TensorValue,
+    ssmax_operands: Sequence[TensorValue],
+    freqs_cis: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    *,
+    scales_dtype: DType,
+    rope_dim: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Checks the operands the fused indexer query ops share and stages one.
+
+    Args:
+        op_name: The custom op to stage.
+        q: ``[rows, heads, 128]`` BF16 query projection.
+        ssmax_operands: The op's operands between ``q`` and ``freqs_cis``;
+            empty for the op without SSMax.
+        freqs_cis: ``[positions, rope_dim]`` BF16 interleaved RoPE table.
+        input_row_offsets: ``[batch + 1]`` uint32 ragged row offsets.
+        start_pos: ``[batch]`` uint32 RoPE start of each request.
+        scales_dtype: The dtype of the ``[rows, heads]`` scales the op writes.
+        rope_dim: Leading columns of each head to rotate; 0 for none.
+
+    Returns:
+        The ``[rows, heads, 128]`` FP8 query and its ``[rows, heads]`` scales.
+
+    Raises:
+        ValueError: If a shared operand has the wrong rank or dtype, or if the
+            RoPE table is not ``rope_dim`` wide.
+    """
+    _check_rank(3, q=q)
+    _check_dtype(DType.bfloat16, q=q)
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, start_pos=start_pos
+    )
+    if rope_dim:
+        _check_dtype(DType.bfloat16, freqs_cis=freqs_cis)
+        if int(freqs_cis.shape[1]) != rope_dim:
+            raise ValueError(
+                f"freqs_cis is {freqs_cis.shape[1]} wide; rope_dim={rope_dim}"
+            )
+    # As in `rope_ragged`: a cross-device table must be materialized on the
+    # kernel's device rather than fused in as a view.
+    if freqs_cis.device != q.device:
+        freqs_cis = freqs_cis.to(q.device)
+    result = ops.custom(
+        op_name,
+        device=q.device,
+        values=[q, *ssmax_operands, freqs_cis, input_row_offsets, start_pos],
+        out_types=[
+            TensorType(DType.float8_e4m3fn, q.shape, device=q.device),
+            TensorType(scales_dtype, [q.shape[0], q.shape[1]], device=q.device),
+        ],
+        parameters={"rope_dim": rope_dim},
+    )
+    return result[0].tensor, result[1].tensor
+
+
 def indexer_q_ssmax_rope_quantize(
     q: TensorValue,
     positions: TensorValue,
@@ -1203,45 +1262,57 @@ def indexer_q_ssmax_rope_quantize(
         The ``[rows, heads, 128]`` FP8 query and its ``[rows, heads]`` E8M0
         scales.
     """
-    _check_rank(3, q=q)
-    _check_dtype(DType.bfloat16, q=q, ssmax_s=ssmax_s, ssmax_b=ssmax_b)
-    _check_dtype(
-        DType.uint32,
-        positions=positions,
-        input_row_offsets=input_row_offsets,
-        start_pos=start_pos,
-    )
-    if rope_dim:
-        _check_dtype(DType.bfloat16, freqs_cis=freqs_cis)
-        if int(freqs_cis.shape[1]) != rope_dim:
-            raise ValueError(
-                f"freqs_cis is {freqs_cis.shape[1]} wide; rope_dim={rope_dim}"
-            )
-    # As in `rope_ragged`: a cross-device table must be materialized on the
-    # kernel's device rather than fused in as a view.
-    if freqs_cis.device != q.device:
-        freqs_cis = freqs_cis.to(q.device)
-    result = ops.custom(
+    _check_dtype(DType.bfloat16, ssmax_s=ssmax_s, ssmax_b=ssmax_b)
+    _check_dtype(DType.uint32, positions=positions)
+    return _indexer_q_quantize(
         "indexer.q.ssmax_rope_quantize.fp8",
-        device=q.device,
-        values=[
-            q,
-            positions,
-            ssmax_s,
-            ssmax_b,
-            freqs_cis,
-            input_row_offsets,
-            start_pos,
-        ],
-        out_types=[
-            TensorType(DType.float8_e4m3fn, q.shape, device=q.device),
-            TensorType(
-                DType.float8_e8m0fnu, [q.shape[0], q.shape[1]], device=q.device
-            ),
-        ],
-        parameters={"rope_dim": rope_dim},
+        q,
+        [positions, ssmax_s, ssmax_b],
+        freqs_cis,
+        input_row_offsets,
+        start_pos,
+        scales_dtype=DType.float8_e8m0fnu,
+        rope_dim=rope_dim,
     )
-    return result[0].tensor, result[1].tensor
+
+
+def indexer_q_rope_quantize(
+    q: TensorValue,
+    freqs_cis: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    *,
+    rope_dim: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Applies RoPE to an index query and FP8-quantizes it.
+
+    :func:`indexer_q_ssmax_rope_quantize` for an indexer without SSMax. One
+    launch computes, bit for bit, :func:`rope_ragged` over the leading
+    ``rope_dim`` columns of each head (interleaved), then
+    :func:`quantize_dynamic_scaled_float8` of each 128-wide head with its
+    power-of-two scale written as float32.
+
+    Args:
+        q: ``[rows, heads, 128]`` BF16 query projection.
+        freqs_cis: ``[positions, rope_dim]`` BF16 interleaved RoPE table.
+        input_row_offsets: ``[batch + 1]`` uint32 ragged row offsets.
+        start_pos: ``[batch]`` uint32 RoPE start of each request.
+        rope_dim: Leading columns of each head to rotate; 0 for none.
+
+    Returns:
+        The ``[rows, heads, 128]`` FP8 query and its ``[rows, heads]`` float32
+        scales.
+    """
+    return _indexer_q_quantize(
+        "indexer.q.rope_quantize.fp8",
+        q,
+        [],
+        freqs_cis,
+        input_row_offsets,
+        start_pos,
+        scales_dtype=DType.float32,
+        rope_dim=rope_dim,
+    )
 
 
 @_rejects_split_head_dims

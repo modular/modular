@@ -30,6 +30,7 @@ from max.graph import (
 )
 from max.nn._graph_ops import (
     indexer_k_quantize_store,
+    indexer_q_rope_quantize,
     mla_fp8_index_top_k,
     mla_fp8_index_top_k_physical,
     mla_fp8_index_top_k_with_physical,
@@ -699,23 +700,40 @@ class Indexer(Module, Shardable):
             self.always_select_tail,
         )
 
-    def _fuses_k_store(self, k: TensorValue, freqs_cis: TensorValue) -> bool:
-        """Whether one launch can normalize, rotate, quantize and store ``k``.
+    def _fused_tails(
+        self, q: TensorValue, k: TensorValue, freqs_cis: TensorValue
+    ) -> tuple[bool, bool]:
+        """Whether the query's and the key's tails each run as one launch.
 
-        :func:`indexer_k_quantize_store` normalizes with a bias, rotates
-        interleaved pairs only, takes one scale per 128-channel key, and
-        assumes a 32-lane warp.
+        :func:`indexer_q_rope_quantize` and :func:`indexer_k_quantize_store`
+        rotate interleaved pairs only, take one scale per 128-channel head or
+        key, and are built for a 32-lane warp. The query op reads a rope table
+        exactly as wide as the rotation. The key op also normalizes with a
+        bias, needs the cache's scale granularity to be 128 channels, and
+        stores per token, which the k-pooled cache does not.
         """
-        return (
-            self.index_kpool == 1
-            and (self.rope_interleaved or not self.rope_head_dim)
+        fusable = (
+            (self.rope_interleaved or not self.rope_head_dim)
             and self.head_dim == 128
-            and self.quant_config.scales_granularity_mnk[2] == 128
-            and self.k_norm.bias is not None
-            and k.dtype == DType.bfloat16
             and freqs_cis.dtype == DType.bfloat16
             and accelerator_api() == "cuda"
         )
+        fuse_q = (
+            fusable
+            and q.dtype == DType.bfloat16
+            and (
+                not self.rope_head_dim
+                or int(freqs_cis.shape[1]) == self.rope_head_dim
+            )
+        )
+        fuse_k = (
+            fusable
+            and k.dtype == DType.bfloat16
+            and self.quant_config.scales_granularity_mnk[2] == 128
+            and self.index_kpool == 1
+            and self.k_norm.bias is not None
+        )
+        return fuse_q, fuse_k
 
     def __call__(
         self,
@@ -783,19 +801,31 @@ class Indexer(Module, Shardable):
         # qr comes projected to lora rank and pre-normed; q_lora_rank -> self.n_heads * self.head_dim
         q = self.wq_b(qr)
         q = q.reshape((-1, self.n_heads, self.head_dim))
-        if self.rope_head_dim:
-            q_pe, q_nope = ops.chunk(q, chunks=2, axis=-1)
-            q_pe = rope_ragged(
-                q_pe,
+        k = self.wk(x)  # dim -> head_dim
+        fused_q_quant, fused_k_store = self._fused_tails(q, k, freqs_cis)
+
+        if fused_q_quant:
+            q_fp8, q_scale = indexer_q_rope_quantize(
+                q,
+                freqs_cis,
                 input_row_offsets,
                 indexer_k_collection.cache_lengths,
-                freqs_cis,
-                interleaved=self.rope_interleaved,
+                rope_dim=self.rope_head_dim,
             )
-            q = ops.concat([q_pe, q_nope], axis=-1)
+            q_scale = ops.unsqueeze(q_scale, axis=-1)
+        else:
+            if self.rope_head_dim:
+                q_pe, q_nope = ops.chunk(q, chunks=2, axis=-1)
+                q_pe = rope_ragged(
+                    q_pe,
+                    input_row_offsets,
+                    indexer_k_collection.cache_lengths,
+                    freqs_cis,
+                    interleaved=self.rope_interleaved,
+                )
+                q = ops.concat([q_pe, q_nope], axis=-1)
+            q_fp8, q_scale = act_quant(q, self.quant_config)
 
-        k = self.wk(x)  # dim -> head_dim
-        fused_k_store = self._fuses_k_store(k, freqs_cis)
         if not fused_k_store:
             k = self.k_norm(k)
             if self.rope_head_dim:
@@ -811,8 +841,6 @@ class Indexer(Module, Shardable):
                     axis=-2,
                 )
                 k = ops.concat([k_pe, k_nope], axis=-1)
-
-        q_fp8, q_scale = act_quant(q, self.quant_config)
 
         # DeepSeek projects the scoring weights in float32.
         proj = self.weights_proj.weight.to(x.device).cast(DType.float32)

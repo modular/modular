@@ -42,6 +42,7 @@ from internal_utils.fp8_utils import cast_saturating
 from nn.indexer_qk_quantize import (
     INDEX_HEAD_DIM,
     indexer_k_quantize_store,
+    indexer_q_rope_quantize,
     indexer_q_ssmax_rope_quantize,
 )
 from nn.kv_cache import (
@@ -1109,6 +1110,59 @@ struct Struct_indexer_q_ssmax_rope_quantize_fp8:
             positions.to_tile_tensor[.uint32](),
             ssmax_s.to_tile_tensor[.bfloat16](),
             ssmax_b.to_tile_tensor[.bfloat16](),
+            freqs_cis.to_tile_tensor[.bfloat16](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            start_pos.to_tile_tensor[.uint32](),
+            context,
+        )
+
+
+@extensibility.register("indexer.q.rope_quantize.fp8")
+struct Struct_indexer_q_rope_quantize_fp8:
+    """Registers `indexer.q.rope_quantize.fp8`.
+
+    Rotates the leading `rope_dim` columns of each head of a `[rows, heads,
+    128]` index query and FP8-quantizes each head, writing its power-of-two
+    scale as float32, in one launch: `indexer.q.ssmax_rope_quantize.fp8` for
+    an indexer without SSMax. See `nn.indexer_qk_quantize`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        rope_dim: Int,
+    ](
+        q_out: Some[Output & Tensor],
+        scale_out: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        start_pos: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert context.target.is_gpu(), "only valid on GPUs"
+        comptime assert conforms_to(type_of(q_out), TileTensorable)
+        comptime assert conforms_to(type_of(scale_out), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(start_pos), TileTensorable)
+        comptime assert type_of(q_out).rank == 3
+        comptime assert type_of(scale_out).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(start_pos).rank == 1
+        comptime assert type_of(q_out).dtype == DType.float8_e4m3fn
+        comptime assert type_of(scale_out).dtype == DType.float32
+        comptime assert type_of(q).dtype == DType.bfloat16
+        comptime assert type_of(freqs_cis).dtype == DType.bfloat16
+        comptime assert type_of(input_row_offsets).dtype == DType.uint32
+        comptime assert type_of(start_pos).dtype == DType.uint32
+        indexer_q_rope_quantize[rope_dim](
+            q_out.to_tile_tensor[.float8_e4m3fn](),
+            scale_out.to_tile_tensor[.float32](),
+            q.to_tile_tensor[.bfloat16](),
             freqs_cis.to_tile_tensor[.bfloat16](),
             input_row_offsets.to_tile_tensor[.uint32](),
             start_pos.to_tile_tensor[.uint32](),
