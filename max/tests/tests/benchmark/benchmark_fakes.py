@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
 from pathlib import Path
 from typing import NamedTuple
 from unittest.mock import MagicMock
@@ -120,6 +120,21 @@ def make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
 def write_blob(path: Path, **fields: object) -> None:
     """Writes ``fields`` as a JSON object, standing in for a benchmark result."""
     path.write_text(json.dumps(fields))
+
+
+class StreamBody:
+    """Stands in for aiohttp's body reader, which needs only ``iter_any``."""
+
+    def __init__(self, chunks: Iterable[bytes]) -> None:
+        self._chunks = list(chunks)
+
+    async def _read(self) -> AsyncIterator[bytes]:
+        for chunk in self._chunks:
+            yield chunk
+
+    def iter_any(self) -> AsyncIterator[bytes]:
+        """Returns the body in the chunks given, so boundaries stay as sent."""
+        return self._read()
 
 
 def write_engine_result_set(path: Path) -> None:
@@ -282,14 +297,9 @@ def mock_chat_stream(
     )
     client = session_class.return_value.__aenter__.return_value
 
-    async def body() -> AsyncIterator[bytes]:
-        for chunk in chunks:
-            yield chunk
-        yield b"data: [DONE]\n\n"
-
     response = mocker.AsyncMock()
     response.status = 200
-    response.content = body()
+    response.content = StreamBody([*chunks, b"data: [DONE]\n\n"])
     post_ctx = mocker.AsyncMock()
     post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
     post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)

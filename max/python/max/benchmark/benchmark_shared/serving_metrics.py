@@ -40,6 +40,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
     ServerTokenStats,
+    compute_chunk_tpots,
     measured_window_duration,
 )
 from max.benchmark.benchmark_shared.steady_state import (
@@ -330,6 +331,16 @@ def calculate_metrics(
     ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
     result. ``None`` leaves both unreported.
     """
+    # A caller that builds metrics straight from request outputs skips the
+    # post-run pass that turns these offsets into TPOT. Say so, rather than
+    # report a run whose per-chunk TPOT quietly went missing. One end offset
+    # describes no interval, so a single-chunk response has no TPOT to lose.
+    if any(len(output.pending_tpot_ends) > 1 for output in outputs):
+        logger.warning(
+            "Some responses still carry per-chunk TPOT offsets, so"
+            " compute_chunk_tpots() did not run and their per-chunk TPOT is"
+            " missing from these metrics."
+        )
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -977,6 +988,7 @@ def build_text_generation_result(
     steady_state_filtering: bool = True,
     goodput_targets: GoodputTargets | None = None,
     num_gpus: int | None = None,
+    disable_tqdm: bool | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
@@ -1016,12 +1028,20 @@ def build_text_generation_result(
     ``num_gpus`` (the number of GPUs the server used) derives
     ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
     result; ``None`` leaves both unreported.
+
+    ``disable_tqdm`` hides the per-chunk TPOT progress bar; ``None``
+    autodetects.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
             "Expected all outputs to be RequestFuncOutput"
             " in text-generation benchmark flow."
         )
+
+    # Tokenizing the recorded chunks here, rather than per chunk on the event
+    # loop, keeps the client out of the way of the streams it measures. It has
+    # to run before steady-state detection, which reads ``tpot``.
+    compute_chunk_tpots(outputs, tokenizer, disable_tqdm=disable_tqdm)
 
     # FIXME (CENG-1381): Failed requests are excluded so that replies the server
     # ends without any text don't fail the run. Remove this once those replies

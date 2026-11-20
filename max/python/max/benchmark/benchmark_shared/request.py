@@ -26,6 +26,7 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
+from array import array
 from collections.abc import (
     Iterable,
     Iterator,
@@ -34,6 +35,7 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any, cast
 
 import aiohttp
@@ -65,6 +67,9 @@ from .utils import deadline_passed, openai_bearer_auth_headers
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
+
+# Chunks tokenized per call when filling in per-chunk TPOT; bounds peak memory.
+_TPOT_TOKENIZE_SLICE = 10_000
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +404,8 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     itl: list[float] = field(default_factory=list)
     # List of per-chunk time-per-output-token values.
     tpot: list[float] = field(default_factory=list)
+    # End offsets in ``generated_text``; compute_chunk_tpots drains it.
+    pending_tpot_ends: array[int] = field(default_factory=lambda: array("I"))
     generated_text: str = ""
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
@@ -448,7 +455,7 @@ class RequestDriver(ABC):
         """Initialize the request driver.
 
         Args:
-            tokenizer: Optional tokenizer for per-chunk TPOT computation.
+            tokenizer: Optional tokenizer for per-chunk TPOT.
             extra_body: Optional arbitrary top-level fields merged onto every
                 request payload (last-writer-wins). Consumed by the
                 text-generation drivers (chat completions, completions, and
@@ -581,25 +588,26 @@ class TRTLLMRequestDriver(RequestDriver):
             try:
                 async with session.post(url=api_url, json=payload) as response:
                     if response.status == 200:
-                        async for event in iter_events(response.content):
+                        async for event in iter_events(
+                            response.content.iter_any()
+                        ):
                             data = _TRTLLMChunk.model_validate_json(event.data)
                             chunk_text = data.text_output
-                            output.generated_text += chunk_text
                             timestamp = time.perf_counter()
+                            output.generated_text += chunk_text
+                            if self.tokenizer is not None:
+                                output.pending_tpot_ends.append(
+                                    len(output.generated_text)
+                                )
                             # First token
                             if ttft == 0.0:
-                                ttft = time.perf_counter() - st
+                                ttft = timestamp - st
                                 output.ttft = ttft
 
                             # Decoding phase
                             else:
                                 itl_value = timestamp - most_recent_timestamp
                                 output.itl.append(itl_value)
-                                tpot = _compute_chunk_tpot(
-                                    self.tokenizer, chunk_text, itl_value
-                                )
-                                if tpot is not None:
-                                    output.tpot.append(tpot)
 
                             most_recent_timestamp = timestamp
 
@@ -617,24 +625,137 @@ class TRTLLMRequestDriver(RequestDriver):
             return output
 
 
-def _compute_chunk_tpot(
-    tokenizer: PreTrainedTokenizerBase | None,
-    chunk_text: str,
-    itl_value: float,
-) -> float | None:
-    """Compute per-chunk time-per-output-token.
+def _append_slice_tpots(
+    pending: Sequence[tuple[RequestFuncOutput, str, float]],
+    tokenizer: PreTrainedTokenizerBase,
+    failures: list[str],
+) -> set[int]:
+    """Tokenizes one slice of chunks and appends each chunk's TPOT.
 
-    Note: This is approximate. Re-tokenizing the chunk text may not exactly
-    match the server's tokenization of the generated output.
+    Args:
+        pending: The slice's (response, chunk text, ITL) triples.
+        tokenizer: The tokenizer that turns each chunk's text into tokens.
+        failures: Receives a description of the first tokenizer failure, so the
+            one warning per run can say what went wrong.
+
+    Returns:
+        The responses in the slice whose TPOT this slice dropped. A tokenizer
+        that raises, or returns a different number of encodings than it was
+        handed, leaves the whole slice unattributed; the affected responses
+        also lose the TPOT of every earlier slice, so no response ends up with
+        partial coverage.
     """
-    if tokenizer is None or not chunk_text:
-        return None
-    chunk_tokens = len(
-        tokenizer(chunk_text, add_special_tokens=False).input_ids
-    )
-    if chunk_tokens > 0:
-        return itl_value / chunk_tokens
-    return None
+    try:
+        encoded = tokenizer(
+            [text for _, text, _ in pending], add_special_tokens=False
+        )
+        slice_tpots = [
+            itl_value / len(token_ids) if token_ids else None
+            for (_, _, itl_value), token_ids in zip(
+                pending, encoded.input_ids, strict=True
+            )
+        ]
+    except Exception as exc:
+        # A tokenizer that rejects the generated text is the benchmark's
+        # problem, not the request's: drop per-chunk TPOT for these responses
+        # rather than failing the run's whole result over it.
+        if not failures:
+            failures.append(f"{type(exc).__name__}: {exc}")
+        for output, _, _ in pending:
+            output.tpot.clear()
+        return {id(output) for output, _, _ in pending}
+    for (output, _, _), tpot in zip(pending, slice_tpots, strict=True):
+        if tpot is not None:
+            output.tpot.append(tpot)
+    return set()
+
+
+def compute_chunk_tpots(
+    outputs: Iterable[RequestFuncOutput],
+    tokenizer: PreTrainedTokenizerBase | None,
+    *,
+    disable_tqdm: bool | None = None,
+) -> None:
+    """Fills ``tpot`` from the chunk offsets recorded while running.
+
+    Runs after the requests, so the event loop never tokenizes inside the
+    measured window, one slice of text at a time.
+
+    Note:
+        The values are approximate: re-tokenizing the chunk text the client
+        received need not match the server's own tokenization of what it
+        generated.
+    """
+    outputs = list(outputs)
+    if tokenizer is None or not any(
+        output.success and len(output.pending_tpot_ends) > 1
+        for output in outputs
+    ):
+        for output in outputs:
+            output.pending_tpot_ends = array("I")
+        return
+
+    logger.info(f"Computing per-chunk TPOT for {len(outputs)} responses...")
+    unsynced = 0  # Responses whose offsets and ITLs disagree.
+    failed_slices = 0  # Tokenizer calls that left a slice unattributed.
+    failures: list[str] = []  # The first such failure, for the one warning.
+    dropped: set[int] = set()  # Responses a slice left without TPOT.
+    pending: list[tuple[RequestFuncOutput, str, float]] = []
+    with tqdm(desc="Per-chunk TPOT", unit="slice", disable=disable_tqdm) as bar:
+        for output in outputs:
+            offsets = output.pending_tpot_ends
+            output.pending_tpot_ends = array("I")
+            if not output.success or output.cancelled or not offsets:
+                continue
+            if len(offsets) - 1 != len(output.itl):
+                # One offset pair and one ITL per streamed chunk, so this can
+                # only mean the recording desynchronized. Skip this response
+                # rather than lose the whole run's TPOT to it.
+                unsynced += 1
+                continue
+            for (start, end), itl_value in zip(
+                pairwise(offsets), output.itl, strict=True
+            ):
+                if end <= start:
+                    continue
+                pending.append(
+                    (output, output.generated_text[start:end], itl_value)
+                )
+                if len(pending) < _TPOT_TOKENIZE_SLICE:
+                    continue
+                dropped_slice = _append_slice_tpots(
+                    pending, tokenizer, failures
+                )
+                pending.clear()
+                bar.update(1)
+                if dropped_slice:
+                    failed_slices += 1
+                    dropped |= dropped_slice
+                    # The refused slice held this response's newest chunk and
+                    # cleared everything it had, so its remaining chunks would
+                    # only record a tail.
+                    break
+        if pending:
+            dropped_slice = _append_slice_tpots(pending, tokenizer, failures)
+            bar.update(1)
+            if dropped_slice:
+                failed_slices += 1
+                dropped |= dropped_slice
+
+    if dropped or unsynced:
+        detail = f" First failure: {failures[0]}." if failures else ""
+        calls = "call" if failed_slices == 1 else "calls"
+        logger.warning(
+            "Per-chunk TPOT dropped for %d of %d responses: %d had chunk"
+            " offsets out of step with their ITLs, and %d tokenizer %s"
+            " failed.%s",
+            len(dropped) + unsynced,
+            len(outputs),
+            unsynced,
+            failed_slices,
+            calls,
+            detail,
+        )
 
 
 class _PromptTokensDetails(BaseModel):
@@ -719,8 +840,11 @@ class OpenAIStreamRecorder:
     """Measures one streamed OpenAI-style response.
 
     The measurement lands in a :class:`RequestFuncOutput`: TTFT at the first
-    chunk carrying text, one inter-chunk latency and per-chunk TPOT per later
-    text chunk, latency at the last event, and the server's usage counts.
+    chunk carrying text, one inter-chunk latency per later text chunk, latency
+    at the last event, and the server's usage counts.
+
+    Per-chunk TPOT comes from :func:`compute_chunk_tpots` after the run, which
+    re-tokenizes the recorded chunks.
 
     Args:
         prompt_len: The prompt length to record on the output.
@@ -833,6 +957,10 @@ class OpenAIStreamRecorder:
             # as a success with ttft=0 and no tokens.
             self._has_content = True
             timestamp = now()
+            self._generated_text += text_content
+            if self._tokenizer is not None:
+                # Store end offsets, not chunk copies, to keep memory flat.
+                self.output.pending_tpot_ends.append(len(self._generated_text))
             # First token
             if self._ttft == 0.0:
                 self._ttft = timestamp - self._st
@@ -842,14 +970,8 @@ class OpenAIStreamRecorder:
             else:
                 itl_value = timestamp - self._most_recent_timestamp
                 self.output.itl.append(itl_value)
-                tpot = _compute_chunk_tpot(
-                    self._tokenizer, text_content, itl_value
-                )
-                if tpot is not None:
-                    self.output.tpot.append(tpot)
 
             self._most_recent_timestamp = timestamp
-            self._generated_text += text_content
         return None
 
     def finish(self) -> RequestFuncOutput:
@@ -953,7 +1075,7 @@ async def _run_openai_stream_request(
             ) as response:
                 if response.status != 200:
                     return recorder.fail(response.reason or "")
-                async for event in iter_events(response.content):
+                async for event in iter_events(response.content.iter_any()):
                     result = recorder.on_event(event.data)
                     if result is not None:
                         return result

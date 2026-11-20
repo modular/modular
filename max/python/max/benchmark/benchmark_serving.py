@@ -830,6 +830,7 @@ async def benchmark(
             steady_state_filtering=args.steady_state_filtering,
             goodput_targets=args.goodput_targets,
             num_gpus=args.num_gpus,
+            disable_tqdm=args.disable_tqdm,
         )
     result.record_run_cache_hit_rate(run_cache_hit_rate(all_outputs))
     if session.lora_manager is not None:

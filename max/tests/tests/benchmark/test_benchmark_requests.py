@@ -18,7 +18,9 @@ import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterator, Sequence
+from array import array
+from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -65,13 +67,14 @@ from max.benchmark.benchmark_shared.request import (
     _count_generated_media,
     async_request_lora_load,
     async_request_lora_unload,
+    compute_chunk_tpots,
     get_request_driver_class,
     mark_cancelled_if_past_deadline,
     tag_lora_route,
     tag_response_format_outcome,
 )
 from pytest_mock import MockerFixture
-from tests.benchmark.benchmark_fakes import make_request_input
+from tests.benchmark.benchmark_fakes import StreamBody, make_request_input
 from tqdm.asyncio import tqdm
 
 
@@ -342,6 +345,39 @@ class TestAsyncRequestFunctions:
         assert unload_time >= 0
 
 
+class _WordCountingTokenizer:
+    """Counts whitespace-separated words and records every call it receives."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def __call__(
+        self, texts: str | Sequence[str], add_special_tokens: bool = True
+    ) -> SimpleNamespace:
+        batch = [texts] if isinstance(texts, str) else list(texts)
+        self.calls.append(batch)
+        return SimpleNamespace(
+            input_ids=[[0] * len(text.split()) for text in batch]
+        )
+
+
+def _text_event(content: str) -> str:
+    """Returns a streamed text chunk carrying ``content``."""
+    return json.dumps({"choices": [{"delta": {"content": content}}]})
+
+
+def _tpot_output(
+    text: str, *, itl: Sequence[float], ends: Sequence[int]
+) -> RequestFuncOutput:
+    """Returns an output carrying recorded chunk offsets, as a stream does."""
+    return RequestFuncOutput(
+        success=True,
+        generated_text=text,
+        itl=list(itl),
+        pending_tpot_ends=array("I", ends),
+    )
+
+
 class TestOpenAIStreamRecorder:
     def test_records_ttft_itl_and_generated_text_for_chat_chunks(self) -> None:
         """The first content chunk sets ttft; later chunks add itl entries."""
@@ -485,19 +521,224 @@ class TestOpenAIStreamRecorder:
         assert output.itl == [pytest.approx(0.25)]
         assert output.latency == pytest.approx(1.0)
 
+    def test_chunk_tpot_is_tokenized_once_after_the_stream(self) -> None:
+        """Streaming records chunk offsets; one pass at the end computes TPOT."""
+        tokenizer: Any = _WordCountingTokenizer()
+        recorder = OpenAIStreamRecorder(
+            prompt_len=1, chat=True, tokenizer=tokenizer
+        )
+        start = recorder._st
+
+        for content, arrived in [
+            ("ab", 0.5),
+            ("c d", 0.75),
+            (" ", 0.875),
+            ("e", 1.0),
+        ]:
+            recorder.on_event(
+                json.dumps({"choices": [{"delta": {"content": content}}]}),
+                arrived=start + arrived,
+            )
+        output = recorder.finish()
+
+        assert tokenizer.calls == []
+        assert output.tpot == []
+        assert list(output.pending_tpot_ends) == [2, 5, 6, 7]
+
+        compute_chunk_tpots([output], tokenizer)
+
+        # One call, for the chunks that can carry TPOT, in stream order. The
+        # first chunk's text belongs to TTFT, and the whitespace-only chunk
+        # counts no tokens, so neither contributes.
+        assert tokenizer.calls == [["c d", " ", "e"]]
+        assert output.tpot == [
+            pytest.approx(0.25 / 2),
+            pytest.approx(0.125),
+        ]
+        assert len(output.pending_tpot_ends) == 0
+
+    def test_chunk_tpot_with_no_tokenizer_drops_the_recorded_offsets(
+        self,
+    ) -> None:
+        """Without a tokenizer the recorded offsets are drained, not used."""
+        tokenizer: Any = _WordCountingTokenizer()
+        recorder = OpenAIStreamRecorder(
+            prompt_len=1, chat=True, tokenizer=tokenizer
+        )
+        start = recorder._st
+        for content, arrived in [("ab", 0.5), ("c d", 0.75)]:
+            recorder.on_event(_text_event(content), arrived=start + arrived)
+        output = recorder.finish()
+
+        assert list(output.pending_tpot_ends) == [2, 5]
+
+        compute_chunk_tpots([output], None)
+
+        assert tokenizer.calls == []
+        assert output.tpot == []
+        assert len(output.pending_tpot_ends) == 0
+
+    def test_chunk_tpot_is_tokenized_in_bounded_slices(
+        self, mocker: MockerFixture
+    ) -> None:
+        """A run wider than one slice is tokenized slice by slice."""
+        mocker.patch(
+            "max.benchmark.benchmark_shared.request._TPOT_TOKENIZE_SLICE", 2
+        )
+        tokenizer: Any = _WordCountingTokenizer()
+        first = _tpot_output(
+            "a bb ccc dddd", itl=[0.2, 0.3, 0.4], ends=[1, 4, 8, 13]
+        )
+        second = _tpot_output("e f", itl=[0.5], ends=[1, 3])
+
+        compute_chunk_tpots([first, second], tokenizer)
+
+        # Two chunks per call: the first output's three chunks fill one split
+        # slice, then a mixed slice.
+        assert tokenizer.calls == [[" bb", " ccc"], [" dddd", " f"]]
+        assert first.tpot == [
+            pytest.approx(0.2),
+            pytest.approx(0.3),
+            pytest.approx(0.4),
+        ]
+        assert second.tpot == [pytest.approx(0.5)]
+        assert len(first.pending_tpot_ends) == 0
+        assert len(second.pending_tpot_ends) == 0
+
+    def test_a_desynchronized_response_costs_only_its_own_tpot(self) -> None:
+        """Offsets out of step with ITLs skip that response, not the run."""
+        tokenizer: Any = _WordCountingTokenizer()
+        synced = _tpot_output("c d e", itl=[0.4, 0.4], ends=[1, 3, 5])
+        # One offset pair per ITL means three pairs for one ITL here.
+        unsynced = _tpot_output("c d e", itl=[0.4], ends=[1, 3, 5])
+
+        compute_chunk_tpots([synced, unsynced], tokenizer)
+
+        assert unsynced.tpot == []
+        assert synced.tpot == [pytest.approx(0.4), pytest.approx(0.4)]
+
+    def test_a_refused_slice_leaves_no_partial_tpot(
+        self, mocker: MockerFixture
+    ) -> None:
+        """A slice the tokenizer rejects drops that response's TPOT whole."""
+        mocker.patch(
+            "max.benchmark.benchmark_shared.request._TPOT_TOKENIZE_SLICE", 2
+        )
+
+        class _FussyTokenizer(_WordCountingTokenizer):
+            """Counts words, but rejects any batch carrying ``bad``."""
+
+            def __call__(
+                self,
+                texts: str | Sequence[str],
+                add_special_tokens: bool = True,
+            ) -> SimpleNamespace:
+                batch = [texts] if isinstance(texts, str) else list(texts)
+                if any("bad" in text for text in batch):
+                    raise ValueError("unsupported text")
+                return super().__call__(texts, add_special_tokens)
+
+        tokenizer: Any = _FussyTokenizer()
+        kept = _tpot_output("c d", itl=[0.2], ends=[1, 3])
+        # Its first slice tokenizes and its second is refused, so the response
+        # must not keep the values the first slice already appended.
+        dropped = _tpot_output(
+            "aa bb cc bad ee",
+            itl=[0.1, 0.2, 0.3, 0.4],
+            ends=[2, 5, 8, 12, 15],
+        )
+
+        compute_chunk_tpots([kept, dropped], tokenizer)
+
+        # Only the batch that reached the tokenizer is recorded; the refused
+        # one raised before counting.
+        assert tokenizer.calls == [[" d", " bb"]]
+        assert kept.tpot == [pytest.approx(0.2)]
+        assert dropped.tpot == []
+
+    def test_chunk_tpot_survives_a_tokenizer_that_raises(self) -> None:
+        """A failing tokenizer costs per-chunk TPOT, not the result build."""
+
+        class _RefusingTokenizer(_WordCountingTokenizer):
+            def __call__(
+                self, texts: Any, add_special_tokens: bool = True
+            ) -> Any:
+                raise ValueError("unsupported text")
+
+        tokenizer: Any = _RefusingTokenizer()
+        recorder = OpenAIStreamRecorder(
+            prompt_len=1, chat=True, tokenizer=tokenizer
+        )
+        start = recorder._st
+        for event, arrived in [
+            (_text_event("ab"), 0.5),
+            (_text_event("c d"), 1.0),
+        ]:
+            recorder.on_event(event, arrived=start + arrived)
+        output = recorder.finish()
+
+        compute_chunk_tpots([output], tokenizer)
+
+        assert output.tpot == []
+
+    def test_failed_slices_cost_one_warning_naming_the_first(
+        self, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Two refused slices report once, with the failure that caused it."""
+        mocker.patch(
+            "max.benchmark.benchmark_shared.request._TPOT_TOKENIZE_SLICE", 2
+        )
+
+        class _RefusingTokenizer(_WordCountingTokenizer):
+            def __call__(
+                self, texts: Any, add_special_tokens: bool = True
+            ) -> Any:
+                raise ValueError("unsupported text")
+
+        tokenizer: Any = _RefusingTokenizer()
+        # Three chunks each, so each response fills one slice on its own.
+        first = _tpot_output(
+            "a bb ccc dddd", itl=[0.2, 0.3, 0.4], ends=[1, 4, 8, 13]
+        )
+        second = _tpot_output(
+            "e ff ggg hhhh", itl=[0.5, 0.6, 0.7], ends=[1, 4, 8, 13]
+        )
+
+        with caplog.at_level(
+            logging.WARNING, logger="max.benchmark.benchmark_shared.request"
+        ):
+            compute_chunk_tpots([first, second], tokenizer)
+
+        warnings = [
+            rec for rec in caplog.records if rec.levelno == logging.WARNING
+        ]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "2 of 2 responses" in message
+        assert "2 tokenizer calls failed" in message
+        assert "First failure: ValueError: unsupported text." in message
+
+        # One refused slice reads as one call, not "1 calls".
+        caplog.clear()
+        single = _tpot_output("a bb ccc", itl=[0.5, 0.6], ends=[1, 4, 8])
+        with caplog.at_level(
+            logging.WARNING, logger="max.benchmark.benchmark_shared.request"
+        ):
+            compute_chunk_tpots([single], tokenizer)
+
+        (warning,) = [
+            rec for rec in caplog.records if rec.levelno == logging.WARNING
+        ]
+        assert "1 tokenizer call failed" in warning.getMessage()
+
 
 def _streaming_response(
     mocker: MockerFixture, chunks: Sequence[bytes]
 ) -> AsyncMock:
     """Returns a 200 response mock whose body streams ``chunks``."""
-
-    async def content() -> AsyncIterator[bytes]:
-        for chunk in chunks:
-            yield chunk
-
     response = mocker.AsyncMock()
     response.status = 200
-    response.content = content()
+    response.content = StreamBody(chunks)
     return response
 
 
@@ -961,6 +1202,133 @@ class TestRequestDriver:
         # Verify progress bar was updated
         mock_pbar.update.assert_called_once_with(1)
         assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_request_driver_without_progress_bar(
+        self, mock_aiohttp_session: Any, mocker: MockerFixture
+    ) -> None:
+        """Test that RequestDriver works without progress bars."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/generate_stream",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"text_output": "Hello"}\n\n',
+                ],
+            )
+        )
+
+        driver = TRTLLMRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_trtllm_records_chunk_offsets_for_the_post_run_pass(
+        self, mock_aiohttp_session: Any, mocker: MockerFixture
+    ) -> None:
+        """TRT-LLM's chunks get TPOT from the post-run pass, not usage."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/generate_stream",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"text_output": "ab"}\n\n',
+                    b'data: {"text_output": "c d"}\n\n',
+                    b'data: {"text_output": "e"}\n\n',
+                ],
+            )
+        )
+
+        tokenizer: Any = _WordCountingTokenizer()
+        result = await TRTLLMRequestDriver(tokenizer=tokenizer).request(
+            request_input
+        )
+
+        assert list(result.pending_tpot_ends) == [2, 5, 6]
+
+        compute_chunk_tpots([result], tokenizer)
+
+        assert tokenizer.calls == [["c d", "e"]]
+        assert result.tpot == [
+            pytest.approx(result.itl[0] / 2),
+            pytest.approx(result.itl[1]),
+        ]
+        assert len(result.pending_tpot_ends) == 0
+
+    @pytest.mark.asyncio
+    async def test_trtllm_ttft_is_the_first_chunk_not_the_bookkeeping(
+        self, mock_aiohttp_session: Any, mocker: MockerFixture
+    ) -> None:
+        """TTFT is the read taken before the chunk is appended, not after."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/generate_stream",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"text_output": "ab"}\n\n',
+                    b'data: {"text_output": "c d"}\n\n',
+                ],
+            )
+        )
+
+        class _SteppingClock:
+            """Advances 1.0 s per read, so a read's value is its position."""
+
+            def __init__(self) -> None:
+                self.now = 0.0
+
+            def perf_counter(self) -> float:
+                self.now += 1.0
+                return self.now
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(time, name)
+
+        mocker.patch(
+            "max.benchmark.benchmark_shared.request.time", _SteppingClock()
+        )
+
+        result = await TRTLLMRequestDriver().request(request_input)
+
+        assert result.success is True
+        # Submit at 1.0, first chunk at 2.0, second at 3.0. A separate read
+        # after the appends would report 3.0 - 1.0 for the first chunk.
+        assert result.ttft == pytest.approx(1.0)
+        assert result.latency == pytest.approx(2.0)
 
 
 class TestBuildFinalPayload:

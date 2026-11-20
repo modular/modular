@@ -18,10 +18,13 @@ Implements the WHATWG HTML Living Standard §9.2 "Server-sent events".
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 
 _UTF8_BOM = b"\xef\xbb\xbf"
+
+_LINE_BREAK = re.compile(rb"\r\n|\r|\n")
 
 
 @dataclass
@@ -37,46 +40,53 @@ async def iter_lines(chunks: AsyncIterable[bytes]) -> AsyncIterator[bytes]:
     """Yield lines from a stream of byte chunks, per the SSE spec.
 
     Handles all three SSE-spec line endings: CRLF, bare LF, bare CR.
-    Strips a leading UTF-8 BOM from the very start of the stream if present.
-    Assumes the BOM, if present, arrives entirely within the first non-empty chunk.
+    Strips a leading UTF-8 BOM from the very start of the stream if present,
+    however the reads split it.
     """
-    current_line = bytearray()
-    prev_was_cr = False
+    remainder = b""
+    # A chunk ending in CR is ambiguous until the next chunk arrives: a leading
+    # LF there completes that CRLF rather than starting a new line.
+    ends_with_cr = False
     bom_checked = False
+    # Bytes that could still turn out to be a BOM prefix, held back until the
+    # next read decides it. Left in the first field name, a split BOM's bytes
+    # would make the field unrecognizable and drop the event.
+    held = b""
 
     async for chunk in chunks:
         if not chunk:
             continue
 
         if not bom_checked:
+            data = held + chunk
+            window = data[: len(_UTF8_BOM)]
+            if _UTF8_BOM.startswith(window):
+                if len(data) < len(_UTF8_BOM):
+                    held = data
+                    continue
+                data = data[len(_UTF8_BOM) :]
             bom_checked = True
-            if chunk[:3] == _UTF8_BOM:
-                chunk = chunk[3:]
+            held = b""
+            chunk = data
             if not chunk:
                 continue
 
-        for b in chunk:
-            if prev_was_cr:
-                prev_was_cr = False
-                if b == 0x0A:  # LF following CR -> CRLF sequence, consume LF
-                    continue
-                # Lone CR already ended the previous line; fall through to
-                # process this byte as the start of the next line.
+        if ends_with_cr and chunk[:1] == b"\n":
+            chunk = chunk[1:]
 
-            if b == 0x0D:  # CR
-                yield bytes(current_line)
-                current_line = bytearray()
-                prev_was_cr = True
-            elif b == 0x0A:  # LF
-                yield bytes(current_line)
-                current_line = bytearray()
-            else:
-                current_line.append(b)
+        data = remainder + chunk if remainder else chunk
+        ends_with_cr = data.endswith(b"\r")
+        lines = _LINE_BREAK.split(data)
+        remainder = lines.pop()
+        for line in lines:
+            yield line
 
-    # A trailing CR already caused its line to be yielded via prev_was_cr.
-    # Yield any remaining unterminated content as a final line.
-    if current_line:
-        yield bytes(current_line)
+    # A stream that ended inside a possible BOM never had one, so the held
+    # bytes are content. A trailing CR already ended its line, leaving an
+    # empty remainder.
+    remainder = held + remainder
+    if remainder:
+        yield remainder
 
 
 async def iter_events(chunks: AsyncIterable[bytes]) -> AsyncIterator[SSEEvent]:

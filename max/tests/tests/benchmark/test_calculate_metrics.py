@@ -19,7 +19,9 @@ import json
 import logging
 import math
 import statistics
+from array import array
 from collections.abc import Sequence
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,6 +31,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
     ServerTokenStats,
+    compute_chunk_tpots,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
     _aggregate_gpu_stats,
@@ -155,6 +158,107 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
     #                       = (1.0 - 0.1) / (5 - 1) = 0.225 s -> 225 ms.
     assert metrics.text_data.tpot_ms is not None
     assert math.isclose(metrics.text_data.tpot_ms.p50, 225.0, rel_tol=1e-3)
+
+
+def test_recorded_chunk_tpots_reach_the_result() -> None:
+    """Chunks recorded during streaming become ``step_tpot_ms``."""
+    tokenizer = MagicMock()
+    tokenizer.encode.return_value = list(range(5))
+    tokenizer.return_value = SimpleNamespace(input_ids=[[0, 1], [0]])
+    # "hello world" in three chunks: "hello" ends at 5, " wo" at 8, "rld" at
+    # 11. The first chunk is TTFT's, so two chunks carry per-step TPOT.
+    output = _make_request_func_output(
+        itl=[0.4, 0.4], pending_tpot_ends=[5, 8, 11]
+    )
+
+    result = build_text_generation_result(
+        outputs=[output],
+        benchmark_duration=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert output.tpot == [pytest.approx(0.2), pytest.approx(0.4)]
+    assert len(output.pending_tpot_ends) == 0
+    assert result.text_data is not None
+    assert result.text_data.step_tpot_ms is not None
+    assert math.isclose(result.text_data.step_tpot_ms.mean, 300.0, rel_tol=1e-6)
+
+
+def test_a_result_built_without_the_post_run_pass_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Metrics built from raw outputs say their per-chunk TPOT is missing."""
+    output = _make_request_func_output(
+        itl=[0.4, 0.4], pending_tpot_ends=[5, 8, 11]
+    )
+
+    with caplog.at_level(
+        logging.WARNING, logger="max.benchmark.benchmark_shared.serving_metrics"
+    ):
+        result = _calculate(
+            [output], dur_s=1.0, tokenizer=_make_tokenizer_mock()
+        )
+
+    assert result.text_data is not None
+    assert result.text_data.step_tpot_ms is None
+    warnings = [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "compute_chunk_tpots()" in rec.message
+    ]
+    assert len(warnings) == 1
+
+
+def test_a_single_chunk_response_without_the_pass_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One end offset describes no interval, so there is no TPOT to lose."""
+    # A response with one text chunk: TTFT's chunk, and no ITL to divide.
+    output = _make_request_func_output(pending_tpot_ends=[5])
+
+    with caplog.at_level(
+        logging.WARNING, logger="max.benchmark.benchmark_shared.serving_metrics"
+    ):
+        _calculate([output], dur_s=1.0, tokenizer=_make_tokenizer_mock())
+
+    assert not [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "compute_chunk_tpots()" in rec.message
+    ]
+
+
+def test_a_result_built_after_the_post_run_pass_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The pass drains the offsets, so the metrics step stays quiet."""
+    output = _make_request_func_output(
+        itl=[0.4, 0.4], pending_tpot_ends=[5, 8, 11]
+    )
+    tokenizer = MagicMock()
+    tokenizer.return_value = SimpleNamespace(input_ids=[[0, 1], [0]])
+    compute_chunk_tpots([output], tokenizer)
+
+    with caplog.at_level(
+        logging.WARNING, logger="max.benchmark.benchmark_shared.serving_metrics"
+    ):
+        _calculate([output], dur_s=1.0, tokenizer=tokenizer)
+
+    assert not [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "compute_chunk_tpots()" in rec.message
+    ]
 
 
 def test_tpot_both_definitions() -> None:
@@ -937,6 +1041,7 @@ def _make_request_func_output(
     latency: float = 1.0,
     ttft: float = 0.1,
     itl: list[float] | None = None,
+    pending_tpot_ends: Sequence[int] = (),
     request_submit_time: float | None = 0.0,
 ) -> RequestFuncOutput:
     return RequestFuncOutput(
@@ -946,6 +1051,7 @@ def _make_request_func_output(
         prompt_len=prompt_len,
         generated_text=generated_text,
         itl=itl or [],
+        pending_tpot_ends=array("I", pending_tpot_ends),
         request_submit_time=request_submit_time,
     )
 

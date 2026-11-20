@@ -86,12 +86,41 @@ class TestIterLines:
                 id="bom_stripped_from_first_chunk",
             ),
             pytest.param((_BOM,), [], id="bom_only_stream_yields_nothing"),
+            # iter_any() returns whatever a read carried, so a BOM can be split
+            # across reads. Left in the first field name, its bytes would make
+            # the line unrecognizable.
+            pytest.param(
+                (_BOM[:1], _BOM[1:] + b"line1\nline2\n"),
+                [b"line1", b"line2"],
+                id="bom_split_across_two_chunks",
+            ),
+            pytest.param(
+                (_BOM[:1], b"", _BOM[1:2], _BOM[2:] + b"line1\n"),
+                [b"line1"],
+                id="bom_split_across_three_chunks_with_empty_read",
+            ),
+            pytest.param(
+                (_BOM[:2], _BOM[2:]), [], id="bom_split_then_stream_ends"
+            ),
+            # A leading byte that only resembles a BOM prefix is content.
+            pytest.param(
+                (b"\xef", b"x\n"), [b"\xefx"], id="partial_bom_is_not_a_bom"
+            ),
+            pytest.param(
+                (b"\xef",), [b"\xef"], id="stream_ending_in_partial_bom"
+            ),
             pytest.param(
                 (b"", b"line1\n", b"", b"line2\n"),
                 [b"line1", b"line2"],
                 id="empty_chunks_are_skipped",
             ),
             pytest.param((b"\n\n\n",), [b"", b"", b""], id="only_newlines"),
+            # A CRLF pair split across chunks, then a blank line.
+            pytest.param(
+                (b"a\r", b"\n\nb"),
+                [b"a", b"", b"b"],
+                id="crlf_split_then_blank_line",
+            ),
             # Each CR is an independent line ending.
             pytest.param(
                 (b"a\r\rb\r",), [b"a", b"", b"b"], id="consecutive_crs"
@@ -231,6 +260,12 @@ class TestIterEvents:
                 (b"data: hel", b"lo\n", b"\n", b"data: world\n\n"),
                 [SSEEvent(data="hello"), SSEEvent(data="world")],
                 id="chunked_delivery_assembles_correctly",
+            ),
+            # A BOM split across reads must not swallow the first event.
+            pytest.param(
+                (_BOM[:1], _BOM[1:2], _BOM[2:] + b"data: hello\n\n"),
+                [SSEEvent(data="hello")],
+                id="bom_split_across_reads_keeps_first_event",
             ),
         ],
     )
