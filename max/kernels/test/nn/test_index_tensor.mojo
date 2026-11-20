@@ -16,11 +16,7 @@ from std.random import random_ui64
 
 from layout import TileTensor, row_major
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
-from nn.index_tensor import (
-    _index_tensor_1d,
-    _index_tensor_impl,
-    index_tensor_shape,
-)
+from nn.index_tensor import _index_tensor_1d, _index_tensor_impl
 from std.math import align_up
 
 from std.sys import simd_width_of
@@ -42,7 +38,6 @@ def test_index_tensor_DLRM() raises:
 
     comptime input_rank = 3
     comptime indices_rank = 2
-    comptime output_rank = 2
 
     # dim_0 x dim_1 x dim_2 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_2]()
@@ -100,13 +95,6 @@ def test_index_tensor_DLRM() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    _ = index_tensor_shape[
-        output_rank,
-        input_type,
-        .uint64,
-        batch_dims,
-    ](input_dyn, indices_dyn)
-
     var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * index_len, simd_width_of[input_type]()),
@@ -139,7 +127,6 @@ def test_index_tensor_DLRM_batch() raises:
 
     comptime input_rank = 4
     comptime indices_rank = 2
-    comptime output_rank = 3
 
     # dim_0 x dim_1 x dim_3 x dim_4 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_3, dim_4]()
@@ -196,13 +183,6 @@ def test_index_tensor_DLRM_batch() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    _ = index_tensor_shape[
-        output_rank,
-        input_type,
-        .uint64,
-        batch_dims,
-    ](input_dyn, indices_dyn)
-
     var output_data_stack = Array[
         Scalar[input_type],
         align_up(dim_0 * dim_1 * index_len, simd_width_of[input_type]()),
