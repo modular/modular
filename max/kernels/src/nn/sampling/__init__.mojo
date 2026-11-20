@@ -35,11 +35,6 @@ from .sampling import (
     apply_penalties_to_logits,
     update_frequency_data,
 )
-from .topk_fi import (
-    topk_mask_logits,
-    topk_sampling_from_prob,
-    topk_softmax_sample,
-)
 from .topk_fi import topk_topp_masked_probs as _topk_topp_masked_probs_single
 from .topk_fi import (
     topk_topp_sampling_from_prob as _topk_topp_sampling_from_prob_single,

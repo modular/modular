@@ -115,7 +115,7 @@ def run_test_blockwise_fp8[
             max_cache_len = cache_lengths[i]
         # Allocate pages like production: ceildiv(cache_len + 1, page_size).
         # The +1 accounts for the new token that is written at position
-        # cache_len by the fused_rope_rmsnorm kernel BEFORE attention runs.
+        # cache_len by the fused rope + RMSNorm kernel BEFORE attention runs.
         total_pages += ceildiv(cache_lengths[i] + q_max_seq_len, page_size)
 
     comptime scale = Float32(0.125)
@@ -253,7 +253,7 @@ def run_test_blockwise_fp8[
 
     # Zero out tail slots in each page (tokens beyond num_keys).
     # The new token at position cache_len has real randn data (written by
-    # the fused_rope_rmsnorm kernel in production). Tokens beyond num_keys
+    # the fused rope + RMSNorm kernel in production). Tokens beyond num_keys
     # are zeroed so TMA reads produce zeros that get masked out.
     var _tok_stride = kv_params.num_heads * kv_params.head_size
     var _page_stride = (
@@ -454,7 +454,7 @@ def run_test_blockwise_fp8[
     # The MLA kernel with _is_cache_length_accurate=False processes
     # num_keys = cache_len + q_max_seq_len tokens. The new token at
     # position cache_len has real data and a real scale (written by the
-    # fused_rope_rmsnorm kernel in production, and by randn in this test).
+    # fused rope + RMSNorm kernel in production, and by randn in this test).
     # The reference dequantizes all num_keys tokens from the paged blocks.
     for b in range(batch_size):
         var cache_len = cache_lengths[b]

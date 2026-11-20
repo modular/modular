@@ -1498,7 +1498,7 @@ def topk_topp_sampling_from_prob_cluster[
 
     Performs stochastic sampling considering only tokens that satisfy both the
     top-k count constraint AND the top-p nucleus constraint. When top_p_val is
-    1.0 (default) this behaves identically to topk_sampling_from_prob.
+    1.0 (default) this behaves identically to top-k sampling alone.
 
     When `emit_dist` is set, the masked renormalized distribution is written
     to `out_dist` as well; see the kernel docstring. A batch too small to

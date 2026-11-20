@@ -216,34 +216,6 @@ from nn.tpool_patch_merger import (
     tpool_patch_merger as nn_tpool_patch_merger,
 )
 
-# ===-----------------------------------------------------------------------===#
-# Helpers
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.nodebug)
-def reduce_shape(
-    input_buf: Some[Tensor], axis: Int
-) raises -> IndexList[type_of(input_buf).rank]:
-    """
-    Compute the output shape of a `reduce` operation, and assert the inputs are
-    compatible.
-
-    Args:
-        input_buf: The input tensor.
-        axis: The axis tensor.
-
-    Returns:
-        The output shape.
-    """
-
-    # compute and return the output shape
-    var output_shape = rebind[IndexList[type_of(input_buf).rank]](
-        coord_to_index_list(input_buf.shape())
-    )
-    output_shape[normalize_neg_index(axis, type_of(input_buf).rank)] = 1
-    return output_shape
-
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
 @export
