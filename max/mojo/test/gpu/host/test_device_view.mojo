@@ -80,10 +80,9 @@ def _max_grid_dim_z(ctx: DeviceContext) raises -> Int:
 def _assert_matches_raw(named: Optional[Int], raw: Optional[Int]) raises:
     # A plugin may not map every CUDA-numbered attribute, so the named query
     # has to raise exactly where `get_attribute` does.
-    assert_equal(Bool(named), Bool(raw))
-    if raw:
-        assert_equal(named.value(), raw.value())
-        assert_true(raw.value() > 0)
+    assert_equal(named, raw)
+    if case .Some(value) = raw:
+        assert_true(value > 0)
 
 
 def test_named_queries_match_get_attribute() raises:

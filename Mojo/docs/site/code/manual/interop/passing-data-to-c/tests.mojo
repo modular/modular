@@ -151,8 +151,8 @@ def test_malloc() raises:
     var block = external_call[
         "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
     ](c_size_t(SIZE))
-    assert_true(Bool(block))
-    var ptr = block.value()
+    __guard case .Some(ptr) = block else:
+        raise Error("malloc failed")
     var bytes = Span(unsafe_ptr=ptr, length=SIZE)
     bytes[0] = 42
     bytes[len(bytes) - 1] = 7
@@ -174,9 +174,10 @@ struct CBuffer:
         var block = external_call[
             "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
         ](c_size_t(size))
-        if not block:
+        if case .Some(ptr) = block:
+            self.ptr = ptr
+        else:
             raise Error("malloc failed")
-        self.ptr = block.value()
         self.size = size
         self.frees = frees
 

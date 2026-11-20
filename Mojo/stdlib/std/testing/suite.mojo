@@ -592,8 +592,8 @@ struct TestSuite(
                     " test not found in suite: ",
                     arg,
                 )
-            if self.allow_list:
-                self.allow_list[].add(arg)
+            if case .Some(ref allow_list) = self.allow_list:
+                allow_list.add(arg)
             else:
                 self.skip_list.add(arg)
 

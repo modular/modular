@@ -959,12 +959,9 @@ struct Optional[T: AnyType](
             If `self` is an empty `Optional`, the returned `Optional` will be
             empty as well.
         """
-        if self:
-            # SAFETY: We just checked that `self` is populated.
-            # Perform an implicit copy
-            return self.unsafe_value()[].copy()
-        else:
-            return None
+        if case .Some(ptr) = self:
+            return ptr[].copy()
+        return None
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)
@@ -1325,9 +1322,9 @@ struct OptionalReg[T: TrivialRegisterPassable](
         comptime DevT = Self._DevicePayloadType
         comptime if conforms_to(Self.T, DevicePassable):
             var dev: OptionalReg[DevT]
-            if self:
+            if case .Some(value) = self:
                 var payload = MaybeUninit[DevT]()
-                self.value()._to_device_type(
+                value._to_device_type(
                     encoder, payload.unsafe_ptr().unsafe_bitcast[NoneType]()
                 )
                 dev = OptionalReg[DevT](payload.unsafe_ptr()[])
@@ -1513,8 +1510,8 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Returns:
             The underlying value contained in the Optional or a default value.
         """
-        if self:
-            return self.value()
+        if case .Some(value) = self:
+            return value
         return default
 
     @__allow_legacy_custom_self_type
