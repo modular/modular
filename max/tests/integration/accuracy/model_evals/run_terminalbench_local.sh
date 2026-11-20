@@ -63,6 +63,11 @@
 #   --agent-timeout-multiplier X
 #                         Scales each task's agent timeout (Harbor option). A
 #                         trial that times out is still valid.
+#   --agent-setup-timeout-multiplier X
+#                         Scales each task's agent setup timeout, the time to
+#                         install opencode in the task container (default: 3).
+#                         Concurrent trials slow the installs, and a timeout
+#                         is a harness failure.
 #   --build-timeout-multiplier X
 #                         Scales each task's environment build timeout
 #                         (default: 3). Harbor serializes identical builds, so
@@ -112,6 +117,7 @@ runtime="podman"
 max_fill=8
 agent_timeout_mult=""
 build_timeout_mult=3
+agent_setup_timeout_mult=3
 endpoint_grace=60
 serve_config=""
 baseline=""
@@ -135,6 +141,7 @@ while [[ $# -gt 0 ]]; do
     --max-fill-passes) max_fill="$2"; shift 2 ;;
     --agent-timeout-multiplier) agent_timeout_mult="$2"; shift 2 ;;
     --build-timeout-multiplier) build_timeout_mult="$2"; shift 2 ;;
+    --agent-setup-timeout-multiplier) agent_setup_timeout_mult="$2"; shift 2 ;;
     --endpoint-grace) endpoint_grace="$2"; shift 2 ;;
     --serve-config) serve_config="$2"; shift 2 ;;
     --baseline) baseline="$(realpath "$2")"; shift 2 ;;
@@ -347,6 +354,7 @@ harbor_cmd=(harbor run -p "$TASKS" -e "$runtime" -a opencode -m "gate/$model"
   -o "$JOBS" --yes)
 [[ -n "$agent_timeout_mult" ]] && harbor_cmd+=(--agent-timeout-multiplier "$agent_timeout_mult")
 harbor_cmd+=(--environment-build-timeout-multiplier "$build_timeout_mult")
+harbor_cmd+=(--agent-setup-timeout-multiplier "$agent_setup_timeout_mult")
 
 # Runs Harbor in its own process group and stops it once the endpoint has
 # failed health checks for --endpoint-grace seconds; shorter outages are tolerated. Returns 2 when the endpoint went down.
