@@ -83,7 +83,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import SharedMemBarrier
 
 from std.utils.coord import Coord
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -2617,7 +2616,7 @@ struct BlackwellMatmulSM100Kernel[
         # Scheduler owns CLC throttle pipeline internally
         var scheduler = TileSchedulerSplitK[
             num_stages=Self.config.num_clc_pipeline_stages,
-            reduction_tile_shape=Index(Self.BM, Self.MMA_N, Self.BK),
+            reduction_tile_shape=(Self.BM, Self.MMA_N, Self.BK),
             cluster_shape=Self.config.cluster_shape,
             block_swizzle_size=Self.config.block_swizzle_size,
             rasterize_order=Self.config.raster_order,

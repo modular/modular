@@ -60,7 +60,6 @@ from layout.tile_io import (
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
 from std.utils import StaticTuple
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from ...utils import (
@@ -1082,9 +1081,9 @@ def _multistage_gemm_kernel_impl[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx_swizzle = block_swizzle(
-        Index[dtype=DType.uint32](block_idx.x, block_idx.y),
-        Index[dtype=DType.uint32](grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index[dtype=DType.uint32](block_idx.x, block_idx.y)
+        (UInt32(block_idx.x), UInt32(block_idx.y)),
+        (UInt32(grid_dim.x), UInt32(grid_dim.y)),
+    ) if swizzle_block else (UInt32(block_idx.x), UInt32(block_idx.y))
     var block_m = Int(block_idx_swizzle[1])
     var block_n = Int(block_idx_swizzle[0])
 

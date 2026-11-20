@@ -38,14 +38,12 @@ from layout.layout import Layout as _StaticLayout, _RowMajor
 from std.utils.coord import Coord, _IntToComptimeInt
 from std.bit import log2_floor
 
-from std.utils.index import Index, IndexList
-
 from .tile_scheduler import RasterOrder, WorkInfo
 
 
 @inline(.nodebug)
 def _check_scheduler_constraints[
-    prob_shape_nk: IndexList[2],
+    prob_shape_nk: Tuple[Int, Int],
     tile_shape: Tuple[Int, Int, Int],
     splits: UInt32,
     num_consumer: UInt32,
@@ -191,7 +189,7 @@ struct ReductionMode(EnumLike, TrivialRegisterPassable):
 struct SplitKTileScheduler[
     locks_origin: MutOrigin,
     //,
-    problem_shape_nk: IndexList[2],
+    problem_shape_nk: Tuple[Int, Int],
     tile_shape: Tuple[Int, Int, Int],
     splits: UInt32,
     num_consumer: UInt32,
@@ -220,8 +218,8 @@ struct SplitKTileScheduler[
         reduction_mode: Whether reduction is deterministic or non-deterministic.
     """
 
-    var prob_shape: IndexList[3]  # M x N x K
-    var block_id_in_cluster: IndexList[2]
+    var prob_shape: Coord[Int, Int, Int]  # M x N x K
+    var block_id_in_cluster: Coord[Int, Int]
     var blocks_per_problem: UInt32
     var current_work_linear_idx: UInt32
 
@@ -252,8 +250,8 @@ struct SplitKTileScheduler[
     @inline(.always)
     def __init__(
         out self,
-        prob_shape: IndexList[3],
-        block_id_in_cluster: IndexList[2],
+        prob_shape: Coord[Int, Int, Int],
+        block_id_in_cluster: Coord[Int, Int],
         locks_ptr: MutPointer[UInt8, Self.locks_origin],
     ):
         _check_scheduler_constraints[
@@ -329,10 +327,10 @@ struct SplitKTileScheduler[
     @staticmethod
     @inline(.always)
     def get_problem_blocks_shape(
-        problem_shape: IndexList[3],
+        problem_shape: Coord[Int, Int, Int],
         dyn_tile_shape: Tuple[Int, Int, Int],
         dyn_cluster_shape: Tuple[Int, Int],
-    ) -> IndexList[2]:
+    ) -> Tuple[Int, Int]:
         var num_blocks_m = ceildiv(problem_shape[0], dyn_tile_shape[0])
         var num_blocks_n = ceildiv(problem_shape[1], dyn_tile_shape[1])
 
@@ -343,10 +341,7 @@ struct SplitKTileScheduler[
             ceildiv(num_blocks_n, dyn_cluster_shape[1])
         ) * dyn_cluster_shape[1]
 
-        return IndexList[2](
-            problem_blocks_m,
-            problem_blocks_n,
-        )
+        return (problem_blocks_m, problem_blocks_n)
 
     @inline(.always)
     def initial_work_tile_info(mut self) -> WorkInfo:
@@ -506,8 +501,8 @@ struct SplitKTileScheduler[
     def get_grid_shape(
         dyn_cluster_shape: Tuple[Int, Int, Int],
         dyn_raster_order: RasterOrder = RasterOrder.AlongN,
-    ) raises -> IndexList[3]:
-        var launch_grid_shape = IndexList[3](1, 1, 1)
+    ) raises -> Tuple[Int, Int, Int]:
+        var launch_grid_shape = (1, 1, 1)
 
         if dyn_raster_order == RasterOrder.AlongN:
             launch_grid_shape[0] = dyn_cluster_shape[0]
@@ -532,7 +527,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @inline(.always)
     def get_num_tiles(
-        problem_shape: IndexList[3],
+        problem_shape: Coord[Int, Int, Int],
         dyn_tile_shape: Tuple[Int, Int, Int],
         dyn_cluster_shape: Tuple[Int, Int],
     ) -> Int:
@@ -555,7 +550,7 @@ struct SplitKTileScheduler[
     def get_required_locks_buffer_size_bytes[
         accum_type: DType, dyn_num_consumer: UInt32
     ](
-        problem_shape: IndexList[3],
+        problem_shape: Coord[Int, Int, Int],
         dyn_tile_shape: Tuple[Int, Int, Int],
         dyn_cluster_shape: Tuple[Int, Int],
     ) -> Int:
