@@ -1735,7 +1735,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     comptime _trace_string = get_static_string[
         trace_arg(
             "A_scales",
-            (
+            Coord(
                 a_scales.static_shape[0] if a_scales.static_shape[0]
                 > -1 else 0,
                 a_scales.static_shape[1] if a_scales.static_shape[1]
@@ -1746,7 +1746,7 @@ def _matmul_dynamic_scaled_fp8_impl[
         ";",
         trace_arg(
             "B_scales",
-            (
+            Coord(
                 b_scales.static_shape[0] if b_scales.static_shape[0]
                 > -1 else 0,
                 b_scales.static_shape[1] if b_scales.static_shape[1]

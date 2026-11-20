@@ -3398,9 +3398,9 @@ def block_scaled_matmul_with_epilogue[
         # fmt: off
         return String(
             "(gpu",
-            ";", trace_arg("A", (m, _k), a_type),
-            ";", trace_arg("B", (_k, n), b_type),
-            ";", trace_arg("C", (m, n), c_type),
+            ";", trace_arg("A", Coord(m, _k), a_type),
+            ";", trace_arg("B", Coord(_k, n), b_type),
+            ";", trace_arg("C", Coord(m, n), c_type),
             ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), "]",
             ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), "]",
             ";transpose_b=", transpose_b,
@@ -3735,9 +3735,9 @@ def block_scaled_matmul[
         return String(
             "(",
             ctx.target.device_kind_label(),
-            ";", trace_arg("A", (m, k), a_type),
-            ";", trace_arg("B", (k, n), b_type),
-            ";", trace_arg("C", (m, n), c_type),
+            ";", trace_arg("A", Coord(m, k), a_type),
+            ";", trace_arg("B", Coord(k, n), b_type),
+            ";", trace_arg("C", Coord(m, n), c_type),
             ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), ",", a_scales.dim[2](), ",", a_scales.dim[3](), ",", a_scales.dim[4](), "]",
             ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), ",", b_scales.dim[2](), ",", b_scales.dim[3](), ",", b_scales.dim[4](), "]",
             ";transpose_a=", True,

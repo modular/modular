@@ -27,8 +27,7 @@ from std.utils.coord import DynamicCoord
 # trailing `subvolume_rank` dims are the subvolume set by the caller; dims
 # `1..rank-subvolume_rank-1` are decomposed; dim 0 is the final quotient), and
 # bit-identical to it for the shapes that reach it. The difference is only in
-# the shape argument: here it arrives as a `Coord` that carries BOTH the static
-# dims (in its type) AND the runtime values, instead of runtime values only.
+# the division: see the unsigned note below.
 #
 # For dims whose extent is statically known in the `Coord` type
 # (`element_types[i].is_static_value`), the divisor becomes a compile-time
@@ -46,7 +45,7 @@ from std.utils.coord import DynamicCoord
 # values are read at runtime here.
 #
 # Uses unconditional `umod`/`ufloordiv` (unlike `_get_start_indices_of_nth_subvolume`,
-# which picks signed/unsigned off the index element type): a flat index and
+# which divides signed `Int`s): a flat index and
 # tensor extents are always non-negative, so unsigned is not just safe but
 # required for the compile-time-divisor magic-multiply fold to fire.
 #
@@ -63,12 +62,6 @@ def _get_start_indices_of_nth_subvolume_static[
     comptime assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
     var res = DynamicCoord[DType.int, rank]()
-
-    # Match `_get_start_indices_of_nth_subvolume`'s fast paths so behavior is
-    # bit-identical for the shapes that reach them.
-    comptime if rank == 2 and subvolume_rank == 1:
-        res.replace_dynamic[0](n)
-        return res
 
     comptime if rank - 1 == subvolume_rank:
         res.replace_dynamic[0](n)

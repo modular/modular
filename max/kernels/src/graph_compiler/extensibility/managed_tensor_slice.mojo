@@ -2097,7 +2097,7 @@ def trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
     Returns:
         A string representation of the buffer with its shape and data type.
     """
-    return trace_arg(name, buf.strides(), buf.dtype)
+    return trace_arg(name, buf.shape_coord(), buf.dtype)
 
 
 # ===----------------------------------------------------------------------=== #

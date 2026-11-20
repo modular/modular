@@ -35,7 +35,7 @@ from max.gpu.host import (
     GridBlockLaunchConfig,
 )
 from std.random import Random
-from std.utils import IndexList
+from std.utils.coord import Coord, DynamicCoord
 
 
 struct InitializationType(
@@ -221,13 +221,13 @@ def get_defined_shape[name: StaticString, default: StaticString]() -> List[Int]:
     return materialize[shape]()
 
 
-def int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
-    var t = IndexList[len(x)]()
+def int_list_to_tuple[x: List[Int]]() -> DynamicCoord[DType.int, len(x)]:
+    var t = Array[Int, len(x)](fill=0)
 
     comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
-    return t
+    return Coord(t)
 
 
 def _get_arg(handle: String) -> Optional[String]:

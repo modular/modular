@@ -22,6 +22,7 @@ from std.sys.info import align_of, simd_width_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import (
+    Coord,
     RowMajorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -255,9 +256,9 @@ def _matmul_impl[
             return String(
                 "(",
                 ctx.T.target.device_kind_label(),
-                ";", trace_arg("A", (shape.M, shape.K), a.dtype),
-                ";", trace_arg("B", (shape.K, shape.N), b.dtype),
-                ";", trace_arg("C", (shape.M, shape.N), c.dtype),
+                ";", trace_arg("A", Coord(shape.M, shape.K), a.dtype),
+                ";", trace_arg("B", Coord(shape.K, shape.N), b.dtype),
+                ";", trace_arg("C", Coord(shape.M, shape.N), c.dtype),
                 ";transpose_a=", transpose_a,
                 ";transpose_b=", transpose_b,
                 ")"
@@ -304,9 +305,9 @@ def _matmul_impl[
             return String(
                 "(",
                 ctx.T.target.device_kind_label(),
-                ";", trace_arg("A", (shape.M, shape.K), a.dtype),
-                ";", trace_arg("B", (shape.K, shape.N), b.dtype),
-                ";", trace_arg("C", (shape.M, shape.N), c.dtype),
+                ";", trace_arg("A", Coord(shape.M, shape.K), a.dtype),
+                ";", trace_arg("B", Coord(shape.K, shape.N), b.dtype),
+                ";", trace_arg("C", Coord(shape.M, shape.N), c.dtype),
                 ";transpose_a=", transpose_a,
                 ";transpose_b=", transpose_b,
                 ";b_packed=", b_packed,

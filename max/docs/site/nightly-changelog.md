@@ -530,6 +530,10 @@ This version is still a work in progress.
       return lower, upper
   ```
 
+- `parallelize_over_rows()` in `max.algorithm` and `trace_arg()` in
+  `max.runtime.tracing` no longer accept an `IndexList` shape. Pass a `Coord`
+  instead, for example `Coord(shape)` or a tensor's `shape_coord()`.
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,
