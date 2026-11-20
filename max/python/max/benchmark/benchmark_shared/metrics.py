@@ -1094,6 +1094,24 @@ class BenchmarkResult(BaseModel):
     # (bounded by the request count). See build_text_generation_result.
     num_outliers_rejected: int | None = None
 
+    # Client-side reads behind the ITL series, pooled over the iteration:
+    # how many socket reads carried generated text, how many of those carried
+    # several such events, and the distribution of those events per read. The
+    # ``events_per_read_*`` figures count generated text events only, not the
+    # role, finish-reason and usage events that share the same reads. A read
+    # carrying several text events has its ITLs split evenly. All five stay
+    # ``None`` when no request streamed text.
+    stream_reads: int | None = None
+    stream_reads_bunched: int | None = None
+    events_per_read_max: int | None = None
+    events_per_read_p99: float | None = None
+    events_per_read_mean: float | None = None
+    # Text events whose gap the socket read could not measure, pooled over the
+    # iteration. A request's first text read gives its other text events no
+    # gap, so ``len(itl) + itl_unresolved`` is one sample per text event after
+    # the first; this count is what the client fell short of, not what it
+    # lost. ``None`` when no request streamed text.
+    itl_unresolved: int | None = None
     # The benchmark client's own event loop over the measured window. The two
     # percentile fields are ``csv_mode=opaque`` so the type-driven CSV keeps
     # one cell each rather than a dozen per-stat columns. Lag is milliseconds
@@ -1134,6 +1152,12 @@ class BenchmarkResult(BaseModel):
             self.steady_state_mode,
             self.steady_state_warning,
             self.num_outliers_rejected,
+            self.stream_reads,
+            self.stream_reads_bunched,
+            self.events_per_read_max,
+            self.events_per_read_p99,
+            self.events_per_read_mean,
+            self.itl_unresolved,
         )
         if self.task_type != "text" and any(
             field is not None for field in text_only_fields
@@ -1384,6 +1408,13 @@ class BenchmarkResult(BaseModel):
             d["client_loop_lag_max_ms"] = self.client_loop_lag_max_ms
         if self.client_warning is not None:
             d["client_warning"] = self.client_warning
+        if self.stream_reads is not None:
+            d["stream_reads"] = self.stream_reads
+            d["stream_reads_bunched"] = self.stream_reads_bunched
+            d["events_per_read_max"] = self.events_per_read_max
+            d["events_per_read_p99"] = self.events_per_read_p99
+            d["events_per_read_mean"] = self.events_per_read_mean
+            d["itl_unresolved"] = self.itl_unresolved
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
         if self.session_server_stats is not None:
@@ -1544,6 +1575,7 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         or result.steady_state_mode is not None
         or result.steady_state_warning is not None
         or result.num_outliers_rejected is not None
+        or result.stream_reads is not None
         or result.client_loop_lag_ms is not None
         or result.client_loop_lag_max_ms is not None
         or result.client_loop_busy is not None
@@ -1562,6 +1594,11 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
             client_loop_busy=result.client_loop_busy,
             client_warning=result.client_warning,
             errors=real_errors,
+            stream_reads=result.stream_reads,
+            stream_reads_bunched=result.stream_reads_bunched,
+            events_per_read_max=result.events_per_read_max,
+            events_per_read_p99=result.events_per_read_p99,
+            events_per_read_mean=result.events_per_read_mean,
         )
 
     return BenchmarkResultGroups(

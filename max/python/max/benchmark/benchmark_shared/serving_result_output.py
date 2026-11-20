@@ -73,6 +73,10 @@ from tabulate import tabulate
 
 logger = logging.getLogger(__name__)
 
+# Above this share of bunched reads, the evenly split ITLs are the run's own
+# bound on ITL p99 rather than a property of the server, so the console says so.
+_BUNCHED_READS_WARN_SHARE = 0.01
+
 
 def hash_string(s: str) -> str:
     """Hash a string using SHA-256. This is stable and deterministic across runs.
@@ -882,6 +886,8 @@ def print_benchmark_summary(
             or diag.steady_state_warning
             or client_rows
             or diag.client_warning
+            or diag.stream_reads_bunched
+            or metrics.itl_unresolved
         ):
             print_section(title="Diagnostics")
             for label, value in diag_rows:
@@ -891,6 +897,33 @@ def print_benchmark_summary(
                     print(f"{label:<45} {value:<10}")
             if diag.steady_state_warning:
                 print(f"Steady-state warning: {diag.steady_state_warning}")
+            # The result JSON always carries these; the console says them only
+            # when some of the run's reads carried several events.
+            if diag.stream_reads_bunched and diag.stream_reads:
+                share = diag.stream_reads_bunched / diag.stream_reads
+                print(
+                    f"{diag.stream_reads_bunched} of {diag.stream_reads}"
+                    " reads carried several text events;"
+                    " their ITLs were split evenly."
+                )
+                if share > _BUNCHED_READS_WARN_SHARE:
+                    print(
+                        f"WARNING: {share:.1%} of reads carried several text"
+                        " events, so their ITLs come from the read's arrival"
+                        " split evenly, not from when each token landed."
+                        " ITL p99 is bounded by the client here, not by the"
+                        " server."
+                    )
+            # A request's first text read has no earlier token to measure to,
+            # so its other text events carry no ITL sample at all. The count
+            # lives on the result rather than the diagnostics group, which is
+            # schema-mirrored in the dashboard tree.
+            if metrics.itl_unresolved:
+                print(
+                    f"{metrics.itl_unresolved} text events shared their"
+                    " read's arrival with an earlier one and carry no ITL"
+                    " sample."
+                )
             if client_rows:
                 print(format_percentile_table(client_rows))
             if diag.client_warning:

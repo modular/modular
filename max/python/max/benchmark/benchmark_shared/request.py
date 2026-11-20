@@ -64,7 +64,7 @@ from .datasets.types import (
     OpenAIImage,
     PixelGenerationImageOptions,
 )
-from .sse import iter_events
+from .sse import SSEDecoder
 from .utils import deadline_passed, openai_bearer_auth_headers
 
 # 30 minute timeout per request session
@@ -547,10 +547,20 @@ class RequestFuncOutput(BaseRequestFuncOutput):
 
     # List of inter-token latencies.
     itl: list[float] = field(default_factory=list)
+    # Text events whose gap the socket read could not measure: the request's
+    # first text read gives its other text events no gap, so they report none.
+    # ``len(itl) + itl_unresolved`` is then one sample per text event after the
+    # first, however the reads were batched.
+    itl_unresolved: int = 0
     # List of per-chunk time-per-output-token values.
     tpot: list[float] = field(default_factory=list)
     # End offsets in ``generated_text``; compute_chunk_tpots drains it.
     pending_tpot_ends: array[int] = field(default_factory=lambda: array("I"))
+    # Events per socket read, as ``{events in the read: reads}``, over the
+    # reads that carried generated text. Pooled over a run into the
+    # diagnostics group: a read carrying several events is where the
+    # client fell behind and read them together.
+    stream_events_per_read: dict[int, int] = field(default_factory=dict)
     generated_text: str = ""
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
@@ -798,9 +808,12 @@ class TRTLLMRequestDriver(RequestDriver):
                 url=api_url, data=body, headers=_JSON_HEADERS
             ) as response:
                 if response.status == 200:
-                    events = iter_events(response.content.iter_any())
-                    try:
-                        async for event in events:
+                    # Each TRT-LLM event is stamped after its own parse rather
+                    # than at its read's arrival, so its ITL carries the parse
+                    # cost. There is no sentinel to stop at.
+                    decoder = SSEDecoder()
+                    async for chunk_bytes in response.content.iter_any():
+                        for event in decoder.feed(chunk_bytes):
                             chunk = _decode_chunk(event.data)
                             if not isinstance(chunk, Mapping):
                                 raise _malformed_chunk(
@@ -829,8 +842,6 @@ class TRTLLMRequestDriver(RequestDriver):
                                 output.itl.append(itl_value)
 
                             most_recent_timestamp = timestamp
-                    finally:
-                        await events.aclose()
 
                     output.latency = most_recent_timestamp - st
                     output.success = True
@@ -1105,6 +1116,59 @@ def _delta_text(delta: Mapping[str, Any], data: str) -> str:
     return text
 
 
+# How many reads the replay parses before yielding to the event loop. The read
+# loop hands over at most ``_READS_PER_REPLAY`` reads at a time, so this splits
+# one replay into two stretches and no more: a finished stream's parse never
+# stalls the streams still being measured for longer than that.
+_REPLAY_READS_PER_YIELD = 32
+
+# How many reads and events the read loop holds before parsing them, which
+# bounds what a long stream costs in memory. A read carrying one event costs
+# about 0.4 KB, but a read the client fell behind on carries many, so the event
+# count is what bounds a bunched stream. Neither limit changes the result.
+_READS_PER_REPLAY = 64
+_REPLAY_EVENTS = 4096
+
+# What makes a read skip its deferred parse for an immediate one: an error
+# must end the request at its read, not at the end of a stream the server may
+# hold open.
+#
+# ``rror`` is the ``error`` key's tail, and it also matches SGLang's
+# ``object: error`` chunk, which spells no key at all. It covers every spelling
+# that leaves an ``r`` and the ``o`` literal. A payload that escapes one of
+# those letters carries no ``rror``, so the two escapes that can hide it are
+# needles too: ``\u0072`` is an escaped ``r`` and ``\u006f`` an escaped ``o``,
+# the latter in both hex cases because JSON allows either. An escaped ``e``
+# needs no needle -- the rest of the key still spells ``rror``.
+#
+# No encoder escapes an ASCII letter, so these only match a payload that
+# actually hid the key, and escaped non-ASCII *content* -- which a stdlib
+# ``json.dumps`` writes for every CJK or emoji character -- still reads
+# deferred. Matching ``\u`` alone would not have that property: it would send
+# every such read down the eager path and give back the CPU this loop exists to
+# save. Text that happens to spell ``rror`` or ``\u0072`` only costs its own
+# read the deferred parse.
+_ERROR_SCAN = (
+    "rror",
+    "\\u0072",
+    "\\u006f",
+    "\\u006F",
+)
+
+
+def _read_may_carry_error(datas: Sequence[str]) -> bool:
+    """Whether any event of a read may report an error.
+
+    Plain loops rather than ``any`` over a generator: this runs once per socket
+    read, on the read loop the measurement depends on.
+    """
+    for data in datas:
+        for needle in _ERROR_SCAN:
+            if needle in data:
+                return True
+    return False
+
+
 class OpenAIStreamRecorder:
     """Measures one streamed OpenAI-style response.
 
@@ -1114,6 +1178,15 @@ class OpenAIStreamRecorder:
 
     Per-chunk TPOT comes from :func:`compute_chunk_tpots` after the run, which
     re-tokenizes the recorded chunks.
+
+    Time comes from the socket reads, one clock read each: a read's text events
+    split the gap since the previous one evenly, so the last lands on the read's
+    arrival time. The request's first text event is TTFT and takes its read's
+    time as is, and so do that read's other text events: it gives them no gap
+    to measure, so each counts towards ``itl_unresolved`` instead of adding a
+    sample. Every later read's text events split its gap, so how the first read
+    was batched moves samples between ``itl`` and ``itl_unresolved`` and never
+    changes their sum.
 
     Args:
         prompt_len: The prompt length to record on the output.
@@ -1170,38 +1243,176 @@ class OpenAIStreamRecorder:
         """Whether the stream reached ``[DONE]``, so reading can stop."""
         return self._stream_complete
 
-    def on_event(
-        self, data: str, *, arrived: float | None = None
+    def on_read(
+        self, datas: Sequence[str], *, arrived: float | None = None
     ) -> RequestFuncOutput | None:
-        """Records one SSE event's data.
+        """Records the events of one socket read.
+
+        The read's arrival time is split evenly across its text events, so the
+        last of them lands on it.
 
         Args:
-            data: The event's data field.
-            arrived: When the event arrived, as a ``time.perf_counter()``
-                value; ``None`` reads the clock as the event is recorded.
+            datas: The events' data fields, in stream order.
+            arrived: When the read arrived, as a ``time.perf_counter()``
+                value; ``None`` reads the clock now.
 
         Returns:
             ``None`` to keep reading the stream, or the request's output when
-            the event reported an error and the request is over.
+            an event reported an error and the request is over.
         """
+        if self.stream_complete:
+            return None
         # Stamped at arrival, before the parse, for latency, TTFT and ITL alike.
         timestamp = time.perf_counter() if arrived is None else arrived
         self._latency = timestamp - self._st
-        if data == "[DONE]":
-            self._stream_complete = True
-            return None
 
-        chunk = _decode_chunk(data)
-        if not isinstance(chunk, Mapping):
-            raise _malformed_chunk("expected a JSON object", data)
+        # Decode first: splitting the read's one time needs its text events.
+        events: list[tuple[Mapping[str, Any], str, str]] = []
+        for data in datas:
+            if data == "[DONE]":
+                self._stream_complete = True
+                break
+            try:
+                chunk = _decode_chunk(data)
+                if not isinstance(chunk, Mapping):
+                    raise _malformed_chunk("expected a JSON object", data)
+                text = self._chunk_text(chunk, data)
+            except Exception:
+                # The read's earlier events arrived and were measured, so
+                # record them before the bad chunk fails the request.
+                self._record_read(events, timestamp)
+                raise
+            error = chunk.get("error")
+            if error is None and chunk.get("object") == "error":
+                # SGLang reports a failed generation in the chunk's own
+                # fields: ``{"object": "error", "message": ...}``.
+                error = chunk
+            if error is not None:
+                # The read's earlier events arrived and were measured, so
+                # record them before the error ends the request.
+                self._record_read(events, timestamp)
+                message = (
+                    error.get("message")
+                    if isinstance(error, Mapping)
+                    else error
+                )
+                return self.fail(str(message or data))
+            events.append((chunk, data, text))
 
-        error = chunk.get("error")
-        if error is not None:
-            message = (
-                error.get("message") if isinstance(error, Mapping) else error
+        self._record_read(events, timestamp)
+        return None
+
+    def _record_read(
+        self,
+        events: Sequence[tuple[Mapping[str, Any], str, str]],
+        timestamp: float,
+    ) -> None:
+        """Records a read's decoded events, splitting its one time evenly.
+
+        Each event travels with the chunk it was decoded from, so the text and
+        the channels behind it are recorded together and cannot desync.
+        """
+        text_events = sum(1 for _, _, text in events if text)
+        if text_events:
+            self.output.stream_events_per_read[text_events] = (
+                self.output.stream_events_per_read.get(text_events, 0) + 1
             )
-            return self.fail(str(message or data))
 
+        # The read's text events split the gap since the previous one, so the
+        # last lands on the read's time. The run's first text event keeps the
+        # read's time too -- TTFT is never interpolated earlier.
+        previous = self._most_recent_timestamp
+        split = (timestamp - previous) / text_events if text_events else 0.0
+        first_text = self._ttft == 0.0
+        rank = 0
+        for chunk, data, text_content in events:
+            event_time = timestamp
+            measure_itl = True
+            if text_content:
+                if first_text:
+                    # TTFT is this read's arrival, and the read's other text
+                    # events share it, so there is no gap to report: a 0.0
+                    # sample would only drag the percentiles down.
+                    measure_itl = False
+                else:
+                    rank += 1
+                    event_time = previous + rank * split
+            self._record_event(
+                chunk, data, text_content, event_time, measure_itl=measure_itl
+            )
+
+    async def replay(
+        self, reads: Sequence[tuple[float, Sequence[str]]]
+    ) -> RequestFuncOutput | None:
+        """Records stored reads, in order.
+
+        The read loop defers parsing to here so it does no decoding while it
+        has a server to keep up with, and calls it every few reads so a long
+        stream's stored reads stay bounded.
+
+        Args:
+            reads: Each read's arrival time and event data fields, in order.
+
+        Returns:
+            ``None``, or the request's output when an event reported an error.
+        """
+        for index, (arrived, datas) in enumerate(reads):
+            if index % _REPLAY_READS_PER_YIELD == 0:
+                await asyncio.sleep(0)
+            result = self.on_read(datas, arrived=arrived)
+            if result is not None:
+                return result
+            if self.stream_complete:
+                # Nothing after [DONE] is measured.
+                break
+        return None
+
+    def _chunk_text(self, chunk: Mapping[str, Any], data: str) -> str:
+        """Returns the text a chunk carries, empty when it carries none.
+
+        Pure: a read is decoded before any of it is recorded, so the text a
+        failure reports is independent of how far recording got.
+        """
+        choices = chunk.get("choices")
+        if choices is None:
+            return ""
+        if not isinstance(choices, list):
+            raise _malformed_chunk("expected choices to be a JSON array", data)
+        if not choices:
+            return ""
+        choice = choices[0]
+        if not isinstance(choice, Mapping):
+            raise _malformed_chunk(
+                "expected each choice to be a JSON object", data
+            )
+        if not self._chat:
+            return _required_text_field(choice.get("text"), "choice.text", data)
+        delta = choice.get("delta")
+        if not isinstance(delta, Mapping):
+            raise _malformed_chunk(
+                "expected the choice to carry a delta object", data
+            )
+        return _delta_text(delta, data)
+
+    def _record_event(
+        self,
+        chunk: Mapping[str, Any],
+        data: str,
+        text_content: str,
+        timestamp: float,
+        *,
+        measure_itl: bool = True,
+    ) -> None:
+        """Records one decoded chunk at *timestamp*.
+
+        Args:
+            chunk: The chunk the text was decoded from.
+            data: The event's raw data field, for a malformed-chunk error.
+            text_content: The text *chunk* carries, empty when it carries none.
+            timestamp: The event's time, as a ``time.perf_counter()`` value.
+            measure_itl: Whether this event has a gap behind it to report. A
+                later event sharing its read's arrival does not.
+        """
         # Parse usage from any chunk that reports it.
         usage = chunk.get("usage")
         if usage:
@@ -1214,64 +1425,64 @@ class OpenAIStreamRecorder:
             except TypeError as exc:
                 raise _malformed_chunk(str(exc), data) from exc
 
-        # A chunk with no choices just carries usage or a finish marker.
         choices = chunk.get("choices")
         if choices is None:
-            return None
+            return
         if not isinstance(choices, list):
             raise _malformed_chunk("expected choices to be a JSON array", data)
         if not choices:
-            return None
+            return
         choice = choices[0]
-        if not isinstance(choice, Mapping):
-            raise _malformed_chunk(
-                "expected each choice to be a JSON object", data
-            )
         finish_reason = choice.get("finish_reason")
         if finish_reason is not None:
             self._finish_reason = finish_reason
             self._finish_reason_time = timestamp
-        if self._chat:
-            delta = choice.get("delta")
-            if not isinstance(delta, Mapping):
-                raise _malformed_chunk(
-                    "expected the choice to carry a delta object", data
-                )
-            if delta.get("tool_calls"):
-                self.output.tool_call_returned = True
-            text_content = _delta_text(delta, data)
-        else:
-            text_content = _required_text_field(
-                choice.get("text"), "choice.text", data
+        delta = choice.get("delta")
+        if delta is not None and not isinstance(delta, Mapping):
+            raise _malformed_chunk(
+                "expected the choice to carry a delta object", data
             )
+        if delta and delta.get("tool_calls"):
+            # Read off the chunk the text came from, so a pure text extraction
+            # cannot report a call this event never recorded.
+            self.output.tool_call_returned = True
+        if not text_content:
+            return
 
-        # Only track timing for chunks with actual text
-        if text_content:
-            # A response only counts as content-bearing once it streams actual
-            # text or tool-call fragments. Chunks that carry only a role or
-            # finish_reason, or that put text in a delta field we don't model,
-            # leave this False so the request is flagged rather than recorded
-            # as a success with ttft=0 and no tokens.
-            self._has_content = True
-            # Kept together: the offset recorded below indexes this text, so the
-            # two must never desync.
-            self._generated_chars += len(text_content)
-            self._generated_text.append(text_content)
-            if self._tokenizer is not None:
-                # Store end offsets, not chunk copies, to keep memory flat.
-                self.output.pending_tpot_ends.append(self._generated_chars)
-            # First token
-            if self._ttft == 0.0:
-                self._ttft = timestamp - self._st
-                self.output.ttft = self._ttft
-
-            # Decoding phase
+        # A response only counts as content-bearing once it streams actual
+        # text or tool-call fragments. Chunks that carry only a role or
+        # finish_reason, or that put text in a delta field we don't model,
+        # leave this False so the request is flagged rather than recorded
+        # as a success with ttft=0 and no tokens.
+        self._has_content = True
+        # Kept together: the offset recorded below indexes this text, so the
+        # two must never desync.
+        self._generated_chars += len(text_content)
+        self._generated_text.append(text_content)
+        if self._tokenizer is not None:
+            # Store end offsets, not chunk copies, to keep memory flat. The
+            # offsets stay paired with ``itl`` (one more offset than samples,
+            # as :func:`compute_chunk_tpots` expects), so an event with no
+            # measured gap moves the read's boundary instead of adding one:
+            # its text carries the same time as the event before it.
+            offsets = self.output.pending_tpot_ends
+            if measure_itl or not len(offsets):
+                offsets.append(self._generated_chars)
             else:
-                itl_value = timestamp - self._most_recent_timestamp
-                self.output.itl.append(itl_value)
+                offsets[-1] = self._generated_chars
 
-            self._most_recent_timestamp = timestamp
-        return None
+        if self._ttft == 0.0:
+            self._ttft = timestamp - self._st
+            self.output.ttft = self._ttft
+        elif measure_itl:
+            self.output.itl.append(timestamp - self._most_recent_timestamp)
+        else:
+            # A later text event of the first text read: it shares the read's
+            # arrival with the event before it, so the read leaves the sample
+            # count one short. Count it, so the shortfall is a measurement.
+            self.output.itl_unresolved += 1
+
+        self._most_recent_timestamp = timestamp
 
     def finish(self) -> RequestFuncOutput:
         """Marks a fully-received stream complete.
@@ -1332,6 +1543,9 @@ class OpenAIStreamRecorder:
         self._done = True
         self.output.error = error
         self.output.success = False
+        # Keep the text the request received before it failed: those events
+        # were recorded, and a per-event reader kept them too.
+        self.output.generated_text = "".join(self._generated_text)
         return self.output
 
     def cancel(self) -> RequestFuncOutput:
@@ -1386,24 +1600,54 @@ async def _run_openai_stream_request(
         ) as response:
             if response.status != 200:
                 return recorder.fail(response.reason or "")
-            events = iter_events(response.content.iter_any())
-            try:
-                async for event in events:
-                    result = recorder.on_event(event.data)
+            decoder = SSEDecoder()
+            reads: list[tuple[float, list[str]]] = []
+            buffered_events = 0
+            async for chunk in response.content.iter_any():
+                # One clock read per socket read, taken before the split, so
+                # the interval is arrival to arrival.
+                arrived = time.perf_counter()
+                datas = [event.data for event in decoder.feed(chunk)]
+                if not datas:
+                    continue
+                if _read_may_carry_error(datas):
+                    # A read that may name an error is parsed now, so an error
+                    # ends the request at its read rather than at the end of a
+                    # stream the server holds open. The reads before it are
+                    # recorded first, to keep the events in stream order.
+                    result = await recorder.replay(reads)
+                    reads.clear()
+                    buffered_events = 0
+                    if result is None:
+                        result = recorder.on_read(datas, arrived=arrived)
                     if result is not None:
                         return result
                     if recorder.stream_complete:
+                        # Nothing after [DONE] is measured; drain the rest so
+                        # the connection stays poolable.
+                        async for _ in response.content.iter_chunked(1 << 16):
+                            pass
                         break
-            finally:
-                # Closed here rather than left to the garbage collector,
-                # which reports the pending aclose() as a warning.
-                await events.aclose()
-            if recorder.stream_complete:
-                # Drain to EOF so the socket closes cleanly and the connection
-                # goes back to the pool this run shares.
-                async for _ in response.content.iter_chunked(1 << 16):
-                    pass
-            return recorder.finish()
+                    continue
+                reads.append((arrived, datas))
+                buffered_events += len(datas)
+                if "[DONE]" in datas:
+                    # Nothing after it is measured; drain the rest so the
+                    # connection stays poolable.
+                    async for _ in response.content.iter_chunked(1 << 16):
+                        pass
+                    break
+                if (
+                    len(reads) >= _READS_PER_REPLAY
+                    or buffered_events >= _REPLAY_EVENTS
+                ):
+                    result = await recorder.replay(reads)
+                    reads.clear()
+                    buffered_events = 0
+                    if result is not None:
+                        return result
+            result = await recorder.replay(reads)
+            return result if result is not None else recorder.finish()
     except Exception:
         exc_info = sys.exc_info()
         return recorder.fail("".join(traceback.format_exception(*exc_info)))

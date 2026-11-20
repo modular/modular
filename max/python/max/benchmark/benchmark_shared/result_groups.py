@@ -168,7 +168,7 @@ class CacheStatsGroup(BaseModel):
 
 
 class DiagnosticsGroup(BaseModel):
-    """Steady-state detection, client health and error diagnostics."""
+    """Steady-state detection, client health, client-read and error diagnostics."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -187,6 +187,15 @@ class DiagnosticsGroup(BaseModel):
     client_loop_busy: PercentileMetrics | None = None
     client_warning: str | None = None
     errors: list[str] = Field(default_factory=list)
+    # How bunched the client's socket reads were, over the reads that carried
+    # generated text: a read carrying several events leaves their ITLs split
+    # evenly, so a large ``stream_reads_bunched`` share means the client, not
+    # the server, fell behind.
+    stream_reads: int | None = None
+    stream_reads_bunched: int | None = None
+    events_per_read_max: int | None = None
+    events_per_read_p99: float | None = None
+    events_per_read_mean: float | None = None
 
 
 class BenchmarkResultGroups(BaseModel):

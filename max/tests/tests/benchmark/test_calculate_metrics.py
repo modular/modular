@@ -1043,6 +1043,8 @@ def _make_request_func_output(
     itl: list[float] | None = None,
     pending_tpot_ends: Sequence[int] = (),
     request_submit_time: float | None = 0.0,
+    stream_events_per_read: dict[int, int] | None = None,
+    itl_unresolved: int = 0,
 ) -> RequestFuncOutput:
     return RequestFuncOutput(
         success=True,
@@ -1051,8 +1053,10 @@ def _make_request_func_output(
         prompt_len=prompt_len,
         generated_text=generated_text,
         itl=itl or [],
+        itl_unresolved=itl_unresolved,
         pending_tpot_ends=array("I", pending_tpot_ends),
         request_submit_time=request_submit_time,
+        stream_events_per_read=stream_events_per_read or {},
     )
 
 
@@ -1111,6 +1115,118 @@ def _outputs_with_completion_tokens(
         output.server_token_stats = ServerTokenStats(completion_tokens=count)
         outputs.append(output)
     return outputs
+
+
+def _stream_read_result(
+    outputs: list[RequestFuncOutput],
+) -> BenchmarkResult:
+    return build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+
+def test_build_text_generation_result_pools_stream_reads() -> None:
+    """Bunched socket reads are pooled over the run into the diagnostics."""
+    result = _stream_read_result(
+        [
+            _make_request_func_output(stream_events_per_read={1: 3, 3: 1}),
+            _make_request_func_output(stream_events_per_read={1: 4}),
+        ]
+    )
+
+    assert result.stream_reads == 8
+    assert result.stream_reads_bunched == 1
+    assert result.events_per_read_max == 3
+    assert result.events_per_read_p99 == 3.0
+    assert result.events_per_read_mean == pytest.approx(10 / 8)
+    # Always reported, even when the fields only describe a healthy client.
+    assert result.result_groups is not None
+    assert result.result_groups.diagnostics is not None
+    assert result.result_groups.diagnostics.stream_reads_bunched == 1
+    # And carried flat, alongside the namespaced group, for the JSON readers
+    # that predate it.
+    flat = result.to_result_dict()
+    assert flat["stream_reads"] == 8
+    assert flat["stream_reads_bunched"] == 1
+    assert flat["events_per_read_max"] == 3
+    assert flat["events_per_read_p99"] == 3.0
+    assert flat["events_per_read_mean"] == pytest.approx(10 / 8)
+
+
+def test_build_text_generation_result_omits_read_stats_without_reads() -> None:
+    """No streamed text means no samples: ``None``, not zeros that read as data."""
+    result = _stream_read_result([_make_request_func_output()])
+
+    assert result.stream_reads is None
+    assert result.stream_reads_bunched is None
+    assert result.events_per_read_max is None
+    assert result.events_per_read_p99 is None
+    assert result.events_per_read_mean is None
+    assert "stream_reads" not in result.to_result_dict()
+    # Nothing in the diagnostics group claims a read sample either; the group
+    # itself is built for the steady-state figures this run does have.
+    diagnostics = (
+        result.result_groups.diagnostics if result.result_groups else None
+    )
+    assert diagnostics is None or diagnostics.stream_reads is None
+
+
+def test_build_text_generation_result_pools_itl_unresolved() -> None:
+    """The ITL shortfall is pooled, so a short series is explainable."""
+    result = _stream_read_result(
+        [
+            _make_request_func_output(
+                stream_events_per_read={3: 1}, itl_unresolved=2
+            ),
+            _make_request_func_output(
+                stream_events_per_read={1: 2}, itl_unresolved=0
+            ),
+            _make_request_func_output(
+                stream_events_per_read={2: 1}, itl_unresolved=1
+            ),
+        ]
+    )
+
+    assert result.itl_unresolved == 3
+    # Carried flat with the read stats it explains.
+    assert result.to_result_dict()["itl_unresolved"] == 3
+
+
+def test_build_text_generation_result_omits_itl_unresolved_without_reads() -> (
+    None
+):
+    """No streamed text means no shortfall to explain: ``None``, not zero."""
+    result = _stream_read_result(
+        [
+            _make_request_func_output(),
+            _make_request_func_output(itl_unresolved=4),
+        ]
+    )
+
+    assert result.itl_unresolved is None
+    assert "itl_unresolved" not in result.to_result_dict()
+
+
+def test_build_text_generation_result_reports_unbunched_reads() -> None:
+    """A run whose reads each carried one event still reports the stats."""
+    result = _stream_read_result(
+        [_make_request_func_output(stream_events_per_read={1: 5})]
+    )
+
+    assert result.stream_reads == 5
+    assert result.stream_reads_bunched == 0
+    assert result.events_per_read_max == 1
+    assert result.events_per_read_p99 == 1.0
+    assert result.events_per_read_mean == 1.0
 
 
 def test_build_text_generation_result_attaches_aggregate_server_stats() -> None:

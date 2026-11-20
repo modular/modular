@@ -34,6 +34,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
+    DiagnosticsGroup,
     PercentileMetrics,
     RatePercentileMetrics,
     StandardPercentileMetrics,
@@ -290,6 +291,97 @@ def test_print_benchmark_summary_omits_goodput_when_unset(
 ) -> None:
     _print_summary(_gpu_benchmark_result())
     assert "oodput" not in capsys.readouterr().out
+
+
+def _with_client_reads(
+    result: BenchmarkResult, *, reads: int, bunched: int, max_events: int
+) -> BenchmarkResult:
+    """Returns *result* carrying the supplied client-read diagnostics."""
+    groups = result.result_groups
+    assert groups is not None
+    return result.model_copy(
+        update={
+            "result_groups": groups.model_copy(
+                update={
+                    "diagnostics": DiagnosticsGroup(
+                        stream_reads=reads,
+                        stream_reads_bunched=bunched,
+                        events_per_read_max=max_events,
+                        events_per_read_p99=float(max_events),
+                        events_per_read_mean=1.0 + bunched / reads,
+                    )
+                }
+            )
+        }
+    )
+
+
+def test_print_benchmark_summary_reports_unmeasured_itl_events(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Text events a read could not separate are reported, not just dropped."""
+    result = _with_client_reads(
+        _gpu_benchmark_result(), reads=400, bunched=120, max_events=4
+    )
+    _print_summary(result.model_copy(update={"itl_unresolved": 900}))
+    out = capsys.readouterr().out
+    assert (
+        "900 text events shared their read's arrival with an earlier one" in out
+    )
+    assert "carry no ITL sample" in out
+
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=400, bunched=0, max_events=1
+        )
+    )
+    assert "carry no ITL sample" not in capsys.readouterr().out
+
+
+def test_print_benchmark_summary_reports_bunched_reads(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Bunched reads print a line; reads of one event each stay quiet."""
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=400, bunched=120, max_events=4
+        )
+    )
+    out = capsys.readouterr().out
+    assert "120 of 400 reads carried several text events;" in out
+    assert "their ITLs were split evenly" in out
+
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=400, bunched=0, max_events=1
+        )
+    )
+    assert "carried several events" not in capsys.readouterr().out
+
+
+def test_print_benchmark_summary_flags_client_bound_itl(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A bunched share above a percent warns that ITL p99 is the client's."""
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=1000, bunched=40, max_events=3
+        )
+    )
+    out = capsys.readouterr().out
+    assert "WARNING: 4.0% of reads carried several text events" in out
+    assert "ITL p99 is bounded by the client here" in out
+
+    # A share at or below a percent is ordinary scheduling, not a bound worth
+    # calling out.
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=1000, bunched=10, max_events=2
+        )
+    )
+    out = capsys.readouterr().out
+    assert "10 of 1000 reads carried several text events;" in out
+    assert "ITL p99 is bounded by the client" not in out
 
 
 def test_print_benchmark_summary_tabulates_gpu_stats(
