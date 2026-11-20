@@ -28,7 +28,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 
 from std.utils.index import IndexList, StaticTuple
-from std.utils.coord import Coord, CoordLike, DynamicCoord, coord_to_index_list
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 
 from std._plugin import CurrentPlugin
 
@@ -205,13 +205,8 @@ def _reduce_generator[
         reduce_function: The lambda implementing the reduction.
         context: The pointer to DeviceContext.
     """
-    # The plugin hook only accepts an `IndexList`, and the empty-dimension
-    # check below needs runtime indexing that a `Coord` does not support, so
-    # materialize an `IndexList` view of the shape once.
-    var shape_index_list = coord_to_index_list(shape)
-
-    for i in range(len(shape_index_list)):
-        if shape_index_list[i] == 0:
+    comptime for i in range(type_of(shape).rank):
+        if Int(shape[i]) == 0:
             return
 
     comptime if context.T.target.is_cpu():
@@ -222,7 +217,7 @@ def _reduce_generator[
         # The plugin hook takes `reduce_dim` as a runtime argument; feed it the
         # compile-time value.
         return plugin_reduce[num_reductions, init_type](
-            shape_index_list,
+            shape,
             init,
             reduce_dim,
             input_0_fn,

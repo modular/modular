@@ -15,7 +15,7 @@ from max.algorithm.backend.gpu.reduction import reduce_launch
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
-from std.utils.coord import Coord
+from std.utils.coord import Coord, CoordLike, Idx, coord_to_index_list
 from std.utils import IndexList, StaticTuple
 
 comptime num_reductions = 2
@@ -108,7 +108,7 @@ def fused_reduce_inner_test[
         )
 
     reduce_launch[reduce_dim=axis](
-        shape, init, input_fn, output_fn, reduce_fn, ctx
+        Coord(shape), init, input_fn, output_fn, reduce_fn, ctx
     )
 
     with res_device0.map_to_host() as res_host0:
@@ -150,8 +150,35 @@ def reduce_inner_test[
     ctx: DeviceContext,
     offset: Int = 1,
 ) raises:
-    comptime num_reductions = 1
+    reduce_inner_test[axis=axis](
+        reduce_fn, Coord(shape), init, expected_vals, ctx, offset
+    )
 
+
+def reduce_inner_test[
+    ReduceFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDLength](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    //,
+    dtype: DType,
+    expected_vals_type: DType,
+    *,
+    axis: Int = Coord[*shape_types].rank - 1,
+](
+    reduce_fn: ReduceFnType,
+    launch_shape: Coord[*shape_types],
+    init: Scalar[dtype],
+    expected_vals: List[Scalar[expected_vals_type]],
+    ctx: DeviceContext,
+    offset: Int = 1,
+) raises:
+    comptime num_reductions = 1
+    comptime rank = Coord[*shape_types].rank
+
+    var shape = coord_to_index_list(launch_shape)
     var out_shape = shape
     out_shape[axis] = 1
 
@@ -215,7 +242,7 @@ def reduce_inner_test[
         )
 
     reduce_launch[reduce_dim=axis](
-        shape,
+        launch_shape,
         StaticTuple[_, num_reductions](init),
         input_fn,
         output_fn,
@@ -307,6 +334,44 @@ def test_reduce() raises:
         reduce_inner_test[axis=1](
             reduce_add,
             IndexList[3](5, 3, 2),
+            Float32(0),
+            [
+                Float32(4.0),
+                5.0,
+                10.0,
+                11.0,
+                16.0,
+                17.0,
+                22.0,
+                23.0,
+                28.0,
+                29.0,
+            ],
+            ctx,
+        )
+
+        # Static dims stay in the `Coord` type through the kernel boundary.
+        # The next three reach the two-phase and the small-row kernels.
+        reduce_inner_test(
+            reduce_add,
+            Coord(Int64(2), Int64(3), Idx[257]),
+            Float32(0),
+            [Float32(257.0), 514.0, 771.0, 1028.0, 1285.0, 1542.0],
+            ctx,
+        )
+
+        # An all-static shape is a zero-sized kernel argument.
+        reduce_inner_test(
+            reduce_add,
+            Coord(Idx[2], Idx[3], Idx[257]),
+            Float32(0),
+            [Float32(257.0), 514.0, 771.0, 1028.0, 1285.0, 1542.0],
+            ctx,
+        )
+
+        reduce_inner_test[axis=1](
+            reduce_add,
+            Coord(Int64(5), Idx[3], Int64(2)),
             Float32(0),
             [
                 Float32(4.0),

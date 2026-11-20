@@ -15,8 +15,7 @@ from std.atomic import Ordering
 from std.collections import OptionalReg
 from std.reflection.location import SourceLocation
 
-from std.utils.coord import Coord
-from std.utils.index import IndexList
+from std.utils.coord import Coord, CoordLike
 from std.math.math import (
     _BinaryMathOp,
     _BinaryMathPluginHookFnType,
@@ -58,8 +57,9 @@ comptime _ReduceGeneratorPluginHookFnType = (
         & def[ty: DType, width: SIMDLength, reduction_idx: Int](
             SIMD[ty, width], SIMD[ty, width]
         ) -> SIMD[ty, width],
+        shape_types: TypeList[Trait=CoordLike, ...],
     ](
-        shape: IndexList[_, element_type=DType.int64],
+        shape: Coord[*shape_types],
         init: StaticTuple[Scalar[init_type], num_reductions],
         reduce_dim: Int,
         input_0_fn: InputFnType,

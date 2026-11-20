@@ -137,7 +137,7 @@ def run_reduce[
             )
 
         reduce_launch[reduce_dim=axis](
-            shape,
+            Coord(shape),
             StaticTuple[_, num_reductions](init),
             input_fn,
             output_fn,
