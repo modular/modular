@@ -97,7 +97,7 @@ modular_cc_test(
 # single-GPU CUDAPluginTest with a multi-GPU requirement.
 modular_cc_test(
     name = "CUDAPeerCopyTest",
-    size = "small",
+    size = "large",
     srcs = ["test/Fixture.h"],
     data = [":CUDAPlugin.so"],
     env = {
