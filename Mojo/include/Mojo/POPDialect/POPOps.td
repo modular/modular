@@ -383,7 +383,9 @@ def POP_FloorDivOp : POP_ArithmeticBinaryOp<"floordiv", [NoMemoryEffect,
 // MaxOp
 //===----------------------------------------------------------------------===//
 
-def POP_MaxOp : POPOp<"max", [Commutative, Pure, SameOperandsAndResultType]> {
+def POP_MaxOp : POPOp<"max", [Commutative, Pure, SameOperandsAndResultType,
+                UnifiedFolding, InterpreterOpInterface]> {
+  let hasFolder = 0;
   let summary = "max";
   let description = [{
     The `pop.max` operation takes two `!kgen.simd` values and returns their
@@ -404,14 +406,15 @@ def POP_MaxOp : POPOp<"max", [Commutative, Pure, SameOperandsAndResultType]> {
   let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // MinOp
 //===----------------------------------------------------------------------===//
 
-def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType]> {
+def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType,
+                UnifiedFolding, InterpreterOpInterface]> {
+  let hasFolder = 0;
   let summary = "min";
   let description = [{
     The `pop.min` operation takes two `!kgen.simd` values and returns their
@@ -432,7 +435,6 @@ def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType]> {
   let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

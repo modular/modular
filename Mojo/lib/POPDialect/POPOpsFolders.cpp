@@ -378,44 +378,45 @@ FoldValue FloorDivOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
   return foldSIMDFloorDiv(operands, target);
 }
 
-template <typename OpT>
-static bool hasEqualOperands(OpT op) {
-  return op->getLhs() == op->getRhs();
-}
+FoldValue MaxOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  std::optional<int64_t> indexBitWidth;
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
 
-OpFoldResult MaxOp::fold(FoldAdaptor adaptor) {
-  if (SIMDAttr const &res = foldSIMDOp(
-          adaptor.getOperands(),
+  if (SIMDAttr res = foldSIMDOp(
+          operands.getAttrs(), indexBitWidth,
           [](APSInt lhs, APSInt rhs) -> APSInt {
             return lhs > rhs ? lhs : rhs;
           },
           [](APFloat lhs, APFloat rhs) -> APFloat {
             return llvm::maxnum(lhs, rhs);
           },
-          [](bool lhs, bool rhs) -> bool { return lhs | rhs; })) {
-    return res;
-  }
-  if (hasEqualOperands(this)) {
-    return getLhs();
-  }
+          [](bool lhs, bool rhs) -> bool { return lhs | rhs; }))
+    return FoldValue(res);
+  // Fold `max(x, x) -> x`.
+  if (operands[0] == operands[1])
+    return operands[0];
   return {};
 }
 
-OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
-  if (SIMDAttr const &res = foldSIMDOp(
-          adaptor.getOperands(),
+FoldValue MinOp::unifiedFold(FoldValues operands, TargetInfoAttr target) {
+  std::optional<int64_t> indexBitWidth;
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
+
+  if (SIMDAttr res = foldSIMDOp(
+          operands.getAttrs(), indexBitWidth,
           [](APSInt lhs, APSInt rhs) -> APSInt {
             return lhs < rhs ? lhs : rhs;
           },
           [](APFloat lhs, APFloat rhs) -> APFloat {
             return llvm::minnum(lhs, rhs);
           },
-          [](bool lhs, bool rhs) -> bool { return lhs & rhs; })) {
-    return res;
-  }
-  if (hasEqualOperands(this)) {
-    return getLhs();
-  }
+          [](bool lhs, bool rhs) -> bool { return lhs & rhs; }))
+    return FoldValue(res);
+  // Fold `min(x, x) -> x`.
+  if (operands[0] == operands[1])
+    return operands[0];
   return {};
 }
 
