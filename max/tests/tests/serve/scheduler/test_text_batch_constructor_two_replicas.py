@@ -107,6 +107,7 @@ class _Connector(NullConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         lookup: KVLookup = (
             _AnsweredLookup(len(block_hashes))

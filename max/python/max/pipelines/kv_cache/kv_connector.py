@@ -338,6 +338,20 @@ class KVProbe(Protocol):
         """
         ...
 
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Returns each replica's co-located run per leaf.
+
+        The run is how many blocks, from the probe's first, the store on
+        the replica's own node held, apart from blocks a remote instance
+        adds past it. A leaf missing from a replica's mapping has no known
+        run. ``None`` when the connector has no such answer, which can be
+        the case even when :meth:`masks` answered, and the reverse.
+
+        Raises:
+            RuntimeError: If the connector has not answered yet.
+        """
+        ...
+
 
 class CompletedProbe:
     """An already-answered :class:`KVProbe`."""
@@ -354,6 +368,10 @@ class CompletedProbe:
     def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
         """Returns the answers the probe came back with, or ``None``."""
         return self._answers
+
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Returns ``None``, since an answer given in place has no runs."""
+        return None
 
 
 @runtime_checkable
@@ -499,6 +517,7 @@ class KVConnector(Protocol):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         """Starts a :meth:`lookup` and returns at once.
 
@@ -507,6 +526,12 @@ class KVConnector(Protocol):
         meanwhile, so a connector whose lookup is a round trip keeps it off
         the scheduler thread. A handle the manager does not load from goes
         back through :meth:`abandon_lookup`.
+
+        ``colocated_runs`` is, per leaf, how many of ``block_hashes`` from
+        the first the request's probe found on the store on this node, as
+        :meth:`KVProbe.colocated_runs` reports it. A connector that asks a
+        remote instance alongside that store can start the remote read past
+        it. It changes where the lookup asks, never what it answers.
 
         By default the lookup runs here and comes back already answered,
         which is right for a connector that answers from local memory.

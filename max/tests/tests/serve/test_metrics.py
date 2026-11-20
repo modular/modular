@@ -761,6 +761,10 @@ def test_dkv_overlapped_lookup_counters_are_counters() -> None:
         "max.dkv.own_runs_short_of_hint",
         "max.dkv.split_loads",
         "max.dkv.overlapped_peer_lookups",
+        "max.dkv.overlap_reads_moved_by_probe",
+        "max.dkv.overlap_blocks_moved_by_probe",
+        "max.dkv.own_runs_short_of_probe",
+        "max.dkv.own_run_blocks_short_of_probe",
         "max.dkv.hinted_lookups",
     ):
         assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name

@@ -156,8 +156,14 @@ class FakeProbe:
     or timed out on does.
     """
 
-    def __init__(self, answers: Sequence[Mapping[str, Sequence[bool]]]) -> None:
+    def __init__(
+        self,
+        answers: Sequence[Mapping[str, Sequence[bool]]],
+        runs: Sequence[Mapping[str, int]] | None = None,
+    ) -> None:
         self._answers: Sequence[Mapping[str, Sequence[bool]]] | None = answers
+        self._runs = runs
+        self.runs_error: Exception | None = None
         self.answered = False
         self.error: Exception | None = None
         self.polls = 0
@@ -173,11 +179,19 @@ class FakeProbe:
             raise RuntimeError("the probe has not answered yet")
         return self._answers
 
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        if not self.answered:
+            raise RuntimeError("the probe has not answered yet")
+        if self.runs_error is not None:
+            raise self.runs_error
+        return self._runs
+
     def answer(self) -> None:
         self.answered = True
 
     def give_up(self) -> None:
         self._answers = None
+        self._runs = None
         self.answered = True
 
 
@@ -190,7 +204,8 @@ class FakeConnector:
     connector holds rather than sending the manager back to ``lookup``, and
     ``probe_leaves`` narrows that answer to the leaves it names.
     ``deferred_probes`` makes ``start_probe`` hand back a :class:`FakeProbe`
-    over that same answer, which answers only when told to.
+    over that same answer, which answers only when told to, and reports
+    ``colocated`` as each leaf's co-located run.
     """
 
     name = "FakeConnector"
@@ -208,6 +223,7 @@ class FakeConnector:
         self.probe_answers = probe_answers
         self.deferred_probes = deferred_probes
         self.probe_leaves: Sequence[str] | None = None
+        self.colocated: Mapping[str, int] | None = None
         # Whether a probe answer may be loaded from, as the tiered
         # connector's, which is one lookup, may.
         self.probes_are_lookups = False
@@ -240,6 +256,7 @@ class FakeConnector:
         self.skips_held = skips_held
         self.lookups: list[tuple[list[bytes], int, bytes | None]] = []
         self.chain_starts: list[int | None] = []
+        self.lease_colocated_runs: list[Mapping[str, int] | None] = []
         # Only the calls to the blocking `lookup`, which a deferred alloc
         # must never make because it runs on the scheduler thread.
         self.blocking_lookups = 0
@@ -286,9 +303,11 @@ class FakeConnector:
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         self.lookups.append((list(block_hashes), replica_idx, hint))
         self.chain_starts.append(chain_start)
+        self.lease_colocated_runs.append(colocated_runs)
         masks = self._resident(block_hashes)
         if not self.deferred_lookups:
             return CompletedLookup(masks)
@@ -351,7 +370,12 @@ class FakeConnector:
     ) -> KVProbe | None:
         if not self.deferred_probes:
             return None
-        probe = FakeProbe(self._probe_answers(block_hashes, replica_idxs))
+        runs = (
+            None
+            if self.colocated is None
+            else [dict(self.colocated) for _ in replica_idxs]
+        )
+        probe = FakeProbe(self._probe_answers(block_hashes, replica_idxs), runs)
         self.started_probes.append(probe)
         return probe
 
@@ -2554,6 +2578,7 @@ def test_a_lookups_age_counts_the_time_its_start_took(
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         clock.now += 4.0
         return start_lookup(
@@ -2561,6 +2586,7 @@ def test_a_lookups_age_counts_the_time_its_start_took(
             replica_idx=replica_idx,
             hint=hint,
             chain_start=chain_start,
+            colocated_runs=colocated_runs,
         )
 
     monkeypatch.setattr(connector, "start_lookup", slow_start_lookup)
@@ -3590,6 +3616,165 @@ def test_a_probed_hit_still_leases() -> None:
     assert transfer.is_complete()
     assert connector.loaded_from == [lookup]
     assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+@pytest.mark.parametrize(
+    ("colocated", "expected"),
+    [
+        ({FULL: 5}, {FULL: 5}),
+        ({FULL: 99}, {FULL: 7}),
+        ({FULL: 5, "uncached": 5}, {FULL: 5}),
+    ],
+)
+def test_a_probed_co_located_run_reaches_the_lease(
+    colocated: Mapping[str, int], expected: Mapping[str, int]
+) -> None:
+    """The lease is handed the co-located run the probe found, per leaf.
+
+    The connector starts an overlapped peer read past it rather than past
+    what the request's hint credits the co-located store with. The run is
+    bounded by the blocks the lease asks for, and a leaf the manager does
+    not cache is left out.
+    """
+    connector = _probing_connector()
+    connector.colocated = colocated
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.chain_starts[-1] == 0
+    assert connector.lease_colocated_runs[-1] == expected
+
+
+def test_a_probe_whose_runs_fail_to_read_keeps_its_masks() -> None:
+    """The runs only move where the lease starts its peer read, so a handle
+    that raises reading them still prices from its masks, and the lease is
+    handed no run."""
+    connector = _probing_connector()
+    connector.colocated = {FULL: 5}
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.runs_error = RuntimeError("broken runs")
+    probe.answer()
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert hits[0].external_blocks > 0, "priced from the masks"
+    assert connector.lease_colocated_runs[-1] is None
+
+
+@pytest.mark.parametrize("run", [6, 4])
+def test_a_probed_co_located_run_is_read_from_where_the_device_hit_ends(
+    run: int,
+) -> None:
+    """The run counts from the probe's first block, the lease's from the
+    end of the device hit, so only the part past the hit reaches the lease,
+    and a run the device hit covers reaches it as no run at all.
+    """
+    connector = _probing_connector()
+    connector.colocated = {FULL: run}
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    device = make_ctx(tokens[:4])
+    manager.claim(device)
+    manager.alloc(device)
+    device.update(9)
+    manager.step(device)
+    manager.release(device)
+
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    hit = connector.chain_starts[-1]
+    assert hit == 4, "asked past a four-block device hit"
+    expected = {FULL: run - hit} if run > hit else None
+    assert connector.lease_colocated_runs[-1] == expected
+
+
+@pytest.mark.parametrize(
+    "case", ["unanswered", "stale", "no_runs", "given_up", "other_chain"]
+)
+def test_a_lease_without_a_usable_probed_run_gets_none(
+    case: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A probe that has not answered, is too old to trust, reports no run,
+    gave up, or was asked over another chain hands the lease no run, so the
+    connector starts its peer read where the hint does, as before.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    connector.colocated = None if case == "no_runs" else {FULL: 5}
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    if case == "given_up":
+        probe.give_up()
+    elif case != "unanswered":
+        probe.answer()
+    if case == "stale":
+        clock.now += jenga_block_manager._PROBED_RUN_AGE_S
+    if case == "other_chain":
+        manager._pending_probes[ctx.request_id].hashes = [b"other"] * len(
+            tokens
+        )
+
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.started, "the lease ran"
+    assert connector.lease_colocated_runs[-1] is None
+
+
+def test_a_probed_co_located_run_outlives_a_probed_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run past the age a probed miss is trusted for still reaches the
+    lease, since only eviction shrinks it, and a run that shrank is asked
+    again from where the co-located run ends."""
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    connector.colocated = {FULL: 5}
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    assert (
+        jenga_block_manager._PROBED_MISS_AGE_S
+        < jenga_block_manager._PROBED_RUN_AGE_S
+    )
+    clock.now += jenga_block_manager._PROBED_MISS_AGE_S
+
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.started, "the lease ran"
+    assert connector.lease_colocated_runs[-1] == {FULL: 5}
 
 
 def test_an_unanswered_probe_leaves_the_lease_to_decide() -> None:

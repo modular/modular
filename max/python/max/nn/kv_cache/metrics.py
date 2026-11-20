@@ -418,6 +418,22 @@ class KVCacheMetrics:
     dkv_overlapped_peer_lookups: int = 0
     """Peer lookups begun alongside the co-located lookup rather than after
     it, under ``MODULAR_DKV_OVERLAP_PEER_LOOKUPS``."""
+    dkv_overlap_reads_moved_by_probe: int = 0
+    """Hinted entries whose overlapped peer lookup started later, or not at
+    all, because the request's presence probe found a longer co-located run
+    than the hint credited the co-located dKV with."""
+    dkv_overlap_blocks_moved_by_probe: int = 0
+    """The blocks those entries' overlapped peer lookups no longer asked a
+    peer for."""
+    dkv_own_runs_short_of_probe: int = 0
+    """Entries whose co-located run ended before the longer run the request's
+    presence probe found, counting only a probed run longer than the hint's
+    credit. With ``MODULAR_DKV_OVERLAP_PEER_LOOKUPS`` each asks its peer in a
+    serial pass, so a rising rate means probed runs go stale before their
+    lease runs."""
+    dkv_own_run_blocks_short_of_probe: int = 0
+    """The blocks past the hint's credit those co-located runs fell short of
+    the probed run by."""
     dkv_peer_writeback_blocks: int = 0
     """Peer-filled blocks offloaded to write back to the co-located dKV once
     their onload landed, under ``MODULAR_DKV_OFFLOAD_PEER_LOADS``, counted per
@@ -758,6 +774,22 @@ class KVCacheMetrics:
             dkv_split_loads=self.dkv_split_loads + other.dkv_split_loads,
             dkv_overlapped_peer_lookups=self.dkv_overlapped_peer_lookups
             + other.dkv_overlapped_peer_lookups,
+            dkv_overlap_reads_moved_by_probe=(
+                self.dkv_overlap_reads_moved_by_probe
+                + other.dkv_overlap_reads_moved_by_probe
+            ),
+            dkv_overlap_blocks_moved_by_probe=(
+                self.dkv_overlap_blocks_moved_by_probe
+                + other.dkv_overlap_blocks_moved_by_probe
+            ),
+            dkv_own_runs_short_of_probe=(
+                self.dkv_own_runs_short_of_probe
+                + other.dkv_own_runs_short_of_probe
+            ),
+            dkv_own_run_blocks_short_of_probe=(
+                self.dkv_own_run_blocks_short_of_probe
+                + other.dkv_own_run_blocks_short_of_probe
+            ),
             dkv_peer_writeback_blocks=self.dkv_peer_writeback_blocks
             + other.dkv_peer_writeback_blocks,
             dkv_peer_writeback_blocks_evicted=(

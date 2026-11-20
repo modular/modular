@@ -93,11 +93,16 @@ class _DkvPresence(Protocol):
     ``masks`` is ``None`` when the server or a hinted peer predates presence,
     or when the query went unanswered because the server shed it or the
     co-located dKV timed out, answered not ready, or never received it.
+    ``colocated_runs`` is each group's leading run on the co-located dKV, or
+    ``None`` unless that dKV looked at every key. An extension that predates
+    it lacks the entry.
     """
 
     def is_complete(self) -> bool: ...
 
     def masks(self) -> Sequence[Sequence[bool]] | None: ...
+
+    def colocated_runs(self) -> Sequence[int] | None: ...
 
 
 class _DkvLoadTransfer(KVTransfer, Protocol):
@@ -147,6 +152,7 @@ class _DkvClient(Protocol):
         block_hashes: Sequence[int],
         hint: bytes | None = ...,
         chain_start: int | None = ...,
+        colocated_run: int | None = ...,
     ) -> _DkvLookup: ...
 
     def load_lookup(
@@ -278,8 +284,8 @@ def _group_recency(group_id: KVCacheGroupId) -> int:
     return _DKV_RECENCY_FULL_SEQUENCE
 
 
-def _takes_chain_start(client: object, entry: str) -> bool:
-    """Returns whether ``client``'s ``entry`` accepts ``chain_start``.
+def _takes_keyword(client: object, entry: str, keyword: str) -> bool:
+    """Returns whether ``client``'s ``entry`` accepts ``keyword``.
 
     An entry the client lacks, or one whose signature cannot be read, does
     not.
@@ -288,7 +294,7 @@ def _takes_chain_start(client: object, entry: str) -> bool:
     if method is None:
         return False
     try:
-        return "chain_start" in inspect.signature(method).parameters
+        return keyword in inspect.signature(method).parameters
     except (TypeError, ValueError):
         return False
 
@@ -1299,6 +1305,33 @@ class _DkvPendingProbe:
             resident if r in self._able else unknown for r in self._replica_idxs
         ]
 
+    def colocated_runs(self) -> list[Mapping[str, int]] | None:
+        """Returns each replica's co-located run per leaf, once answered.
+
+        Read apart from :meth:`masks`, so a call a peer left unanswered still
+        reports the run the co-located dKV found. A layout whose call reports
+        no run, or whose extension predates it, leaves its leaves out, and
+        ``None`` means no leaf has one.
+        """
+        if not self.is_complete():
+            raise RuntimeError("dkv presence has not answered on every layout")
+        runs: dict[str, int] = {}
+        for leaf_ids, handle in self._handles:
+            if not hasattr(handle, "colocated_runs"):
+                continue
+            answer = handle.colocated_runs()
+            if answer is None:
+                continue
+            if len(answer) != len(leaf_ids):
+                raise ValueError(
+                    f"dkv start_presence answered {len(answer)} co-located "
+                    f"runs for leaves {leaf_ids}"
+                )
+            runs.update(zip(leaf_ids, answer, strict=True))
+        if not runs:
+            return None
+        return [runs if r in self._able else {} for r in self._replica_idxs]
+
 
 class _DkvSyncLookup(CompletedLookup):
     """A lookup answered in place by an extension without the async entries.
@@ -1893,7 +1926,7 @@ class DKVConnector(KVConnector):
 
         An extension without the handle carried lookup and presence entries
         is driven through the blocking calls instead, and one whose lookups
-        predate ``chain_start`` is called without it.
+        predate ``chain_start`` or ``colocated_run`` is called without them.
         """
         self._async_lookup_replicas = [
             all(
@@ -1923,7 +1956,16 @@ class DKVConnector(KVConnector):
                 leaf_id: frozenset(
                     entry
                     for entry in _CHAIN_START_ENTRIES
-                    if _takes_chain_start(client, entry)
+                    if _takes_keyword(client, entry, "chain_start")
+                )
+                for leaf_id, client in clients.items()
+            }
+            for clients in self._clients
+        ]
+        self._colocated_run_clients = [
+            {
+                leaf_id: _takes_keyword(
+                    client, "start_prepare_load", "colocated_run"
                 )
                 for leaf_id, client in clients.items()
             }
@@ -1941,6 +1983,21 @@ class DKVConnector(KVConnector):
         if entry in self._chain_start_entries[replica_idx][leaf_id]:
             return {"chain_start": chain_start}
         return {}
+
+    def _colocated_run_kwargs(
+        self,
+        replica_idx: int,
+        leaf_id: str,
+        colocated_runs: Mapping[str, int] | None,
+    ) -> dict[str, int]:
+        """Returns ``leaf_id``'s run as ``start_prepare_load``'s keyword.
+
+        Empty when the leaf has no run or its client predates the keyword.
+        """
+        run = (colocated_runs or {}).get(leaf_id)
+        if run is None or not self._colocated_run_clients[replica_idx][leaf_id]:
+            return {}
+        return {"colocated_run": run}
 
     def lookup(
         self,
@@ -2363,6 +2420,7 @@ class DKVConnector(KVConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         """Starts one leased read per leaf and returns before any answers.
 
@@ -2371,7 +2429,9 @@ class DKVConnector(KVConnector):
         request's lookup never cancels another's. :meth:`load_lookup` reads
         out of the handle and :meth:`abandon_lookup` hands it back, and a
         handle the manager drops does the same on its own. ``hint`` and
-        ``chain_start`` go to the reads as in :meth:`lookup`.
+        ``chain_start`` go to the reads as in :meth:`lookup`. Each leaf's
+        ``colocated_runs`` entry goes to its read, which starts an overlapped
+        peer read past it.
 
         An extension without the async entries answers through the blocking
         :meth:`lookup` here instead. That lease lives in the prepared slot,
@@ -2406,6 +2466,9 @@ class DKVConnector(KVConnector):
                     hint=usable_hint,
                     **self._chain_start_kwargs(
                         replica_idx, leaf_id, "start_prepare_load", chain_start
+                    ),
+                    **self._colocated_run_kwargs(
+                        replica_idx, leaf_id, colocated_runs
                     ),
                 )
         except Exception:
@@ -2960,6 +3023,18 @@ class DKVConnector(KVConnector):
                     dkv_split_loads=m.get("split_loads", 0),
                     dkv_overlapped_peer_lookups=m.get(
                         "overlapped_peer_lookups", 0
+                    ),
+                    dkv_overlap_reads_moved_by_probe=m.get(
+                        "overlap_reads_moved_by_probe", 0
+                    ),
+                    dkv_overlap_blocks_moved_by_probe=m.get(
+                        "overlap_blocks_moved_by_probe", 0
+                    ),
+                    dkv_own_runs_short_of_probe=m.get(
+                        "own_runs_short_of_probe", 0
+                    ),
+                    dkv_own_run_blocks_short_of_probe=m.get(
+                        "own_run_blocks_short_of_probe", 0
                     ),
                     dkv_hinted_lookups=m.get("hinted_lookups", 0),
                     dkv_hinted_lookup_ms_total=m.get(

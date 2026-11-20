@@ -735,6 +735,22 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "max.dkv.overlapped_peer_lookups",
         description="dKV peer lookups begun alongside the co-located lookup rather than after it, at most one per round, under MODULAR_DKV_OVERLAP_PEER_LOOKUPS. Zero with the option off; read against max.dkv.hinted_lookups for how often it fires.",
     ),
+    "max.dkv.overlap_reads_moved_by_probe": _create_counter(
+        "max.dkv.overlap_reads_moved_by_probe",
+        description="Hinted dKV entries whose overlapped peer lookup started later, or not at all, because the request's presence probe found a longer co-located run than the cache hint credited the co-located dKV with. Zero with MODULAR_DKV_OVERLAP_PEER_LOOKUPS off; a high rate means the router cannot see what the co-located dKV holds.",
+    ),
+    "max.dkv.overlap_blocks_moved_by_probe": _create_counter(
+        "max.dkv.overlap_blocks_moved_by_probe",
+        description="The blocks those overlapped peer lookups no longer asked a peer for, counted with max.dkv.overlap_reads_moved_by_probe.",
+    ),
+    "max.dkv.own_runs_short_of_probe": _create_counter(
+        "max.dkv.own_runs_short_of_probe",
+        description="dKV entries whose co-located run ended before the longer run the request's presence probe found, counting only a probed run longer than the cache hint's credit. With MODULAR_DKV_OVERLAP_PEER_LOOKUPS each asks its peer in a serial pass; a rising rate means probed runs go stale before their lease runs. Read against max.dkv.overlap_reads_moved_by_probe.",
+    ),
+    "max.dkv.own_run_blocks_short_of_probe": _create_counter(
+        "max.dkv.own_run_blocks_short_of_probe",
+        description="The blocks past the cache hint's credit those co-located runs fell short of the probed run by, counted with max.dkv.own_runs_short_of_probe.",
+    ),
     # The peer-load write-back. Counters, since take_metrics clears them every
     # batch like the split loads above.
     "max.dkv.peer_writeback_blocks": _create_counter(
@@ -2759,6 +2775,42 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.overlapped_peer_lookups",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_overlap_reads_moved_by_probe(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.overlap_reads_moved_by_probe",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_overlap_blocks_moved_by_probe(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.overlap_blocks_moved_by_probe",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_own_runs_short_of_probe(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.own_runs_short_of_probe",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_own_run_blocks_short_of_probe(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.own_run_blocks_short_of_probe",
                 value,
                 self.extra_attributes,
             ),

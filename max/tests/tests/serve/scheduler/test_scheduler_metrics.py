@@ -2363,6 +2363,10 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_own_runs_short_of_hint.assert_not_called()
     mock_metrics.dkv_split_loads.assert_not_called()
     mock_metrics.dkv_overlapped_peer_lookups.assert_not_called()
+    mock_metrics.dkv_overlap_reads_moved_by_probe.assert_not_called()
+    mock_metrics.dkv_overlap_blocks_moved_by_probe.assert_not_called()
+    mock_metrics.dkv_own_runs_short_of_probe.assert_not_called()
+    mock_metrics.dkv_own_run_blocks_short_of_probe.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks_evicted.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks_dropped.assert_not_called()
@@ -2469,6 +2473,10 @@ def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
         dkv_own_runs_short_of_hint=2,
         dkv_split_loads=3,
         dkv_overlapped_peer_lookups=4,
+        dkv_overlap_reads_moved_by_probe=6,
+        dkv_overlap_blocks_moved_by_probe=8,
+        dkv_own_runs_short_of_probe=7,
+        dkv_own_run_blocks_short_of_probe=9,
         dkv_hinted_lookups=5,
         dkv_hinted_lookup_ms_total=12.5,
     )
@@ -2489,12 +2497,20 @@ def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
     mock_metrics.dkv_own_runs_short_of_hint.assert_called_once_with(2)
     mock_metrics.dkv_split_loads.assert_called_once_with(3)
     mock_metrics.dkv_overlapped_peer_lookups.assert_called_once_with(4)
+    mock_metrics.dkv_overlap_reads_moved_by_probe.assert_called_once_with(6)
+    mock_metrics.dkv_overlap_blocks_moved_by_probe.assert_called_once_with(8)
+    mock_metrics.dkv_own_runs_short_of_probe.assert_called_once_with(7)
+    mock_metrics.dkv_own_run_blocks_short_of_probe.assert_called_once_with(9)
     mock_metrics.dkv_hinted_lookups.assert_called_once_with(5)
     mock_metrics.dkv_hinted_lookup_latency.assert_called_once_with(2.5)
     extra = metrics.to_log_extra()
     assert extra["dkv_own_runs_short_of_hint"] == 2
     assert extra["dkv_split_loads"] == 3
     assert extra["dkv_overlapped_peer_lookups"] == 4
+    assert extra["dkv_overlap_reads_moved_by_probe"] == 6
+    assert extra["dkv_overlap_blocks_moved_by_probe"] == 8
+    assert extra["dkv_own_runs_short_of_probe"] == 7
+    assert extra["dkv_own_run_blocks_short_of_probe"] == 9
     assert extra["dkv_hinted_lookups"] == 5
     assert extra["dkv_hinted_lookup_avg_ms"] == 2.5
 
