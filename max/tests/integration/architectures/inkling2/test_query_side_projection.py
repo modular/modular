@@ -29,6 +29,8 @@ HEADS = 8
 HEAD_DIM = 4
 D_REL = 2
 WIDTH = 2 * HEAD_DIM + D_REL + 1
+# Each head's rows round up to a multiple of 8, zero-filled.
+PADDED_WIDTH = 16
 TOKENS = 3
 # The deployed degree: every rank's block has one shape, so it compiles once.
 TP_DEGREES = [4]
@@ -71,8 +73,9 @@ def _head_major(weights: Weights, heads: int) -> NDArray[np.float32]:
         weights["wr_du"].reshape(heads, D_REL, HIDDEN),
         weights["gate_attn"].reshape(heads, HEAD_DIM, HIDDEN),
         weights["attn_sink_proj"].reshape(heads, 1, HIDDEN),
+        np.zeros((heads, PADDED_WIDTH - WIDTH, HIDDEN), np.float32),
     ]
-    return np.concatenate(parts, axis=1).reshape(heads * WIDTH, HIDDEN)
+    return np.concatenate(parts, axis=1).reshape(heads * PADDED_WIDTH, HIDDEN)
 
 
 def test_projection_names_stay_native() -> None:
@@ -92,6 +95,61 @@ def test_fused_weight_is_head_major() -> None:
     proj = _build(weights, HEADS)
     np.testing.assert_array_equal(
         proj.fused_weight.to_numpy(), _head_major(weights, HEADS)
+    )
+
+
+def test_inkling2_heads_pad_to_aligned_rows() -> None:
+    """Inkling 2's 273 rows per head pad to 280, so 12 heads per rank align."""
+    proj = _QuerySideProjection(
+        hidden=HIDDEN, num_heads=12, head_dim=128, d_rel=16
+    )
+    assert proj.width == 273
+    assert proj.padded_width == 280
+    # A rank's bf16 output row is 16-byte aligned, as the SM100 matmul needs.
+    assert proj.num_heads * proj.padded_width * 2 % 16 == 0
+
+
+def test_an_aligned_width_takes_no_padding() -> None:
+    """A width already a multiple of 8 projects with no pad segment."""
+    rng = np.random.default_rng(3)
+    d_rel = 7  # 2 * 4 + 7 + 1 = 16 rows per head
+    with default_dtype(DType.float32):
+        proj = _QuerySideProjection(
+            hidden=HIDDEN, num_heads=HEADS, head_dim=HEAD_DIM, d_rel=d_rel
+        )
+    weights = {
+        "wq_du": rng.standard_normal((HEADS * HEAD_DIM, HIDDEN)),
+        "wr_du": rng.standard_normal((HEADS * d_rel, HIDDEN)),
+        "gate_attn": rng.standard_normal((HEADS * HEAD_DIM, HIDDEN)),
+        "attn_sink_proj": rng.standard_normal((HEADS, HIDDEN)),
+    }
+    for name, weight in weights.items():
+        getattr(proj, name).weight = Tensor(
+            weight.astype(np.float32), device=CPU()
+        )
+    assert proj.padded_width == proj.width == 16
+    x = rng.standard_normal((TOKENS, HIDDEN)).astype(np.float32)
+    q, r, gate, sink = proj(Tensor(x, device=CPU()))
+    np.testing.assert_allclose(
+        q.to_numpy().reshape(TOKENS, -1),
+        x @ weights["wq_du"].T,
+        rtol=1e-5,
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        r.to_numpy().reshape(TOKENS, -1),
+        x @ weights["wr_du"].T,
+        rtol=1e-5,
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        gate.to_numpy().reshape(TOKENS, -1),
+        x @ weights["gate_attn"].T,
+        rtol=1e-5,
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        sink.to_numpy(), x @ weights["attn_sink_proj"].T, rtol=1e-5, atol=1e-5
     )
 
 
@@ -142,7 +200,7 @@ def test_rank_rows_are_that_ranks_own_projection_shards(
     weights = _random_weights(np.random.default_rng(2))
     fused = _head_major(weights, HEADS)
     heads_per_rank = HEADS // num_devices
-    rows_per_rank = heads_per_rank * WIDTH
+    rows_per_rank = heads_per_rank * PADDED_WIDTH
 
     for rank in range(num_devices):
         first_head = rank * heads_per_rank

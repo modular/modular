@@ -27,6 +27,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.linear import Linear
+from max.support.math import ceildiv
 from max.tensor import Tensor
 
 from ..model_config import Inkling2TextConfig
@@ -55,6 +56,10 @@ class _RelLogitsProj(Module[[], None]):
         self.proj = Tensor.zeros([d_rel, extent])
 
 
+_ROW_ALIGN = 8
+"""Rows per head in the fused weight round up to this, for 16-byte bf16 rows."""
+
+
 class _QuerySideProjection(
     TransparentModule[[Tensor], tuple[Tensor, Tensor, Tensor, Tensor]]
 ):
@@ -63,11 +68,16 @@ class _QuerySideProjection(
     At decode each projection is a weight-bound GEMV, so one launch over their
     row interleaved weight replaces four. The rows are head-major, placing
     each head's q block, r block, gate block and sink row together, so the
-    output reshapes to ``[tokens, heads, q | r | gate | sink]`` and splits on
+    output reshapes to ``[tokens, heads, q | r | gate | sink | pad]`` and splits on
     the last axis. That keeps the split off the head axis, where the
     column-parallel weights shard: each rank's rows are its own heads' four
     blocks, where a plain ``[q; r; gate; sink]`` row concat would hand a rank
     a slice of every projection instead.
+
+    Each head's rows are padded with zeros to a multiple of 8, so a rank's
+    output row stays 16-byte aligned for the SM100 matmul. Unpadded, 12 heads
+    of 273 rows is 3276 columns, which the dispatcher hands to cuBLAS's sm80
+    kernel at several times the cost.
 
     Name-transparent, so the checkpoint's four names still load. The weights
     are dense bf16; a quantized projection would have to interleave its scale
@@ -87,6 +97,7 @@ class _QuerySideProjection(
         self.d_rel = d_rel
         self.hidden = hidden
         self.width = 2 * head_dim + d_rel + 1
+        self.padded_width = ceildiv(self.width, _ROW_ALIGN) * _ROW_ALIGN
         self.wq_du = col_parallel(
             Linear(hidden, num_heads * head_dim, bias=False)
         )
@@ -100,7 +111,7 @@ class _QuerySideProjection(
 
     @property
     def fused_weight(self) -> Tensor:
-        """The interleaved ``[heads * width, hidden]`` weight, one GEMM."""
+        """The interleaved ``[heads * padded_width, hidden]`` weight, one GEMM."""
         parts = [
             self.wq_du.weight.reshape(
                 [self.num_heads, self.head_dim, self.hidden]
@@ -115,18 +126,27 @@ class _QuerySideProjection(
                 [self.num_heads, 1, self.hidden]
             ),
         ]
+        pad = self.padded_width - self.width
+        if pad:
+            parts.append(
+                F.zeros_like(
+                    F.broadcast_to(parts[3], [self.num_heads, pad, self.hidden])
+                )
+            )
         return F.concat(parts, axis=1).reshape(
-            [self.num_heads * self.width, self.hidden]
+            [self.num_heads * self.padded_width, self.hidden]
         )
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Projects ``x`` to per-head q, r, gate and sink with one matmul."""
         per_head = (x @ self.fused_weight.T).reshape(
-            [-1, self.num_heads, self.width]
+            [-1, self.num_heads, self.padded_width]
         )
-        q, r, gate, sink = per_head.split(
-            [self.head_dim, self.d_rel, self.head_dim, 1], axis=-1
-        )
+        sizes = [self.head_dim, self.d_rel, self.head_dim, 1]
+        pad = self.padded_width - self.width
+        if pad:
+            sizes.append(pad)
+        q, r, gate, sink = per_head.split(sizes, axis=-1)[:4]
         return q, r, gate, sink.reshape([-1, self.num_heads])
 
 
