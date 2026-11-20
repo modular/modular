@@ -20,12 +20,15 @@ the address: the TMEM map fixes lane, warp and value bits, and nothing free
 may reach the two lane bits the warp picks. The register side is `cols`
 registers in each of the warp's 32 threads.
 
-Neither atom waits. Their completions are counters: `TMemLoadWait` is
-`tcgen05.wait::ld` and `TMemStoreWait` is `tcgen05.wait::st`, each of which
-waits for all of this thread's outstanding loads or stores. As with
-`TMemEngine.copy_to_async` and `copy_from_async`, the register operand must
-be a register tile, a loaded fragment is valid only after the load wait, and
-a stored fragment must not change before the store wait.
+Neither atom waits, and neither completion holds a wait. Their completions
+are counters: `TMemLoadWait` describes the `tcgen05.ld` family and
+`TMemStoreWait` the `tcgen05.st` family, and the building block waits on
+each with `layout.building_blocks.wait_issues`, which emits
+`tcgen05.wait::ld` or `tcgen05.wait::st` for all of this thread's
+outstanding loads or stores. As with `TMemEngine.copy_to_async` and
+`copy_from_async`, the register operand must be a register tile, a loaded
+fragment is valid only after the load wait, and a stored fragment must not
+change before the store wait.
 
 You can import these APIs from the `layout.atoms.tmem` module:
 
@@ -42,6 +45,7 @@ from layout.atoms import (
     TMEM_COLUMN,
     TMEM_LANE,
     AddressEncoding,
+    CompletionFamily,
     CounterCompletion,
     LoadAtom,
     OperandMap,
@@ -84,43 +88,27 @@ def tmem_32x32b_map(cols: Int) -> OperandMap:
 
 
 struct TMemLoadWait(CounterCompletion):
-    """`tcgen05.wait::ld`: waits for all of this thread's TMEM loads."""
+    """The completion of `tcgen05.ld`: a counter of this thread's TMEM
+    loads, which `tcgen05.wait::ld` drains."""
 
     comptime Result = NoneType
     """Nothing: a `tcgen05.ld` returns no handle."""
+    comptime family = CompletionFamily.tensor_memory_load
+    """Every `TMemLoad`, whatever its width."""
     comptime max_pending = 0
     """None: the wait covers every outstanding load."""
 
-    @staticmethod
-    @always_inline
-    def wait[pending: Int = 0]():
-        """Blocks until this thread's TMEM loads are done.
-
-        Parameters:
-            pending: Must be 0; the instruction waits for all of them.
-        """
-        comptime assert pending == 0, "tcgen05.wait::ld waits for all loads"
-        TMemEngine.wait_load()
-
 
 struct TMemStoreWait(CounterCompletion):
-    """`tcgen05.wait::st`: waits for all of this thread's TMEM stores."""
+    """The completion of `tcgen05.st`: a counter of this thread's TMEM
+    stores, which `tcgen05.wait::st` drains."""
 
     comptime Result = NoneType
     """Nothing: a `tcgen05.st` returns no handle."""
+    comptime family = CompletionFamily.tensor_memory_store
+    """Every `TMemStore`, whatever its width."""
     comptime max_pending = 0
     """None: the wait covers every outstanding store."""
-
-    @staticmethod
-    @always_inline
-    def wait[pending: Int = 0]():
-        """Blocks until this thread's TMEM stores are done.
-
-        Parameters:
-            pending: Must be 0; the instruction waits for all of them.
-        """
-        comptime assert pending == 0, "tcgen05.wait::st waits for all stores"
-        TMemEngine.wait_store()
 
 
 @fieldwise_init
@@ -160,7 +148,8 @@ struct TMemLoad[dt: DType, cols: Int](LoadAtom):
         dst: MutTileTensor[T, LR, Engine=ER, ...],
         src: ImmTileTensor[T, LM, Engine=EM, ...],
     ):
-        """Issues the load without waiting for it; `TMemLoadWait` waits.
+        """Issues the load without waiting for it; the building block waits
+        on `TMemLoadWait`.
 
         Parameters:
             T: The operands' element type.
@@ -235,7 +224,8 @@ struct TMemStore[dt: DType, cols: Int](StoreAtom):
         dst: MutTileTensor[T, LM, Engine=EM, ...],
         src: ImmTileTensor[T, LR, Engine=ER, ...],
     ):
-        """Issues the store without waiting for it; `TMemStoreWait` waits.
+        """Issues the store without waiting for it; the building block waits
+        on `TMemStoreWait`.
 
         Parameters:
             T: The operands' element type.
