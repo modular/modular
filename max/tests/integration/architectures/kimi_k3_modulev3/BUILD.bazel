@@ -152,6 +152,25 @@ modular_py_test(
     ],
 )
 
+# Compiles the preprocessing graph on CPU: its alpha lookup tables can each
+# be right while their composition diverges from host processing.
+modular_py_test(
+    name = "preprocess_graph_tests_cpu",
+    srcs = ["test_preprocess_graph.py"],
+    deps = [
+        requirement("numpy"),
+        requirement("pillow"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:vision_preprocess_parity",
+    ],
+)
+
 modular_py_test(
     name = "resolution_tests_cpu",
     srcs = ["test_resolution.py"],
