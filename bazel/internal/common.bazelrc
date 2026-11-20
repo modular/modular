@@ -285,7 +285,13 @@ build --per_file_copt=external/grpc.*/src/python/grpcio/grpc/_cython/cygrpc.cpp@
 build --aspects=//bazel/pip:mypy.bzl%mypy_aspect
 build --output_groups=+mypy
 
-build:disable-mypy --output_groups=-mypy
+# Turn off mypy, for example on platforms the pip lock file doesn't cover.
+# Uses `common` so that every command (query, version, ...) accepts it.
+common:disable-mypy --output_groups=-mypy
+common:disable-mypy --//bazel/pip:enable_mypy=false
+# mypy runs as a build tool, and tools are built in a separate configuration,
+# so the flag has to be passed along to that configuration too.
+common:disable-mypy --experimental_propagate_custom_flag=//bazel/pip:enable_mypy
 
 build:disable-lint --config=disable-mypy
 
