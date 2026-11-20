@@ -532,6 +532,10 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
     errors are raised. Works with `Error` and any custom `Writable` error type.
     For instance:
 
+
+    Parameters:
+        T: The type of Error passed. Defaults to String.
+
     ```mojo
     from std.testing import assert_raises
 
