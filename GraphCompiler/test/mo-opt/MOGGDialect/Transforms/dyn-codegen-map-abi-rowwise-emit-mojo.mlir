@@ -11,6 +11,7 @@
 // CHECK-NEXT:  @__allow_legacy_any_origin_fields
 // CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    comptime {{.*}} = algorithm.rowwise_types.Context[params].element_alignment[{{.*}}, w]()
 // CHECK-NEXT:    return tile
 // CHECK:       def {{write_+[0-9]+}}(oc: {{.*}}) {var}:
 // CHECK-NEXT:    var [[B:.*]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = params.emit_tile_width{{.*}}(oc)

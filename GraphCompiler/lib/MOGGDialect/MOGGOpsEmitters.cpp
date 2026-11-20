@@ -1607,12 +1607,18 @@ static LogicalResult bindRowValues(EmitMojoState &state, Region &region,
 }
 
 // Lowers the body of `phase` inside a phase lambda of width `width`, at the
-// element index `idx`, reading the row's tile as `tile`.
+// element index `idx`, reading the row's tile as `tile`. Its loads use the
+// Row's alignment:
+//
+//   comptime al = Context[params].element_alignment[dtype, w]()
 static LogicalResult lowerPhaseBody(EmitMojoState &state,
                                     RowwisePhaseOpInterface phase,
                                     const MojoValue &width,
-                                    const MojoValue &alignment,
                                     const MojoValue &tile) {
+  const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+  MojoValue alignment =
+      state.file->comptime(kStructRowwiseContext[info.params].get(
+          kParameterElementAlignment)[{info.dtype, width}]({}));
   auto parametersScope =
       state.enterRegion<ElementwiseLambdaRegion>(width, alignment);
   state.setMojoValueFor(phase.getIndexArg(), "idx");
@@ -1879,6 +1885,7 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 //
 //   @inline(.always)
 //   def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:     (1)
+//     comptime al = Context[params].element_alignment[dtype, w]()
 //     <fold body, reading `tile`>
 //   var acc = row.reduce[Monoid[..., W = params.simd_width]](           (2)
 //       contribute, load)
@@ -1904,9 +1911,9 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
       MojoBuilder::LambdaInline::kAlways, false, false, "var",
       [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
-        if (failed(lowerPhaseBody(state, *this,
-                                  functionBody.parameter(kParameterTileWidth),
-                                  1, functionBody.arguments[0].resolvedName))) {
+        MojoValue width = functionBody.parameter(kParameterTileWidth);
+        if (failed(lowerPhaseBody(state, *this, width,
+                                  functionBody.arguments[0].resolvedName))) {
           failedToLower = true;
           return;
         }
@@ -1954,13 +1961,8 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
       false, "var", [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
         MojoValue width = functionBody.parameter(kParameterTileWidth);
-        // comptime al = Context[params].element_alignment[dtype, w]()
-        MojoValue alignment =
-            state.file->comptime(kStructRowwiseContext[info.params].get(
-                kParameterElementAlignment)[{info.dtype, width}]({}));
-        failedToLower =
-            failed(lowerPhaseBody(state, *this, width, alignment,
-                                  functionBody.arguments[0].resolvedName));
+        failedToLower = failed(lowerPhaseBody(
+            state, *this, width, functionBody.arguments[0].resolvedName));
       });
   if (failedToLower)
     return failure();
@@ -1997,11 +1999,7 @@ LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
       [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
         MojoValue width = functionBody.parameter(kParameterTileWidth);
-        // comptime al = Context[params].element_alignment[dtype, w]()
-        MojoValue alignment =
-            state.file->comptime(kStructRowwiseContext[info.params].get(
-                kParameterElementAlignment)[{info.dtype, width}]({}));
-        if (failed(lowerPhaseBody(state, *this, width, alignment,
+        if (failed(lowerPhaseBody(state, *this, width,
                                   functionBody.arguments[0].resolvedName))) {
           failedToLower = true;
           return;

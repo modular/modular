@@ -9,6 +9,7 @@
 // CHECK-NEXT:  @__allow_legacy_any_origin_fields
 // CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.bfloat16, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    comptime {{.*}} = algorithm.rowwise_types.Context[params].element_alignment[{{.*}}, w]()
 // CHECK-NEXT:    var [[A:.*]] = builtin_kernels.elementwise.Cast.elementwise[out_dtype = DType.float32](tile)
 // CHECK-NEXT:    var [[SQ:.*]] = builtin_kernels.elementwise.Mul.elementwise[dtype = DType.float32]([[A]], [[A]])
 // CHECK-NEXT:    return [[SQ]]

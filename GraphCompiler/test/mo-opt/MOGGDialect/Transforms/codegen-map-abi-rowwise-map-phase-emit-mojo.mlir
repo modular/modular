@@ -129,6 +129,7 @@ mo.graph @scaleByRow(%x: !mo.tensor<[8, 128], f32>, %s: !mo.tensor<[8, 1], f32>)
 // CHECK-NEXT:  @__allow_legacy_any_origin_fields
 // CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    comptime {{.*}} = algorithm.rowwise_types.Context[params].element_alignment[{{.*}}, w]()
 // CHECK-NEXT:    var [[D6:.*]] = builtin_kernels.elementwise.Sub.elementwise[dtype = DType.float32](tile, [[MAX6]].acc.slice[w]())
 // CHECK-NEXT:    var [[E6:.*]] = builtin_kernels.elementwise.Exp.elementwise[dtype = DType.float32]([[D6]])
 // CHECK-NEXT:    return [[E6]]

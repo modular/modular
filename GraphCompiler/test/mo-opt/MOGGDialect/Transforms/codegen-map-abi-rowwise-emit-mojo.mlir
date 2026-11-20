@@ -21,6 +21,7 @@
 // CHECK-NEXT:    @__allow_legacy_any_origin_fields
 // CHECK-NEXT:    @inline(.always)
 // CHECK-NEXT:    def [[ADD:contribute_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], idx: std.utils.coord.DynamicCoord[DType.int, [[RANK]]]) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:      comptime {{.*}} = algorithm.rowwise_types.Context[params].element_alignment[{{.*}}, w]()
 // CHECK-NEXT:      return tile
 // CHECK:         var [[ACC:.*]] = [[ROW]].reduce[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = params.simd_width]]([[ADD]], [[LOAD]])
 // CHECK-NEXT:    @__allow_legacy_any_origin_fields
@@ -39,6 +40,7 @@ mo.graph @sum(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
 // CHECK-LABEL: def __cast_reduce_add(
 // CHECK:       algorithm.rowwise.Row[params, DType.float32, DType.bfloat16, 1,
 // CHECK:       def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.bfloat16, w], idx: {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    comptime {{.*}} = algorithm.rowwise_types.Context[params].element_alignment[{{.*}}, w]()
 // CHECK-NEXT:    {{.*}}Cast{{.*}}tile
 // CHECK:       {{.*}}._rowwise[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = 1], DType.bfloat16, DType.float32,
 mo.graph @bf16Sum(%x: !mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 1], f32> {
@@ -55,6 +57,7 @@ mo.graph @bf16Sum(%x: !mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 1], f32> {
 // CHECK-NEXT:    var [[M:.*]] = builtin_kernels.elementwise.Mul.elementwise[dtype = DType.float32]([[V]], SIMD[DType.float32, width](2.0))
 // CHECK-NEXT:    return [[M]]
 // CHECK:       def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    comptime {{.*}} = algorithm.rowwise_types.Context[params].element_alignment[{{.*}}, w]()
 // CHECK-NEXT:    return tile
 mo.graph @scaledSum(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %c = mo.constant <#M.dense_array<2.0> : tensor<f32>> : !mo.tensor<[], f32>
@@ -62,4 +65,17 @@ mo.graph @scaledSum(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %m = mo.mul(%x, %cb) : !mo.tensor<[8, 128], f32>
   %r = mo.reduce.add(%m) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
   mo.output %r : !mo.tensor<[8, 1], f32>
+}
+
+// A fold that reads another tensor (the weight, in the max over a normalized
+// row) loads it at the Row's alignment, as a map phase does.
+// CHECK-LABEL: def __static_broadcast_to_add_{{[0-9a-f]+}}(
+// CHECK:       def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    comptime [[AL:.*]] = algorithm.rowwise_types.Context[params].element_alignment[DType.float32, w]()
+// CHECK:         managed_tensor_slice.simd_load_from_tensor_pointer[static_spec = {{.*}}, simd_width = w, element_alignment = [[AL]]]
+// CHECK:       .reduce[builtin_kernels.monoids.ReduceMax
+mo.graph @normMax(%x: !mo.tensor<[8, 128], f32>, %w: !mo.tensor<[128], f32>) -> !mo.tensor<[8, 1], f32> {
+  %n = mo.composite.reduce.rms_norm(%x, %w) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[8, 128], f32>, !mo.tensor<[128], f32>) -> !mo.tensor<[8, 128], f32>
+  %m = mo.reduce.max(%n) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
+  mo.output %m : !mo.tensor<[8, 1], f32>
 }
