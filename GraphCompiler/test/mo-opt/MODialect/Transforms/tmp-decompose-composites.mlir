@@ -168,3 +168,80 @@ mo.graph @softmaxImplemented(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 12
   %y = mo.composite.reduce.softmax(%x) [axis = 1] : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32>
   mo.output %y : !mo.tensor<[8, 128], f32>
 }
+
+// -----
+
+// rms_norm followed by a per-token quantize becomes the ops they are made of,
+// as the hand-written fused kernel computes them: the normalized row stays in
+// f32 into the quantize, which takes the row's max-abs, a scale in the scales
+// dtype, a reciprocal that is zero where it isn't finite, and a clamp before
+// the cast. A host constant `scale_ub` is built again on the device.
+// CHECK-LABEL: mo.graph @rmsNormQuantize
+// CHECK-NOT:     mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8
+// CHECK:         %[[XA:.*]] = mo.cast(%arg0) : (!mo.tensor<[8, 128], bf16, gpu:0>) -> !mo.tensor<[8, 128], f32, gpu:0>
+// CHECK:         mo.rsqrt
+// CHECK:         %[[NORMED:.*]] = mo.mul(%{{.*}}, %{{.*}}) : !mo.tensor<[8, 128], f32, gpu:0>
+// CHECK:         %[[W:.*]] = mo.cast(%arg1) : (!mo.tensor<[128], bf16, gpu:0>) -> !mo.tensor<[128], f32, gpu:0>
+// CHECK:         %[[GB:.*]] = mo.static.broadcast_to(%{{.*}}) : !mo.tensor<[128], f32, gpu:0> -> !mo.tensor<[8, 128], f32, gpu:0>
+// CHECK:         %[[N:.*]] = mo.mul(%[[NORMED]], %[[GB]]) : !mo.tensor<[8, 128], f32, gpu:0>
+// CHECK-NOT:     mo.cast(%[[N]])
+// CHECK:         %[[ABS:.*]] = mo.abs(%[[N]])
+// CHECK:         %[[MAX:.*]] = mo.reduce.max(%[[ABS]]) : (!mo.tensor<[8, 128], f32, gpu:0>) -> !mo.tensor<[8, 1], f32, gpu:0>
+// CHECK:         %[[UB:.*]] = mo.constant <#M.dense_array<1.200000e+03> : tensor<f32>> : !mo.tensor<[], f32, gpu:0>
+// CHECK:         %[[UB16:.*]] = mo.cast(%[[UB]]) : (!mo.tensor<[], f32, gpu:0>) -> !mo.tensor<[], bf16, gpu:0>
+// CHECK:         %[[MAX16:.*]] = mo.cast(%[[MAX]]) : (!mo.tensor<[8, 1], f32, gpu:0>) -> !mo.tensor<[8, 1], bf16, gpu:0>
+// CHECK:         %[[UBB:.*]] = mo.static.broadcast_to(%[[UB16]])
+// CHECK:         %[[CAPPED:.*]] = mo.min(%[[MAX16]], %[[UBB]]) : !mo.tensor<[8, 1], bf16, gpu:0>
+// CHECK:         %[[FP8MAX:.*]] = mo.constant <#M.dense_array<4.480000e+02> : {{.*}}> : !mo.tensor<[], f32, gpu:0>
+// CHECK:         %[[FP8MAX16:.*]] = mo.cast(%[[FP8MAX]])
+// CHECK:         %[[FP8MAXB:.*]] = mo.static.broadcast_to(%[[FP8MAX16]])
+// CHECK:         %[[SCALE:.*]] = mo.div(%[[CAPPED]], %[[FP8MAXB]]) : !mo.tensor<[8, 1], bf16, gpu:0>
+// CHECK:         %[[SCALEA:.*]] = mo.cast(%[[SCALE]]) : (!mo.tensor<[8, 1], bf16, gpu:0>) -> !mo.tensor<[8, 1], f32, gpu:0>
+// CHECK:         %[[INV:.*]] = mo.div(%{{.*}}, %[[SCALEA]]) : !mo.tensor<[8, 1], f32, gpu:0>
+// CHECK:         %[[INF:.*]] = mo.is_inf(%[[INV]])
+// CHECK:         %[[NAN:.*]] = mo.is_nan(%[[INV]])
+// CHECK:         %[[BAD:.*]] = mo.or(%[[INF]], %[[NAN]])
+// CHECK:         %[[SAFE:.*]] = mo.select(%[[BAD]], %{{.*}}, %[[INV]])
+// CHECK:         %[[SAFEB:.*]] = mo.static.broadcast_to(%[[SAFE]]) : !mo.tensor<[8, 1], f32, gpu:0> -> !mo.tensor<[8, 128], f32, gpu:0>
+// CHECK:         %[[SCALED:.*]] = mo.mul(%[[N]], %[[SAFEB]])
+// CHECK:         %[[LO:.*]] = mo.max(%[[SCALED]], %{{.*}}) : !mo.tensor<[8, 128], f32, gpu:0>
+// CHECK:         %[[HI:.*]] = mo.min(%[[LO]], %{{.*}}) : !mo.tensor<[8, 128], f32, gpu:0>
+// CHECK:         %[[Q:.*]] = mo.cast(%[[HI]]) : (!mo.tensor<[8, 128], f32, gpu:0>) -> !mo.tensor<[8, 128], f8e4m3fn, gpu:0>
+// CHECK:         %[[SCALES:.*]] = mo.static.reshape(%[[SCALE]]) : !mo.tensor<[8, 1], bf16, gpu:0> -> !mo.tensor<[1, 8], bf16, gpu:0>
+// CHECK:         mo.output %[[Q]], %[[SCALES]]
+mo.graph @rmsNormQuantize(%x: !mo.tensor<[8, 128], bf16, gpu:0>, %w: !mo.tensor<[128], bf16, gpu:0>) -> (!mo.tensor<[8, 128], f8e4m3fn, gpu:0>, !mo.tensor<[1, 8], bf16, gpu:0>) {
+  %ub = mo.constant <#M.dense_array<1.200000e+03> : tensor<f32>> : !mo.tensor<[], f32, cpu:0>
+  %q:2 = mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8(%x, %w, %ub) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>} : (!mo.tensor<[8, 128], bf16, gpu:0>, !mo.tensor<[128], bf16, gpu:0>, !mo.tensor<[], f32, cpu:0>) -> (!mo.tensor<[8, 128], f8e4m3fn, gpu:0>, !mo.tensor<[1, 8], bf16, gpu:0>)
+  mo.output %q#0, %q#1 : !mo.tensor<[8, 128], f8e4m3fn, gpu:0>, !mo.tensor<[1, 8], bf16, gpu:0>
+}
+
+// -----
+
+// The scale divides by the output dtype's largest value, f32 scales need no
+// cast, and a `scale_ub` computed on the host is copied over.
+// CHECK-LABEL: mo.graph @rmsNormQuantizeFnuz
+// CHECK:         %[[MAX:.*]] = mo.reduce.max
+// CHECK:         %[[UB:.*]], %{{.*}} = mo.transfer[%{{.*}}] %arg2 : !mo.tensor<[], f32> to <"gpu", 0>
+// CHECK:         %[[UBB:.*]] = mo.static.broadcast_to(%[[UB]])
+// CHECK:         mo.min(%[[MAX]], %[[UBB]]) : !mo.tensor<[8, 1], f32, gpu:0>
+// CHECK:         mo.constant <#M.dense_array<2.400000e+02> : {{.*}}> : !mo.tensor<[], f32, gpu:0>
+// CHECK:         mo.cast(%{{.*}}) : (!mo.tensor<[8, 128], f32, gpu:0>) -> !mo.tensor<[8, 128], f8e4m3fnuz, gpu:0>
+// CHECK:         mo.static.reshape(%{{.*}}) : !mo.tensor<[8, 1], f32, gpu:0> -> !mo.tensor<[1, 8], f32, gpu:0>
+mo.graph @rmsNormQuantizeFnuz(%x: !mo.tensor<[8, 128], bf16, gpu:0>, %w: !mo.tensor<[128], bf16, gpu:0>, %ub: !mo.tensor<[], f32, cpu:0>) -> (!mo.tensor<[8, 128], f8e4m3fnuz, gpu:0>, !mo.tensor<[1, 8], f32, gpu:0>) {
+  %q:2 = mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8(%x, %w, %ub) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<1.0> : tensor<f32>} : (!mo.tensor<[8, 128], bf16, gpu:0>, !mo.tensor<[128], bf16, gpu:0>, !mo.tensor<[], f32, cpu:0>) -> (!mo.tensor<[8, 128], f8e4m3fnuz, gpu:0>, !mo.tensor<[1, 8], f32, gpu:0>)
+  mo.output %q#0, %q#1 : !mo.tensor<[8, 128], f8e4m3fnuz, gpu:0>, !mo.tensor<[1, 8], f32, gpu:0>
+}
+
+// -----
+
+// A target that registers a kernel for the fused op keeps running it.
+// CHECK-LABEL: mo.graph @rmsNormQuantizeImplemented
+// CHECK:         mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8
+// CHECK-NOT:     mo.reduce.max
+#kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
+mogg.kernel.decl @plugin_rms_norm_quantize registration = "mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8" execute = #kf struct_params = [] is_user_defined = false
+
+mo.graph @rmsNormQuantizeImplemented(%x: !mo.tensor<[8, 128], bf16, gpu:0>, %w: !mo.tensor<[128], bf16, gpu:0>, %ub: !mo.tensor<[], f32, cpu:0>) -> (!mo.tensor<[8, 128], f8e4m3fn, gpu:0>, !mo.tensor<[1, 8], f32, gpu:0>) {
+  %q:2 = mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8(%x, %w, %ub) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>} : (!mo.tensor<[8, 128], bf16, gpu:0>, !mo.tensor<[128], bf16, gpu:0>, !mo.tensor<[], f32, cpu:0>) -> (!mo.tensor<[8, 128], f8e4m3fn, gpu:0>, !mo.tensor<[1, 8], f32, gpu:0>)
+  mo.output %q#0, %q#1 : !mo.tensor<[8, 128], f8e4m3fn, gpu:0>, !mo.tensor<[1, 8], f32, gpu:0>
+}

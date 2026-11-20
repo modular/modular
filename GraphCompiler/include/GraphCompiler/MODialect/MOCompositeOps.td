@@ -556,7 +556,9 @@ def MOComposite_RMSNormFusedQuantizeDynamicScaledFP8Op
                  {multiply_before_cast = true}
       output, scale = quantize_dynamic_scaled_float8(normed, scale_ub)
 
-    `scale` is per-token. GPU only.
+    `scale` is per-token. GPU only. A target that registers a kernel for it
+    runs that kernel; elsewhere `mo-tmp-decompose-composites` replaces it
+    with the ops it is made of.
   }];
 
   let arguments = (ins

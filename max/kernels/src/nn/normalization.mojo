@@ -3081,8 +3081,8 @@ def rms_norm_quantize_dynamic_scaled_fp8[
     `output` is `[rows, num_cols]` FP8 and `scales` is
     `[num_cols // group_size, rows]` (row `r`'s scale for column group `g`
     at `scales[g, r]`; a padded trailing scale column is left untouched).
-    Per-token scales (`group_size == num_cols`) stay on
-    `rms_norm_fused_quantize_dynamic_scaled_fp8`.
+    Per-token scales (`group_size == num_cols`) take the graph compiler's
+    generated kernel instead.
     """
     comptime assert output.rank == 2, "expected rank-2 output"
     comptime assert scales.rank == 2, "expected rank-2 scales"

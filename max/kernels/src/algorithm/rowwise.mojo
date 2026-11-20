@@ -459,8 +459,8 @@ def strided_load[
 # `layer_norm` / `rms_norm_rope` / `layer_norm_rope_ragged` pass `2`, and so
 # does the generated rms_norm_fused_residual_add (its second reduce reads a
 # cache);
-# `softmax` / `log_softmax` / `rms_norm_fused_quantize_dynamic_scaled_fp8`
-# pass `3` (two plain reduces, then the per-element write). Cached reduces,
+# `softmax` / `log_softmax` pass `3` (two plain reduces, then the
+# per-element write). Cached reduces,
 # `cache`, and `emit` aren't phase-aware, so a body using them must leave
 # `dtype_size = 0` (asserted). Asserted `> 0`; a reduce-shaped body's
 # `num_phases == 1` never reaches the phase-aware split-K branch (that branch
