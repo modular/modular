@@ -123,18 +123,38 @@ def write_blob(path: Path, **fields: object) -> None:
 
 
 class StreamBody:
-    """Stands in for aiohttp's body reader, which needs only ``iter_any``."""
+    """Stands in for aiohttp's body reader, consuming as it is read."""
 
     def __init__(self, chunks: Iterable[bytes]) -> None:
-        self._chunks = list(chunks)
-
-    async def _read(self) -> AsyncIterator[bytes]:
-        for chunk in self._chunks:
-            yield chunk
+        self.chunks = list(chunks)
 
     def iter_any(self) -> AsyncIterator[bytes]:
-        """Returns the body in the chunks given, so boundaries stay as sent."""
-        return self._read()
+        """Yields the chunks given, so boundaries stay as sent."""
+        return _BodyChunks(self)
+
+    def iter_chunked(self, nbytes: int) -> AsyncIterator[bytes]:
+        """Yields the rest the same way; a test chunk is already small."""
+        return _BodyChunks(self)
+
+
+class _BodyChunks:
+    """Drains a ``StreamBody``, like aiohttp's own stream iterator.
+
+    An iterator rather than a generator, so a caller that stops reading early
+    leaves nothing for the garbage collector to report as an unclosed
+    generator.
+    """
+
+    def __init__(self, body: StreamBody) -> None:
+        self._body = body
+
+    def __aiter__(self) -> _BodyChunks:
+        return self
+
+    async def __anext__(self) -> bytes:
+        if not self._body.chunks:
+            raise StopAsyncIteration
+        return self._body.chunks.pop(0)
 
 
 def write_engine_result_set(path: Path) -> None:

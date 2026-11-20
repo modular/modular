@@ -13,13 +13,14 @@
 
 """Unit tests for benchmark_shared.request module."""
 
+import asyncio
 import concurrent.futures
 import json
 import logging
 import os
 import time
 from array import array
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -431,21 +432,199 @@ class TestOpenAIStreamRecorder:
         assert result.success is False
         assert result.error == "boom"
 
-    def test_usage_chunk_is_recorded_as_server_token_stats(self) -> None:
+    def test_an_empty_error_object_still_fails_the_request(self) -> None:
+        """``{"error": {}}`` fails the request, as it did before."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        result = recorder.on_event(json.dumps({"error": {}}))
+
+        assert result is not None
+        assert result.success is False
+        assert '{"error": {}}' in result.error
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            pytest.param("null", id="null"),
+            pytest.param("5", id="number"),
+            pytest.param("[1]", id="array"),
+        ],
+    )
+    def test_a_chunk_that_is_not_an_object_fails_with_its_payload(
+        self, data: str
+    ) -> None:
+        """A non-object chunk fails at once, quoting the bytes that broke it."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        with pytest.raises(TypeError, match="expected a JSON object") as raised:
+            recorder.on_event(data)
+
+        assert repr(data) in str(raised.value)
+
+    @pytest.mark.parametrize(
+        ("data", "why"),
+        [
+            pytest.param(
+                '{"choices": [{"content": "hi"}]}',
+                "carry a delta object",
+                id="choice_without_delta",
+            ),
+            pytest.param(
+                '{"choices": [{"delta": {"content": {"a": 1}}}]}',
+                "delta.content",
+                id="object_content",
+            ),
+            pytest.param(
+                '{"choices": [{"delta": {"content": 7}}]}',
+                "delta.content",
+                id="number_content",
+            ),
+            pytest.param(
+                '{"choices": {}}',
+                "choices to be a JSON array",
+                id="choices_object",
+            ),
+            pytest.param(
+                '{"choices": 5}',
+                "choices to be a JSON array",
+                id="choices_number",
+            ),
+            pytest.param(
+                '{"choices": "hi"}',
+                "choices to be a JSON array",
+                id="choices_string",
+            ),
+        ],
+    )
+    def test_a_bad_choice_fails_at_that_chunk(
+        self, data: str, why: str
+    ) -> None:
+        """A shape the client cannot read fails there, naming the field."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        with pytest.raises(TypeError, match=why) as raised:
+            recorder.on_event(data)
+
+        assert repr(data) in str(raised.value)
+
+    def test_a_non_string_completion_text_fails_at_that_chunk(self) -> None:
+        """``chat=False`` rejects a non-string ``text`` the same way."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=False)
+        data = '{"choices": [{"text": {"a": 1}}]}'
+
+        with pytest.raises(TypeError, match=r"choice\.text") as raised:
+            recorder.on_event(data)
+
+        assert repr(data) in str(raised.value)
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            pytest.param('{"choices": [{"text": null}]}', id="null"),
+            pytest.param(
+                '{"choices": [{"finish_reason": "stop"}]}', id="missing"
+            ),
+        ],
+    )
+    def test_a_completion_chunk_without_text_fails_at_that_chunk(
+        self, data: str
+    ) -> None:
+        """A completion's ``text`` is the response text, so null is not empty.
+
+        A chat delta may carry a null field; the completions schema has no such
+        option, and reading null as ``""`` hid a chunk schema the client does
+        not understand.
+        """
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=False)
+
+        with pytest.raises(TypeError, match=r"choice\.text") as raised:
+            recorder.on_event(data)
+
+        assert repr(data) in str(raised.value)
+
+    def test_a_bool_usage_count_is_rejected(self) -> None:
+        """``true`` in a count field is a schema change, not a count of one."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        with pytest.raises(TypeError, match="not an integer"):
+            recorder.on_event(
+                json.dumps(
+                    {
+                        "choices": [{"delta": {"content": "x"}}],
+                        "usage": {"completion_tokens": True},
+                    }
+                )
+            )
+
+    @pytest.mark.parametrize(
+        ("usage", "expected_cached_tokens", "details_reported"),
+        [
+            pytest.param(
+                {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 1,
+                    "total_tokens": 4,
+                    "prompt_tokens_details": {"cached_tokens": 2},
+                },
+                2,
+                True,
+                id="with_cached_tokens",
+            ),
+            pytest.param(
+                {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+                0,
+                False,
+                id="without_prompt_tokens_details",
+            ),
+            pytest.param(
+                {
+                    "prompt_tokens": "3",
+                    "completion_tokens": 1.0,
+                    "total_tokens": "4",
+                    "prompt_tokens_details": {"cached_tokens": "2"},
+                },
+                2,
+                True,
+                id="lax_numeric_forms",
+            ),
+            pytest.param(
+                {
+                    "prompt_tokens": "3.0",
+                    "completion_tokens": "1.0",
+                    "total_tokens": 4,
+                    "prompt_tokens_details": {"cached_tokens": 2},
+                },
+                2,
+                True,
+                id="integral_float_strings",
+            ),
+            # A server that reports the field as null still reported the
+            # details, so the run is not read as one with no cache lookups.
+            pytest.param(
+                {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 1,
+                    "total_tokens": 4,
+                    "prompt_tokens_details": {"cached_tokens": None},
+                },
+                0,
+                True,
+                id="null_cached_tokens",
+            ),
+        ],
+    )
+    def test_usage_chunk_is_recorded_as_server_token_stats(
+        self,
+        usage: dict[str, Any],
+        expected_cached_tokens: int,
+        details_reported: bool,
+    ) -> None:
         """A usage-bearing chunk populates ``server_token_stats``."""
         recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
 
         recorder.on_event(
             json.dumps(
-                {
-                    "choices": [{"delta": {"content": "x"}}],
-                    "usage": {
-                        "prompt_tokens": 3,
-                        "completion_tokens": 1,
-                        "total_tokens": 4,
-                        "prompt_tokens_details": {"cached_tokens": 2},
-                    },
-                }
+                {"choices": [{"delta": {"content": "x"}}], "usage": usage}
             )
         )
 
@@ -453,8 +632,12 @@ class TestOpenAIStreamRecorder:
         assert stats.prompt_tokens == 3
         assert stats.completion_tokens == 1
         assert stats.total_tokens == 4
-        assert stats.cached_tokens == 2
-        assert stats.cached_tokens_reported
+        assert stats.cached_tokens == expected_cached_tokens
+        assert stats.cached_tokens_reported is details_reported
+        # The counts feed integer arithmetic after the run, so a bool or a
+        # numeric string must not reach the metrics as itself.
+        assert isinstance(stats.completion_tokens, int)
+        assert not isinstance(stats.completion_tokens, bool)
 
     def test_usage_without_prompt_details_reports_no_cached_tokens(
         self,
@@ -655,6 +838,81 @@ class TestOpenAIStreamRecorder:
         assert tokenizer.calls == [[" d", " bb"]]
         assert kept.tpot == [pytest.approx(0.2)]
         assert dropped.tpot == []
+
+    @pytest.mark.parametrize(
+        ("chunk", "expected_text"),
+        [
+            pytest.param(
+                {
+                    "id": "c1",
+                    "vendor_extra": {"trace": "x"},
+                    "choices": [
+                        {
+                            "index": 0,
+                            "logprobs": None,
+                            "delta": {"unmodeled": "ignored", "content": "a"},
+                        }
+                    ],
+                },
+                "a",
+                id="unknown_fields_ignored",
+            ),
+            pytest.param(
+                {"choices": [{"delta": {"content": None, "reasoning": None}}]},
+                "",
+                id="null_text_fields",
+            ),
+            pytest.param(
+                {"choices": [{"delta": {"tool_calls": [{"index": 0}]}}]},
+                "",
+                id="tool_call_without_function",
+            ),
+            pytest.param(
+                {"choices": [{"delta": {"content": "a"}, "finish_reason": 5}]},
+                "a",
+                id="non_string_finish_reason",
+            ),
+            pytest.param(
+                {
+                    "choices": [
+                        {"delta": {"tool_calls": [{"function": "nope"}]}}
+                    ]
+                },
+                "",
+                id="tool_call_with_non_object_function",
+            ),
+            pytest.param({"choices": None}, "", id="null_choices"),
+            pytest.param(
+                {"choices": [], "usage": {"prompt_tokens": 3}},
+                "",
+                id="no_choices",
+            ),
+        ],
+    )
+    def test_chunk_tolerance(
+        self, chunk: dict[str, Any], expected_text: str
+    ) -> None:
+        """A chunk of any tolerated shape contributes only its own text.
+
+        The tolerated shapes are the ones that cannot change what the run
+        reports: an absent choices list, a field the client does not model, a
+        null optional delta field, a tool-call fragment with no function text,
+        and a ``finish_reason`` that is not a string (only ``"length"`` is
+        ever compared). Everything that would corrupt the measured text or the
+        token counts fails at the chunk instead.
+        """
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        assert recorder.on_event(json.dumps(chunk)) is None
+        # A trailing real chunk makes the case's own text observable, since a
+        # response with no text at all is a failure rather than a record.
+        recorder.on_event(
+            json.dumps({"choices": [{"delta": {"content": "."}}]})
+        )
+
+        output = recorder.finish()
+        assert output.success is True
+        assert output.generated_text == expected_text + "."
 
     def test_chunk_tpot_survives_a_tokenizer_that_raises(self) -> None:
         """A failing tokenizer costs per-chunk TPOT, not the result build."""
@@ -912,7 +1170,7 @@ class TestRequestDriver:
 
         Regression guard for double-counting: a turn that streams prose
         before deciding to call a tool must count that prose exactly once,
-        even though ``_extract_chat_delta_text`` sums ``content`` and
+        even though ``_delta_text`` sums ``content`` and
         ``tool_calls`` text from the same delta object. The server only ever
         populates one of the two per ``ParsedToolCallDelta``, so summing them
         is additive by construction -- this test pins that with an exact
@@ -1175,6 +1433,220 @@ class TestRequestDriver:
         assert "No text content" in result.error
 
     @pytest.mark.asyncio
+    async def test_openai_chat_completions_ignores_events_after_done(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Nothing after ``[DONE]`` is parsed, and the body is drained."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_response_data = [
+            b'data: {"choices": [{"delta": {"content": "Hi"}}]}\n\n',
+            (
+                b'data: {"choices": [], "usage": {"prompt_tokens": 3, '
+                b'"completion_tokens": 1, "total_tokens": 4, '
+                b'"prompt_tokens_details": {"cached_tokens": 2}}}\n\n'
+            ),
+            b"data: [DONE]\n\n",
+            # A chunk this client cannot parse: drained, never parsed, so it
+            # cannot fail the request.
+            b"data: {not json\n\n",
+        ]
+
+        body = StreamBody(mock_response_data)
+        response = mocker.AsyncMock()
+        response.status = 200
+        response.content = body
+        mock_aiohttp_session.setup_post_response(response)
+
+        result = await OpenAIChatCompletionsRequestDriver().request(
+            request_input
+        )
+
+        assert result.success is True
+        assert result.generated_text == "Hi"
+        assert result.server_token_stats.cached_tokens == 2
+        # Read to EOF: the response closes cleanly instead of resetting.
+        assert body.chunks == []
+
+    @pytest.mark.asyncio
+    async def test_done_early_exit_leaves_latency_alone(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """The drain after ``[DONE]`` does not extend the measured latency."""
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions"
+        )
+
+        class _HeldTailBody(StreamBody):
+            """Holds the response open after ``[DONE]`` before it ends."""
+
+            async def iter_chunked(self, nbytes: int) -> AsyncIterator[bytes]:
+                await asyncio.sleep(0.2)
+                async for chunk in super().iter_chunked(nbytes):
+                    yield chunk
+
+        body = _HeldTailBody(
+            [
+                b'data: {"choices": [{"delta": {"content": "Hi"}}]}\n\n',
+                b"data: [DONE]\n\n",
+                b"data: {not json\n\n",
+            ]
+        )
+        response = mocker.AsyncMock()
+        response.status = 200
+        response.content = body
+        mock_aiohttp_session.setup_post_response(response)
+
+        started = time.perf_counter()
+        result = await OpenAIChatCompletionsRequestDriver().request(
+            request_input
+        )
+        elapsed = time.perf_counter() - started
+
+        assert result.success is True
+        # The clock stops at ``[DONE]``; only the drain waits for the tail.
+        assert elapsed - result.latency >= 0.1
+
+    @pytest.mark.asyncio
+    async def test_a_post_done_trailer_is_relayed_but_not_measured(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Work after ``[DONE]`` is read out and never measured.
+
+        A trailer that carries text would corrupt TTFT, ITL and the generated
+        text if the client kept recording, and leaving it unread resets the
+        socket. This pins all three: nothing after ``[DONE]`` is parsed, the
+        tail is relayed to EOF, and ``finish()`` reports the ``[DONE]``
+        measurement.
+        """
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions"
+        )
+        drained: list[bytes] = []
+
+        class _RelayRecordingBody(StreamBody):
+            """Records what the drain actually reads."""
+
+            async def iter_chunked(self, nbytes: int) -> AsyncIterator[bytes]:
+                async for chunk in super().iter_chunked(nbytes):
+                    drained.append(chunk)
+                    yield chunk
+
+        body = _RelayRecordingBody(
+            [
+                b'data: {"choices": [{"delta": {"content": "Hi"}}]}\n\n',
+                b"data: [DONE]\n\n",
+                b'data: {"choices": [{"delta": {"content": "TRAILER"}}]}\n\n',
+            ]
+        )
+        response = mocker.AsyncMock()
+        response.status = 200
+        response.content = body
+        mock_aiohttp_session.setup_post_response(response)
+
+        started = time.perf_counter()
+        result = await OpenAIChatCompletionsRequestDriver().request(
+            request_input
+        )
+        elapsed = time.perf_counter() - started
+
+        assert result.success is True
+        assert result.generated_text == "Hi"
+        assert result.itl == []
+        # finish() reported the [DONE] measurement, not the end of the drain.
+        assert 0.0 < result.latency <= elapsed
+        # The trailer was relayed, and the body is empty afterwards.
+        assert b"TRAILER" in b"".join(drained)
+        assert body.chunks == []
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_malformed_chunk_fails_the_request(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """A chunk that is not JSON fails the request, quoting the payload."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_response_data = [
+            b'data: {"choices": [{"delta": {"content": "Hi"}}]}\n\n',
+            b"data: {not json\n\n",
+            b"data: [DONE]\n\n",
+        ]
+
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
+
+        result = await OpenAIChatCompletionsRequestDriver().request(
+            request_input
+        )
+
+        assert result.success is False
+        assert "Malformed stream chunk" in result.error
+        assert repr("{not json") in result.error
+
+    @pytest.mark.asyncio
+    async def test_a_bool_usage_count_fails_the_request(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """``true`` in a count field fails the request where it arrives."""
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions"
+        )
+
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "Hi"}}]}\n\n',
+                    b'data: {"choices": [], "usage": {"prompt_tokens": true}}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
+        )
+
+        result = await OpenAIChatCompletionsRequestDriver().request(
+            request_input
+        )
+
+        assert result.success is False
+        assert "usage count is not an integer" in result.error
+
+    @pytest.mark.asyncio
     async def test_request_driver_with_progress_bar(
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
@@ -1233,6 +1705,48 @@ class TestRequestDriver:
         result = await driver.request(request_input)
 
         assert result.success is True
+
+    @pytest.mark.parametrize(
+        "chunk",
+        [
+            pytest.param(b'data: {"text_output": null}\n\n', id="null"),
+            pytest.param(b'data: {"text_output": 7}\n\n', id="number"),
+            pytest.param(b"data: {}\n\n", id="missing"),
+            pytest.param(b"data: 5\n\n", id="not_an_object"),
+            pytest.param(b"data: {not json\n\n", id="not_json"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_trtllm_non_string_text_output_fails_only_that_request(
+        self, mock_aiohttp_session: Any, mocker: MockerFixture, chunk: bytes
+    ) -> None:
+        """A chunk the client cannot read fails the request, not the run."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/generate_stream",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker, [b'data: {"text_output": "ok"}\n\n', chunk]
+            )
+        )
+
+        result = await TRTLLMRequestDriver().request(request_input)
+
+        assert result.success is False
+        assert result.generated_text == "ok"
+        # The message quotes the payload, so the log says what broke it.
+        assert "Malformed stream chunk" in result.error
+        payload = chunk.removeprefix(b"data: ").removesuffix(b"\n\n")
+        assert repr(payload.decode())[:60] in result.error
 
     @pytest.mark.asyncio
     async def test_trtllm_records_chunk_offsets_for_the_post_run_pass(

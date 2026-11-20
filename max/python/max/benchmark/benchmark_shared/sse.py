@@ -19,7 +19,7 @@ Implements the WHATWG HTML Living Standard §9.2 "Server-sent events".
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterable
 from dataclasses import dataclass
 
 _UTF8_BOM = b"\xef\xbb\xbf"
@@ -36,7 +36,7 @@ class SSEEvent:
     last_event_id: str = ""
 
 
-async def iter_lines(chunks: AsyncIterable[bytes]) -> AsyncIterator[bytes]:
+async def iter_lines(chunks: AsyncIterable[bytes]) -> AsyncGenerator[bytes]:
     """Yield lines from a stream of byte chunks, per the SSE spec.
 
     Handles all three SSE-spec line endings: CRLF, bare LF, bare CR.
@@ -89,7 +89,9 @@ async def iter_lines(chunks: AsyncIterable[bytes]) -> AsyncIterator[bytes]:
         yield remainder
 
 
-async def iter_events(chunks: AsyncIterable[bytes]) -> AsyncIterator[SSEEvent]:
+async def iter_events(
+    chunks: AsyncIterable[bytes],
+) -> AsyncGenerator[SSEEvent]:
     """Yield dispatched SSE events from a stream of byte chunks.
 
     Splits chunks into lines via :func:`iter_lines`, then implements the
@@ -108,44 +110,51 @@ async def iter_events(chunks: AsyncIterable[bytes]) -> AsyncIterator[SSEEvent]:
     last_event_id_buffer = ""
     last_event_id = ""
 
-    async for line_bytes in iter_lines(chunks):
-        line = line_bytes.decode("utf-8")
+    lines = iter_lines(chunks)
+    try:
+        async for line_bytes in lines:
+            line = line_bytes.decode("utf-8")
 
-        if not line:
-            # Empty line: dispatch the event.
-            last_event_id = last_event_id_buffer
-            if not data_buffer:
+            if not line:
+                # Empty line: dispatch the event.
+                last_event_id = last_event_id_buffer
+                if not data_buffer:
+                    event_type_buffer = ""
+                    continue
+                data_buffer = data_buffer.removesuffix("\n")
+                yield SSEEvent(
+                    data=data_buffer,
+                    event_type=event_type_buffer or "message",
+                    last_event_id=last_event_id,
+                )
+                data_buffer = ""
                 event_type_buffer = ""
                 continue
-            data_buffer = data_buffer.removesuffix("\n")
-            yield SSEEvent(
-                data=data_buffer,
-                event_type=event_type_buffer or "message",
-                last_event_id=last_event_id,
-            )
-            data_buffer = ""
-            event_type_buffer = ""
-            continue
 
-        if line[0] == ":":
-            continue  # Comment; ignore.
+            if line[0] == ":":
+                continue  # Comment; ignore.
 
-        if ":" in line:
-            colon_idx = line.index(":")
-            field = line[:colon_idx]
-            value = line[colon_idx + 1 :]
-            value = value.removeprefix(" ")
-        else:
-            field = line
-            value = ""
+            if ":" in line:
+                colon_idx = line.index(":")
+                field = line[:colon_idx]
+                value = line[colon_idx + 1 :]
+                value = value.removeprefix(" ")
+            else:
+                field = line
+                value = ""
 
-        if field == "data":
-            data_buffer += value + "\n"
-        elif field == "event":
-            event_type_buffer = value
-        elif field == "id":
-            if "\x00" not in value:
-                last_event_id_buffer = value
-        elif field == "retry":
-            pass  # Connection-level; not surfaced in SSEEvent.
-        # Unknown fields are ignored per spec.
+            if field == "data":
+                data_buffer += value + "\n"
+            elif field == "event":
+                event_type_buffer = value
+            elif field == "id":
+                if "\x00" not in value:
+                    last_event_id_buffer = value
+            elif field == "retry":
+                pass  # Connection-level; not surfaced in SSEEvent.
+            # Unknown fields are ignored per spec.
+
+    finally:
+        # Closes the line splitter too: an abandoned async generator reports
+        # a never-awaited aclose() from the garbage collector.
+        await lines.aclose()

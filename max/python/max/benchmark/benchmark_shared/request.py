@@ -39,13 +39,12 @@ from itertools import pairwise
 from typing import Any, cast
 
 import aiohttp
+import msgspec
 from max.serve._tool_call_validation import (
     check_response_format_conformance,
     response_format_schema_is_checkable,
 )
-from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
 from openai.types.chat.completion_create_params import ResponseFormat
-from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import NotRequired, TypedDict
@@ -585,31 +584,46 @@ class TRTLLMRequestDriver(RequestDriver):
             st = time.perf_counter()
             output.request_submit_time = st
             most_recent_timestamp = st
+            chunk_texts: list[str] = []
+            chunk_texts_chars = 0
             try:
                 async with session.post(url=api_url, json=payload) as response:
                     if response.status == 200:
-                        async for event in iter_events(
-                            response.content.iter_any()
-                        ):
-                            data = _TRTLLMChunk.model_validate_json(event.data)
-                            chunk_text = data.text_output
-                            timestamp = time.perf_counter()
-                            output.generated_text += chunk_text
-                            if self.tokenizer is not None:
-                                output.pending_tpot_ends.append(
-                                    len(output.generated_text)
+                        events = iter_events(response.content.iter_any())
+                        try:
+                            async for event in events:
+                                chunk = _decode_chunk(event.data)
+                                if not isinstance(chunk, Mapping):
+                                    raise _malformed_chunk(
+                                        "expected a JSON object", event.data
+                                    )
+                                chunk_text = _required_text_field(
+                                    chunk.get("text_output"),
+                                    "text_output",
+                                    event.data,
                                 )
-                            # First token
-                            if ttft == 0.0:
-                                ttft = timestamp - st
-                                output.ttft = ttft
+                                timestamp = time.perf_counter()
+                                chunk_texts.append(chunk_text)
+                                chunk_texts_chars += len(chunk_text)
+                                if self.tokenizer is not None:
+                                    output.pending_tpot_ends.append(
+                                        chunk_texts_chars
+                                    )
+                                # First token
+                                if ttft == 0.0:
+                                    ttft = timestamp - st
+                                    output.ttft = ttft
 
-                            # Decoding phase
-                            else:
-                                itl_value = timestamp - most_recent_timestamp
-                                output.itl.append(itl_value)
+                                # Decoding phase
+                                else:
+                                    itl_value = (
+                                        timestamp - most_recent_timestamp
+                                    )
+                                    output.itl.append(itl_value)
 
-                            most_recent_timestamp = timestamp
+                                most_recent_timestamp = timestamp
+                        finally:
+                            await events.aclose()
 
                         output.latency = most_recent_timestamp - st
                         output.success = True
@@ -622,6 +636,7 @@ class TRTLLMRequestDriver(RequestDriver):
                 exc_info = sys.exc_info()
                 output.error = "".join(traceback.format_exception(*exc_info))
 
+            output.generated_text = "".join(chunk_texts)
             return output
 
 
@@ -668,6 +683,87 @@ def _append_slice_tpots(
         if tpot is not None:
             output.tpot.append(tpot)
     return set()
+
+
+def _malformed_chunk(why: str, data: str) -> TypeError:
+    """Builds the client's error for a chunk it cannot read.
+
+    The payload snippet is what makes the failure actionable: the shape came
+    from the server, so whoever reads the log needs the bytes that broke it.
+    """
+    return TypeError(f"Malformed stream chunk: {why}: {data[:200]!r}")
+
+
+def _decode_chunk(data: str) -> Any:
+    """Decodes one event's data, quoting the payload if it is not JSON."""
+    try:
+        return msgspec.json.decode(data)
+    except msgspec.DecodeError as exc:
+        raise _malformed_chunk(f"not valid JSON ({exc})", data) from exc
+
+
+def _text_field(value: Any, field: str, data: str) -> str:
+    """Returns one streamed text field, reading an absent value as no text.
+
+    Chat deltas may legitimately carry a null field, and a field we do not
+    model is not an error. A field that is present with another type is
+    rejected, because it would silently become missing text.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise _malformed_chunk(f"expected {field} to be a string", data)
+    return value
+
+
+def _required_text_field(value: Any, field: str, data: str) -> str:
+    """Returns a text field the chunk must carry as a string.
+
+    Used where a null would not mean "the server sent no text this chunk" but
+    a schema the client does not understand: a completions ``choice.text`` is
+    the response's text, not an optional delta field.
+    """
+    if not isinstance(value, str):
+        raise _malformed_chunk(f"expected {field} to be a string", data)
+    return value
+
+
+def _server_token_stats(usage: Mapping[str, Any]) -> ServerTokenStats:
+    """Reads one chunk's ``usage`` object into the run's token stats."""
+    details = usage.get("prompt_tokens_details")
+    cached = (
+        details.get("cached_tokens") if isinstance(details, Mapping) else None
+    )
+    return ServerTokenStats(
+        prompt_tokens=_usage_count(usage.get("prompt_tokens")),
+        completion_tokens=_usage_count(usage.get("completion_tokens")),
+        total_tokens=_usage_count(usage.get("total_tokens")),
+        cached_tokens=_usage_count(cached) or 0,
+        cached_tokens_reported=isinstance(details, Mapping),
+    )
+
+
+def _usage_count(value: Any) -> int | None:
+    """Coerces one server-reported token count to an int.
+
+    Providers are lax here, sending ``3``, ``3.0`` or ``"3"`` for the same
+    count, and the counts feed integer arithmetic in the post-run metrics. A
+    bool is rejected rather than coerced: ``true`` in a count field is a
+    schema change, not a count of one.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise TypeError(f"usage count is not an integer: {value!r}")
+    if isinstance(value, int):
+        return value
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise TypeError(f"usage count is not an integer: {value!r}") from None
+    if not number.is_integer():
+        raise TypeError(f"usage count is not an integer: {value!r}")
+    return int(number)
 
 
 def compute_chunk_tpots(
@@ -758,82 +854,48 @@ def compute_chunk_tpots(
         )
 
 
-class _PromptTokensDetails(BaseModel):
-    cached_tokens: int = 0
+def _delta_text(delta: Mapping[str, Any], data: str) -> str:
+    """Extracts all generated text carried by a chat streaming delta.
 
-
-class _UsageChunk(BaseModel):
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    total_tokens: int | None = None
-    prompt_tokens_details: _PromptTokensDetails | None = None
-
-
-class _ChatDelta(BaseModel):
-    reasoning: str | None = None
-    reasoning_content: str | None = None
-    content: str | None = None
-    tool_calls: list[ChoiceDeltaToolCall] | None = None
-
-
-class _ChatChoice(BaseModel):
-    delta: _ChatDelta
-    finish_reason: str | None = None
-
-
-class _CompletionChoice(BaseModel):
-    text: str
-    finish_reason: str | None = None
-
-
-class _ErrorDetail(BaseModel):
-    message: str = ""
-    code: str = ""
-    param: str = ""
-    type: str = ""
-
-
-class _ChatCompletionChunk(BaseModel):
-    usage: _UsageChunk | None = None
-    choices: list[_ChatChoice] = []
-    error: _ErrorDetail | None = None
-
-
-class _CompletionChunk(BaseModel):
-    usage: _UsageChunk | None = None
-    choices: list[_CompletionChoice] = []
-    error: _ErrorDetail | None = None
-
-
-class _TRTLLMChunk(BaseModel):
-    text_output: str
-
-
-def _extract_chat_delta_text(data: _ChatCompletionChunk) -> str:
-    """Extracts all generated text carried by a chat streaming chunk.
-
-    "reasoning" and "reasoning_content" are NOT official OpenAI fields.
+    ``reasoning`` and ``reasoning_content`` are NOT official OpenAI fields.
     Different model providers and serving frameworks may emit one or both to
-    stream chain-of-thought tokens separately from "content". These fields may
-    also be None in some chunks. We merge them here to preserve all streamed
-    text.
+    stream chain-of-thought tokens separately from ``content``. These fields
+    may also be None in some chunks. We merge them here to preserve all
+    streamed text.
 
     Tool-call fragments (function name and argument bytes) also count: a pure
     tool-call turn has no ``content`` by design, and without this a successful
     agentic response is misreported as "No text content captured".
+
+    A field of the wrong type fails here, against the chunk that carried it,
+    rather than surfacing as a surprising result in ``finish()``.
     """
-    delta = data.choices[0].delta
-    tool_call_text = "".join(
-        (tc.function.name or "") + (tc.function.arguments or "")
-        for tc in delta.tool_calls or []
-        if tc.function is not None
+    reasoning = _text_field(delta.get("reasoning"), "delta.reasoning", data)
+    reasoning_content = _text_field(
+        delta.get("reasoning_content"), "delta.reasoning_content", data
     )
-    return (
-        (delta.reasoning or "")
-        + (delta.reasoning_content or "")
-        + (delta.content or "")
-        + tool_call_text
-    )
+    content = _text_field(delta.get("content"), "delta.content", data)
+    tool_calls = delta.get("tool_calls")
+    if content and not (reasoning or reasoning_content or tool_calls):
+        # Fast path: a plain content chunk is nearly every chunk of a normal
+        # generation.
+        return content
+    text = reasoning + reasoning_content + content
+    for call in tool_calls or ():
+        if not isinstance(call, Mapping):
+            raise _malformed_chunk(
+                "expected each tool call to be a JSON object", data
+            )
+        function = call.get("function")
+        if isinstance(function, Mapping):
+            text += _text_field(
+                function.get("name"), "tool_calls[].function.name", data
+            ) + _text_field(
+                function.get("arguments"),
+                "tool_calls[].function.arguments",
+                data,
+            )
+    return text
 
 
 class OpenAIStreamRecorder:
@@ -869,11 +931,10 @@ class OpenAIStreamRecorder:
     ) -> None:
         self.output = RequestFuncOutput()
         self.output.prompt_len = prompt_len
-        self._chunk_type: type[_ChatCompletionChunk | _CompletionChunk] = (
-            _ChatCompletionChunk if chat else _CompletionChunk
-        )
+        self._chat = chat
         self._tokenizer = tokenizer
-        self._generated_text = ""
+        self._generated_text: list[str] = []
+        self._generated_chars = 0
         self._ttft = 0.0
         self._st = time.perf_counter()
         self.output.request_submit_time = self._st
@@ -892,6 +953,11 @@ class OpenAIStreamRecorder:
         """Whether the request finished, was cancelled, or failed."""
         return self._done
 
+    @property
+    def stream_complete(self) -> bool:
+        """Whether the stream reached ``[DONE]``, so reading can stop."""
+        return self._stream_complete
+
     def on_event(
         self, data: str, *, arrived: float | None = None
     ) -> RequestFuncOutput | None:
@@ -906,47 +972,66 @@ class OpenAIStreamRecorder:
             ``None`` to keep reading the stream, or the request's output when
             the event reported an error and the request is over.
         """
-
-        def now() -> float:
-            return time.perf_counter() if arrived is None else arrived
-
-        self._latency = now() - self._st
+        # Stamped at arrival, before the parse, for latency, TTFT and ITL alike.
+        timestamp = time.perf_counter() if arrived is None else arrived
+        self._latency = timestamp - self._st
         if data == "[DONE]":
             self._stream_complete = True
             return None
 
-        chunk = self._chunk_type.model_validate_json(data)
+        chunk = _decode_chunk(data)
+        if not isinstance(chunk, Mapping):
+            raise _malformed_chunk("expected a JSON object", data)
 
-        if chunk.error:
-            return self.fail(chunk.error.message or data)
+        error = chunk.get("error")
+        if error is not None:
+            message = (
+                error.get("message") if isinstance(error, Mapping) else error
+            )
+            return self.fail(str(message or data))
 
         # Parse usage from any chunk that reports it.
-        if chunk.usage:
-            self.output.server_token_stats = ServerTokenStats(
-                prompt_tokens=chunk.usage.prompt_tokens,
-                completion_tokens=chunk.usage.completion_tokens,
-                total_tokens=chunk.usage.total_tokens,
-                cached_tokens=(
-                    chunk.usage.prompt_tokens_details.cached_tokens
-                    if chunk.usage.prompt_tokens_details
-                    else 0
-                ),
-                cached_tokens_reported=chunk.usage.prompt_tokens_details
-                is not None,
-            )
+        usage = chunk.get("usage")
+        if usage:
+            if not isinstance(usage, Mapping):
+                raise _malformed_chunk(
+                    "expected usage to be a JSON object", data
+                )
+            try:
+                self.output.server_token_stats = _server_token_stats(usage)
+            except TypeError as exc:
+                raise _malformed_chunk(str(exc), data) from exc
 
-        # Skip content processing for chunks with no choices.
-        if not chunk.choices:
+        # A chunk with no choices just carries usage or a finish marker.
+        choices = chunk.get("choices")
+        if choices is None:
             return None
-        if chunk.choices[0].finish_reason is not None:
-            self._finish_reason = chunk.choices[0].finish_reason
-            self._finish_reason_time = now()
-        if isinstance(chunk, _ChatCompletionChunk):
-            if chunk.choices[0].delta.tool_calls:
+        if not isinstance(choices, list):
+            raise _malformed_chunk("expected choices to be a JSON array", data)
+        if not choices:
+            return None
+        choice = choices[0]
+        if not isinstance(choice, Mapping):
+            raise _malformed_chunk(
+                "expected each choice to be a JSON object", data
+            )
+        finish_reason = choice.get("finish_reason")
+        if finish_reason is not None:
+            self._finish_reason = finish_reason
+            self._finish_reason_time = timestamp
+        if self._chat:
+            delta = choice.get("delta")
+            if not isinstance(delta, Mapping):
+                raise _malformed_chunk(
+                    "expected the choice to carry a delta object", data
+                )
+            if delta.get("tool_calls"):
                 self.output.tool_call_returned = True
-            text_content = _extract_chat_delta_text(chunk)
+            text_content = _delta_text(delta, data)
         else:
-            text_content = chunk.choices[0].text
+            text_content = _required_text_field(
+                choice.get("text"), "choice.text", data
+            )
 
         # Only track timing for chunks with actual text
         if text_content:
@@ -956,11 +1041,13 @@ class OpenAIStreamRecorder:
             # leave this False so the request is flagged rather than recorded
             # as a success with ttft=0 and no tokens.
             self._has_content = True
-            timestamp = now()
-            self._generated_text += text_content
+            # Kept together: the offset recorded below indexes this text, so the
+            # two must never desync.
+            self._generated_chars += len(text_content)
+            self._generated_text.append(text_content)
             if self._tokenizer is not None:
                 # Store end offsets, not chunk copies, to keep memory flat.
-                self.output.pending_tpot_ends.append(len(self._generated_text))
+                self.output.pending_tpot_ends.append(self._generated_chars)
             # First token
             if self._ttft == 0.0:
                 self._ttft = timestamp - self._st
@@ -1016,7 +1103,7 @@ class OpenAIStreamRecorder:
             )
             self.output.success = False
         else:
-            self.output.generated_text = self._generated_text
+            self.output.generated_text = "".join(self._generated_text)
             self.output.success = True
             self.output.latency = self._latency
         return self.output
@@ -1075,10 +1162,24 @@ async def _run_openai_stream_request(
             ) as response:
                 if response.status != 200:
                     return recorder.fail(response.reason or "")
-                async for event in iter_events(response.content.iter_any()):
-                    result = recorder.on_event(event.data)
-                    if result is not None:
-                        return result
+                events = iter_events(response.content.iter_any())
+                try:
+                    async for event in events:
+                        result = recorder.on_event(event.data)
+                        if result is not None:
+                            return result
+                        if recorder.stream_complete:
+                            break
+                finally:
+                    # Closed here rather than left to the garbage collector,
+                    # which reports the pending aclose() as a warning.
+                    await events.aclose()
+                if recorder.stream_complete:
+                    # Reads the response out so the socket closes cleanly
+                    # instead of resetting. Each request owns its session, so
+                    # there is no connection pool to hand it back to.
+                    async for _ in response.content.iter_chunked(1 << 16):
+                        pass
                 return recorder.finish()
         except Exception:
             exc_info = sys.exc_info()
