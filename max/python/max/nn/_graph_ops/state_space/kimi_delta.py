@@ -47,9 +47,11 @@ __all__ = [
     "amd_kda_long_row_scratch_bytes",
     "kda_chunk",
     "kda_chunk_conv",
+    "kda_chunk_max_segments",
     "kda_chunk_predicate",
     "kda_chunk_rows",
     "kda_chunk_rows_servable",
+    "kda_chunk_scratch_rows",
     "kda_chunk_servable",
     "kda_chunk_workspace_bytes",
     "kda_decode",
@@ -222,12 +224,12 @@ KDA_GATE_LOWER_BOUND = -5.0
 _CHUNK_MIN_COMPUTE_CAPABILITY = 100
 """Lowest NVIDIA compute capability (``sm_100`` -> 100) ``kda_chunk`` builds for."""
 
-_AMD_CHUNK_MAX_ELEMENTS = 1 << 31
-"""Largest tensor or workspace the gfx950 ``kda_chunk`` launch indexes; it
-raises past this rather than overflow its 32-bit offsets."""
-
-_CHUNK_LEN = 64
+_AMD_CHUNK_LEN = 32
 """Tokens per chunk of the AMD ``kda_chunk`` recurrence."""
+
+_AMD_CU_CEILING = 512
+"""Conservative CU count standing in for the device's in the single-sequence
+segment rule of :func:`kda_chunk_max_segments`."""
 
 
 def kda_gate_mode(lower_bound: float | None) -> KdaGateMode:
@@ -335,52 +337,107 @@ def kda_chunk_bf16_launch() -> tuple[DType, bool]:
 
 
 def kda_chunk_predicate(
-    total_tokens: TensorValue,
-    batch_size: TensorValue,
-    num_heads: int,
-    head_dim: int,
+    total_tokens: TensorValue, batch_size: TensorValue
 ) -> TensorValue:
     """Returns whether a batch takes the ``kda_chunk`` side of the cond.
 
-    A batch with more tokens than sequences is a prefill. On AMD it must also
-    fit the launch's 32-bit indexing, or it falls back to ``kda_decode``
-    instead of raising: the largest buffer, ``kg_t``, holds ``(T // 64 + N) *
-    64 <= T + 64 N`` rows of ``num_heads * head_dim``. That also bounds q/k/v,
-    gate and output, and the launch's stride check, because every q/k/v the
-    layers pass reaches the op as dense rows of that same width: a cast that
-    changes dtype copies, and where the cast is elided (K3's bf16 slices of
-    the fused qkv) the graph compiler materializes the slices for the op.
+    A batch with more tokens than sequences is a prefill. The gfx950 launch
+    indexes in 64 bits, so no size bound applies on any accelerator. Mirrors
+    ``kda_amd_decode_runs_chunk_pipeline`` in
+    ``Kernels/lib/kda/amd_prefill.mojo``; keep the two in step.
 
     Args:
         total_tokens: Scalar token count of the batch.
         batch_size: Scalar sequence count of the batch.
-        num_heads: KDA heads on this device.
-        head_dim: Key and value head width.
 
     Returns:
         A boolean scalar.
     """
-    is_prefill = total_tokens > batch_size
-    if accelerator_api() != "hip":
-        return is_prefill
-    max_rows = _AMD_CHUNK_MAX_ELEMENTS // (num_heads * head_dim)
-    return is_prefill & (total_tokens + _CHUNK_LEN * batch_size <= max_rows)
+    return total_tokens > batch_size
+
+
+def kda_chunk_max_segments(tokens: int, seqs: int, heads: int) -> int:
+    """Largest segment count the AMD ``kda_chunk`` launch picks for a shape.
+
+    Mirrors ``kda_max_batch_segments`` in
+    ``Kernels/lib/kda/amd_prefill.mojo``; the launcher uses the
+    device's CU count, so the single-sequence residency clamp substitutes a
+    512-CU ceiling, and the launcher's further one-wave clamp, which only
+    lowers the count, is left out. The result is never below what the
+    launcher picks, which the workspace bound relies on. Keep the two
+    expressions in sync.
+
+    Args:
+        tokens: Total tokens across the batch.
+        seqs: Number of sequences (rows of ``state_indices``).
+        heads: Number of value heads.
+
+    Returns:
+        The largest per-sequence segment count the launch can use.
+    """
+    chunks = -(-tokens // _AMD_CHUNK_LEN)
+    if seqs > 1:
+        avg_chunks = -(-chunks // seqs)
+        if avg_chunks < 40:
+            return 1
+        return min(12, max(8, (avg_chunks + 15) // 16))
+    if tokens <= 2048:
+        segments = max(1, (tokens + 255) // 256)
+    elif tokens <= 8192:
+        segments = (tokens + 511) // 512
+    else:
+        segments = (tokens + 1023) // 1024
+    segments = min(segments, max(1, _AMD_CU_CEILING // heads))
+    if 2048 < tokens <= 8192:
+        # The launcher may raise a mid-length sequence's count to fill one
+        # replay wave, never past 12 chunks per segment.
+        fill = min(max(1, _AMD_CU_CEILING // (2 * heads)), -(-chunks // 12))
+        segments = max(segments, fill)
+    return segments
+
+
+def kda_chunk_scratch_rows(tokens: int, seqs: int, heads: int) -> int:
+    """Workspace of one AMD ``kda_chunk`` launch, in output-row units.
+
+    One row holds ``heads * 128`` bf16 elements: 138 rows per 32-token
+    chunk -- four bf16 chunk matrices, the bf16 within-chunk score block
+    and the fp32 gamma strip -- plus, when the launch splits sequences into
+    segments, 768 rows per (sequence, segment) of fp32 segment maps and
+    segment states.
+
+    Args:
+        tokens: Total tokens across the batch.
+        seqs: Number of sequences (rows of ``state_indices``).
+        heads: Number of value heads.
+
+    Returns:
+        Workspace rows the launch allocates (an upper bound).
+    """
+    max_chunks = -(-tokens // _AMD_CHUNK_LEN) + seqs
+    max_segments = kda_chunk_max_segments(tokens, seqs, heads)
+    segment_slots = seqs * max_segments if max_segments > 1 else 0
+    rows_per_chunk = 138
+    rows_per_segment = 768
+    return max_chunks * rows_per_chunk + segment_slots * rows_per_segment
 
 
 def kda_chunk_workspace_bytes(
     num_heads: int, head_dim: int, batch_tokens: int, batch_size: int
 ) -> int:
-    """Returns an upper bound on one gfx950 ``kda_chunk`` call's workspaces.
+    """Returns an upper bound on one gfx950 ``kda_chunk`` call's workspace.
 
-    Mirrors the allocations in ``kda_amd_chunk_launch``
-    (``Kernels/lib/kda/amd_chunk_launch.mojo``), per head: bf16 ``qg``, ``w``,
-    ``u`` and ``aqk`` per token; bf16 ``kg_t`` and float32 ``decay`` per
-    64-token chunk, of which a batch holds at most ``tokens // 64 +
-    sequences``; and the float32 split-walk workspace, which the launch sizes
-    for at most one group per four chunks and 32 groups per sequence. The
-    per-device int32 chunk offsets are counted per head, which covers them on
-    any split. Every term is per head, so the bytes for a set of devices is
-    the sum over each device's heads, however the heads are split.
+    Uses :func:`kda_chunk_scratch_rows`, which mirrors the launcher's
+    workspace layout in ``Kernels/lib/kda/amd_prefill.mojo``: per
+    32-token chunk and per (sequence, segment), in rows of ``heads *
+    head_dim`` bf16 elements. The segment count only grows as a device holds
+    fewer heads, so rows at one head bound every device of any head split,
+    and the bytes for a set of devices is at most those rows times their
+    heads. The bound covers every batch the chunk path runs (see
+    :func:`kda_chunk_predicate`: more tokens than sequences) of at most
+    ``batch_tokens`` tokens and ``batch_size`` sequences, not only the full
+    one. A batch with no more tokens than sequences takes the token-serial
+    kernel and needs no workspace, so the sweep stops at ``tokens``
+    sequences.
 
     Args:
         num_heads: KDA heads the reservation sizes.
@@ -391,25 +448,23 @@ def kda_chunk_workspace_bytes(
     Returns:
         Workspace bytes for ``num_heads``.
     """
-    chunk_len = _CHUNK_LEN
-    min_chunks_per_group = 4
-    max_groups_per_sequence = 32
-    chunks = batch_tokens // chunk_len + batch_size
-    split_planes = min(
-        -(-batch_tokens // chunk_len) // min_chunks_per_group,
-        max_groups_per_sequence * batch_size,
+    assert head_dim == _AMD_CHUNK_HEAD_DIM, (
+        "the gfx950 kda_chunk kernel needs 128-wide heads"
     )
-    plane_elems = head_dim * head_dim
-    per_head = (
-        batch_tokens * (3 * head_dim + chunk_len) * DType.bfloat16.size_in_bytes
-        + chunks * head_dim * chunk_len * DType.bfloat16.size_in_bytes
-        + chunks * head_dim * DType.float32.size_in_bytes
-        + split_planes
-        * (2 * plane_elems + head_dim + plane_elems // 2)
-        * DType.float32.size_in_bytes
-        + batch_size * DType.int32.size_in_bytes
-    )
-    return num_heads * per_head
+    # The workspace is not monotone in either count: fewer, longer sequences
+    # cross the threshold where the launch starts splitting them into
+    # segments, and the single-sequence segment rule steps down just past
+    # 2048 and 8192 tokens. Past one sequence per chunk nothing splits and
+    # the rows only grow with the sequence count.
+    rows = 0
+    for tokens in {batch_tokens} | {
+        t for t in (2048, 8192) if t < batch_tokens
+    }:
+        chunks = -(-tokens // _AMD_CHUNK_LEN)
+        largest = max(1, min(batch_size, tokens))
+        for seqs in [*range(1, min(largest, chunks) + 1), largest]:
+            rows = max(rows, kda_chunk_scratch_rows(tokens, seqs, 1))
+    return rows * num_heads * head_dim * DType.bfloat16.size_in_bytes
 
 
 def amd_kda_chunk_workspace_bytes(
@@ -934,10 +989,10 @@ def kda_chunk(
     of the L1/L2/L3 pipeline on supported shapes.
 
     On an AMD accelerator (gfx950 only) the op runs a separate pipeline over
-    64-token chunks with a narrower contract: ``key_head_dim ==
+    32-token chunks with a narrower contract: ``key_head_dim ==
     value_head_dim == 128``, ``num_key_heads == num_value_heads``,
-    ``gate_mode="safe"``, bf16 ``q``/``k``/``v`` and output, fp32 gates and
-    state, and ``use_computebound=False``.
+    ``gate_mode="safe"``, bf16 ``q``/``k``/``v``, a bf16 or fp32 output, fp32
+    gates and state, and ``use_computebound=False``.
 
     Args:
         q: ``[total_tokens, num_key_heads, key_head_dim]``.

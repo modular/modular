@@ -377,9 +377,7 @@ def _kgroup_conv_verify(
         core, window = F.cond(
             F.logical_and(
                 no_drafts,
-                _chunk_predicate(
-                    total_tokens, batch_size, head_shape[1], head_shape[2]
-                ),
+                _chunk_predicate(total_tokens, batch_size),
             ),
             [
                 TensorType(DType.float32, out_shape, device),
@@ -591,7 +589,7 @@ def kda_core(
     ]
     if verify_width is None and chunked:
         (core,) = F.cond(
-            _chunk_predicate(total_tokens, batch_size, head_shape[1], head_dim),
+            _chunk_predicate(total_tokens, batch_size),
             out_types,
             lambda: [chunk()],
             lambda: [F.rebind(decode(), out_shape, "kda decode output rebind")],
@@ -614,9 +612,7 @@ def kda_core(
         (core,) = F.cond(
             F.logical_and(
                 no_drafts,
-                _chunk_predicate(
-                    total_tokens, batch_size, head_shape[1], head_dim
-                ),
+                _chunk_predicate(total_tokens, batch_size),
             ),
             out_types,
             lambda: [chunk(_split_heads(conv_io, head_shape))],
