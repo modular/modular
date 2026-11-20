@@ -162,6 +162,17 @@ modular_py_test(
     ],
 )
 
+modular_py_test(
+    name = "vision_processor_tests_cpu",
+    srcs = ["test_vision_processor.py"],
+    deps = [
+        requirement("numpy"),
+        requirement("pillow"),
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/context",
+    ],
+)
+
 # The selection is arithmetic over the config and the host's architecture
 # name; the kernels it selects are graded by the GPU tests beside this one.
 modular_py_test(

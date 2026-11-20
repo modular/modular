@@ -16,9 +16,15 @@ modular_py_library(
     # Recipe yamls (and the hw_recipes.yaml table) ship with the library so
     # any downstream runfiles tree can resolve them.
     data = glob(["recipes/*.yaml"]),
+    ignore_extra_deps = [
+        # The checkpoint's remote tokenizer imports tiktoken at runtime.
+        requirement("tiktoken"),
+    ],
     visibility = ["//visibility:public"],
     deps = [
         requirement("numpy"),
+        requirement("pillow"),
+        requirement("tiktoken"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max:tensor",
