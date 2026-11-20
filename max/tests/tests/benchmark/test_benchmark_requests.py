@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import time
+import urllib.parse
 from array import array
 from collections.abc import AsyncIterator, Sequence
 from types import SimpleNamespace
@@ -45,6 +46,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     TextContentBlock,
 )
 from max.benchmark.benchmark_shared.request import (
+    BaseRequestFuncOutput,
     ChatWireHistory,
     OpenAIChatCompletionsRequestDriver,
     OpenAICompletionsRequestDriver,
@@ -89,10 +91,11 @@ from tqdm.asyncio import tqdm
 
 @pytest.fixture
 def mock_aiohttp_session(mocker: MockerFixture) -> Any:
-    """A session mock with a helper to set up POST responses.
+    """The one session a driver is handed, with a POST-response helper.
 
-    The driver under test is handed this session; a helper that opens its own
-    session gets the same mock, so both paths post through it.
+    Drivers never open a session of their own; a run passes its shared one in.
+    The LoRA helpers do open one, so ``aiohttp.ClientSession`` is patched to
+    hand them this same mock.
     """
     mock_client = mocker.MagicMock()
     mock_client.__aenter__ = mocker.AsyncMock(return_value=mock_client)
@@ -1032,8 +1035,9 @@ def _record_encode_times(
     """Replaces the module's ``msgspec`` with one that logs each encode.
 
     Only this module's reference is swapped, so the rest of the process keeps
-    the real encoder. The log holds the fake clock's reading per call, in
-    order.
+    the real encoder. The stand-in carries the three attributes the drivers
+    reach for: ``json.encode``, ``json.decode`` and ``Raw``. The log holds the
+    fake clock's reading per call, in order.
     """
     encode_times: list[float] = []
 
@@ -1051,6 +1055,21 @@ def _record_encode_times(
             Raw=msgspec.Raw,
         ),
     )
+    return encode_times
+
+
+def _record_form_encodes(
+    mocker: MockerFixture, clock: _CountingClock
+) -> list[float]:
+    """Logs the clock's reading at each form encode, in order."""
+    encode_times: list[float] = []
+    encode = request_module._serialize_form_body
+
+    def counting_encode(payload: dict[str, str]) -> bytes:
+        encode_times.append(clock.perf_counter())
+        return encode(payload)
+
+    mocker.patch.object(request_module, "_serialize_form_body", counting_encode)
     return encode_times
 
 
@@ -1894,57 +1913,6 @@ class TestRequestDriver:
         assert driver._sampling_fields(sampling) == {"temperature": 0.9}
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("driver_class", "api_url", "chunk"),
-        [
-            pytest.param(
-                OpenAICompletionsRequestDriver,
-                "http://localhost:8000/completions",
-                b'data: {"choices": [{"text": "hi"}]}\n\n',
-                id="completions",
-            ),
-            pytest.param(
-                OpenAIChatCompletionsRequestDriver,
-                "http://localhost:8000/v1/chat/completions",
-                b'data: {"choices": [{"delta": {"content": "hi"}}]}\n\n',
-                id="chat",
-            ),
-        ],
-    )
-    async def test_the_window_opens_before_the_body_is_encoded(
-        self,
-        mock_aiohttp_session: Any,
-        mock_openai_env: None,
-        mocker: MockerFixture,
-        driver_class: type[RequestDriver],
-        api_url: str,
-        chunk: bytes,
-    ) -> None:
-        """Serialization stays inside the window, as it is on main.
-
-        On main the payload reaches aiohttp as ``json=``, so aiohttp encodes it
-        after the recorder has stamped the start. Encoding the body up front
-        must not move that cost out of TTFT and latency.
-        """
-        clock = _CountingClock()
-        encode_times = _record_encode_times(mocker, clock)
-        mocker.patch.object(request_module, "time", clock)
-        mock_aiohttp_session.setup_post_response(
-            _streaming_response(mocker, [chunk, b"data: [DONE]\n\n"])
-        )
-
-        result = await driver_class(session=mock_aiohttp_session).request(
-            make_request_input(api_url)
-        )
-
-        assert result.success is True
-        assert encode_times, "the driver must encode the body itself"
-        assert result.request_submit_time is not None
-        assert result.request_submit_time < encode_times[-1], (
-            "the request's start stamp must precede the body's encode"
-        )
-
-    @pytest.mark.asyncio
     async def test_trtllm_ttft_is_the_first_chunk_not_the_bookkeeping(
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
@@ -2192,10 +2160,192 @@ class TestDriverExtraBody:
             )
         )
         assert result.success is True
-        # The TRT-LLM driver keeps a dict body, so aiohttp serializes it.
-        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        # The body is pre-serialised, so aiohttp gets bytes, not a dict.
+        sent = sent_json(mock_aiohttp_session.post)
         assert sent["stop"] == ["}"]
         assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+
+
+class TestSerializeBeforeTheClock:
+    """A pre-serialized body must not be charged to the request's window.
+
+    aiohttp serializes a payload handed to it as ``json=``, or form-encodes a
+    ``data=`` mapping, inside the request's measured window. Each driver whose
+    body is JSON or a flat form encodes it first and takes its start stamp
+    after, and each test here reads the same property from the fake clock: the
+    last encode happened before the stamp that opens TTFT and latency.
+    """
+
+    def _assert_window_opens_after(
+        self, encode_times: list[float], output: BaseRequestFuncOutput
+    ) -> None:
+        assert encode_times, "the driver must encode the body itself"
+        assert output.request_submit_time is not None
+        assert output.request_submit_time > encode_times[-1], (
+            "the request's start stamp must follow the body's encode"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("driver_class", "api_url", "chunk"),
+        [
+            pytest.param(
+                OpenAICompletionsRequestDriver,
+                "http://localhost:8000/completions",
+                b'data: {"choices": [{"text": "hi"}]}\n\n',
+                id="completions",
+            ),
+            pytest.param(
+                OpenAIChatCompletionsRequestDriver,
+                "http://localhost:8000/v1/chat/completions",
+                b'data: {"choices": [{"delta": {"content": "hi"}}]}\n\n',
+                id="chat",
+            ),
+        ],
+    )
+    async def test_openai_window_opens_after_the_body_is_encoded(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+        driver_class: type[RequestDriver],
+        api_url: str,
+        chunk: bytes,
+    ) -> None:
+        """Chat and completions take their start stamp after the encode."""
+        clock = _CountingClock()
+        encode_times = _record_encode_times(mocker, clock)
+        mocker.patch.object(request_module, "time", clock)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, [chunk, b"data: [DONE]\n\n"])
+        )
+
+        result = await driver_class(session=mock_aiohttp_session).request(
+            make_request_input(api_url)
+        )
+
+        assert result.success is True
+        self._assert_window_opens_after(encode_times, result)
+
+    @pytest.mark.asyncio
+    async def test_trtllm_ttft_clock_starts_after_the_body_is_serialized(
+        self, mock_aiohttp_session: Any, mocker: MockerFixture
+    ) -> None:
+        """TTFT is measured from a stamp the encode precedes."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/generate_stream",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+        clock = _CountingClock()
+        encode_times = _record_encode_times(mocker, clock)
+        mocker.patch.object(request_module, "time", clock)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, [b'data: {"text_output": "Hi"}\n\n'])
+        )
+
+        result = await TRTLLMRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
+
+        assert result.success is True
+        self._assert_window_opens_after(encode_times, result)
+
+    @pytest.mark.asyncio
+    async def test_media_latency_excludes_the_serialization(
+        self, mock_aiohttp_session: Any, mocker: MockerFixture
+    ) -> None:
+        """A pixel driver's latency starts after the encode, not before it."""
+        clock = _CountingClock()
+        encode_times = _record_encode_times(mocker, clock)
+        mocker.patch.object(request_module, "time", clock)
+        response = mocker.AsyncMock()
+        response.status = 200
+        response.json = mocker.AsyncMock(
+            return_value={"output": [{"content": [{"type": "output_image"}]}]}
+        )
+        mock_aiohttp_session.setup_post_response(response)
+
+        request_input = PixelGenerationRequestFuncInput(
+            model="test-model",
+            session_id=None,
+            prompt="a pixel",
+            input_image_paths=None,
+            api_url="http://localhost:8000/v1/responses",
+        )
+
+        output = await OpenResponsesRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
+
+        assert output.success is True
+        self._assert_window_opens_after(encode_times, output)
+        # Latency is measured from that stamp, so the encode is outside it.
+        assert output.latency > 0
+
+    @pytest.mark.asyncio
+    async def test_video_form_latency_excludes_the_encoding(
+        self, mock_aiohttp_session: Any, mocker: MockerFixture
+    ) -> None:
+        """The text-to-video form body is encoded before its latency starts."""
+        clock = _CountingClock()
+        encode_times = _record_form_encodes(mocker, clock)
+        mocker.patch.object(request_module, "time", clock)
+        response = mocker.AsyncMock()
+        response.status = 200
+        response.read = mocker.AsyncMock(return_value=b"mp4 bytes")
+        response.headers = {}
+        mock_aiohttp_session.setup_post_response(response)
+        request_input = PixelGenerationRequestFuncInput(
+            model="test-model",
+            session_id=None,
+            prompt="a video",
+            input_image_paths=None,
+            api_url="http://localhost:8000/v1/videos/sync",
+        )
+
+        output = await VllmOmniVideoRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
+
+        assert output.success is True
+        self._assert_window_opens_after(encode_times, output)
+        # Byte for byte what aiohttp made of the same dict, and the type it
+        # would have declared for it.
+        sent = mock_aiohttp_session.post.call_args.kwargs
+        assert (
+            sent["data"]
+            == urllib.parse.urlencode(
+                _build_vllm_omni_video_payload(request_input)
+            ).encode()
+        )
+        assert sent["headers"]["Content-Type"] == (
+            "application/x-www-form-urlencoded"
+        )
+
+    @pytest.mark.asyncio
+    async def test_unencodable_body_fails_only_that_request(
+        self, mock_aiohttp_session: Any
+    ) -> None:
+        """A payload this client can't serialize fails one request, and the
+        failure is still stamped so the run's denominators do not change."""
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session,
+            extra_body={"unserializable": object()},
+        )
+        result = await driver.request(_chat_input(None))
+
+        assert result.success is False
+        assert "TypeError" in result.error
+        assert result.request_submit_time is not None
+        assert result.latency == 0.0
+        mock_aiohttp_session.post.assert_not_called()
 
 
 class TestRequestDriverSelection:

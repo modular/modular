@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.parse
 from abc import ABC, abstractmethod
 from array import array
 from collections.abc import (
@@ -37,7 +38,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass, field
 from itertools import pairwise
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import aiohttp
 import msgspec
@@ -81,6 +82,9 @@ AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 # connection per request; give it the same pool.
 KEEPALIVE_TIMEOUT_S = 60
 
+_JSON_HEADERS = {"Content-Type": "application/json"}
+_FORM_HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
+
 # Chunks tokenized per call when filling in per-chunk TPOT; bounds peak memory.
 _TPOT_TOKENIZE_SLICE = 10_000
 
@@ -97,6 +101,36 @@ async def benchmark_client_session() -> AsyncIterator[aiohttp.ClientSession]:
         connector=connector, timeout=AIOHTTP_TIMEOUT
     ) as session:
         yield session
+
+
+def _serialize_request_body(payload: Any) -> tuple[bytes, str]:
+    """Encodes the body so the request's clock starts after it.
+
+    aiohttp serializes a ``json=`` payload itself, inside the window TTFT and
+    latency are measured from, which charges the client's encoding to the
+    server. Every driver whose body is JSON, or a flat form encoded by
+    :func:`_serialize_form_body`, encodes it up front and takes its start stamp
+    afterwards, so neither TTFT, latency nor a media driver's latency covers
+    it. A multipart body is the one exception: aiohttp frames it while it
+    streams, and the image bytes it carries are already read before the stamp.
+
+    Returns:
+        The encoded body, or ``b""`` and the error that fails this one request
+        instead of the run.
+    """
+    try:
+        return msgspec.json.encode(payload), ""
+    except Exception:
+        return b"", "".join(traceback.format_exception(*sys.exc_info()))
+
+
+def _serialize_form_body(payload: Mapping[str, str]) -> bytes:
+    """Encodes a flat field map as a form body, as aiohttp would have.
+
+    aiohttp form-encodes a ``data=`` mapping while it writes the request, which
+    puts the encoding inside the measured window.
+    """
+    return urllib.parse.urlencode(payload).encode()
 
 
 def _encode_openresponses_image_from_file_path(
@@ -554,6 +588,21 @@ class PixelGenerationRequestFuncOutput(BaseRequestFuncOutput):
     num_generated_outputs: int = 0
 
 
+_FuncOutputT = TypeVar("_FuncOutputT", bound=BaseRequestFuncOutput)
+
+
+def _failed_before_sending(output: _FuncOutputT, error: str) -> _FuncOutputT:
+    """Records a request that failed before it reached the wire.
+
+    It carries a submit time, and the zero latency it measured, like any other
+    failure: the run's measurement window and its denominators then count it
+    the same way.
+    """
+    output.error = error
+    output.request_submit_time = time.perf_counter()
+    return output
+
+
 class RequestDriver(ABC):
     """Abstract base class for a driver that handles API requests to different backends."""
 
@@ -728,6 +777,12 @@ class TRTLLMRequestDriver(RequestDriver):
             base_payload, request_func_input.sampling
         )
         payload = _build_final_payload(base_payload, self.extra_body)
+        body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(
+                RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                encode_error,
+            )
 
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len
@@ -739,7 +794,9 @@ class TRTLLMRequestDriver(RequestDriver):
         output.request_submit_time = st
         most_recent_timestamp = st
         try:
-            async with self.session.post(url=api_url, json=payload) as response:
+            async with self.session.post(
+                url=api_url, data=body, headers=_JSON_HEADERS
+            ) as response:
                 if response.status == 200:
                     events = iter_events(response.content.iter_any())
                     try:
@@ -1299,7 +1356,7 @@ def _body_headers(headers: Mapping[str, str]) -> dict[str, str]:
     caller sets it here. The request's own headers win, and the dict passed in
     is left alone: the drivers cache their auth headers per run.
     """
-    return {"Content-Type": "application/json", **headers}
+    return {**_JSON_HEADERS, **headers}
 
 
 async def _run_openai_stream_request(
@@ -1381,13 +1438,15 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
         payload = _build_final_payload(payload, self.extra_body)
-
-        # The clock starts before the encode. On main aiohttp serialises the
-        # payload inside ``session.post``, after the recorder has stamped the
-        # start, so TTFT and latency include the encode; starting the clock
-        # after one here would silently drop it from the measurement.
+        body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(
+                RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                encode_error,
+            )
+        # The window opens after the body is serialized, so the encode is not
+        # charged to TTFT: see `_serialize_request_body`.
         start = time.perf_counter()
-        body = msgspec.json.encode(payload)
         return await _run_openai_stream_request(
             api_url=api_url,
             body=body,
@@ -1548,27 +1607,40 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         if request_func_input.cache_salt:
             headers["X-Cache-Salt"] = request_func_input.cache_salt
 
-        # Stamped before the encode, which main leaves inside the measured
-        # window; see the note in OpenAICompletionsRequestDriver.request.
-        start = time.perf_counter()
+        # Stamped after the encode in both branches, so the encode is charged
+        # to neither TTFT nor latency: see `_serialize_request_body`.
         if self.backend == "atom":
             # ATOM doesn't per-token-stream chat/completions: send non-streaming
             # and read timing from `usage`. TODO(ATOM): remove once it streams.
             nonstream_payload = dict(payload)
             nonstream_payload["stream"] = False
             nonstream_payload.pop("stream_options", None)
+            body, encode_error = _serialize_request_body(nonstream_payload)
+            if encode_error:
+                return _failed_before_sending(
+                    RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                    encode_error,
+                )
+            start = time.perf_counter()
             output = await _run_atom_nonstream_chat_request(
                 api_url=api_url,
-                body=msgspec.json.encode(nonstream_payload),
+                body=body,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
                 session=self.session,
                 start=start,
             )
         else:
+            body, encode_error = _serialize_request_body(payload)
+            if encode_error:
+                return _failed_before_sending(
+                    RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                    encode_error,
+                )
+            start = time.perf_counter()
             output = await _run_openai_stream_request(
                 api_url=api_url,
-                body=msgspec.json.encode(payload),
+                body=body,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
                 chat=True,
@@ -1700,11 +1772,15 @@ class OpenResponsesRequestDriver(RequestDriver):
         }
 
         output = PixelGenerationRequestFuncOutput()
+        request_body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(output, encode_error)
+
         start = time.perf_counter()
         output.request_submit_time = start
         try:
             async with self.session.post(
-                url=api_url, json=payload, headers=headers
+                url=api_url, data=request_body, headers=headers
             ) as response:
                 output.latency = time.perf_counter() - start
                 if response.status != 200:
@@ -1790,11 +1866,15 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
         }
 
         output = PixelGenerationRequestFuncOutput()
+        request_body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(output, encode_error)
+
         start = time.perf_counter()
         output.request_submit_time = start
         try:
             async with self.session.post(
-                url=api_url, json=payload, headers=headers
+                url=api_url, data=request_body, headers=headers
             ) as response:
                 output.latency = time.perf_counter() - start
                 if response.status != 200:
@@ -1994,17 +2074,20 @@ class SglangVideoRequestDriver(RequestDriver):
         # multipart/form-data; text-to-video stays JSON. Let aiohttp set the
         # multipart Content-Type (with boundary) for the form path.
         headers = dict(self._auth_headers())
+        output = PixelGenerationRequestFuncOutput()
         if request_func_input.input_image_paths and schema is None:
             post_kwargs: dict[str, Any] = {
                 "data": _build_sglang_video_form(request_func_input)
             }
         else:
             headers["Content-Type"] = "application/json"
-            post_kwargs = {
-                "json": _build_sglang_video_payload(request_func_input)
-            }
+            post_body, encode_error = _serialize_request_body(
+                _build_sglang_video_payload(request_func_input)
+            )
+            if encode_error:
+                return _failed_before_sending(output, encode_error)
+            post_kwargs = {"data": post_body}
 
-        output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
         output.request_submit_time = start
 
@@ -2153,11 +2236,15 @@ class VllmOmniPixelGenerationRequestDriver(RequestDriver):
         }
 
         output = PixelGenerationRequestFuncOutput()
+        request_body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(output, encode_error)
+
         start = time.perf_counter()
         output.request_submit_time = start
         try:
             async with self.session.post(
-                url=api_url, json=payload, headers=headers
+                url=api_url, data=request_body, headers=headers
             ) as response:
                 output.latency = time.perf_counter() - start
                 if response.status != 200:
@@ -2254,7 +2341,7 @@ class VllmOmniVideoRequestDriver(RequestDriver):
 
         # For image-to-video the conditioning image rides along as the
         # `input_reference` file, which requires multipart/form-data. The
-        # text-to-video path keeps its existing form-encoded dict POST.
+        # text-to-video path posts a form-encoded dict.
         payload = _build_vllm_omni_video_payload(request_func_input)
         if request_func_input.input_image_paths:
             form = aiohttp.FormData()
@@ -2262,11 +2349,13 @@ class VllmOmniVideoRequestDriver(RequestDriver):
                 form.add_field(field_name, value)
             _add_input_reference(form, request_func_input.input_image_paths)
             post_data: Any = form
+            # A copy per request: the cached dict is shared by every request.
+            headers = dict(self._auth_headers())
         else:
-            post_data = payload
-
-        # A copy per request: the cached dict is shared by every request.
-        headers = dict(self._auth_headers())
+            # aiohttp would form-encode the dict as it writes the request, so
+            # the encoding would land inside the window; encode it first.
+            post_data = _serialize_form_body(payload)
+            headers = {**self._auth_headers(), **_FORM_HEADERS}
 
         output = PixelGenerationRequestFuncOutput()
 

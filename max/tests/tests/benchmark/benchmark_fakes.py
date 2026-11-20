@@ -337,15 +337,13 @@ def make_request_input(
 def mock_chat_stream(
     mocker: MockerFixture, chunks: Sequence[bytes]
 ) -> MagicMock:
-    """Patches aiohttp so a chat request streams ``chunks`` back.
+    """Returns a session whose one chat POST streams ``chunks`` back.
 
-    Returns the mocked client, whose ``post`` records the sent payload.
+    The session is handed to the driver, as a run hands its one shared session
+    to every driver; the returned mock's ``post`` records the sent body.
     """
     mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
-    )
-    client = session_class.return_value.__aenter__.return_value
+    client = mocker.MagicMock()
 
     response = mocker.AsyncMock()
     response.status = 200
