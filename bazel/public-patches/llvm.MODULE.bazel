@@ -27,6 +27,9 @@ llvm_source.configure(
         # Don't merge stores into HVX vectors without auto-HVX:
         # https://github.com/llvm/llvm-project/pull/242323
         "//bazel/public-patches:llvm-hexagon-store-merge-no-autohvx.patch",
+        # Adds optional_targets (below): backends whose libraries exist but
+        # stay out of the default aggregates, libLLVM and Targets.def.
+        "//bazel/public-patches:llvm-optional-targets.patch",
     ],
 )
 
@@ -39,5 +42,11 @@ llvm_configure.configure(
         "AMDGPU",
         "Hexagon",
         "NVPTX",
+    ],
+    optional_targets = [
+        # Linked only by its explicit users (the OpenCL hardware plugin),
+        # never into libLLVM. Temporary: remove it once a plugin can build
+        # against its own LLVM target set.
+        "SPIRV",
     ],
 )
