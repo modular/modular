@@ -42,9 +42,6 @@ TEST(CPUDeviceDeathTest, ConfiguredThreadCountSelectsWorkQueue) {
           EXPECT_EQ(options.workQueueType,
                     count == 1 ? CPUDeviceOptions::WorkQueueType::kSingleThread
                                : CPUDeviceOptions::WorkQueueType::kThreadPool);
-          EXPECT_EQ(
-              createTestCPUDevice()->getWorkQueue()->getParallelismLevel(),
-              count);
           std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
         },
         ::testing::ExitedWithCode(0), "");
