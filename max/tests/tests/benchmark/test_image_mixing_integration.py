@@ -160,10 +160,7 @@ async def test_serialized_payload_carries_the_image(
         wire_history=wire,
     )
 
-    session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
-    )
-    client = session_class.return_value.__aenter__.return_value
+    client = mocker.MagicMock()
 
     def post(**_: Any) -> Any:
         response = mocker.AsyncMock()
@@ -181,7 +178,9 @@ async def test_serialized_payload_carries_the_image(
 
     client.post = mocker.Mock(side_effect=post)
 
-    await OpenAIChatCompletionsRequestDriver().request(request_input)
+    await OpenAIChatCompletionsRequestDriver(session=client).request(
+        request_input
+    )
 
     payload = sent_json(client.post)
     roles = [m["role"] for m in payload["messages"]]
@@ -198,7 +197,9 @@ async def test_serialized_payload_carries_the_image(
     # use the history's encoding. The next turn, which carries no images, takes
     # the cached path: nothing from the splice may have been cached with it.
     request_input.images = []
-    await OpenAIChatCompletionsRequestDriver().request(request_input)
+    await OpenAIChatCompletionsRequestDriver(session=client).request(
+        request_input
+    )
     next_payload = sent_json(client.post)
     next_roles = [m["role"] for m in next_payload["messages"]]
     assert next_payload["messages"][next_roles.index("user")]["content"] == [

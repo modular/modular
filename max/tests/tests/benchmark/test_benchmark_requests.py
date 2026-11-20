@@ -82,21 +82,25 @@ from tests.benchmark.benchmark_fakes import (
     StreamBody,
     make_request_input,
     sent_json,
+    unused_session,
 )
 from tqdm.asyncio import tqdm
 
 
 @pytest.fixture
 def mock_aiohttp_session(mocker: MockerFixture) -> Any:
-    """Fixture to create a properly mocked aiohttp ClientSession.
+    """A session mock with a helper to set up POST responses.
 
-    Returns a mock client with a helper method to easily setup POST responses.
+    The driver under test is handed this session; a helper that opens its own
+    session gets the same mock, so both paths post through it.
     """
-    mock_session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
+    mock_client = mocker.MagicMock()
+    mock_client.__aenter__ = mocker.AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = mocker.AsyncMock(return_value=None)
+    mocker.patch(
+        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession",
+        return_value=mock_client,
     )
-    mock_session = mock_session_class.return_value
-    mock_client = mock_session.__aenter__.return_value
 
     def setup_post_response(response_mock: Any) -> None:
         """Helper to setup POST response mock."""
@@ -1075,7 +1079,7 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAICompletionsRequestDriver()
+        driver = OpenAICompletionsRequestDriver(session=mock_aiohttp_session)
         result = await driver.request(request_input)
 
         assert result.success is True
@@ -1106,7 +1110,9 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAIChatCompletionsRequestDriver()
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        )
         result = await driver.request(request_input)
 
         assert result.success is True
@@ -1148,7 +1154,9 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAIChatCompletionsRequestDriver()
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        )
         result = await driver.request(request_input)
 
         assert result.success is False
@@ -1200,7 +1208,9 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAIChatCompletionsRequestDriver()
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        )
         result = await driver.request(request_input)
 
         assert result.success is True
@@ -1254,7 +1264,9 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAIChatCompletionsRequestDriver()
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        )
         result = await driver.request(request_input)
 
         assert result.success is True
@@ -1295,7 +1307,9 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAIChatCompletionsRequestDriver()
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        )
         result = await driver.request(request_input)
 
         assert result.success is True
@@ -1333,7 +1347,9 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAIChatCompletionsRequestDriver()
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        )
         result = await driver.request(request_input)
 
         assert result.success is True
@@ -1377,7 +1393,9 @@ class TestRequestDriver:
             )
         )
 
-        driver = OpenAIChatCompletionsRequestDriver()
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        )
         result = await driver.request(request_input)
 
         assert result.success is False
@@ -1456,9 +1474,9 @@ class TestRequestDriver:
             )
         )
 
-        result = await OpenAIChatCompletionsRequestDriver().request(
-            request_input
-        )
+        result = await OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
 
         assert result.success is True
         assert result.carries_image is expected
@@ -1481,7 +1499,7 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        driver = OpenAICompletionsRequestDriver()
+        driver = OpenAICompletionsRequestDriver(session=mock_aiohttp_session)
         result = await driver.request(request_input)
 
         assert result.success is False
@@ -1526,9 +1544,9 @@ class TestRequestDriver:
         response.content = body
         mock_aiohttp_session.setup_post_response(response)
 
-        result = await OpenAIChatCompletionsRequestDriver().request(
-            request_input
-        )
+        result = await OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
 
         assert result.success is True
         assert result.generated_text == "Hi"
@@ -1569,9 +1587,9 @@ class TestRequestDriver:
         mock_aiohttp_session.setup_post_response(response)
 
         started = time.perf_counter()
-        result = await OpenAIChatCompletionsRequestDriver().request(
-            request_input
-        )
+        result = await OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
         elapsed = time.perf_counter() - started
 
         assert result.success is True
@@ -1619,9 +1637,9 @@ class TestRequestDriver:
         mock_aiohttp_session.setup_post_response(response)
 
         started = time.perf_counter()
-        result = await OpenAIChatCompletionsRequestDriver().request(
-            request_input
-        )
+        result = await OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
         elapsed = time.perf_counter() - started
 
         assert result.success is True
@@ -1663,9 +1681,9 @@ class TestRequestDriver:
             _streaming_response(mocker, mock_response_data)
         )
 
-        result = await OpenAIChatCompletionsRequestDriver().request(
-            request_input
-        )
+        result = await OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
 
         assert result.success is False
         assert "Malformed stream chunk" in result.error
@@ -1694,9 +1712,9 @@ class TestRequestDriver:
             )
         )
 
-        result = await OpenAIChatCompletionsRequestDriver().request(
-            request_input
-        )
+        result = await OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
 
         assert result.success is False
         assert "usage count is not an integer" in result.error
@@ -1722,7 +1740,7 @@ class TestRequestDriver:
             )
         )
 
-        base_driver = TRTLLMRequestDriver()
+        base_driver = TRTLLMRequestDriver(session=mock_aiohttp_session)
         driver = ProgressBarRequestDriver(base_driver, mock_pbar)
         result = await driver.request(request_input)
 
@@ -1756,7 +1774,7 @@ class TestRequestDriver:
             )
         )
 
-        driver = TRTLLMRequestDriver()
+        driver = TRTLLMRequestDriver(session=mock_aiohttp_session)
         result = await driver.request(request_input)
 
         assert result.success is True
@@ -1794,7 +1812,9 @@ class TestRequestDriver:
             )
         )
 
-        result = await TRTLLMRequestDriver().request(request_input)
+        result = await TRTLLMRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
 
         assert result.success is False
         assert result.generated_text == "ok"
@@ -1832,9 +1852,9 @@ class TestRequestDriver:
         )
 
         tokenizer: Any = _WordCountingTokenizer()
-        result = await TRTLLMRequestDriver(tokenizer=tokenizer).request(
-            request_input
-        )
+        result = await TRTLLMRequestDriver(
+            session=mock_aiohttp_session, tokenizer=tokenizer
+        ).request(request_input)
 
         assert list(result.pending_tpot_ends) == [2, 5, 6]
 
@@ -1850,7 +1870,7 @@ class TestRequestDriver:
     def test_sampling_fields_are_cached_on_the_values(self) -> None:
         """Callers rebuild an equal ``SamplingConfig`` per request, so the
         cache keys on the values; an identity key would rebuild every time."""
-        driver = OpenAICompletionsRequestDriver()
+        driver = OpenAICompletionsRequestDriver(session=unused_session())
         first = driver._sampling_fields(SamplingConfig(temperature=0.5))
         assert first == {"temperature": 0.5}
         assert driver._sampling_fields(SamplingConfig(temperature=0.5)) is first
@@ -1865,7 +1885,7 @@ class TestRequestDriver:
         Caching the config object would compare it to itself, which always
         matches, so the cache would serve the pre-edit fields forever.
         """
-        driver = OpenAICompletionsRequestDriver()
+        driver = OpenAICompletionsRequestDriver(session=unused_session())
         sampling = SamplingConfig(temperature=0.5)
         assert driver._sampling_fields(sampling) == {"temperature": 0.5}
 
@@ -1913,7 +1933,9 @@ class TestRequestDriver:
             _streaming_response(mocker, [chunk, b"data: [DONE]\n\n"])
         )
 
-        result = await driver_class().request(make_request_input(api_url))
+        result = await driver_class(session=mock_aiohttp_session).request(
+            make_request_input(api_url)
+        )
 
         assert result.success is True
         assert encode_times, "the driver must encode the body itself"
@@ -1966,7 +1988,9 @@ class TestRequestDriver:
             "max.benchmark.benchmark_shared.request.time", _SteppingClock()
         )
 
-        result = await TRTLLMRequestDriver().request(request_input)
+        result = await TRTLLMRequestDriver(
+            session=mock_aiohttp_session
+        ).request(request_input)
 
         assert result.success is True
         # Submit at 1.0, first chunk at 2.0, second at 3.0. A separate read
@@ -2084,7 +2108,9 @@ class TestDriverExtraBody:
             )
         )
 
-        driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
+        driver = OpenAIChatCompletionsRequestDriver(
+            session=mock_aiohttp_session, extra_body=self._EXTRA
+        )
         result = await driver.request(
             make_request_input(
                 "http://localhost:8000/v1/chat/completions",
@@ -2115,7 +2141,9 @@ class TestDriverExtraBody:
             )
         )
 
-        driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
+        driver = OpenAICompletionsRequestDriver(
+            session=mock_aiohttp_session, extra_body=self._EXTRA
+        )
         result = await driver.request(
             make_request_input(
                 "http://localhost:8000/v1/completions",
@@ -2153,7 +2181,9 @@ class TestDriverExtraBody:
             )
         )
 
-        driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
+        driver = TRTLLMRequestDriver(
+            session=mock_aiohttp_session, extra_body=self._EXTRA
+        )
         result = await driver.request(
             make_request_input(
                 "http://localhost:8000/v2/models/ensemble/generate_stream",
@@ -2162,6 +2192,7 @@ class TestDriverExtraBody:
             )
         )
         assert result.success is True
+        # The TRT-LLM driver keeps a dict body, so aiohttp serializes it.
         sent = mock_aiohttp_session.post.call_args[1]["json"]
         assert sent["stop"] == ["}"]
         assert sent["vendor_ext"] == {"flags": ["a", "b"]}
@@ -2893,9 +2924,9 @@ async def test_cache_warmup_empty_stream_requires_completed_generation(
     response.reason = "Bad Request"
     mock_aiohttp_session.setup_post_response(response)
     driver = (
-        OpenAIChatCompletionsRequestDriver()
+        OpenAIChatCompletionsRequestDriver(session=mock_aiohttp_session)
         if chat
-        else OpenAICompletionsRequestDriver()
+        else OpenAICompletionsRequestDriver(session=mock_aiohttp_session)
     )
     result = await driver.request(request_input)
 
@@ -3022,7 +3053,9 @@ async def test_measured_empty_stream_succeeds_only_when_tiny_budget_is_spent(
         mocker, [f"data: {event}\n\n".encode() for event in events]
     )
     mock_aiohttp_session.setup_post_response(response)
-    result = await OpenAIChatCompletionsRequestDriver().request(request_input)
+    result = await OpenAIChatCompletionsRequestDriver(
+        session=mock_aiohttp_session
+    ).request(request_input)
 
     assert result.success == success
     assert result.generated_text == ""

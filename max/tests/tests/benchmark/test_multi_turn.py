@@ -55,6 +55,7 @@ from max.benchmark.benchmark_shared.single_turn import prime_shared_contexts
 from pytest_mock import MockerFixture
 from tests.benchmark.benchmark_fakes import (
     CapturingDriver,
+    FakeDriver,
     StreamBody,
     make_request_input,
     mock_chat_stream,
@@ -114,7 +115,7 @@ def test_chat_session_driver_constrains_only_the_marked_turns() -> None:
     response_format: ResponseFormat = {"type": "json_object"}
     sent: list[tuple[ResponseFormat | None, bool]] = []
 
-    class SnapshottingDriver(RequestDriver):
+    class SnapshottingDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -165,7 +166,7 @@ def test_chat_session_driver_constrains_only_the_marked_turns() -> None:
 
 
 def test_chat_session_driver_tags_every_turn_with_its_adapter() -> None:
-    class OkDriver(RequestDriver):
+    class OkDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -202,7 +203,7 @@ def test_chat_session_driver_disable_ignore_eos_covers_every_turn() -> None:
     ``RequestFuncInput``, so each value is snapshotted when sent."""
     sent: list[bool] = []
 
-    class SnapshottingDriver(RequestDriver):
+    class SnapshottingDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -251,7 +252,7 @@ def test_chat_session_driver_strips_harmony_wire_tags_from_history(
     histories: list[list[str]] = []
     prompt_lens: list[int] = []
 
-    class EchoingDriver(RequestDriver):
+    class EchoingDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -319,7 +320,7 @@ def test_chat_len_charges_what_the_turn_generated(
     """
     prompt_lens: list[int] = []
 
-    class ShortResponseDriver(RequestDriver):
+    class ShortResponseDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -525,7 +526,7 @@ def test_chat_session_driver_marks_a_history_that_carries_an_image() -> None:
     }
     sent: list[bool] = []
 
-    class SnapshottingDriver(RequestDriver):
+    class SnapshottingDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -680,7 +681,7 @@ def test_prerun_warmup_turns_raises_on_failed_request() -> None:
     """
     sessions = [_make_session_with_id(0, prefix_turns=2)]
 
-    class _FailingDriver(RequestDriver):
+    class _FailingDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -746,7 +747,7 @@ def test_prerun_warmup_turns_cross_session_parallelism() -> None:
     in_flight = 0
     release = asyncio.Event()
 
-    class _SlowDriver(RequestDriver):
+    class _SlowDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -1176,7 +1177,9 @@ async def test_serialized_payload_carries_the_turn_response_format(
         mocker, [b'data: {"choices": [{"delta": {"content": "{}"}}]}\n\n']
     )
 
-    await OpenAIChatCompletionsRequestDriver().request(request_input)
+    await OpenAIChatCompletionsRequestDriver(session=client).request(
+        request_input
+    )
 
     payload = sent_json(client.post)
     assert payload["response_format"] == response_format
@@ -1193,7 +1196,7 @@ def test_chat_session_driver_sends_each_turns_own_tools() -> None:
     tools = [{"type": "function", "function": {"name": "read_file"}}]
     sent: list[tuple[list[dict[str, object]] | None, bool]] = []
 
-    class SnapshottingDriver(RequestDriver):
+    class SnapshottingDriver(FakeDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -1267,7 +1270,7 @@ async def test_serialized_payload_carries_tools_and_flags_a_tool_call(
     ]
     client = mock_chat_stream(mocker, [_TOOL_CALL_CHUNK])
 
-    output = await OpenAIChatCompletionsRequestDriver().request(
+    output = await OpenAIChatCompletionsRequestDriver(session=client).request(
         _chat_input(tools)
     )
 
@@ -1282,10 +1285,10 @@ async def test_serialized_payload_carries_tools_and_flags_a_tool_call(
 async def test_plain_answer_to_offered_tools_is_not_a_tool_call(
     mocker: MockerFixture,
 ) -> None:
-    mock_chat_stream(
+    client = mock_chat_stream(
         mocker, [b'data: {"choices": [{"delta": {"content": "done"}}]}\n\n']
     )
-    output = await OpenAIChatCompletionsRequestDriver().request(
+    output = await OpenAIChatCompletionsRequestDriver(session=client).request(
         _chat_input([{"type": "function", "function": {"name": "read_file"}}])
     )
     assert output.tools_offered
@@ -1299,7 +1302,7 @@ async def test_request_without_tools_is_not_counted_as_offering_them(
     client = mock_chat_stream(
         mocker, [b'data: {"choices": [{"delta": {"content": "done"}}]}\n\n']
     )
-    output = await OpenAIChatCompletionsRequestDriver().request(
+    output = await OpenAIChatCompletionsRequestDriver(session=client).request(
         _chat_input(None)
     )
     assert "tools" not in sent_json(client.post)
@@ -1309,15 +1312,12 @@ async def test_request_without_tools_is_not_counted_as_offering_them(
 def _mock_chat_turns(mocker: MockerFixture) -> MagicMock:
     """Patches aiohttp so every chat POST streams one short reply.
 
-    Unlike ``_mock_chat_stream``, each call gets its own response, so a
+    Unlike ``mock_chat_stream``, each call gets its own response, so a
     multi-turn session can send several turns through the real driver.
     Returns the mocked client, whose ``post`` records each body sent.
     """
     mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
-    )
-    client = session_class.return_value.__aenter__.return_value
+    client = mocker.MagicMock()
 
     def post(*, url: str, data: bytes, headers: Any) -> Any:
         response = mocker.AsyncMock()
@@ -1344,8 +1344,8 @@ class _RecordingChatDriver(OpenAIChatCompletionsRequestDriver):
     below reach the body.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, session: Any) -> None:
+        super().__init__(session=session)
         self.dumped: list[dict[str, Any]] = []
 
     async def request(
@@ -1401,7 +1401,7 @@ def test_multiturn_bodies_are_the_dumped_history(mocker: MockerFixture) -> None:
     session.messages[0].images.append(image)
     session.messages[2].tools = tools
 
-    driver = _RecordingChatDriver()
+    driver = _RecordingChatDriver(session=client)
     _run_session(session, driver)
 
     bodies = sent_bodies(client.post)
@@ -1423,7 +1423,8 @@ def test_multiturn_history_dumps_each_message_once(
     dumps = mocker.spy(ChatMessage, "model_dump")
 
     _run_session(
-        _make_4turn_session(delay_ms=0.0), OpenAIChatCompletionsRequestDriver()
+        _make_4turn_session(delay_ms=0.0),
+        OpenAIChatCompletionsRequestDriver(session=client),
     )
 
     assert len(client.post.call_args_list) == 4
@@ -1439,10 +1440,7 @@ async def test_atom_tool_call_response_is_a_success_and_flagged(
     """ATOM answers non-streaming. A response that is only a tool call must
     still count as content, and be recorded as a call."""
     mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
-    )
-    client = session_class.return_value.__aenter__.return_value
+    client = mocker.MagicMock()
     response = mocker.AsyncMock()
     response.status = 200
     response.json = mocker.AsyncMock(
@@ -1472,7 +1470,9 @@ async def test_atom_tool_call_response_is_a_success_and_flagged(
     post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
     client.post = mocker.Mock(return_value=post_ctx)
 
-    output = await OpenAIChatCompletionsRequestDriver(backend="atom").request(
+    output = await OpenAIChatCompletionsRequestDriver(
+        session=client, backend="atom"
+    ).request(
         _chat_input([{"type": "function", "function": {"name": "read_file"}}])
     )
 

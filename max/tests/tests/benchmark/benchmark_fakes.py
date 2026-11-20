@@ -17,9 +17,10 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Iterable, Sequence
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 from unittest.mock import MagicMock, Mock
 
+import aiohttp
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatMessage,
@@ -84,7 +85,19 @@ def fake_loader(
     return FakeTokenizer(model_max_length=model_max_length or 4096)
 
 
-class CapturingDriver(RequestDriver):
+def unused_session() -> aiohttp.ClientSession:
+    """A session for a driver a test never sends a request through."""
+    return cast(aiohttp.ClientSession, MagicMock())
+
+
+class FakeDriver(RequestDriver):
+    """A driver a test never sends a request through."""
+
+    def __init__(self) -> None:
+        super().__init__(session=unused_session())
+
+
+class CapturingDriver(FakeDriver):
     """Request driver that records all requests and returns success."""
 
     def __init__(self) -> None:

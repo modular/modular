@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
+import aiohttp
 import numpy as np
 import psutil
 import uvloop
@@ -114,6 +115,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestDriver,
     RequestFuncOutput,
+    benchmark_client_session,
     get_request_driver_class,
     progressbar_request_driver,
 )
@@ -314,6 +316,19 @@ async def benchmark(
     ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
     user-supplied values (``None`` = auto-derive from *max_concurrency*).
     """
+    async with benchmark_client_session() as client:
+        return await _benchmark_with_client(
+            args, session, max_concurrency, request_rate, client
+        )
+
+
+async def _benchmark_with_client(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    max_concurrency: int | None,
+    request_rate: float,
+    client: aiohttp.ClientSession,
+) -> tuple[BenchmarkResult, bool]:
     backend: Backend = args.backend
 
     skip_first, skip_last = resolve_skip_counts(
@@ -398,6 +413,7 @@ async def benchmark(
         tokenizer=session.tokenizer,
         extra_body=args.extra_body,
         backend=args.backend,
+        session=client,
     )
 
     if args.warm_shared_prefix:
@@ -449,6 +465,7 @@ async def benchmark(
         tokenizer=session.tokenizer,
         extra_body=args.extra_body,
         backend=args.backend,
+        session=client,
     )
 
     # Warm up the initial-slot sessions before starting the timer.

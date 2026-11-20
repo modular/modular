@@ -12,6 +12,7 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = [
+            "test_benchmark_client_session.py",
             "test_benchmark_datasets_functional.py",
         ],
     ),
@@ -51,6 +52,20 @@ modular_py_test(
         requirement("tqdm"),
         requirement("transformers"),
         requirement("uvloop"),
+    ],
+)
+
+modular_py_test(
+    name = "test_benchmark_client_session",
+    srcs = ["test_benchmark_client_session.py"],
+    # Binds a loopback socket to watch one connection serve several requests.
+    tags = [
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/benchmark/benchmark_shared",
+        requirement("aiohttp"),
+        requirement("pytest-asyncio"),
     ],
 )
 

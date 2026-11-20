@@ -28,6 +28,7 @@ import traceback
 from abc import ABC, abstractmethod
 from array import array
 from collections.abc import (
+    AsyncIterator,
     Iterable,
     Iterator,
     Mapping,
@@ -68,10 +69,34 @@ from .utils import deadline_passed, openai_bearer_auth_headers
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
+# How long a pooled connection may sit idle before it is closed. Long enough
+# that a run's own think time rarely costs a handshake, short enough that a
+# server which closes idle connections first does not hand back a dead one: a
+# POST is not retried, so a race there fails the request outright.
+#
+# The native pool lives for one benchmark() point, while the measuring proxy's
+# lives for the proxy, so the two only diverge with --skip-test-prompt and no
+# warmup, where the proxy serves requests the native client never sends.
+# TODO: the eval-capture proxy (utils/eval-capture, proxy.rs) still opens a
+# connection per request; give it the same pool.
+KEEPALIVE_TIMEOUT_S = 60
+
 # Chunks tokenized per call when filling in per-chunk TPOT; bounds peak memory.
 _TPOT_TOKENIZE_SLICE = 10_000
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.asynccontextmanager
+async def benchmark_client_session() -> AsyncIterator[aiohttp.ClientSession]:
+    """Yields the one keep-alive connection pool a benchmark run shares."""
+    connector = aiohttp.TCPConnector(
+        limit=0, limit_per_host=0, keepalive_timeout=KEEPALIVE_TIMEOUT_S
+    )
+    async with aiohttp.ClientSession(
+        connector=connector, timeout=AIOHTTP_TIMEOUT
+    ) as session:
+        yield session
 
 
 def _encode_openresponses_image_from_file_path(
@@ -534,6 +559,8 @@ class RequestDriver(ABC):
 
     def __init__(
         self,
+        *,
+        session: aiohttp.ClientSession,
         tokenizer: PreTrainedTokenizerBase | None = None,
         extra_body: Mapping[str, Any] | None = None,
         backend: Backend | None = None,
@@ -541,6 +568,8 @@ class RequestDriver(ABC):
         """Initialize the request driver.
 
         Args:
+            session: The client session whose connections this driver's
+                requests share.
             tokenizer: Optional tokenizer for per-chunk TPOT.
             extra_body: Optional arbitrary top-level fields merged onto every
                 request payload (last-writer-wins). Consumed by the
@@ -551,6 +580,7 @@ class RequestDriver(ABC):
                 server-reported-timing workaround for the ``atom`` backend.
                 TODO(ATOM): remove once ATOM streams chat/completions correctly.
         """
+        self.session = session
         self.tokenizer = tokenizer
         self.extra_body = extra_body
         self.backend = backend
@@ -617,7 +647,9 @@ class ProgressBarRequestDriver(RequestDriver):
             request_driver: The underlying request driver to wrap.
             pbar: Progress bar to update after each request completes.
         """
-        super().__init__(tokenizer=request_driver.tokenizer)
+        super().__init__(
+            session=request_driver.session, tokenizer=request_driver.tokenizer
+        )
         self.request_driver = request_driver
         self.pbar = pbar
 
@@ -682,83 +714,80 @@ class TRTLLMRequestDriver(RequestDriver):
         api_url = request_func_input.api_url
         assert api_url.endswith("generate_stream")
 
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            base_payload: dict[
-                str, bool | str | int | float | list[ChatMessage]
-            ] = {
-                "text_input": request_func_input.prompt,
-                "ignore_eos": request_func_input.ignore_eos,
-                "stream": True,
-            }
+        base_payload: dict[
+            str, bool | str | int | float | list[ChatMessage]
+        ] = {
+            "text_input": request_func_input.prompt,
+            "ignore_eos": request_func_input.ignore_eos,
+            "stream": True,
+        }
 
-            if request_func_input.max_tokens is not None:
-                base_payload["max_tokens"] = request_func_input.max_tokens
-            _apply_sampling_to_request_payload(
-                base_payload, request_func_input.sampling
-            )
-            payload = _build_final_payload(base_payload, self.extra_body)
+        if request_func_input.max_tokens is not None:
+            base_payload["max_tokens"] = request_func_input.max_tokens
+        _apply_sampling_to_request_payload(
+            base_payload, request_func_input.sampling
+        )
+        payload = _build_final_payload(base_payload, self.extra_body)
 
-            output = RequestFuncOutput()
-            output.prompt_len = request_func_input.prompt_len
+        output = RequestFuncOutput()
+        output.prompt_len = request_func_input.prompt_len
 
-            ttft = 0.0
-            st = time.perf_counter()
-            output.request_submit_time = st
-            most_recent_timestamp = st
-            chunk_texts: list[str] = []
-            chunk_texts_chars = 0
-            try:
-                async with session.post(url=api_url, json=payload) as response:
-                    if response.status == 200:
-                        events = iter_events(response.content.iter_any())
-                        try:
-                            async for event in events:
-                                chunk = _decode_chunk(event.data)
-                                if not isinstance(chunk, Mapping):
-                                    raise _malformed_chunk(
-                                        "expected a JSON object", event.data
-                                    )
-                                chunk_text = _required_text_field(
-                                    chunk.get("text_output"),
-                                    "text_output",
-                                    event.data,
+        ttft = 0.0
+        chunk_texts: list[str] = []
+        chunk_texts_chars = 0
+        st = time.perf_counter()
+        output.request_submit_time = st
+        most_recent_timestamp = st
+        try:
+            async with self.session.post(url=api_url, json=payload) as response:
+                if response.status == 200:
+                    events = iter_events(response.content.iter_any())
+                    try:
+                        async for event in events:
+                            chunk = _decode_chunk(event.data)
+                            if not isinstance(chunk, Mapping):
+                                raise _malformed_chunk(
+                                    "expected a JSON object", event.data
                                 )
-                                timestamp = time.perf_counter()
-                                chunk_texts.append(chunk_text)
-                                chunk_texts_chars += len(chunk_text)
-                                if self.tokenizer is not None:
-                                    output.pending_tpot_ends.append(
-                                        chunk_texts_chars
-                                    )
-                                # First token
-                                if ttft == 0.0:
-                                    ttft = timestamp - st
-                                    output.ttft = ttft
+                            chunk_text = _required_text_field(
+                                chunk.get("text_output"),
+                                "text_output",
+                                event.data,
+                            )
+                            timestamp = time.perf_counter()
+                            chunk_texts.append(chunk_text)
+                            chunk_texts_chars += len(chunk_text)
+                            if self.tokenizer is not None:
+                                output.pending_tpot_ends.append(
+                                    chunk_texts_chars
+                                )
+                            # First token
+                            if ttft == 0.0:
+                                ttft = timestamp - st
+                                output.ttft = ttft
 
-                                # Decoding phase
-                                else:
-                                    itl_value = (
-                                        timestamp - most_recent_timestamp
-                                    )
-                                    output.itl.append(itl_value)
+                            # Decoding phase
+                            else:
+                                itl_value = timestamp - most_recent_timestamp
+                                output.itl.append(itl_value)
 
-                                most_recent_timestamp = timestamp
-                        finally:
-                            await events.aclose()
+                            most_recent_timestamp = timestamp
+                    finally:
+                        await events.aclose()
 
-                        output.latency = most_recent_timestamp - st
-                        output.success = True
+                    output.latency = most_recent_timestamp - st
+                    output.success = True
 
-                    else:
-                        output.error = response.reason or ""
-                        output.success = False
-            except Exception:
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                else:
+                    output.error = response.reason or ""
+                    output.success = False
+        except Exception:
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
 
-            output.generated_text = "".join(chunk_texts)
-            return output
+        output.generated_text = "".join(chunk_texts)
+        return output
 
 
 def _append_slice_tpots(
@@ -1283,6 +1312,7 @@ async def _run_openai_stream_request(
     tokenizer: PreTrainedTokenizerBase | None = None,
     is_cache_warmup: bool = False,
     max_tokens: int | None = None,
+    session: aiohttp.ClientSession,
     start: float | None = None,
 ) -> RequestFuncOutput:
     recorder = OpenAIStreamRecorder(
@@ -1293,35 +1323,33 @@ async def _run_openai_stream_request(
         max_tokens=max_tokens,
         start=start,
     )
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        try:
-            async with session.post(
-                url=api_url, data=body, headers=_body_headers(headers)
-            ) as response:
-                if response.status != 200:
-                    return recorder.fail(response.reason or "")
-                events = iter_events(response.content.iter_any())
-                try:
-                    async for event in events:
-                        result = recorder.on_event(event.data)
-                        if result is not None:
-                            return result
-                        if recorder.stream_complete:
-                            break
-                finally:
-                    # Closed here rather than left to the garbage collector,
-                    # which reports the pending aclose() as a warning.
-                    await events.aclose()
-                if recorder.stream_complete:
-                    # Reads the response out so the socket closes cleanly
-                    # instead of resetting. Each request owns its session, so
-                    # there is no connection pool to hand it back to.
-                    async for _ in response.content.iter_chunked(1 << 16):
-                        pass
-                return recorder.finish()
-        except Exception:
-            exc_info = sys.exc_info()
-            return recorder.fail("".join(traceback.format_exception(*exc_info)))
+    try:
+        async with session.post(
+            url=api_url, data=body, headers=_body_headers(headers)
+        ) as response:
+            if response.status != 200:
+                return recorder.fail(response.reason or "")
+            events = iter_events(response.content.iter_any())
+            try:
+                async for event in events:
+                    result = recorder.on_event(event.data)
+                    if result is not None:
+                        return result
+                    if recorder.stream_complete:
+                        break
+            finally:
+                # Closed here rather than left to the garbage collector,
+                # which reports the pending aclose() as a warning.
+                await events.aclose()
+            if recorder.stream_complete:
+                # Drain to EOF so the socket closes cleanly and the connection
+                # goes back to the pool this run shares.
+                async for _ in response.content.iter_chunked(1 << 16):
+                    pass
+            return recorder.finish()
+    except Exception:
+        exc_info = sys.exc_info()
+        return recorder.fail("".join(traceback.format_exception(*exc_info)))
 
 
 class OpenAICompletionsRequestDriver(RequestDriver):
@@ -1369,6 +1397,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             tokenizer=self.tokenizer,
             is_cache_warmup=request_func_input.is_cache_warmup,
             max_tokens=request_func_input.max_tokens,
+            session=self.session,
             start=start,
         )
 
@@ -1379,6 +1408,7 @@ async def _run_atom_nonstream_chat_request(
     body: bytes,
     headers: Mapping[str, str],
     prompt_len: int,
+    session: aiohttp.ClientSession,
     start: float | None = None,
 ) -> RequestFuncOutput:
     """ATOM workaround: non-streaming chat request using server-reported timing.
@@ -1395,20 +1425,19 @@ async def _run_atom_nonstream_chat_request(
     output.prompt_len = prompt_len
     output.request_submit_time = time.perf_counter() if start is None else start
 
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        try:
-            async with session.post(
-                url=api_url, data=body, headers=_body_headers(headers)
-            ) as response:
-                if response.status != 200:
-                    output.error = response.reason or ""
-                    output.success = False
-                    return output
-                response_body = await response.json()
-        except Exception:
-            output.success = False
-            output.error = "".join(traceback.format_exception(*sys.exc_info()))
-            return output
+    try:
+        async with session.post(
+            url=api_url, data=body, headers=_body_headers(headers)
+        ) as response:
+            if response.status != 200:
+                output.error = response.reason or ""
+                output.success = False
+                return output
+            response_body = await response.json()
+    except Exception:
+        output.success = False
+        output.error = "".join(traceback.format_exception(*sys.exc_info()))
+        return output
 
     try:
         message = response_body["choices"][0].get("message") or {}
@@ -1513,10 +1542,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload["tools"] = request_func_input.tools
         payload = _build_final_payload(payload, self.extra_body)
 
-        headers = {
-            "Content-Type": "application/json",
-            **self._auth_headers(),
-        }
+        headers = dict(self._auth_headers())
         if request_func_input.session_id:
             headers["X-Session-ID"] = request_func_input.session_id
         if request_func_input.cache_salt:
@@ -1531,25 +1557,25 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             nonstream_payload = dict(payload)
             nonstream_payload["stream"] = False
             nonstream_payload.pop("stream_options", None)
-            body = msgspec.json.encode(nonstream_payload)
             output = await _run_atom_nonstream_chat_request(
                 api_url=api_url,
-                body=body,
+                body=msgspec.json.encode(nonstream_payload),
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
+                session=self.session,
                 start=start,
             )
         else:
-            body = msgspec.json.encode(payload)
             output = await _run_openai_stream_request(
                 api_url=api_url,
-                body=body,
+                body=msgspec.json.encode(payload),
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
                 chat=True,
                 tokenizer=self.tokenizer,
                 is_cache_warmup=request_func_input.is_cache_warmup,
                 max_tokens=request_func_input.max_tokens,
+                session=self.session,
                 start=start,
             )
         output.tools_offered = "tools" in payload
@@ -1676,41 +1702,39 @@ class OpenResponsesRequestDriver(RequestDriver):
         output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, json=payload, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    body = await response.json()
-                    output.num_generated_outputs = _count_generated_media(body)
-                    if output.num_generated_outputs <= 0:
-                        output.error = (
-                            "No output_image or output_video content found in"
-                            " OpenResponses response body."
-                        )
-                        output.success = False
-                        return output
-
-                    output.success = True
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, json=payload, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                output.num_generated_outputs = _count_generated_media(body)
+                if output.num_generated_outputs <= 0:
+                    output.error = (
+                        "No output_image or output_video content found in"
+                        " OpenResponses response body."
+                    )
+                    output.success = False
+                    return output
+
+                output.success = True
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _build_sglang_pixel_generation_payload(
@@ -1768,42 +1792,38 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
         output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, json=payload, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    body = await response.json()
-                    # sglang returns {"data": [{"b64_json": "..."}, ...]}
-                    data = body.get("data", [])
-                    output.num_generated_outputs = len(data)
-                    if output.num_generated_outputs <= 0:
-                        output.error = (
-                            "No images found in sglang response body."
-                        )
-                        output.success = False
-                        return output
-
-                    output.success = True
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, json=payload, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                # sglang returns {"data": [{"b64_json": "..."}, ...]}
+                data = body.get("data", [])
+                output.num_generated_outputs = len(data)
+                if output.num_generated_outputs <= 0:
+                    output.error = "No images found in sglang response body."
+                    output.success = False
+                    return output
+
+                output.success = True
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _add_input_reference(
@@ -1988,92 +2008,89 @@ class SglangVideoRequestDriver(RequestDriver):
         start = time.perf_counter()
         output.request_submit_time = start
 
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=base_url, headers=headers, **post_kwargs
-                ) as response:
-                    if response.status != 200:
-                        body = await response.text()
+        try:
+            async with self.session.post(
+                url=base_url, headers=headers, **post_kwargs
+            ) as response:
+                if response.status != 200:
+                    body = await response.text()
+                    output.latency = time.perf_counter() - start
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                job_id = body.get("id")
+                if not job_id:
+                    output.latency = time.perf_counter() - start
+                    output.error = "No job id in sglang video POST response."
+                    output.success = False
+                    return output
+
+            poll_url = f"{base_url}/{job_id}"
+            while True:
+                async with self.session.get(
+                    url=poll_url, headers=headers
+                ) as poll_response:
+                    if poll_response.status != 200:
+                        body = await poll_response.text()
                         output.latency = time.perf_counter() - start
                         output.error = (
-                            f"HTTP {response.status}: {body}"
+                            f"Poll HTTP {poll_response.status}: {body}"
                             if body
-                            else (response.reason or "")
+                            else (poll_response.reason or "")
                         )
                         output.success = False
                         return output
 
-                    body = await response.json()
-                    job_id = body.get("id")
-                    if not job_id:
+                    poll_body = await poll_response.json()
+                    status = poll_body.get("status", "")
+
+                    if status == "completed":
+                        if (
+                            schema is not None
+                            and not await _fetch_sglang_video_content(
+                                self.session, poll_url, headers, output
+                            )
+                        ):
+                            output.latency = time.perf_counter() - start
+                            output.success = False
+                            return output
                         output.latency = time.perf_counter() - start
+                        output.num_generated_outputs = 1
+                        output.success = True
+
+                        inference_time = poll_body.get("inference_time_s")
+                        if inference_time:
+                            logger.debug(
+                                "sglang video: inference_time=%s s",
+                                inference_time,
+                            )
+                        return output
+
+                    if status in ("failed", "error"):
+                        output.latency = time.perf_counter() - start
+                        error_info = poll_body.get("error", {})
                         output.error = (
-                            "No job id in sglang video POST response."
+                            error_info.get("message", "")
+                            if isinstance(error_info, dict)
+                            else str(error_info)
                         )
                         output.success = False
                         return output
 
-                poll_url = f"{base_url}/{job_id}"
-                while True:
-                    async with session.get(
-                        url=poll_url, headers=headers
-                    ) as poll_response:
-                        if poll_response.status != 200:
-                            body = await poll_response.text()
-                            output.latency = time.perf_counter() - start
-                            output.error = (
-                                f"Poll HTTP {poll_response.status}: {body}"
-                                if body
-                                else (poll_response.reason or "")
-                            )
-                            output.success = False
-                            return output
+                    await asyncio.sleep(_SGLANG_VIDEO_POLL_INTERVAL_S)
 
-                        poll_body = await poll_response.json()
-                        status = poll_body.get("status", "")
-
-                        if status == "completed":
-                            if (
-                                schema is not None
-                                and not await _fetch_sglang_video_content(
-                                    session, poll_url, headers, output
-                                )
-                            ):
-                                output.latency = time.perf_counter() - start
-                                output.success = False
-                                return output
-                            output.latency = time.perf_counter() - start
-                            output.num_generated_outputs = 1
-                            output.success = True
-
-                            inference_time = poll_body.get("inference_time_s")
-                            if inference_time:
-                                logger.debug(
-                                    "sglang video: inference_time=%s s",
-                                    inference_time,
-                                )
-                            return output
-
-                        if status in ("failed", "error"):
-                            output.latency = time.perf_counter() - start
-                            error_info = poll_body.get("error", {})
-                            output.error = (
-                                error_info.get("message", "")
-                                if isinstance(error_info, dict)
-                                else str(error_info)
-                            )
-                            output.success = False
-                            return output
-
-                        await asyncio.sleep(_SGLANG_VIDEO_POLL_INTERVAL_S)
-
-            except Exception:
-                output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
-                return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _build_vllm_omni_pixel_generation_payload(
@@ -2138,55 +2155,51 @@ class VllmOmniPixelGenerationRequestDriver(RequestDriver):
         output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, json=payload, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    body = await response.json()
-                    # vllm-omni returns chat completions format with image
-                    # data in choices[].message.content[].image_url.url
-                    choices = body.get("choices", [])
-                    count = 0
-                    for choice in choices:
-                        message = choice.get("message", {})
-                        content = message.get("content", [])
-                        if isinstance(content, list):
-                            count += sum(
-                                1
-                                for item in content
-                                if isinstance(item, dict)
-                                and item.get("type") == "image_url"
-                            )
-
-                    output.num_generated_outputs = count
-                    if output.num_generated_outputs <= 0:
-                        output.error = (
-                            "No images found in vllm-omni response body."
-                        )
-                        output.success = False
-                        return output
-
-                    output.success = True
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, json=payload, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                # vllm-omni returns chat completions format with image
+                # data in choices[].message.content[].image_url.url
+                choices = body.get("choices", [])
+                count = 0
+                for choice in choices:
+                    message = choice.get("message", {})
+                    content = message.get("content", [])
+                    if isinstance(content, list):
+                        count += sum(
+                            1
+                            for item in content
+                            if isinstance(item, dict)
+                            and item.get("type") == "image_url"
+                        )
+
+                output.num_generated_outputs = count
+                if output.num_generated_outputs <= 0:
+                    output.error = "No images found in vllm-omni response body."
+                    output.success = False
+                    return output
+
+                output.success = True
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _build_vllm_omni_video_payload(
@@ -2256,50 +2269,47 @@ class VllmOmniVideoRequestDriver(RequestDriver):
         headers = dict(self._auth_headers())
 
         output = PixelGenerationRequestFuncOutput()
+
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, data=post_data, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    video_bytes = await response.read()
-                    if not video_bytes:
-                        output.error = (
-                            "Empty response body from /v1/videos/sync."
-                        )
-                        output.success = False
-                        return output
-
-                    output.num_generated_outputs = 1
-                    output.success = True
-
-                    inference_time = response.headers.get("X-Inference-Time-S")
-                    if inference_time:
-                        logger.debug(
-                            "vllm-omni video: inference_time=%s s",
-                            inference_time,
-                        )
-
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, data=post_data, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                video_bytes = await response.read()
+                if not video_bytes:
+                    output.error = "Empty response body from /v1/videos/sync."
+                    output.success = False
+                    return output
+
+                output.num_generated_outputs = 1
+                output.success = True
+
+                inference_time = response.headers.get("X-Inference-Time-S")
+                if inference_time:
+                    logger.debug(
+                        "vllm-omni video: inference_time=%s s",
+                        inference_time,
+                    )
+
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 class RequestCounter:

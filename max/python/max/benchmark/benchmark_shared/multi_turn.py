@@ -618,7 +618,9 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
         semaphore: contextlib.AbstractAsyncContextManager[None],
         benchmark_should_end_time: int | None = None,
     ) -> None:
-        super().__init__(tokenizer=request_driver.tokenizer)
+        super().__init__(
+            session=request_driver.session, tokenizer=request_driver.tokenizer
+        )
         self._request_driver = request_driver
         self._semaphore = semaphore
         self._benchmark_should_end_time = benchmark_should_end_time
