@@ -106,7 +106,7 @@ kgen.generator @fold_upcast_conformance<T: !DerivedTrait, c: scalar<bool>>() {
 }
 
 // CHECK-LABEL: @fold_or
-kgen.generator @fold_or<a: scalar<bool>, b: scalar<bool>>() {
+kgen.generator @fold_or<a: scalar<bool>, b: scalar<bool>, c: scalar<bool>>() {
   // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <a>
   kgen.param.constant: scalar<bool> = <and(a, or(a, b))>
 
@@ -115,6 +115,12 @@ kgen.generator @fold_or<a: scalar<bool>, b: scalar<bool>>() {
   kgen.param.constant: scalar<bool> = <and(or(a, b), a)>
   // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b)>
   kgen.param.constant: scalar<bool> = <and(or(a, b), b, a)>
+
+  // COM: A conjunctive disjunct can need the stored and the incoming fact.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b)>
+  kgen.param.constant: scalar<bool> = <and(or(and(a, b), c), a, b)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b)>
+  kgen.param.constant: scalar<bool> = <and(a, b, or(and(a, b), c))>
   hlcf.return
 }
 

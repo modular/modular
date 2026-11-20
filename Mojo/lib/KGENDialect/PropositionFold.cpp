@@ -302,17 +302,21 @@ static ClauseInsertResult insertLeaf(SmallVectorImpl<TypedAttr> &clauses,
     }
   }
 
-  // A stored OR is obsolete when the incoming fact proves it.
+  // A stored OR is obsolete when the incoming fact, together with the other
+  // stored ones, proves it. A conjunctive disjunct can need both
+  // (`or(and(a, b), c)` against stored `a` and incoming `b`). The OR's own slot
+  // holds `leaf` during its test so it never justifies its own erasure.
+  SmallVector<TypedAttr> facts;
   for (auto [index, clause] : llvm::enumerate(clauses)) {
     auto storedOr = sugarDynCast<ParamOperatorAttr>(clause);
     if (!storedOr || storedOr.getOpcode() != POC::Or)
       continue;
-    if (entailedBy(ArrayRef<TypedAttr>(leaf), clause) ||
-        llvm::any_of(storedOr.getOperands(), [&](TypedAttr operand) {
-          return entailedBy(clauses, operand) ||
-                 entailedBy(ArrayRef<TypedAttr>(leaf), operand);
-        }))
+    if (facts.empty())
+      facts.assign(clauses.begin(), clauses.end());
+    facts[index] = leaf;
+    if (entailedBy(facts, clause))
       erase.push_back(index);
+    facts[index] = clause;
   }
 
   eraseIndices(clauses, erase);
