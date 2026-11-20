@@ -76,9 +76,9 @@ struct EraseAddF : DirectOpConversionPattern<arith::AddFOp> {
 
 class DirectConversionTest : public testing::Test {
 protected:
-  DirectConversionTest()
-      : ctx(MLIRContext::Threading::DISABLED),
-        converter(makeWideningConverter()) {
+  explicit DirectConversionTest(
+      MLIRContext::Threading threading = MLIRContext::Threading::DISABLED)
+      : ctx(threading), converter(makeWideningConverter()) {
     ctx.loadDialect<arith::ArithDialect, func::FuncDialect>();
   }
 
@@ -117,6 +117,25 @@ protected:
 
   MLIRContext ctx;
   TypeConverter converter;
+};
+
+/// Runs the driver's module walks on several threads.
+class ThreadedDirectConversionTest : public DirectConversionTest {
+protected:
+  ThreadedDirectConversionTest()
+      : DirectConversionTest(MLIRContext::Threading::ENABLED) {}
+
+  /// Returns a module of `numFuncs` functions. `body` starts on the second
+  /// line of each function.
+  static std::string makeModuleText(unsigned numFuncs, StringRef body) {
+    std::string text;
+    for (unsigned i = 0; i < numFuncs; ++i) {
+      text +=
+          ("func.func @f" + Twine(i) + "(%x: i32) -> i32 {\n" + body + "\n}\n")
+              .str();
+    }
+    return text;
+  }
 };
 
 } // namespace
@@ -230,4 +249,38 @@ TEST_F(DirectConversionTest, ErasesAnUnusedCastCycle) {
   ASSERT_TRUE(module);
   EXPECT_FALSE(convert(*module));
   EXPECT_EQ(count(*module, "builtin.unrealized_conversion_cast"), 0u);
+}
+
+TEST_F(ThreadedDirectConversionTest, ConvertsEveryFunctionOfAModule) {
+  constexpr unsigned numFuncs = 300;
+  auto module = parse(makeModuleText(
+      numFuncs, "  %a = arith.constant 1 : i32\n  return %a : i32"));
+  ASSERT_TRUE(module);
+  EXPECT_FALSE(convert(*module));
+
+  unsigned numWideConstants = 0;
+  module->walk([&](arith::ConstantOp op) {
+    numWideConstants += op.getType().isInteger(64);
+  });
+  EXPECT_EQ(numWideConstants, numFuncs);
+  // Each `return` still wants an i32, so each function keeps one bridge cast.
+  EXPECT_EQ(count(*module, "builtin.unrealized_conversion_cast"), numFuncs);
+}
+
+TEST_F(ThreadedDirectConversionTest, ReportsTheFirstUnconvertedOp) {
+  auto module = parse(
+      makeModuleText(300, "  %y = arith.muli %x, %x : i32\n  return %y : i32"));
+  ASSERT_TRUE(module);
+
+  SmallVector<unsigned> errorLines;
+  ScopedDiagnosticHandler handler(&ctx, [&](Diagnostic &diag) {
+    if (auto loc = dyn_cast<FileLineColLoc>(diag.getLocation()))
+      errorLines.push_back(loc.getLine());
+    return success();
+  });
+  EXPECT_TRUE(failed(applyDirectConversion(
+      *module, &converter, makePatterns(), {},
+      [](Operation *op) { return isa<arith::MulIOp>(op); })));
+  // The `muli` of the first function is on line 2 of the module.
+  EXPECT_EQ(errorLines, SmallVector<unsigned>{2});
 }

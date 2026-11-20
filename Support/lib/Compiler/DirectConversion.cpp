@@ -13,6 +13,7 @@
 
 #include "Support/Compiler/DirectConversion.h"
 
+#include "Support/Compiler/Threading.h"
 #include "mlir/IR/Iterators.h"
 
 using namespace M;
@@ -187,6 +188,37 @@ FailureOr<Block *> DirectRewriter::convertRegionTypes(
 // applyDirectConversion
 //===----------------------------------------------------------------------===//
 
+/// Returns the ops directly in `root`, in order.
+static SmallVector<Operation *, 0> getTopLevelOps(Operation *root) {
+  SmallVector<Operation *, 0> ops;
+  for (Region &region : root->getRegions()) {
+    for (Block &block : region) {
+      for (Operation &op : block)
+        ops.push_back(&op);
+    }
+  }
+  return ops;
+}
+
+/// Calls `walk(topLevelOp, results)` on each of `topLevelOps` in parallel and
+/// returns the results joined in the order of `topLevelOps`. Each `walk`
+/// collects its results by a walk of its op, so the joined results are in the
+/// order of one walk of the root.
+template <typename T, typename FnT>
+static SmallVector<T> walkTopLevelOps(MLIRContext *ctx,
+                                      ArrayRef<Operation *> topLevelOps,
+                                      FnT &&walk) {
+  auto resultsPerOp = parallelMap(ctx, topLevelOps, [&](Operation *op) {
+    SmallVector<T, 0> results;
+    walk(op, results);
+    return results;
+  });
+  SmallVector<T> joined;
+  for (const SmallVector<T, 0> &results : resultsPerOp)
+    joined.append(results.begin(), results.end());
+  return joined;
+}
+
 /// Folds away the casts in `castOps` that cancel out or became dead, as
 /// `mlir::reconcileUnrealizedCasts` does. `castOps` holds each cast once, in
 /// the order of the walk that found it.
@@ -278,12 +310,15 @@ M::applyDirectConversion(Operation *root, const TypeConverter *typeConverter,
   // Collect the ops to convert up front, in def-before-use (pre-)order.
   // Patterns may erase pending ops; `pending` keeps the worklist valid
   // (a reused Operation address is not in `pending`, so it is skipped).
-  SmallVector<Operation *> worklist;
-  root->walk<WalkOrder::PreOrder>([&](Operation *op) {
-    if (op != root && hasPatterns(op) && (!skipOp || !skipOp(op))) {
-      worklist.push_back(op);
-    }
-  });
+  MLIRContext *ctx = root->getContext();
+  SmallVector<Operation *> worklist = walkTopLevelOps<Operation *>(
+      ctx, getTopLevelOps(root),
+      [&](Operation *topLevelOp, SmallVectorImpl<Operation *> &ops) {
+        topLevelOp->walk<WalkOrder::PreOrder>([&](Operation *op) {
+          if (hasPatterns(op) && (!skipOp || !skipOp(op)))
+            ops.push_back(op);
+        });
+      });
   DenseMap<Operation *, size_t> pending;
   pending.reserve(worklist.size());
   for (auto [i, op] : llvm::enumerate(worklist))
@@ -347,10 +382,24 @@ M::applyDirectConversion(Operation *root, const TypeConverter *typeConverter,
     (void)applyBenefitOrdered(op);
   }
 
+  // The patterns replaced and erased top-level ops, so list them again.
+  SmallVector<Operation *, 0> topLevelOps = getTopLevelOps(root);
+
   // Ops the pass declares as necessarily-converted must be gone, including
   // those no pattern matches; the wording is the conversion framework's.
   // Everything else stays unconverted (partial-conversion semantics).
-  if (mustConvert) {
+  auto hasUnconvertedOp = [&](Operation *topLevelOp) {
+    return topLevelOp
+        ->walk<WalkOrder::PreOrder>([&](Operation *op) {
+          if ((skipOp && skipOp(op)) || !mustConvert(op))
+            return WalkResult::advance();
+          return WalkResult::interrupt();
+        })
+        .wasInterrupted();
+  };
+  // The parallel scan finds out whether an op is left. The walk on this thread
+  // then reports the first one, so the error does not depend on the threads.
+  if (mustConvert && parallelAnyOf(ctx, topLevelOps, hasUnconvertedOp)) {
     WalkResult unconverted =
         root->walk<WalkOrder::PreOrder>([&](Operation *op) {
           if (op == root || (skipOp && skipOp(op)) || !mustConvert(op)) {
@@ -366,9 +415,15 @@ M::applyDirectConversion(Operation *root, const TypeConverter *typeConverter,
 
   // Fold away bridge casts that became dead or cancel out (A->B->A pairs),
   // so converted-consumer chains reference converted values directly.
-  SmallVector<UnrealizedConversionCastOp> casts;
-  root->walk(
-      [&](UnrealizedConversionCastOp castOp) { casts.push_back(castOp); });
+  SmallVector<UnrealizedConversionCastOp> casts =
+      walkTopLevelOps<UnrealizedConversionCastOp>(
+          ctx, topLevelOps,
+          [](Operation *topLevelOp,
+             SmallVectorImpl<UnrealizedConversionCastOp> &found) {
+            topLevelOp->walk([&](UnrealizedConversionCastOp castOp) {
+              found.push_back(castOp);
+            });
+          });
   reconcileCasts(casts);
   return success();
 }
