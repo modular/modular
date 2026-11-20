@@ -94,22 +94,16 @@ def describe_guard_optional(opt: Optional[Int]) -> String:
 
 
 def classify_if_clauses(enabled: Bool, opt: Optional[Int]) -> String:
-    if enabled;
-      case .Some(value) = opt;
-      value > 0:
+    if enabled; case .Some(value) = opt; value > 0:
         return String("positive:", value)
-    elif enabled;
-      case .Some(value) = opt;
-      value <= 0:
+    elif enabled; case .Some(value) = opt; value <= 0:
         return String("nonpositive:", value)
     else:
         return "unavailable"
 
 
 def describe_guard_clauses(enabled: Bool, opt: Optional[Int]) -> String:
-    __guard enabled;
-      case .Some(value) = opt;
-      value > 0 else:
+    __guard enabled; case .Some(value) = opt; value > 0 else:
         return "unavailable"
     return String("positive:", value)
 
@@ -240,16 +234,14 @@ def classify_if_case_type[T: AnyType]() -> String:
 
 
 def classify_comptime_if_clauses[T: AnyType, enabled: Bool]() -> String:
-    comptime if enabled;
-      case == Int = T:
+    comptime if enabled; case == Int = T:
         return "integer"
     else:
         return "other"
 
 
 def classify_comptime_guard_clauses[T: AnyType, enabled: Bool]() -> String:
-    comptime __guard enabled;
-      case == Int = T else:
+    comptime __guard enabled; case == Int = T else:
         return "other"
     return "integer"
 
