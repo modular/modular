@@ -262,8 +262,18 @@ class Inkling2Config(ArchConfigWithKVCache, DeploymentConfig):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
-        """One cache per attention flavor, plus the conv state."""
+        """One cache per attention flavor, plus the conv state.
+
+        A speculative deployment sizes both for the draft tokens one verify
+        step scores and may reject.
+        """
         text_config = Inkling2TextConfig.from_hf(huggingface_config.text_config)
+        speculative = pipeline_config.speculative
+        num_draft_tokens = (
+            speculative.num_speculative_tokens or 0
+            if speculative is not None
+            else 0
+        )
 
         def params_for(
             n_kv_heads: int,
@@ -278,7 +288,10 @@ class Inkling2Config(ArchConfigWithKVCache, DeploymentConfig):
                 num_layers=num_layers,
                 devices=devices,
                 data_parallel_degree=pipeline_config.model.data_parallel_degree,
-                num_draft_tokens=0,
+                speculative_method=speculative.speculative_method
+                if speculative is not None
+                else None,
+                num_draft_tokens=num_draft_tokens,
                 window_size=window_size,
             )
 
@@ -299,7 +312,9 @@ class Inkling2Config(ArchConfigWithKVCache, DeploymentConfig):
         )
         state = RecurrentStateParams(
             regions=ConvStateLayout.from_config(
-                text_config, tp_size=len(devices)
+                text_config,
+                tp_size=len(devices),
+                max_rollback=num_draft_tokens,
             ).regions(),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,

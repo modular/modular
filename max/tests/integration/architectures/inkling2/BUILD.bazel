@@ -15,6 +15,19 @@ modular_py_test(
     ],
 )
 
+# Guards architectures/inkling2/dspark_config.py's read of the checkpoint's
+# mtp_config: max.dtype's width table through kv_bytes_per_token, and the
+# target_layer_ids the drafter's graph reads as taps, which Inkling2.run_layers
+# validates. Both turn a silent parse drift into a failed export otherwise.
+modular_py_test(
+    name = "test_dspark_config",
+    srcs = ["test_dspark_config.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
 modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
