@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.pipelines.architectures.inkling2.layers.attention import (
@@ -109,50 +108,6 @@ def test_inkling2_heads_pad_to_aligned_rows() -> None:
     assert proj.num_heads * proj.padded_width * 2 % 16 == 0
 
 
-def test_an_aligned_width_takes_no_padding() -> None:
-    """A width already a multiple of 8 projects with no pad segment."""
-    rng = np.random.default_rng(3)
-    d_rel = 7  # 2 * 4 + 7 + 1 = 16 rows per head
-    with default_dtype(DType.float32):
-        proj = _QuerySideProjection(
-            hidden=HIDDEN, num_heads=HEADS, head_dim=HEAD_DIM, d_rel=d_rel
-        )
-    weights = {
-        "wq_du": rng.standard_normal((HEADS * HEAD_DIM, HIDDEN)),
-        "wr_du": rng.standard_normal((HEADS * d_rel, HIDDEN)),
-        "gate_attn": rng.standard_normal((HEADS * HEAD_DIM, HIDDEN)),
-        "attn_sink_proj": rng.standard_normal((HEADS, HIDDEN)),
-    }
-    for name, weight in weights.items():
-        getattr(proj, name).weight = Tensor(
-            weight.astype(np.float32), device=CPU()
-        )
-    assert proj.padded_width == proj.width == 16
-    x = rng.standard_normal((TOKENS, HIDDEN)).astype(np.float32)
-    q, r, gate, sink = proj(Tensor(x, device=CPU()))
-    np.testing.assert_allclose(
-        q.to_numpy().reshape(TOKENS, -1),
-        x @ weights["wq_du"].T,
-        rtol=1e-5,
-        atol=1e-5,
-    )
-    np.testing.assert_allclose(
-        r.to_numpy().reshape(TOKENS, -1),
-        x @ weights["wr_du"].T,
-        rtol=1e-5,
-        atol=1e-5,
-    )
-    np.testing.assert_allclose(
-        gate.to_numpy().reshape(TOKENS, -1),
-        x @ weights["gate_attn"].T,
-        rtol=1e-5,
-        atol=1e-5,
-    )
-    np.testing.assert_allclose(
-        sink.to_numpy(), x @ weights["attn_sink_proj"].T, rtol=1e-5, atol=1e-5
-    )
-
-
 def test_fused_projection_matches_per_projection() -> None:
     """One GEMM over the fused weight reproduces the four projections."""
     rng = np.random.default_rng(1)
@@ -184,34 +139,3 @@ def test_fused_projection_matches_per_projection() -> None:
     np.testing.assert_allclose(
         sink, x_np @ weights["attn_sink_proj"].T, rtol=1e-6, atol=1e-6
     )
-
-
-@pytest.mark.parametrize("num_devices", TP_DEGREES)
-def test_rank_rows_are_that_ranks_own_projection_shards(
-    num_devices: int,
-) -> None:
-    """Each rank's contiguous rows are its own shards, not a slice of a part.
-
-    A plain ``[q; r; gate; sink]`` row concat would give a rank
-    ``heads * width / num_devices`` rows of ``q`` alone. Head-major rows make
-    a rank's block exactly the interleave of the shards it already holds, so
-    the fused weight can be built from column-parallel sharded weights.
-    """
-    weights = _random_weights(np.random.default_rng(2))
-    fused = _head_major(weights, HEADS)
-    heads_per_rank = HEADS // num_devices
-    rows_per_rank = heads_per_rank * PADDED_WIDTH
-
-    for rank in range(num_devices):
-        first_head = rank * heads_per_rank
-        shard = {
-            name: weight.reshape(HEADS, -1, HIDDEN)[
-                first_head : first_head + heads_per_rank
-            ].reshape(-1, HIDDEN)
-            for name, weight in weights.items()
-        }
-        rank_proj = _build(shard, heads_per_rank)
-        np.testing.assert_array_equal(
-            rank_proj.fused_weight.to_numpy(),
-            fused[rank * rows_per_rank : (rank + 1) * rows_per_rank],
-        )

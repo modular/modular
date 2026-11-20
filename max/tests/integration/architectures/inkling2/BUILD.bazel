@@ -129,6 +129,19 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_query_side_shards",
+    size = "enormous",
+    srcs = ["test_query_side_shards.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_vision_input_contract",
     srcs = ["test_vision_input_contract.py"],
     deps = [
