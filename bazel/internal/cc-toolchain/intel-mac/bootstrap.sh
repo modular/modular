@@ -75,6 +75,10 @@ fetch() {
 components="clang;clang-resource-headers;lld;dsymutil;llvm-ar;llvm-as;llvm-bitcode-strip;llvm-cov;llvm-dlltool;llvm-dwp;llvm-extract-bundle-entry;llvm-install-name-tool;llvm-lib;llvm-nm;llvm-objcopy;llvm-objdump;llvm-otool;llvm-profdata;llvm-ranlib;llvm-strip;builtins;runtimes"
 
 mkdir -p "$work/llvm"
+# Version-specific build and stage dirs: CMake rejects a build dir that was
+# configured for a different source dir.
+llvm_build="$work/llvm/build-$LLVM_VERSION"
+llvm_stage="$work/llvm/stage-$LLVM_VERSION"
 llvm_src="$work/llvm/llvm-project-$LLVM_VERSION.src"
 tag=llvmorg-$LLVM_VERSION
 fetch "https://github.com/llvm/llvm-project/releases/download/$tag/${llvm_src##*/}.tar.xz" \
@@ -82,7 +86,7 @@ fetch "https://github.com/llvm/llvm-project/releases/download/$tag/${llvm_src##*
 
 # DARWIN_osx_ARCHS=x86_64: without it compiler-rt also builds x86_64h, and
 # linking the sanitizer libraries fails in lipo.
-cmake -G Ninja -S "$llvm_src/llvm" -B "$work/llvm/build" \
+cmake -G Ninja -S "$llvm_src/llvm" -B "$llvm_build" \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_ASSERTIONS=OFF \
   -DLLVM_APPEND_VC_REV=OFF \
@@ -90,7 +94,7 @@ cmake -G Ninja -S "$llvm_src/llvm" -B "$work/llvm/build" \
   -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
   -DCMAKE_OSX_ARCHITECTURES=x86_64 \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-  -DCMAKE_INSTALL_PREFIX="$work/llvm/stage" \
+  -DCMAKE_INSTALL_PREFIX="$llvm_stage" \
   -DLLVM_ENABLE_PROJECTS="clang;lld" \
   -DLLVM_ENABLE_RUNTIMES=compiler-rt \
   -DLLVM_TARGETS_TO_BUILD=X86 \
@@ -117,14 +121,14 @@ cmake -G Ninja -S "$llvm_src/llvm" -B "$work/llvm/build" \
   -DCOMPILER_RT_ENABLE_WATCHOS=OFF \
   -DCOMPILER_RT_ENABLE_TVOS=OFF \
   -DLLVM_DISTRIBUTION_COMPONENTS="$components"
-(cd "$work/llvm/build" && ninja distribution && ninja install-distribution-stripped)
+(cd "$llvm_build" && ninja distribution && ninja install-distribution-stripped)
 
 # The toolchain directory that Bazel uses. It holds the LLVM install (bin, lib,
 # ...) plus tcmalloc. No BUILD files: the Bazel repo rule supplies those.
 out="$work/toolchain"
 rm -rf "$out"
 mkdir -p "$out"
-cp -R "$work/llvm/stage/." "$out/"
+cp -R "$llvm_stage/." "$out/"
 
 # --- tcmalloc (gperftools) ---
 
@@ -155,4 +159,12 @@ mkdir -p "$work/gperftools/build" "$out/gperftools"
 
 echo
 echo "Done. Add this line to $repo/local.bazelrc:"
-echo "common --repo_env=MODULAR_INTEL_MAC_TOOLCHAIN=$out"
+# Bazel rc files split on whitespace but accept double quotes (with a backslash
+# escape inside them), so quote the whole option only when the path needs it.
+if [[ $out == *[[:space:]\"\'\\]* ]]; then
+  quoted=${out//\\/\\\\}
+  quoted=${quoted//\"/\\\"}
+  echo "common \"--repo_env=MODULAR_INTEL_MAC_TOOLCHAIN=$quoted\""
+else
+  echo "common --repo_env=MODULAR_INTEL_MAC_TOOLCHAIN=$out"
+fi
