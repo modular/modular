@@ -12,8 +12,12 @@ else
 fi
 
 if [[ $OSTYPE == darwin* ]]; then
-  readonly platform=darwin-arm64
-  readonly sha="555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d5625793ec"
+  readonly platform=darwin-"$bazel_arch"
+  if [[ "$bazel_arch" == "amd64" ]]; then
+    readonly sha="a0e6468b0c6b812f782d8cbfb05824121f6980c0bd70aaa1774fb8272bb7b2ad"
+  else
+    readonly sha="555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d5625793ec"
+  fi
   readonly sha_cmd="shasum"
 elif [[ $OSTYPE == linux* ]]; then
   readonly sha_cmd="sha256sum"
