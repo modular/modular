@@ -1539,6 +1539,27 @@ kgen.func @simd_insertelement2() -> (!kgen.simd<2, si8>) {
   hlcf.return %2 : !kgen.simd<2, si8>
 }
 
+// Inserting into uninitialized memory works for the pointer-sized dtypes too.
+// CHECK-LABEL: @simd_insertelement_index_uninit
+kgen.func @simd_insertelement_index_uninit() -> (!kgen.simd<2, index>, !kgen.simd<2, uindex>, !kgen.simd<2, address>) {
+  // CHECK-DAG: %[[IDX:.*]] = kgen.param.constant: simd<2, index> = <<1099511627776, 0>>
+  // CHECK-DAG: %[[UIDX:.*]] = kgen.param.constant: simd<2, uindex> = <<0, 30>>
+  // CHECK-DAG: %[[ADDR:.*]] = kgen.param.constant: simd<2, address> = <<0, 5>>
+  // CHECK: hlcf.return %[[IDX]], %[[UIDX]], %[[ADDR]]
+  %idx0 = kgen.param.constant: scalar<index> = <0>
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, index> = <#interp.uninitmem : !kgen.simd<2, index>>
+  %1 = kgen.param.constant: scalar<index> = <1099511627776>
+  %2 = pop.simd.insertelement %1, %0[%idx0] : !kgen.simd<2, index>
+  %3 = kgen.param.constant: simd<2, uindex> = <#interp.uninitmem : !kgen.simd<2, uindex>>
+  %4 = kgen.param.constant: scalar<uindex> = <30>
+  %5 = pop.simd.insertelement %4, %3[%idx1] : !kgen.simd<2, uindex>
+  %6 = kgen.param.constant: simd<2, address> = <#interp.uninitmem : !kgen.simd<2, address>>
+  %7 = kgen.param.constant: scalar<address> = <5>
+  %8 = pop.simd.insertelement %7, %6[%idx1] : !kgen.simd<2, address>
+  hlcf.return %2, %5, %8 : !kgen.simd<2, index>, !kgen.simd<2, uindex>, !kgen.simd<2, address>
+}
+
 // CHECK-LABEL: @simd_shuffle
 kgen.func @simd_shuffle() -> !kgen.simd<2, si8> {
   // CHECK-NEXT: <3, 2>
