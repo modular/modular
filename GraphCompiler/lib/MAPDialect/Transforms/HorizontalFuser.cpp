@@ -28,6 +28,7 @@
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/Support/DataflowUtils.h"
+#include "Support/AssertStream.h"
 
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -252,7 +253,7 @@ BlockArgument inputArgFor(IterElementwiseOp op, Value in) {
 IterElementwiseOp fuse(IterElementwiseOp a, IterElementwiseOp b,
                        Value forwarded = {}, SliceIndexOp slice = {},
                        bool atA = false) {
-  assert((!slice || forwarded) && "a slice is how `b` reads `forwarded`");
+  ASSERT_STREAM(!slice || forwarded, "a slice is how `b` reads `forwarded`");
   // Merged inputs: `a`'s, then the ones only `b` carries. A shared operand
   // keeps `a`'s slot, which is what collapses the duplicate load.
   SmallVector<Value> inputs(a.getInputs());

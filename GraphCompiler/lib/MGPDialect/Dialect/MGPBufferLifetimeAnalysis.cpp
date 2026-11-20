@@ -14,6 +14,7 @@
 #include "GraphCompiler/MGPDialect/Dialect/MGPBufferLifetimeAnalysis.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "MLRT/GraphRT/GRTDialect/GRTControlFlowInterface.h"
+#include "Support/AssertStream.h"
 #include "Support/Compiler/Threading.h"
 
 #include "llvm/ADT/SparseBitVector.h"
@@ -109,10 +110,11 @@ static void buildRunsAfter(
   std::function<void(Operation *)> visit = [&](Operation *op) {
     if (visited.count(op))
       return;
-    if (tempMark.count(op)) {
-      llvm::report_fatal_error("Cycle detected in graph region: "
-                               "buffer lifetime analysis assumes a DAG");
-    }
+    // SSA in a block is a DAG, so a cycle means the GC produced one. Reported
+    // rather than asserted: a release build must still name it.
+    if (tempMark.count(op))
+      llvm::report_fatal_error("Cycle detected in graph region: buffer "
+                               "lifetime analysis assumes a DAG");
     tempMark.insert(op);
 
     for (Value operand : op->getOperands()) {

@@ -2473,6 +2473,7 @@ def MOGG_IndexConcatSelectOp : MOGG_Op<"index.concat.select", [
     $inputs
   }];
 
+  let hasVerifier = 1;
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MOGGDIALECT_MOGGOPS_TD

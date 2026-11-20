@@ -343,6 +343,13 @@ LogicalResult TileStoreOp::verify() {
   return verifyTileElementType(*this, getTensor(), getValue().getType());
 }
 
+LogicalResult IndexConcatSelectOp::verify() {
+  // Emit casts the result to a SIMD; the type verifier checks the dtype.
+  if (!isa<SimdType>(getResult().getType()))
+    return emitOpError("yields a !mogg.simd, got ") << getResult().getType();
+  return success();
+}
+
 LogicalResult CallRowwiseOp::verify() {
   if (failed(verifyMaxSimdWidth(*this)))
     return failure();

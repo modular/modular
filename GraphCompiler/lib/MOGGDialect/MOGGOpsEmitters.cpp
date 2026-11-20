@@ -705,8 +705,7 @@ LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
 
   ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(
       cast<SimdType>(getResult().getType()).getElementType());
-  if (dtypeOr.isError())
-    return emitOpError("concat select yields a non-scalar value");
+  ASSERT_STREAM(!dtypeOr.isError(), "the verifier requires a !mogg.simd");
   MojoValue dtype = state.mlirDTypeToMojoType(*dtypeOr);
 
   // A foreach closure's index is a `Coord` of the loop's own rank.
@@ -1564,14 +1563,15 @@ monoidType(EmitMojoState &state, RowwiseReduceOp fold, const MojoValue &width) {
       state.registry.lookupKernelBySymName(fold.getMonoid()));
   StringRef widthParam = adaptor.reduction->getWidthParam().getValue();
   DictionaryAttr bound = fold.getParamsAttr();
-  if (widthParam.empty() || !bound)
-    return fold.emitOpError("has no width parameter or bound params");
+  ASSERT_STREAM(!widthParam.empty() && bound,
+                "`declVerifyReduction` requires a width parameter and "
+                "`mogg-rowwise-bind-monoids` binds the parameters");
   SmallVector<MojoValue> params;
   for (NamedAttribute param : bound) {
     ErrorOr<DType> dtype =
         M::MO::fromMLIRType(cast<TypeAttr>(param.getValue()).getValue());
-    if (dtype.isError())
-      return fold.emitOpError("binds a parameter to a non-dtype type");
+    ASSERT_STREAM(!dtype.isError(),
+                  "`mogg-rowwise-bind-monoids` binds dtype parameters only");
     params.push_back(MojoValue(param.getName().getValue())
                          .equal(state.mlirDTypeToMojoType(*dtype)));
   }
@@ -1706,13 +1706,15 @@ rowwiseLaunchArgs(CallRowwiseOp op, EmitMojoState &state, MojoValue bodyFn,
 //       body, shape, ctx)
 LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   RowwiseTileOp tile = getTile();
-  if (!tile || !getAccum() || !getNumPhases() || !getDtypeSize() ||
-      !getSimdMonoid())
-    return emitOpError("isn't legalized for the Row API");
+  ASSERT_STREAM(tile && getAccum() && getNumPhases() && getDtypeSize() &&
+                    getSimdMonoid(),
+                "a rowwise body reaches emit only after "
+                "`mogg-rowwise-set-launch-params`");
   ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(tile.getType().getElementType());
   ErrorOr<DType> accumOr = M::MO::fromMLIRType(*getAccum());
-  if (dtypeOr.isError() || accumOr.isError())
-    return emitOpError("has a non-dtype `dtype` or `accum`");
+  ASSERT_STREAM(!dtypeOr.isError() && !accumOr.isError(),
+                "`mogg-rowwise-set-launch-params` binds the tile's dtype and "
+                "accumulation dtype");
   MojoValue dtype = state.mlirDTypeToMojoType(*dtypeOr);
   MojoValue accum = state.mlirDTypeToMojoType(*accumOr);
 
@@ -1734,8 +1736,8 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   auto simdFold = llvm::find_if(folds, [&](RowwiseReduceOp fold) {
     return fold.getMonoidAttr() == getSimdMonoidAttr();
   });
-  if (simdFold == folds.end())
-    return emitOpError("has no fold for its SIMD monoid");
+  ASSERT_STREAM(simdFold != folds.end(),
+                "`mogg-rowwise-set-launch-params` picks a bound fold's monoid");
   FailureOr<MojoValue> simdMonoid = monoidType(state, *simdFold, 1);
   if (failed(simdMonoid))
     return failure();
@@ -1893,8 +1895,8 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 // `dtype` and the call's arguments are a cache's when the fold reads one
 // (`PhaseTile`).
 LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
-  if (!getFieldsAttr())
-    return emitOpError("has no bound fields");
+  ASSERT_STREAM(getFieldsAttr(),
+                "a fold reaches emit only after `mogg-rowwise-bind-monoids`");
   const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
   auto yield = cast<YieldOp>(getBody().front().getTerminator());
   PhaseTile tile = phaseTile(state, *this);

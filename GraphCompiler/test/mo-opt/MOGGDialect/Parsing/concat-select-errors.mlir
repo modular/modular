@@ -16,3 +16,21 @@ func.func @noResult(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, 
   return
 }
 
+
+// -----
+
+// The result is a !mogg.simd: emit casts it to one.
+
+func.func @tensorResult(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %y: !mogg.tensor) {
+  mogg.call.foreach @builtin_primitives.primitives._foreach shape(%shape) context(%ctx) (%i : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %cy = %y : !mogg.tensor} device = "cpu" {
+    // expected-error @below{{yields a !mogg.simd, got '!mogg.tensor'}}
+    %v = mogg.index.concat.select(%i) <axis = 1, sizes = #mosh<ape[4, 4]> : !mosh.ape> : !map.index<2> -> !mogg.tensor {
+    ^bb0(%a: !map.index<2>):
+      mogg.yield %cx : !mogg.tensor
+    }, {
+    ^bb0(%b: !map.index<2>):
+      mogg.yield %cy : !mogg.tensor
+    }
+  }
+  return
+}
