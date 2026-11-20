@@ -187,6 +187,77 @@ FailureOr<Block *> DirectRewriter::convertRegionTypes(
 // applyDirectConversion
 //===----------------------------------------------------------------------===//
 
+/// Folds away the casts in `castOps` that cancel out or became dead, as
+/// `mlir::reconcileUnrealizedCasts` does. `castOps` holds each cast once, in
+/// the order of the walk that found it.
+///
+/// The upstream function copies the casts from one hash set to another in
+/// bucket order, and insertions in that order collide heavily.
+// TODO(MOCO-5464): Call the upstream function when it no longer makes that
+// copy.
+static void reconcileCasts(ArrayRef<UnrealizedConversionCastOp> castOps) {
+  DenseSet<Operation *> castSet(castOps.begin(), castOps.end());
+
+  // Returns the cast that defines all inputs of `castOp`, in the same order.
+  auto getInputCast =
+      [](UnrealizedConversionCastOp castOp) -> UnrealizedConversionCastOp {
+    if (castOp.getInputs().empty())
+      return {};
+    auto inputCastOp =
+        castOp.getInputs().front().getDefiningOp<UnrealizedConversionCastOp>();
+    if (!inputCastOp || inputCastOp.getOutputs() != castOp.getInputs())
+      return {};
+    return inputCastOp;
+  };
+
+  // From the last cast to the first, replace a cast with the inputs of the
+  // nearest cast up its input chain that takes the types this cast returns.
+  for (UnrealizedConversionCastOp castOp : llvm::reverse(castOps)) {
+    for (UnrealizedConversionCastOp inputCast = castOp; inputCast;
+         inputCast = getInputCast(inputCast)) {
+      if (inputCast.getInputs().getTypes() != castOp.getResultTypes())
+        continue;
+      bool isCycle = llvm::any_of(inputCast.getInputs(), [&](Value input) {
+        return input.getDefiningOp() == castOp;
+      });
+      if (!isCycle)
+        castOp.replaceAllUsesWith(inputCast.getInputs());
+      break;
+    }
+  }
+
+  // A cast is live when an op outside `castOps` uses a result of it, directly
+  // or through other casts of `castOps`.
+  DenseSet<Operation *> liveCasts;
+  liveCasts.reserve(castOps.size());
+  auto markLive = [&](Operation *liveCast) {
+    SmallVector<Operation *> worklist = {liveCast};
+    while (!worklist.empty()) {
+      Operation *op = worklist.pop_back_val();
+      if (!liveCasts.insert(op).second)
+        continue;
+      for (Value operand : op->getOperands())
+        if (Operation *def = operand.getDefiningOp())
+          if (castSet.contains(def))
+            worklist.push_back(def);
+    }
+  };
+  for (UnrealizedConversionCastOp castOp : castOps) {
+    if (liveCasts.contains(castOp))
+      continue;
+    if (llvm::any_of(castOp->getUsers(),
+                     [&](Operation *user) { return !castSet.contains(user); }))
+      markLive(castOp);
+  }
+
+  for (UnrealizedConversionCastOp castOp : castOps) {
+    if (liveCasts.contains(castOp))
+      continue;
+    castOp->dropAllUses();
+    castOp->erase();
+  }
+}
+
 LogicalResult
 M::applyDirectConversion(Operation *root, const TypeConverter *typeConverter,
                          const FrozenRewritePatternSet &patterns,
@@ -298,6 +369,6 @@ M::applyDirectConversion(Operation *root, const TypeConverter *typeConverter,
   SmallVector<UnrealizedConversionCastOp> casts;
   root->walk(
       [&](UnrealizedConversionCastOp castOp) { casts.push_back(castOp); });
-  reconcileUnrealizedCasts(casts);
+  reconcileCasts(casts);
   return success();
 }

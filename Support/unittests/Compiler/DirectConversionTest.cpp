@@ -189,3 +189,45 @@ TEST_F(DirectConversionTest, PatternsDoNotRunOnUnconvertibleOperandTypes) {
   EXPECT_FALSE(convert(*module));
   EXPECT_EQ(count(*module, "arith.addf"), 1u);
 }
+
+TEST_F(DirectConversionTest, FoldsACastChainThatReturnsToItsSourceType) {
+  auto module = parse(R"(
+    func.func @f(%x: i16) -> i16 {
+      %a = builtin.unrealized_conversion_cast %x : i16 to i8
+      %b = builtin.unrealized_conversion_cast %a : i8 to i1
+      %c = builtin.unrealized_conversion_cast %b : i1 to i16
+      return %c : i16
+    })");
+  ASSERT_TRUE(module);
+  EXPECT_FALSE(convert(*module));
+  EXPECT_EQ(count(*module, "builtin.unrealized_conversion_cast"), 0u);
+  auto func = cast<func::FuncOp>(module->getBody()->front());
+  auto ret = cast<func::ReturnOp>(func.getBody().front().getTerminator());
+  EXPECT_EQ(ret.getOperand(0), func.getArgument(0));
+}
+
+TEST_F(DirectConversionTest, KeepsACastChainWithAUserOfAnotherType) {
+  auto module = parse(R"(
+    func.func @f(%x: i16) -> i1 {
+      %a = builtin.unrealized_conversion_cast %x : i16 to i8
+      %b = builtin.unrealized_conversion_cast %a : i8 to i1
+      %c = builtin.unrealized_conversion_cast %b : i1 to i16
+      return %b : i1
+    })");
+  ASSERT_TRUE(module);
+  EXPECT_FALSE(convert(*module));
+  EXPECT_EQ(count(*module, "builtin.unrealized_conversion_cast"), 2u);
+}
+
+// The module body is a graph region, so its casts can form a cycle.
+TEST_F(DirectConversionTest, ErasesAnUnusedCastCycle) {
+  auto module = parse(R"(
+    module {
+      %a = builtin.unrealized_conversion_cast %c : i32 to i64
+      %b = builtin.unrealized_conversion_cast %a : i64 to i16
+      %c = builtin.unrealized_conversion_cast %b : i16 to i32
+    })");
+  ASSERT_TRUE(module);
+  EXPECT_FALSE(convert(*module));
+  EXPECT_EQ(count(*module, "builtin.unrealized_conversion_cast"), 0u);
+}
