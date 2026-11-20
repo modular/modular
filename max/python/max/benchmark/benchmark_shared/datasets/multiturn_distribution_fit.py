@@ -349,12 +349,25 @@ def _build_session(args: _SessionArgs) -> _SessionResult:
     )
 
 
+def _session_stream(stream_seed: int, session_id: int) -> np.random.RandomState:
+    """Returns the random stream that session ``session_id`` draws from.
+
+    Each session draws only from its own stream, so a session's turns do not
+    depend on how many sessions the run builds.
+    """
+    return np.random.RandomState(
+        np.random.MT19937(np.random.SeedSequence([stream_seed, session_id]))
+    )
+
+
 def _build_sessions(
     *,
     pool: TokenizerPool,
     user_text_pool: Sequence[str],
     tool_text_pool: Sequence[str],
-    session_turn_counts: Sequence[int],
+    num_sessions: int,
+    num_turns: BaseDistribution,
+    stream_seed: int,
     first_turn_profile: TurnProfile,
     later_turn_profile: TurnProfile,
     tools: Sequence[ToolConfig] | None,
@@ -370,7 +383,9 @@ def _build_sessions(
     """Draw each session's turns and build them from the pools.
 
     A human turn and an agent-loop round are the same draw from different
-    distributions, so both go through one loop.
+    distributions, so both go through one loop. Session ``i`` draws its turn
+    count, lengths, delays and agent-loop rounds from
+    ``_session_stream(stream_seed, i)``.
     """
     model_max_length = min(
         pool.tokenizer.model_max_length, np.iinfo(np.int64).max
@@ -393,18 +408,6 @@ def _build_sessions(
         )
         return ChatSamples(chat_sessions=[])
 
-    num_sessions = len(session_turn_counts)
-    total_turns_needed = sum(session_turn_counts)
-    if total_turns_needed > len(filtered_user_texts):
-        logger.info(
-            "%s: pool has %d valid rows but %d turns planned; will cycle "
-            "through the pool, with a per-draw unique marker (e.g. '[7] ') "
-            "and distributions re-sampled on each turn.",
-            log_prefix,
-            len(filtered_user_texts),
-            total_turns_needed,
-        )
-
     # A real tool result can be a token or two, so no min-length filter here.
     # Datasets with no recorded tool messages fall back to the user pool; the
     # copy keeps the two shuffled and cycled independently below.
@@ -421,7 +424,10 @@ def _build_sessions(
     tool_body_cycle = itertools.cycle(tool_texts)
     draw_counter = itertools.count()
     tool_list = list(tools) if tools else []
-    tool_weights = [tool.weight for tool in tool_list]
+    tool_probs = np.array([tool.weight for tool in tool_list], dtype=np.float64)
+    if tool_list:
+        tool_probs /= tool_probs.sum()
+    num_user_turns = 0
 
     def add_turn(
         turns: list[_TurnSpec],
@@ -431,6 +437,7 @@ def _build_sessions(
         session_id: int,
         turn_i: int,
         is_agentic: bool,
+        rng: np.random.RandomState,
     ) -> None:
         """Draw one spec and append it, taking its body from ``body_cycle``.
 
@@ -438,7 +445,7 @@ def _build_sessions(
         way, from different profiles.
         """
         targets = profile.draw(
-            min_input_len=min_input_len, min_output_len=min_output_len
+            min_input_len=min_input_len, min_output_len=min_output_len, rng=rng
         )
         turns.append(
             _TurnSpec(
@@ -457,7 +464,10 @@ def _build_sessions(
             )
         )
 
-    for session_id, n_turns in enumerate(session_turn_counts):
+    for session_id in range(num_sessions):
+        rng = _session_stream(stream_seed, session_id)
+        n_turns = max(round(num_turns.sample_value(rng)), 1)
+        num_user_turns += n_turns
         turn_specs: list[_TurnSpec] = []
         for turn_i in range(n_turns):
             block_start = len(turn_specs)
@@ -468,20 +478,21 @@ def _build_sessions(
                 session_id=session_id,
                 turn_i=turn_i,
                 is_agentic=False,
+                rng=rng,
             )
             if tool_list and rounds is not None:
-                for tool in random.choices(
-                    tool_list,
-                    weights=tool_weights,
-                    k=max(round(rounds.sample_value()), 0),
+                num_rounds = max(round(rounds.sample_value(rng)), 0)
+                for tool_i in rng.choice(
+                    len(tool_list), size=num_rounds, p=tool_probs
                 ):
                     add_turn(
                         turn_specs,
-                        tool.profile,
+                        tool_list[tool_i].profile,
                         tool_body_cycle,
                         session_id=session_id,
                         turn_i=turn_i,
                         is_agentic=True,
+                        rng=rng,
                     )
 
             # Each spec goes on the wire as a user message and a reply. In
@@ -506,6 +517,16 @@ def _build_sessions(
                 max_context_length=max_context_length,
                 log_prefix=log_prefix,
             )
+        )
+
+    if num_user_turns > len(filtered_user_texts):
+        logger.info(
+            "%s: pool has %d valid rows but %d turns planned; will cycle "
+            "through the pool, with a per-draw unique marker (e.g. '[7] ') "
+            "and distributions re-sampled on each turn.",
+            log_prefix,
+            len(filtered_user_texts),
+            num_user_turns,
         )
 
     sessions: list[ChatSession] = []
@@ -636,21 +657,21 @@ def build_fitted_chat_samples(
             " turn."
         )
 
-    # Turn counts are drawn up front, before any per-turn target, matching the
-    # original sampling order so a fixed seed reproduces earlier runs.
     num_turns_dist = BaseDistribution.from_distribution_parameter_or_raise(
         num_turns
     )
-    session_turn_counts = [
-        max(round(num_turns_dist.sample_value()), 1)
-        for _ in range(num_sessions)
-    ]
+    # One draw from the global stream keys every session's own stream. The
+    # count of sessions changes with the load (the warmup pool grows with
+    # concurrency), and session i must stay the same when it does.
+    stream_seed = int(np.random.randint(2**31))
 
     return _build_sessions(
         pool=pool,
         user_text_pool=user_text_pool,
         tool_text_pool=tool_text_pool or [],
-        session_turn_counts=session_turn_counts,
+        num_sessions=num_sessions,
+        num_turns=num_turns_dist,
+        stream_seed=stream_seed,
         first_turn_profile=first_turn_profile,
         later_turn_profile=later_turn_profile,
         tools=tools,

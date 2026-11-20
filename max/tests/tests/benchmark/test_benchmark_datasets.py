@@ -22,6 +22,7 @@ from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 import msgspec
+import numpy as np
 import pytest
 from huggingface_hub import errors as hf_hub_errors
 from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
@@ -1132,6 +1133,38 @@ def test_every_user_body_is_marked_distinct() -> None:
         for msg in session.messages[0::2]
     ):
         assert abs(user.num_tokens - target_in) <= 4
+
+
+def test_a_session_does_not_depend_on_the_session_count() -> None:
+    """Session ``i`` is the same however many sessions follow it.
+
+    The warmup pool grows with concurrency, so the session count changes
+    across a sweep while the sessions must not.
+    """
+    tok = FakeTokenizer(model_max_length=50_000)
+
+    def sessions(num_sessions: int) -> list[list[tuple[str, int]]]:
+        np.random.seed(42)
+        with TokenizerPool(tok, loader=fake_loader) as pool:
+            samples = build_fitted_chat_samples(
+                pool=pool,
+                user_text_pool=["alpha body text", "beta body text"],
+                num_sessions=num_sessions,
+                num_turns="DU(1, 6)",
+                input_len="LN(4.0, 0.5)",
+                output_len="LN(3.0, 0.5)",
+                delay_between_turns_dist="U(0, 1000)",
+                sys_prompt_ratio=0.0,
+                max_num_unique_sys_prompt=1,
+                shuffle_pool=False,
+                log_prefix="test-invariant",
+            )
+        return [
+            [(m.content, m.num_tokens) for m in session.messages]
+            for session in samples.chat_sessions
+        ]
+
+    assert sessions(4) == sessions(12)[:4]
 
 
 def test_a_truncated_session_still_ends_without_a_delay() -> None:

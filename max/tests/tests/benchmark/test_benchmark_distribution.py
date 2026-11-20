@@ -13,6 +13,9 @@
 
 """Unit tests for benchmark_shared.distribution module."""
 
+from collections.abc import Callable
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.datasets.distribution import (
@@ -406,21 +409,19 @@ def test_burr12_string_missing_param_raises() -> None:
         BaseDistribution.from_distribution_parameter("Burr12(1, 2)")
 
 
-def test_burr12_sample_is_stable_for_tiny_u(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_burr12_sample_is_stable_for_tiny_u() -> None:
     # For u below ~2^-53, (1 - u) rounds to 1.0 and the naive form
     # (1 - u)**(-1/d) - 1.0 collapses to 0.0. The expm1/log1p form preserves
     # precision: the true value is ~u/d for small u.
     tiny_u = 1e-18
     d = 0.569
-    monkeypatch.setattr(np.random, "uniform", lambda low=0.0, high=1.0: tiny_u)
+    rng = Mock(uniform=lambda low=0.0, high=1.0: tiny_u)
 
     # Sanity check: the naive form is broken at this u.
     assert (1.0 - tiny_u) ** (-1.0 / d) - 1.0 == 0.0
 
     dist = Burr12Distribution(c=2.389, d=d, scale=214.8)
-    sample = dist.sample_value()
+    sample = dist.sample_value(rng)
     assert sample > 0.0
     # Expected: scale * (u/d)**(1/c). Within 1% of the analytic small-u limit.
     expected = dist.scale * (tiny_u / d) ** (1.0 / dist.c)
@@ -454,3 +455,94 @@ def test_discrete_distributions_are_discrete() -> None:
         NegativeBinomialDistribution,
     ):
         assert issubclass(dist_cls, DiscreteDistribution)
+
+
+# ---------------------------------------------------------------------------
+# Random stream selection
+# ---------------------------------------------------------------------------
+
+
+def _burr12_from_global_uniform() -> float:
+    u = np.random.uniform(low=0.0, high=1.0)
+    return float(214.8 * np.expm1(-np.log1p(-u) / 0.569) ** (1.0 / 2.389))
+
+
+# Each distribution that draws, paired with the np.random call it must match
+# when it samples from the global stream.
+_DRAWING_DISTRIBUTIONS = [
+    pytest.param(
+        CategoricalDistribution(
+            values=[1.0, 2.0, 3.0], weights=[1.0, 1.0, 2.0]
+        ),
+        lambda: float(np.random.choice([1.0, 2.0, 3.0], p=[0.25, 0.25, 0.5])),
+        id="categorical",
+    ),
+    pytest.param(
+        NormalDistribution(mean=100.0, std=5.0),
+        lambda: float(np.random.normal(loc=100.0, scale=5.0)),
+        id="normal",
+    ),
+    pytest.param(
+        UniformDistribution(lower=1.0, upper=9.0),
+        lambda: float(np.random.uniform(low=1.0, high=9.0)),
+        id="uniform",
+    ),
+    pytest.param(
+        GammaDistribution(shape=2.0, scale=3.0),
+        lambda: float(np.random.gamma(shape=2.0, scale=3.0)),
+        id="gamma",
+    ),
+    pytest.param(
+        LogNormalDistribution(mean=1.0, std=0.5),
+        lambda: float(np.random.lognormal(mean=1.0, sigma=0.5)),
+        id="lognormal",
+    ),
+    pytest.param(
+        Burr12Distribution(c=2.389, d=0.569, scale=214.8),
+        _burr12_from_global_uniform,
+        id="burr12",
+    ),
+    pytest.param(
+        DiscreteUniformDistribution(lower=1, upper=1000),
+        lambda: int(np.random.randint(low=1, high=1001)),
+        id="discrete_uniform",
+    ),
+    pytest.param(
+        NegativeBinomialDistribution(n=3, p=0.2),
+        lambda: int(np.random.negative_binomial(n=3, p=0.2)) + 1,
+        id="negative_binomial",
+    ),
+]
+
+
+@pytest.mark.parametrize(("dist", "global_draw"), _DRAWING_DISTRIBUTIONS)
+def test_default_stream_matches_seeded_global_numpy_draws(
+    dist: BaseDistribution, global_draw: Callable[[], float]
+) -> None:
+    np.random.seed(1234)
+    expected = [global_draw() for _ in range(8)]
+
+    np.random.seed(1234)
+    assert [dist.sample_value() for _ in range(8)] == expected
+
+
+@pytest.mark.parametrize(
+    "dist",
+    [pytest.param(p.values[0], id=p.id) for p in _DRAWING_DISTRIBUTIONS],
+)
+def test_explicit_rng_is_seeded_and_independent_of_global_stream(
+    dist: BaseDistribution,
+) -> None:
+    np.random.seed(0)
+    rng = np.random.RandomState(7)
+    expected = [dist.sample_value(rng) for _ in range(8)]
+    # Draws from rng must not advance the global stream.
+    assert np.random.random() == np.random.RandomState(0).random()
+
+    np.random.seed(99)
+    rng = np.random.RandomState(7)
+    actual = []
+    for _ in range(8):
+        actual.append(dist.sample_value(rng))
+        np.random.random()
+    assert actual == expected
