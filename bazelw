@@ -5,6 +5,14 @@ set -euo pipefail
 readonly version="1.30.0"
 
 arch="$(uname -m)"
+if [[ $OSTYPE == darwin* ]]; then
+  # uname -m says x86_64 under Rosetta; hw.optional.arm64 is 1 on Apple silicon.
+  if [[ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+    arch="arm64"
+  else
+    arch="x86_64"
+  fi
+fi
 if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
   readonly bazel_arch="arm64"
 else
@@ -12,8 +20,12 @@ else
 fi
 
 if [[ $OSTYPE == darwin* ]]; then
-  readonly platform=darwin-arm64
-  readonly sha="555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d5625793ec"
+  readonly platform=darwin-"$bazel_arch"
+  if [[ "$bazel_arch" == "amd64" ]]; then
+    readonly sha="a0e6468b0c6b812f782d8cbfb05824121f6980c0bd70aaa1774fb8272bb7b2ad"
+  else
+    readonly sha="555d2ff912ccd336d0060bdb5251ef2f62629c6f8fbadb59005a45d5625793ec"
+  fi
   readonly sha_cmd="shasum"
 elif [[ $OSTYPE == linux* ]]; then
   readonly sha_cmd="sha256sum"
