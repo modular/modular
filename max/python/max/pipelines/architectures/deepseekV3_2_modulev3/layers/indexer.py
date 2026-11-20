@@ -77,7 +77,11 @@ def _scales_mapping(mapping: DeviceMapping) -> DeviceMapping:
 def act_quant(
     x: Tensor, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[Tensor, Tensor]:
-    """Quantizes the activation's last axis and returns its scales."""
+    """Quantizes the activation's last axis and returns its scales.
+
+    The scales are float32 powers of two, the values a ``float8_e8m0fnu``
+    scale holds.
+    """
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
@@ -86,9 +90,10 @@ def act_quant(
         x,
         quant_config.input_scale,
         quant_config.weight_scale,
-        scales_type=DType.float8_e8m0fnu,
+        scales_type=DType.float32,
         group_size_or_per_token=block_size,
         out_type=DType.float8_e4m3fn,
+        pow2_scales=True,
     )
     # Both outputs take the input's placements; the scales have a different
     # shape than the quantized tensor, which a placements-only mapping allows.
@@ -388,7 +393,7 @@ class Indexer(
         )
         store_k_scale_cache_ragged(
             indexer_k_collection,
-            F.cast(F.unsqueeze(k_scale, axis=1), DType.float32),
+            F.unsqueeze(k_scale, axis=1),
             input_row_offsets,
             layer_idx,
             quantization_granularity=self.quant_config.scales_granularity_mnk[
@@ -547,7 +552,7 @@ class Indexer(
         # quantizing each rank's own.
         k_fp8, k_scale = act_quant(pcp.gather_rows(k, whole), self.quant_config)
         k_rows = F.unsqueeze(k_fp8, axis=1)
-        k_scales = F.cast(F.unsqueeze(k_scale, axis=1), DType.float32)
+        k_scales = F.unsqueeze(k_scale, axis=1)
         granularity = self.quant_config.scales_granularity_mnk[2]
         # The DCP cache keeps only the positions each rank owns.
         store_k_cache_ragged(

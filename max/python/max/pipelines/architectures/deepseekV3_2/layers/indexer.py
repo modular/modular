@@ -93,7 +93,11 @@ def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
 def act_quant(
     x: TensorValue, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[TensorValue, TensorValue]:
-    """Quantizes the activation's last axis and returns its scales."""
+    """Quantizes the activation's last axis and returns its scales.
+
+    The scales are float32 powers of two, the values a ``float8_e8m0fnu``
+    scale holds.
+    """
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
@@ -102,9 +106,10 @@ def act_quant(
         x,
         quant_config.input_scale,
         quant_config.weight_scale,
-        scales_type=DType.float8_e8m0fnu,
+        scales_type=DType.float32,
         group_size_or_per_token=block_size,
         out_type=DType.float8_e4m3fn,
+        pow2_scales=True,
     )
     num_rows = x.shape[0]
     x = x.reshape((*x_dims, head_dim))
@@ -834,7 +839,7 @@ class Indexer(Module, Shardable):
         )
         store_k_scale_cache_ragged(
             indexer_k_collection,
-            ops.unsqueeze(k_scale, axis=1).cast(DType.float32),
+            ops.unsqueeze(k_scale, axis=1),
             input_row_offsets,
             layer_idx,
             quantization_granularity=self.quant_config.scales_granularity_mnk[
