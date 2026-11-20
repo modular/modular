@@ -1536,7 +1536,9 @@ struct ManagedTensorSlice[
         return rebind[Pointer[Scalar[_dtype], MutAnyOrigin]](self._ptr)
 
     @inline(.always)
-    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def to_device_buffer(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[Self.dtype]:
         var size = self.size()
         if size > 0:
             return DeviceBuffer[Self.dtype](

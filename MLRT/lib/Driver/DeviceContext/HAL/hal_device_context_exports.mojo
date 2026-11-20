@@ -31,7 +31,6 @@ from std.ffi import c_char, CStringSpan, external_call
 # backend, where each wrapper holds the HAL implementation.
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
-    _wrap_hal_memory,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
@@ -279,7 +278,9 @@ def MojoHAL_DeviceContext_createBufferOwning(
     owning: Bool,
 ) abi("C") -> _CString[]:
     try:
-        var buf = _wrap_hal_memory(ctx[], ptr, Int(byte_size), owning=owning)
+        var buf = DeviceBuffer[.uint8](
+            ctx[], ptr, Int(byte_size), owning=owning
+        )
         var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
         boxed.unsafe_ptr().unsafe_write(buf^)
         out_buf[] = boxed^.unsafe_leak()
@@ -395,7 +396,7 @@ def MojoHAL_DeviceContext_enqueueCopyToDevice(
         return None
     try:
         var ctxref = ctx[]
-        var dst_buf = _wrap_hal_memory(
+        var dst_buf = DeviceBuffer[.uint8](
             ctxref, dst, Int(byte_size), owning=False
         )
         ctxref.enqueue_copy(dst_buf, src)
@@ -418,7 +419,7 @@ def MojoHAL_DeviceContext_enqueueCopyFromDevice(
         return None
     try:
         var ctxref = ctx[]
-        var src_buf = _wrap_hal_memory(
+        var src_buf = DeviceBuffer[.uint8](
             ctxref, src, Int(byte_size), owning=False
         )
         ctxref.enqueue_copy(dst, src_buf)
@@ -441,7 +442,7 @@ def MojoHAL_DeviceContext_enqueueSetMemory(
         return None
     try:
         ref device_ctx = ctx[]
-        var view = _wrap_hal_memory(
+        var view = DeviceBuffer[.uint8](
             device_ctx, dst, Int(byte_size), owning=False
         )
         device_ctx.unwrap_hal()._stream[].fill(
@@ -621,7 +622,7 @@ def MojoHAL_HostBuffer_createSubBuffer(
     if byte_size > parent_size or parent_size - byte_size < byte_offset:
         return _err_cstr("offset, len and elem_size are out of range")
     try:
-        var view = _wrap_hal_memory(
+        var view = DeviceBuffer[.uint8](
             rebind_var[DeviceContext[]](parent_buf.unwrap_hal()._ctx),
             parent_buf.unsafe_ptr().unsafe_offset(Int(byte_offset)),
             Int(byte_size),
@@ -655,7 +656,7 @@ def MojoHAL_DeviceBuffer_createSubBuffer(
     if byte_size > parent_size or parent_size - byte_size < byte_offset:
         return _err_cstr("offset, len and elem_size are out of range")
     try:
-        var view = _wrap_hal_memory(
+        var view = DeviceBuffer[.uint8](
             rebind_var[DeviceContext[]](parent_buf.unwrap_hal()._ctx),
             parent_buf.unwrap_hal()._device_ptr.unsafe_offset(Int(byte_offset)),
             Int(byte_size),
@@ -746,7 +747,7 @@ def MojoHAL_DeviceContext_memmapFile(
         return _err_cstr("failed to mmap file")
 
     try:
-        var view = _wrap_hal_memory(ctx[], base, Int(size), owning=False)
+        var view = DeviceBuffer[.uint8](ctx[], base, Int(size), owning=False)
         var boxed = alloc(Layout[_MmapBox].single())
         boxed.unsafe_ptr().unsafe_write(_MmapBox(view^, base, UInt64(size)))
         out_buf[] = boxed^.unsafe_leak().unsafe_bitcast[DeviceBuffer[.uint8]]()

@@ -3910,7 +3910,9 @@ struct TileTensor[
         }
 
     @inline(.always)
-    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def to_device_buffer(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[Self.dtype]:
         """Convert the tensor to a `DeviceBuffer`.
 
         Works for tensors backed by either `DefaultEngine` or
@@ -3924,6 +3926,9 @@ struct TileTensor[
 
         Returns:
             A `DeviceBuffer` containing the tensor's data.
+
+        Raises:
+            If the driver refuses to wrap the tensor's memory.
         """
         comptime assert (
             Self.Engine == DefaultEngine[element_width=1]

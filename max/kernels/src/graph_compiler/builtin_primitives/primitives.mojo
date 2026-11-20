@@ -216,7 +216,9 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
         ](storage^.take_handle(), ptr, n)
         return AnyAsyncValueRef(handle)
 
-    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[.int8]:
+    def to_device_buffer(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[.int8]:
         """Wraps the view's memory in a non-owning `DeviceBuffer` for a copy.
 
         Rebuilds a fresh view from the origin-erased data pointer so the
@@ -228,6 +230,9 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
 
         Returns:
             A non-owning `DeviceBuffer` over the view's memory.
+
+        Raises:
+            If the driver refuses to wrap the view's memory.
         """
         return MutByteBuffer(
             self.unsafe_ptr(), Index(self.size())
