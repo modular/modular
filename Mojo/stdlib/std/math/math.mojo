@@ -3322,7 +3322,7 @@ def max[T: Copyable & Comparable & Deinitable](x: T, *ys: T) -> T:
     for y in ys:
         if y > res:
             res = y.copy()
-    return res.copy()
+    return res^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3376,7 +3376,7 @@ def min[T: Copyable & Comparable & Deinitable](x: T, *ys: T) -> T:
     for y in ys:
         if y < res:
             res = y.copy()
-    return res.copy()
+    return res^
 
 
 # ===----------------------------------------------------------------------=== #
