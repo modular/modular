@@ -20,6 +20,7 @@ position-local: it holds no state across steps.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import cast
 
 from max import functional as F
@@ -63,6 +64,67 @@ class AttnResQueries(Module[[], None]):
         self.output_query = Tensor.zeros([hidden_size], dtype=DType.float32)
 
 
+@dataclass(frozen=True)
+class AttnResSources:
+    """Mixed sources, stacked and normalized once for repeated mixtures.
+
+    The normalization runs over the last axis, so each source is scaled on its
+    own and a prepared set depends only on the sources, never on the queries.
+    That is what lets the looped checkpoint prepare its bank once per pass and
+    mix it once per core layer.
+    """
+
+    normed: Tensor
+    values: Tensor
+
+
+def prepare_attn_res(
+    sources: Sequence[Tensor], *, normalize_values: bool
+) -> AttnResSources:
+    """Stacks the sources in float32 and normalizes each one.
+
+    Args:
+        sources: The stored blocks then the live partial sum, each
+            ``[tokens, hidden]``.
+        normalize_values: Whether the mixture averages the normalized sources.
+    """
+    stack = F.stack([s.cast(DType.float32) for s in sources], axis=1)
+    normed = unweighted_rms_norm(stack, ATTN_RES_EPS)
+    return AttnResSources(
+        normed=normed, values=normed if normalize_values else stack
+    )
+
+
+def mix_attn_res(
+    prepared: AttnResSources,
+    queries: Tensor,
+    *,
+    queries_are_scaled: bool = False,
+) -> list[Tensor]:
+    """Mixes prepared sources once for each query row, in float32.
+
+    Args:
+        prepared: The sources, from :func:`prepare_attn_res`.
+        queries: ``[hidden]`` or ``[num_queries, hidden]`` float32.
+        queries_are_scaled: Whether ``queries`` already carry
+            ``hidden ** -0.5``. The looped checkpoints scale their message
+            queries once, upstream, so this mix must not scale them again.
+
+    Returns:
+        One float32 ``[tokens, hidden]`` mixture per query row.
+    """
+    hidden = int(prepared.normed.shape[-1])
+    queries = queries.reshape([-1, hidden])
+    mixes = []
+    for row in range(int(queries.shape[0])):
+        scores = (prepared.normed * queries[row]).sum(axis=-1)
+        if not queries_are_scaled:
+            scores = scores * hidden**-0.5
+        probs = F.softmax(scores, axis=1)
+        mixes.append((probs * prepared.values).sum(axis=1).squeeze(1))
+    return mixes
+
+
 def attn_res_mix(
     sources: Sequence[Tensor],
     queries: Tensor,
@@ -87,19 +149,11 @@ def attn_res_mix(
     Returns:
         One float32 ``[tokens, hidden]`` mixture per query row.
     """
-    hidden = int(sources[0].shape[-1])
-    queries = queries.reshape([-1, hidden])
-    stack = F.stack([s.cast(DType.float32) for s in sources], axis=1)
-    normed = unweighted_rms_norm(stack, ATTN_RES_EPS)
-    values = normed if normalize_values else stack
-    mixes = []
-    for row in range(int(queries.shape[0])):
-        scores = (normed * queries[row]).sum(axis=-1)
-        if not queries_are_scaled:
-            scores = scores * hidden**-0.5
-        probs = F.softmax(scores, axis=1)
-        mixes.append((probs * values).sum(axis=1).squeeze(1))
-    return mixes
+    return mix_attn_res(
+        prepare_attn_res(sources, normalize_values=normalize_values),
+        queries,
+        queries_are_scaled=queries_are_scaled,
+    )
 
 
 # One CTA per token covers 1024 threads x 8 elements in

@@ -32,7 +32,7 @@ from max.dtype import DType
 from max.nn import Module
 from max.tensor import Tensor
 
-from .attn_res import attn_res_mix
+from .attn_res import AttnResSources, mix_attn_res, prepare_attn_res
 from .norm import unweighted_rms_norm
 
 CONTROLLER_EPS = 1e-6
@@ -95,14 +95,25 @@ class Inkling2MessageControllers(Module[[], None]):
         self.mlp = Inkling2MessageController(width, rank)
 
 
-def loop_bank_messages(
-    sources: Sequence[Tensor], queries: Tensor
-) -> list[Tensor]:
-    """The messages one core layer reads from the previous pass.
+def prepare_bank_messages(sources: Sequence[Tensor]) -> AttnResSources:
+    """Normalizes the bank once for every core layer of a pass.
+
+    The bank is one tensor set per pass while every core layer mixes a
+    different query out of it, so the normalization belongs to the pass, not
+    to the layer.
 
     Args:
         sources: The stored blocks the core does not own, then the previous
             pass's partial sum.
+    """
+    return prepare_attn_res(sources, normalize_values=True)
+
+
+def bank_messages(prepared: AttnResSources, queries: Tensor) -> list[Tensor]:
+    """The messages one core layer reads from the previous pass.
+
+    Args:
+        prepared: The pass's bank, from :func:`prepare_bank_messages`.
         queries: ``[4, hidden]`` float32, this layer's rows of
             ``scaled_loop_queries``. They already carry ``hidden ** -0.5``, so
             the mix must not apply it a second time.
@@ -110,9 +121,7 @@ def loop_bank_messages(
     Returns:
         One float32 mixture per controller row.
     """
-    return attn_res_mix(
-        sources, queries, normalize_values=True, queries_are_scaled=True
-    )
+    return mix_attn_res(prepared, queries, queries_are_scaled=True)
 
 
 def scaled_loop_queries(
@@ -124,8 +133,8 @@ def scaled_loop_queries(
     wants ``[num_core, 4, hidden]`` in controller order, so the attention query
     and the key/value queries interleave as ``q[0::2]``, ``kv[0::2]``,
     ``kv[1::2]``, ``q[1::2]`` and the whole thing is scaled once by
-    ``hidden ** -0.5``. This is that one application: ``loop_bank_messages``
-    mixes with ``queries_are_scaled=True`` so the scale does not compound.
+    ``hidden ** -0.5``. This is that one application: ``bank_messages`` mixes
+    with ``queries_are_scaled=True`` so the scale does not compound.
     """
     core = int(queries.shape[0]) // 2
     q = queries.reshape([core, 2, width])

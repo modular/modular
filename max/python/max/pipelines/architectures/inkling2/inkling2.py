@@ -47,9 +47,13 @@ from max.tensor.sharding import (
     Partial,
 )
 
-from .layers.attn_res import AttnResQueries, attn_res_mix
+from .layers.attn_res import AttnResQueries, AttnResSources, attn_res_mix
 from .layers.decoder_layer import Inkling2DecoderLayer
-from .layers.loop import loop_bank_messages, scaled_loop_queries
+from .layers.loop import (
+    bank_messages,
+    prepare_bank_messages,
+    scaled_loop_queries,
+)
 from .layers.norm import Inkling2RMSNorm
 from .layers.placement import as_replicated
 from .layers.short_convolution import LayerConvState, SiteState
@@ -354,7 +358,7 @@ class Inkling2(Module[..., DecoderOutputs]):
         )
         entry: tuple[Tensor, list[Tensor]] | None = None
         entry_blocks = 0
-        bank: list[Tensor] | None = None
+        prepared_bank: AttnResSources | None = None
         seen_taps: set[int] = set()
         blocks: list[Tensor] = []
         tapped: list[Tensor] = []
@@ -366,10 +370,10 @@ class Inkling2(Module[..., DecoderOutputs]):
                 entry_blocks = len(entry[1])
                 h, blocks = entry[0], list(entry[1])
             messages: list[Tensor] | None = None
-            if bank is not None and layer_idx in core_set:
+            if prepared_bank is not None and layer_idx in core_set:
                 assert queries is not None
-                messages = loop_bank_messages(
-                    bank, queries[layer_idx - core[0]]
+                messages = bank_messages(
+                    prepared_bank, queries[layer_idx - core[0]]
                 )
             if layer_idx in taps and layer_idx not in seen_taps:
                 tapped.append(h)
@@ -410,8 +414,12 @@ class Inkling2(Module[..., DecoderOutputs]):
             if core and layer_idx == core[-1]:
                 # The bank holds the blocks the core closed after its own first
                 # layer, then the partial: the first core layer re-closes the
-                # prelude's sum, which the bank does not carry twice.
-                bank = [*blocks[entry_blocks + 1 :], h]
+                # prelude's sum, which the bank does not carry twice. It is
+                # stacked and normalized here, once per pass, instead of in
+                # each core layer that mixes a query out of it.
+                prepared_bank = prepare_bank_messages(
+                    [*blocks[entry_blocks + 1 :], h]
+                )
         if num_layers in taps:
             tapped.append(self.final_hidden(blocks, h))
         return LayerOutputs(
