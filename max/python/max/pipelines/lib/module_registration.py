@@ -1241,7 +1241,7 @@ class ModuleV3DecoderPipelineModel(
         Raises:
             TypeError: If the registered batch processor can't encode images.
         """
-        if type(self).vision_cls is None:
+        if self._vision_module is None:
             return None
         batching = self._batch_processor
         if not isinstance(batching, VisionBatchProcessor):

@@ -899,6 +899,23 @@ def test_a_pipeline_model_without_vision_encodes_no_images() -> None:
     assert vision_encoding(object()) is None
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_registered_vision_encoding_requires_a_built_module(
+    enabled: bool,
+) -> None:
+    cls = module_pipeline_model(
+        ToyConfig,
+        ((GraphRole.DECODER, VisionDecoder), (GraphRole.VISION, ToyVision)),
+        ToyVisionBatchProcessor,
+    )
+    model = cls.__new__(cls)
+    processor = ToyVisionBatchProcessor.__new__(ToyVisionBatchProcessor)
+    model._batch_processor = processor
+    if enabled:
+        model._vision_module = ToyVision(ToyConfig())
+    assert vision_encoding(model) is (processor if enabled else None)
+
+
 class VideoCountingBatchProcessor(ToyVisionBatchProcessor):
     def pop_vision_metrics(self) -> None:
         return None
