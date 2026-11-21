@@ -915,11 +915,17 @@ class ArchLookup:
         # Import any architecture deferred under this name before looking it up.
         if name in self._lazy_architectures:
             self.materialize(name)
-        if task is not None:
+        arch = self.architectures.get(name)
+        if task is not None and task != PipelineTask.UNDEFINED:
             task_key = (name, task)
             if task_key in self._architectures_by_task:
                 return self._architectures_by_task[task_key]
-        return self.architectures.get(name)
+            # Every registration is keyed by task, so a miss means no variant
+            # under this name serves the task. Returning the name-only entry
+            # would hand back an architecture for another task.
+            if arch is not None and arch.task != task:
+                return None
+        return arch
 
     def find(
         self,
