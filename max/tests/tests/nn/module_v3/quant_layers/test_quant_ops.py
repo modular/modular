@@ -113,6 +113,23 @@ def test_storage_dtype_follows_the_source_not_the_format(
     assert quant_ops.routed_weight_dtype(None) == DType.bfloat16
 
 
+def test_storage_dtype_matches_the_containers_and_follows_the_source(
+    fp8_quant_config: QuantConfig,
+    nvfp4_quant_config: QuantConfig,
+    nvfp4_fake_quant_config: QuantConfig,
+    mxfp8_quant_config: QuantConfig,
+    mxfp4_quant_config: QuantConfig,
+) -> None:
+    """``QuantConfig.storage_dtype`` is what each container allocates."""
+    assert fp8_quant_config.storage_dtype == DType.float8_e4m3fn
+    assert nvfp4_quant_config.storage_dtype == DType.uint8
+    assert mxfp8_quant_config.storage_dtype == MXFP8Tensor.storage_dtype
+    assert mxfp4_quant_config.storage_dtype == MXFP4Tensor.storage_dtype
+
+    # Quantized on load, the checkpoint holds bf16.
+    assert nvfp4_fake_quant_config.storage_dtype == DType.bfloat16
+
+
 def test_only_nvfp4_needs_dispatch_scales_and_offsets(
     fp8_quant_config: QuantConfig, nvfp4_quant_config: QuantConfig
 ) -> None:
@@ -205,8 +222,8 @@ def test_quantized_weight_nvfp4_fake(
         assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
         # The dtype the checkpoint holds, not whatever device happens to be
         # available: this matches what `routed_weight_dtype` promises.
-        assert weight._tensor.dtype == DType.bfloat16
-        assert weight._tensor.dtype == quant_ops.routed_weight_dtype(
+        assert weight._weight.dtype == DType.bfloat16
+        assert weight._weight.dtype == quant_ops.routed_weight_dtype(
             nvfp4_fake_quant_config
         )
 
@@ -1237,8 +1254,8 @@ def test_quantized_weight_mxfp8_fake(
         assert isinstance(weight, MXFP8Tensor)
         assert weight.block_size == (1, 32)
         assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
-        assert weight._tensor.dtype == DType.bfloat16
-        assert weight._tensor.dtype == quant_ops.routed_weight_dtype(
+        assert weight._weight.dtype == DType.bfloat16
+        assert weight._weight.dtype == quant_ops.routed_weight_dtype(
             mxfp8_fake_quant_config
         )
 
@@ -1286,7 +1303,7 @@ def test_quantized_weight_mxfp4_fake(
         assert isinstance(weight, MXFP4Quantizer)
         assert isinstance(weight, MXFP4Tensor)
         assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
-        assert weight._tensor.dtype == DType.bfloat16
+        assert weight._weight.dtype == DType.bfloat16
 
 
 def test_stack_mxfp4_adds_expert_axis_to_both_leaves() -> None:
@@ -1424,4 +1441,56 @@ def test_grouped_matmul_sharding_keeps_optional_row_scales_replicated(
         )
         assert all(
             isinstance(p, Replicated) for p in assignment.needed_inputs[4:]
+        )
+
+
+# --------------------------------------------------------------------------- #
+# A block-scaled FP8 source
+# --------------------------------------------------------------------------- #
+
+
+def test_quantize_on_load_wraps_an_fp8_container(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    with F.lazy():
+        source = FP8BlockTensor.zeros((128, 256))
+
+        weight = quant_ops.quantize_on_load(source, nvfp4_fake_quant_config)
+
+    assert isinstance(weight, NVFP4TensorQuantizer)
+    assert weight._tensor is source
+    assert list(weight.shape) == [128, 256]
+    assert {name for name, _ in weight.parameters} == {
+        "weight",
+        "weight_scale_inv",
+    }
+
+
+def test_quantize_on_load_wraps_a_native_tensor(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    with F.lazy():
+        raw = Tensor.zeros((128, 256), dtype=DType.bfloat16)
+
+        weight = quant_ops.quantize_on_load(raw, nvfp4_fake_quant_config)
+
+    assert isinstance(weight, NVFP4TensorQuantizer)
+    assert weight._tensor is raw
+
+
+def test_quantize_on_load_needs_a_config_that_quantizes_on_load(
+    nvfp4_quant_config: QuantConfig,
+) -> None:
+    with F.lazy(), pytest.raises(ValueError, match="quantizes on load"):
+        quant_ops.quantize_on_load(
+            Tensor.zeros((128, 256), dtype=DType.bfloat16), nvfp4_quant_config
+        )
+
+
+def test_an_fp8_source_that_does_not_tile_fails_when_wrapped(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    with F.lazy(), pytest.raises(ValueError, match="multiples of the block"):
+        quant_ops.quantize_on_load(
+            FP8BlockTensor.zeros((100, 256)), nvfp4_fake_quant_config
         )

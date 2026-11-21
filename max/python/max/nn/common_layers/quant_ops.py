@@ -367,11 +367,15 @@ class _ContainerFactory(Protocol):
 
 
 class _QuantizerFactory(Protocol):
-    """Wraps a native-precision tensor, quantizing it on first use."""
+    """Wraps a weight, quantizing it on first use.
+
+    The weight is a native-precision tensor, or an FP8 container that the
+    wrapper decodes first.
+    """
 
     def __call__(
         self,
-        tensor: Tensor,
+        tensor: Tensor | FP8BlockTensor,
         block_size: tuple[int, int],
         *,
         report_error: bool = False,
@@ -395,23 +399,49 @@ _QUANTIZERS: dict[QuantFormat, _QuantizerFactory] = {
     QuantFormat.MXFP4: MXFP4Quantizer,
 }
 
-#: Dtype of the weight as the CHECKPOINT holds it, per format.
-_STORAGE_DTYPES: dict[QuantFormat, DType] = {
-    QuantFormat.BLOCKSCALED_FP8: DType.float8_e4m3fn,
-    QuantFormat.NVFP4: DType.uint8,
-    QuantFormat.MXFP8: MXFP8Tensor.storage_dtype,
-    QuantFormat.MXFP4: MXFP4Tensor.storage_dtype,
-}
-
 
 def routed_weight_dtype(quant_config: QuantConfig | None) -> DType:
     """The storage dtype :func:`quantized_weight` picks for ``quant_config``.
 
-    Weights quantized on the fly are bf16 on disk whatever they will become.
+    bfloat16 without a config; otherwise :attr:`QuantConfig.storage_dtype`.
     """
-    if quant_config is None or quant_config.quantizes_on_load:
+    if quant_config is None:
         return DType.bfloat16
-    return _STORAGE_DTYPES.get(quant_config.format, DType.bfloat16)
+    return quant_config.storage_dtype
+
+
+def quantize_on_load(
+    weight: Tensor | FP8BlockTensor, quant_config: QuantConfig
+) -> QuantAwareTensor:
+    """Wraps ``weight`` in the quantizer of ``quant_config``'s format.
+
+    ``weight`` is a native-precision tensor, or an :class:`FP8BlockTensor`
+    that the quantizer decodes to bfloat16 first. It keeps whatever
+    placement it has.
+
+    Raises:
+        ValueError: If ``quant_config`` does not quantize on load, or its
+            format has no on-the-fly quantizer.
+    """
+    if not quant_config.quantizes_on_load:
+        raise ValueError(
+            "quantize_on_load needs a config that quantizes on load; got "
+            f"source={quant_config.source.value}"
+        )
+    if quant_config.format not in _QUANTIZERS:
+        known = ", ".join(sorted(f.value for f in _QUANTIZERS))
+        raise ValueError(
+            f"Quant type {quant_config.format} is not yet supported for "
+            f"on-the-fly quantization; known: {known}."
+        )
+    block_size = quant_config.weight_scale.block_size
+    assert block_size is not None
+    return _QUANTIZERS[quant_config.format](
+        weight,
+        block_size=block_size,
+        report_error=quant_config.report_error,
+        mse_sweep_scales=quant_config.mse_sweep_scales,
+    )
 
 
 def quantized_weight(
@@ -446,33 +476,24 @@ def quantized_weight(
             "there is no quantization to measure otherwise"
         )
 
-    registry = _QUANTIZERS if quant_config.quantizes_on_load else _CONTAINERS
-    if quant_config.format not in registry:
-        known = ", ".join(sorted(f.value for f in registry))
-        raise ValueError(
-            f"Quant type {quant_config.format} is not yet supported"
-            + (
-                " for on-the-fly quantization"
-                if quant_config.quantizes_on_load
-                else ""
-            )
-            + f"; known: {known}."
-        )
-
-    block_size = quant_config.weight_scale.block_size
-    assert block_size is not None
     if quant_config.quantizes_on_load:
         # Pinned, not left to the ambient default. `Tensor.zeros` picks
         # float32 on CPU and bfloat16 on an accelerator, which would make a
         # parameter's dtype depend on the hardware present when it is built
-        # -- and disagree with what `routed_weight_dtype` tells callers the
-        # checkpoint holds.
-        return _QUANTIZERS[quant_config.format](
-            Tensor.zeros(shape, dtype=routed_weight_dtype(quant_config)),
-            block_size=block_size,
-            report_error=quant_config.report_error,
-            mse_sweep_scales=quant_config.mse_sweep_scales,
+        # -- and disagree with `QuantConfig.storage_dtype`, which tells
+        # callers what the checkpoint holds.
+        return quantize_on_load(
+            Tensor.zeros(shape, dtype=quant_config.storage_dtype),
+            quant_config,
         )
+    if quant_config.format not in _CONTAINERS:
+        known = ", ".join(sorted(f.value for f in _CONTAINERS))
+        raise ValueError(
+            f"Quant type {quant_config.format} is not yet supported; "
+            f"known: {known}."
+        )
+    block_size = quant_config.weight_scale.block_size
+    assert block_size is not None
     # The same format, stored with compressed-tensors' global scales.
     container: _ContainerFactory = (
         CompressedTensorsNVFP4Tensor

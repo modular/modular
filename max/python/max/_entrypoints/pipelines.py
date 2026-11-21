@@ -914,6 +914,20 @@ def cli_pipeline(
     ),
 )
 @click.option(
+    "--source-format",
+    type=click.Choice(["bf16", "fp8"]),
+    default=None,
+    help=(
+        "Check that every targeted weight is stored as this: bf16 (native"
+        " precision) or fp8 (block-scaled float8_e4m3fn with"
+        " weight_scale_inv). A targeted weight stored as anything else is an"
+        " error that names the layer, so a mistaken --targets pattern cannot"
+        " quietly re-quantize the wrong layers. Optional: when omitted, each"
+        " weight is handled by its own format, so one set of targets can mix"
+        " bf16 and fp8 weights. Leave it out for such a mix."
+    ),
+)
+@click.option(
     "--error-report-dir",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
@@ -1008,6 +1022,7 @@ def cli_pipeline(
 def quantize(
     targets: list[str],
     quantization_format: str,
+    source_format: str | None,
     error_report_dir: Path | None,
     mse_sweep_scales: bool,
     verbose: bool,
@@ -1089,6 +1104,7 @@ def quantize(
         targets=targets,
         prompt=prompt,
         quantization_format=quantization_format,
+        source_format=source_format,
         verbose=verbose,
         error_report_dir=error_report_dir,
         mse_sweep_scales=mse_sweep_scales,

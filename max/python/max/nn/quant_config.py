@@ -244,6 +244,19 @@ class InputScaleSpec:
         return self.granularity == ScaleGranularity.BLOCK
 
 
+#: The dtype of a weight stored in each format, as its checkpoint holds it.
+#: Formats missing here are not stored by a ModuleV3 container, and report
+#: bfloat16. :class:`~max.nn.common_layers.quant_tensor.MXFP8Tensor` and its
+#: siblings state the same dtype as ``storage_dtype``; a test keeps the two
+#: in step.
+_STORAGE_DTYPES: dict[QuantFormat, DType] = {
+    QuantFormat.BLOCKSCALED_FP8: DType.float8_e4m3fn,
+    QuantFormat.NVFP4: DType.uint8,
+    QuantFormat.MXFP8: DType.float8_e4m3fn,
+    QuantFormat.MXFP4: DType.uint8,
+}
+
+
 @dataclass
 class QuantConfig:
     """Configures scaled quantization settings for a layer or model section.
@@ -634,6 +647,18 @@ class QuantConfig:
         checkpoint already holds them that way.
         """
         return self.source is WeightSource.QUANTIZE
+
+    @property
+    def storage_dtype(self) -> DType:
+        """The dtype of a weight as the checkpoint holds it.
+
+        A pre-quantized checkpoint holds the format's own dtype (packed
+        ``uint8`` for FP4, ``float8_e4m3fn`` for FP8 and MXFP8). A weight
+        quantized on load is bfloat16 on disk, whatever it becomes.
+        """
+        if self.quantizes_on_load:
+            return DType.bfloat16
+        return _STORAGE_DTYPES.get(self.format, DType.bfloat16)
 
     @overload
     def per_tensor_scale(self, stored: None) -> None: ...

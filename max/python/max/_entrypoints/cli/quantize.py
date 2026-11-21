@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 import requests
 from max import tree
 from max.driver import CPU, Accelerator, accelerator_count
+from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.engine.api import PrintStyle
 from max.nn import Linear, Module
@@ -43,11 +44,14 @@ from max.nn.common_layers.quant_linear import (
     QuantizedMLP,
     QuantizedQKVLinear,
 )
-from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.common_layers.quant_moe import ExpertParallelMoE, QuantizedMoE
+from max.nn.common_layers.quant_ops import quantize_on_load
 from max.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
     MXFP4Quantizer,
     MXFP8Quantizer,
     NVFP4TensorQuantizer,
+    QTensor,
 )
 from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
 from max.pipelines import PIPELINE_REGISTRY
@@ -78,6 +82,7 @@ from max.pipelines.weights.fp4_quantization import (
 )
 from max.profiler import OneShotCapture, Tracer
 from max.tensor import Tensor, compilation
+from max.tensor.sharding import DeviceMapping, Sharded
 from max.tensor.support import _session
 
 from .generate import stream_text_to_console
@@ -192,12 +197,241 @@ _ERROR_REPORT_FORMATS = frozenset(
 )
 
 
+_EXPERT_PROJECTIONS = ("gate_proj", "up_proj", "down_proj")
+
+#: What ``--source-format`` accepts: ``bf16`` is a native-precision weight,
+#: ``fp8`` a block-scaled ``float8_e4m3fn`` weight with ``weight_scale_inv``.
+SOURCE_FORMATS = ("bf16", "fp8")
+
+
+def _require_source_format(
+    what: str, actual: str, expected: str | None
+) -> None:
+    """Rejects a targeted weight whose stored format is not the stated one."""
+    if expected is not None and actual != expected:
+        raise ValueError(
+            f"{what} is stored as {actual}, but the source format was "
+            f"stated as {expected}. Fix --targets so it matches only "
+            f"{expected} weights, or drop --source-format."
+        )
+
+
+def _require_unsharded(path: str, mapping: DeviceMapping) -> None:
+    """Rejects a weight that is split across devices.
+
+    The quantize ops have no sharding rule, so a quantizer cannot read a
+    sharded source: it would first have to gather the whole weight onto every
+    device. A weight on one device, or replicated, is fine. That covers
+    routed experts under expert parallelism, which sit whole on one device
+    each.
+
+    Raises:
+        ValueError: If ``mapping`` shards the weight along any mesh axis.
+    """
+    for axis_index, placement in enumerate(mapping.placements):
+        if isinstance(placement, Sharded):
+            shards = mapping.mesh.axis_size(axis_index)
+            raise ValueError(
+                f"{path} is sharded {shards} ways along axis "
+                f"{placement.axis}, and quantizing a sharded weight is not "
+                "supported yet. Leave it out of --targets so it stays in FP8, "
+                "or use a layout that does not shard it, such as expert "
+                "parallelism for routed experts."
+            )
+
+
+def _check_expert_parallel_target(
+    path: str,
+    moe: ExpertParallelMoE,
+    quant_config: QuantConfig,
+    patterns: list[re.Pattern[str]],
+) -> None:
+    """Rejects an expert-parallel MoE the target format cannot serve.
+
+    Expert-parallel dispatch quantizes tokens as FP8, NVFP4 or MXFP4 (the
+    FP4 formats travel as packed ``uint8``). MXFP8 has no dispatch yet, so
+    NVFP4 and MXFP4 are the targets an FP8 MoE can move to. MXFP4's grouped
+    matmul runs on AMD only. When the dispatch fuses the shared expert into
+    the routed experts' stack, the shared expert has to change format with
+    them.
+
+    Raises:
+        ValueError: If the target is not NVFP4 or MXFP4, or the shared expert
+            is fused into the routed experts and is not targeted too.
+    """
+    if not quant_config.is_fp4:
+        raise ValueError(
+            f"{path} is expert parallel, and expert-parallel dispatch can "
+            f"quantize tokens only as FP8, NVFP4 or MXFP4, not "
+            f"{quant_config.format.value}. Quantize to nvfp4 or mxfp4."
+        )
+    fused = moe.ep_config.fused_shared_expert
+    if fused and moe.shared_experts is not None:
+        shared = _child_path(path, "shared_experts")
+        paths = [_child_path(shared, name) for name in _EXPERT_PROJECTIONS]
+        hits = _projection_hits(paths, patterns)
+        if len(hits) != len(paths):
+            raise ValueError(
+                f"{path} stacks its shared expert with the routed experts, so "
+                "they change format together. Also target "
+                f"{[p for p in paths if p not in hits]}."
+            )
+
+
+def _retarget_dispatch(
+    moe: ExpertParallelMoE, quant_config: QuantConfig
+) -> None:
+    """Points the expert-parallel dispatch at the target format.
+
+    The dispatch config is shared by every MoE layer of the model and was
+    built from the checkpoint's FP8 config. Experts that now run in NVFP4 or
+    MXFP4 need tokens dispatched in that format, as packed ``uint8``, so the
+    config follows them. Setting it again from another layer changes
+    nothing.
+    """
+    config = moe.ep_config
+    config.dispatch_dtype = DType.uint8
+    config.dispatch_quant_config = quant_config
+    config.__post_init__()
+
+
+_QUANTIZER_TYPES = (NVFP4TensorQuantizer, MXFP8Quantizer, MXFP4Quantizer)
+
+
+def _check_fp8_moe(
+    path: str,
+    moe: QuantizedMoE,
+    patterns: list[re.Pattern[str]],
+    quant_config: QuantConfig,
+    source_format: str | None,
+) -> None:
+    """Rejects targets that would leave a block-FP8 MoE half quantized.
+
+    A MoE built from a block-scaled FP8 checkpoint holds FP8 experts and a
+    ``quant_config`` that says so. The grouped matmuls read that config, so
+    the experts cannot be quantized one projection at a time: every expert's
+    gate, up and down projection is targeted, or none is. A MoE whose
+    experts are not FP8 is left to the rest of :func:`insert_quantized_linears`.
+
+    Raises:
+        ValueError: If only some experts, or only some of an expert's three
+            projections, are targeted, a targeted expert weight is not
+            block-scaled FP8, ``source_format`` is not ``fp8``, or the MoE is
+            expert parallel and cannot serve the target (see
+            :func:`_check_expert_parallel_target`).
+    """
+    layers: list[tuple[str, Any]] = []
+    for index, expert in enumerate(moe.experts):
+        expert_path = _child_path(_child_path(path, "experts"), str(index))
+        for name in _EXPERT_PROJECTIONS:
+            layer = getattr(expert, name)
+            if isinstance(layer, QuantizedLinear):
+                layers.append((_child_path(expert_path, name), layer.weight))
+    if not any(isinstance(weight, FP8BlockTensor) for _, weight in layers):
+        return
+    targeted = 0
+    for index in range(len(moe.experts)):
+        expert_path = _child_path(_child_path(path, "experts"), str(index))
+        paths = [_child_path(expert_path, name) for name in _EXPERT_PROJECTIONS]
+        hits = _projection_hits(paths, patterns)
+        if not hits:
+            continue
+        if len(hits) != len(paths):
+            raise ValueError(
+                "an expert's gate_proj, up_proj and down_proj are "
+                "quantized together, so target all three. Matched "
+                f"{hits}; left out {[p for p in paths if p not in hits]}."
+            )
+        targeted += 1
+    if targeted == 0:
+        return
+    if targeted != len(moe.experts):
+        raise ValueError(
+            "a MoE stacks every expert into one matmul, so quantize all "
+            f"experts or none of them. Matched {targeted} of "
+            f"{len(moe.experts)} at {path}."
+        )
+    for layer_path, weight in layers:
+        if not isinstance(weight, FP8BlockTensor):
+            raise ValueError(
+                f"{layer_path} holds a {type(weight).__name__}; only "
+                "block-scaled FP8 experts can be quantized again"
+            )
+        _require_source_format(layer_path, "fp8", source_format)
+    if isinstance(moe, ExpertParallelMoE):
+        _check_expert_parallel_target(path, moe, quant_config, patterns)
+
+
+def _check_loaded_containers(
+    module: Module[..., Any],
+    patterns: list[re.Pattern[str]],
+    quant_config: QuantConfig,
+    source_format: str | None,
+) -> None:
+    """Rejects targets that would split a container the model already built.
+
+    A model built from a quantized checkpoint's config holds
+    :class:`QuantizedMLP` and :class:`QuantizedMoE` containers, which the
+    plain ``MLP`` and ``MoE`` checks in :func:`insert_quantized_linears`
+    never see. A gate/up pair is one matmul, so it is targeted whole or not
+    at all. Runs before any weight changes.
+
+    Raises:
+        ValueError: See :func:`_require_full_group` and
+            :func:`_check_fp8_moe`.
+    """
+    for path in tree.nodes(module, QuantizedMLP):
+        names = ("gate_proj", "up_proj")
+        paths = [_child_path(path, name) for name in names]
+        hits = _projection_hits(paths, patterns)
+        if hits:
+            _require_full_group(names, paths, hits)
+    for path, moe in tree.nodes(module, QuantizedMoE).items():
+        _check_fp8_moe(path, moe, patterns, quant_config, source_format)
+
+
+def _sync_moe_configs(
+    module: Module[..., Any], quant_config: QuantConfig
+) -> None:
+    """Points each block-FP8 MoE whose experts are now quantizers at the target.
+
+    The grouped matmuls dispatch on the MoE's ``quant_config``, so it has to
+    follow the experts it holds. Under expert parallelism the dispatch config,
+    which is shared by every MoE layer and was built from the checkpoint's FP8
+    config, follows as well: tokens are dispatched in the experts' format, as
+    packed ``uint8``. The dispatch refuses a config that quantizes on load,
+    since it runs before any weight is read. These quantizers are the
+    format's own containers, so the MoE and its dispatch take the config of
+    a pre-quantized checkpoint of that format.
+    """
+    for moe in tree.nodes(module, QuantizedMoE).values():
+        current = moe.quant_config
+        if current is None or current.format is not QuantFormat.BLOCKSCALED_FP8:
+            continue
+        weights = [
+            getattr(expert, name).weight
+            for expert in moe.experts
+            for name in _EXPERT_PROJECTIONS
+        ]
+        if not all(isinstance(weight, _QUANTIZER_TYPES) for weight in weights):
+            continue
+        if isinstance(moe, ExpertParallelMoE):
+            container_config = dataclasses.replace(
+                quant_config, source=WeightSource.CHECKPOINT
+            )
+            moe.quant_config = container_config
+            _retarget_dispatch(moe, container_config)
+        else:
+            moe.quant_config = quant_config
+
+
 def insert_quantized_linears(
     module: Module[..., Any],
     targets: Iterable[str],
     quant_config: QuantConfig,
     *,
     verbose: bool = False,
+    source_format: str | None = None,
 ) -> Module[Any, Any]:
     """Quantizes every weight matching ``targets``.
 
@@ -216,14 +450,36 @@ def insert_quantized_linears(
     weight. Only the on-the-fly block-scaled formats in
     :data:`_ERROR_REPORT_FORMATS` can measure their error.
 
+    A model built from a block-scaled FP8 checkpoint already holds quantized
+    layers. Targeted ones are wrapped in the target format's quantizer,
+    which decodes the FP8 weight to bfloat16 itself; untargeted ones stay
+    FP8. The quantizer wraps the weight where it already lives, so an
+    expert keeps its device. An FP8 weight sharded across devices is
+    rejected, because the quantize ops cannot read one. The routed experts
+    of an FP8 :class:`QuantizedMoE` are quantized all together. The MoE's
+    own config, and under expert parallelism the dispatch config, then
+    follow its experts to the target format (:func:`_sync_moe_configs`).
+
+    ``source_format`` (``bf16`` or ``fp8``) states what the targeted weights
+    are stored as. It is optional: when ``None`` each weight's own format
+    decides. When given, a targeted weight stored as anything else raises, so
+    a mistaken ``targets`` pattern cannot quietly quantize the wrong layers.
+
     Returns:
         ``module``. A new object when ``module`` itself was the container:
         a constructor cannot change the object the caller already holds.
 
     Raises:
         ValueError: If ``quant_config.report_error`` is set for a format that
-            cannot measure its error.
+            cannot measure its error, ``source_format`` is not one of
+            :data:`SOURCE_FORMATS`, or a targeted weight is stored in a
+            different format than ``source_format``.
     """
+    if source_format is not None and source_format not in SOURCE_FORMATS:
+        raise ValueError(
+            f"unknown source format {source_format!r}; expected one of "
+            f"{', '.join(SOURCE_FORMATS)}"
+        )
     if quant_config.report_error and (
         quant_config.format not in _ERROR_REPORT_FORMATS
     ):
@@ -293,20 +549,43 @@ def insert_quantized_linears(
         if not isinstance(updated, Module):
             raise TypeError(f"rebuilt {type(module).__name__} is not a Module")
         module = updated
+    _check_loaded_containers(module, patterns, quant_config, source_format)
     # One walk for a Linear, a QuantizedLinear still holding a plain
-    # tensor, and a projection the model built as its own module. The
-    # container updates above have already landed, so this sees those new
-    # children. A weight that is already a quantizer is not a Tensor and
-    # is skipped. The tree cannot be edited while it is walked, so the
-    # replacements are applied once afterwards.
-    replacements: dict[str, QuantizedLinear] = {}
+    # tensor, a projection the model built as its own module, and a block-FP8
+    # weight. The container updates above have already landed, so this sees
+    # those new children. The walk stops at a quantized weight, which is
+    # reported at its layer's path and holds its own plain ``weight`` tensor:
+    # it is a layer's weight, not a layer. A weight that is already a
+    # quantizer is skipped. The tree cannot be edited while it is walked,
+    # so the replacements are applied once afterwards.
+    replacements: dict[str, Any] = {}
     replacing: set[int] = set()
-    for path, node in tree.nodes(module, Module).items():
+    for path, node in tree.nodes(module, Module, leaf=QTensor).items():
+        if isinstance(node, QTensor):
+            if not any(pattern.search(path) for pattern in patterns):
+                continue
+            if isinstance(node, _QUANTIZER_TYPES):
+                continue
+            if not isinstance(node, FP8BlockTensor):
+                raise ValueError(
+                    f"{path} holds a {type(node).__name__}, which cannot be "
+                    "quantized again; only block-scaled FP8 and "
+                    "native-precision weights can be"
+                )
+            _require_source_format(path, "fp8", source_format)
+            _require_unsharded(path, node.weight.mapping)
+            # The container is already placed, so the quantizer wrapping
+            # it is too.
+            replacements[path] = quantize_on_load(node, quant_config)
+            replacing.add(id(node))
+            count += 1
+            continue
         weight = getattr(node, "weight", None)
         if type(weight) is not Tensor or weight.rank != 2:
             continue
         if not any(pattern.search(path) for pattern in patterns):
             continue
+        _require_source_format(path, "bf16", source_format)
         if type(node) not in (Linear, QuantizedLinear):
             logger.warning(
                 "Replaced a custom %s with a common QuantizedLinear. "
@@ -344,6 +623,7 @@ def insert_quantized_linears(
         if not isinstance(updated, Module):
             raise TypeError(f"rebuilt {type(module).__name__} is not a Module")
         module = updated
+    _sync_moe_configs(module, quant_config)
     if verbose:
         print(module)
     logger.info(f"Quantizing {count} weight tensors.")
@@ -720,6 +1000,7 @@ def _single_graph_quantizing_model(
     quant_config: QuantConfig,
     verbose: bool,
     error_report_dir: Path | None,
+    source_format: str | None = None,
 ) -> type[Any]:
     """Returns a subclass that quantizes what ``_instantiate_module`` builds.
 
@@ -750,6 +1031,7 @@ def _single_graph_quantizing_model(
                 targets,
                 quant_config,
                 verbose=verbose,
+                source_format=source_format,
             )
             self.nn_module = nn_model
             return nn_model
@@ -778,6 +1060,7 @@ def _multi_graph_quantizing_model(
     quant_config: QuantConfig,
     verbose: bool,
     error_report_dir: Path | None,
+    source_format: str | None = None,
 ) -> type[Any]:
     """Returns a subclass that quantizes what ``_language_spec`` builds.
 
@@ -805,6 +1088,7 @@ def _multi_graph_quantizing_model(
                 targets,
                 quant_config,
                 verbose=verbose,
+                source_format=source_format,
             )
             self.nn_module = language
             if language is not spec.module:
@@ -837,6 +1121,7 @@ def _factory_with_layer_quantizers(
     *,
     verbose: bool = False,
     error_report_dir: Path | None = None,
+    source_format: str | None = None,
 ) -> Callable[[], Any]:
     """Returns a factory that quantizes layers before the module is compiled.
 
@@ -854,11 +1139,21 @@ def _factory_with_layer_quantizers(
     model_cls = keywords["pipeline_model"]
     if issubclass(model_cls, ModuleV3MultiGraphPipelineModelWithKVCache):
         pipeline_model = _multi_graph_quantizing_model(
-            model_cls, targets, quant_config, verbose, error_report_dir
+            model_cls,
+            targets,
+            quant_config,
+            verbose,
+            error_report_dir,
+            source_format,
         )
     elif issubclass(model_cls, ModuleV3PipelineModelWithKVCache):
         pipeline_model = _single_graph_quantizing_model(
-            model_cls, targets, quant_config, verbose, error_report_dir
+            model_cls,
+            targets,
+            quant_config,
+            verbose,
+            error_report_dir,
+            source_format,
         )
     else:
         raise TypeError(
@@ -884,9 +1179,14 @@ def quantize_pipeline(
     profile_top_n: int = 15,
     error_report_dir: Path | None = None,
     export_path: Path | None = None,
+    source_format: str | None = None,
     mse_sweep_scales: bool = False,
 ) -> None:
     """Quantizes the targeted layers on load, then generates text.
+
+    ``source_format`` optionally states what the targeted weights are stored
+    as (``bf16`` or ``fp8``); a mismatch raises instead of re-quantizing the
+    wrong layers.
 
     With ``--export-path``, the model is built and exported without a
     generate graph. With ``error_report_dir``, every quantized weight's
@@ -912,6 +1212,7 @@ def quantize_pipeline(
         quant_config,
         verbose=verbose,
         error_report_dir=error_report_dir,
+        source_format=source_format,
     )
     # Export uses this same pipeline. Its constructor returns once the model
     # exists, before the KV cache and the sampler.
