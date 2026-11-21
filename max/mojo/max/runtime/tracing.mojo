@@ -36,7 +36,7 @@ from max.gpu.host import _start_range as _start_gpu_range
 from std.utils import Variant
 from std.os import abort
 
-comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
+comptime log = logger.Logger[.info](fd=stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""
 
 
@@ -318,7 +318,7 @@ def _is_gpu_profiler_detailed_enabled[
 
 @inline(.always)
 def _is_op_logging_enabled[level: TraceLevel]() -> Bool:
-    comptime if logger.DEFAULT_LEVEL == logger.Level.NOTSET:
+    comptime if logger.DEFAULT_LEVEL == .notset:
         return False
 
     return level <= TraceLevel.OP

@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.logger import Level, Logger
+from std.logger import Logger
 from std.testing import TestSuite
 
 
 def test_log_critical() raises:
-    var log = Logger[Level.CRITICAL]()
+    var log = Logger[.critical]()
 
-    # CHECK-NOT: DEBUG
+    # CHECK-NOT: debug
     # CHECK-NOT: ::: hello world
     log.debug("hello", "world")
 
-    # CHECK-NOT: DEBUG
+    # CHECK-NOT: debug
     # CHECK-NOT: ::: hello world
     log.info("hello", "world")
 
-    # CHECK: CRITICAL
+    # CHECK: critical
     # CHECK: ::: hello
     log.critical("hello")
 
