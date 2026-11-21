@@ -119,12 +119,15 @@ static void mgp_context_create(Result<StateContext> result,
 /// Packs pointers to the input and output async values (then the constant
 /// resources) into the array the kernel ABI expects.
 template <typename OperandTy, typename ResultTy>
-llvm::SmallVector<void *> getKernelInputs(OperandTy &operands,
-                                          ResultTy &results,
-                                          MEFListAttr constantResources) {
+llvm::SmallVector<void *, 16> getKernelInputs(OperandTy &operands,
+                                              ResultTy &results,
+                                              MEFListAttr constantResources) {
   M_PROFILE_TRACY_ZONE("getKernelInputs", M_PROFILE_COLOR_TEAL);
 
-  llvm::SmallVector<void *> kernelInputs;
+  // SmallVector<void *> holds six elements inline by default, and a kernel's
+  // inputs are one per operand and result plus two per constant resource, so
+  // anything beyond a handful of operands allocates on every launch.
+  llvm::SmallVector<void *, 16> kernelInputs;
   kernelInputs.reserve(results.size() + operands.size() +
                        constantResources.size());
 
@@ -247,7 +250,7 @@ mgp_generic_execute(StateContext &ctx, RemainingArguments operands,
           // so no downstream work starts before `kernelPtr` fully completes.
           llvm::SmallVector<AnyAsyncValueRef> localResults(outResults.size());
 
-          llvm::SmallVector<void *> kernelInputs =
+          llvm::SmallVector<void *, 16> kernelInputs =
               getKernelInputs(takenOperands, localResults, constantResources);
           MAYBE_LOG_ASYNC_KERNEL(*dSummary, takenOperands, localResults);
 
@@ -291,7 +294,7 @@ mgp_generic_execute(StateContext &ctx, RemainingArguments operands,
     if (deviceCtx.getPointer() != nullptr)
       (void)deviceCtx->bindToCurrentThread();
 
-    llvm::SmallVector<void *> kernelInputs =
+    llvm::SmallVector<void *, 16> kernelInputs =
         getKernelInputs(operands, outResults, fConstantResources);
     MAYBE_LOG_SYNC_KERNEL(*dSummary, operands, outResults.get());
     {
