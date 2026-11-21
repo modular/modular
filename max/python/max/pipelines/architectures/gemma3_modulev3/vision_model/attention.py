@@ -22,7 +22,7 @@ from max.nn.attention_mask import MHAMaskVariant
 from max.nn.linear import Linear
 from max.tensor import Tensor
 
-from ..model_config import Gemma3ForConditionalGenerationConfig
+from ..multimodal_config import Gemma3ForConditionalGenerationConfig
 
 
 class Gemma3VisionAttention(Module[[Tensor], Tensor]):

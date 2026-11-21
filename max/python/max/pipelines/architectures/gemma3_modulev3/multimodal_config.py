@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Gemma 3 configuration."""
+"""Gemma 3 vision-language configuration."""
 
 from __future__ import annotations
 
@@ -24,9 +24,6 @@ from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.gemma3_modulev3.model_config import (
-    Gemma3Config,
-)
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -52,6 +49,8 @@ from max.pipelines.modeling.config_enums import (
 )
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+from .model_config import Gemma3Config
 
 
 @dataclass

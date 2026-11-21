@@ -25,9 +25,6 @@ from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.nn.rope_scaling import LinearScalingParams
-from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
-    hybrid_swa_full_kv_params,
-)
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
@@ -47,6 +44,8 @@ from max.pipelines.modeling.config_enums import (
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+from .kv_cache_params import hybrid_swa_full_kv_params
 
 
 @dataclass(kw_only=True)

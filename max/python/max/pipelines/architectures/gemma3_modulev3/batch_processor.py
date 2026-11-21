@@ -29,8 +29,8 @@ from max.pipelines.lib.vision_batching import (
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.tensor.compilation import CompiledCallable
 
-from .model_config import Gemma3ForConditionalGenerationConfig
 from .modules import _unquantized_dtype
+from .multimodal_config import Gemma3ForConditionalGenerationConfig
 
 
 class Gemma3MultiModalModuleV3BatchProcessor(DecoderBatchProcessor):

@@ -214,7 +214,7 @@ def register_all_models() -> None:
         ),
         _LazyArch(
             "Gemma3ForConditionalGeneration_ModuleV3",
-            ".gemma3multimodal_modulev3",
+            ".gemma3_modulev3",
             "gemma3_multimodal_modulev3_arch",
         ),
         _LazyArch("Gemma4ForConditionalGeneration", ".gemma4", "gemma4_arch"),

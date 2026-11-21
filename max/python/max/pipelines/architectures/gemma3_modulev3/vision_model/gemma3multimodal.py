@@ -23,11 +23,11 @@ from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.norm.layer_norm import LayerNorm
 from max.nn.outputs import ReturnLogits
-from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor
 
-from ..model_config import Gemma3ForConditionalGenerationConfig
+from ..gemma3 import Gemma3TextModel
+from ..multimodal_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings
 from .encoding import Gemma3VisionEncoder
 from .projection import Gemma3MultiModalProjector

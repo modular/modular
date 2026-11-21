@@ -17,12 +17,10 @@ from __future__ import annotations
 from max import functional as F
 from max.nn import Module
 from max.nn.linear import Linear
-from max.pipelines.architectures.gemma3_modulev3.layers.rms_norm import (
-    Gemma3RMSNorm,
-)
 from max.tensor import Tensor
 
-from ..model_config import Gemma3ForConditionalGenerationConfig
+from ..layers.rms_norm import Gemma3RMSNorm
+from ..multimodal_config import Gemma3ForConditionalGenerationConfig
 
 
 class Gemma3MultiModalProjector(Module[[Tensor], Tensor]):

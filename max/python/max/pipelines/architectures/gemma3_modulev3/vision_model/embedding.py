@@ -22,7 +22,7 @@ from max.nn.conv import Conv2d
 from max.nn.embedding import Embedding
 from max.tensor import Tensor
 
-from ..model_config import Gemma3ForConditionalGenerationConfig
+from ..multimodal_config import Gemma3ForConditionalGenerationConfig
 
 
 class Gemma3VisionEmbeddings(Module[[Tensor], Tensor]):

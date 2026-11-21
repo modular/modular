@@ -22,7 +22,7 @@ from max.nn import Module
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor, default_dtype
 
-from .model_config import Gemma3ForConditionalGenerationConfig
+from .multimodal_config import Gemma3ForConditionalGenerationConfig
 from .vision_model.gemma3multimodal import (
     Gemma3LanguageModel,
     Gemma3VisionModel,

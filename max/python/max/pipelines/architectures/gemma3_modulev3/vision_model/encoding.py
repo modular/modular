@@ -19,7 +19,7 @@ from max.nn.norm.layer_norm import LayerNorm
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
-from ..model_config import Gemma3ForConditionalGenerationConfig
+from ..multimodal_config import Gemma3ForConditionalGenerationConfig
 from .attention import Gemma3VisionAttention
 from .projection import Gemma3VisionMLP
 

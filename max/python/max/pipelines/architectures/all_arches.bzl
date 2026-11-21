@@ -43,7 +43,6 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/gemma3",
     "//max/python/max/pipelines/architectures/gemma3_modulev3",
     "//max/python/max/pipelines/architectures/gemma3multimodal",
-    "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
     "//max/python/max/pipelines/architectures/gemma4",
     "//max/python/max/pipelines/architectures/gemma4_assistant",
     "//max/python/max/pipelines/architectures/gemma4_assistant_modulev3",
