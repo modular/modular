@@ -47,6 +47,7 @@ from max.benchmark.benchmark_shared.request import (
 from max.benchmark.benchmark_shared.single_turn import (
     build_single_turn_request_input,
 )
+from tests.benchmark.benchmark_fakes import unused_session
 
 
 @pytest.mark.parametrize("task", ["text-to-video", "image-to-video"])
@@ -75,7 +76,8 @@ def test_mach_video_session_routes_sampled_payload_to_responses(
     assert session.api_url == "http://localhost:8000/v1/responses"
     driver_class = get_request_driver_class(session.api_url, task=task)
     assert driver_class is OpenResponsesRequestDriver
-    assert driver_class(backend=args.backend).backend == "mach"
+    driver = driver_class(session=unused_session(), backend=args.backend)
+    assert driver.backend == "mach"
     assert isinstance(session.samples, RequestSamples)
     (sample,) = session.samples.requests
     assert isinstance(sample, PixelGenerationSampledRequest)
