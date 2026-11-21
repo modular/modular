@@ -15,6 +15,12 @@ instead of compiling.
   each action under the action timeout and lets them run in parallel; splitting
   by device class lets the CPU sweep, which is identical on every x86 lane, run
   once and be shared from the remote cache.
+- Within an action the slots are independent, so the producer compiles them in
+  parallel worker processes (`MODULAR_WARM_JOBS` sets how many, default 8).
+  Each compile holds about 2.5 cores and 2.5 GiB, which the rule declares with
+  `resource_set` so Bazel does not pack several actions onto one worker. On a
+  48-core box, the conv accelerator fragment takes 31s instead of 105s; the
+  whole `//max/tests/integration/xarch_warm:all` takes 452s instead of 608s.
   - `warm_cpu.py` warms the CPU slot. It takes only `--cpu-target`, so its
     action is the same on every lane.
   - `warm_accelerators.py` presents `WARM_DEVICE_COUNT` virtual accelerators of
