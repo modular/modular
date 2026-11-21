@@ -28,6 +28,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <limits>
 
 using namespace M;
 using namespace KGEN;
@@ -1787,8 +1788,16 @@ layOutElements(ArrayRef<Type> types, TargetInfoAttr target,
     std::optional<int64_t> typeSize = getStructFieldSize(target, type);
     if (!typeAlign || !typeSize)
       return {};
-    offsets.push_back(llvm::alignTo(end, *typeAlign));
-    end = offsets.back() + *typeSize;
+    std::optional<int64_t> aligned =
+        DataLayoutInterface::checkedSizeAlignTo(end, *typeAlign);
+    if (!aligned)
+      return {};
+    offsets.push_back(*aligned);
+    std::optional<int64_t> next =
+        DataLayoutInterface::checkedSizeAdd(*aligned, *typeSize);
+    if (!next)
+      return {};
+    end = *next;
   }
   return end;
 }
@@ -1813,7 +1822,7 @@ static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
   std::optional<int64_t> strictest = getMaxAlignmentAmongTypes(types, target);
   if (!end || !strictest)
     return {};
-  return llvm::alignTo(*end, *strictest);
+  return DataLayoutInterface::checkedSizeAlignTo(*end, *strictest);
 }
 
 std::optional<SmallVector<int64_t>>
@@ -2409,9 +2418,15 @@ std::optional<int64_t> VariantType::getTypeSize(TargetInfoAttr target) const {
   std::optional<int64_t> align = getTypeAlign(target);
   if (!align)
     return {};
-  return llvm::alignTo(llvm::alignTo(*contentSize, *discrAlign) +
-                           getVariantDiscrSize(*this),
-                       *align);
+  std::optional<int64_t> afterContent =
+      DataLayoutInterface::checkedSizeAlignTo(*contentSize, *discrAlign);
+  if (!afterContent)
+    return {};
+  std::optional<int64_t> withDiscr = DataLayoutInterface::checkedSizeAdd(
+      *afterContent, getVariantDiscrSize(*this));
+  if (!withDiscr)
+    return {};
+  return DataLayoutInterface::checkedSizeAlignTo(*withDiscr, *align);
 }
 
 std::optional<int64_t> VariantType::getTypeAlign(TargetInfoAttr target) const {
@@ -2594,22 +2609,38 @@ std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
   std::optional<int64_t> size = getResolvedSize();
   if (!dtype || !size)
     return {};
+  if (*size < 0)
+    return {};
+
+  auto bytesFromBits = [&](int64_t bitWidth) -> std::optional<int64_t> {
+    std::optional<int64_t> bits =
+        DataLayoutInterface::checkedSizeMul(bitWidth, *size);
+    if (!bits)
+      return {};
+    return llvm::divideCeil(*bits, CHAR_BIT);
+  };
 
   switch (dtype->getValue()) {
   case KGENDType::address:
-    return llvm::divideCeil(target.getDataLayout().getPointerBitWidth() * *size,
-                            CHAR_BIT);
+    return bytesFromBits(target.getDataLayout().getPointerBitWidth());
   case KGENDType::index:
   case KGENDType::uindex:
-    return llvm::divideCeil(target.resolveIndexBitWidth() * *size, CHAR_BIT);
+    return bytesFromBits(target.resolveIndexBitWidth());
   default:
     break;
   }
-  ssize_t result = dtype->getSizeInBytes(*size);
-  // Return zero size for invalid/nonmaterializable dtypes.
-  if (result == -1)
+
+  FailureOr<size_t> checked =
+      dtype->getSizeInBytesChecked(static_cast<size_t>(*size));
+  if (succeeded(checked)) {
+    if (*checked > size_t(std::numeric_limits<int64_t>::max()))
+      return {};
+    return static_cast<int64_t>(*checked);
+  }
+  // Non-numeric dtypes are not materializable; treat them as zero-sized.
+  if (!dtype->isArithmetic() && !dtype->isBool())
     return 0;
-  return result;
+  return {};
 }
 
 std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {

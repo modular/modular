@@ -83,7 +83,7 @@ POP::ArrayType::getTypeSize(TargetInfoAttr target) const {
   if (!elementAllocSize)
     return {};
 
-  return *size * *elementAllocSize;
+  return DataLayoutInterface::checkedSizeMul(*size, *elementAllocSize);
 }
 
 /// The alignment of the array is the alignment of the element type.
@@ -269,7 +269,7 @@ std::optional<int64_t> UnionType::getTypeSize(TargetInfoAttr target) const {
   std::optional<int64_t> align = getTypeAlign(target);
   if (!align)
     return std::nullopt;
-  return llvm::alignTo(maxSize, *align);
+  return DataLayoutInterface::checkedSizeAlignTo(maxSize, *align);
 }
 
 std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
