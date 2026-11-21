@@ -7,6 +7,15 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_sampler_extensions",
+    srcs = ["test_sampler_extensions.py"],
+    deps = [
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
     name = "test_overlap_text_generation_pipeline",
     srcs = ["test_overlap_text_generation_pipeline.py"],
     deps = [
