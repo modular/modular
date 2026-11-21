@@ -959,3 +959,38 @@ kgen.func @arg_single_field_structs(%s8: !kgen.struct<(scalar<si8>)>, %u16: !kge
 }
 // CHECK: llvm.func @c_i2(i8, i16, i8) -> i8
 }
+
+// -----
+
+// J1: empty struct arguments are dropped, and argAttrs stay aligned.
+// The empty argument has no ABI representation, so dropEmptyStructArguments
+// removes it from the callee signature. The call must drop it too, along with
+// its attribute, or the remaining arguments shift by one parameter.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @empty_arg_dropped
+kgen.func @empty_arg_dropped(%a: !kgen.scalar<si32>, %b: !kgen.scalar<si32>) {
+  %empty = kgen.param.constant: struct<()> = <{  }>
+  // CHECK: llvm.call @c_j1(%arg0, %arg1) : (i32, i32) -> ()
+  pop.external_call @c_j1(%a, %empty, %b)
+    : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> () <argAttrs = [{llvm.noundef}, {llvm.noundef}, {llvm.noundef}]>
+  hlcf.return
+}
+// CHECK: llvm.func @c_j1(i32 {llvm.noundef}, i32 {llvm.noundef})
+}
+
+// -----
+
+// J2: a fixed empty struct argument is still a fixed argument before it is
+// dropped. numFixedArgs counts operands, so it must be translated to the
+// filtered argument list; otherwise the variadic tail becomes fixed.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_empty_fixed
+kgen.func @variadic_empty_fixed(%fixed: !kgen.scalar<si32>, %extra: !kgen.scalar<si32>) {
+  %empty = kgen.param.constant: struct<()> = <{  }>
+  // CHECK: llvm.call @c_j2(%{{.*}}, %{{.*}}) : (i32, i32) -> ()
+  pop.external_call @c_j2(%fixed, %empty, %extra)
+    : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> () <numFixedArgs = 2 : index>
+  hlcf.return
+}
+// CHECK: llvm.func @c_j2(i32, ...)
+}

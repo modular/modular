@@ -490,3 +490,29 @@ kgen.func @caller_rollback(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !
 }
 
 } // module
+
+//===----------------------------------------------------------------------===//
+// T10: empty struct arguments are dropped from an indirect C ABI call.
+//
+// An empty struct has no ABI representation. dropEmptyStructArguments removes
+// it from function signatures, so a call site must drop it too; otherwise
+// every argument after it shifts by one parameter.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+
+// CHECK-LABEL: llvm.func internal @caller_indirect_empty_arg
+// CHECK:         llvm.call %arg0(%arg1, %arg2) : !llvm.ptr, (i32, i32) -> i32
+kgen.func @caller_indirect_empty_arg(
+    %callee: !kgen.generator<(!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) cabi -> !kgen.scalar<si32>>,
+    %a: !kgen.scalar<si32>,
+    %b: !kgen.scalar<si32>
+) -> !kgen.scalar<si32> {
+  %empty = kgen.param.constant: struct<()> = <{  }>
+  %r = kgen.call_indirect %callee(%a, %empty, %b) : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) cabi -> !kgen.scalar<si32>
+  hlcf.return %r : !kgen.scalar<si32>
+}
+
+} // module
