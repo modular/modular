@@ -717,3 +717,10 @@ Most code that no longer compiles matches one of these patterns:
 - A NUL byte (`\0`) in the literal text of a t-string is now kept as text.
   Previously it ended the literal segment early, so `t"a\0b{x}"` with
   `x = "ls"` produced `alsb` instead of `a\0bls`.
+
+- On Intel Macs, `os.stat()`, `os.lstat()` and `os.listdir()` now call the
+  64-bit-inode libc functions that match their struct layouts. Previously they
+  called the legacy 32-bit-inode ones, so every field after `st_dev` was wrong:
+  `os.path.isdir()` and `isfile()` returned `False` for every path,
+  `getsize()` returned `0`, `tempfile` could not find a temporary directory,
+  and `listdir()` returned truncated names along with `.` and `..`.
