@@ -1478,8 +1478,13 @@ class LowerLITEvaluationContext : public SymTabEvaluationContext {
 public:
   LowerLITEvaluationContext(ModuleOp module,
                             mlir::LockedSymbolTableCollection &symtab,
-                            StructDecls &decls)
-      : SymTabEvaluationContext(module, symtab), decls(decls) {}
+                            StructDecls &decls, Lowering &asType)
+      : SymTabEvaluationContext(module, symtab), decls(decls), asType(asType) {}
+
+  /// Record that the signature and body of `structGen` are lowered to KGEN.
+  void markLowered(StructGeneratorOp structGen) {
+    loweredGenerators.insert(structGen);
+  }
 
 protected:
   /// Resolve LIT struct types to KGEN struct generators using the decls
@@ -1494,6 +1499,11 @@ protected:
 
 private:
   StructDecls &decls;
+  /// The type-domain lowering, for the parameter values of a struct whose
+  /// generator is already lowered.
+  Lowering &asType;
+  /// The struct generators lowered so far.
+  DenseSet<Operation *> loweredGenerators;
 };
 } // namespace
 
@@ -1575,9 +1585,30 @@ LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue,
         symtab.lookupSymbolIn<StructGeneratorOp>(module, it->second.symRef);
     if (!structDecl)
       return failure();
+    if (!loweredGenerators.contains(structDecl))
+      return ResolvedStructHandle{
+          cast<StructDeclInterface>(structDecl.getOperation()),
+          structType.getParamValues(), nullptr,
+          /*instance=*/nullptr};
+
+    // The generator's parameter declarations and conformances are KGEN now, so
+    // the values bound to them must be too. Otherwise a proposition rebuilt
+    // from a LIT value no longer matches the lowered types around it, such as
+    // the generator of a `param_list.reduce` over the parameter.
+    SmallVector<TypedAttr> loweredValues;
+    loweredValues.reserve(structType.getParamValues().size());
+    for (TypedAttr value : structType.getParamValues()) {
+      FailureOr<TypedAttr> loweredOr = asType.replaceParameter(value);
+      if (failed(loweredOr))
+        return failure();
+      loweredValues.push_back(*loweredOr);
+    }
+    auto loweredRef =
+        TypeGeneratorRefAttr::get(it->second.symRef, loweredValues,
+                                  TypeType::get(typeValue.getContext()));
     return ResolvedStructHandle{
         cast<StructDeclInterface>(structDecl.getOperation()),
-        structType.getParamValues(), nullptr,
+        loweredRef.getParamValues(), nullptr,
         /*instance=*/nullptr};
   }
 
@@ -2030,7 +2061,8 @@ static DebugInfo::DIType buildDebugInfoForStructRef(
 
 LITTypeLowerer::LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
                                mlir::LockedSymbolTableCollection &symtab)
-    : IRRewriter(module.getContext()), evalContext(module, symtab, structDecls),
+    : IRRewriter(module.getContext()),
+      evalContext(module, symtab, structDecls, asType),
       structDecls(structDecls) {
   populateValueDomainRules(structDecls, *this, module.getContext());
   populateTypeDomainRules(structDecls, *this, evalContext, module.getContext());
@@ -2504,6 +2536,7 @@ static LogicalResult lowerLITTypes(ModuleOp module, StructDecls &state,
 
       return WalkResult::advance();
     });
+    b.evalContext.markLowered(structGen);
   }
 
   // FIXME(MOCO-4167): Erase the duplicated witness entries at the end after
