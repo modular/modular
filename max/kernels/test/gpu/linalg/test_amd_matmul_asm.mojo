@@ -59,9 +59,8 @@ def parse_directive_value(asm: String, directive: String) -> Int:
     Returns:
         The parsed integer value, or 0 if not found.
     """
-    __guard case .Some(directive_idx) = asm.find(directive) else:
-        return 0
-    __guard case .Some(line_end) = asm.find("\n", directive_idx) else:
+    __guard case .Some(directive_idx) = asm.find(directive);
+      case .Some(line_end) = asm.find("\n", directive_idx) else:
         return 0
 
     var line = asm[byte=directive_idx:line_end]

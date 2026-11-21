@@ -288,19 +288,16 @@ struct DeviceFunction[
             )
             return
 
-        if case .Some(func_attribute) = func_attribute:
-            # The CUDA plugin lifts the dynamic shared memory cap to the
-            # device's opt-in limit when it loads a function, and Metal and
-            # HIP have no cap, so a requested cap needs nothing more.
-            if (
-                func_attribute.attribute
-                != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            ):
-                raise Error(
-                    "the function attribute '",
-                    func_attribute.attribute,
-                    "' is not currently supported",
-                )
+        # The CUDA plugin lifts the dynamic shared memory cap to the
+        # device's opt-in limit when it loads a function, and Metal and
+        # HIP have no cap, so a requested cap needs nothing more.
+        if case .Some(func_attribute) = func_attribute;
+          func_attribute.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
+            raise Error(
+                "the function attribute '",
+                func_attribute.attribute,
+                "' is not currently supported",
+            )
         var info = ctx._impl._context[]._compile_inner[
             type_of(Self._HAL._wrapped_func),
             Self._HAL._wrapped_func,
