@@ -342,13 +342,15 @@ def main() raises:
         failures += run_case[.bfloat16](ctx, "bf16 rscf bias epilogue")
         failures += run_case[.float32](ctx, "fp32 rscf bias epilogue")
         # 20 output channels leave a tail in the epilogue's vector loop; FCRS
-        # runs the cuDNN fallback and its elementwise epilogue pass.
-        failures += run_case[.float16, True, 24, 20](
-            ctx, "fp16 fcrs 24 -> 20 bias epilogue"
-        )
-        failures += run_case[.float32, True, 24, 20](
-            ctx, "fp32 fcrs 24 -> 20 bias epilogue"
-        )
+        # runs the cuDNN fallback and its elementwise epilogue pass. Apple has
+        # no FCRS conv kernel.
+        comptime if not ctx.target.is_apple_gpu():
+            failures += run_case[.float16, True, 24, 20](
+                ctx, "fp16 fcrs 24 -> 20 bias epilogue"
+            )
+            failures += run_case[.float32, True, 24, 20](
+                ctx, "fp32 fcrs 24 -> 20 bias epilogue"
+            )
         failures += run_case_3d[.float16](ctx, "fp16 3-D bias epilogue")
         failures += run_case_3d[.bfloat16](ctx, "bf16 3-D bias epilogue")
         failures += run_case_3d[.float32](ctx, "fp32 3-D bias epilogue")
@@ -359,11 +361,12 @@ def main() raises:
         failures += run_case_3d[.bfloat16, 1, 24, 20](
             ctx, "bf16 3-D 1x1x1 24 -> 20 bias epilogue"
         )
-        failures += run_case_conv1d[.float16](
-            ctx, "fp16 strided conv1d, 1020 channels"
-        )
-        failures += run_case_conv1d[.bfloat16](
-            ctx, "bf16 strided conv1d, 1020 channels"
-        )
+        comptime if not ctx.target.is_apple_gpu():
+            failures += run_case_conv1d[.float16](
+                ctx, "fp16 strided conv1d, 1020 channels"
+            )
+            failures += run_case_conv1d[.bfloat16](
+                ctx, "bf16 strided conv1d, 1020 channels"
+            )
     assert_equal(failures, 0, "naive conv storing epilogue")
     print("PASSED")
