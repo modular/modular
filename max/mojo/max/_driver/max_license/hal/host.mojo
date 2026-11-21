@@ -55,14 +55,15 @@ struct Host(not Copyable, Movable):
             )
 
         self.drivers = []
-        var accelerator_spec = _accelerator_plugin_entry(plugins_spec)
-        if not accelerator_spec:
+        __guard case .Some(accelerator_spec) = _accelerator_plugin_entry(
+            plugins_spec
+        ) else:
             raise HALError(
                 STATUS_INVALID_ARG,
                 message="No accelerator plugin in MODULAR_DRIVER_PLUGINS",
             )
         # TODO: support multiple drivers
-        var driver = Driver.create(accelerator_spec.value())
+        var driver = Driver.create(accelerator_spec)
         self.drivers.append(driver^)
 
     def driver_count(self) -> Int64:

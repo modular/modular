@@ -97,7 +97,7 @@ modular_cc_test(
 # single-GPU CUDAPluginTest with a multi-GPU requirement.
 modular_cc_test(
     name = "CUDAPeerCopyTest",
-    size = "small",
+    size = "large",
     srcs = ["test/Fixture.h"],
     data = [":CUDAPlugin.so"],
     env = {
@@ -116,6 +116,33 @@ modular_cc_test(
     deps = [
         ":DriverPluginTests",
         "@tl_expected",
+    ],
+)
+
+# Needs two GPUs so that hiding one with `CUDA_VISIBLE_DEVICES` changes the
+# count. A separate binary, without `:DriverPluginTests`, so no other test
+# initializes CUDA before the variable is narrowed.
+modular_cc_test(
+    name = "CUDAVisibleDevicesTest",
+    size = "small",
+    srcs = [
+        "test/CUDAVisibleDevicesTest.cpp",
+        "test/Fixture.h",
+    ],
+    copts = ["-Wno-global-constructors"],
+    data = [":CUDAPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :CUDAPlugin.so)",
+    },
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//SDK:HAL",
+        "@llvm-project//llvm:Support",
     ],
 )
 

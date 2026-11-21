@@ -864,6 +864,7 @@ __extension SM100MLA:
             kv_pipeline.state._phase = 1  # producer starts at phase 1
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_rope_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KRopeType.dtype]]:
@@ -889,6 +890,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_fused[
                 partial: Bool,
                 with_q: Bool = False,
@@ -943,6 +945,7 @@ __extension SM100MLA:
                 )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_v_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
@@ -1116,6 +1119,7 @@ __extension SM100MLA:
             comptime produce_k_split_mbar_type = type_of(k0_mbar)
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_split[
                 partial: Bool,
                 with_q: Bool = False,

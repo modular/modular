@@ -536,25 +536,25 @@ void IterElementwiseOp::print(OpAsmPrinter &p) {
 // map.iter.elementwise.body
 //===----------------------------------------------------------------------===//
 
-// Parses an optional `max_simd_width(<limit>)`.
+// Parses an optional `max_simd_width(<width>)`.
 static ParseResult parseOptionalMaxSimdWidth(OpAsmParser &parser,
                                              OperationState &state,
                                              StringAttr name) {
   if (failed(parser.parseOptionalKeyword("max_simd_width")))
     return mlir::success();
-  TypedAttr limit;
-  if (parser.parseLParen() || MAP::parseWidthLimit(parser, limit) ||
+  TypedAttr width;
+  if (parser.parseLParen() || MAP::GCDAttr::parseSimdWidth(parser, width) ||
       parser.parseRParen())
     return mlir::failure();
-  state.addAttribute(name, limit);
+  state.addAttribute(name, width);
   return mlir::success();
 }
 
-static void printOptionalMaxSimdWidth(OpAsmPrinter &p, TypedAttr limit) {
-  if (!limit)
+static void printOptionalMaxSimdWidth(OpAsmPrinter &p, TypedAttr width) {
+  if (!width)
     return;
   p << " max_simd_width(";
-  MAP::printWidthLimit(p, limit);
+  MAP::GCDAttr::printSimdWidth(p, width);
   p << ")";
 }
 

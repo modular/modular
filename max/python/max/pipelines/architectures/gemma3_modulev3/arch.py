@@ -11,16 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Register the Gemma 3 ``ModuleV3`` architecture."""
+"""Register the Gemma 3 ``ModuleV3`` architectures."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
-from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.context import TextAndVisionContext, TextContext
+from max.pipelines.lib import (
+    GraphRole,
+    SupportedArchitecture,
+    TextAndVisionTokenizer,
+    TextTokenizer,
+)
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Gemma3MultiModalModuleV3BatchProcessor
 from .gemma3 import Gemma3
 from .model_config import Gemma3Config
-from .weight_adapters import gemma3_weight_rules
+from .modules import Gemma3Decoder, Gemma3VisionEncoder
+from .multimodal_config import Gemma3ForConditionalGenerationConfig
+from .weight_adapters import convert_registered_state_dict, gemma3_weight_rules
 
 gemma3_modulev3_arch = SupportedArchitecture(
     name="Gemma3ForCausalLM_ModuleV3",
@@ -29,8 +37,8 @@ gemma3_modulev3_arch = SupportedArchitecture(
         # pt = Pre-trained.
         "google/gemma-3-1b-it",
         "google/gemma-3-1b-pt",
-        # We have a different architecture for >=4B models. See gemma3multimodal
-        # for more information.
+        # The >=4B models are vision-language; see
+        # gemma3_multimodal_modulev3_arch below.
     ],
     default_encoding=Gemma3Config.DEFAULT_ENCODING,
     supported_encodings=Gemma3Config.SUPPORTED_ENCODINGS,
@@ -43,6 +51,41 @@ gemma3_modulev3_arch = SupportedArchitecture(
     weight_rules=gemma3_weight_rules,
     use_weight_rules=True,
     config=Gemma3Config,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
+)
+
+gemma3_multimodal_modulev3_arch = SupportedArchitecture(
+    name="Gemma3ForConditionalGeneration_ModuleV3",
+    example_repo_ids=[
+        # it = Instruction tuned (recommended).
+        # pt = Pre-trained.
+        "google/gemma-3-4b-it",
+        "google/gemma-3-4b-pt",
+        "google/gemma-3-12b-it",
+        "google/gemma-3-12b-pt",
+        "google/gemma-3-27b-it",
+        "google/gemma-3-27b-pt",
+    ],
+    default_encoding=Gemma3ForConditionalGenerationConfig.DEFAULT_ENCODING,
+    supported_encodings=Gemma3ForConditionalGenerationConfig.SUPPORTED_ENCODINGS,
+    modules={
+        GraphRole.DECODER: Gemma3Decoder,
+        GraphRole.VISION: Gemma3VisionEncoder,
+    },
+    weight_adapters={WeightsFormat.safetensors: convert_registered_state_dict},
+    task=PipelineTask.TEXT_GENERATION,
+    tokenizer=TextAndVisionTokenizer,
+    default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    required_arguments={
+        "enable_prefix_caching": False,
+        "enable_chunked_prefill": False,
+    },
+    context_type=TextAndVisionContext,
+    config=Gemma3ForConditionalGenerationConfig,
+    batching=Gemma3MultiModalModuleV3BatchProcessor,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

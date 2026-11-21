@@ -420,7 +420,7 @@ def _indexer_score_gpu[
                 if part == 0 and c < n:
                     output.store((t, c), score)
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=(grid[0], grid[1]),
         block_dim=block_size,

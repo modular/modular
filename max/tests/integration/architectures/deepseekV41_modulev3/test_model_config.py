@@ -126,6 +126,7 @@ def _construct_kv_params(speculative: Any) -> Any:
     pipeline_config = Mock()
     pipeline_config.model = Mock(data_parallel_degree=1)
     pipeline_config.speculative = speculative
+    pipeline_config.artifact_export = False
     huggingface_config = Mock()
     huggingface_config.to_dict.return_value = {
         "text_config": _text_config(candidate_topk_blocks=2)

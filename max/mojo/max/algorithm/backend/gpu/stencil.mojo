@@ -191,6 +191,6 @@ def _stencil_impl_gpu[
         compute_finalize_func[simd_width](indices, result)
 
     # Compile and launch kernel
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         stencil_kernel, grid_dim=grid_dim, block_dim=(block_x, block_y, 1)
     )

@@ -151,6 +151,7 @@ class ScriptedConnector:
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         return CompletedLookup(
             self.lookup(block_hashes, replica_idx=replica_idx, hint=hint)

@@ -28,7 +28,10 @@ from std.sys.info import is_gpu
 from max._plugin import CurrentMaxPlugin, MaxPluginForTarget
 from max.gpu.host import DeviceContext, Dim, GridBlockLaunchConfig
 
-comptime _UNSUPPORTED = "graph blobs are not supported on this target"
+comptime _UNSUPPORTED = (
+    "graph blobs are not supported on this target; leave"
+    " max-debug.graph-blob-max-calls unset or 0"
+)
 
 
 def launch_config(ctx: DeviceContext) -> GridBlockLaunchConfig:

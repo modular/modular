@@ -1256,9 +1256,6 @@ def deepseek_v41_weight_rules(
         Bitcast(
             r"\.ffn\.experts\.\d+\.w[123]\.weight$", DType.int8, DType.uint8
         ),
-        # The CPU initializer reads host table codes as raw bytes.
-        Bitcast(r"\.engram\.embed\.weight$", DType.float8_e4m3fn, DType.uint8),
-        Bitcast(r"\.engram\.embed\.scale$", DType.float8_e8m0fnu, DType.uint8),
     )
 
 

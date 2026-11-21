@@ -21,8 +21,8 @@ from max.algorithm import sync_parallelize
 from max.algorithm.functional import _get_num_workers
 from std.math.math import min as _min
 
-from std.utils.index import IndexList, StaticTuple
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.index import StaticTuple
+from std.utils.coord import Coord
 
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
@@ -53,7 +53,7 @@ def _reduce_generator_cpu[
     *,
     reduce_dim: Int,
 ](
-    shape_coord: Coord,
+    shape: Coord,
     init: StaticTuple[Scalar[init_type], num_reductions],
     input_0_fn: InputFnType,
     output_0_fn: OutputFnType,
@@ -73,25 +73,26 @@ def _reduce_generator_cpu[
         reduce_dim: The dimension we are reducing.
 
     Args:
-        shape_coord: The shape of the tensor we are reducing.
+        shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to store to the output tensor.
         reduce_function: The lambda implementing the reduction.
+
+    Constraints:
+        The shape `Coord` must be flat (no nested `Coord` elements).
     """
+    comptime assert type_of(
+        shape
+    ).is_flat, "`_reduce_generator_cpu` requires a flat `Coord` shape"
 
-    # The inner/outer reduction helpers index the shape by a runtime
-    # `reduce_dim`, which a `Coord` does not support, so convert to an
-    # `IndexList` at the boundary.
-    var shape = coord_to_index_list(shape_coord)
-
-    comptime rank = shape.size
+    comptime rank = type_of(shape).rank
 
     comptime reduce_dim_normalized = (
         rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
-    comptime if shape.size == 1:
+    comptime if rank == 1:
         _reduce_along_inner_dimension[reduce_dim=reduce_dim_normalized](
             shape, init, input_0_fn, output_0_fn, reduce_function
         )
@@ -126,7 +127,7 @@ def _reduce_along_inner_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=.int64],
+    shape: Coord,
     init_value: StaticTuple[Scalar[init_type], num_reductions],
     input_0_fn: InputFnType,
     output_0_fn: OutputFnType,
@@ -150,11 +151,11 @@ def _reduce_along_inner_dimension[
         output_0_fn: The lambda to use to store to the output tensor.
         reduce_function: The lambda implementing the reduction.
     """
-    var total_size: Int = shape.flattened_length()
+    var total_size = Int(shape.product())
     if total_size == 0:
         return
 
-    var reduce_dim_size = shape[reduce_dim]
+    var reduce_dim_size = Int(shape[reduce_dim])
 
     var parallelism_size: Int = total_size // reduce_dim_size
 
@@ -204,7 +205,7 @@ def _reduce_along_inner_dimension[
             # it is the dimension being iterated over. In our case we don't know
             # this yet so we do have to calculate the extra one.
             var indices = _get_nd_indices_from_flat_index(
-                flat_index, Coord(shape), reduce_dim
+                flat_index, shape, reduce_dim
             )
 
             @inline(.always)
@@ -316,7 +317,7 @@ def _reduce_along_outer_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=.int64],
+    shape: Coord,
     init: StaticTuple[Scalar[init_type], num_reductions],
     input_0_fn: InputFnType,
     output_0_fn: OutputFnType,
@@ -342,19 +343,19 @@ def _reduce_along_outer_dimension[
         output_0_fn: The lambda to use to store to the output tensor.
         reduce_function: The lambda implementing the reduction.
     """
-    comptime rank = shape.size
+    comptime rank = type_of(shape).rank
     comptime dtype = init.element_type
 
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
     comptime simd_width = simd_width_of[dtype]()
 
-    var total_size: Int = shape.flattened_length()
+    var total_size = Int(shape.product())
     if total_size == 0:
         return
 
-    var reduce_dim_size = shape[reduce_dim]
-    var inner_dim = shape[rank - 1]
+    var reduce_dim_size = Int(shape[reduce_dim])
+    var inner_dim = Int(shape[rank - 1])
 
     # parallelize across slices of the input, where a slice is [reduce_dim, inner_dim]
     # the slice is composed of [reduce_dim, simd_width] chunks
@@ -388,7 +389,7 @@ def _reduce_along_outer_dimension[
 
                 var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
                 var indices = _get_nd_indices_from_flat_index(
-                    reduce_vector_idx, Coord(shape), reduce_dim
+                    reduce_vector_idx, shape, reduce_dim
                 )
                 for reduce_dim_idx in range(reduce_dim_size):
                     indices.replace_dynamic[reduce_dim](reduce_dim_idx)

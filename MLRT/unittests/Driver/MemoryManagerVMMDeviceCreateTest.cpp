@@ -18,7 +18,7 @@
 // the derived CUDADevice vtable was not yet installed, so VMM never turned on.
 //
 // Unlike MemoryManagerVMMTest, which constructs a MemoryManager directly via
-// MemoryManager::onDevice() on an already-constructed device (bypassing the
+// createDeviceMemoryManager() on an already-constructed device (bypassing the
 // Device constructor entirely), this test exercises the REAL path: it creates a
 // device via Device::create() and then asserts that the device's lazily-built
 // memoryManager() VMM state matches the memory_manager_vmm config. Before the
@@ -31,7 +31,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "TestUtils.h"
 
 #include "gtest/gtest.h"

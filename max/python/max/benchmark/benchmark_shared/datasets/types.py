@@ -73,20 +73,36 @@ class ImageURLDetail(BaseModel):
 class ImageContentBlock(BaseModel):
     """An OpenAI image content block."""
 
-    # Images are carried in the separate RequestFuncInput.images field and
-    # appended to the payload after serialisation; they appear in content lists
-    # only at the wire layer, not in prompts constructed by this codebase.
-    # The model is defined here so ChatMessage.content can represent the full
-    # OpenAI content-block union and round-trip correctly.
+    # A dataset's turn images reach the wire in RequestFuncInput.images, which
+    # is attached to the first user message before encoding, or in a multi-turn
+    # history's own messages, which carry them so every later turn resends them.
     type: Literal["image_url"] = "image_url"
     image_url: ImageURLDetail
+
+
+ReasoningField = Literal["reasoning_content", "reasoning"]
+
+
+class ToolCallFunction(BaseModel):
+    """The function a tool call names, with its JSON-encoded arguments."""
+
+    name: str
+    arguments: str
+
+
+class AssistantToolCall(BaseModel):
+    """A tool call an assistant turn made, as the chat API returns it."""
+
+    id: str
+    type: Literal["function"] = "function"
+    function: ToolCallFunction
 
 
 class ChatMessage(BaseModel):
     """One message in an OpenAI chat request."""
 
-    # role is "user", "assistant", or "system" in practice. "system" is
-    # used by chat-judge today.
+    # role is "user", "assistant", "tool", or "system" in practice. "system"
+    # is used by chat-judge today; "tool" answers a replayed tool call.
     # TODO: wire sys_prompt_ratio support with "system" role through the
     # multi-turn path.
     role: str
@@ -94,6 +110,14 @@ class ChatMessage(BaseModel):
     # plain-string content straight through from its dataset. Consumers that
     # index or append to content must handle both shapes.
     content: str | list[TextContentBlock | ImageContentBlock]
+    # A replayed assistant turn carries its reasoning and tool calls in their
+    # own fields, as the server returned them, so the chat template renders the
+    # turn the way the model generated it. Reasoning goes under the key the
+    # server used; unset fields stay out of the payload.
+    reasoning_content: str | None = None
+    reasoning: str | None = None
+    tool_calls: list[AssistantToolCall] | None = None
+    tool_call_id: str | None = None
 
 
 @dataclass
@@ -124,6 +148,13 @@ class PixelGenerationImageOptions:
     negative_prompt: str | None = None
     seed: int | None = None
     num_frames: int | None = None
+    # ``None`` means the default video body (size + num_frames). A schema name
+    # selects a backend-specific body; see ``VideoRequestSchema``.
+    request_schema: str | None = None
+    duration_seconds: int | None = None
+    aspect_ratio: str | None = None
+    short_edge: int | None = None
+    keyframes: str | None = None
 
 
 @dataclass

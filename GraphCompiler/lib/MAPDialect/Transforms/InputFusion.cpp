@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Support/InputFusion.h"
+#include "Support/AssertStream.h"
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
 #include "GraphCompiler/MAPDialect/Transforms/MAPTransforms.h"
@@ -249,13 +250,14 @@ void spliceIntoClosure(IterOpaqueOp dst, IterElementwiseOp src,
   for (auto [i, input] : llvm::enumerate(dst.getInputs()))
     if (input == src.getResult(0))
       fusionIndices.push_back(i);
-  assert(!fusionIndices.empty() && "src must be a current input of dst");
+  ASSERT_STREAM(!fusionIndices.empty(), "src must be a current input of dst");
 
   unsigned numSrcInputs = src.getInputs().size();
 
   for (unsigned argIdx : llvm::reverse(fusionIndices)) {
     ClosureCapture capture = findExistingPrologueCapture(dst, argIdx);
-    assert(capture.closure && "findEligibleProducer should have verified this");
+    ASSERT_STREAM(capture.closure,
+                  "findEligibleProducer should have verified this");
     CapturingFusionClosure closure = capture.closure;
     // Captured before cloning inserts a second block ahead of it.
     Block &closureBody = closure.getBody().front();
@@ -404,8 +406,9 @@ IterElementwiseOp findEligibleProducer(Operation *dstOp,
 
 void spliceProducer(IterOpInterface dst, IterElementwiseOp src,
                     mlir::RewriterBase &rewriter) {
-  assert(isa<StructuredIterOpInterface>(dst.getOperation()) &&
-         "an opaque kernel reads its inputs through closures, not loads");
+  ASSERT_STREAM(isa<StructuredIterOpInterface>(dst.getOperation()),
+                "an opaque kernel reads its inputs through closures, not "
+                "loads");
   Region &dstRegion = dst->getRegion(0);
   Block &dstBody = dstRegion.front();
   unsigned numSrcInputs = src.getInputs().size();
@@ -414,7 +417,7 @@ void spliceProducer(IterOpInterface dst, IterElementwiseOp src,
   for (auto [i, input] : llvm::enumerate(dst.getInputs()))
     if (input == src.getResult(0))
       fusionIndices.push_back(i);
-  assert(!fusionIndices.empty() && "src must be a current input of dst");
+  ASSERT_STREAM(!fusionIndices.empty(), "src must be a current input of dst");
 
   for (unsigned argIdx : llvm::reverse(fusionIndices)) {
     dst.insertInputsAt(argIdx, src.getInputs());

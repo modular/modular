@@ -127,6 +127,17 @@ Prefill-only and single-output-token workloads therefore leave `tpot_ms`,
 `itl_ms`, and `step_tpot_ms` as `None`. The `validate_metrics()` check already
 skips decode-phase metrics when `max_output <= 1`.
 
+A multi-token response can also leave `itl_ms` with no samples, and that is not
+a degenerate case: the read-timed client measures one ITL per text event after
+the first, and a request whose text prefix arrived in a single socket read has
+no earlier arrival to measure to. Its first text event is the TTFT, and the
+others share that read's time, so they report no sample. `itl_unresolved` on the
+request output counts those events, which keeps `len(itl) + itl_unresolved` at
+one per text event after the first however the reads were batched. The run-level
+`itl_unresolved` is the same count pooled over the measured requests, so
+a short ITL series can be told apart from a run that streamed fewer tokens.
+`tpot_ms` is unaffected: it comes from re-tokenized chunks, not from the reads.
+
 ### Timing- or endpoint-specific `None` values
 
 - `input_throughput` is `None` when no measured request reported a nonzero time

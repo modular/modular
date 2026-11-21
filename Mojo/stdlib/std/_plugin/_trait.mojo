@@ -15,8 +15,7 @@ from std.atomic import Ordering
 from std.collections import OptionalReg
 from std.reflection.location import SourceLocation
 
-from std.utils.coord import Coord
-from std.utils.index import IndexList
+from std.utils.coord import Coord, CoordLike
 from std.math.math import (
     _BinaryMathOp,
     _BinaryMathPluginHookFnType,
@@ -58,8 +57,9 @@ comptime _ReduceGeneratorPluginHookFnType = (
         & def[ty: DType, width: SIMDLength, reduction_idx: Int](
             SIMD[ty, width], SIMD[ty, width]
         ) -> SIMD[ty, width],
+        shape_types: TypeList[Trait=CoordLike, ...],
     ](
-        shape: IndexList[_, element_type=DType.int64],
+        shape: Coord[*shape_types],
         init: StaticTuple[Scalar[init_type], num_reductions],
         reduce_dim: Int,
         input_0_fn: InputFnType,
@@ -70,7 +70,7 @@ comptime _ReduceGeneratorPluginHookFnType = (
 """Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
 
 
-__enum TargetDeviceKind(ImplicitlyCopyable):
+__union TargetDeviceKind(ImplicitlyCopyable):
     """The kind of device a compilation target is.
 
     `CompilationTarget.is_gpu()` and `is_accelerator()` are derived from it.
@@ -79,9 +79,9 @@ __enum TargetDeviceKind(ImplicitlyCopyable):
     diagnostics.
     """
 
-    case cpu
+    case cpu()
     """A host CPU."""
-    case gpu
+    case gpu()
     """A SIMT GPU, where the thread, block and warp primitives apply."""
     case other(StaticString, Bool)
     """Any other device, such as an NPU: its name, then whether it is an
@@ -484,4 +484,4 @@ struct DefaultPlugin(StdPlugin):
 
 
 struct DefaultPluginHooks[target: CompilationTarget](PluginHooks):
-    comptime device_kind = TargetDeviceKind.cpu
+    comptime device_kind = TargetDeviceKind.cpu()

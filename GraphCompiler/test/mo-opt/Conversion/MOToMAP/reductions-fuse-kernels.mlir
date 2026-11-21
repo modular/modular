@@ -4,22 +4,23 @@
 // grows as fusion gains features: what does not fuse yet is checked as
 // unfused, and moves over once it does.
 //
-// Today the `mul` fuses into the sum's fold. The rest stays outside: sibling
-// reductions, a reduction of a reduction, a full-row consumer and a view of a
-// result.
+// Today the `mul` fuses into the sum's fold, and the division into the sum's
+// kernel as a map phase, next to the sum, which the graph also outputs. The
+// rest stays outside: sibling reductions, a reduction of a reduction and a
+// view of a result.
 
 // CHECK-LABEL: mo.graph @aroundReductions
 // CHECK-SAME:  (%[[X:.*]]: !mo.tensor<[8, 128], f32>)
-// CHECK:       %[[S:.*]] = map.iter.rowwise<[8, 128], axis = 1>
+// CHECK:       %[[S:.*]]:2 = map.iter.rowwise<[8, 128], axis = 1>
 // CHECK-NEXT:  inputs  (%[[X]]: !mo.tensor<[8, 128], f32>)
 // CHECK:       map.iter.reduce @builtin_kernels.monoids.ReduceSum
 // CHECK:       map.call.elementwise @builtin_kernels.elementwise.Mul
+// CHECK:       map.iter.map
+// CHECK:       map.call.elementwise @builtin_kernels.elementwise.Div
 // CHECK:       %[[M:.*]] = map.iter.rowwise<[8, 128], axis = 1>
 // CHECK-NEXT:  inputs  (%[[X]]: !mo.tensor<[8, 128], f32>)
 // CHECK:       map.iter.reduce @builtin_kernels.monoids.ReduceMax
-// CHECK:       map.iter.elementwise<[8, 128]>
-// CHECK-NEXT:  inputs  (%[[X]]: !mo.tensor<[8, 128], f32>, %[[S]]: !mo.tensor<[8, 1], f32>)
-// CHECK:       map.call.elementwise @builtin_kernels.elementwise.Div
+// CHECK-NOT:   map.iter.elementwise<[8, 128]>
 // CHECK:       map.iter.elementwise<[8]>
 // CHECK-NEXT:  inputs  (%[[M]]: !mo.tensor<[8, 1], f32>)
 // CHECK:       map.iter.rowwise<[8, 1], axis = 0>

@@ -1191,9 +1191,7 @@ void ParamInf::inferOriginParams() {
     // type is fully resolved, we can go ahead and instantiate it.
     if (auto paramType =
             sugarDynCast<LIT::StructType>(declaredParamTypes[idx])) {
-      if (paramType.getSymbol().getLeafReference().strref() == "Origin" &&
-          paramType.getParamValues().size() == 2 &&
-          isa<OriginType>(paramType.getParamValues()[1].getType())) {
+      if (ASTType(paramType).isOriginStruct()) {
         IREmitter emitter(getDeclScope(), EC_TypeParamValue);
 
         paramType = cast<LIT::StructType>(evaluator.getReboundType(paramType));
@@ -1681,10 +1679,10 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
 /// This method is called for ByRefResult arguments of the callee.  It checks to
 /// see if the callee has a parametric address space or origin. If so, it looks
-/// at the ExprDest the call is being emitted into and infers the desired
-/// values, or marks it as needing to be spilled if not.
+/// at the result slot or the ExprDest the call is being emitted into and infers
+/// the desired values, or marks it as needing to be spilled if not.
 LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
-                                            const ExprDest &dest) {
+                                            const CallOperands &operands) {
 
   // Penalize generic code slightly.
   if (ASTType(expectedRef.getElementType())
@@ -1698,14 +1696,18 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
     return success(); // Nothing to do.
 
   RefType actualRef;
+  MLValue mlDest = operands.resultSlot;
+  if (!mlDest)
+    mlDest = operands.dest.getDirectMLValueIfPresent();
+
   // If we have a concrete MLValue, we can use it to infer the desired values.
-  if (MLValue mlDest = dest.getDirectMLValueIfPresent()) {
+  if (mlDest) {
     actualRef = mlDest.getRefType();
   } else {
     // If the ExprDest lacks a concrete MLValue, we can't infer anything. We
-    // need the caller to spill the result into a buffer and reinfer us. Until
-    // then, bind it as AnyOrigin to avoid failing to infer the parameters.
-
+    // need the caller to spill the result into a temporary (the result slot)
+    // and reinfer us. Until then, bind it as AnyOrigin to avoid failing to
+    // infer the parameters.
     operandsNeedingOrigins.push_back({OperandNeedingOrigin::kExprDestOperandIdx,
                                       argIdx, expectedRef.getElementType(),
                                       calleeSignature});
@@ -1854,8 +1856,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // infer result origin/address space from it.
       if (expectedConvention == ArgConvention::ByRefResult) {
         auto expectedRef = sugarCast<RefType>(expectedType);
-        if (failed(inferResultSlot(expectedRef, expectedArgIdx,
-                                   callOperands.dest)))
+        if (failed(inferResultSlot(expectedRef, expectedArgIdx, callOperands)))
           return {};
       } else {
         assert(expectedConvention == ArgConvention::ByRefError &&

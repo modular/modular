@@ -29,6 +29,7 @@ from ..stream import Stream
 from .._machine import DeviceRef
 from max.gpu.host import ExecutionConfig
 from ..execution_config.cpu import CPUExecutionConfiguration
+from ..extensions.cpu import CPUHALExtensions
 from ..extensions.traits import DefaultHALExtensions, HALExtensions
 
 
@@ -303,3 +304,11 @@ struct DefaultHalPluginHooks(HalPluginHooks):
     comptime ExecutionConfigType[device: DeviceRef] = CPUExecutionConfiguration
 
     comptime extensions = DefaultHALExtensions
+
+
+struct CPUHalPluginHooks(HalPluginHooks):
+    """The host CPU's HAL hooks: the default ones plus its own extensions."""
+
+    comptime ExecutionConfigType[device: DeviceRef] = CPUExecutionConfiguration
+
+    comptime extensions: HALExtensions = CPUHALExtensions

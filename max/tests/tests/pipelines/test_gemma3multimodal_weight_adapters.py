@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from unittest.mock import NonCallableMock
 
+from max.pipelines.architectures.gemma3_modulev3.weight_adapters import (
+    convert_safetensor_language_state_dict as convert_mm_v3,
+)
 from max.pipelines.architectures.gemma3multimodal.weight_adapters import (
     convert_safetensor_language_state_dict as convert_mm,
-)
-from max.pipelines.architectures.gemma3multimodal_modulev3.weight_adapters import (
-    convert_safetensor_language_state_dict as convert_mm_v3,
 )
 
 
@@ -52,7 +52,7 @@ def test_gemma3multimodal_language_preserves_hf_qkv_proj_names() -> None:
     assert "unrelated.prefix.weight" not in out
 
 
-def test_gemma3multimodal_modulev3_language_preserves_hf_qkv_proj_names() -> (
+def test_gemma3_modulev3_multimodal_language_preserves_hf_qkv_proj_names() -> (
     None
 ):
     """V3 uses language_model.layers.* after stripping language_model.model.,

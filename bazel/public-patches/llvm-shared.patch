@@ -82,6 +82,19 @@ index fa2c5abc0718..49500f888aa8 100644
  template class LLVM_EXPORT_TEMPLATE
      InnerAnalysisManagerProxy<CGSCCAnalysisManager, Module>;
  template class LLVM_EXPORT_TEMPLATE OuterAnalysisManagerProxy<
+diff --git a/llvm/lib/CodeGen/GlobalISel/Combiner.cpp b/llvm/lib/CodeGen/GlobalISel/Combiner.cpp
+index 3b051aacba8a..5e928d6e2902 100644
+--- a/llvm/lib/CodeGen/GlobalISel/Combiner.cpp
++++ b/llvm/lib/CodeGen/GlobalISel/Combiner.cpp
+@@ -34,7 +34,7 @@ STATISTIC(NumThreeOrMoreIterations,
+           "Number of functions with three or more iterations");
+ 
+ namespace llvm {
+-cl::OptionCategory GICombinerOptionCategory(
++LLVM_ABI cl::OptionCategory GICombinerOptionCategory(
+     "GlobalISel Combiner",
+     "Control the rules which are enabled. These options all take a comma "
+     "separated list of rules to disable and may be specified by number "
 diff --git a/llvm/lib/MC/MCContext.cpp b/llvm/lib/MC/MCContext.cpp
 index a0031e18fec2..71c51b033e9a 100644
 --- a/llvm/lib/MC/MCContext.cpp

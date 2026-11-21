@@ -168,11 +168,17 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
   if (!callResult)
     return failure();
   if (!calleeSig.isAsync()) {
-    auto regRet = callResult.getIfSRValue();
-    if (regRet && resultType != regRet.getType())
-      regRet = RebindOp::create(builder, resultType, regRet);
+    Value ret;
+    if (auto regRet = callResult.getIfSRValue()) {
+      ret = regRet;
+      if (ret.getType() != resultType)
+        ret = RebindOp::create(builder, resultType, regRet);
+    } else if (calleeSig.isRefResult()) {
+      ret = callResult.getIfMLValue();
+      assert(ret); // We must be forwarding a MLValue.
+    }
 
-    IREmitter::emitNormalReturn(builder, regRet);
+    IREmitter::emitNormalReturn(builder, ret);
     return success();
   }
 
@@ -2080,6 +2086,7 @@ Value ClosureEmitter::emitClosure(ModuleASTDecl &moduleDecl,
         meetCaptureConvention(highestCaptureConvention, captureConventionMet);
   };
   bool allCapturesEncodable = true;
+  bool allowAnyOriginCaptures = nestedFnDecl.allowsLegacyAnyOriginCaptures();
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
@@ -2104,6 +2111,20 @@ Value ClosureEmitter::emitClosure(ModuleASTDecl &moduleDecl,
     Type mlirType = value.getType();
     if (auto refType = sugarDynCast<LIT::RefType>(mlirType))
       mlirType = refType.getElementType();
+    // The storage struct hides the capture's origins from lifetime checking,
+    // so a captured AnyOrigin does not extend any lifetime.
+    if (!allowAnyOriginCaptures && typeHasAnyOrigin(shared, mlirType)) {
+      auto diag = shared.emitWarning(capture.getLoc())
+                  << "capture '" << capture.getSpelling() << "' of type "
+                  << ASTType(mlirType)
+                  << " has AnyOrigin, which the closure does not track; the "
+                     "value it refers to can be destroyed before the closure "
+                     "runs";
+      diag.attachNote(nestedFnDecl.getLoc())
+          << "add '@__allow_legacy_any_origin_fields' to the closure's 'def' "
+             "or to an enclosing function if the lifetime is managed "
+             "explicitly";
+    }
     switch (captureConvention) {
     case CaptureConvention::kConventionUnspecified:
     case CaptureConvention::kConventionMut:
@@ -2555,7 +2576,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(DefASTDecl &closure, SMLoc location,
       signatureDecl ? signatureDecl : &closure);
   captureValueDecl.setCapturedName(captureName);
   shared.addCaptureToScope(closure, result,
-                           Capture(captureValue, convention, name));
+                           Capture(captureValue, convention, name, location));
   return &captureValueDecl;
 }
 

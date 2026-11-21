@@ -65,6 +65,7 @@ class Line:
 
     mode: Mode
     depth: int = 0
+    indent_offset: int = 0
     leaves: list[Leaf] = field(default_factory=list)
     # keys ordered like `leaves`
     comments: dict[LeafID, list[Leaf]] = field(default_factory=dict)
@@ -502,6 +503,7 @@ class Line:
         return Line(
             mode=self.mode,
             depth=self.depth,
+            indent_offset=self.indent_offset,
             inside_brackets=self.inside_brackets,
             should_split_rhs=self.should_split_rhs,
             magic_trailing_comma=self.magic_trailing_comma,
@@ -512,7 +514,7 @@ class Line:
         if not self:
             return "\n"
 
-        indent = "    " * self.depth
+        indent = "    " * self.depth + " " * self.indent_offset
         leaves = iter(self.leaves)
         first = next(leaves)
         res = f"{first.prefix}{indent}{first.value}"

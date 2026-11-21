@@ -3,44 +3,44 @@
 
 module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch = "", data_layout = "", simd_bit_width = 128>} {
   // CHECK-LABEL: @test_air_cos_f16_mangling
-  llvm.func @test_air_cos_f16_mangling(%arg0: !llvm.struct<(f16)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(f16)> to !kgen.struct<(scalar<f16>)>
+  llvm.func @test_air_cos_f16_mangling(%arg0: f16) {
+    %input = builtin.unrealized_conversion_cast %arg0 : f16 to !kgen.scalar<f16>
     // CHECK: llvm.call @air.cos.f16
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<f16>)>) -> !kgen.scalar<f16>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.scalar<f16>) -> !kgen.scalar<f16>
     llvm.return
   }
 
   // CHECK-LABEL: @test_air_cos_f32_mangling
-  llvm.func @test_air_cos_f32_mangling(%arg0: !llvm.struct<(f32)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(f32)> to !kgen.struct<(scalar<f32>)>
+  llvm.func @test_air_cos_f32_mangling(%arg0: f32) {
+    %input = builtin.unrealized_conversion_cast %arg0 : f32 to !kgen.scalar<f32>
     // CHECK: llvm.call @air.cos.f32
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<f32>)>) -> !kgen.scalar<f32>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.scalar<f32>) -> !kgen.scalar<f32>
     llvm.return
   }
 
   // CHECK-LABEL: @test_air_cos_bf16_mangling
-  llvm.func @test_air_cos_bf16_mangling(%arg0: !llvm.struct<(bf16)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(bf16)> to !kgen.struct<(scalar<bf16>)>
+  llvm.func @test_air_cos_bf16_mangling(%arg0: bf16) {
+    %input = builtin.unrealized_conversion_cast %arg0 : bf16 to !kgen.scalar<bf16>
     // CHECK: llvm.call @air.cos.bf16
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<bf16>)>) -> !kgen.scalar<bf16>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.scalar<bf16>) -> !kgen.scalar<bf16>
     llvm.return
   }
 
   // COM: There's no cos for integer type, but it's needed to verify mangling is correct
   // CHECK-LABEL: @test_air_cos_i32_mangling
-  llvm.func @test_air_cos_i32_mangling(%arg0: !llvm.struct<(i32)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(i32)> to !kgen.struct<(scalar<si32>)>
+  llvm.func @test_air_cos_i32_mangling(%arg0: i32) {
+    %input = builtin.unrealized_conversion_cast %arg0 : i32 to !kgen.scalar<si32>
     // CHECK: llvm.call @air.cos.i32
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<si32>)>) -> !kgen.scalar<si32>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.scalar<si32>) -> !kgen.scalar<si32>
     llvm.return
   }
 
   // COM: There's no cos for integer type, but it's needed to verify mangling is correct
   // CHECK-LABEL: @test_air_cos_i128_mangling
-  llvm.func @test_air_cos_i128_mangling(%arg0: !llvm.struct<(i128)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(i128)> to !kgen.struct<(scalar<si128>)>
+  llvm.func @test_air_cos_i128_mangling(%arg0: i128) {
+    %input = builtin.unrealized_conversion_cast %arg0 : i128 to !kgen.scalar<si128>
     // CHECK: llvm.call @air.cos.i128
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<si128>)>) -> !kgen.scalar<si128>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.scalar<si128>) -> !kgen.scalar<si128>
     llvm.return
   }
 
@@ -52,10 +52,10 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
   }
 
   // CHECK-LABEL: @test_air_cos_v2f16_mangling
-  llvm.func @test_air_cos_v2f16_mangling(%arg0: !llvm.struct<(vector<2 x f16>)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(vector<2 x f16>)> to !kgen.struct<(!kgen.simd<2, f16>)>
+  llvm.func @test_air_cos_v2f16_mangling(%arg0: vector<2 x f16>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : vector<2 x f16> to !kgen.simd<2, f16>
     // CHECK: llvm.call @air.cos.v2f16
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(!kgen.simd<2, f16>)>) -> !kgen.simd<2, f16>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.simd<2, f16>) -> !kgen.simd<2, f16>
     llvm.return
   }
 
@@ -509,9 +509,7 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
   // CHECK: llvm.func @air.thread_position_in_threadgroup.x() -> i32
   // CHECK-DEBUG-INFO: llvm.func @air.thread_position_in_threadgroup.x() -> i32 loc(#[[LOCATION:.*]])
   kgen.func @test_no_debug_on_air_func_declaration() {
-    %undef = llvm.mlir.undef : !llvm.struct<()> loc(unknown)
-    %empty_struct = builtin.unrealized_conversion_cast %undef : !llvm.struct<()> to !kgen.struct<()> loc(unknown)
-    %res = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.thread_position_in_threadgroup.x", (%empty_struct) : (!kgen.struct<()>) -> !kgen.scalar<ui32> loc("dummy.mlir":1:1)
+    %res = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.thread_position_in_threadgroup.x", () : () -> !kgen.scalar<ui32> loc("dummy.mlir":1:1)
     hlcf.return
   }
   // CHECK-DEBUG-INFO: #[[LOCATION]] = loc(unknown)
@@ -522,29 +520,26 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
 // Test texture intrinsic lowering with special mangling (by data type, not all arg types)
 module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch = "", data_layout = "", simd_bit_width = 128>} {
   // CHECK-LABEL: @test_air_read_texture_2d_v4f32
-  llvm.func @test_air_read_texture_2d_v4f32(%arg0: !llvm.struct<(ptr, vector<2 x i32>, i32, i32)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, vector<2 x i32>, i32, i32)> to !kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, scalar<si32>, scalar<si32>)>
+  kgen.func @test_air_read_texture_2d_v4f32(%a: !kgen.pointer<scalar<f32>>, %b: !kgen.simd<2, ui32>, %c: !kgen.scalar<si32>, %d: !kgen.scalar<si32>) {
     // Texture intrinsics should be mangled by data type only (v4f32 from result), not all arg types
     // CHECK: llvm.call @air.read_texture_2d.v4f32
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.read_texture_2d", (%input) : (!kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, scalar<si32>, scalar<si32>)>) -> !kgen.struct<(simd<4, f32>, scalar<ui8>)>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.read_texture_2d", (%a, %b, %c, %d) : (!kgen.pointer<scalar<f32>>, !kgen.simd<2, ui32>, !kgen.scalar<si32>, !kgen.scalar<si32>) -> !kgen.struct<(simd<4, f32>, scalar<ui8>)>
     llvm.return
   }
 
   // CHECK-LABEL: @test_air_write_texture_2d_v4f32
-  llvm.func @test_air_write_texture_2d_v4f32(%arg0: !llvm.struct<(ptr, vector<2 x i32>, vector<4 x f32>, i32, i32)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, vector<2 x i32>, vector<4 x f32>, i32, i32)> to !kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, simd<4, f32>, scalar<si32>, scalar<si32>)>
+  kgen.func @test_air_write_texture_2d_v4f32(%a: !kgen.pointer<scalar<f32>>, %b: !kgen.simd<2, ui32>, %c: !kgen.simd<4, f32>, %d: !kgen.scalar<si32>, %e: !kgen.scalar<si32>) {
     // Texture intrinsics should be mangled by data type (v4f32 from 3rd arg), not all arg types
     // CHECK: llvm.call @air.write_texture_2d.v4f32
-    pop.call_llvm_intrinsic side_effecting<1> "llvm.air.write_texture_2d", (%input) : (!kgen.struct<(pointer<scalar<f32>>, simd<2, ui32>, simd<4, f32>, scalar<si32>, scalar<si32>)>) -> ()
+    pop.call_llvm_intrinsic side_effecting<1> "llvm.air.write_texture_2d", (%a, %b, %c, %d, %e) : (!kgen.pointer<scalar<f32>>, !kgen.simd<2, ui32>, !kgen.simd<4, f32>, !kgen.scalar<si32>, !kgen.scalar<si32>) -> ()
     llvm.return
   }
 
   // Test sample_texture intrinsic - mangled by data type
   // CHECK-LABEL: @test_air_sample_texture_2d_v4f32
-  llvm.func @test_air_sample_texture_2d_v4f32(%arg0: !llvm.struct<(ptr, ptr, vector<2 x f32>, i32)>) {
-    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, ptr, vector<2 x f32>, i32)> to !kgen.struct<(pointer<scalar<f32>>, pointer<scalar<f32>>, simd<2, f32>, scalar<si32>)>
+  kgen.func @test_air_sample_texture_2d_v4f32(%a: !kgen.pointer<scalar<f32>>, %b: !kgen.pointer<scalar<f32>>, %c: !kgen.simd<2, f32>, %d: !kgen.scalar<si32>) {
     // CHECK: llvm.call @air.sample_texture_2d.v4f32
-    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.sample_texture_2d", (%input) : (!kgen.struct<(pointer<scalar<f32>>, pointer<scalar<f32>>, simd<2, f32>, scalar<si32>)>) -> !kgen.struct<(simd<4, f32>, scalar<ui8>)>
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.sample_texture_2d", (%a, %b, %c, %d) : (!kgen.pointer<scalar<f32>>, !kgen.pointer<scalar<f32>>, !kgen.simd<2, f32>, !kgen.scalar<si32>) -> !kgen.struct<(simd<4, f32>, scalar<ui8>)>
     llvm.return
   }
 }

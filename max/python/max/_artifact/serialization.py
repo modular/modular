@@ -134,8 +134,9 @@ def deserialize(
 ) -> ModelArtifact:
     """Deserializes a model artifact from a ``.m`` directory.
 
-    Before any component is loaded, every file listed in the metadata is
-    checksummed, and Hugging Face references are snapshotted.
+    Before any component is loaded, the format version is checked, every
+    file listed in the metadata is checksummed, and Hugging Face references
+    are snapshotted.
 
     Args:
         path: The artifact directory.
@@ -147,7 +148,8 @@ def deserialize(
         The deserialized artifact. File references point into ``path``.
 
     Raises:
-        ArtifactError: If the artifact is missing or modified, a cached
+        ArtifactError: If the artifact is missing, modified or of another
+            format version, a cached
             Hugging Face snapshot lacks a referenced path, or a component
             can't be deserialized.
     """
@@ -165,6 +167,11 @@ def deserialize(
         f"The artifact was exported by MAX {metadata.max_version} and this is"
         f" MAX {_core.__version__}; re-export it."
     )
+    if metadata.artifact_version != ARTIFACT_VERSION:
+        raise ArtifactError(
+            f"{root}: artifact format version {metadata.artifact_version}, but"
+            f" this MAX reads version {ARTIFACT_VERSION}. {stale_hint}"
+        )
     if ARTIFACT_FILE_NAME not in metadata.files:
         raise ArtifactError(
             f"{root}: metadata does not list {ARTIFACT_FILE_NAME}"

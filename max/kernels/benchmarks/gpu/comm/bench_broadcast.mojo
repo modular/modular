@@ -213,6 +213,7 @@ def bench_broadcast[
         vendor_ccl.init_comms(ngpus)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:

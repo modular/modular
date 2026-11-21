@@ -250,11 +250,9 @@ bool needsSink(IterRowwiseOp dst, IterElementwiseOp consumer) {
 }
 
 bool canFuseConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
-  // The Row API can't write per-row stores after a map phase: `Row.emit`
-  // isn't phase-aware. A concat select runs only in a fold, never at the row
-  // index.
+  // A concat select runs only in a fold, never at the row index.
   if (!(isPlainForeach(consumer) || isFusibleMutableStore(consumer, dst)) ||
-      holdsConcatSelect(consumer) || lastMapPhase(dst) || dst.getInputChain() ||
+      holdsConcatSelect(consumer) || dst.getInputChain() ||
       consumer->getBlock() != dst->getBlock() || !sameDevice(consumer, dst) ||
       !isPerRowShape(dst, consumer.getShape()))
     return false;
@@ -350,7 +348,13 @@ IterRowwiseOp fuseConsumer(IterRowwiseOp dst, IterElementwiseOp consumer,
     mapping.map(consumerBody.getArgument(consumer.getInputs().size()),
                 newDst.getOutputBlockArgs().back());
 
-  rewriter.setInsertionPointToEnd(&newDst.getBody().front());
+  // Row-level ops go before the map phases, which stay last.
+  Block &newBody = newDst.getBody().front();
+  auto maps = newBody.getOps<IterMapOp>();
+  if (maps.empty())
+    rewriter.setInsertionPointToEnd(&newBody);
+  else
+    rewriter.setInsertionPoint(*maps.begin());
   for (Operation &op : consumerBody) {
     if (auto load = dyn_cast<LoadOp>(op)) {
       auto arg = dyn_cast<BlockArgument>(load.getTensor());
@@ -400,7 +404,8 @@ bool readsOwnRow(ArrayRef<int64_t> dims, int64_t rank, int64_t axis) {
   if (static_cast<int64_t>(dims.size()) != rank)
     return false;
   for (auto [k, d] : llvm::enumerate(dims))
-    if (d != (int64_t(k) == axis ? kPinnedCoordinate : int64_t(k)))
+    if (d != (int64_t(k) == axis ? IndexTransformOpInterface::kPinnedCoordinate
+                                 : int64_t(k)))
       return false;
   return true;
 }
@@ -532,7 +537,9 @@ bool canFuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
     for (Operation *user : body.getArgument(i).getUsers()) {
       auto load = dyn_cast<LoadOp>(user);
       std::optional<SmallVector<int64_t>> dims =
-          load ? traceLoopDims(load.getIndex(), loopIdx) : std::nullopt;
+          load ? IndexTransformOpInterface::traceLoopDims(load.getIndex(),
+                                                          loopIdx)
+               : std::nullopt;
       if (!dims || !(perRow ? readsOwnRow(*dims, rank, axis)
                             : readsSameElement(*dims, rank)))
         return false;
@@ -544,13 +551,6 @@ bool canFuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
   if (laterReductionTakes(consumer))
     return false;
 
-  // A per-row output can't stay next to a map phase (`Row.emit` isn't
-  // phase-aware), so fuse only when every per-row output goes away.
-  for (unsigned idx = 0, e = dst.getOutputBlockArgs().size(); idx < e; ++idx)
-    if (perRowStore(dst, idx) &&
-        llvm::any_of(dst.getResult(idx).getUsers(),
-                     [&](Operation *user) { return user != consumer; }))
-      return false;
   return !needsSink(dst, consumer) || canSinkTo(dst, consumer);
 }
 
@@ -611,8 +611,7 @@ IterRowwiseOp fuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer,
   rewriter.eraseOp(consumer);
   IterOpInterface(newDst).dedupeInputs(rewriter);
 
-  // Drop the outputs nothing reads anymore, so no per-row store is left next
-  // to the map phase.
+  // Drop the outputs nothing reads anymore.
   SmallVector<unsigned> kept;
   for (unsigned idx = 0, e = newDst.getOutputBlockArgs().size(); idx < e;
        ++idx) {
@@ -642,7 +641,8 @@ bool readsOwnRowOnly(IterRowwiseOp consumer, BlockArgument arg) {
       return true;
     auto phase = load->getParentOfType<RowwisePhaseOpInterface>();
     std::optional<SmallVector<int64_t>> dims =
-        phase ? traceLoopDims(load.getIndex(), phase.getIndexArg())
+        phase ? IndexTransformOpInterface::traceLoopDims(load.getIndex(),
+                                                         phase.getIndexArg())
               : std::nullopt;
     return dims && readsOwnRow(*dims, rank, axis);
   });

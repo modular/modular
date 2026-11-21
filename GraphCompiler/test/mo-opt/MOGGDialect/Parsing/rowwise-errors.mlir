@@ -137,10 +137,11 @@ func.func @twoFoldsNoMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.ten
 
 // -----
 
-// A per-row store can't follow a map phase yet.
-func.func @emitAndMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor, %sum: !mogg.tensor) {
-  // expected-error @below{{has both per-row stores and a map phase}}
-  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor, %cs = %sum : !mogg.tensor} device = "cpu" {
+// Per-row stores next to a map phase need the row whole: `Row.emit` runs once
+// per row.
+func.func @emitAndMapSplitRow(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor, %sum: !mogg.tensor) {
+  // expected-error @below{{splits its row and has per-row stores}}
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor, %cs = %sum : !mogg.tensor} device = "cpu" attributes {dtype_size = 4 : i64} {
     %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
       %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
       mogg.yield %v : !mogg.simd<f32>

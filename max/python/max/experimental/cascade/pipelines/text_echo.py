@@ -130,5 +130,5 @@ class TextEchoPipeline(GenAIPipeline):
         """Replay the prompt's scripted output and parse it into chunks."""
         text = await self.transformer.replay(_prompt_text(req.messages))
         return await self.parser.parse_stream(
-            text, req.tools_enabled, req.tool_schemas()
+            text, req.tools_enabled, req.tool_schemas(), req.text.stop
         )

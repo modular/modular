@@ -513,7 +513,7 @@ def _fused_load_negate[
             )
 
         comptime block_size = 64
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             device_body,
             grid_dim=(ceildiv(n, block_size),),
             block_dim=(block_size,),
@@ -4134,7 +4134,7 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
                         )
 
             comptime block_size = 64
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 device_body,
                 grid_dim=(ceildiv(Int(n_dev), block_size),),
                 block_dim=(block_size,),

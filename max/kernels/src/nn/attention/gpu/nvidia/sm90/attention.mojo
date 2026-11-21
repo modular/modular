@@ -295,6 +295,7 @@ def _apply_mask[
     var mask_warp_col: UInt32 = kv_tile_start_row + fragment_col
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _apply_mask_capture[masked: Bool]() {imm}:
         comptime for m_mma in range(num_m_mmas):
             comptime for n_mma in range(num_n_mmas):

@@ -11,8 +11,9 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "ScopedEnvVar.h"
 #include "TestUtils.h"
 
@@ -66,7 +67,7 @@ protected:
     memInfo.total = 256 * maxCacheSize; // Needs to be larger than 256 * KB
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
-    return std::unique_ptr<MemoryManager>(MemoryManager::onHost(*device, 64));
+    return createHostMemoryManager(*device, 64);
   }
 
   // Helper to create a device memory manager with an explicit large-block
@@ -79,9 +80,9 @@ protected:
     memInfo.free = 16 * 1024 * 1024;
     memInfo.total = 32 * 1024 * 1024;
 
-    return std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
-        device, memInfo, /*alignment=*/64, /*memoryLimit=*/8 * 1024 * 1024,
-        static_cast<int64_t>(largeAllocAlignment)));
+    return createDeviceMemoryManager(device, memInfo, /*alignment=*/64,
+                                     /*memoryLimit=*/8 * 1024 * 1024,
+                                     static_cast<int64_t>(largeAllocAlignment));
   }
 };
 
@@ -103,7 +104,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
     memInfo.total = 2 * 1024 * 1024;
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
-    std::unique_ptr<MemoryManager> cache(MemoryManager::onHost(*device, 64));
+    std::unique_ptr<MemoryManager> cache(createHostMemoryManager(*device, 64));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_TRUE(cache->isHost());
@@ -118,7 +119,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128));
+        createDeviceMemoryManager(*device, memInfo, 128));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -133,7 +134,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128, memInfo.total / 2));
+        createDeviceMemoryManager(*device, memInfo, 128, memInfo.total / 2));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -149,7 +150,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128, 0));
+        createDeviceMemoryManager(*device, memInfo, 128, 0));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -165,7 +166,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 64));
+        createDeviceMemoryManager(*device, memInfo, 64));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -210,7 +211,7 @@ TEST_F(MemoryManagerTest, BasicAllocationAndFree) {
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Test basic allocation
   ASSIGN_NO_ERR(void *, ptr1, freeList.allocate(64, mode));
@@ -232,7 +233,7 @@ TEST_F(MemoryManagerTest, MultipleAllocations) {
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Allocate multiple blocks
@@ -263,7 +264,7 @@ TEST_F(MemoryManagerTest, AllocationSizes) {
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<size_t> sizes = {1, 15, 64, 128, 256, 512, 1000};
   std::vector<void *> ptrs;
 
@@ -300,7 +301,7 @@ TEST_F(MemoryManagerTest, LargeAllocationsGetStartAlignment) {
       createTestDeviceCache(*device, kLargeAlign);
   MemoryManagerFreeList &freeList = *manager->freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Interleave sub-threshold allocations so each large block would land
@@ -328,7 +329,7 @@ TEST_F(MemoryManagerTest, LargeAlignmentPaddingIsReusable) {
       createTestDeviceCache(*device, kLargeAlign);
   MemoryManagerFreeList &freeList = *manager->freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // A whole number of allocation-alignment units but not of the large-block
   // alignment, so the second block needs head padding wherever the chunk
@@ -362,7 +363,7 @@ TEST_F(MemoryManagerTest, LargeStartAlignmentDisabledPacksBlocks) {
       createTestDeviceCache(*device, /*largeAllocAlignment=*/0);
   MemoryManagerFreeList &freeList = *manager->freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // With the large-block alignment off, blocks stay packed at the manager's own
   // allocation alignment regardless of size.
@@ -385,7 +386,7 @@ TEST_F(MemoryManagerTest, FreeListEmpty) {
   // Initially, the free list should be empty (no chunks allocated yet)
   EXPECT_TRUE(freeList.empty());
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // After first allocation, free list should not be empty (chunk is allocated)
   ASSIGN_NO_ERR(void *, ptr, freeList.allocate(64, mode));
@@ -402,7 +403,7 @@ TEST_F(MemoryManagerTest, FreeListSorting) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Allocate blocks of various sizes to create fragmentation
@@ -438,7 +439,7 @@ TEST_F(MemoryManagerTest, FreeListMerging) {
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Allocate several consecutive blocks
   std::vector<void *> ptrs;
@@ -474,7 +475,7 @@ TEST_F(MemoryManagerTest, BlockSplittingAndReuse) {
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Allocate a large block
   size_t largeSize = 8 * allocAlignment;
@@ -514,7 +515,7 @@ TEST_F(MemoryManagerTest, MemoryReuse) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Allocate and free a block multiple times to verify reuse
   {
@@ -556,7 +557,7 @@ TEST_F(MemoryManagerTest, FragmentationHandling) {
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Create a fragmentation pattern
   std::vector<void *> ptrs;
@@ -604,7 +605,7 @@ TEST_F(MemoryManagerTest, ConfigurationVariations) {
     MemoryManager &cache = device->memoryManager();
     MemoryManagerFreeList &freeList = *cache.freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     // Should be able to allocate with different configuration
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(1024, mode));
@@ -622,7 +623,7 @@ TEST_F(MemoryManagerTest, ConfigurationVariations) {
     MemoryManager &cache = device->memoryManager();
     MemoryManagerFreeList &freeList = *cache.freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     // Should still work with small chunk size
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(512, mode));
@@ -635,7 +636,7 @@ TEST_F(MemoryManagerTest, ChunkAllocationBehavior) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Allocate many blocks to potentially trigger multiple chunk allocations
@@ -662,7 +663,7 @@ TEST_F(MemoryManagerTest, LargeAllocationHandling) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Try to allocate a very large block that might exceed chunk size
   // This tests the heuristics for chunk size growth
@@ -688,10 +689,10 @@ TEST_F(MemoryManagerTest, AllocationModeHandling) {
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
   // Test different allocation modes
-  std::vector<Device::AllocMode> modes = {Device::AllocMode::SYNC,
-                                          Device::AllocMode::HOST};
+  std::vector<AllocatorContext::AllocMode> modes = {
+      AllocatorContext::AllocMode::SYNC, AllocatorContext::AllocMode::HOST};
 
-  for (Device::AllocMode mode : modes) {
+  for (AllocatorContext::AllocMode mode : modes) {
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(256, mode));
     EXPECT_NE(ptr, nullptr);
     EXPECT_NO_ERR(freeList.free(ptr));
@@ -704,7 +705,7 @@ TEST_F(MemoryManagerTest, BoundaryConditions) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Test minimum allocation (1 byte)
   ASSIGN_NO_ERR(void *, min_ptr, freeList.allocate(1, mode));
@@ -728,7 +729,7 @@ TEST_F(MemoryManagerTest, MemoryPattern) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Allocate a block and write/read pattern to verify memory is usable
   ASSIGN_NO_ERR(void *, ptr, freeList.allocate(1024, mode));
@@ -752,7 +753,7 @@ TEST_F(MemoryManagerTest, StressTestAllocation) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Stress test with rapid allocation/deallocation cycles
   for (int cycle = 0; cycle < 10; ++cycle) {
@@ -784,7 +785,7 @@ TEST_F(MemoryManagerTest, InvalidOperations) {
   EXPECT_NO_ERR(freeList.free(nullptr));
 
   // Test double free - allocate, free, then free again
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   ASSIGN_NO_ERR(void *, ptr, freeList.allocate(256, mode));
   EXPECT_NE(ptr, nullptr);
 
@@ -819,7 +820,7 @@ TEST_F(MemoryManagerTest, ConfigurationLimits) {
     MemoryManager &cache = device->memoryManager();
     MemoryManagerFreeList &freeList = *cache.freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     // Should still work with 100% chunk percentage
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(1024, mode));
@@ -835,7 +836,7 @@ TEST_F(MemoryManagerTest, SelfCheckValidation) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Perform operations that should trigger self-check validations
@@ -864,7 +865,7 @@ TEST_F(MemoryManagerTest, LoggingOutput) {
     CpuDeviceRef device = createTestDevice();
     MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     // Perform operations that would generate logs if enabled
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(1024, mode));
@@ -880,7 +881,7 @@ TEST_F(MemoryManagerTest, LoggingOutput) {
     CpuDeviceRef device = createTestDevice();
     MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     // Operations that should generate log output
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(512, mode));
@@ -900,7 +901,7 @@ TEST_F(MemoryManagerTest, OOMFragmentationDumpStructure) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
   for (int i = 0; i < 6; ++i) {
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(64 + i * 32, mode));
@@ -968,7 +969,7 @@ TEST_F(MemoryManagerTest, OOMFragmentationDumpHistogramAndTopN) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   // Pick sizes that span multiple log2 buckets after alignment.
   std::vector<size_t> sizes = {64, 64, 128, 128, 256, 256, 512};
   std::vector<void *> ptrs;
@@ -1008,7 +1009,7 @@ TEST_F(MemoryManagerTest, MemoryLeakDetection) {
     CpuDeviceRef device = createTestDevice();
     MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
     std::vector<void *> ptrs;
 
     // Allocate multiple blocks
@@ -1033,7 +1034,7 @@ TEST_F(MemoryManagerTest, DescriptorManagement) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Test descriptor allocation and recycling through multiple allocation cycles
   std::vector<void *> cycle1_ptrs;
@@ -1077,7 +1078,7 @@ TEST_F(MemoryManagerTest, MaxSizeHandling) {
   CpuDeviceRef device = CpuDeviceRef::create(smallMemInfo);
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Try to allocate many blocks to approach cache limits
@@ -1131,11 +1132,12 @@ TEST_F(MemoryManagerTest, FreeListTeardownRedirectsAllocatedBy) {
   void *ptr = nullptr;
   {
     std::unique_ptr<MemoryManagerFreeList> childFreeList =
-        MemoryManagerFreeList::createForContext(*ctx, memMgr, &rootFreeList,
-                                                /*disableFlush=*/false,
-                                                /*label=*/"test_child");
-    ASSIGN_NO_ERR(void *, allocated,
-                  childFreeList->allocate(256, Device::AllocMode::SYNC));
+        createFreeListForContext(*ctx, memMgr, &rootFreeList,
+                                 /*disableFlush=*/false,
+                                 /*label=*/"test_child");
+    ASSIGN_NO_ERR(
+        void *, allocated,
+        childFreeList->allocate(256, AllocatorContext::AllocMode::SYNC));
     EXPECT_NE(allocated, nullptr);
     ptr = allocated;
     // `childFreeList` is destroyed here while `ptr` is still in use; the
@@ -1152,7 +1154,7 @@ TEST_F(MemoryManagerTest, MemoryPressure) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> large_ptrs;
 
   // Allocate increasingly large blocks to simulate memory pressure
@@ -1307,7 +1309,7 @@ TEST_F(MemoryManagerTest, ConcurrentAllocations) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const int numThreads = 4;
   const int allocationsPerThread = 10;
 
@@ -1351,7 +1353,7 @@ TEST_F(MemoryManagerTest, ConcurrentFrees) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const int numBlocks = 20;
 
   // First, allocate blocks sequentially
@@ -1391,7 +1393,7 @@ TEST_F(MemoryManagerTest, MixedConcurrentOperations) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const int numThreads = 4;
   const int operationsPerThread = 15;
 
@@ -1467,7 +1469,7 @@ TEST_F(MemoryManagerTest, AllocationSpeed) {
 
   ASSIGN_NO_ERR(DeviceContextRef, ctx, createTestDeviceContext());
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const int numAllocations = 100;
   const size_t allocSize = 1024;
 
@@ -1523,7 +1525,7 @@ TEST_F(MemoryManagerTest, FragmentationMeasurement) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Test fragmentation under different allocation patterns
   struct FragmentationTest {
@@ -1585,7 +1587,7 @@ TEST_F(MemoryManagerTest, CacheEfficiency) {
   CpuDeviceRef device = createTestDevice();
   MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const int totalOperations = 200;
 
   int cacheHits = 0;
@@ -1677,7 +1679,7 @@ TEST_F(MemoryManagerTest, ScalingBehavior) {
     CpuDeviceRef device = createTestDevice();
     MemoryManagerFreeList &freeList = *device->memoryManager().freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -2014,7 +2016,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoDisabledDefaults) {
   CpuDeviceRef device = createTestDevice();
   MemoryManager &cache = device->memoryManager();
 
-  Device::MemInfo memInfo = cache.getMemoryInfo();
+  AllocatorMemInfo memInfo = cache.getMemoryInfo();
 
   EXPECT_EQ(memInfo.total, 0);
   EXPECT_EQ(memInfo.free, 0);
@@ -2026,11 +2028,11 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   MemoryManagerFreeList &freeList = *cache.freeList();
 
   // Get initial memory info
-  Device::MemInfo initialInfo = cache.getMemoryInfo();
+  AllocatorMemInfo initialInfo = cache.getMemoryInfo();
   EXPECT_GT(initialInfo.total, 0);
   size_t initialFree = initialInfo.free.value();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Allocate some blocks
@@ -2041,7 +2043,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after allocations
-  Device::MemInfo afterAllocInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterAllocInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterAllocInfo.total,
             initialInfo.total); // Total should remain same
   EXPECT_LE(afterAllocInfo.free.value(),
@@ -2053,7 +2055,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after freeing
-  Device::MemInfo afterFreeInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterFreeInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterFreeInfo.total, initialInfo.total); // Total should remain same
   EXPECT_GE(afterFreeInfo.free.value(),
             afterAllocInfo.free.value()); // Free should increase

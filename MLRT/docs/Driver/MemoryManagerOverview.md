@@ -98,11 +98,16 @@ The source of the above image is available
 The memory manager operates on a two-level hierarchy:
 
 1. **MemoryManager**: Owns (relatively large) memory chunks allocated from
-   CUDA/HIP
+   CUDA/HIP. It gets them from an `AllocatorChunks`, which also reports the
+   device's free and total memory. A manager that uses VMM instead reserves
+   address space and maps physical pages through an `AllocatorVmm`. A `Device`
+   serves both through `DeviceAllocatorChunks` and `DeviceAllocatorVmm`.
 2. **MemoryManagerFreeList**: Manages free blocks within chunks, with hierarchy:
    - **Parent/Shared**: Global free list accessible to all DeviceContexts
    - **DeviceContext-local**: Stream-specific free lists for better cache
-     locality
+     locality. Each one reaches its stream through an `AllocatorContext`; the
+     root list has none. `createFreeListForContext` wraps a `DeviceContext`
+     in a `DeviceAllocatorContext`.
 
 When a block is requested, we first look up free-lists to recycle any
 previously-(allocated and) released blocks. If none are available, we allocate
@@ -505,11 +510,12 @@ modular_py_test(
 ### Basic Allocation Pattern
 
 ```cpp
-// Get free list from device context
-MemoryManagerFreeList* freeList = deviceContext->freeList();
+// Get the free list that serves the context's stream
+MemoryManagerFreeList &freeList = deviceContext->freeList();
 
 // Allocate buffer
-ErrorOr<void*> ptrResult = freeList->allocate(1024, Device::AllocMode::SYNC);
+ErrorOr<void*> ptrResult =
+    freeList.allocate(1024, AllocatorContext::AllocMode::SYNC);
 if (ptrResult.isError()) {
     // Handle allocation failure - may fallback to direct device allocation
     handleError(ptrResult.takeError());
@@ -520,7 +526,7 @@ void* ptr = ptrResult.takeValue();
 useBuffer(ptr);
 
 // Free when done (critical for cache efficiency)
-ErrorOrSuccess freeResult = freeList->free(ptr);
+ErrorOrSuccess freeResult = freeList.free(ptr);
 if (freeResult.isError()) {
     handleError(freeResult.takeError());
 }

@@ -14,6 +14,8 @@
 from std.collections import OptionalReg
 from std.ffi import _DLHandle
 
+from ..buffer import Buffer
+from ..device import DeviceSpec
 from ..plugin import RawDriver
 from ..plugins import (
     ContextHandle,
@@ -21,7 +23,7 @@ from ..plugins import (
     FlagHandle,
     HALPluginConstructable,
 )
-from ..status import STATUS_UNKNOWN_SYMBOL, HALError
+from ..status import STATUS_INVALID_ARG, STATUS_UNKNOWN_SYMBOL, HALError
 from .completion_flag import (
     CompletionFlagAddressV1,
     CompletionFlagResetV1,
@@ -125,6 +127,95 @@ trait SupportsPeerAccessV1(Deinitable, Movable):
             )
 
 
+trait SupportsHostPointerV1(Deinitable, Movable):
+    """Capability: the host may map some of this backend's memory.
+
+    A host pointer to host-reachable memory is legitimate, as `vkMapMemory`
+    is; a host-side device address is not, because kernels get memory through
+    the plugin's argument encoding.
+
+    A backend that can never map memory does not conform, which compiles
+    host access out. Reachability is per allocation, from the plugin's
+    `"host_reachable"` memory property.
+
+    Take the extension set from the device or context, not from the buffer:
+    `buf.extensions()` borrows `buf`, which then cannot be mapped mutably.
+
+    ```mojo
+    comptime Ext = type_of(device.extensions())
+    comptime if conforms_to(Ext, SupportsHostPointerV1):
+        ref ext = device.extensions()
+        if ext.host_reachable(buf):
+            var hp = ext.unsafe_host_ptr(buf)
+    ```
+    """
+
+    def host_reachable[
+        spec: DeviceSpec, //
+    ](self, buffer: Buffer[spec]) raises HALError -> Bool:
+        """Reports whether the host may dereference `buffer`'s memory.
+
+        Parameters:
+            spec: The device the buffer lives on.
+
+        Args:
+            buffer: The allocation to ask about.
+
+        Returns:
+            True if `unsafe_host_ptr` can map `buffer`. False for an empty
+            buffer.
+
+        Raises:
+            If the plugin fails to answer for this allocation.
+        """
+        # An empty allocation has a null handle, which plugins may not accept.
+        if buffer.byte_size == 0:
+            return False
+        return (
+            buffer._context[]
+            .raw_driver()[]
+            .get_memory_property["host_reachable", Bool](buffer._handle)
+        )
+
+    def unsafe_host_ptr[
+        spec: DeviceSpec, mut: Bool, //, origin: Origin[mut=mut]
+    ](self, ref[origin] buffer: Buffer[spec]) raises HALError -> Pointer[
+        UInt8, origin
+    ]:
+        """Returns a host pointer to `buffer`'s memory.
+
+        This maps host-reachable memory; it is not the buffer's device
+        address. Reads are valid only after the device work that wrote the
+        buffer completes, and host writes must not race device work on the
+        same memory. Mappings of device memory may be write-combined, so use
+        a queue copy for bulk transfers.
+
+        Parameters:
+            spec: The device the buffer lives on.
+            mut: Whether the borrow of `buffer` is mutable.
+            origin: The origin of the borrow of `buffer`.
+
+        Args:
+            buffer: The allocation to map.
+
+        Returns:
+            A host pointer to the first byte of `buffer`.
+
+        Raises:
+            If `host_reachable(buffer)` is False, or the plugin fails to map
+            the memory.
+        """
+        if not self.host_reachable(buffer):
+            raise HALError(
+                STATUS_INVALID_ARG,
+                message=(
+                    "the host cannot reach this memory; copy it with a queue"
+                    " transfer instead"
+                ),
+            )
+        return buffer._context[].memory_get_host_address[origin](buffer)
+
+
 trait PeerAccessV1(TrivialRegisterPassable):
     # Status messages are driver-scoped, hence the `RawDriver` argument.
     def can_access_peer(
@@ -219,7 +310,7 @@ trait SupportsCompletionFlagAddressV1(SupportsCompletionFlagV1):
 
 
 struct DefaultHALExtensions(HALExtensions):
-    """`HALExtensions` implementation used when no plugin is active."""
+    """`HALExtensions` implementation for targets no plugin claims."""
 
     def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         pass

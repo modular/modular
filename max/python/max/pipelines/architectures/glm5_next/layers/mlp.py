@@ -34,12 +34,12 @@ from max.nn.common_layers import quant_ops
 from max.nn.common_layers.moe import MoEGate
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_moe import ExpertParallelMoE, TensorParallelMoE
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import (
     moe_router_group_limited,
     moe_sigmoid_gemv_router,
     router_gate_mixed_gemv,
 )
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 from typing_extensions import override
@@ -164,7 +164,7 @@ class Glm5NextExpertParallelMoE(ExpertParallelMoE):
 
     @override
     def _dispatched_rows(self, x_shards: Sequence[Tensor]) -> Tensor:
-        if not self.ep_batch_manager.config.use_allreduce:
+        if not self.ep_config.use_allreduce:
             return super()._dispatched_rows(x_shards)
         # Every device holds every row under allreduce, so the rows count
         # once. The base's sum would estimate each device's expert rows at
@@ -332,7 +332,7 @@ class Glm5NextMLP(QuantizedMLP):
 def build_mlp(
     config: Glm5NextConfig,
     layer_idx: int,
-    ep_batch_manager: EPBatchManager | None,
+    ep_config: EPConfig | None,
 ) -> Module[..., Tensor]:
     """Returns layer ``layer_idx``'s feed-forward block.
 
@@ -370,8 +370,6 @@ def build_mlp(
         mlp_cls=mlp_cls,
         swiglu_limit=config.swiglu_limit,
     )
-    if ep_batch_manager is not None:
-        return Glm5NextExpertParallelMoE(
-            **moe_kwargs, ep_batch_manager=ep_batch_manager
-        )
+    if ep_config is not None:
+        return Glm5NextExpertParallelMoE(**moe_kwargs, ep_config=ep_config)
     return Glm5NextTensorParallelMoE(**moe_kwargs)

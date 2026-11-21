@@ -998,6 +998,7 @@ def _gather_impl[
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def gather_elementwise_fn[
             simd_width: Int, alignment: Int = 1
         ](idx: Coord) {

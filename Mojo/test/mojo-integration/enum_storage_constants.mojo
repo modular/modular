@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# Compile-time enum values used at run time:
+# Compile-time union values used at run time:
 # 1. Materialize byte, heap, interior-pointer and function-symbol constants.
 # 2. Clear pointer and symbol marks when a compile-time value changes cases.
 # 3. Preserve function marks across separate evaluations and list moves.
@@ -18,13 +18,13 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-__enum Text(Equatable, Hashable, ImplicitlyCopyable, Writable):
-    case end
+__union Text(Equatable, Hashable, ImplicitlyCopyable, Writable):
+    case end()
     case text(String)
     case word(Int)
 
 
-__enum Outer(ImplicitlyCopyable, Writable):
+__union Outer(ImplicitlyCopyable, Writable):
     case inner(Text)
 
 
@@ -51,7 +51,7 @@ struct Node(ImplicitlyCopyable, Movable):
         )
 
 
-__enum Box(ImplicitlyCopyable):
+__union Box(ImplicitlyCopyable):
     case node(Node)
 
 
@@ -73,7 +73,7 @@ def empty_after_text() -> Text:
         "a long compile-time string that requires heap storage"
     )
     _ = value
-    value = Text.end
+    value = Text.end()
     return value
 
 
@@ -104,7 +104,7 @@ def increment(value: Int) -> Int:
     return value + 1
 
 
-__enum Event(ImplicitlyCopyable):
+__union Event(ImplicitlyCopyable):
     case callback(Callback)
     case number(Int)
 
@@ -166,10 +166,10 @@ def invoke_reloaded(event: Event) -> Int:
             return n
 
 
-__enum Choice(Equatable, ImplicitlyCopyable):
+__union Choice(Equatable, ImplicitlyCopyable):
     case big(Int, Int)
     case small(Int)
-    case end
+    case end()
 
 
 struct Holder[value: Choice]:
@@ -186,7 +186,7 @@ def changed() -> Choice:
 def emptied() -> Choice:
     var value = Choice.big(3, 4)
     _ = value
-    value = Choice.end
+    value = Choice.end()
     return value
 
 
@@ -196,7 +196,7 @@ struct Padded(Equatable, ImplicitlyCopyable):
     var word: Int
 
 
-__enum Record(Equatable, ImplicitlyCopyable):
+__union Record(Equatable, ImplicitlyCopyable):
     case big(Int, Int, Int)
     case padded(Padded)
 
@@ -212,7 +212,7 @@ def padded() -> Record:
     return value
 
 
-__enum OuterChoice(Equatable, ImplicitlyCopyable):
+__union OuterChoice(Equatable, ImplicitlyCopyable):
     case big(Int, Int, Int, Int)
     case inner(Choice)
 
@@ -254,7 +254,7 @@ def main():
     comptime empty = empty_after_text()
     comptime word = word_after_text()
     comptime text = text_after_word()
-    # CHECK-DAG: overwritten Text.end Text.word(17) Text.text(another long compile-time string that requires heap storage)
+    # CHECK-DAG: overwritten Text.end() Text.word(17) Text.text(another long compile-time string that requires heap storage)
     print("overwritten", empty, word, text)
     comptime event = Event.callback(Callback(increment))
     invoke("callback", event)
@@ -278,7 +278,7 @@ def main():
     comptime a = changed()
     comptime b = Choice.small(17)
     comptime c = emptied()
-    comptime d = Choice.end
+    comptime d = Choice.end()
     comptime e = padded()
     comptime f = Record.padded(Padded(7, 19))
     comptime g = nested_choice()

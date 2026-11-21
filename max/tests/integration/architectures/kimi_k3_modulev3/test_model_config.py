@@ -34,6 +34,9 @@ from max.nn.kv_cache import (
     RecurrentStateParams,
 )
 from max.nn.quant_config import QuantConfig
+from max.pipelines.architectures.kimi_k3_modulev3.layers.vision.transformer import (
+    KimiK3VisionEncoder,
+)
 from max.pipelines.architectures.kimi_k3_modulev3.model_config import (
     KimiK3Config,
 )
@@ -49,6 +52,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineRuntimeConfig,
 )
+from max.pipelines.lib.module_registration import _vision_enabled
 from max.pipelines.lib.registration_runtime import ModuleRuntime
 from max.pipelines.speculative import SpeculativeConfig
 from max.tensor.sharding import DeviceMesh
@@ -850,3 +854,71 @@ def test_a_speculative_pairing_is_refused_under_expert_parallelism(
 
     with pytest.raises(NotImplementedError, match="tensor parallelism"):
         config.expert_parallel_config(_ep_runtime(ep_size=2, n_devices=2))
+
+
+def test_text_only_checkpoint_disables_vision_role(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    _, pipeline_config, _ = configs
+    config = KimiK3Config.initialize(
+        pipeline_config, pipeline_config.model, max_seq_len=_MAX_LENGTH
+    )
+    assert config.vision_config is None
+    assert not _vision_enabled(KimiK3VisionEncoder, config)
+
+
+@pytest.mark.parametrize("dspark", [False, True])
+def test_vision_role_is_disabled_only_for_the_dspark_pairing(
+    configs: tuple[Any, Any, Any], dspark: bool
+) -> None:
+    huggingface_config, pipeline_config, model_config = configs
+    huggingface_config.vision_config = SimpleNamespace(
+        patch_size=14,
+        vt_hidden_size=64,
+        qkv_hidden_size=64,
+        vt_intermediate_size=128,
+        vt_num_attention_heads=1,
+        vt_num_hidden_layers=1,
+        init_pos_emb_height=4,
+        init_pos_emb_width=4,
+        init_pos_emb_time=4,
+        merge_kernel_size=[2, 2],
+        mm_hidden_size=64,
+        text_hidden_size=_HIDDEN_SIZE,
+        projector_ln_eps=1e-5,
+    )
+    if dspark:
+        pipeline_config.speculative = SpeculativeConfig(
+            speculative_method="dspark", num_speculative_tokens=7
+        )
+    config = KimiK3Config.initialize(
+        pipeline_config, model_config, max_seq_len=_MAX_LENGTH
+    )
+    assert (config.vision_config is None) == dspark
+    assert _vision_enabled(KimiK3VisionEncoder, config) == (not dspark)
+    assert config.attn_kv_params.num_draft_tokens == (7 if dspark else 0)
+
+
+def test_a_vision_width_unlike_the_text_width_is_refused(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    huggingface_config, pipeline_config, _ = configs
+    huggingface_config.vision_config = SimpleNamespace(
+        patch_size=14,
+        vt_hidden_size=64,
+        qkv_hidden_size=64,
+        vt_intermediate_size=128,
+        vt_num_attention_heads=1,
+        vt_num_hidden_layers=1,
+        init_pos_emb_height=4,
+        init_pos_emb_width=4,
+        init_pos_emb_time=4,
+        merge_kernel_size=[2, 2],
+        mm_hidden_size=64,
+        text_hidden_size=_HIDDEN_SIZE * 2,
+        projector_ln_eps=1e-5,
+    )
+    with pytest.raises(ValueError, match="text_hidden_size"):
+        KimiK3Config.initialize(
+            pipeline_config, pipeline_config.model, max_seq_len=_MAX_LENGTH
+        )

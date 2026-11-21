@@ -19,7 +19,9 @@
 #include "Support/ReferenceCounted.h"
 
 namespace M {
+namespace MLRT {
 class PrimitiveRegistry;
+} // namespace MLRT
 
 namespace MGP {
 
@@ -69,10 +71,10 @@ struct KernelExecutionState : public ReferenceCounted<KernelExecutionState> {
 
 /// Registers the device-generic subset of the 'mgp' dialect primitives for
 /// "cpu" devices.
-void registerMGPCPUPrimitives(PrimitiveRegistry &registry);
+void registerMGPCPUPrimitives(MLRT::PrimitiveRegistry &registry);
 
 /// Registers all the 'mgp' dialect primitives.
-void registerMGPPrimitives(PrimitiveRegistry &registry);
+void registerMGPPrimitives(MLRT::PrimitiveRegistry &registry);
 
 } // namespace M
 

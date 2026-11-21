@@ -36,10 +36,11 @@ from std.os import PathLike as stdPathLike, abort, makedirs
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call
-from std.sys import CompilationTarget, size_of
-from std.sys._libc_errno import get_errno
+from std.sys import size_of
 from std.utils._nicheable import _FieldNicheable
 
+from ._syscall import cap_io_length
+from .error import IOError
 from .file_descriptor import FileDescriptor, RawFileDescriptor
 from std.sys.info import platform_map
 
@@ -83,10 +84,8 @@ def _platform_read[
     dtype: DType
 ](fd: RawFileDescriptor, buffer: MutSpan[Scalar[dtype], _]) -> c_ssize_t:
     """Reads up to `len(buffer) * size_of[dtype]()` bytes from `fd` into
-    `buffer` with a single `read` call.
-
-    macOS fails a `read` of more than `c_int.MAX` bytes with `EINVAL` instead
-    of reading fewer, so on macOS this asks for at most `c_int.MAX` bytes.
+    `buffer` with a single `read` call, asking for no more than
+    `cap_io_length()` allows.
 
     Parameters:
         dtype: The element type of the buffer.
@@ -99,21 +98,18 @@ def _platform_read[
         The number of bytes read, 0 at end of file, or -1 on error with
         `errno` set.
     """
-    var count = len(buffer) * size_of[dtype]()
-    comptime if CompilationTarget.is_macos():
-        count = min(count, Int(c_int.MAX))
     return external_call["read", c_ssize_t](
-        fd._value, buffer.unsafe_ptr(), count
+        fd._value,
+        buffer.unsafe_ptr(),
+        cap_io_length(len(buffer) * size_of[dtype]()),
     )
 
 
 def _platform_write(
     fd: RawFileDescriptor, bytes: ImmSpan[Byte, _, address_space=_]
 ) -> c_ssize_t:
-    """Writes up to `len(bytes)` bytes to `fd` with a single `write` call.
-
-    macOS fails a `write` of more than `c_int.MAX` bytes with `EINVAL` instead
-    of writing fewer, so on macOS this writes at most `c_int.MAX` bytes.
+    """Writes up to `len(bytes)` bytes to `fd` with a single `write` call,
+    writing no more than `cap_io_length()` allows.
 
     Args:
         fd: The file descriptor to write to.
@@ -122,15 +118,12 @@ def _platform_write(
     Returns:
         The number of bytes written, or -1 on error with `errno` set.
     """
-    var count = len(bytes)
-    comptime if CompilationTarget.is_macos():
-        count = min(count, Int(c_int.MAX))
     return external_call["write", c_ssize_t](
-        fd._value, bytes.unsafe_ptr(), count
+        fd._value, bytes.unsafe_ptr(), cap_io_length(len(bytes))
     )
 
 
-def _open_file(path: String, mode: String) raises -> RawFileDescriptor:
+def _open_file(path: String, mode: String) raises IOError -> RawFileDescriptor:
     """Open a file and return its file descriptor.
 
     This function implements the complex logic for opening files with proper
@@ -144,7 +137,7 @@ def _open_file(path: String, mode: String) raises -> RawFileDescriptor:
         The file descriptor of the opened file.
 
     Raises:
-        Error if the file cannot be opened or if the mode is invalid.
+        If the mode is invalid, or if the file can't be opened.
     """
     # Parse mode
     var flags: Int
@@ -163,25 +156,17 @@ def _open_file(path: String, mode: String) raises -> RawFileDescriptor:
             flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
             create_dirs = True
         case _:
-            raise Error(
-                'invalid mode: "'
-                + mode
-                + '". Can only be one of: {"r", "w", "rw", "a"}'
-            )
+            raise IOError(
+                .invalid_input,
+                'invalid mode, expected one of "r", "w", "rw" or "a"',
+                operation="open",
+            )._with_subject(.path(path))
 
     # Create parent directories if needed
     if create_dirs:
         var parent = dirname(path)
         if parent:
-            try:
-                makedirs(parent, exist_ok=True)
-            except e:
-                raise Error(
-                    "unable to create directories '"
-                    + parent
-                    + "': "
-                    + String(e)
-                )
+            makedirs(parent, exist_ok=True)
 
     # int open(const char *path, int oflag, ...);
     # Mode 0o666 allows read/write for owner, group, and others (modified by
@@ -192,8 +177,7 @@ def _open_file(path: String, mode: String) raises -> RawFileDescriptor:
     )
 
     if fd < 0:
-        var err = get_errno()
-        raise Error(t"Failed to open file '{path}': {err}")
+        raise IOError.last_os_error("open")._with_subject(.path(path))
 
     return RawFileDescriptor(unsafe_unchecked_value=fd)
 
@@ -216,7 +200,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
     var _fd: FileDescriptor
     """The owned descriptor."""
 
-    def __init__(out self, path: StringSpan, mode: StringSpan) raises:
+    def __init__(out self, path: StringSpan, mode: StringSpan) raises IOError:
         """Construct the FileHandle using the file path and mode.
 
         Args:
@@ -238,7 +222,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         except:
             pass
 
-    def close(deinit self) raises:
+    def close(deinit self) raises IOError:
         """Closes the file, consuming the handle.
 
         Raises:
@@ -305,7 +289,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
     def read[
         dtype: DType, origin: MutOrigin
-    ](self, buffer: Span[Scalar[dtype], origin]) raises -> Int:
+    ](self, buffer: Span[Scalar[dtype], origin]) raises IOError -> Int:
         """Read data from the file into the Span.
 
         This will read n bytes from the file into the input Span where
@@ -362,12 +346,11 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         var bytes_read = _platform_read(fd, buffer)
 
         if bytes_read < 0:
-            var err = get_errno()
-            raise Error(String(t"Failed to read from file: {err}"))
+            raise IOError.last_os_error("read")
 
         return bytes_read
 
-    def read_bytes(self, size: Int = -1) raises -> List[UInt8]:
+    def read_bytes(self, size: Int = -1) raises IOError -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
         size is left as default of -1, it will read to the end of the file.
         Setting size to a number larger than what's in the file will be handled
@@ -429,8 +412,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
             var chunk_bytes_read = _platform_read(fd, Span(result)[num_read:])
 
             if chunk_bytes_read < 0:
-                var err = get_errno()
-                raise Error(String(t"Failed to read from file: {err}"))
+                raise IOError.last_os_error("read")
 
             num_read += chunk_bytes_read
 
@@ -446,7 +428,9 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
         return result^
 
-    def seek(self, offset: Int, whence: UInt8 = SEEK_SET) raises -> UInt64:
+    def seek(
+        self, offset: Int, whence: UInt8 = SEEK_SET
+    ) raises IOError -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
@@ -492,12 +476,11 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         var pos = external_call["lseek", Int64](fd, Int64(offset), Int(whence))
 
         if pos < 0:
-            var err = get_errno()
-            raise Error(String(t"Failed to seek in file: {err}"))
+            raise IOError.last_os_error("lseek")
 
         return UInt64(pos)
 
-    def write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
+    def write_once(mut self, bytes: Span[Byte, _]) raises IOError -> Int:
         """Attempt to write bytes to the file, returning the number of bytes written.
 
         This is a low-level method that performs a single write syscall. It may
@@ -535,12 +518,11 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         var bytes_written = _platform_write(fd, bytes)
 
         if bytes_written < 0:
-            var err = get_errno()
-            raise Error(String(t"Failed to write to file: {err}"))
+            raise IOError.last_os_error("write")
 
         return bytes_written
 
-    def write_all(mut self, bytes: Span[Byte, _]) raises:
+    def write_all(mut self, bytes: Span[Byte, _]) raises IOError:
         """Write all bytes to the file, handling partial writes automatically.
 
         This method guarantees that all bytes are written by looping until
@@ -574,8 +556,10 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
             # write() returning 0 typically means the object cannot accept more bytes
             if chunk_written == 0:
-                raise Error(
-                    "Write returned 0 bytes (file may be full or closed)"
+                raise IOError(
+                    .write_zero,
+                    "failed to write whole buffer",
+                    operation="write",
                 )
 
             total_written += chunk_written
@@ -659,7 +643,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         self,
         ptr: ImmPointer[UInt8, _, address_space=_],
         len: Int,
-    ) raises:
+    ) raises IOError:
         """Write the data to the file, handling partial writes automatically.
 
         Args:
@@ -680,13 +664,14 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
             )
 
             if bytes_written < 0:
-                var err = get_errno()
-                raise Error(String(t"Failed to write to file: {err}"))
+                raise IOError.last_os_error("write")
 
             # write() returning 0 typically means the object cannot accept more bytes
             if bytes_written == 0:
-                raise Error(
-                    "Write returned 0 bytes (file may be full or closed)"
+                raise IOError(
+                    .write_zero,
+                    "failed to write whole buffer",
+                    operation="write",
                 )
 
             total_written += bytes_written
@@ -710,7 +695,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
 def open[
     PathLike: stdPathLike
-](path: PathLike, mode: StringSpan) raises -> FileHandle:
+](path: PathLike, mode: StringSpan) raises IOError -> FileHandle:
     """Opens the file specified by path using the mode provided, returning a
     FileHandle.
 

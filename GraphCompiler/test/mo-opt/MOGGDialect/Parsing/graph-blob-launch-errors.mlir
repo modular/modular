@@ -120,3 +120,30 @@ func.func @execute_configuration_not_declarative() {
   %cfg = mogg.call.execute_configuration @builtin_kernels.monoids.ReduceSum
   return
 }
+
+// -----
+
+// A loop without a context runs only in a call region.
+func.func @foreach_outside_call(%s: !mogg.shape, %x: !mogg.tensor) {
+  // expected-error@+1 {{expects parent op 'mogg.graph_blob.call'}}
+  mogg.graph_blob.foreach shape(%s) (%idx : !map.index<1>) capturing {%cx = %x : !mogg.tensor} {
+    %v = mogg.tensor.load %cx[%idx] : !mogg.tensor, !map.index<1> -> !mogg.simd<f32>
+    mogg.tensor.store %cx[%idx] = %v : !mogg.tensor, !map.index<1>, !mogg.simd<f32>
+  }
+  return
+}
+
+// -----
+
+func.func @foreach_static_and_dynamic_limit(%ctx: !mogg.context, %cfg: !mogg.launch_config, %a: i32, %s: !mogg.shape, %x: !mogg.tensor) {
+  mogg.graph_blob.launch context(%ctx) config(%cfg) args {%a0 = %a : i32, %s0 = %s : !mogg.shape, %x0 = %x : !mogg.tensor} {
+    mogg.graph_blob.call active(%a0) {
+      // expected-error@+1 {{expected a static or a dynamic max_simd_width, not both}}
+      mogg.graph_blob.foreach shape(%s0) dynamic_max_simd_width(%s0) (%idx : !map.index<1>) capturing {%cx = %x0 : !mogg.tensor} attributes {max_simd_width = 2 : i64} {
+        %v = mogg.tensor.load %cx[%idx] : !mogg.tensor, !map.index<1> -> !mogg.simd<f32>
+        mogg.tensor.store %cx[%idx] = %v : !mogg.tensor, !map.index<1>, !mogg.simd<f32>
+      }
+    }
+  }
+  return
+}

@@ -15,13 +15,17 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import multiprocessing as mp
+import os
+import re
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 import msgspec
+import numpy as np
 import pytest
 from huggingface_hub import errors as hf_hub_errors
 from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
@@ -70,7 +74,11 @@ from max.benchmark.benchmark_shared.datasets.image_augmentation import (
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
+    _MAX_JUNCTION_GROWTH,
+    _cut_may_grow,
+    _text_scaled_to_token_length,
     build_fitted_chat_samples,
+    build_scaled_user_message,
     resolve_constant_delay_ms,
 )
 from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
@@ -80,11 +88,10 @@ from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
-    OpenAIImage,
-    SessionMessage,
 )
 from PIL import Image
 from tests.benchmark.benchmark_fakes import FakeTokenizer, fake_loader
+from transformers import PreTrainedTokenizerFast
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
@@ -973,7 +980,10 @@ def test_instruct_coder_multiturn_fit_distributions(
         ]
         for user in session.messages[0::2]:
             assert user.source == "user"
-            assert user.num_tokens == 80
+            # FakeTokenizer decodes to one unbroken run, so its truncation cut
+            # and its marker join both land inside a word and each take the
+            # per-junction allowance.
+            assert 80 <= user.num_tokens <= 80 + 2 * _MAX_JUNCTION_GROWTH
 
 
 @patch.object(InstructCoderBenchmarkDataset, "_load_pairs")
@@ -1134,6 +1144,38 @@ def test_every_user_body_is_marked_distinct() -> None:
         for msg in session.messages[0::2]
     ):
         assert abs(user.num_tokens - target_in) <= 4
+
+
+def test_a_session_does_not_depend_on_the_session_count() -> None:
+    """Session ``i`` is the same however many sessions follow it.
+
+    The warmup pool grows with concurrency, so the session count changes
+    across a sweep while the sessions must not.
+    """
+    tok = FakeTokenizer(model_max_length=50_000)
+
+    def sessions(num_sessions: int) -> list[list[tuple[str, int]]]:
+        np.random.seed(42)
+        with TokenizerPool(tok, loader=fake_loader) as pool:
+            samples = build_fitted_chat_samples(
+                pool=pool,
+                user_text_pool=["alpha body text", "beta body text"],
+                num_sessions=num_sessions,
+                num_turns="DU(1, 6)",
+                input_len="LN(4.0, 0.5)",
+                output_len="LN(3.0, 0.5)",
+                delay_between_turns_dist="U(0, 1000)",
+                sys_prompt_ratio=0.0,
+                max_num_unique_sys_prompt=1,
+                shuffle_pool=False,
+                log_prefix="test-invariant",
+            )
+        return [
+            [(m.content, m.num_tokens) for m in session.messages]
+            for session in samples.chat_sessions
+        ]
+
+    assert sessions(4) == sessions(12)[:4]
 
 
 def test_a_truncated_session_still_ends_without_a_delay() -> None:
@@ -1728,6 +1770,312 @@ def test_system_prefix_lands_on_the_first_turn_only() -> None:
     assert samples.shared_contexts
 
 
+class _WordStartTokenizer:
+    """Fake tokenizer whose ids carry the leading space of a word.
+
+    A byte-level BPE behaves this way: a word that a repeat glues onto the
+    previous one loses its spaced id and falls back to per-character ids, so
+    the splice costs more ids than the two copies did apart.
+    """
+
+    unk_token_id = None
+    all_special_ids: frozenset[int] = frozenset()
+    vocab_size = 1000
+
+    _SPACED = {" the": 10, " cat": 11}
+    _BARE = {"the": 20, "cat": 21}
+    _CHARS = {c: 30 + i for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")}
+    _SPACE = 60
+
+    def __init__(self, model_max_length: int = 50_000) -> None:
+        self.model_max_length = model_max_length
+        self.encode_calls = 0
+
+    def _reverse(self) -> dict[int, str]:
+        table = {tid: piece for piece, tid in self._SPACED.items()}
+        table.update({tid: piece for piece, tid in self._BARE.items()})
+        table.update({tid: char for char, tid in self._CHARS.items()})
+        table[self._SPACE] = " "
+        return table
+
+    def decode(
+        self, ids: list[int], skip_special_tokens: bool = False, **_: object
+    ) -> str:
+        table = self._reverse()
+        return "".join(table[tid] for tid in ids)
+
+    def encode(
+        self, text: str, add_special_tokens: bool = False, **_: object
+    ) -> list[int]:
+        self.encode_calls += 1
+        ids: list[int] = []
+        i = 0
+        while i < len(text):
+            piece, tid = self._match(text, i)
+            ids.append(tid)
+            i += len(piece)
+        return ids
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self._SPACE
+
+    def _match(self, text: str, i: int) -> tuple[str, int]:
+        # A spaced id only matches at a space, and a bare id only where a word
+        # starts, so a glued word lands on the per-character fallback.
+        word_start = i == 0 or text[i - 1] == " "
+        tables = [self._SPACED]
+        if word_start:
+            tables.append(self._BARE)
+        for table in tables:
+            for piece, tid in table.items():
+                if text.startswith(piece, i):
+                    return piece, tid
+        if text[i] == " ":
+            return " ", self._SPACE
+        return text[i], self._CHARS[text[i]]
+
+
+def test_repeat_count_adds_the_measured_seam_growth() -> None:
+    """A repeat's drift is per seam, and one measured seam gives it exactly.
+
+    A seam that lengthens the re-encode and one that shortens it both come
+    out exact, from the base encode and three short probe encodes, with no
+    re-encode of the whole body.
+    """
+    tok = _WordStartTokenizer()
+
+    tok.encode_calls = 0
+    glued = "the cat"
+    glued_text, glued_tokens = _text_scaled_to_token_length(tok, glued, 8)
+    assert tok.encode_calls == 4
+    assert len(tok.encode(glued_text)) > 8  # the seam lengthens the re-encode
+    assert glued_tokens == len(tok.encode(glued_text))
+
+    tok.encode_calls = 0
+    separated = "the cat "
+    separated_text, separated_tokens = _text_scaled_to_token_length(
+        tok, separated, 9
+    )
+    assert tok.encode_calls == 4
+    assert len(tok.encode(separated_text)) < 9  # the seam merges
+    assert separated_tokens == len(tok.encode(separated_text))
+
+
+def test_repeat_with_no_split_near_the_seam_reencodes() -> None:
+    """A copy with no split cannot bound its seam, so the count is exact."""
+    tok = _WordStartTokenizer()
+
+    tok.encode_calls = 0
+    text, num_tokens = _text_scaled_to_token_length(tok, "cat", 7, min_len=1)
+    # The base and the re-encode, with no probe.
+    assert tok.encode_calls == 2
+    assert num_tokens == len(tok.encode(text))
+
+
+def test_empty_body_with_no_minimum_scales_to_nothing() -> None:
+    """A body with no ids and no minimum length gives an empty turn."""
+    msg = build_scaled_user_message(_WordStartTokenizer(), "", 0, 0.0, 0, 0)
+    assert msg.content == ""
+    assert msg.num_tokens == 0
+
+
+class _CrossMergeBpe:
+    """Fake BPE whose space before a word merges across the word's characters.
+
+    Here ``pqr`` and ``stu`` are one character each, as multibyte UTF-8
+    characters are under a byte-level BPE, and the word ``pqrstu`` encodes
+    to those two ids. After a space, the space takes ``p`` and ``q``, and
+    the leftover ``r`` merges with ``s`` across the two characters, so the
+    spaced word costs four ids where a space and the word cost three. A space
+    and ``pqr`` alone still merge into one id, so the seam of a repeat looks
+    like a merge to any probe that only reads the two ids at the seam. GLM
+    5.3 splits a space before Korean and Japanese words the same way.
+    """
+
+    unk_token_id = None
+    all_special_ids: frozenset[int] = frozenset()
+
+    _MERGES = [
+        (" ", "p"),
+        (" p", "q"),
+        ("p", "q"),
+        ("pq", "r"),
+        ("r", "s"),
+        ("s", "t"),
+        ("st", "u"),
+        (" pq", "r"),
+    ]
+
+    def __init__(self) -> None:
+        pieces = [" ", "p", "q", "r", "s", "t", "u"]
+        pieces += [left + right for left, right in self._MERGES]
+        self._ids = {piece: tid for tid, piece in enumerate(pieces)}
+        self._pieces = dict(enumerate(pieces))
+
+    def encode(
+        self, text: str, add_special_tokens: bool = False, **_: object
+    ) -> list[int]:
+        ids: list[int] = []
+        for word in re.findall(r"\s*\S+|\s+", text):
+            ids += [self._ids[piece] for piece in self._merge(list(word))]
+        return ids
+
+    def decode(
+        self, ids: list[int], skip_special_tokens: bool = False, **_: object
+    ) -> str:
+        return "".join(self._pieces[tid] for tid in ids)
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self._ids[" "]
+
+    def _merge(self, symbols: list[str]) -> list[str]:
+        while True:
+            ranked = [
+                (self._MERGES.index(pair), i)
+                for i, pair in enumerate(itertools.pairwise(symbols))
+                if pair in self._MERGES
+            ]
+            if not ranked:
+                return symbols
+            _, i = min(ranked)
+            symbols[i : i + 2] = [symbols[i] + symbols[i + 1]]
+
+
+def test_seam_that_regroups_a_whole_word_is_counted() -> None:
+    """A seam is measured out to the next split, not just at its two ids.
+
+    The copy ends in a space and opens with a word the space regroups, so
+    every seam costs one id more than the copies' counts, while the space
+    and the copy's first id alone merge into one.
+    """
+    tok = _CrossMergeBpe()
+    body = "pqrstu "
+    ids = tok.encode(body)
+    assert len(ids) == 3
+    # The premise: the two ids at the seam merge, but the whole word grows.
+    assert len(tok.encode(tok.decode(ids[-1:] + ids[:1]))) == 1
+    assert len(tok.encode(body * 2)) == 2 * len(ids) + 1
+
+    text, num_tokens = _text_scaled_to_token_length(tok, body, 30, min_len=1)
+    assert text == body * 10
+    assert num_tokens == len(tok.encode(text)) == 39
+
+
+def test_truncation_end_allows_for_a_word_cut_in_two() -> None:
+    """A cut between words keeps the id count exact; one inside a word is bound.
+
+    The truncated text's last word is the only place its re-encode can differ,
+    so only a cut inside a word takes the per-junction allowance.
+    """
+    tok = _WordStartTokenizer()
+
+    mid_word_text, mid_word_tokens = _text_scaled_to_token_length(
+        tok, "the cats", 2, min_len=1
+    )
+    assert mid_word_text == "the cat"
+    real = len(tok.encode(mid_word_text))
+    assert mid_word_tokens >= real
+    assert mid_word_tokens <= real + _MAX_JUNCTION_GROWTH
+
+    boundary_text, boundary_tokens = _text_scaled_to_token_length(
+        tok, "the cat the cat", 2, min_len=1
+    )
+    assert boundary_text == "the cat"
+    assert boundary_tokens == len(tok.encode(boundary_text))
+
+
+def test_part_join_allowance_bounds_a_glued_marker() -> None:
+    """A marker glued onto the body costs ids the parts' own counts miss.
+
+    The marker and the body are counted apart, so the join can re-encode
+    longer; the allowance keeps the recorded count at or above the real one.
+    """
+    tok = _WordStartTokenizer()
+
+    marked = build_scaled_user_message(
+        tok,
+        "the cat",
+        4,
+        0.0,
+        0,
+        1,
+        unique_marker="zz",
+    )
+    real = len(tok.encode(marked.content))
+    # The premise: without the allowance the two parts' counts fall short.
+    assert real > len(tok.encode("zz")) + len(tok.encode("the cat"))
+    assert marked.num_tokens >= real
+    assert marked.num_tokens <= real + _MAX_JUNCTION_GROWTH
+
+    unmarked = build_scaled_user_message(tok, "the cat", 4, 0.0, 0, 1)
+    assert unmarked.num_tokens == len(tok.encode(unmarked.content))
+
+
+@pytest.fixture(scope="module")
+def byte_level_bpe() -> PreTrainedTokenizerFast:
+    """The Llama 3 tokenizer checked into the repo, so these tests run offline."""
+    path = os.environ.get("BYTE_LEVEL_BPE_TOKENIZER_JSON")
+    if not path:
+        pytest.skip("BYTE_LEVEL_BPE_TOKENIZER_JSON is set only under bazel")
+    return PreTrainedTokenizerFast(tokenizer_file=path)
+
+
+@pytest.mark.parametrize("cut", range(1, 8))
+def test_cut_through_a_multibyte_character_takes_the_allowance(
+    byte_level_bpe: PreTrainedTokenizerFast, cut: int
+) -> None:
+    """A cut that splits a character's UTF-8 bytes is never counted exact.
+
+    The kept bytes decode to U+FFFD, which no word-character test sees as part
+    of a word. Cuts 1 and 5 keep one of four byte ids, so the next id does not
+    complete the character either and adds no text after the cut.
+    """
+    tok = byte_level_bpe
+    text = "𠮷𠮷"
+    ids = tok.encode(text, add_special_tokens=False)
+    assert len(ids) == 8  # four byte-level ids per character
+
+    scaled_text, num_tokens = _text_scaled_to_token_length(
+        tok, text, cut, min_len=1
+    )
+    assert num_tokens >= len(tok.encode(scaled_text, add_special_tokens=False))
+    assert _cut_may_grow(tok, ids[:cut], ids)
+    if cut % 4:
+        assert scaled_text.endswith("\N{REPLACEMENT CHARACTER}")
+    assert num_tokens == cut + 3  # pins _MAX_JUNCTION_GROWTH
+
+
+@pytest.mark.parametrize("sys_prompt_ratio", [0.0, 0.5])
+def test_marker_join_counts_a_multibyte_word_it_merges_with(
+    byte_level_bpe: PreTrainedTokenizerFast, sys_prompt_ratio: float
+) -> None:
+    """The marker's trailing space merges into a Hangul word and costs ids.
+
+    The marker and the body are counted apart, and the join re-encodes two
+    ids longer, so a rule that trusts any join next to whitespace understates
+    the turn. The join is measured, so the marker-only turn is exact.
+    """
+    tok = byte_level_bpe
+    marker, body = "[7] ", "스크립트"
+
+    def count(text: str) -> int:
+        return len(tok.encode(text, add_special_tokens=False))
+
+    assert count(marker + body) == count(marker) + count(body) + 2
+    target = count(marker) + count(body)
+    if sys_prompt_ratio:
+        target *= 2
+
+    msg = build_scaled_user_message(
+        tok, body, target, sys_prompt_ratio, 0, 1, unique_marker=marker
+    )
+    assert msg.content.endswith(marker + body)
+    real = count(msg.content)
+    assert msg.num_tokens >= real
+    if not sys_prompt_ratio:
+        assert msg.num_tokens == real
+
+
 # ---------------------------------------------------------------------------
 # Agent rounds and text pools
 # ---------------------------------------------------------------------------
@@ -2020,24 +2368,6 @@ def test_round_tool_mix_follows_the_weights() -> None:
     light = sum(1 for n in lens if n < 100)
     # 3:1 over 2000 draws; binomial sd is ~20, so this is generous.
     assert 0.70 < light / len(lens) < 0.80
-
-
-def test_session_message_images_defaults_to_empty() -> None:
-    """SessionMessage.images defaults to empty so existing multi-turn
-    workloads are unaffected until a later stage populates it."""
-    message = SessionMessage(source="user", content="hi", num_tokens=1)
-    assert message.images == []
-
-
-def test_session_message_images_can_be_populated() -> None:
-    image: OpenAIImage = {
-        "type": "image_url",
-        "image_url": {"url": "data:image/jpeg;base64,AAA"},
-    }
-    message = SessionMessage(
-        source="user", content="hi", num_tokens=1, images=[image]
-    )
-    assert message.images == [image]
 
 
 @pytest.mark.parametrize("max_output_len", [None, 64])

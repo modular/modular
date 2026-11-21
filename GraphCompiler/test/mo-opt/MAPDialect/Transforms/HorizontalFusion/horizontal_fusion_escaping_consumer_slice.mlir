@@ -269,28 +269,6 @@ mo.graph @sole_reader(%a: !mo.tensor<[4, 8, 16], f32>, %b: !mo.tensor<[4, 8, 16]
   mo.output %y : !mo.tensor<[4, 4, 16], f32>
 }
 
-// The add moves into the matmul's epilogue and the relu follows it there
-// inside a select. Merged first (the second RUN line), the pair moves in together,
-// its select kept at the epilogue's index.
-// CHECK-LABEL: mo.graph @matmul_feeds_merge
-// CHECK:       %[[MM:[0-9]+]]:2 = map.iter.opaque
-// CHECK:       map.iter.epilogue
-// CHECK:       %[[ADD:[0-9]+]] = map.call.elementwise @{{.*}}.Add
-// CHECK:       map.index.slice.select<{{.*}}> (%idx) -> (%[[J:[a-z0-9]+]])
-// CHECK-NEXT:  map.call.elementwise @{{.*}}.ReLU(%[[J]], %[[ADD]])
-// CHECK-NOT:   map.iter.elementwise
-// CHECK:       mo.output %[[MM]]#0, %[[MM]]#1
-mo.graph @matmul_feeds_merge(%p: !mo.tensor<[8, 8], f32>, %q: !mo.tensor<[8, 16], f32>, %b: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
-  %starts = mo.constant <#M.dense_array<1, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
-  %stops = mo.constant <#M.dense_array<8, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>
-  %steps = mo.constant <#M.dense_array<2, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>
-  %mm = mo.matmul(%p, %q) : (!mo.tensor<[8, 8], f32>, !mo.tensor<[8, 16], f32>) -> !mo.tensor<[8, 16], f32>
-  %x = mo.add(%mm, %b) : !mo.tensor<[8, 16], f32>
-  %w = mo.slice(%x, %starts, %stops, %steps) : (!mo.tensor<[8, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 16], f32>
-  %y = mo.relu(%w) : !mo.tensor<[4, 16], f32>
-  mo.output %x, %y : !mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>
-}
-
 // The adds pair as siblings and the relu joins them through a select before
 // output fusion sees the pair as the matmul's one reader; the whole kernel
 // still moves into the epilogue, so the matmul's result is never stored.

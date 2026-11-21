@@ -1254,23 +1254,28 @@ def external_call[
             __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
                 numFixedArgs=fixed_args.__mlir_index__(),
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=None,
             ](loaded_pack)
         else:
-            __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
-                loaded_pack
-            )
+            __mlir_op.`pop.external_call`[
+                func=callee_kgen_string,
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
+                _type=None,
+            ](loaded_pack)
         return rebind_var[return_type](NoneType())
     else:
         comptime if declares_variadic:
             return __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
                 numFixedArgs=fixed_args.__mlir_index__(),
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=return_type,
             ](loaded_pack)
         else:
             return __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=return_type,
             ](loaded_pack)
 
@@ -1319,5 +1324,6 @@ def _external_call_const[
             `targetMem0 = none, `,
             `targetMem1 = none>`,
         ],
+        expandPackOperandIdx=__mlir_attr.`0 : index`,
         _type=return_type,
     ](loaded_pack)

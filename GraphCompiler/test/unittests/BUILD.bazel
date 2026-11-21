@@ -25,6 +25,7 @@ modular_cc_test(
         "//bazel/internal:MLIR",
     ],
     deps = [
+        "//GraphCompiler:GGUF",
         "//GraphCompiler:MGPPrimitives",
         "//GraphCompiler:SafeTensor",
         "//GraphCompiler:Support",
@@ -51,6 +52,7 @@ modular_cc_test(
     local_defines = ["ENABLE_MGP_KERNEL_LOGGING"],
     tags = ["kernel_logging"],
     deps = [
+        "//GraphCompiler:GGUF",
         "//GraphCompiler:MGPPrimitivesWithLogging",
         "//GraphCompiler:SafeTensor",
         "//GraphCompiler:Support",

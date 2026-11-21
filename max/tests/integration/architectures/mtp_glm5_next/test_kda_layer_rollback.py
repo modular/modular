@@ -203,7 +203,6 @@ class _Rollback(Module[..., tuple[Tensor, ...]]):
     """The verify and rollback beside the decode steps, in one graph."""
 
     def __init__(self, layer: KimiDeltaAttention, num_steps: int) -> None:
-        layer.pin_decode_fma = True
         self.layer = layer
         self.num_steps = num_steps
 

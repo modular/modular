@@ -21,6 +21,7 @@ from typing import Any
 
 import numpy as np
 from max import functional as F
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue, ops
@@ -242,6 +243,10 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         self.index_topk = index_topk
         self.skip_topk = skip_topk
         self.indexer_rope_interleave = indexer_rope_interleave
+        # A pipeline stage that hands its last selection to the next stage
+        # sets this, so its ``full`` layers also return their selection's
+        # token positions (:class:`CarriedSelection`).
+        self.carries_positions = False
 
         # ``shared`` layers carry no indexer weights, and instead reuse the
         # previous full layer's top-k selection.
@@ -749,6 +754,9 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             args[9],
             args[10],
         )
+        # Prefill context parallelism runs on a whole model, never on a
+        # pipeline stage that hands its selection on.
+        assert isinstance(topk_dcp, Tensor)
         topk_pcp, topk_dcp = (
             t if t.dtype == DType.int32 else F.cast(t, DType.int32)
             for t in (topk_pcp, topk_dcp)
@@ -767,14 +775,14 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         layer_idx: Tensor,
         input_row_offsets: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None,
-        prev_topk_indices: Tensor | None,
+        prev_topk_indices: Tensor | CarriedSelection | None,
         reuse_prev_topk: bool,
         indexer_layer_idx: Tensor | None,
         selection_lag: int,
         *,
         hisparse: HiSparseInputs | None = None,
         hisparse_group_size: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor | CarriedSelection]:
         """The attention before ``o_proj``, and its selection."""
         if selection_lag != 0 and not reuse_prev_topk:
             raise ValueError(
@@ -809,19 +817,37 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         if runs_indexer:
             # ``full`` layer: run the lightning indexer and select top-k keys.
             assert self.indexer is not None
-            topk_indices = self.indexer(
-                x,
-                q_a_normed,
-                freqs_cis,
-                input_row_offsets,
-                indexer_kv_collection,
-                # The indexer cache holds only ``full`` layers, so its slot
-                # is this layer's rank among them, not ``layer_idx``.
-                layer_idx if indexer_layer_idx is None else indexer_layer_idx,
-                kv_collection,
-                MHAMaskVariant.CAUSAL_MASK,
-                hisparse,
+            # The indexer cache holds only ``full`` layers, so its slot is
+            # this layer's rank among them, not ``layer_idx``.
+            indexer_slot = (
+                layer_idx if indexer_layer_idx is None else indexer_layer_idx
             )
+            topk_indices: Tensor | CarriedSelection
+            if self.carries_positions:
+                topk_indices = CarriedSelection(
+                    *self.indexer.forward_with_positions(
+                        x,
+                        q_a_normed,
+                        freqs_cis,
+                        input_row_offsets,
+                        indexer_kv_collection,
+                        indexer_slot,
+                        kv_collection,
+                        MHAMaskVariant.CAUSAL_MASK,
+                    )
+                )
+            else:
+                topk_indices = self.indexer(
+                    x,
+                    q_a_normed,
+                    freqs_cis,
+                    input_row_offsets,
+                    indexer_kv_collection,
+                    indexer_slot,
+                    kv_collection,
+                    MHAMaskVariant.CAUSAL_MASK,
+                    hisparse,
+                )
         else:
             # ``shared`` layer: reuse the previous full layer's top-k selection
             # (cross-layer index sharing). Physical rows name a page and
@@ -859,7 +885,11 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
-            sparse_indices=topk_indices,
+            sparse_indices=(
+                topk_indices.rows
+                if isinstance(topk_indices, CarriedSelection)
+                else topk_indices
+            ),
             sparse_indices_stride=sparse_selection_width(
                 self.kv_params, self.index_topk
             ),
@@ -1041,10 +1071,29 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         return attn_out, topk_indices
 
 
-Selection = Tensor | tuple[Tensor, Tensor]
+@tree.dataclass
+class CarriedSelection:
+    """A pipeline stage's top-k selection, which it hands the next stage.
+
+    The sparse MLA kernels read physical cache rows, and a row names a page of
+    the cache it was resolved against: an NVFP4 cache's scale rows count that
+    cache's pages, whose size differs from stage to stage. So a cut hands on
+    the token positions, and the next stage resolves them against its own
+    cache.
+    """
+
+    rows: Tensor
+    """The selected keys' rows in this stage's MLA cache."""
+
+    positions: Tensor
+    """The selected keys' token positions, ``-1`` past a token's selection."""
+
+
+Selection = Tensor | tuple[Tensor, Tensor] | CarriedSelection
 """A layer's top-k selection: one tensor, or under predicated prefill
 context parallelism its DCP rows and each rank's own PCP rows, which the
-next layer reads without a join."""
+next layer reads without a join, or on a pipeline stage that hands it on, a
+:class:`CarriedSelection`."""
 
 
 def _columns(t: Tensor, n: int) -> Tensor:

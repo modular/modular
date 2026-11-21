@@ -171,6 +171,27 @@ LogicalResult GraphOp::verify() {
         "Expressions are not (currently) allowed in function signatures");
   }
 
+  // `$` is reserved for names that `ParamExprBuilder` mints during result type
+  // inference; a declared parameter with such a name could collide with one.
+  auto checkName = [&](StringRef name, Operation *at) -> LogicalResult {
+    if (!name.starts_with("$"))
+      return success();
+    return at->emitError("parameter name '")
+           << name
+           << "' uses the '$' prefix reserved for names created during result "
+              "type inference";
+  };
+  for (ParamDeclAttr param : getAllParams())
+    if (failed(checkName(param.getName().getValue(), getOperation())))
+      return failure();
+  WalkResult walked = getBody().walk([&](KGEN::ParamDeclareOp declare) {
+    return failed(checkName(declare.getName().getValue(), declare))
+               ? WalkResult::interrupt()
+               : WalkResult::advance();
+  });
+  if (walked.wasInterrupted())
+    return failure();
+
   return useDefGraph.verify(nullptr, cache);
 }
 

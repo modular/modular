@@ -1424,7 +1424,7 @@ protected:
 
 private:
   friend class PinnedCompletionFlag;
-  friend class MemoryManagerFreeList;
+  friend class DeviceAllocatorContext;
   friend class DeviceBuffer;
   // Frees run from a `DeviceBuffer` destructor, so a failure can only be
   // recorded as a pending error on the context.

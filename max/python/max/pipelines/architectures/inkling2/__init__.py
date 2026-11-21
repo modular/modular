@@ -12,6 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """The Inkling 2 architecture on ModuleV3."""
 
-from .arch import inkling2_arch
+from .arch import inkling2_arch, inkling2_dspark_draft_arch, inkling2_loop_arch
 
-__all__ = ["inkling2_arch"]
+__all__ = [
+    "inkling2_arch",
+    "inkling2_dspark_draft_arch",
+    "inkling2_loop_arch",
+]

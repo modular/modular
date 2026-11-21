@@ -22,6 +22,13 @@ filegroup(
     ),
 )
 
+filegroup(
+    name = "enum_many_cases_fixture",
+    testonly = True,
+    srcs = ["enum_many_cases.mojo"],
+    visibility = ["//Mojo/test/mojo-integration/extern-c-abi:__pkg__"],
+)
+
 # Crash tests that time out in external CI after the crash handler prints its
 # trace. Temporary, until crash-test slowness is fixed.
 _SKIP_EXTERNAL_CI = [

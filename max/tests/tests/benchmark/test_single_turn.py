@@ -20,11 +20,18 @@ import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets import SampledRequest
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatMessage,
+    ImageContentBlock,
+    ImageURLDetail,
+    TextContentBlock,
+)
 from max.benchmark.benchmark_shared.request import RequestFuncInput
 from max.benchmark.benchmark_shared.single_turn import (
     build_single_turn_request_input,
     get_request,
 )
+from tests.benchmark.benchmark_fakes import make_sampled_request
 
 
 async def generate_test_intervals(
@@ -37,13 +44,7 @@ async def generate_test_intervals(
     np.random.seed(seed)
 
     mock_requests = [
-        SampledRequest(
-            prompt_formatted=f"Test prompt {i}",
-            prompt_len=10,
-            output_len=20,
-            encoded_images=[],
-            ignore_eos=True,
-        )
+        make_sampled_request(f"Test prompt {i}", prompt_len=10, output_len=20)
         for i in range(num_samples)
     ]
 
@@ -177,16 +178,7 @@ async def test_request_intervals_infinite_rate() -> None:
 @pytest.mark.asyncio
 async def test_get_request_stops_when_sleep_would_exceed_deadline() -> None:
     np.random.seed(0)
-    requests = [
-        SampledRequest(
-            prompt_formatted=f"p{i}",
-            prompt_len=1,
-            output_len=1,
-            encoded_images=[],
-            ignore_eos=True,
-        )
-        for i in range(50)
-    ]
+    requests = [make_sampled_request(f"p{i}", output_len=1) for i in range(50)]
     timing_data: dict[str, list[float]] = {}
     deadline_ns = time.perf_counter_ns() + int(0.1 * 1e9)
 
@@ -241,13 +233,7 @@ def test_build_single_turn_request_input_records_the_adapter(
 ) -> None:
     built = build_single_turn_request_input(
         benchmark_task="text-generation",
-        request=SampledRequest(
-            prompt_formatted="hi",
-            prompt_len=1,
-            output_len=8,
-            encoded_images=[],
-            ignore_eos=True,
-        ),
+        request=make_sampled_request("hi", output_len=8),
         model_id="base-model",
         lora_id=lora_id,
         api_url="http://localhost:8000/v1/chat/completions",
@@ -260,19 +246,60 @@ def test_build_single_turn_request_input_records_the_adapter(
 
 
 @pytest.mark.parametrize(
+    ("prompt_formatted", "expected"),
+    [
+        pytest.param("hi", False, id="text"),
+        pytest.param(
+            [
+                ChatMessage(
+                    role="user",
+                    content=[
+                        TextContentBlock(text="what is this?"),
+                        ImageContentBlock(
+                            image_url=ImageURLDetail(
+                                url="data:image/jpeg;base64,AAA"
+                            )
+                        ),
+                    ],
+                )
+            ],
+            True,
+            id="image-in-content",
+        ),
+    ],
+)
+def test_build_single_turn_request_input_marks_a_prompt_with_an_image(
+    prompt_formatted: str | list[ChatMessage], expected: bool
+) -> None:
+    """batch-job attaches images to the prompt messages and leaves
+    ``encoded_images`` empty, so the flag has to come from the messages."""
+    built = build_single_turn_request_input(
+        benchmark_task="text-generation",
+        request=SampledRequest(
+            prompt_formatted=prompt_formatted,
+            prompt_len=1,
+            output_len=8,
+            encoded_images=[],
+            ignore_eos=True,
+        ),
+        model_id="base-model",
+        lora_id=None,
+        api_url="http://localhost:8000/v1/chat/completions",
+        sampling=SamplingConfig(),
+        max_output_len=None,
+    )
+    assert isinstance(built, RequestFuncInput)
+    assert built.prompt_carries_image is expected
+
+
+@pytest.mark.parametrize(
     ("disable_ignore_eos", "expected"), [(False, True), (True, False)]
 )
 def test_disable_ignore_eos_lets_a_forced_request_stop(
     disable_ignore_eos: bool, expected: bool
 ) -> None:
     """The flag drops ``ignore_eos``; the target length still caps output."""
-    request = SampledRequest(
-        prompt_formatted="Test prompt",
-        prompt_len=10,
-        output_len=20,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    request = make_sampled_request("Test prompt", prompt_len=10, output_len=20)
 
     built = build_single_turn_request_input(
         benchmark_task="text-generation",

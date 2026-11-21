@@ -23,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from max.gpu.host import DeviceContext
 from std.memory import Layout as AllocLayout, dealloc
 from internal_utils import (
@@ -137,7 +137,7 @@ def run_reduce[
             )
 
         reduce_launch[reduce_dim=axis](
-            shape,
+            Coord(shape),
             StaticTuple[_, num_reductions](init),
             input_fn,
             output_fn,
@@ -199,7 +199,7 @@ def main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        comptime dims = shape
+        comptime dims = coord_to_index_list(shape)
         run_reduce[dtype, cache_busting=cache_busting, axis=axis](
             m,
             dims,

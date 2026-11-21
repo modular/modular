@@ -1,35 +1,104 @@
-load("//bazel:api.bzl", "mojo_library")
+load("//bazel:api.bzl", "mojo_library", "mojo_package_group")
 load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
 
 package(default_visibility = ["//max:consumers"])
 
-# Raw sources for plugin overlays.
-filegroup(
-    name = "srcs",
-    srcs = glob(["**/*.mojo"]),
-    visibility = ["//plugins:__subpackages__"],
+# `builtin_kernels` is a namespace rather than a package: it holds no
+# `__init__.mojo`, so each module below precompiles on its own and they build in
+# parallel. `import_path = ".."` puts the import root above this directory, so
+# every module keeps the name it had when one package held them all.
+
+# Modules that need another one in this namespace. Everything else needs none,
+# which is what lets them start at once.
+_DEPS = {
+    "_naive_tile_matmul": [":_tile_fusion"],
+    "attention": [":_coords"],
+    "bundled": [":_checks"],
+    "conv": [":conv_filter_layout"],
+    "distributed": [":_checks"],
+    "ep": [":_checks"],
+    "gather_scatter": [
+        ":_checks",
+        ":concat_shapes",
+    ],
+    "kernels": [
+        ":_checks",
+        ":_coords",
+        ":concat_shapes",
+        ":conv_filter_layout",
+        ":nan_check",
+    ],
+    "qk_rms_norm_rope_store": [":monoids"],
+    "quantization_ops": [":rowwise_normalization"],
+    "reductions": [
+        ":rowwise_normalization",
+        ":rowwise_reductions",
+    ],
+    "routed_rows_rms_norm": [":monoids"],
+    "rowwise_normalization": [":monoids"],
+    "rowwise_reductions": [":monoids"],
+}
+
+_COMMON_DEPS = [
+    "//max:algorithm",
+    "//max:builtin_primitives",
+    "//max:comm",
+    "//max:extensibility",
+    "//max:kv_cache",
+    "//max:layout",
+    "//max:linalg",
+    "//max:max_mojo",
+    "//max:nn",
+    "//max:quantization",
+    "//max:shmem",
+    "//max:state_space",
+    "@mojo//:std",
+]
+
+MODULES = [init.removesuffix("/__init__.mojo") for init in glob(["*/__init__.mojo"])]
+
+[
+    mojo_library(
+        name = module,
+        srcs = glob([module + "/**/*.mojo"]),
+        docs_base_path = "kernels",
+        ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
+        import_path = "..",
+        use_production_compiler_for_asan = True,
+        validate_missing_docs = False,
+        deps = _COMMON_DEPS + _DEPS.get(module, []),
+    )
+    for module in MODULES
+]
+
+# One label for the whole namespace, for a target that wants the registry
+# rather than a particular module. It is not a package and has no import name.
+mojo_package_group(
+    name = "builtin_kernels",
+    visibility = ["//visibility:public"],
+    deps = [":" + module for module in MODULES],
 )
 
-mojo_library(
-    name = "builtin_kernels",
-    srcs = glob(["**/*.mojo"]),
-    docs_base_path = "kernels",
-    ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
-    use_production_compiler_for_asan = True,
-    validate_missing_docs = False,
-    deps = [
-        "//max:algorithm",
-        "//max:builtin_primitives",
-        "//max:comm",
-        "//max:extensibility",
-        "//max:kv_cache",
-        "//max:layout",
-        "//max:linalg",
-        "//max:max_mojo",
-        "//max:nn",
-        "//max:quantization",
-        "//max:shmem",
-        "//max:state_space",
-        "@mojo//:std",
-    ],
-)
+# Raw sources for plugin overlays, one filegroup per module so an overlay
+# replaces a file in the module it belongs to. Only the overlaid modules get
+# one: an unused filegroup trips the unused-targets lint.
+_OVERLAID_MODULES = [
+    "_tile_fusion",
+    "attention",
+    "distributed",
+    "elementwise",
+    "gather_scatter",
+    "kernels",
+    "linalg_ops",
+    "reductions",
+    "rowwise_reductions",
+]
+
+[
+    filegroup(
+        name = module + "_srcs",
+        srcs = glob([module + "/**/*.mojo"]),
+        visibility = ["//plugins:__subpackages__"],
+    )
+    for module in _OVERLAID_MODULES
+]

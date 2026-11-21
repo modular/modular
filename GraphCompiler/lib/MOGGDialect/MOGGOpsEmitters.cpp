@@ -705,8 +705,7 @@ LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
 
   ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(
       cast<SimdType>(getResult().getType()).getElementType());
-  if (dtypeOr.isError())
-    return emitOpError("concat select yields a non-scalar value");
+  ASSERT_STREAM(!dtypeOr.isError(), "the verifier requires a !mogg.simd");
   MojoValue dtype = state.mlirDTypeToMojoType(*dtypeOr);
 
   // A foreach closure's index is a `Coord` of the loop's own rank.
@@ -1564,14 +1563,15 @@ monoidType(EmitMojoState &state, RowwiseReduceOp fold, const MojoValue &width) {
       state.registry.lookupKernelBySymName(fold.getMonoid()));
   StringRef widthParam = adaptor.reduction->getWidthParam().getValue();
   DictionaryAttr bound = fold.getParamsAttr();
-  if (widthParam.empty() || !bound)
-    return fold.emitOpError("has no width parameter or bound params");
+  ASSERT_STREAM(!widthParam.empty() && bound,
+                "`declVerifyReduction` requires a width parameter and "
+                "`mogg-rowwise-bind-monoids` binds the parameters");
   SmallVector<MojoValue> params;
   for (NamedAttribute param : bound) {
     ErrorOr<DType> dtype =
         M::MO::fromMLIRType(cast<TypeAttr>(param.getValue()).getValue());
-    if (dtype.isError())
-      return fold.emitOpError("binds a parameter to a non-dtype type");
+    ASSERT_STREAM(!dtype.isError(),
+                  "`mogg-rowwise-bind-monoids` binds dtype parameters only");
     params.push_back(MojoValue(param.getName().getValue())
                          .equal(state.mlirDTypeToMojoType(*dtype)));
   }
@@ -1607,12 +1607,18 @@ static LogicalResult bindRowValues(EmitMojoState &state, Region &region,
 }
 
 // Lowers the body of `phase` inside a phase lambda of width `width`, at the
-// element index `idx`, reading the row's tile as `tile`.
+// element index `idx`, reading the row's tile as `tile`. Its loads use the
+// Row's alignment:
+//
+//   comptime al = Context[params].element_alignment[dtype, w]()
 static LogicalResult lowerPhaseBody(EmitMojoState &state,
                                     RowwisePhaseOpInterface phase,
                                     const MojoValue &width,
-                                    const MojoValue &alignment,
                                     const MojoValue &tile) {
+  const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+  MojoValue alignment =
+      state.file->comptime(kStructRowwiseContext[info.params].get(
+          kParameterElementAlignment)[{info.dtype, width}]({}));
   auto parametersScope =
       state.enterRegion<ElementwiseLambdaRegion>(width, alignment);
   state.setMojoValueFor(phase.getIndexArg(), "idx");
@@ -1700,13 +1706,15 @@ rowwiseLaunchArgs(CallRowwiseOp op, EmitMojoState &state, MojoValue bodyFn,
 //       body, shape, ctx)
 LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   RowwiseTileOp tile = getTile();
-  if (!tile || !getAccum() || !getNumPhases() || !getDtypeSize() ||
-      !getSimdMonoid())
-    return emitOpError("isn't legalized for the Row API");
+  ASSERT_STREAM(tile && getAccum() && getNumPhases() && getDtypeSize() &&
+                    getSimdMonoid(),
+                "a rowwise body reaches emit only after "
+                "`mogg-rowwise-set-launch-params`");
   ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(tile.getType().getElementType());
   ErrorOr<DType> accumOr = M::MO::fromMLIRType(*getAccum());
-  if (dtypeOr.isError() || accumOr.isError())
-    return emitOpError("has a non-dtype `dtype` or `accum`");
+  ASSERT_STREAM(!dtypeOr.isError() && !accumOr.isError(),
+                "`mogg-rowwise-set-launch-params` binds the tile's dtype and "
+                "accumulation dtype");
   MojoValue dtype = state.mlirDTypeToMojoType(*dtypeOr);
   MojoValue accum = state.mlirDTypeToMojoType(*accumOr);
 
@@ -1728,8 +1736,8 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   auto simdFold = llvm::find_if(folds, [&](RowwiseReduceOp fold) {
     return fold.getMonoidAttr() == getSimdMonoidAttr();
   });
-  if (simdFold == folds.end())
-    return emitOpError("has no fold for its SIMD monoid");
+  ASSERT_STREAM(simdFold != folds.end(),
+                "`mogg-rowwise-set-launch-params` picks a bound fold's monoid");
   FailureOr<MojoValue> simdMonoid = monoidType(state, *simdFold, 1);
   if (failed(simdMonoid))
     return failure();
@@ -1879,6 +1887,7 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 //
 //   @inline(.always)
 //   def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:     (1)
+//     comptime al = Context[params].element_alignment[dtype, w]()
 //     <fold body, reading `tile`>
 //   var acc = row.reduce[Monoid[..., W = params.simd_width]](           (2)
 //       contribute, load)
@@ -1886,8 +1895,8 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 // `dtype` and the call's arguments are a cache's when the fold reads one
 // (`PhaseTile`).
 LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
-  if (!getFieldsAttr())
-    return emitOpError("has no bound fields");
+  ASSERT_STREAM(getFieldsAttr(),
+                "a fold reaches emit only after `mogg-rowwise-bind-monoids`");
   const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
   auto yield = cast<YieldOp>(getBody().front().getTerminator());
   PhaseTile tile = phaseTile(state, *this);
@@ -1904,9 +1913,9 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
       MojoBuilder::LambdaInline::kAlways, false, false, "var",
       [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
-        if (failed(lowerPhaseBody(state, *this,
-                                  functionBody.parameter(kParameterTileWidth),
-                                  1, functionBody.arguments[0].resolvedName))) {
+        MojoValue width = functionBody.parameter(kParameterTileWidth);
+        if (failed(lowerPhaseBody(state, *this, width,
+                                  functionBody.arguments[0].resolvedName))) {
           failedToLower = true;
           return;
         }
@@ -1954,13 +1963,8 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
       false, "var", [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
         MojoValue width = functionBody.parameter(kParameterTileWidth);
-        // comptime al = Context[params].element_alignment[dtype, w]()
-        MojoValue alignment =
-            state.file->comptime(kStructRowwiseContext[info.params].get(
-                kParameterElementAlignment)[{info.dtype, width}]({}));
-        failedToLower =
-            failed(lowerPhaseBody(state, *this, width, alignment,
-                                  functionBody.arguments[0].resolvedName));
+        failedToLower = failed(lowerPhaseBody(
+            state, *this, width, functionBody.arguments[0].resolvedName));
       });
   if (failedToLower)
     return failure();
@@ -1997,11 +2001,7 @@ LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
       [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
         MojoValue width = functionBody.parameter(kParameterTileWidth);
-        // comptime al = Context[params].element_alignment[dtype, w]()
-        MojoValue alignment =
-            state.file->comptime(kStructRowwiseContext[info.params].get(
-                kParameterElementAlignment)[{info.dtype, width}]({}));
-        if (failed(lowerPhaseBody(state, *this, width, alignment,
+        if (failed(lowerPhaseBody(state, *this, width,
                                   functionBody.arguments[0].resolvedName))) {
           failedToLower = true;
           return;
@@ -2485,51 +2485,51 @@ static MojoValue instantiateTileFusionStruct(EmitMojoState &state,
 /// (LegacyTileMojoTraits.h). The struct is emitted even when nothing is fused,
 /// because the kernel calls `store` or `compute` on every tile. Remove with the
 /// legacy tile traits.
-static LogicalResult emitLegacyTileTraitEpilogue(TileCreateEpilogueOp op,
-                                                 EmitMojoState &state) {
+LogicalResult
+TileCreateEpilogueOp::emitLegacyTileTraitEpilogue(EmitMojoState &state) {
   state.declare(kLegacyTileFusionDefs);
   MojoBuilder &builder = *state.file;
-  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(op.getElementType());
+  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(getElementType());
   if (dtypeOr.isError())
-    return op.emitOpError("failed to convert epilogue element type to Mojo");
-  Block &body = op.getBody().front();
-  FailureOr<unsigned> rank = fusedRegionRank(op, op.getShape());
+    return emitOpError("failed to convert epilogue element type to Mojo");
+  Block &body = getBody().front();
+  FailureOr<unsigned> rank = fusedRegionRank(*this, getShape());
   if (failed(rank))
     return failure();
-  bool isCompute = op.getLane() == TileFusionLane::Compute;
+  bool isCompute = getLane() == TileFusionLane::Compute;
 
   // Body args are (value, index, captures...); capture 0 is the store target.
   SmallVector<TileCapture> captures;
-  for (auto [i, cap] : llvm::enumerate(op.getCaptures())) {
+  for (auto [i, cap] : llvm::enumerate(getCaptures())) {
     FailureOr<TileCapture> capture =
-        makeTileCapture(op, cap, body.getArgument(2 + i), i);
+        makeTileCapture(*this, cap, body.getArgument(2 + i), i);
     if (failed(capture))
       return failure();
     captures.push_back(*capture);
   }
   FailureOr<MojoValue> name = emitTileFusionStruct(
-      op, state, isCompute ? TileFusionKind::Compute : TileFusionKind::Store,
+      *this, state, isCompute ? TileFusionKind::Compute : TileFusionKind::Store,
       body, captures, /*index=*/body.getArgument(1),
       /*value=*/body.getArgument(0), /*storeTarget=*/body.getArgument(2),
-      *dtypeOr, op.getDevice());
+      *dtypeOr, getDevice());
   if (failed(name))
     return failure();
   MojoValue fusion = instantiateTileFusionStruct(state, *name, captures);
 
-  StringRef deviceLabel = op.getDevice();
+  StringRef deviceLabel = getDevice();
   bool devicePassable = deviceLabel != kCPULabel;
   MojoValue dtypeParam = state.mlirDTypeToMojoType(*dtypeOr);
   MojoValue alignmentParam(static_cast<uint64_t>(
       M::Driver::getPreferredAlignment(deviceLabel.str())));
   MojoValue layoutVar =
-      builder.var(rowMajorLayout(state.getMojoValueFor(op.getShape())));
+      builder.var(rowMajorLayout(state.getMojoValueFor(getShape())));
   MojoValue layoutType = kFnTypeOf({layoutVar});
   MojoValue fusionType = kFnTypeOf({fusion});
   MojoValue wrapper;
   if (isCompute) {
     MojoValue baseSlice = emitBaseSliceFromPtr(
         state, dtypeParam, *rank, layoutVar, alignmentParam,
-        state.getMojoValueFor(op.getOutputPtr()));
+        state.getMojoValueFor(getOutputPtr()));
     // The wrapper's `handle` is `Pointer[Scalar[dtype], MutUntrackedOrigin]`;
     // a slice's `unsafe_ptr()` yields `MutAnyOrigin`, so retag the origin.
     MojoValue basePtr = builder.var(MojoValue(
@@ -2544,14 +2544,14 @@ static LogicalResult emitLegacyTileTraitEpilogue(TileCreateEpilogueOp op,
         dtypeParam, layoutType, alignmentParam, fusionType, devicePassable,
         !devicePassable}]({fusion, layoutVar});
   }
-  state.setMojoValueFor(op.getTensor(), builder.var(wrapper));
+  state.setMojoValueFor(getTensor(), builder.var(wrapper));
   return success();
 }
 
 LogicalResult TileCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   // TODO(GEX-4340): the legacy tile traits are the only tile epilogue form
   // until GEX-4467.
-  return emitLegacyTileTraitEpilogue(*this, state);
+  return emitLegacyTileTraitEpilogue(state);
 }
 
 /// Drives a standalone elementwise body through an `ElementwiseFusionTile`
@@ -2850,37 +2850,41 @@ static FailureOr<MojoValue> collectDtypesTuple(EmitMojoState &state,
       dtypeMojoValues);
 }
 
-LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
-  // Emits the per-index closure directly, then calls `_foreach` with it.
-  // `_foreach`'s `Lambda` parameter needs a blanket `{var}` capture clause, the
-  // only convention that works for a closure capturing register-passable
-  // values (see `MojoBuilder::lambda`'s `captureConvention`). As in the fusion
-  // functors, each source is captured as its decomposed `ManagedTensorSlice`
-  // components, so loads/stores go through
-  // `simd_{load_from,store_into}_tensor_pointer`.
-  //
-  // The closure's comptime parameters are `[width, element_alignment]`;
-  // `TensorLoadOp`/`TensorStoreOp` read them from the context pushed below.
-  MojoValue shape = state.getMojoValueFor(getShape());
-  MojoValue context = state.getMojoValueFor(getDeviceContext());
-  ValueRange capturing = getCapturing();
+// A loop's per-index closure, and the dtypes its body touches, from which the
+// loop picks its SIMD width.
+struct ForeachClosure {
+  MojoValue lambda;
+  MojoValue dtypes;
+};
 
+// Emits the per-index closure that runs `body`, a loop's body over
+// `capturing`. The loop primitive's `Lambda` parameter needs a blanket `{var}`
+// capture clause, the only convention that works for a closure capturing
+// register-passable values (see `MojoBuilder::lambda`'s `captureConvention`).
+// As in the fusion functors, each source is captured as its decomposed
+// `ManagedTensorSlice` components, so loads/stores go through
+// `simd_{load_from,store_into}_tensor_pointer`.
+//
+// The closure's comptime parameters are `[width, element_alignment]`;
+// `TensorLoadOp`/`TensorStoreOp` read them from the context pushed below.
+static FailureOr<ForeachClosure> emitForeachClosure(EmitMojoState &state,
+                                                    Operation *op,
+                                                    ValueRange capturing,
+                                                    Region &body) {
   // Decompose each capture into the (ptr, layout) the closure captures plus its
   // static alignment, exactly as `emitMapFusionFunctor` does. Built here, in
   // the enclosing scope, so the `{var}` closure captures the (ptr, layout)
   // locals (not the slice) and can name the comptime alignment alias.
   FailureOr<SmallVector<FusedCaptureInfo>> captureInfosOr =
-      collectFusedCaptureInfos(state, *this, capturing);
+      collectFusedCaptureInfos(state, op, capturing);
   if (failed(captureInfosOr))
     return failure();
   SmallVector<FusedCaptureInfo> captureInfos = *captureInfosOr;
 
-  // Infer simd_width from all dtypes touched anywhere in the closure body.
-  FailureOr<MojoValue> dtypesTuple = collectDtypesTuple(state, getBody());
+  // The SIMD width comes from every dtype touched anywhere in the body.
+  FailureOr<MojoValue> dtypesTuple = collectDtypesTuple(state, body);
   if (failed(dtypesTuple))
-    return emitOpError("mogg.call.foreach: could not determine capture dtype");
-  MojoValue simdWidth =
-      kFnGetSimdWidthForDtypes[{*dtypesTuple, context.get("target")}]({});
+    return op->emitOpError("could not determine capture dtype");
 
   bool errOccurred = false;
   // Blanket `{var}` capture -- see the capture-convention note above.
@@ -2896,8 +2900,8 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
             /*width=*/functionBody.parameter(kParameterWidth),
             /*alignment=*/functionBody.parameter(kParameterElementAlignment));
 
-        Block &body = getBody().front();
-        ArrayRef<BlockArgument> args = body.getArguments();
+        Block &block = body.front();
+        ArrayRef<BlockArgument> args = block.getArguments();
         for (unsigned i = 0; i < captureInfos.size(); ++i) {
           // Record the captured decomposed MTS components for the body's
           // loads/stores; the closure captures trivial values only, so all are
@@ -2909,23 +2913,57 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
         state.setMojoValueFor(args.back(),
                               functionBody.arguments[0].resolvedName);
 
-        errOccurred = llvm::any_of(body, [&](Operation &op) {
-          return state.lowerOpToMojo(&op).failed();
+        errOccurred = llvm::any_of(block, [&](Operation &bodyOp) {
+          return state.lowerOpToMojo(&bodyOp).failed();
         });
       });
   if (errOccurred)
     return failure();
+  return ForeachClosure{lambdaVal, *dtypesTuple};
+}
 
-  // `_foreach` picks a width that divides the limit: at compile time when it
-  // is an `Idx`, at launch when it is known only at run time. Widths are
-  // powers of two, so a run-time limit only needs the largest power of two
-  // dividing its dims, not their GCD.
-  SmallVector<MojoValue> parameters = {
-      kParameterPreferredSimdWidth.equal(simdWidth)};
-  SmallVector<MojoValue> arguments = {shape, lambdaVal, context};
+// The loop primitive picks a width that divides the limit: at compile time
+// when it is an `Idx`, at launch when it is known only at run time. Widths are
+// powers of two, so a run-time limit only needs the largest power of two
+// dividing its dims, not their GCD.
+LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
+  MojoValue context = state.getMojoValueFor(getDeviceContext());
+  FailureOr<ForeachClosure> closure =
+      emitForeachClosure(state, *this, getCapturing(), getBody());
+  if (failed(closure))
+    return failure();
+  MojoValue simdWidth =
+      kFnGetSimdWidthForDtypes[{closure->dtypes, context.get("target")}]({});
+  SmallVector<MojoValue> arguments = {state.getMojoValueFor(getShape()),
+                                      closure->lambda, context};
   appendMaxSimdWidthArg(arguments, getMaxSimdWidth(), getDynamicMaxSimdWidth(),
                         state);
-  state.file->call(getCallee(), parameters, arguments);
+  state.file->call(getCallee(), {kParameterPreferredSimdWidth.equal(simdWidth)},
+                   arguments);
+  return success();
+}
+
+// The registered primitive picks the SIMD width from the dtypes on the target
+// the kernel compiles for:
+//
+//   def lambda_N[width: Int, element_alignment: Int = 1](idx: Coord) {var}:
+//       ...  # the body
+//   _graph_blob_foreach[dtypes = StaticTuple[DType, N](...)](shape, lambda_N)
+LogicalResult GraphBlobForeachOp::emitMojo(EmitMojoState &state) {
+  PrimitiveDeclOp primitive =
+      state.registry.lookupPrimitive(getOperationName());
+  if (!primitive)
+    return emitOpError("no primitive is registered for this op");
+  FailureOr<ForeachClosure> closure =
+      emitForeachClosure(state, *this, getCapturing(), getBody());
+  if (failed(closure))
+    return failure();
+  SmallVector<MojoValue> arguments = {state.getMojoValueFor(getShape()),
+                                      closure->lambda};
+  appendMaxSimdWidthArg(arguments, getMaxSimdWidth(), getDynamicMaxSimdWidth(),
+                        state);
+  state.file->call(MojoValue(primitiveMojoName(primitive)),
+                   {kParameterDtypes.equal(closure->dtypes)}, arguments);
   return success();
 }
 

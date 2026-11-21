@@ -30,7 +30,8 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
                             const FrontendOptions &frontendOptions,
                             llvm::ArrayRef<std::string> includePaths,
                             DiagnosticFormat diagnosticFormat,
-                            llvm::raw_ostream &os) {
+                            llvm::raw_ostream &os,
+                            llvm::ArrayRef<std::string> outputNamespace) {
   llvm::SourceMgr sourceManager;
   sourceManager.setDiagHandler(getDiagHandler(diagnosticFormat));
   sourceManager.setIncludeDirs(includePaths);
@@ -44,7 +45,8 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
   CompilationOptions compilationOptions;
   MojoParserContext parserContext(sourceManager, &context, compilationOptions,
                                   frontendOptions);
-  LIT::ASTDecl *moduleDecl = parserContext.parseFileOrPackage(resolvedPath);
+  LIT::ASTDecl *moduleDecl =
+      parserContext.parseFileOrPackage(resolvedPath, outputNamespace);
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return false;
 

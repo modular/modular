@@ -1289,15 +1289,12 @@ LogicalResult StructLoadIndirectOp::inferReturnTypes(
            << adaptor.getStructValue().getType();
   // The result type is the same as the input type, but with a layer of pointers
   // stripped off. The struct type may be parametric, so we need to use the
-  // ParamOperatorAttr to remove the pointer layer. Preserve `isParamPack` on
-  // the result when the operand is a variadic pack (same as former
-  // `kgen.pack.load`).
+  // ParamOperatorAttr to remove the pointer layer.
   auto mappedTypes = ParamOperatorAttr::get(
       POC::VariadicPtrRemoveMap, structType.getElementTypesVariadic());
   assert(structType.getDomain() != StructDomain::Value && "Unexpected domain");
   types.push_back(StructType::get(ctx, mappedTypes, /*memOnly*/ {},
-                                  /*minAlign*/ {}, structType.getIsParamPack(),
-                                  structType.getDomain()));
+                                  /*minAlign*/ {}, structType.getDomain()));
   return success();
 }
 

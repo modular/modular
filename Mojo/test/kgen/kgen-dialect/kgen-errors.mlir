@@ -316,28 +316,28 @@ kgen.func @invalid(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !k
 // -----
 
 // expected-error @below {{element #1 of pack argument #0 should be a `!kgen.pointer` but got: 'index'}}
-kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>, index) isParamPack>> pack_mut) {
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>, index)>> pack_mut) {
   hlcf.unreachable
 }
 
 // -----
 
 // expected-error @below {{element #0 of pack argument #0 should be a `!kgen.pointer` but got: '!kgen.struct<(pointer<none>)>'}}
-kgen.func @invalid(%arg0: !kgen.pointer<struct<(struct<(pointer<none>)>) isParamPack>> pack_imm_mem) {
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(struct<(pointer<none>)>)>> pack_imm_mem) {
   hlcf.unreachable
 }
 
 // -----
 
 // expected-error @below {{argument #0 with convention 'pack_imm_mem' in func type should be a `!kgen.pointer`}}
-kgen.func @invalid(%arg0: !kgen.struct<(pointer<index>) isParamPack> pack_imm_mem) {
+kgen.func @invalid(%arg0: !kgen.struct<(pointer<index>)> pack_imm_mem) {
   hlcf.unreachable
 }
 
 // -----
 
 // expected-error @below {{func type cannot have more than one pack argument}}
-kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_imm_mem, %arg1: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) {
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>)>> pack_imm_mem, %arg1: !kgen.pointer<struct<(pointer<index>)>> pack_mut) {
   hlcf.unreachable
 }
 

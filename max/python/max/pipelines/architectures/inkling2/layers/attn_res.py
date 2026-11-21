@@ -20,11 +20,14 @@ position-local: it holds no state across steps.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 from max import functional as F
 from max.dtype import DType
+from max.graph import TensorType, TensorValue, ops
 from max.nn import Module
 from max.tensor import Tensor
+from max.tensor.sharding import NamedMapping
 
 from .norm import unweighted_rms_norm
 
@@ -61,7 +64,11 @@ class AttnResQueries(Module[[], None]):
 
 
 def attn_res_mix(
-    sources: Sequence[Tensor], queries: Tensor, *, normalize_values: bool
+    sources: Sequence[Tensor],
+    queries: Tensor,
+    *,
+    normalize_values: bool,
+    queries_are_scaled: bool = False,
 ) -> list[Tensor]:
     """Mixes the sources once for each query row, in float32.
 
@@ -73,6 +80,9 @@ def attn_res_mix(
             ``[tokens, hidden]``.
         queries: ``[hidden]`` or ``[num_queries, hidden]`` float32.
         normalize_values: Whether the mixture averages the normalized sources.
+        queries_are_scaled: Whether ``queries`` already carry
+            ``hidden ** -0.5``. The looped checkpoints scale their message
+            queries once, upstream, so this mix must not scale them again.
 
     Returns:
         One float32 ``[tokens, hidden]`` mixture per query row.
@@ -84,7 +94,107 @@ def attn_res_mix(
     values = normed if normalize_values else stack
     mixes = []
     for row in range(int(queries.shape[0])):
-        scores = (normed * queries[row]).sum(axis=-1) * hidden**-0.5
+        scores = (normed * queries[row]).sum(axis=-1)
+        if not queries_are_scaled:
+            scores = scores * hidden**-0.5
         probs = F.softmax(scores, axis=1)
         mixes.append((probs * values).sum(axis=1).squeeze(1))
     return mixes
+
+
+# One CTA per token covers 1024 threads x 8 elements in
+# `Kernels/lib/attn_res/inkling2_mix_norm.mojo`; the launcher raises beyond.
+_MIX_NORM_MAX_HIDDEN = 1024 * 8
+# The op's variadic block list is compiled for 1..15 entries.
+_MIX_NORM_MAX_BLOCKS = 15
+
+
+def _inkling2_mix_norm(
+    blocks: list[Tensor],
+    partial: Tensor,
+    query: Tensor,
+    gamma: Tensor,
+    *,
+    query_row: int,
+    norm_eps: float,
+    normalize_values: bool,
+    out_type: TensorType,
+) -> TensorValue:
+    # Under TP this runs once per device, so the output takes that device.
+    device = TensorValue(partial).device
+    local_out_type = TensorType(out_type.dtype, out_type.shape, device=device)
+    return cast(
+        TensorValue,
+        ops.custom(
+            "inkling2_mix_norm",
+            device=device,
+            values=[TensorValue(b) for b in blocks]
+            + [TensorValue(partial), TensorValue(query), TensorValue(gamma)],
+            out_types=[local_out_type],
+            parameters={
+                "eps": ATTN_RES_EPS,
+                "norm_eps": norm_eps,
+                "normalize_values": normalize_values,
+                "query_row": query_row,
+                "score_scale": int(out_type.shape[-1]) ** -0.5,
+            },
+        )[0],
+    )
+
+
+_inkling2_mix_norm_op = F.functional(_inkling2_mix_norm)
+
+
+def can_fuse_mix_norm(blocks: Sequence[Tensor], partial: Tensor) -> bool:
+    """Whether ``attn_res_mix_norm`` can take this site's sources."""
+    return (
+        1 <= len(blocks) <= _MIX_NORM_MAX_BLOCKS
+        and int(partial.shape[-1]) <= _MIX_NORM_MAX_HIDDEN
+    )
+
+
+def attn_res_mix_norm(
+    blocks: Sequence[Tensor],
+    partial: Tensor,
+    query: Tensor,
+    gamma: Tensor,
+    *,
+    query_row: int,
+    norm_eps: float,
+    normalize_values: bool,
+) -> Tensor:
+    """``Inkling2RMSNorm(attn_res_mix([*blocks, partial], query)[query_row])``.
+
+    Fused into one launch. The partial keeps its dtype (the MLP site's float32
+    residual is never rounded on the way in); the output is bfloat16, as the
+    sublayer norm's is.
+
+    Args:
+        blocks: The stored block sums, ``[tokens, hidden]`` bfloat16 each.
+        partial: The live partial sum, ``[tokens, hidden]``.
+        query: ``[hidden]`` or ``[num_queries, hidden]`` float32 queries.
+        query_row: The query row to mix for.
+        gamma: The sublayer norm's weight.
+        norm_eps: The sublayer norm's epsilon.
+        normalize_values: Whether the mixture averages the normalized sources.
+    """
+    hidden = int(partial.shape[-1])
+    queries = query.reshape([-1, hidden])
+    out_device = (
+        partial.mesh.devices[0] if partial.is_distributed else partial.device
+    )
+    out_type = TensorType(DType.bfloat16, partial.shape, device=out_device)
+    result = _inkling2_mix_norm_op(
+        [b.cast(DType.bfloat16) for b in blocks],
+        partial,
+        queries,
+        gamma,
+        query_row=query_row,
+        norm_eps=norm_eps,
+        normalize_values=normalize_values,
+        out_type=out_type,
+    )
+    # The op has no sharding rule, so restate the replicated placement.
+    if partial.is_distributed:
+        result = result.rebind_mapping(NamedMapping(partial.mesh, (None, None)))
+    return result

@@ -2242,6 +2242,62 @@ def test_connector_load_failures_are_silent_while_none_fail() -> None:
     assert "connector_load_failures" not in metrics.to_log_extra()
 
 
+def test_create_carries_connector_quarantined_blocks_through() -> None:
+    """The managers' quarantined block count reaches the batch."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        connector_quarantined_blocks=12
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.connector_quarantined_blocks == 12
+
+
+def test_connector_quarantined_blocks_are_sent_wherever_dkv_is_attached() -> (
+    None
+):
+    """The level is sent with dKV attached, zero included, so a dashboard
+    has the series before the first block is held."""
+    for held in (0, 12):
+        metrics = _make_metrics(
+            dkv_total_clients=1, connector_quarantined_blocks=held
+        )
+
+        with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+            metrics.publish_metrics()
+
+        mock_metrics.cache_connector_quarantined_blocks.assert_called_once_with(
+            held
+        )
+        assert metrics.to_log_extra()["connector_quarantined_blocks"] == held
+
+
+def test_connector_quarantined_blocks_are_silent_without_dkv_or_any_held() -> (
+    None
+):
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_quarantined_blocks.assert_not_called()
+    assert "connector_quarantined_blocks" not in metrics.to_log_extra()
+
+
 def test_create_carries_dkv_fail_open_counters_through() -> None:
     """The connector's fail-open counts reach the batch, with no host tier."""
     kv_cache = MagicMock()
@@ -2307,6 +2363,10 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_own_runs_short_of_hint.assert_not_called()
     mock_metrics.dkv_split_loads.assert_not_called()
     mock_metrics.dkv_overlapped_peer_lookups.assert_not_called()
+    mock_metrics.dkv_overlap_reads_moved_by_probe.assert_not_called()
+    mock_metrics.dkv_overlap_blocks_moved_by_probe.assert_not_called()
+    mock_metrics.dkv_own_runs_short_of_probe.assert_not_called()
+    mock_metrics.dkv_own_run_blocks_short_of_probe.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks_evicted.assert_not_called()
     mock_metrics.dkv_peer_writeback_blocks_dropped.assert_not_called()
@@ -2413,6 +2473,10 @@ def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
         dkv_own_runs_short_of_hint=2,
         dkv_split_loads=3,
         dkv_overlapped_peer_lookups=4,
+        dkv_overlap_reads_moved_by_probe=6,
+        dkv_overlap_blocks_moved_by_probe=8,
+        dkv_own_runs_short_of_probe=7,
+        dkv_own_run_blocks_short_of_probe=9,
         dkv_hinted_lookups=5,
         dkv_hinted_lookup_ms_total=12.5,
     )
@@ -2433,12 +2497,20 @@ def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
     mock_metrics.dkv_own_runs_short_of_hint.assert_called_once_with(2)
     mock_metrics.dkv_split_loads.assert_called_once_with(3)
     mock_metrics.dkv_overlapped_peer_lookups.assert_called_once_with(4)
+    mock_metrics.dkv_overlap_reads_moved_by_probe.assert_called_once_with(6)
+    mock_metrics.dkv_overlap_blocks_moved_by_probe.assert_called_once_with(8)
+    mock_metrics.dkv_own_runs_short_of_probe.assert_called_once_with(7)
+    mock_metrics.dkv_own_run_blocks_short_of_probe.assert_called_once_with(9)
     mock_metrics.dkv_hinted_lookups.assert_called_once_with(5)
     mock_metrics.dkv_hinted_lookup_latency.assert_called_once_with(2.5)
     extra = metrics.to_log_extra()
     assert extra["dkv_own_runs_short_of_hint"] == 2
     assert extra["dkv_split_loads"] == 3
     assert extra["dkv_overlapped_peer_lookups"] == 4
+    assert extra["dkv_overlap_reads_moved_by_probe"] == 6
+    assert extra["dkv_overlap_blocks_moved_by_probe"] == 8
+    assert extra["dkv_own_runs_short_of_probe"] == 7
+    assert extra["dkv_own_run_blocks_short_of_probe"] == 9
     assert extra["dkv_hinted_lookups"] == 5
     assert extra["dkv_hinted_lookup_avg_ms"] == 2.5
 

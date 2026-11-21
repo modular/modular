@@ -83,11 +83,9 @@ def bench_pad_gpu[
 
 def main() raises:
     comptime dtype = get_defined_dtype["dtype", .float32]()
-    # `int_list_to_tuple` still hands back an `IndexList`; the pad entry
-    # points take the shape as a `Coord`.
-    comptime shape = Coord(
-        int_list_to_tuple[get_defined_shape["shape", "256x256"]()]()
-    )
+    comptime shape = int_list_to_tuple[
+        get_defined_shape["shape", "256x256"]()
+    ]()
     comptime pad_size = get_defined_int["pad_size", 3]()
 
     var m = Bench(BenchConfig(num_repetitions=1))

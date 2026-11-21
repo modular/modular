@@ -39,8 +39,7 @@ from max.gpu.primitives import warp
 from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
 
-from std.utils import IndexList
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord, CoordLike
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from std.sys import get_defined_int
@@ -381,7 +380,7 @@ def row_reduce[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 def reduce_kernel[
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
@@ -402,7 +401,7 @@ def reduce_kernel[
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     init: StaticTuple[Scalar[dtype], num_reductions],
     input_fn: InputFnType,
     output_fn: OutputFnType,
@@ -413,7 +412,7 @@ def reduce_kernel[
     Uses a grid-stride loop to handle more rows than blocks.
 
     Parameters:
-        rank: The tensor rank.
+        shape_types: The element types of the shape `Coord`.
         axis: The axis along which to reduce.
         num_reductions: The number of fused reductions to perform.
         BLOCK_SIZE: The number of threads per block.
@@ -431,15 +430,15 @@ def reduce_kernel[
         output_fn: The lambda to store output elements.
         reduce_fn: The binary reduction function.
     """
-    var row_size = shape[axis]
-    var num_rows = shape.flattened_length() // row_size
+    var row_size = Int(shape[axis])
+    var num_rows = Int(shape.product()) // row_size
 
     with PDL():
         # grid stride loop over rows
         # each block reduces a row, which requires no partial reductions
         for row_idx in range(block_idx.x, num_rows, grid_dim.x):
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, Coord(shape), axis
+                row_idx, shape, axis
             )
 
             var row_accum = row_reduce[
@@ -467,7 +466,7 @@ def reduce_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 def small_reduce_kernel[
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
@@ -488,7 +487,7 @@ def small_reduce_kernel[
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     init: StaticTuple[Scalar[dtype], num_reductions],
     input_fn: InputFnType,
     output_fn: OutputFnType,
@@ -499,7 +498,7 @@ def small_reduce_kernel[
     per block without shared-memory synchronization.
 
     Parameters:
-        rank: The tensor rank.
+        shape_types: The element types of the shape `Coord`.
         axis: The axis along which to reduce.
         num_reductions: The number of fused reductions to perform.
         BLOCK_SIZE: The number of threads per block.
@@ -517,8 +516,8 @@ def small_reduce_kernel[
         output_fn: The lambda to store output elements.
         reduce_fn: The binary reduction function.
     """
-    var row_size = shape[axis]
-    var num_rows = shape.flattened_length() // row_size
+    var row_size = Int(shape[axis])
+    var num_rows = Int(shape.product()) // row_size
 
     comptime warps_per_block = BLOCK_SIZE // WARP_SIZE
 
@@ -534,7 +533,7 @@ def small_reduce_kernel[
             grid_dim.x * warps_per_block,
         ):
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx + warp_id(), Coord(shape), axis
+                row_idx + warp_id(), shape, axis
             )
 
             # One row per warp, warp collectively reads from global
@@ -591,7 +590,7 @@ def small_reduce_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 def twophase_reduce_kernel[
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
@@ -612,7 +611,7 @@ def twophase_reduce_kernel[
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     init: StaticTuple[Scalar[dtype], num_reductions],
     # GPU kernel entry params backed by device buffers. `MutAnyOrigin` reflects
     # that device memory has no tracked Mojo origin, and matches the buffers'
@@ -632,7 +631,7 @@ def twophase_reduce_kernel[
     counter) reduces all partial results for its row.
 
     Parameters:
-        rank: The tensor rank.
+        shape_types: The element types of the shape `Coord`.
         axis: The axis along which to reduce.
         num_reductions: The number of fused reductions to perform.
         BLOCK_SIZE: The number of threads per block.
@@ -659,17 +658,15 @@ def twophase_reduce_kernel[
     comptime assert (
         simd_width == 1
     ), "twophase_reduce_kernel only currently supports simd_width == 1"
-    var row_size = shape[axis]
-    var num_rows = shape.flattened_length() // row_size
+    var row_size = Int(shape[axis])
+    var num_rows = Int(shape.product()) // row_size
 
     var row_idx, block_in_row = udivmod(block_idx.x, _bpr)
 
     if row_idx >= num_rows:
         return
 
-    var row_coords = _get_nd_indices_from_flat_index(
-        row_idx, Coord(shape), axis
-    )
+    var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
 
     # --- Phase 1: Each block reduces its portion of the row ---
     # Threads are striped across ALL blocks for this row to coalesce reads.
@@ -753,7 +750,7 @@ def twophase_reduce_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 def saturated_reduce_kernel[
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
@@ -774,7 +771,7 @@ def saturated_reduce_kernel[
     simd_width: Int,
     accum_type: DType = get_accum_type[dtype](),
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     init: StaticTuple[Scalar[dtype], num_reductions],
     input_fn: InputFnType,
     output_fn: OutputFnType,
@@ -786,7 +783,7 @@ def saturated_reduce_kernel[
     a non-contiguous axis.
 
     Parameters:
-        rank: The tensor rank.
+        shape_types: The element types of the shape `Coord`.
         axis: The axis along which to reduce.
         num_reductions: The number of fused reductions to perform.
         BLOCK_SIZE: The number of threads per block.
@@ -804,8 +801,8 @@ def saturated_reduce_kernel[
         output_fn: The lambda to store output elements.
         reduce_fn: The binary reduction function.
     """
-    var row_size = shape[axis]
-    var num_rows = shape.flattened_length() // row_size
+    var row_size = Int(shape[axis])
+    var num_rows = Int(shape.product()) // row_size
 
     var global_dim_x = grid_dim.x * block_dim.x
 
@@ -818,7 +815,7 @@ def saturated_reduce_kernel[
         ):
             # Reduce the whole row
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, Coord(shape), axis
+                row_idx, shape, axis
             )
 
             # Declare & initialize registers
@@ -853,7 +850,7 @@ def saturated_reduce_kernel[
 
 def reduce_launch[
     num_reductions: Int,
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     dtype: DType,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
@@ -872,7 +869,7 @@ def reduce_launch[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     init: StaticTuple[Scalar[dtype], num_reductions],
     input_fn: InputFnType,
     output_fn: OutputFnType,
@@ -892,7 +889,7 @@ def reduce_launch[
 
     Parameters:
         num_reductions: The number of fused reductions to perform.
-        rank: The tensor rank.
+        shape_types: The element types of the shape `Coord` (inferred).
         dtype: The data type of the elements.
         InputFnType: The type of `input_fn` (inferred).
         OutputFnType: The type of `output_fn` (inferred).
@@ -907,16 +904,23 @@ def reduce_launch[
         reduce_fn: The binary reduction function.
         ctx: The device context for GPU execution.
 
+    Constraints:
+        The shape `Coord` must be flat (no nested `Coord` elements).
+
     Raises:
         If the GPU kernel launch fails.
     """
+    comptime assert Coord[
+        *shape_types
+    ].is_flat, "`reduce_launch` requires a flat `Coord` shape"
+    comptime rank = Coord[*shape_types].rank
     comptime register_width = 32
     comptime sm_count = ctx.default_device_info.sm_count
 
     comptime packing_factor = 1
 
     var num_rows = (
-        shape.flattened_length() // shape[reduce_dim] // packing_factor
+        Int(shape.product()) // Int(shape[reduce_dim]) // packing_factor
     )
     comptime sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
@@ -936,7 +940,7 @@ def reduce_launch[
     # enough work to justify two-phase kernel
     comptime unsaturated_block_size = 128
     var more_values_than_threads: Bool = (
-        shape[reduce_dim] > unsaturated_block_size
+        Int(shape[reduce_dim]) > unsaturated_block_size
     )
 
     # This assumes row-major layout. The reduce dim is contiguous (innermost)
@@ -951,7 +955,7 @@ def reduce_launch[
     # when a real inner dim supplies the adjacent rows.
     var inner_size = 1
     comptime for i in range(reduce_dim + 1, rank):
-        inner_size *= shape[i]
+        inner_size *= Int(shape[i])
     var reduce_contig_dim: Bool = inner_size == 1
 
     # --- Tier 1: Thread-saturated, non-contiguous reduce_dim ---
@@ -963,7 +967,7 @@ def reduce_launch[
         comptime BLOCK_SIZE = get_defined_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
 
         comptime kernel = saturated_reduce_kernel[
-            rank,
+            shape_types,
             reduce_dim,
             num_reductions,
             BLOCK_SIZE,
@@ -1004,7 +1008,7 @@ def reduce_launch[
         ctx.enqueue_memset(counter_buf, Int32(0))
 
         comptime kernel = twophase_reduce_kernel[
-            rank,
+            shape_types,
             reduce_dim,
             num_reductions,
             BLOCK_SIZE,
@@ -1035,9 +1039,9 @@ def reduce_launch[
         comptime BLOCK_SIZE = get_defined_int[
             "MOJO_REDUCTION_BLOCK_SIZE", 128
         ]()
-        if shape[reduce_dim] < ctx.default_device_info.warp_size:
+        if Int(shape[reduce_dim]) < ctx.default_device_info.warp_size:
             comptime kernel = small_reduce_kernel[
-                rank,
+                shape_types,
                 reduce_dim,
                 num_reductions,
                 BLOCK_SIZE,
@@ -1057,7 +1061,7 @@ def reduce_launch[
             )
         else:
             comptime kernel = reduce_kernel[
-                rank,
+                shape_types,
                 reduce_dim,
                 num_reductions,
                 BLOCK_SIZE,
@@ -1098,7 +1102,7 @@ def _reduce_generator_gpu[
     *,
     reduce_dim: Int,
 ](
-    shape_coord: Coord,
+    shape: Coord,
     init: StaticTuple[Scalar[init_type], num_reductions],
     input_0_fn: InputFnType,
     output_0_fn: OutputFnType,
@@ -1119,7 +1123,7 @@ def _reduce_generator_gpu[
         reduce_dim: The dimension we are reducing.
 
     Args:
-        shape_coord: The shape of the tensor we are reducing.
+        shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
@@ -1129,10 +1133,8 @@ def _reduce_generator_gpu[
     Raises:
         If the GPU kernel launch fails.
     """
-
-    var shape = coord_to_index_list(shape_coord)
     comptime reduce_dim_normalized = (
-        shape.size + reduce_dim
+        type_of(shape).rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
     reduce_launch[reduce_dim=reduce_dim_normalized](

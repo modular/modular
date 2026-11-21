@@ -12,7 +12,9 @@
 ##===----------------------------------------------------------------------===##
 # 8x B200 recipe for Hy4-preview MXFP8, after vLLM's: tensor and expert
 # parallel 8, MTP with three speculative tokens, the hy_v4 reasoning and tool
-# parsers.
+# parsers. `max serve` refuses Hy4: `max export --config-file` builds the
+# pipeline artifact from this recipe, and Mach serves it
+# (mach/docs/models/hy4.md).
 #
 # Attention is tensor-parallel (data_parallel_degree 1 across eight devices).
 # vLLM's FLASHMLA_SPARSE backend has no MAX flag; the sparse MLA kernel is the

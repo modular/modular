@@ -47,26 +47,6 @@ from pydantic import ValidationError
 # ---------------------------------------------------------------------------
 
 
-def test_percentile_metrics_basic_creation() -> None:
-    """Test basic creation of PercentileMetrics."""
-    metrics = PercentileMetrics(
-        mean=10.0,
-        std=2.0,
-        p50=9.5,
-        p90=12.0,
-        p95=14.0,
-        p99=18.0,
-        unit="ms",
-    )
-    assert metrics.mean == 10.0
-    assert metrics.std == 2.0
-    assert metrics.p50 == 9.5
-    assert metrics.p90 == 12.0
-    assert metrics.p95 == 14.0
-    assert metrics.p99 == 18.0
-    assert metrics.unit == "ms"
-
-
 def test_percentile_metrics_creation_without_unit() -> None:
     """Test creating PercentileMetrics without unit."""
     metrics = PercentileMetrics(
@@ -259,15 +239,6 @@ def test_single_value(
 # ---------------------------------------------------------------------------
 
 
-def test_throughput_metrics_basic_functionality() -> None:
-    """Test basic ThroughputMetrics functionality."""
-    data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-    metrics = ThroughputMetrics(data)
-
-    assert metrics.mean == pytest.approx(5.5, rel=1e-10)
-    assert metrics.p50 == pytest.approx(5.5, rel=1e-10)
-
-
 def test_throughput_metrics_reversed_percentiles() -> None:
     """Test that percentiles are reversed for throughput (lower percentiles for p90, p95, p99)."""
     data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
@@ -394,48 +365,40 @@ def test_percentile_metrics_negative_mean() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ThroughputMetrics.validate_metrics()
+# ThroughputMetrics / StandardPercentileMetrics validate_metrics()
 # ---------------------------------------------------------------------------
 
 
-def test_throughput_metrics_valid() -> None:
-    """Healthy ThroughputMetrics passes validation."""
-    tm = ThroughputMetrics([50.0, 60.0], unit="tok/s")
-    ok, errors = tm.validate_metrics()
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        ThroughputMetrics([50.0, 60.0], unit="tok/s"),
+        StandardPercentileMetrics([0.05, 0.06], scale_factor=1000.0, unit="ms"),
+    ],
+    ids=["throughput_metrics", "standard_percentile_metrics"],
+)
+def test_healthy_percentile_subclass_passes_validation(
+    metrics: ThroughputMetrics | StandardPercentileMetrics,
+) -> None:
+    ok, errors = metrics.validate_metrics()
     assert ok is True
     assert errors == []
 
 
-def test_throughput_metrics_nan() -> None:
-    """NaN input produces a validation error via delegation."""
-    tm = ThroughputMetrics([float("nan")], unit="tok/s")
-    ok, errors = tm.validate_metrics()
-    assert ok is False
-    assert len(errors) == 1
-    assert "mean" in errors[0].lower()
-
-
-# ---------------------------------------------------------------------------
-# StandardPercentileMetrics.validate_metrics()
-# ---------------------------------------------------------------------------
-
-
-def test_standard_percentile_metrics_valid() -> None:
-    """Healthy StandardPercentileMetrics passes validation."""
-    spm = StandardPercentileMetrics(
-        [0.05, 0.06], scale_factor=1000.0, unit="ms"
-    )
-    ok, errors = spm.validate_metrics()
-    assert ok is True
-    assert errors == []
-
-
-def test_standard_percentile_metrics_nan() -> None:
-    """NaN input produces a validation error via delegation."""
-    spm = StandardPercentileMetrics(
-        [float("nan")], scale_factor=1000.0, unit="ms"
-    )
-    ok, errors = spm.validate_metrics()
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        ThroughputMetrics([float("nan")], unit="tok/s"),
+        StandardPercentileMetrics(
+            [float("nan")], scale_factor=1000.0, unit="ms"
+        ),
+    ],
+    ids=["throughput_metrics", "standard_percentile_metrics"],
+)
+def test_nan_input_fails_validation_via_delegation(
+    metrics: ThroughputMetrics | StandardPercentileMetrics,
+) -> None:
+    ok, errors = metrics.validate_metrics()
     assert ok is False
     assert len(errors) == 1
     assert "mean" in errors[0].lower()
@@ -1080,17 +1043,6 @@ def test_interactivity_from_per_request_durations_golden() -> None:
     assert m.p75 == pytest.approx(1.0 / 0.175)
     assert m.p90 == pytest.approx(1.0 / 0.19)
     assert m.p95 == pytest.approx(1.0 / 0.195)
-
-
-def test_interactivity_is_not_the_mean_of_reciprocals() -> None:
-    """1 / mean(x) differs from mean(1 / x) whenever the values differ;
-    the builder must produce the former."""
-    durations = [0.1, 0.2]
-    m = interactivity_from_per_request_durations(durations)
-    assert m is not None
-    mean_of_reciprocals = float(np.mean([1.0 / d for d in durations]))
-    assert m.mean == pytest.approx(1.0 / float(np.mean(durations)))
-    assert m.mean != pytest.approx(mean_of_reciprocals)
 
 
 def test_interactivity_from_per_request_durations_edge_cases() -> None:

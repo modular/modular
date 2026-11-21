@@ -17,7 +17,6 @@ from std.collections.string.string_span import get_static_string
 from std.math import align_up, ceildiv
 from max.gpu.host.info import B200
 from std.math.uutils import ufloordiv
-from std.atomic import Atomic
 from std.sys import simd_width_of
 from std.sys import size_of, get_defined_bool
 import max.gpu.primitives.block as block
@@ -50,7 +49,7 @@ from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx
 from std.utils.index import StaticTuple
-from std.utils.numerics import get_accum_type, max_finite
+from std.utils.numerics import get_accum_type
 
 from .matmul import matmul
 from .matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
@@ -151,71 +150,6 @@ def quantize_static_scaled_fp8[
         shape=(Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
     )
-
-
-@__name("fp8_zero_scale_global_kernel")
-def zero_scale_global_kernel(scale_global: MutPointer[Float32, MutAnyOrigin]):
-    """Zeros the global FP8 scale factor in a single thread.
-
-    Writes ``0`` to ``scale_global[0]`` directly rather than using
-    ``enqueue_fill``, which can deadlock under CUDA graph replay when the GPU
-    is already spinning inside a collectives kernel.
-
-    Args:
-        scale_global: Pointer to the single FP32 global scale to zero.
-    """
-    # GENAI-512: Avoid using `enqueue_fill` for this operation as this can
-    # deadlock when using CUDA graphs. The graph node for the async memset
-    # could try to load a CUDA kernel, but if the GPU is spinning inside a
-    # collectives kernel, then the graph replay will deadlock.
-    scale_global[0] = 0
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
-)
-@__name(
-    t"fp8_max_reduction_scale_{in_dtype}_{out_dtype}_t{num_threads}",
-)
-def max_reduction_scale_kernel[
-    in_dtype: DType,
-    out_dtype: DType,
-    input_layout: TensorLayout,
-    scale_layout: TensorLayout,
-    num_threads: Int,
-](
-    scale_global: TileTensor[mut=True, .float32, scale_layout, MutAnyOrigin],
-    input_tensor: TileTensor[in_dtype, input_layout, MutAnyOrigin],
-):
-    """Per-row strided max-|x| reduction into a global FP8 scale.
-
-    One block scans one row: threads stride across the hidden dimension, reduce
-    to a row-wise max absolute value, then thread 0 atomically updates
-    ``scale_global`` with ``row_max / max_finite[out_dtype]``.
-
-    Args:
-        scale_global: Length-1 FP32 ``TileTensor``; must be zero before launch.
-        input_tensor: Rank-2 input.
-    """
-    comptime fp8_max = Float32(max_finite[out_dtype]())
-    var tid = thread_idx.x
-    var row = block_idx.x
-    var hidden_size = Int(input_tensor.dim[1]())
-
-    var thread_max = Float32(0)
-    with PDL():
-        for e in range(tid, hidden_size, num_threads):
-            var v = abs(
-                input_tensor.load(Coord(row, e)).cast[.float32]()
-            ).reduce_max()
-            thread_max = max(thread_max, v)
-
-        var row_max = block.max[block_size=num_threads, broadcast=True](
-            thread_max
-        )
-
-        if tid == 0:
-            _ = Atomic[Float32].max(scale_global.ptr, row_max / fp8_max)
 
 
 @inline(.always)
@@ -329,7 +263,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scale_ub.cast[scales_dtype](),
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 scales_kernel,
                 grid_dim=(num_rows, num_cols // group_size, 1),
                 block_dim=num_threads,
@@ -347,7 +281,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 Int32(num_rows),
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 reduce_kernel,
                 grid_dim=1,
                 block_dim=num_threads,
@@ -365,7 +299,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scales.address_space_cast[.GENERIC](),
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 quant_kernel,
                 grid_dim=(num_rows, num_cols // group_size, 1),
                 block_dim=num_threads,
@@ -387,7 +321,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_rows,
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 kernel,
                 grid_dim=(num_rows, num_cols // group_size, 1),
                 block_dim=num_threads,
@@ -557,7 +491,7 @@ def quantize_dynamic_scaled_fp8[
                 )
                 grid_rows = min(grid_rows, grid_row_cap)
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 kernel,
                 grid_dim=(grid_rows, num_groups, 1),
                 block_dim=num_threads,
@@ -961,7 +895,7 @@ def quantize_dynamic_scaled_fp8_grouped_mx[
             passes_per_warp,
         )
 
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             kernel,
             grid_dim=(num_rows, ceildiv(passes, passes_per_warp), 1),
             block_dim=num_threads,
@@ -1475,7 +1409,7 @@ def batched_quantize_dynamic_scaled_fp8[
         scale_ub.cast[scales_dtype](),
     )
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=(num_rows, num_cols // group_size, batch_size),
         block_dim=num_threads,
@@ -1735,7 +1669,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     comptime _trace_string = get_static_string[
         trace_arg(
             "A_scales",
-            (
+            Coord(
                 a_scales.static_shape[0] if a_scales.static_shape[0]
                 > -1 else 0,
                 a_scales.static_shape[1] if a_scales.static_shape[1]
@@ -1746,7 +1680,7 @@ def _matmul_dynamic_scaled_fp8_impl[
         ";",
         trace_arg(
             "B_scales",
-            (
+            Coord(
                 b_scales.static_shape[0] if b_scales.static_shape[0]
                 > -1 else 0,
                 b_scales.static_shape[1] if b_scales.static_shape[1]

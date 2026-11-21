@@ -1,9 +1,11 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect -verify-parameters --kgen-print-inline-type-values | FileCheck %s
+// RUN: kgen-opt -allow-unregistered-dialect --kgen-print-inline-type-values %s | FileCheck %s
 // RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect --kgen-print-inline-type-values | FileCheck %s
 
 // COM: A scalar-bool `and` folds its operands into one set of clauses, inserted
 // COM: in the order written, so several cases below state the same facts in
-// COM: more than one order.
+// COM: more than one order. The first RUN line checks a single fold, since a
+// COM: refold of the printed form can hide an order dependence.
 
 #A = #kgen.type<typevalue<#kgen.trait_ref<[@A]>>, type> : !kgen.type
 #B = #kgen.type<typevalue<#kgen.trait_ref<[@B]>>, type> : !kgen.type
@@ -104,7 +106,7 @@ kgen.generator @fold_upcast_conformance<T: !DerivedTrait, c: scalar<bool>>() {
 }
 
 // CHECK-LABEL: @fold_or
-kgen.generator @fold_or<a: scalar<bool>, b: scalar<bool>>() {
+kgen.generator @fold_or<a: scalar<bool>, b: scalar<bool>, c: scalar<bool>>() {
   // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <a>
   kgen.param.constant: scalar<bool> = <and(a, or(a, b))>
 
@@ -113,6 +115,12 @@ kgen.generator @fold_or<a: scalar<bool>, b: scalar<bool>>() {
   kgen.param.constant: scalar<bool> = <and(or(a, b), a)>
   // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b)>
   kgen.param.constant: scalar<bool> = <and(or(a, b), b, a)>
+
+  // COM: A conjunctive disjunct can need the stored and the incoming fact.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b)>
+  kgen.param.constant: scalar<bool> = <and(or(and(a, b), c), a, b)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(a, b)>
+  kgen.param.constant: scalar<bool> = <and(a, b, or(and(a, b), c))>
   hlcf.return
 }
 
@@ -136,6 +144,34 @@ kgen.generator @fold_not<a: scalar<bool>, b: scalar<bool>>() {
   // COM: `not(a)` implies `not(and(a, b))`, so the wider one adds nothing.
   // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <not(a)>
   kgen.param.constant: scalar<bool> = <and(not(a), not(and(a, b)))>
+  hlcf.return
+}
+
+// COM: A later fact that shrinks a stored `not` makes it as strong as an
+// COM: incoming `not`, so it drops the stored `not`s and `or`s that it implies.
+// COM: Each fold is stated in both orders.
+// CHECK-LABEL: @fold_not_shrink
+kgen.generator @fold_not_shrink<a: scalar<bool>, b: scalar<bool>, c: scalar<bool>, d: scalar<bool>>() {
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(a), b)>
+  kgen.param.constant: scalar<bool> = <and(not(and(a, b)), not(and(a, c)), b)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(a), b)>
+  kgen.param.constant: scalar<bool> = <and(b, not(and(a, c)), not(and(a, b)))>
+
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(a), b)>
+  kgen.param.constant: scalar<bool> = <and(or(not(a), d), not(and(a, b)), b)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(a), b)>
+  kgen.param.constant: scalar<bool> = <and(b, not(and(a, b)), or(not(a), d))>
+  hlcf.return
+}
+
+// COM: Two of four negated pairs are shrunk by the positive pair, and the
+// COM: shrunk ones imply a third.
+// CHECK-LABEL: @fold_not_shrink_pairs
+kgen.generator @fold_not_shrink_pairs<a4: scalar<bool>, a5: scalar<bool>, b4: scalar<bool>, b5: scalar<bool>>() {
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(a4), not(b5), a5, b4)>
+  kgen.param.constant: scalar<bool> = <and(not(and(a4, b4)), not(and(a5, b5)), not(and(a4, b5)), a5, b4)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(not(a4), not(b5), a5, b4)>
+  kgen.param.constant: scalar<bool> = <and(b4, a5, not(and(a4, b5)), not(and(a5, b5)), not(and(a4, b4)))>
   hlcf.return
 }
 

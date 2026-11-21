@@ -459,6 +459,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     """
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -1164,6 +1165,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     comptime use_block_wise = not (use_per_tensor or use_per_channel)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def write_to_cache[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {
@@ -1263,6 +1265,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         # `write_to_cache`; once it takes a value closure, this one serves both
         # branches and the legacy closure goes away.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def write_to_cache_blockwise[
             dtype: DType, width: SIMDLength, *, alignment: Int
         ](idx: Coord, val: SIMD[dtype, width]) {
@@ -1636,6 +1639,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     """
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
@@ -3860,6 +3864,7 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
+    @__allow_legacy_any_origin_fields
     def _dispatch_flash_attention[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k, var v, imm}:
@@ -4318,6 +4323,7 @@ def _flare_mla_decode_kv_cache_ragged[
     var num_partitions_val = num_partitions_in.or_else(0)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _dispatch_mla[
         mask_t: MHAMask
     ](mask: mask_t) raises {
@@ -4849,6 +4855,7 @@ def _cross_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
+    @__allow_legacy_any_origin_fields
     def _dispatch_flash_attention[
         mask_t: MHAMask
     ](mask: mask_t) raises {

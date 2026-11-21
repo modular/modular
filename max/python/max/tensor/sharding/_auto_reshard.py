@@ -29,9 +29,9 @@ from __future__ import annotations
 import contextvars
 import sys
 import warnings
-from collections.abc import Generator, Iterable, Sequence
+from collections.abc import Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
-from types import FrameType
+from types import FrameType, MappingProxyType
 from typing import Literal
 
 from .action import Action, AxisAssignment
@@ -57,6 +57,13 @@ _AUTO_RESHARD_POLICY: contextvars.ContextVar[
 )
 """The allowed transitions and the reshard mode of the innermost block."""
 
+_AXIS_TRANSITIONS: contextvars.ContextVar[
+    Mapping[str, frozenset[Transition]]
+] = contextvars.ContextVar(
+    "max_auto_reshard_axis_transitions", default=MappingProxyType({})
+)
+"""The allowed transitions of each mesh axis an enclosing block names."""
+
 _RESHARD_MODES = ("silent", "warn", "raise")
 
 MeshAxisChoice = tuple[
@@ -81,6 +88,7 @@ against, so the report can suggest moves the allowed set could reach.
 def auto_reshard(
     allowed_transitions: Iterable[Transition] | None = None,
     *,
+    axes: Mapping[str, Iterable[Transition]] | None = None,
     mode: Literal["silent", "warn", "raise"] | None = None,
 ) -> Generator[None]:
     """Sets how ops in this block may change the placement of their inputs.
@@ -114,12 +122,21 @@ def auto_reshard(
         # Only allreduce partial sums.
         with auto_reshard({(Partial, Replicated)}):
             ...
+        # Any move, except on "dp": only allreduce partial sums there.
+        with auto_reshard(ALL_TRANSITIONS, axes={"dp": {(Partial, Replicated)}}):
+            ...
 
     Args:
         allowed_transitions: The ``(from, to)`` placement-type pairs the
             picker may plan with. A row needing any other transition is
             not allowed; if no row is allowed on some mesh axis, the op
-            raises.
+            raises. Applies to every mesh axis ``axes`` does not name.
+        axes: Allowed transitions for single mesh axes, by axis name, such
+            as ``{"dp": {(Sharded, Replicated)}}``. On a mesh axis with one
+            of these names, ops in the block use this set instead of
+            ``allowed_transitions``. Names that a mesh does not have are
+            ignored. Inner blocks inherit these sets, unless they name the
+            same axis.
         mode: What happens when a chosen row moves an input.
             ``"silent"`` moves it, ``"warn"`` moves it and emits a
             :class:`UserWarning` naming the move and the ``transfer_to``
@@ -137,7 +154,8 @@ def auto_reshard(
         if allowed_transitions is None
         else frozenset(allowed_transitions)
     )
-    for transition in allowed:
+    named = {a: frozenset(t) for a, t in (axes or {}).items()}
+    for transition in allowed.union(*named.values()):
         if not (
             isinstance(transition, tuple)
             and len(transition) == 2
@@ -157,9 +175,11 @@ def auto_reshard(
     token = _AUTO_RESHARD_POLICY.set(
         (allowed, enclosing_mode if mode is None else mode)
     )
+    axis_token = _AXIS_TRANSITIONS.set({**_AXIS_TRANSITIONS.get(), **named})
     try:
         yield
     finally:
+        _AXIS_TRANSITIONS.reset(axis_token)
         _AUTO_RESHARD_POLICY.reset(token)
 
 
@@ -243,7 +263,10 @@ def pick_reshard_action(
             "A rule's tensor operands must be on meshes with the same shape "
             "and axis names."
         )
-    allowed, mode = _AUTO_RESHARD_POLICY.get()
+    default, mode = _AUTO_RESHARD_POLICY.get()
+    allowed_on = [
+        _AXIS_TRANSITIONS.get().get(name, default) for name in mesh.axis_names
+    ]
     placements = [
         [
             p[axis] if axis < len(p) else Replicated()
@@ -253,6 +276,7 @@ def pick_reshard_action(
     ]
     per_axis: list[MeshAxisChoice] = []
     for axis in range(mesh.ndim):
+        allowed = allowed_on[axis]
         current = tuple(p[axis] for p in placements)
         scored: list[tuple[float, int, AxisAssignment]] = []
         for row in dict.fromkeys(
@@ -312,9 +336,10 @@ def pick_reshard_action(
             operand_names=operand_names,
             operand_layouts=layouts,
             mesh=mesh,
-            allowed_transitions=allowed,
+            allowed_transitions=default,
             mode=mode,
             per_axis=per_axis,
+            allowed_on=allowed_on,
         )
         if undecided or mode == "raise":
             raise ShardingError(report)
@@ -374,6 +399,7 @@ def format_reshard_report(
     allowed_transitions: frozenset[Transition],
     mode: str,
     per_axis: Sequence[MeshAxisChoice],
+    allowed_on: Sequence[frozenset[Transition]],
 ) -> str:
     """Lays out every input, then the picker's choice on each mesh axis.
 
@@ -395,6 +421,7 @@ def format_reshard_report(
             ``"raise"``.
         per_axis: What the picker saw and did on each mesh axis, in
             mesh-axis order.
+        allowed_on: The allowed transitions on each mesh axis.
 
     Returns:
         The report, ready to print or to carry in a warning or an error.
@@ -412,6 +439,11 @@ def format_reshard_report(
         slot
         for current, _, _, committed in per_axis
         for slot in moved_input_slots(current, committed)
+    }
+    named = {
+        name: a
+        for name, a in zip(mesh.axis_names, allowed_on, strict=True)
+        if a != allowed_transitions
     }
     call = f"{op_name}({', '.join(names)})"
     if undecided_axes:
@@ -438,13 +470,11 @@ def format_reshard_report(
     lines.append(
         f"  {'region':<{width}} : "
         f"auto_reshard({_format_transition_set(allowed_transitions)}, "
-        f'mode="{mode}")'
+        f'{_format_axes(named)}mode="{mode}")'
     )
     if per_axis:
         lines += ["", "  decided per mesh axis"]
-        lines += _format_candidate_table(
-            names, mesh, allowed_transitions, per_axis
-        )
+        lines += _format_candidate_table(names, mesh, allowed_on, per_axis)
         lines.append("")
         for slot, name in enumerate(names):
             if slot in moved_slots:
@@ -459,21 +489,27 @@ def format_reshard_report(
                     f"({mapping}{',' if len(needed) == 1 else ''})))"
                 )
         if undecided_axes:
-            widened = allowed_transitions.union(
-                *(
-                    row_transitions(current, committed)
-                    for current, _, _, committed in per_axis
+            needed_on = {
+                name: row_transitions(current, committed)
+                for name, (current, _, _, committed) in zip(
+                    mesh.axis_names, per_axis, strict=True
                 )
+            }
+            widened = allowed_transitions.union(
+                *(t for name, t in needed_on.items() if name not in named)
             )
+            widened_axes = {n: a | needed_on[n] for n, a in named.items()}
             lines.append(
                 f"  with auto_reshard({_format_transition_set(widened)}, "
-                'mode="silent"):'
+                f'{_format_axes(widened_axes)}mode="silent"):'
             )
         else:
             lines.append('  with auto_reshard(mode="silent"):')
             if any(ranked[0][1] != chosen for _, ranked, chosen, _ in per_axis):
+                every = dict.fromkeys(named, ALL_TRANSITIONS)
                 lines.append(
-                    '  with auto_reshard(ALL_TRANSITIONS, mode="silent"):'
+                    "  with auto_reshard(ALL_TRANSITIONS, "
+                    f'{_format_axes(every)}mode="silent"):'
                     "   # also allows the cheaper rows above"
                 )
     lines.append(f"  at {_first_user_call_site()}")
@@ -483,7 +519,7 @@ def format_reshard_report(
 def _format_candidate_table(
     names: Sequence[str],
     mesh: DeviceMesh,
-    allowed_transitions: frozenset[Transition],
+    allowed_on: Sequence[frozenset[Transition]],
     per_axis: Sequence[MeshAxisChoice],
 ) -> list[str]:
     """Formats one aligned line per candidate row, then the result line."""
@@ -512,13 +548,13 @@ def _format_candidate_table(
                 for s in moved
             ]
             line.append(", ".join(collectives) or "keep")
-            line.append(f"{cost:g}".rjust(6))
+            line.append(f"{cost:g}")
             if row == chosen:
                 resharded = ", ".join(names[s] for s in moved)
                 line.append(
                     f"chosen, reshards {resharded}" if resharded else "chosen"
                 )
-            elif not row_transitions(current, row) <= allowed_transitions:
+            elif not row_transitions(current, row) <= allowed_on[axis]:
                 line.append("not allowed")
             table.append(line)
             axis_cell = ""
@@ -544,10 +580,12 @@ def _format_candidate_table(
         max(len(line[i]) for line in table if i < len(line))
         for i in range(max(len(line) for line in table))
     ]
+    bytes_column = len(names) + 3
     return [
         "  "
         + "  ".join(
-            cell.ljust(w) for cell, w in zip(line, widths, strict=False)
+            cell.rjust(w) if i == bytes_column else cell.ljust(w)
+            for i, (cell, w) in enumerate(zip(line, widths, strict=False))
         ).rstrip()
         for line in table
     ]
@@ -626,6 +664,16 @@ def _format_transition_set(transitions: frozenset[Transition]) -> str:
         )
         + "}"
     )
+
+
+def _format_axes(axes: Mapping[str, frozenset[Transition]]) -> str:
+    """Spells an ``axes=`` argument and its comma, or nothing."""
+    if not axes:
+        return ""
+    sets = ", ".join(
+        f'"{n}": {_format_transition_set(a)}' for n, a in axes.items()
+    )
+    return f"axes={{{sets}}}, "
 
 
 def _first_user_call_site() -> str:

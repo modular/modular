@@ -30,6 +30,7 @@ the QRSCF dispatch chain, before `dispatch_im2col_matmul_conv3d`.
 """
 
 from std.math import divmod
+from std.sys.info import align_of
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
@@ -189,7 +190,7 @@ def dispatch_1x1x1_matmul_conv3d[
             var batch_idx, sp = divmod(m_idx, DHW_out)
             var d_idx, rem = divmod(sp, HW_out)
             var h_idx, w_idx = divmod(rem, W_out)
-            epilogue_fn(
+            epilogue_fn[alignment=max(alignment, align_of[output_type]())](
                 (batch_idx, d_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),
             )

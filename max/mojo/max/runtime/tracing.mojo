@@ -33,7 +33,7 @@ from max.gpu.host import RangeID as _GPURangeID
 from max.gpu.host import _mark as _mark_gpu
 from max.gpu.host import _start_range as _start_gpu_range
 
-from std.utils import IndexList, Variant
+from std.utils import Variant
 from std.os import abort
 
 comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
@@ -569,25 +569,6 @@ def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
 
 
 @inline(.always)
-def trace_arg(name: String, shape: IndexList) -> String:
-    """Helper to stringify the type and shape of a kernel argument for tracing.
-
-    Args:
-        name: The name of the argument.
-        shape: The shape of the argument.
-
-    Returns:
-        A string representation of the argument with its shape.
-    """
-    var s = name + "="
-    for i in range(len(shape)):
-        if i != 0:
-            s += "x"
-        s += String(shape[i])
-    return s
-
-
-@inline(.always)
 def trace_arg(name: String, shape: Coord) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
 
@@ -604,21 +585,6 @@ def trace_arg(name: String, shape: Coord) -> String:
             s += "x"
         s += String(shape[i].value())
     return s
-
-
-@inline(.always)
-def trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
-    """Helper to stringify the type and shape of a kernel argument for tracing.
-
-    Args:
-        name: The name of the argument.
-        shape: The shape of the argument.
-        dtype: The data type of the argument.
-
-    Returns:
-        A string representation of the argument with its shape and data type.
-    """
-    return String(t"{trace_arg(name, shape)}x{dtype}")
 
 
 @inline(.always)

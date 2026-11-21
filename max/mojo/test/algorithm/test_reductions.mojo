@@ -23,7 +23,7 @@ from std.math.math import max as _max, min as _min
 from std.testing import TestSuite
 
 from std.utils.index import StaticTuple
-from std.utils.coord import Coord
+from std.utils.coord import Coord, Idx
 
 
 # CHECK-LABEL: test_reductions
@@ -129,6 +129,22 @@ def test_fused_reductions_inner() raises:
     # CHECK: 5050.0
     print(out[2])
 
+    # A static shape takes the same path. Clear `out` so the checks below
+    # can only pass if this call writes it.
+    out = StaticTuple[Scalar[test_type], num_reductions](0, 0, 0)
+    _reduce_generator[reduce_dim=0](
+        Coord(Idx[size]), init, input_fn, output_fn, reduce_fn
+    )
+
+    # CHECK: 1.0
+    print(out[0])
+
+    # CHECK: 100.0
+    print(out[1])
+
+    # CHECK: 5050.0
+    print(out[2])
+
 
 # CHECK-LABEL: test_fused_reductions_outer
 def test_fused_reductions_outer() raises:
@@ -196,6 +212,13 @@ def test_fused_reductions_outer() raises:
         )
 
     _reduce_generator[reduce_dim=0](shape, init, input_fn, output_fn, reduce_fn)
+
+    # A static reduced dim with a runtime inner dim takes the same path.
+    # CHECK: Column: 0  min:  1.0  max:  99.0  sum:  2500.0
+    # CHECK: Column: 1  min:  2.0  max:  100.0  sum:  2550.0
+    _reduce_generator[reduce_dim=0](
+        Coord(Idx[50], Int64(2)), init, input_fn, output_fn, reduce_fn
+    )
 
 
 # We use a smaller vector so that we do not overflow

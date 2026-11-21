@@ -256,8 +256,6 @@ modular_py_binary(
     testonly = True,
     srcs = ["precompile_all_pipelines.py"],
     ignore_extra_deps = ALL_ARCHITECTURES + [
-        # Unsure if this is actually needed, but likely
-        requirement("gguf"),
     ],
     imports = ["."],
     main = "precompile_all_pipelines.py",
@@ -270,7 +268,6 @@ modular_py_binary(
         "//max/python/max/serve:config",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         requirement("click"),
-        requirement("gguf"),
     ],
 )
 

@@ -343,6 +343,7 @@ def run_mma_fp32_tf32(
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -517,6 +518,7 @@ def run_mma_fp32_bf16(
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -690,6 +692,7 @@ def run_mma_fp32_bf16_2(
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -863,6 +866,7 @@ def run_mma_fp32_fp16(
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -1036,6 +1040,7 @@ def run_mma_fp16_fp16(
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,

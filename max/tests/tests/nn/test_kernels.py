@@ -32,6 +32,7 @@ from max.nn._graph_ops import (
     _moe_sigmoid_gemv_group_limited_router_unsupported,
     block_scaled_preshuffle_grouped_scale_4d,
     grouped_dynamic_block_scaled_matmul_amd,
+    learnable_2d_interp_pos_emb,
 )
 
 
@@ -385,3 +386,48 @@ def test_group_limited_router_rejects_unsupported_routing(
         **{**_GROUP_LIMITED_ROUTER, **overrides}
     )
     assert result is not None and reason in result
+
+
+def _pos_emb_custom_call(**kwargs: Any) -> tuple[mock.MagicMock, TensorType]:
+    """Builds the position-embedding op and returns its ``ops.custom`` call."""
+    gpu = DeviceRef.GPU(0)
+    with (
+        mock.patch.object(ops, "custom", wraps=ops.custom) as custom,
+        Graph(
+            "learnable_2d_interp_pos_emb",
+            input_types=[
+                TensorType(DType.bfloat16, ("tokens", 16), device=gpu),
+                TensorType(DType.bfloat16, (4, 6, 16), device=gpu),
+                TensorType(DType.int64, ("videos", 3), device=gpu),
+                TensorType(DType.float32, (2, 16), device=gpu),
+            ],
+        ) as graph,
+    ):
+        x, weight, grid_thws, time_weight = (v.tensor for v in graph.inputs)
+        out = learnable_2d_interp_pos_emb(
+            x, weight, grid_thws, time_weight, **kwargs
+        )
+        return custom, out.type
+
+
+@pytest.mark.parametrize(
+    "kwargs, bilinear",
+    [
+        ({}, False),
+        ({"interpolation_mode": "bicubic"}, False),
+        ({"interpolation_mode": "bilinear"}, True),
+    ],
+    ids=["default", "bicubic", "bilinear"],
+)
+def test_pos_emb_maps_the_mode_to_the_bilinear_parameter(
+    kwargs: dict[str, str], bilinear: bool
+) -> None:
+    custom, out_type = _pos_emb_custom_call(**kwargs)
+    assert custom.call_args.kwargs["parameters"] == {"bilinear": bilinear}
+    assert out_type.dtype == DType.bfloat16
+    assert [str(dim) for dim in out_type.shape] == ["tokens", "16"]
+
+
+def test_pos_emb_rejects_an_unknown_mode() -> None:
+    with pytest.raises(ValueError, match="'bicubic' or 'bilinear'"):
+        _pos_emb_custom_call(interpolation_mode="nearest")

@@ -278,10 +278,38 @@ def _trim_tail(
     The end, because a fitted first turn opens with the system prompt that
     sessions share. A block longer than the turn's body still trims into that
     prompt, and the session then misses the shared prefix.
+
+    Only a window at the end is encoded, widened until it outsizes the cut, so
+    the cost tracks the tokens dropped rather than the prompt's length.
+
+    Encoding a suffix can merge tokens differently from encoding the whole
+    text, but only in the window's first piece: the window starts inside a
+    word, so that piece is a truncated word, while every later piece is a
+    whole one and splits as it does in the whole text. Keeping the window
+    ``margin`` tokens longer than the cut therefore leaves the differing
+    tokens at least ``margin`` away from the dropped ones. That assumes no
+    single word spans more than ``margin`` (32) tokens.
+
+    The kept head is returned as the original characters rather than as a
+    decode of the whole id sequence. A tokenizer is not obliged to round-trip
+    text through ids unchanged, and re-rendering the head could quietly rewrite
+    the shared system-prompt prefix the carve-out is meant to preserve.
     """
     if num_tokens <= 0:
         return text
-    ids = tokenizer.encode(text, add_special_tokens=False)
+    # Slack past the dropped tokens, so the strict exit test below leaves a
+    # non-empty remainder to decode. Doubles as the widest word the suffix
+    # assumption above tolerates.
+    margin = 32
+    # Seed the window at about eight characters per token, and widen it below
+    # when the text packs more than that into each one.
+    window = (num_tokens + margin) * 8
+    while True:
+        start = max(0, len(text) - window)
+        ids = tokenizer.encode(text[start:], add_special_tokens=False)
+        if start == 0 or len(ids) > num_tokens + margin:
+            break
+        window *= 2
     if num_tokens >= len(ids):
         return ""
-    return tokenizer.decode(ids[:-num_tokens])
+    return text[:start] + tokenizer.decode(ids[:-num_tokens])

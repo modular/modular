@@ -56,7 +56,7 @@ def main() raises:
 
         # Compiles `scale_kernel.__call__` over `type_of(scale_kernel).device_type`,
         # then encodes the host closure into that same layout.
-        ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=N)
+        ctx.enqueue_closure(scale_kernel, grid_dim=1, block_dim=N)
 
         with buf.map_to_host() as h:
             for i in range(N):

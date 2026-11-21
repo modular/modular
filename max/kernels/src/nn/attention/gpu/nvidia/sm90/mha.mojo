@@ -1669,6 +1669,7 @@ def _mha_sm90[
             warpgroup_fence(p_reg_tile)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def p_mul_v(read_idx: UInt32, read_phase: UInt32) {imm}:
             var v_smem_sub = v_tile(read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
@@ -1748,6 +1749,7 @@ def _mha_sm90[
                 old_rowsum[Coord(Idx[row])] = new
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def write_output(
             position: PositionType,
             q_idx: UInt32,

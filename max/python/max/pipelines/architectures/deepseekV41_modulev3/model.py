@@ -19,34 +19,26 @@ import logging
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol
 
 import numpy as np
 from max import functional as F
+from max import tree
 from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph.weights import Weights, WeightsAdapter
+from max.nn.ep import init as ep_init
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPInit
-
-# The export's ep_init graph declares its counter buffers by the same word
-# count EPCommInitializer allocates at runtime, so the engine introspects
-# from the MEF the size it must zero-fill at boot.
-from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
-from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    GraphRole,
-    GraphSpec,
-    KVCacheConfig,
     ModuleV3Outputs,
     ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.registration_runtime import ExpertParallelInputs
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.support.host_memory import available_host_memory, host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -54,9 +46,6 @@ from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoTokenizer
 from typing_extensions import override
-
-if TYPE_CHECKING:
-    from max.pipelines.lib.memory_plan import MemoryPlan
 
 from .batch_processor import DeepseekV41BatchProcessor
 from .deepseekV41 import DeepseekV41
@@ -473,32 +462,23 @@ def engram_static_inputs(
 
 
 def check_parallel_layout(pipeline_config: PipelineConfig) -> None:
-    """Raises unless the pipeline asks for a layout this trunk wires.
+    """Checks TP2/TP4 or one attention replica per expert-parallel device.
 
-    Raises:
-        ValueError: If more than one device serves other than data-parallel
-            attention with expert-parallel MoE over all of them, if
-            ``ep_size`` isn't the device count, or if expert parallelism
-            runs without chunked prefill.
+    Mixed DP/TP layouts and wider TP have no staged contract. EP still
+    requires chunked prefill because its dispatch allocation has a fixed bound.
     """
     ep_size = pipeline_config.runtime.ep_size
     dp = pipeline_config.model.data_parallel_degree
-    # The arch registration lets every multi-GPU layout through, but this
-    # trunk wires exactly one: DP attention with EP over all the devices.
-    # Everything else -- plain tensor parallelism included -- dies deep in
-    # graph staging, so refuse it before the graphs compile, naming the
-    # layout that works. The config's ``device_specs`` is read rather than
-    # a model's devices: an EP1 build (a graph-contract recorder can stage
-    # the model without ``__init__``) never touches the device list.
     n_devices = len(pipeline_config.model.device_specs)
-    if n_devices > 1 and (dp != n_devices or ep_size != n_devices):
+    tensor_parallel = dp == 1 and ep_size == 1 and n_devices in (2, 4)
+    data_expert_parallel = dp == n_devices and ep_size == n_devices
+    if n_devices > 1 and not (tensor_parallel or data_expert_parallel):
         raise ValueError(
-            f"DeepSeek-V4.1 serves {n_devices} devices only as "
+            f"DeepSeek-V4.1 serves {n_devices} devices only as TP2/TP4 "
+            "with data_parallel_degree=1 and ep_size=1, or as "
             "data-parallel attention with expert-parallel MoE: pass "
-            f"--data-parallel-degree {n_devices} --ep-size "
-            f"{n_devices} (got data_parallel_degree={dp}, "
-            f"ep_size={ep_size}). Plain tensor parallelism is not "
-            "wired for this trunk."
+            f"--data-parallel-degree {n_devices} --ep-size {n_devices} "
+            f"(got data_parallel_degree={dp}, ep_size={ep_size})."
         )
     if ep_size <= 1:
         return
@@ -550,114 +530,34 @@ class DeepseekV41Model(
         DeepseekV41BatchProcessor
     )
 
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        *,
-        memory_plan: MemoryPlan,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        max_batch_size: int = 1,
-    ) -> None:
-        # Capture the session so _init_distributed_runtime can run the EP
-        # handshake outside virtual-device mode.
-        self.session = session
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter=adapter,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
-        )
-
-    def _build_ep_config(
-        self, model_config: DeepseekV41Config, n_devices: int
-    ) -> EPConfig:
-        """Builds the ModuleV3 EP config from the pipeline ``ep_size``."""
-        return build_ep_config(
-            self.pipeline_config,
-            model_config,
-            n_devices,
-            model_config.routed_expert_format,
-        )
-
     @override
     def _init_distributed_runtime(
         self, model_config: DeepseekV41Config
     ) -> None:
         super()._init_distributed_runtime(model_config)
-        self._ep_batch_manager: EPBatchManager | None = None
-        self.ep_comm_initializer: EPCommInitializer | None = None
-
+        self._ep_config: EPConfig | None = None
         check_parallel_layout(self.pipeline_config)
         if self.pipeline_config.runtime.ep_size <= 1:
             return
+        # The decoder takes the exchange's buffers flat after its extras, in
+        # the order of the registered decoder's ``ep``.
         n_devices = len(self.devices)
-        # DeepseekV41Config is mutable; the EP config lives on the batch
-        # manager the rest of the runtime already reads (graph_specs
-        # included).
-        ep_config = self._build_ep_config(model_config, n_devices)
-        self._ep_batch_manager = EPBatchManager(ep_config)
-        self._modulev3_extra_input_types = self._ep_batch_manager.input_types()
-        if not is_virtual_device_mode():
-            # In-process serving allocates the symmetric heap and the
-            # counters now, and the base load_graphs hands the buffers to
-            # the batch processor, so every forward's input tail carries
-            # them. The export leaves them to the engine's handshake,
-            # which owns the counters the compiled forward shares.
-            self.ep_comm_initializer = self._init_ep_comm(
-                self.session, ep_config
+        self._ep_config, self.ep_comm_initializer, modules = (
+            ExpertParallelInputs().initialize(
+                self._session,
+                build_ep_config(
+                    self.pipeline_config,
+                    model_config,
+                    n_devices,
+                    model_config.routed_expert_format,
+                ),
+                DeviceMesh(tuple(self.devices), (n_devices,), ("ep",)),
             )
-            # run_init already wrote node_id through the shared config;
-            # restate it like the deepseekV3 pattern does.
-            ep_config.node_id = self.ep_comm_initializer.config.node_id
-
-    @override
-    def graph_specs(
-        self, model_config: DeepseekV41Config
-    ) -> dict[str, GraphSpec]:
-        """The decoder, plus the EP handshake graph when EP is on.
-
-        The ``ep_init`` graph allocates the engine-side symmetric heap and
-        returns its buffer addresses, so the engine runs it once at startup
-        with its own atomic counters (``mach/docs/expert-parallelism.md``,
-        contract 1). The export never runs it in-process: the engine's
-        handshake owns the counters the forward shares.
-        """
-        specs = super().graph_specs(model_config)
-        ep_batch_manager = getattr(self, "_ep_batch_manager", None)
-        ep_config = ep_batch_manager.config if ep_batch_manager else None
-        # A build on devices already keeps the init graph it ran.
-        if (
-            ep_config is not None
-            and GraphRole.EP_INIT not in self.compiled_modules
-        ):
-            counter_shape = [
-                _ep_counter_words(
-                    ep_config.n_experts,
-                    ep_config.n_gpus_per_node,
-                    ep_config.use_allreduce,
-                    ep_config.moe_dim,
-                )
-            ]
-            init = EPInit(ep_config, counter_shape)
-            specs[GraphRole.EP_INIT] = GraphSpec(
-                init,
-                "ep_init",
-                init.input_types(),
-                weights={},
-            )
-        return specs
+        )
+        self.compiled_modules = {**self.compiled_modules, **modules}
+        self._modulev3_extra_input_types = tree.leaves(
+            ep_init.payload_types(self._ep_config)
+        )
 
     @classmethod
     def build_module(
@@ -703,21 +603,24 @@ class DeepseekV41Model(
             tables, token_map, devices[0]
         )
         config.dspark_trailing_inputs = extra_inputs(
-            v41_config(pipeline_config.model.huggingface_config),
+            v41_config(
+                pipeline_config.model.huggingface_config,
+                artifact_export=pipeline_config.artifact_export,
+            ),
             config.devices,
             dp,
             verify_rows=True,
         )
-        ep_batch_manager: EPBatchManager | None = None
+        ep_config: EPConfig | None = None
         if pipeline_config.runtime.ep_size > 1:
-            ep_config = build_ep_config(
-                pipeline_config,
-                config,
-                len(devices),
-                config.routed_expert_format,
+            ep_config = context.start_ep(
+                build_ep_config(
+                    pipeline_config,
+                    config,
+                    len(devices),
+                    config.routed_expert_format,
+                )
             )
-            context.start_ep(ep_config)
-            ep_batch_manager = EPBatchManager(ep_config)
         axis = "dp" if dp > 1 else "tp"
         mesh = DeviceMesh(tuple(devices), (len(devices),), (axis,))
         with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
@@ -730,7 +633,7 @@ class DeepseekV41Model(
                 ),
                 token_map=token_map,
                 data_parallel_degree=dp,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=ep_config,
             )
         return module, config
 
@@ -800,7 +703,7 @@ class DeepseekV41Model(
             ),
             token_map=self._token_map,
             data_parallel_degree=dp,
-            ep_batch_manager=getattr(self, "_ep_batch_manager", None),
+            ep_config=getattr(self, "_ep_config", None),
         )
 
     def _load_decoder(

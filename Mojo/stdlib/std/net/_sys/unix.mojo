@@ -17,9 +17,11 @@ platforms, Linux and macOS.
 from std.ffi import (
     c_int,
     c_long,
+    c_short,
     c_size_t,
     c_ssize_t,
     c_uint,
+    c_ulong,
     external_call,
 )
 from std.io import FileDescriptor, IOError, RawFileDescriptor
@@ -42,6 +44,7 @@ from .linux import (
 )
 from .macos import (
     AF_INET6 as macos_AF_INET6,
+    SO_NOSIGPIPE as macos_SO_NOSIGPIPE,
     sockaddr as macos_sockaddr,
     sockaddr_in as macos_sockaddr_in,
     sockaddr_in6 as macos_sockaddr_in6,
@@ -562,6 +565,43 @@ def socketpair(
     return external_call["socketpair", c_int](domain, type, protocol, sv)
 
 
+# ===----------------------------------------------------------------------=== #
+# `poll` (`<poll.h>`)
+# ===----------------------------------------------------------------------=== #
+
+comptime POLLIN: c_short = 0x1
+"""Data other than high-priority data can be read."""
+comptime POLLPRI: c_short = 0x2
+"""High-priority data can be read."""
+comptime POLLOUT: c_short = 0x4
+"""Data can be written."""
+comptime POLLERR: c_short = 0x8
+"""An error occurred (reported in `revents` only)."""
+comptime POLLHUP: c_short = 0x10
+"""The peer hung up (reported in `revents` only)."""
+comptime POLLNVAL: c_short = 0x20
+"""The descriptor isn't open (reported in `revents` only)."""
+
+comptime nfds_t = Scalar[
+    platform_map[T=DType, "nfds_t", linux=c_ulong.dtype, macos=c_uint.dtype]()
+]
+"""C `nfds_t`: the number of entries in a `pollfd` array."""
+
+
+@fieldwise_init
+struct pollfd(TrivialRegisterPassable, Writable):
+    """C `struct pollfd`: a descriptor for `poll` to watch."""
+
+    var fd: c_int
+    var events: c_short
+    var revents: c_short
+
+
+def poll(fds: MutPointer[pollfd, _], nfds: nfds_t, timeout: c_int) -> c_int:
+    """C `poll(2)`: waits for one of a set of descriptors to become ready."""
+    return external_call["poll", c_int](fds, nfds, timeout)
+
+
 def open_socket(
     domain: c_int, type: c_int, protocol: c_int
 ) raises IOError -> FileDescriptor:
@@ -639,16 +679,26 @@ def accept_socket(
 def _set_up_macos_socket(
     var fd: FileDescriptor,
 ) raises IOError -> FileDescriptor:
-    """Makes a new socket close-on-exec, closing it if that fails."""
+    """Makes a new socket close-on-exec and stops writes to it raising
+    `SIGPIPE`, closing it if either fails."""
     try:
         _ = check(
             fcntl(fd._raw(), FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC),
             "fcntl",
         )
-        # TODO(https://github.com/modular/modular/issues/7475): Maybe set
-        # `macos.SO_NOSIGPIPE` socket option, we should already likely set
-        # MSG_NOSIGNAL in each send/recv call so it may not be necessary, but
-        # also it doesn't hurt either.
+        # `Socket.send()` passes `MSG_NOSIGNAL`. This also covers writes that
+        # don't go through it.
+        var on: c_int = 1
+        _ = check(
+            setsockopt(
+                fd._raw(),
+                SOL_SOCKET,
+                macos_SO_NOSIGPIPE,
+                Pointer(to=on).unsafe_bitcast[NoneType](),
+                socklen_t(size_of[c_int]()),
+            ),
+            "setsockopt",
+        )
     except e:
         # ignore an error returned from close, and re-raise the op above
         # that failed.

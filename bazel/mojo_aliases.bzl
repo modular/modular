@@ -15,6 +15,41 @@ _EXTRA_ALIASES = {
     "hal_device_context_max": "max/mojo/max/_driver/max_license:max",
 }
 
+# The built-in kernel registrations. `builtin_kernels` is a namespace rather
+# than a package, so each module under it precompiles on its own and needs its
+# own target. The alias keeps the dotted name so a label reads like the import
+# it stands for.
+_BUILTIN_KERNEL_MODULES = [
+    "_checks",
+    "_coords",
+    "_naive_tile_matmul",
+    "_tile_fusion",
+    "attention",
+    "bundled",
+    "concat_shapes",
+    "conv",
+    "conv_filter_layout",
+    "distributed",
+    "elementwise",
+    "ep",
+    "gated_residual_rms_norm",
+    "gather_scatter",
+    "kernels",
+    "kv_cache_ops",
+    "linalg_ops",
+    "logprobs",
+    "monoids",
+    "mtp",
+    "nan_check",
+    "qk_rms_norm_rope_store",
+    "quantization_ops",
+    "reductions",
+    "routed_rows_rms_norm",
+    "rowwise_normalization",
+    "rowwise_reductions",
+    "short_conv_ring",
+]
+
 _MAX_PACKAGES = {
     "algorithm": "kernels/src/algorithm",
     "kv_cache": "kernels/src/kv_cache",
@@ -26,7 +61,6 @@ _MAX_PACKAGES = {
     "quantization": "kernels/src/quantization",
     "extensibility": "kernels/src/graph_compiler/extensibility",
     "builtin_primitives": "kernels/src/graph_compiler/builtin_primitives",
-    "builtin_kernels": "kernels/src/graph_compiler/builtin_kernels",
     "weights_registry": "kernels/src/weights_registry",
     "internal_utils": "kernels/src/internal_utils",
     "comm": "kernels/src/comm",
@@ -40,6 +74,9 @@ _MAX_PACKAGES = {
     "_rocblas": "kernels/src/_rocblas",
     "_miopen": "kernels/src/_miopen",
     "max_mojo": "mojo/max",
+} | {
+    "builtin_kernels." + module: "kernels/src/graph_compiler/builtin_kernels:" + module
+    for module in _BUILTIN_KERNEL_MODULES
 }
 
 # Packages outside the `@mojo` aliases above that `ALL_MOJOPKGS` and
@@ -83,6 +120,18 @@ INTERNAL_KERNEL_MOJOPKGS = [
 {internal_kernel_packages}
 ]
 
+# Every built-in kernel package. `builtin_kernels` is a namespace, so a target
+# that needs the whole registry names these rather than one label.
+BUILTIN_KERNEL_MOJOPKGS = [
+{builtin_kernel_packages}
+]
+
+# The module names behind those labels, for a target that builds something
+# other than the package itself (its docs, say) out of the same Bazel package.
+BUILTIN_KERNEL_MODULES = [
+{builtin_kernel_modules}
+]
+
 ALL_MOJOPKGS = [
 {packages}
 {max_packages}
@@ -123,6 +172,14 @@ def max_aliases():
         internal_packages = "\n".join([
             '    "{}",'.format(name)
             for name in INTERNAL_PACKAGES
+        ]),
+        builtin_kernel_modules = "\n".join([
+            '    "{}",'.format(module)
+            for module in _BUILTIN_KERNEL_MODULES
+        ]),
+        builtin_kernel_packages = "\n".join([
+            '    "//max:builtin_kernels.{}",'.format(module)
+            for module in _BUILTIN_KERNEL_MODULES
         ]),
         internal_kernel_packages = "\n".join([
             '    "{}",'.format(name)

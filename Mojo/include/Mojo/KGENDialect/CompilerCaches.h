@@ -128,6 +128,9 @@ public:
 
   /// Canonical forms, keyed by the value's opaque pointer.
   ShardedCache<const void *> canonical;
+  /// Values with each stdlib `Origin` value spelled `{}`, keyed by the value's
+  /// opaque pointer.
+  ShardedCache<const void *> originNormalized;
   /// `IndexDepthAdjuster` results, keyed by the value, `adjustDepth` and
   /// `onlyAdjustIndexRef`.
   ShardedCache<std::tuple<const void *, int64_t, unsigned>> depthAdjust;

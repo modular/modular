@@ -69,6 +69,31 @@ class SmartResize:
 
 
 @dataclass(frozen=True)
+class KimiK3NavitResize:
+    """Shrinks by a floor-patch budget, then pads to merged patches.
+
+    The budget applies before padding. The resulting token count can exceed
+    ``in_patch_limit / merge_size**2``.
+
+    Args:
+        in_patch_limit: The floor-patch count used to choose the content scale.
+        patch_limit_on_one_side: The maximum padded patch-grid side.
+    """
+
+    rule: ClassVar[str] = "kimi_k3_navit"
+    in_patch_limit: int
+    patch_limit_on_one_side: int
+
+    def __post_init__(self) -> None:
+        if not _is_int_in(self.in_patch_limit, 1, 2**32 - 1):
+            raise ValueError("in_patch_limit must be a positive uint32")
+        if not _is_int_in(self.patch_limit_on_one_side, 1, 2**16 - 1):
+            raise ValueError(
+                "patch_limit_on_one_side must be a positive uint16"
+            )
+
+
+@dataclass(frozen=True)
 class AspectRatioPreserving:
     """Resizes keeping the aspect ratio, within a patch-count budget.
 
@@ -250,6 +275,7 @@ class Inkling2Blocks:
 ResizeStrategy: TypeAlias = (
     SmartResize
     | AspectRatioPreserving
+    | KimiK3NavitResize
     | VideoSmartResize
     | InklingPatchRows
     | MuseSmartResize

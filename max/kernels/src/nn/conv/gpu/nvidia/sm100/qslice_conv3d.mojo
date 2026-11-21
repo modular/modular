@@ -35,16 +35,25 @@ diff vs the reference on WAN mid_res shapes).
 This dispatcher instead maintains a **dedicated fp32 accumulator
 buffer** outside the conv calls:
 
-  1. Allocate `accum_fp32` of output size and zero-fill it.
-  2. Allocate one reusable `temp_bf16` buffer of output size.
-  3. For q in [0, Q):
+  1. Allocate `accum_fp32` of output size (uninitialized) and one
+     reusable `temp_bf16` buffer holding a single batch.
+  2. For q in [0, Q):
         - Call `dispatch_sm100_conv2d(has_residual=False)` to write
           `conv(input[q], filter[q])` into `temp_bf16`.
         - Launch an elementwise kernel that reads `temp_bf16`, casts
-          to fp32, and adds into `accum_fp32`.
-  4. Launch a final kernel that casts `accum_fp32` → bf16 and writes
+          to fp32, and stores it into `accum_fp32` for q == 0 and adds
+          it for q > 0.
+  3. Launch a final kernel that casts `accum_fp32` → bf16 and writes
      to user `output` (fused with the caller's 5-D epilogue when one
      is provided).
+
+No zero-fill is needed: the q == 0 kernel stores over all of
+`[0, per_batch_elems)` of each batch's accumulator slice, so every element
+is defined whatever the 2-D conv wrote. The result is therefore
+independent of the accumulator's prior contents, which a device graph
+replay relies on: a buffer's own `enqueue_fill` runs on the buffer's
+context, so under a recording context it would execute once at record
+time instead of on each replay.
 
 Only the final cast is lossy; all intermediate accumulation is fp32,
 matching what a single all-at-once 3-D conv would produce internally.
@@ -96,14 +105,22 @@ from .dispatch import dispatch_sm100_conv2d, test_alignment_sm100_conv2d
 def _accum_bf16_to_fp32_kernel[
     dtype: DType,
     output_simd_width: Int,
+    first_slice: Bool,
 ](
     accum_fp32_ptr: MutPointer[Float32, MutAnyOrigin],
     src_bf16_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     per_batch_elems: Int32,
 ):
-    """Elementwise `accum_fp32[i] += src_bf16[i].cast[fp32]()`.
+    """Elementwise `accum_fp32[i] (+)= src_bf16[i].cast[fp32]()`.
 
-    One thread per element; no atomics. Each thread owns its slot.
+    The first Q slice stores (`=`) so the accumulator needs no zero-fill;
+    later slices add (`+=`). One thread per element; no atomics. Each
+    thread owns its slot.
+
+    Parameters:
+        dtype: Element type of `src_bf16_ptr`.
+        output_simd_width: Elements handled per thread.
+        first_slice: Store instead of add.
     """
     var _per_batch_elems = Int(per_batch_elems)
     comptime bf16_alignment = align_of[SIMD[dtype, output_simd_width]]()
@@ -117,12 +134,17 @@ def _accum_bf16_to_fp32_kernel[
         var src_val = src_bf16_ptr.unsafe_load[
             width=output_simd_width, alignment=bf16_alignment
         ](accum_idx).cast[.float32]()
-        var accum_val = accum_fp32_ptr.unsafe_load[
-            width=output_simd_width, alignment=fp32_alignment
-        ](accum_idx)
-        accum_fp32_ptr.unsafe_store[alignment=fp32_alignment](
-            accum_idx, accum_val + src_val
-        )
+        comptime if first_slice:
+            accum_fp32_ptr.unsafe_store[alignment=fp32_alignment](
+                accum_idx, src_val
+            )
+        else:
+            var accum_val = accum_fp32_ptr.unsafe_load[
+                width=output_simd_width, alignment=fp32_alignment
+            ](accum_idx)
+            accum_fp32_ptr.unsafe_store[alignment=fp32_alignment](
+                accum_idx, accum_val + src_val
+            )
 
 
 @__name(t"qslice_fp32_to_dtype_plain_{dtype}")
@@ -399,23 +421,38 @@ def dispatch_qslice_conv3d_sm100[
     var per_batch_elems = D_out * H_out * W_out * C_out
     var output_elems = batch * per_batch_elems
 
-    # --- 1. Allocate fp32 accumulator (zeroed) + reusable bf16 temp. ---
+    # --- 1. Allocate the fp32 accumulator + reusable bf16 temp. ---
+    # The accumulator is not zeroed: slice q == 0 stores into it.
     var accum_fp32_buf = ctx.enqueue_create_buffer[.float32](output_elems)
-    accum_fp32_buf.enqueue_fill(Float32(0.0))
     var accum_fp32_ptr = accum_fp32_buf.unsafe_ptr()
 
     var temp_bf16_buf = ctx.enqueue_create_buffer[output_type](per_batch_elems)
     # Redundant for correctness (conv2d fully overwrites this via TMA store);
     # works around initcheck not tracking TMA bulk stores as initializing writes.
-    temp_bf16_buf.enqueue_fill(Scalar[output_type](0))
+    # Enqueued on `ctx` (not the buffer's context) so that a recording context
+    # records it.
+    ctx.enqueue_memset(temp_bf16_buf, Scalar[output_type](0))
 
     # --- 2. Per-(n, q) conv into temp_bf16, then accumulate into fp32. ---
     comptime accum_block = 256
+    var accum_grid = ceildiv(per_batch_elems // output_simd_width, accum_block)
+
+    def _launch_accum[first: Bool](n_batch: Int) raises {imm}:
+        comptime accum_kernel = _accum_bf16_to_fp32_kernel[
+            output_type, output_simd_width, first
+        ]
+        ctx.enqueue_function[accum_kernel](
+            accum_fp32_ptr.unsafe_offset(n_batch * per_batch_elems),
+            temp_bf16_buf,
+            Int32(per_batch_elems),
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=accum_grid,
+                block_dim=accum_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
+        )
 
     for n_batch in range(batch):
-        var accum_n_offset = n_batch * per_batch_elems
-        var accum_n_ptr = accum_fp32_ptr.unsafe_offset(accum_n_offset)
-
         for q in range(Q):
             var input_offset = input.layout[
                 linear_idx_type=input.linear_idx_type
@@ -444,23 +481,11 @@ def dispatch_qslice_conv3d_sm100[
                 ctx,
             )
 
-            # Accumulate: accum_fp32_n += temp_bf16.cast[fp32]().
-            var accum_grid = ceildiv(
-                per_batch_elems // output_simd_width, accum_block
-            )
-            comptime accum_kernel = _accum_bf16_to_fp32_kernel[
-                output_type, output_simd_width
-            ]
-            ctx.enqueue_function[accum_kernel](
-                accum_n_ptr,
-                temp_bf16_buf,
-                Int32(per_batch_elems),
-                execution_config=GridBlockAttributeLaunchConfig(
-                    grid_dim=accum_grid,
-                    block_dim=accum_block,
-                    attributes=pdl_launch_attributes(PDLLevel.ON),
-                ),
-            )
+            # Accumulate: accum_fp32_n (+)= temp_bf16.cast[fp32]().
+            if q == 0:
+                _launch_accum[True](n_batch)
+            else:
+                _launch_accum[False](n_batch)
 
     # --- 3. Final fp32 → bf16 write to user output (fuse epilogue). ---
     comptime final_block = 256
@@ -518,4 +543,7 @@ def dispatch_qslice_conv3d_sm100[
             ),
         )
 
+    # The kernels above read the accumulator through a raw pointer, so keep
+    # it alive until after the last enqueue rather than until its last use.
+    _ = accum_fp32_buf^
     return True

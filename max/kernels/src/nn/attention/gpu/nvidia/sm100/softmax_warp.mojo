@@ -170,6 +170,7 @@ def fa4_scale_write_output[
             ragged_tma_store.prefetch_descriptor()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def write_chunk[j: Int]() {imm}:
         var packed: SIMD[DType.uint32, chunk // 2]
         comptime if zero_fill:
@@ -205,6 +206,7 @@ def fa4_scale_write_output[
             write_chunk[j]()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_blocks[lo: Int, hi: Int]() {imm}:
         comptime for blk in range(lo, hi):
             ragged_tma_store.async_copy_from_col[blk](
@@ -916,6 +918,7 @@ def fa4_ws_intracta_combine[
         )
         m = max_ftz(m, maxsum_smem[(3 * rows + r) * 2])
 
+    @__allow_legacy_any_origin_fields
     def scale_at[p: Int]() {imm} -> Scalar[accum_dtype]:
         var mp = maxsum_smem[(p * rows + r) * 2]
         var d = mp - m
@@ -923,6 +926,7 @@ def fa4_ws_intracta_combine[
             d = mul_ftz(d, scale_log2e)
         return exp2(d)
 
+    @__allow_legacy_any_origin_fields
     def lps_at[p: Int]() {imm} -> Scalar[accum_dtype]:
         return maxsum_smem[(p * rows + r) * 2 + 1]
 
@@ -1116,6 +1120,7 @@ def fa4_ws_level1_combine[
         )
         m = max_ftz(m, maxsum_smem[(3 * rows + r) * 2])
 
+    @__allow_legacy_any_origin_fields
     def scale_at[p: Int]() {imm} -> Scalar[accum_dtype]:
         var mp = maxsum_smem[(p * rows + r) * 2]
         var d = mp - m
@@ -1123,6 +1128,7 @@ def fa4_ws_level1_combine[
             d = mul_ftz(d, scale_log2e)
         return exp2(d)
 
+    @__allow_legacy_any_origin_fields
     def lps_at[p: Int]() {imm} -> Scalar[accum_dtype]:
         return maxsum_smem[(p * rows + r) * 2 + 1]
 
@@ -1699,6 +1705,7 @@ def fa4_ws_splitk_reduce_scatter_write[
     named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def reduce_scatter_p[P_static: Int]() {imm}:
         comptime bpp = ceildiv(m_pack, P_static)
         var e = elect()
@@ -2437,6 +2444,7 @@ def fa4_splitk_reduce_scatter_write[
     # trailing bands, both of which are already handled below.
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def reduce_scatter_p[P_static: Int]() {imm}:
         comptime bpp = ceildiv(iters_total, P_static)
         comptime for p_static in range(P_static):
@@ -3062,6 +3070,7 @@ def fa4_softmax[
                 s0[n + 1] = sn[1]
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def load_mask_max_impl[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32) {
@@ -3181,6 +3190,7 @@ def fa4_softmax[
         return load_mask_max_impl[mask_strategy=mask_strategy](kv_row)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_exp(
         max_term: Float32,
     ) {mut s, mut inplace_cons, mut pipeline_s, mut order_phase, imm} -> f32x2:
@@ -3562,6 +3572,7 @@ def fa4_softmax[
     # row-sum, but reproduces every barrier arrival so the MMA and correction
     # warps stay in lockstep.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_exp_skip() {
         mut pipeline_s, mut inplace_cons, mut order_phase, imm
     }:
@@ -4131,6 +4142,7 @@ def fa4_softmax[
     var blasst_lane0: Bool = (tid % UInt32(32)) == UInt32(0)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def blasst_observe(tile_max: Float32) {mut m_true, imm} -> Bool:
         m_true = max_ftz(m_true, tile_max)
         var diff_true = sub_ftz(tile_max, m_true)
@@ -4459,6 +4471,7 @@ def fa4_softmax[
 
         # wait on the o_pipeline producer
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def wait_and_write_output() {imm}:
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
@@ -4696,6 +4709,7 @@ def fa4_softmax[
                 )
 
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def sk_epilogue[single_wg: Bool]() {imm}:
                     # (M, L) are depth-independent, so every tile computes the
                     # same pair; keep tile 0's. They are carried OUT of the loop

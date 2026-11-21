@@ -1253,6 +1253,13 @@ def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+  private:
+    /// Prints the body as a legacy tile traits functor and binds it to the
+    /// tensor's epilogue.
+    ::mlir::LogicalResult emitLegacyTileTraitEpilogue(EmitMojoState &state);
+  }];
 }
 
 def MOGG_TensorGetPtrOp : MOGG_Op<"tensor.get_ptr", [
@@ -1435,12 +1442,13 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   NoTerminator,
   SingleBlock,
 ]> {
-  let summary = "Launch several declarative kernels as one device kernel.";
+  let summary = "Launch several kernels as one device kernel.";
   let description = [{
-    Runs the declarative `mogg.call.opaque`s in its body, in order, as one
-    launch on their shared device context. Each call runs on the part of the
-    launch its own configuration asks for, and every call sees the writes of
-    the calls before it.
+    Runs the declarative `mogg.call.opaque`s and the `mogg.call.foreach`s in
+    its body, in order, as one launch on their shared device context. Each
+    declarative call runs on the part of the launch its own configuration asks
+    for, each loop runs on all of it, and every call sees the writes of the
+    calls before it.
 
     The body holds the calls and the ops that build their operands, and can use
     the enclosing region's values. `LowerGraphBlobs` writes the op as host ops
@@ -1544,6 +1552,45 @@ def MOGG_GraphBlobBarrierOp : MOGG_Op<"graph_blob.barrier", [
     before it are visible to every thread after it.
   }];
   let assemblyFormat = "attr-dict";
+}
+
+def MOGG_GraphBlobForeachOp : MOGG_Op<"graph_blob.foreach", [
+  AttrSizedOperandSegments,
+  HasParent<"MOGG::GraphBlobCallOp">,
+  MOGG_CallLike,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  NoTerminator,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Run a generated elementwise loop in a graph blob launch.";
+  let description = [{
+    Runs its body on every index of `$shape`, split across every thread of the
+    enclosing launch. Each thread runs its own share and doesn't wait for the
+    others. The body and its arguments are those of `mogg.call.foreach`: one
+    argument per `$capturing` tensor, then the index.
+
+    The SIMD widths the loop may run at must divide `$max_simd_width` when it
+    is set, else the GCD of `$dynamic_max_simd_width`'s dims when that is set.
+    At most one of them is set.
+
+    Example:
+    ```mlir
+    mogg.graph_blob.foreach shape(%s) (%idx : !map.index<2>)
+        capturing {%cx = %x : !mogg.tensor, %cy = %y : !mogg.tensor} {
+      %v = mogg.tensor.load %cx[%idx] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.tensor.store %cy[%idx] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+    ```
+  }];
+  let arguments = (ins
+    MOGG_Shape:$shape,
+    Variadic<MOGG_TensorLike>:$capturing,
+    Optional<MOGG_Shape>:$dynamic_max_simd_width,
+    OptionalAttr<I64Attr>:$max_simd_width
+  );
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
@@ -1857,12 +1904,13 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let summary = "Run a fused reduction body once per row.";
   let description = [{
     Runs its body once per row of `$shape` along `$axis`. The body holds the
-    row's phases in order: folds (`mogg.rowwise.reduce`) and per-element
-    phases (`mogg.rowwise.map`), the row-level ops between them, and the
-    per-row stores. A fold can't follow a map phase, and a body with a map
-    phase has no per-row stores. Its arguments are one per `$capturing`
-    tensor, then the row index, which has the `$axis` coordinate pinned to
-    0. Lowered from a `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
+    row's phases in order: folds (`mogg.rowwise.reduce`) and the row-level
+    ops between and after them, the per-row stores, then per-element phases
+    (`mogg.rowwise.map`). A fold can't follow a map phase, and a body with
+    both a map phase and per-row stores keeps its row whole (`$dtype_size`
+    0). Its arguments are one per `$capturing` tensor, then the row index,
+    which has the `$axis` coordinate pinned to 0. Lowered from a
+    `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
 
     A `mogg.rowwise.cache` computes a value of the row that later phases
     read instead of the tile.
@@ -2424,6 +2472,8 @@ def MOGG_IndexConcatSelectOp : MOGG_Op<"index.concat.select", [
     attr-dict `:` qualified(type($index)) `->` type($result)
     $inputs
   }];
+
+  let hasVerifier = 1;
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MOGGDIALECT_MOGGOPS_TD

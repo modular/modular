@@ -1817,3 +1817,16 @@ modular_cc_library(
     ],
     alwayslink = True,
 )
+
+modular_cc_library(
+    name = "GGUF",
+    srcs = glob(["lib/Support/GGUF/*.cpp"]),
+    hdrs = glob(["include/GraphCompiler/Support/GGUF/*.h"]),
+    deps = [
+        ":DeviceDriver",
+        "//MLRT:Driver/DeviceContext.static",
+        "//Support:Base",
+        "//Support:ML",
+    ],
+    alwayslink = True,
+)

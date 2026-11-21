@@ -158,6 +158,15 @@ This version is still a work in progress.
 
 ## Python API
 
+- `GGUFWeights` now reads checkpoints through MAX's own GGUF parser instead of
+  the `gguf` Python package, so loading no longer needs that dependency. The
+  parser skips tokenizer metadata, whose payload dominates a typical file, and
+  reads tensors from the file's own offsets. Quantized tensors are still
+  exposed as `uint8` blocks with their `QuantizationEncoding`. The same
+  binding writes checkpoints: `max._core.gguf.GGUFWriter` records string,
+  integer, float and boolean metadata plus float, integer and block-quantized
+  tensors, and `write()` emits the file.
+
 - `AutoModel(eager=True)`, `AutoPipeline(eager=True)` and `max generate --eager`
   run the decoder op by op instead of as a compiled graph, so `pdb` stopped
   inside a module's `forward()` sees real values on every step. It is for
@@ -367,6 +376,15 @@ This version is still a work in progress.
 
 ## C API
 
+- `M_loadGGUF()` loads GGUF checkpoints the way `M_loadSafetensors()` loads
+  Safetensors ones, with `M_getGGUFCount()`, `M_getGGUFData()`,
+  `M_getGGUFDtype()`, `M_getGGUFShape()` and
+  `M_newWeightsRegistryFromGGUF()` to inspect and use the tensors.
+  Block-quantized tensors are exposed as `uint8` data whose last dimension
+  counts quantization blocks, and `M_getGGUFQuantization()` names the
+  scheme. `M_newGGUFWriter()`, `M_setGGUFMetadata*()`, `M_addGGUFTensor()` and
+  `M_writeGGUF()` write checkpoints the same way.
+
 ## Kernels and GPU programming
 
 - A custom op's `execute` method no longer accepts `ManagedTensorSlice`
@@ -471,6 +489,27 @@ This version is still a work in progress.
   attributes, such as the ones `pdl_launch_attributes()` returns for
   programmatic dependent launch.
 
+- Renamed the closure overloads of `DeviceContext.compile_function()` and
+  `DeviceContext.enqueue_function()` to `compile_closure()` and
+  `enqueue_closure()`. Kernels that capture state from their enclosing scope
+  now use the `*_closure()` methods, and `compile_function()` and
+  `enqueue_function()` take only kernels that are plain functions. The old
+  closure overloads are removed, so a call that passes a closure to
+  `enqueue_function()` no longer compiles:
+
+  ```mojo
+  var scale: Float32 = 2.0
+
+  def scale_kernel() {var scale}:
+      ...
+
+  # Before:
+  ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
+
+  # After:
+  ctx.enqueue_closure(scale_kernel, grid_dim=1, block_dim=256)
+  ```
+
 - A bare `DeviceContext` is now an unbound parameterized type, not a concrete
   type.
 
@@ -508,6 +547,14 @@ This version is still a work in progress.
       var upper = StencilPoint(lower[0] + window_h, lower[1] + window_w)
       return lower, upper
   ```
+
+- `parallelize_over_rows()` in `max.algorithm` and `trace_arg()` in
+  `max.runtime.tracing` no longer accept an `IndexList` shape. Pass a `Coord`
+  instead, for example `Coord(shape)` or a tensor's `shape_coord()`.
+
+- Removed `trace_slice_arg()` from `extensibility`. Call
+  `trace_arg(name, tensor.shape_coord(), tensor.dtype)` from
+  `max.runtime.tracing` instead.
 
 ## Tools
 

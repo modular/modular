@@ -43,7 +43,10 @@ from max.benchmark.benchmark_shared.model_csv import (
     strip_leading_hierarchy_key,
 )
 from pydantic import BaseModel
-from tests.benchmark.benchmark_fakes import write_blob
+from tests.benchmark.benchmark_fakes import (
+    write_blob,
+    write_engine_result_set,
+)
 
 # --- Data-driven flattening --------------------------------------------------
 
@@ -277,51 +280,6 @@ def test_convert_dry_run_does_not_write(tmp_path: Path) -> None:
 # --- Engine profile (ResultSetInContext output from engine benchmarks) -------
 
 
-def _write_engine_json(path: Path) -> None:
-    """Writes a minimal engine ResultSetInContext document."""
-    path.write_text(
-        json.dumps(
-            {
-                "run_context": {"config_id": None, "git_commit": "abc"},
-                "results": [
-                    {
-                        "iteration_config": {
-                            "batch_size": 4,
-                            "context_len": 0,
-                            "input_len": 128,
-                            "output_len": 64,
-                        },
-                        "result": {
-                            "total_latency_ms": {
-                                "mean": 10.0,
-                                "std": 1.0,
-                                "p50": 9.0,
-                                "p90": 12.0,
-                                "p95": 13.0,
-                                "p99": 15.0,
-                                "unit": "ms",
-                                "confidence_info": None,
-                            },
-                            "prefill_latency_ms": {"mean": 3.0, "p90": 3.5},
-                            "decode_latency_ms": {"mean": 7.0, "p90": 8.0},
-                            "tokens_per_second": 500.0,
-                            "input_tokens_per_second": 300.0,
-                            "output_tokens_per_second": 200.0,
-                            "gpu": {
-                                "peak_memory_mib": 40000.0,
-                                "avg_utilization_percent": 90.0,
-                                "kernel_time_ms": 5.0,
-                                "device_count": 1,
-                                "per_gpu_metrics": None,
-                            },
-                        },
-                    }
-                ],
-            }
-        )
-    )
-
-
 def test_engine_profile_summary_selects_engine_columns() -> None:
     available = [
         "run_context.git_commit",
@@ -365,7 +323,7 @@ def test_engine_profile_unknown_group_lists_engine_groups() -> None:
 
 def test_convert_engine_profile_end_to_end(tmp_path: Path) -> None:
     src = tmp_path / "engine-results.json"
-    _write_engine_json(src)
+    write_engine_result_set(src)
     out = tmp_path / "engine.csv"
     columns = convert([src], out, profile=ENGINE_PROFILE)
 

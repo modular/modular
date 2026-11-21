@@ -98,6 +98,7 @@ def inlined_assembly[
             constraints=constraints_kgen_string,
             hasSideEffects=has_side_effect.__mlir_i1__(),
             isStackAligned=False.__mlir_i1__(),
+            expandPackOperandIdx=__mlir_attr.`0 : index`,
         ](loaded_pack)
         return rebind[result_type](None)
     else:
@@ -107,4 +108,5 @@ def inlined_assembly[
             constraints=constraints_kgen_string,
             hasSideEffects=has_side_effect.__mlir_i1__(),
             isStackAligned=False.__mlir_i1__(),
+            expandPackOperandIdx=__mlir_attr.`0 : index`,
         ](loaded_pack)

@@ -89,7 +89,7 @@ static void fixup(OpBuilder &builder, Block *inBlock,
 
   for (Operation *inOp : getDataflowOrder(inBlock)) {
     LLVM_DEBUG(llvm::dbgs() << "looking at op " << *inOp << "\n");
-    if (auto inOutputOp = dyn_cast<MEF::OutputOp>(inOp)) {
+    if (auto inOutputOp = dyn_cast<MLRT::MEF::OutputOp>(inOp)) {
       if (mustAlsoReturn) {
         SmallVector<Value> outOperands;
         // Rewrite existing operands (possibly excluding last).
@@ -116,15 +116,15 @@ static void fixup(OpBuilder &builder, Block *inBlock,
           outOperands.emplace_back(outOperand);
         }
         [[maybe_unused]] Operation *outOutputOp =
-            MEF::OutputOp::create(builder, inOp->getLoc(), outOperands);
+            MLRT::MEF::OutputOp::create(builder, inOp->getLoc(), outOperands);
         ASSERT_STREAM(checkRewrite(inOutputOp, outOutputOp),
                       << "invalid rewrite for output op");
         continue;
       }
     }
 
-    if (auto inCfOp = dyn_cast<GRT::GRTControlFlowInterface>(inOp)) {
-      bool subMustAlsoReturn = inCfOp.getFlavor() == GRT::kLoopLike;
+    if (auto inCfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(inOp)) {
+      bool subMustAlsoReturn = inCfOp.getFlavor() == MLRT::GRT::kLoopLike;
 
       SetVector<Value> nestedFreeValues;
       for (Region &region : inCfOp->getRegions())
@@ -165,7 +165,7 @@ static void fixup(OpBuilder &builder, Block *inBlock,
         // Account for last result.
         outResultTypes.emplace_back(inCfOp->getResult(n).getType());
 
-      GRT::GRTControlFlowInterface outCfOp =
+      MLRT::GRT::GRTControlFlowInterface outCfOp =
           cloneWithArgs(builder, inCfOp, outResultTypes, outOperands);
       ASSERT_STREAM(checkRewrite(inCfOp, outCfOp),
                     << "invalid rewrite for control flow op");
@@ -182,7 +182,7 @@ static void fixup(OpBuilder &builder, Block *inBlock,
       for (size_t i = 0, m = inCfOp->getNumRegions(); i < m; ++i) {
         // A grt.while 'cond' block returns the condition last, so new values
         // go before it.
-        bool subBeforeLastOutput = inCfOp.getFlavor() == GRT::kLoopLike &&
+        bool subBeforeLastOutput = inCfOp.getFlavor() == MLRT::GRT::kLoopLike &&
                                    inCfOp->getNumRegions() == 2 && i == 0;
         Block *inSubBlock = &inCfOp->getRegion(i).front();
         Block *outSubBlock = &outCfOp->getRegion(i).emplaceBlock();

@@ -17,6 +17,7 @@ from std.collections import OptionalReg
 from std.collections.string.string_span import _get_kgen_string
 from std.reflection import SourceLocation
 from std.utils.coord import Coord
+from std.utils.index import IndexList
 from std._gpu import lane_id
 from std._gpu.host.info import (
     NoGPU,
@@ -42,7 +43,7 @@ from max.gpu.host import (
 # `--config=hal-device-context` points `max.gpu.host` at the HAL one.
 from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 from max.gpu.host._legacy.device_context import (
-    LegacyDeviceContext as _LegacyDeviceContext,
+    LegacyDeviceContext,
     LegacyDeviceFunction,
 )
 from max.gpu.host.info import get_gpu_info
@@ -56,6 +57,7 @@ from max.gpu.sync.sync import (
     _SyncwarpPluginHookFnType,
 )
 from max._driver.max_license.hal._plugin._trait import (
+    CPUHalPluginHooks,
     DefaultHalPluginHooks,
     HalPluginHooks,
 )
@@ -434,10 +436,10 @@ trait MaxPluginHooks:
         ctx_target: CompilationTarget,
         //,
         ClosureType: RegisterPassable & def() -> None,
-    ](ctx: _LegacyDeviceContext[ctx_target]) raises -> Self.ClosureKernel[
+    ](ctx: DeviceContext[ctx_target]) raises -> Self.ClosureKernel[
         ClosureType, ctx_target
     ]:
-        """Per-target plugin hook for `DeviceContext.compile_function[ClosureType]`.
+        """Per-target plugin hook for `DeviceContext.compile_closure`.
 
         Parameters:
             ClosureType: The closure's type.
@@ -460,7 +462,7 @@ trait MaxPluginHooks:
         //,
         ClosureType: RegisterPassable & def() -> None,
     ](
-        ctx: _LegacyDeviceContext[ctx_target],
+        ctx: DeviceContext[ctx_target],
         kernel: Self.ClosureKernel[ClosureType, ctx_target],
         closure: ClosureType,
         grid_dim: Dim,
@@ -508,6 +510,32 @@ trait MaxPluginHooks:
         return GridBlockLaunchConfig(grid_dim=Dim(1), block_dim=Dim(1))
 
     @staticmethod
+    def elementwise_device_fn[
+        rank: Int, //, simd_width: Int
+    ](
+        func: Some[def[width: Int, alignment: Int = 1](Coord) -> None],
+        extents: IndexList[rank],
+    ):
+        """Per-target plugin hook for the graph blob loop primitive,
+        `_graph_blob_foreach`: runs the calling thread's share of an
+        elementwise loop over `extents`, in a launch whose every thread calls
+        it.
+
+        Parameters:
+            rank: The rank of `extents`.
+            simd_width: The width of a full-width call to `func`.
+
+        Args:
+            func: The body, called with the index of the first element it
+                covers, at `width` elements of one row.
+            extents: The shape of the loop.
+
+        Only invoked when `_handles_graph_blobs` is `True`; the default is
+        never called.
+        """
+        pass
+
+    @staticmethod
     def graph_blob_is_thread_active(active: Int32) -> Bool:
         """Per-target plugin hook for `max._graph_blob.is_thread_active`.
 
@@ -548,11 +576,20 @@ struct DefaultMaxPlugin(MaxPlugin):
     """Provides the default MAX plugin behavior."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor[target: CompilationTarget] = DefaultMaxPluginHooks
+    # No plugin claims the host CPU, so the default names its HAL hooks.
+    comptime HookFor[target: CompilationTarget] = (
+        _CPUMaxPluginHooks if target.is_cpu() else DefaultMaxPluginHooks
+    )
 
 
 struct DefaultMaxPluginHooks(MaxPluginHooks):
     comptime warp_size = _accelerator_warp_size()
+
+
+struct _CPUMaxPluginHooks(MaxPluginHooks):
+    comptime warp_size = _accelerator_warp_size()
+
+    comptime HalHooks: HalPluginHooks = CPUHalPluginHooks
 
 
 def _accelerator_warp_size() -> Int:

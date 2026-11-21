@@ -1622,12 +1622,20 @@ OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
 }
 
 LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
-  // Canonicalize (offset (array.gep a, 0), j) -> (array.gep a, i)
+  // Canonicalize (offset (array.gep a, 0), j) -> (array.gep a, j) when j is a
+  // constant index into the array. An offset can go past the end of the array,
+  // but an array.gep with an out-of-bounds index is poison.
   // TODO: could generalize (offset (array.gep a, i), j) -> (array.gep a, i + j)
   // but we don't have a way to add two index values here.
   if (auto gep = op.getPtr().getDefiningOp<ArrayGEPOp>()) {
     if (matchConstantIndex(gep.getIndex()) != 0)
       return b.notifyMatchFailure(op, "not a constant offset");
+
+    std::optional<int64_t> index = matchConstantIndex(op.getIndex());
+    std::optional<int64_t> size =
+        gep.getArray().getType().getElementAs<ArrayType>().getResolvedSize();
+    if (!index || !size || *index < 0 || *index >= *size)
+      return b.notifyMatchFailure(op, "offset is not known to be in bounds");
 
     b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), gep.getArray(),
                                      op.getIndex());
@@ -2907,18 +2915,8 @@ interpretLibraryCall(ExternalCallOp op, void *entry,
 /// operations.
 ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
-  // external_call can take things through a !kgen.struct.  Expand that out
-  // before we try to interpret it.
-  SmallVector<Attribute> expandedOperands;
-  expandedOperands.reserve(operands.size());
-  for (auto attr : operands) {
-    auto pack = dyn_cast<StructAttr>(attr);
-    if (pack && pack.getType().getIsParamPack()) {
-      expandedOperands.append(pack.getValues().begin(), pack.getValues().end());
-    } else {
-      expandedOperands.push_back(attr);
-    }
-  }
+  SmallVector<Attribute> expandedOperands =
+      getOperandsWithPackExpanded(operands, getExpandPackOperandIdxAttr());
 
   StringRef callee = getCallee();
   if (callee == "malloc")
@@ -2945,18 +2943,8 @@ ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ExternalCallOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  // external_call can take things through a !kgen.struct.  Expand that out
-  // before we try to interpret it.
-  SmallVector<Attribute> expandedOperands;
-  expandedOperands.reserve(operands.size());
-  for (auto attr : operands) {
-    auto pack = dyn_cast<StructAttr>(attr);
-    if (pack && pack.getType().getIsParamPack()) {
-      expandedOperands.append(pack.getValues().begin(), pack.getValues().end());
-    } else {
-      expandedOperands.push_back(attr);
-    }
-  }
+  SmallVector<Attribute> expandedOperands =
+      getOperandsWithPackExpanded(operands, getExpandPackOperandIdxAttr());
 
   StringRef callee = cast<StringAttr>(state.getReboundAttribute(getFunc()));
 

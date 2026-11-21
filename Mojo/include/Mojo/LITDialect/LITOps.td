@@ -509,9 +509,15 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // Read back through `#kgen.get_annotation_value`, which the reflection
     // library wraps as `reflect[T].annotation[index]`.
     DefaultValuedAttr<ArrayAttr, "{}">:$annotations,
-    // Present if the struct is declared with `__enum`. Its cases are the
-    // `lit.enum.case` ops in its body.
-    UnitAttr:$isEnum
+    // Present for `__enum`: every case is a payload-free `comptime` value,
+    // spelled `case red`, matched as `.red` and printed as `Color.red`. The
+    // struct stores only a scalar tag and conforms to `__Enum`. `__Union`
+    // supplies the separate payload-storage defaults for unions.
+    UnitAttr:$isEnum,
+    // Present if the struct is declared with `__union`. Its cases are the
+    // `lit.enum.case` ops in its body; every case takes parentheses, and its
+    // payload is the `Tuple` of the types in them.
+    UnitAttr:$isUnion
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -577,6 +583,11 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     /// Return true if this struct is declared with `__enum`.
     bool isEnum() { return getIsEnum(); }
+    /// Return true if this struct is declared with `__union`.
+    bool isUnion() { return getIsUnion(); }
+    /// Return true if this struct is declared with `__enum` or `__union`,
+    /// whose state is declared by its cases.
+    bool isEnumOrUnion() { return isEnum() || isUnion(); }
   }];
 
   let builders = [
@@ -644,8 +655,8 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
 def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
   let summary = "Enum case declaration.";
   let description = [{
-    The `lit.enum.case` operation declares a case of the enum whose
-    `lit.struct.decl` contains it. The cases of an enum are its
+    The `lit.enum.case` operation declares a case of the enum or union whose
+    `lit.struct.decl` contains it. The cases of an enum or union are its
     `lit.enum.case` ops, in declaration order. `payloadTypes` lists the
     case's payload types as written, empty for a case without a payload; it
     is absent until the payload is resolved.
@@ -659,7 +670,7 @@ def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
     ```mlir
     lit.struct.decl @Color {
       lit.enum.case red : []
-      lit.enum.case rgb : [!alias_Int1, !alias_Int1, !alias_Int1]
+      lit.enum.case green : []
     } {isEnum}
     ```
   }];
@@ -2247,7 +2258,7 @@ def LIT_RefPackFromPointerPackOp : LITOp<"ref.pack.from_pointer_pack", [Pure]> {
 
     ```mlir
     %0 = lit.ref.pack.from_pointer_pack %pack
-      : !kgen.struct<[pointer<index>, pointer<f32>]> isParamPack>
+      : !kgen.struct<(pointer<index>, pointer<f32>)>
      -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin>
     ```
   }];

@@ -137,6 +137,10 @@ public:
 /// output. An op whose patterns all fail stays unconverted; afterwards the
 /// first remaining op that `mustConvert` selects fails the conversion with an
 /// error on that op. `skipOp` ops are neither converted nor required.
+///
+/// The driver walks the ops directly in `root` in parallel to find the ops to
+/// convert and the ops that remain. It thus calls `skipOp` and `mustConvert`
+/// from several threads at once. The patterns run on the calling thread.
 MODULAR_CXX_EXPORT mlir::LogicalResult applyDirectConversion(
     mlir::Operation *root, const mlir::TypeConverter *typeConverter,
     const mlir::FrozenRewritePatternSet &patterns,

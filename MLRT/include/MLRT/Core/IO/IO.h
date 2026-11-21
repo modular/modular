@@ -21,7 +21,7 @@
 #include "MLRT/Core/IO/CUFile.h"
 #include "Support/ADT/SmartVariant.h"
 
-namespace M::IO {
+namespace M::MLRT {
 struct File {
   /// Initializes the cuFile library and driver resources. Must be called before
   /// any other cuFile API function. This would also register the uninitializer
@@ -51,6 +51,6 @@ struct File {
 private:
   SmartVariant<CUFile> impl;
 };
-}; // namespace M::IO
+}; // namespace M::MLRT
 
 #endif // MLRT_CORE_IO_IO_H

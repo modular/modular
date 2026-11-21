@@ -44,7 +44,6 @@ from layout import (
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index, IndexList
 from std.utils.coord import Coord, DynamicCoord
 from std.collections import OptionalReg
 from std.utils.static_tuple import StaticTuple
@@ -910,7 +909,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
     ](
-        IndexList[2](Int(c_device.dim[0]()), Int(c_device.dim[1]())),
+        (Int(c_device.dim[0]()), Int(c_device.dim[1]())),
         a_device,
         b_device,
         epilogue_fn,
@@ -927,7 +926,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_shape: IndexList[2],
+    c_shape: Tuple[Int, Int],
     a_device: TileTensor,
     b_device: TileTensor,
     epilogue_fn: EpilogueFnType,
@@ -973,7 +972,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     ] = None
     var c_shape_only = TileTensor(
         c_ptr._unsafe_nullable(),
-        tt_row_major(Coord(IndexList[3](1, c_shape[0], c_shape[1]))),
+        tt_row_major(Coord(1, c_shape[0], c_shape[1])),
     )
 
     def no_c_compute_fn[
@@ -1031,7 +1030,7 @@ def splitk_grid(
     cluster_m: Int,
     cluster_n: Int,
     num_split_k: Int,
-) -> IndexList[3]:
+) -> Tuple[Int, Int, Int]:
     """Returns the split-K launcher's grid: one CTA per output tile and split.
 
     Args:
@@ -1047,7 +1046,7 @@ def splitk_grid(
     Returns:
         The grid as (A tiles, B tiles, splits).
     """
-    return Index(
+    return (
         align_up(ceildiv(a_rows, block_m), cluster_m),
         align_up(ceildiv(b_rows, mma_n), cluster_n),
         num_split_k,
@@ -1310,7 +1309,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         ReductionTTLayout, type_of(reduction_tensor).Engine
     ]
 
-    var grid = splitk_grid(
+    var grid_dim = splitk_grid(
         M_maybe_swapped,
         N_maybe_swapped,
         BM,
@@ -1319,7 +1318,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         cluster_shape[1],
         config.num_split_k,
     )
-    var grid_dim = (grid[0], grid[1], grid[2])
 
     var cluster_dim = StaticTuple[Int32, 3](
         Int32(ceildiv(grid_dim[0], cluster_shape[0])),
@@ -1645,11 +1643,9 @@ def matmul_sm100_fallback[
             `bfloat16` or `float8_e4m3fn`.
         b_type: Input element dtype of the RHS matrix; must equal `a_type`.
         transpose_b: Whether B is stored transposed as (N, K). Must be True.
-        umma_shape: Tensor core MMA instruction shape as a 3-element
-            `IndexList` of (M, N, K).
-        block_tile_shape: CTA block tile shape as a 3-element
-            `IndexList` of (BM, BN, BK) giving the tile dimensions
-            along M, N, and K.
+        umma_shape: Tensor core MMA instruction shape as (M, N, K).
+        block_tile_shape: CTA block tile shape as (BM, BN, BK) giving the
+            tile dimensions along M, N, and K.
         a_swizzle: TMA swizzle mode for A tensor loads (defaults to
             `SWIZZLE_128B`).
         b_swizzle: TMA swizzle mode for B tensor loads (defaults to

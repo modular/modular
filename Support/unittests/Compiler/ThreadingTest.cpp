@@ -75,6 +75,44 @@ TEST_P(ThreadingTest, ForEachChunkGivesFewItemsOneChunkEach) {
   EXPECT_TRUE(oneItemEach);
 }
 
+TEST_P(ThreadingTest, IndexedChunkGetsTheIndexOfItsFirstItem) {
+  std::vector<int> items = makeItems(2000);
+  std::vector<std::atomic<int>> numCalls(M::kMaxParallelChunks);
+  std::atomic<bool> indexIsFirstItem = true;
+  M::parallelForEachIndexedChunk(
+      &context, items, [&](size_t chunkIndex, ArrayRef<int> chunk) {
+        ++numCalls[chunkIndex];
+        if (static_cast<size_t>(chunk[0]) != chunkIndex)
+          indexIsFirstItem = false;
+      });
+
+  EXPECT_TRUE(indexIsFirstItem);
+  EXPECT_TRUE(llvm::all_of(
+      numCalls, [](const std::atomic<int> &count) { return count == 1; }));
+}
+
+TEST_P(ThreadingTest, IndexedChunkKeepsStatePerIndexAcrossCalls) {
+  constexpr size_t numItems = 2000;
+  std::vector<int> items = makeItems(numItems);
+  // Plain ints are safe, because no two calls that run at once get the same
+  // index.
+  std::vector<int> sums(M::kMaxParallelChunks);
+  for (int call = 0; call < 2; ++call) {
+    M::parallelForEachIndexedChunk(&context, items,
+                                   [&](size_t chunkIndex, ArrayRef<int> chunk) {
+                                     for (int item : chunk)
+                                       sums[chunkIndex] += item;
+                                   });
+  }
+
+  for (size_t chunk = 0; chunk < sums.size(); ++chunk) {
+    int expected = 0;
+    for (size_t i = chunk; i < numItems; i += M::kMaxParallelChunks)
+      expected += 2 * static_cast<int>(i);
+    EXPECT_EQ(sums[chunk], expected);
+  }
+}
+
 TEST_P(ThreadingTest, MapChunksReturnsResultsInChunkOrder) {
   constexpr size_t numItems = 2000;
   std::vector<int> items = makeItems(numItems);

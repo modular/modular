@@ -18,17 +18,16 @@ from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
-from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, row_major
 from nn.softmax import softmax_inline
-
-from std.utils.index import IndexList
 
 
 def bench_softmax_gpu[
-    rank: Int, //, dtype: DType, shape: IndexList[rank]
+    dtype: DType, shape: Coord
 ](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
-    comptime cols = shape[rank - 1]
-    comptime total = shape.flattened_length()
+    comptime rank = shape.rank
+    comptime cols = Int(shape[rank - 1])
+    comptime total = Int(shape.product())
 
     var data_h = List(length=total, fill=Scalar[dtype](0))
 
@@ -38,8 +37,8 @@ def bench_softmax_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](total)
     var out_d = ctx.enqueue_create_buffer[dtype](total)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(shape))).as_imm()
-    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
+    var data_buf = TileTensor(data_d, row_major(shape)).as_imm()
+    var out_buf = TileTensor(out_d, row_major(shape))
 
     ctx.enqueue_copy(data_d, data_h)
 
@@ -55,7 +54,7 @@ def bench_softmax_gpu[
             simd_width_of[dtype, target=ctx.target](),
         ](
             input_fn,
-            Coord(shape),
+            shape,
             out_buf,
             rank - 1,
             ctx,

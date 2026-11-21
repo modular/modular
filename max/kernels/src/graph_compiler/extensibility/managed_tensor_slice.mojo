@@ -40,8 +40,6 @@ from std.sys.intrinsics import strided_load, strided_store
 from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
 
-from max.runtime.tracing import trace_arg
-
 from layout import (
     Coord,
     CoordLike,
@@ -743,7 +741,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 # They are set to be inlined further down graph compiler stack.
 @doc_hidden
 @inline(.always)
-def simd_store_into_managed_tensor_slice[
+def _simd_store_at_flat_index[
     dtype: DType,
     rank: Int,
     simd_width: SIMDLength,
@@ -752,11 +750,9 @@ def simd_store_into_managed_tensor_slice[
     element_alignment: Int = 1,
 ](
     tensor: ManagedTensorSlice[static_spec=static_spec, ...],
-    indices: IndexList[rank],
+    flat_index: Int,
     value: SIMD[dtype, simd_width],
 ):
-    var flat_index = tensor._compute_offset(indices)
-
     # Store alignment cannot exceed the data type's alignment.
     comptime max_alignment = _gcd_pow2[
         tensor.alignment, element_alignment * align_of[dtype]()
@@ -812,6 +808,45 @@ def simd_store_into_managed_tensor_slice[
                 store_stride1()
             case _:
                 store_strided(_last_stride_value)
+
+
+@doc_hidden
+@inline(.always)
+def simd_store_into_managed_tensor_slice[
+    dtype: DType,
+    rank: Int,
+    simd_width: SIMDLength,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: IndexList[rank],
+    value: SIMD[dtype, simd_width],
+):
+    _simd_store_at_flat_index[element_alignment=element_alignment](
+        tensor, tensor._compute_offset(indices), value
+    )
+
+
+@doc_hidden
+@inline(.always)
+def _simd_store_into_managed_tensor_slice_coord[
+    dtype: DType,
+    rank: Int,
+    simd_width: SIMDLength,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: Coord,
+    value: SIMD[dtype, simd_width],
+):
+    comptime assert indices.rank == rank
+    _simd_store_at_flat_index[element_alignment=element_alignment](
+        tensor, tensor._compute_offset(indices), value
+    )
 
 
 @doc_hidden
@@ -917,7 +952,7 @@ def _strided_lanes_mask[width: Int, stride: Int]() -> IndexList[width]:
 
 @doc_hidden
 @inline(.always)
-def simd_load_from_managed_tensor_slice[
+def _simd_load_at_flat_index[
     dtype: DType,
     rank: Int,
     simd_width: Int,
@@ -926,9 +961,8 @@ def simd_load_from_managed_tensor_slice[
     element_alignment: Int = 1,
 ](
     tensor: ManagedTensorSlice[static_spec=static_spec, ...],
-    indices: IndexList[rank],
+    flat_index: Int,
 ) -> SIMD[dtype, simd_width]:
-    var flat_index = tensor._compute_offset(indices)
     comptime _last_stride_is_static = tensor.static_spec.static_layout._stride_types[
         rank - 1
     ].is_static_value
@@ -1035,6 +1069,43 @@ def simd_load_from_managed_tensor_slice[
                             simd_width, mask.as_index_tuple()
                         ](v)
                 return load_strided(_last_stride_value)
+
+
+@doc_hidden
+@inline(.always)
+def simd_load_from_managed_tensor_slice[
+    dtype: DType,
+    rank: Int,
+    simd_width: Int,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: IndexList[rank],
+) -> SIMD[dtype, simd_width]:
+    return _simd_load_at_flat_index[
+        simd_width=simd_width, element_alignment=element_alignment
+    ](tensor, tensor._compute_offset(indices))
+
+
+@doc_hidden
+@inline(.always)
+def _simd_load_from_managed_tensor_slice_coord[
+    dtype: DType,
+    rank: Int,
+    simd_width: Int,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: Coord,
+) -> SIMD[dtype, simd_width]:
+    comptime assert indices.rank == rank
+    return _simd_load_at_flat_index[
+        simd_width=simd_width, element_alignment=element_alignment
+    ](tensor, tensor._compute_offset(indices))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1310,6 +1381,22 @@ struct ManagedTensorSlice[
         return self._ptr[unsafe_offset=offset]
 
     @inline(.always)
+    def __getitem__(self, indices: Coord) -> Scalar[Self.dtype]:
+        """Gets the value at the specified coordinates.
+
+        Args:
+          indices: The coordinates of the value to retrieve.
+
+        Returns:
+          The value at the specified coordinates.
+        """
+        comptime assert indices.rank == Self.rank
+        comptime assert (
+            not Self._has_input_fusion
+        ), "Direct load on fused tensor is forbidden"
+        return self._ptr[unsafe_offset=self._compute_offset(indices)]
+
+    @inline(.always)
     def __getitem__(self, *indices: Int) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.
 
@@ -1360,6 +1447,21 @@ struct ManagedTensorSlice[
         ), "Direct store on fused tensor is forbidden"
         var offset = self._compute_offset(indices)
         self._ptr[unsafe_offset=offset] = val
+
+    @inline(.always)
+    def __setitem__(self, indices: Coord, val: Scalar[Self.dtype]):
+        """Stores the value at the specified coordinates.
+
+        Args:
+          indices: The coordinates of the value to store.
+          val: The value to store.
+
+        """
+        comptime assert indices.rank == Self.rank
+        comptime assert (
+            not Self._has_output_store_fusion
+        ), "Direct store on fused tensor is forbidden"
+        self._ptr[unsafe_offset=self._compute_offset(indices)] = val
 
     @inline(.always)
     def shape(self) -> IndexList[Self.rank]:
@@ -1536,7 +1638,9 @@ struct ManagedTensorSlice[
         return rebind[Pointer[Scalar[_dtype], MutAnyOrigin]](self._ptr)
 
     @inline(.always)
-    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def to_device_buffer(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[Self.dtype]:
         var size = self.size()
         if size > 0:
             return DeviceBuffer[Self.dtype](
@@ -1596,9 +1700,9 @@ struct ManagedTensorSlice[
             Data from this tensor slice at dimension `index`.
         """
         comptime assert index.rank == Self.rank
-        return self.load[width, element_alignment=element_alignment](
-            rebind[IndexList[Self.rank]](coord_to_index_list(index))
-        )
+        return _simd_load_from_managed_tensor_slice_coord[
+            simd_width=width, element_alignment=element_alignment
+        ](self, index)
 
     @inline(.always)
     def _fused_load[
@@ -1759,9 +1863,9 @@ struct ManagedTensorSlice[
             val: The data to set into this tensor slice.
         """
         comptime assert index.rank == Self.rank
-        self.store[width, element_alignment=element_alignment](
-            rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
-        )
+        _simd_store_into_managed_tensor_slice_coord[
+            simd_width=width, element_alignment=element_alignment
+        ](self, index, val)
 
     @__allow_legacy_custom_self_type
     @inline(.always)
@@ -2082,22 +2186,6 @@ struct ManagedTensorSlice[
         self.write_to(writer)
 
 
-# TODO: Move to Mojo/stdlib/stdlib/runtime/tracing.mojo and
-# rename to trace_arg
-@inline(.always)
-def trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
-    """Helper to stringify the type and shape of a kernel argument for tracing.
-
-    Args:
-        name: The name of the argument.
-        buf: The tensor to trace.
-
-    Returns:
-        A string representation of the buffer with its shape and data type.
-    """
-    return trace_arg(name, buf.strides(), buf.dtype)
-
-
 # ===----------------------------------------------------------------------=== #
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
@@ -2228,9 +2316,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     making it safe to pass across the host-device boundary via GPU closures.
     """
 
-    comptime _mlir_type = __mlir_type[
-        `!kgen.struct<`, ~Self.Ts.values, ` isParamPack>`
-    ]
+    comptime _mlir_type = __mlir_type[`!kgen.struct<`, ~Self.Ts.values, `>`]
     var _mlir_value: Self._mlir_type
 
     @inline(.nodebug)

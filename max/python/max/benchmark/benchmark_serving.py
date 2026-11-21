@@ -37,8 +37,10 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
+import aiohttp
 import numpy as np
 import psutil
+import uvloop
 from cyclopts import App, Parameter
 from cyclopts.config import Env
 from transformers import PreTrainedTokenizerBase
@@ -46,6 +48,10 @@ from transformers import PreTrainedTokenizerBase
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
 
+from max.benchmark.benchmark_shared.client_health import (
+    ClientLoopProbe,
+    client_loop_warning,
+)
 from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
     PIXEL_GENERATION_ENDPOINTS,
@@ -90,7 +96,6 @@ from max.benchmark.benchmark_shared.iteration import (
     resolve_seed,
     resolve_skip_counts,
     retain_result,
-    seed_for_concurrency,
 )
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
@@ -110,6 +115,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestDriver,
     RequestFuncOutput,
+    benchmark_client_session,
     get_request_driver_class,
     progressbar_request_driver,
 )
@@ -310,6 +316,19 @@ async def benchmark(
     ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
     user-supplied values (``None`` = auto-derive from *max_concurrency*).
     """
+    async with benchmark_client_session() as client:
+        return await _benchmark_with_client(
+            args, session, max_concurrency, request_rate, client
+        )
+
+
+async def _benchmark_with_client(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    max_concurrency: int | None,
+    request_rate: float,
+    client: aiohttp.ClientSession,
+) -> tuple[BenchmarkResult, bool]:
     backend: Backend = args.backend
 
     skip_first, skip_last = resolve_skip_counts(
@@ -394,6 +413,7 @@ async def benchmark(
         tokenizer=session.tokenizer,
         extra_body=args.extra_body,
         backend=args.backend,
+        session=client,
     )
 
     if args.warm_shared_prefix:
@@ -445,6 +465,7 @@ async def benchmark(
         tokenizer=session.tokenizer,
         extra_body=args.extra_body,
         backend=args.backend,
+        session=client,
     )
 
     # Warm up the initial-slot sessions before starting the timer.
@@ -578,6 +599,10 @@ async def benchmark(
             f"request_rate={request_rate}) ==="
         )
         benchmark_start_time = time.perf_counter_ns()
+        # Probes the client's own loop over the measured window only.
+        client_probe = ClientLoopProbe()
+        client_probe.start()
+        benchmark_stack.callback(client_probe.stop)
         if args.max_benchmark_duration_s is None:
             benchmark_should_end_time = None
         else:
@@ -715,6 +740,7 @@ async def benchmark(
         benchmark_duration = (
             time.perf_counter_ns() - benchmark_start_time
         ) / 1e9
+        await client_probe.aclose()
 
     if session.benchmark_task == "text-generation":
         spec_decode_metrics_after = fetch_spec_decode_metrics(
@@ -831,10 +857,34 @@ async def benchmark(
             steady_state_filtering=args.steady_state_filtering,
             goodput_targets=args.goodput_targets,
             num_gpus=args.num_gpus,
+            disable_tqdm=args.disable_tqdm,
         )
     result.record_run_cache_hit_rate(run_cache_hit_rate(all_outputs))
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics
+
+    # The client's own delay is judged against the latencies this run reports:
+    # the probe only measured the loop, so the result has to exist first.
+    client_stats = client_probe.stats()
+    text_data = result.text_data
+    ttft_p50_ms = (
+        text_data.ttft_ms.p50
+        if text_data is not None and text_data.ttft_ms is not None
+        else None
+    )
+    itl_p50_ms = (
+        text_data.itl_ms.p50
+        if text_data is not None and text_data.itl_ms is not None
+        else None
+    )
+    result = result.updated(
+        client_loop_lag_ms=client_stats.lag_ms,
+        client_loop_lag_max_ms=client_stats.lag_max_ms,
+        client_loop_busy=client_stats.busy,
+        client_warning=client_loop_warning(
+            client_stats, ttft_p50_ms=ttft_p50_ms, itl_p50_ms=itl_p50_ms
+        ),
+    )
 
     ok = report_and_validate(
         result,
@@ -1166,11 +1216,13 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     # Auto-select the correct endpoint for pixel generation based on the
     # backend. Each pixel-gen backend requires a specific endpoint (e.g.,
     # sglang needs /v1/images/generations, vllm needs
-    # /v1/chat/completions). We auto-select when the current endpoint
-    # doesn't match this backend's expected pixel-gen endpoint.
+    # /v1/chat/completions). We auto-select when the current endpoint does not match this
+    # backend's expected pixel-gen endpoint.
     if benchmark_task in PIXEL_GENERATION_TASKS:
         try:
-            expected = get_pixel_gen_endpoint(args.backend, benchmark_task)
+            expected = get_pixel_gen_endpoint(
+                args.backend, benchmark_task, args.video_request_schema
+            )
         except ValueError:
             raise ValueError(
                 f"Backend {args.backend!r} does not have a default"
@@ -1416,9 +1468,8 @@ def _emit_engine_state(
         logger.info("Wrote engine state to %s", args.engine_state_json)
     if into_stats:
         assert args.workload_stats_json is not None
-        # Recomputed from the samples this run sent: the sweep draws a new
-        # sample for each concurrency level, so the file written before the
-        # run describes another draw of the same workload.
+        # Recomputed from the samples this run sent: the sweep samples again
+        # for each concurrency level, and num_prompts can change with it.
         stats = _compute_session_stats(args, session).model_copy(
             update={"engine_state": state}
         )
@@ -1440,7 +1491,6 @@ def _run_dry_run_sweep(
     if not args.print_workload_stats:
         print_workload_stats(session.samples, stats)
     if isinstance(session.samples, ChatSamples) and args.warmup_multiturn:
-        rng = np.random.default_rng(args.seed or 0)
         for mc in concurrency_range:
             warmup_count = (
                 args.max_concurrent_conversations
@@ -1457,7 +1507,7 @@ def _run_dry_run_sweep(
                 warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
-                rng=rng,
+                rng=np.random.default_rng(args.seed),
                 delay_biased=args.warmup_delay_biased,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
@@ -1508,16 +1558,15 @@ def _run_benchmark_sweep(
         # from args.
         args.num_prompts = num_prompts
 
-        # Each concurrency level draws its own sample, derived from the base
-        # seed, so levels are reproducible individually without replaying
-        # the exact same requests at every level.
-        mc_seed = seed_for_concurrency(args.seed, mc)
+        # Every level samples from the base seed, so a sweep compares the
+        # server across loads on one workload. num_prompts can change with
+        # the level, so sample again rather than reuse the session's draw.
         session.samples = _sample_for_seed(
             args,
             session.benchmark_task,
             session.tokenizer,
             session.endpoint == "/v1/chat/completions",
-            mc_seed,
+            args.seed,
         )
 
         for rr in args.request_rate:
@@ -1533,9 +1582,9 @@ def _run_benchmark_sweep(
                         base_url=args.base_url,
                     )
 
-                logger.info("mc=%s seed=%d", mc, mc_seed)
+                logger.info("mc=%s seed=%d", mc, args.seed)
 
-                result, ok = asyncio.run(benchmark(args, session, mc, rr))
+                result, ok = uvloop.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)
                 if not ok:
                     validation_passed = False

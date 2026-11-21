@@ -45,7 +45,7 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
 )
-from max._driver.max_license.device_context_dispatch.device_context import (
+from max._driver.max_license.device_context_dispatch.backend_selection import (
     HAL_DEVICE_CONTEXT,
 )
 from max.runtime.async_value import AnyAsyncValueRef

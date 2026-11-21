@@ -33,10 +33,6 @@ import numpy as np
 import pytest
 from max import driver
 from max import functional as F
-from max._entrypoints.cli.quantize import (
-    insert_quantized_linears,
-    on_the_fly_config,
-)
 from max.driver import Accelerator, accelerator_count
 from max.driver.buffer import load_max_buffer
 from max.dtype import DType
@@ -51,6 +47,10 @@ from max.nn.common_layers.quant_tensor import (
 )
 from max.nn.kernels import nvfp4_dequant
 from max.nn.module import Module, module_dataclass
+from max.pipelines.lib.quantization import (
+    insert_quantized_linears,
+    on_the_fly_config,
+)
 from max.pipelines.weights.fp4_quantization import (
     FP4Format,
     dequantize_nvfp4,
@@ -257,6 +257,62 @@ def test_single_weight_and_fused_group(tmp_path: Path) -> None:
         # Nonzero error; the equality above pins each report to the served
         # (group-scaled) leaves.
         assert member_got[0] > 0 and member_got[1] > 0, name
+
+
+@module_dataclass
+class _PlainAndSwept(Module[[], tuple[Tensor, ...]]):
+    weight: Tensor
+
+    def forward(self) -> tuple[Tensor, ...]:
+        leaves: list[Tensor] = []
+        for sweep in (False, True):
+            quantized = NVFP4TensorQuantizer(
+                self.weight, mse_sweep_scales=sweep
+            ).quant_tensor
+            leaves += [
+                quantized.weight,
+                quantized.weight_scale,
+                quantized.weight_scale_2,
+            ]
+        return tuple(leaves)
+
+
+def test_mse_sweep_lowers_the_error() -> None:
+    """The swept block amaxes reconstruct the weight no worse than abs-max.
+
+    The sweep includes the unclipped amax, so per block it can only match
+    or beat plain abs-max scaling. Heavy-tailed weights make some clip win,
+    so the scales differ and the error drops.
+    """
+    device = Accelerator()
+    rng = np.random.default_rng(11)
+    w_f32 = rng.standard_t(3, (_N, _K)).astype(np.float32)
+    weight = _bf16_weight(device, w_f32)
+
+    with F.lazy():
+        model = _PlainAndSwept(
+            weight=Tensor.zeros([_N, _K], dtype=DType.bfloat16)
+        )
+    compiled = model.compile(
+        weights={"weight": weight.driver_tensor},
+        session=InferenceSession(devices=[device]),
+    )
+    plain_q, plain_s, plain_d, swept_q, swept_s, swept_d = compiled()
+
+    source = weight.cast(DType.float32).to_numpy().astype(np.float64)
+    plain = _host_dequant(plain_q, plain_s, plain_d).astype(np.float64)
+    swept = _host_dequant(swept_q, swept_s, swept_d).astype(np.float64)
+    plain_err = ((plain - source) ** 2).reshape(_N, _K // 16, 16).sum(-1)
+    swept_err = ((swept - source) ** 2).reshape(_N, _K // 16, 16).sum(-1)
+
+    assert float(plain_d.to_numpy()) == float(swept_d.to_numpy())
+    assert not np.array_equal(
+        plain_s.driver_tensor.view(DType.uint8).to_numpy(),
+        swept_s.driver_tensor.view(DType.uint8).to_numpy(),
+    )
+    assert swept_err.sum() < plain_err.sum()
+    # 1.0 is a candidate, so no block does worse than its own abs-max.
+    np.testing.assert_array_less(swept_err, plain_err * (1 + 1e-5) + 1e-12)
 
 
 def test_flag_leaves_output_unchanged_and_names_layers(tmp_path: Path) -> None:

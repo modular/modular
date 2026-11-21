@@ -36,7 +36,7 @@ from std.os import abort
 from std.sys._libc import FcntlCommands, close as libc_close, fcntl
 from std.utils._nicheable import UnsafeSingleNicheable, _FieldNicheable
 
-from ._syscall import check
+from ._syscall import cap_io_length, check
 from .error import IOError
 
 
@@ -170,7 +170,7 @@ struct RawFileDescriptor(
         ), "`read_bytes()` is not yet implemented for unknown platform."
         return check(
             external_call["read", c_ssize_t](
-                self._value, buffer.unsafe_ptr(), len(buffer)
+                self._value, buffer.unsafe_ptr(), cap_io_length(len(buffer))
             ),
             "read",
         )

@@ -96,7 +96,10 @@ modular_py_library(
     name = "warm_lib",
     srcs = ["warm_lib.py"],
     visibility = ["//visibility:public"],
-    deps = ["//max/python/max/engine"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+    ],
 )
 
 # CPU-slot producer. "manual" so wildcards don't pick it up standalone; built as

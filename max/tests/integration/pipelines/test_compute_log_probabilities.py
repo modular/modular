@@ -22,11 +22,11 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.nn.outputs import ReturnLogits
+from max.pipelines.architectures.gemma3_modulev3 import (
+    gemma3_multimodal_modulev3_arch,
+)
 from max.pipelines.architectures.gemma3multimodal.model import (
     Gemma3_MultiModalModel,
-)
-from max.pipelines.architectures.gemma3multimodal_modulev3 import (
-    gemma3_multimodal_modulev3_arch,
 )
 from max.pipelines.architectures.internvl.model import InternVLModel
 from max.pipelines.context import LogProbabilities

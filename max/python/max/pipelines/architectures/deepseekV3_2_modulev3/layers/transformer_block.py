@@ -28,7 +28,8 @@ from max.nn.common_layers.quant_linear import (
     QuantizedMLP,
     tensor_parallel_mlp,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantFormat
 from max.tensor import Tensor
@@ -44,6 +45,7 @@ from ..model_config import DeepseekV3_2Config, HiSparseInputs
 from .mlp import DeepseekV3_2MLP
 from .moe import (
     DeepseekV3_2ExpertParallelMoE,
+    DeepseekV3_2LocalExpertsMoE,
     DeepseekV3_2MoE,
     DeepseekV3_2TensorParallelMoE,
 )
@@ -65,7 +67,7 @@ def _get_mlp(
     config: DeepseekV3_2Config,
     mode: ParallelismMode,
     layer_idx: int,
-    ep_batch_manager: EPBatchManager | None = None,
+    ep_config: EPConfig | None = None,
 ) -> Module[[Tensor], Tensor]:
     """Returns either an MoE or MLP module for the given layer index.
 
@@ -83,13 +85,27 @@ def _get_mlp(
         and layer_idx >= config.first_k_dense_replace
         and layer_idx % config.moe_layer_freq == 0
     )
+    nvfp4_experts = (
+        layer_quant_config is not None
+        and layer_quant_config.format == QuantFormat.NVFP4
+    )
+    # One device holding every NVFP4 expert, as a pipeline stage does, runs
+    # the expert-parallel path's local kernels: its tokens need no exchange.
+    local_experts = (
+        use_moe
+        and nvfp4_experts
+        and ep_config is None
+        and config.mesh is not None
+        and config.mesh.num_devices == 1
+    )
     # The graph-API model shards its router and shared expert into the plain
     # DeepSeek-V3 ones, so its expert-parallel deployments run the gate GEMM
     # in bfloat16 (casting the logits to float32) and the shared-expert
     # SwiGLU in bfloat16. Match that for the NVFP4 checkpoints it serves; the
-    # others keep the float32 variants they were validated with.
-    plain_v3_numerics = (
-        ep_batch_manager is not None
+    # others keep the float32 variants they were validated with. A device
+    # holding every expert takes them too, to match that path bit for bit.
+    plain_v3_numerics = local_experts or (
+        ep_config is not None
         and quant_cfg is not None
         and quant_cfg.format == QuantFormat.NVFP4
     )
@@ -121,10 +137,12 @@ def _get_mlp(
             # would otherwise give the shared expert a bf16 activation.
             mlp_cls=QuantizedMLP if plain_v3_numerics else DeepseekV3_2MLP,
         )
-        if ep_batch_manager is not None:
+        if ep_config is not None:
             return DeepseekV3_2ExpertParallelMoE(
-                **moe_kwargs, ep_batch_manager=ep_batch_manager
+                **moe_kwargs, ep_config=ep_config
             )
+        if local_experts:
+            return DeepseekV3_2LocalExpertsMoE(**moe_kwargs)
         if (
             mode is not ParallelismMode.DP_EP
             and config.mesh is not None
@@ -163,7 +181,7 @@ class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
         config: DeepseekV3_2Config,
         layer_idx: int,
         attention_scale: float,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -227,7 +245,7 @@ class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
                 self.self_attn, attention_tp
             )
 
-        self.mlp = _get_mlp(config, self.mode, layer_idx, ep_batch_manager)
+        self.mlp = _get_mlp(config, self.mode, layer_idx, ep_config)
         # The graph-API model's opt-in for the fused all-gather + next input
         # norm. That fused norm multiplies before the cast, so with it opted
         # in every input norm does too, as there.
@@ -268,7 +286,7 @@ class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         prev_topk_indices: Selection | None = None,
         reuse_prev_topk: bool = False,
         indexer_layer_idx: Tensor | None = None,
@@ -322,8 +340,7 @@ class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
             )
             norm_h = self.post_attention_layernorm(hidden_states)
         if isinstance(self.mlp, DeepseekV3_2ExpertParallelMoE):
-            assert comm_buffers is not None
-            mlp_out = self.mlp(norm_h, comm_buffers)
+            mlp_out = self.mlp(norm_h, ep=ep)
         else:
             mlp_out = self.mlp(norm_h)
         if next_input_gamma is not None:

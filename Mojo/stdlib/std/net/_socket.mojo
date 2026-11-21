@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Owns a socket descriptor and applies the setup every socket needs."""
 
-from std.ffi import c_int, c_size_t
+from std.ffi import ErrNo, c_int, c_size_t
 from std.io import FileDescriptor, IOError
-from std.io._syscall import check, retry_io_interrupted
+from std.io._syscall import cap_io_length, check, retry_io_interrupted
 from std.net.addr import SocketAddr
 from std.sys import size_of
 
@@ -25,9 +25,15 @@ from ._sys.socket_addr import (
     to_sockaddr_storage,
 )
 from ._sys.unix import (
+    MSG_NOSIGNAL,
+    POLLOUT,
+    SOL_SOCKET,
+    SO_ERROR,
     accept_socket,
     getsockopt,
+    nfds_t,
     open_socket,
+    pollfd,
     setsockopt,
     sockaddr,
     sockaddr_storage,
@@ -135,30 +141,35 @@ struct Socket(not Deinitable, Movable):
     def connect(self, addr: SocketAddr) raises IOError:
         """Connects the socket to a remote address."""
         var storage = to_sockaddr_storage(addr)
+        var result = unix.connect(
+            self.unsafe_fd(),
+            Pointer(to=storage).unsafe_bitcast[sockaddr](),
+            sockaddr_len(addr),
+        )
+        if result == 0:
+            return
+        var error = IOError.last_os_error("connect")._with_subject(.addr(addr))
+        # An interrupted `connect` carries on in the kernel, so calling it
+        # again doesn't work: on macOS that fails with `EISCONN` while the
+        # connection is still pending.
+        if error.kind() != .interrupted:
+            raise error
+        self.finish_connect(addr)
 
-        # TODO(https://github.com/modular/modular/issues/7478): return nothing
-        # once the compiler can infer `None` as the result type of a closure
-        # passed to `retry_io_interrupted`.
-        def attempt() raises IOError {imm} -> c_int:
-            var result = unix.connect(
-                self.unsafe_fd(),
-                Pointer(to=storage).unsafe_bitcast[sockaddr](),
-                sockaddr_len(addr),
-            )
-            if result == -1:
-                raise IOError.last_os_error("connect")._with_subject(
-                    .addr(addr)
-                )
-            return result
+    def finish_connect(self, addr: SocketAddr) raises IOError:
+        """Waits for a pending connection to `addr` to finish, and raises the
+        error it failed with, if any."""
+        var fds = pollfd(fd=self.unsafe_fd(), events=POLLOUT, revents=0)
 
-        # TODO(https://github.com/modular/modular/issues/7474): an interrupted
-        # `connect` carries on in the kernel. On macOS the retry fails with
-        # `EISCONN` even while the connection is still pending, so this can
-        # raise for a connection that succeeds; treating `EISCONN` as success,
-        # as Rust's std does, would instead return before the socket is
-        # connected. After `EINTR`, `poll` for `POLLOUT` and read the outcome
-        # from `SO_ERROR`, as CPython does.
+        def attempt() raises IOError {mut fds} -> c_int:
+            return check(unix.poll(Pointer(to=fds), nfds_t(1), -1), "poll")
+
         _ = retry_io_interrupted(attempt)
+        var errno = self.option(level=SOL_SOCKET, name=SO_ERROR)
+        if errno != 0:
+            raise IOError(
+                errno=ErrNo(Int(errno)), operation="connect"
+            )._with_subject(.addr(addr))
 
     def accept(self) raises IOError -> Tuple[Socket, SocketAddr]:
         """Accepts a connection, and returns its socket and the peer's
@@ -201,15 +212,12 @@ struct Socket(not Deinitable, Movable):
         """Reads into `buffer` with the given `MSG_*` flags, and returns how
         many bytes it read: 0 once the peer has closed its end."""
 
-        # TODO(https://github.com/modular/modular/issues/7476): macOS fails a
-        # `recv` of more than `INT_MAX` bytes with `EINVAL` instead of reading
-        # less. Cap the length there.
         def attempt() raises IOError {imm} -> Int:
             return check(
                 unix.recv(
                     self.unsafe_fd(),
                     buffer.unsafe_ptr(),
-                    c_size_t(len(buffer)),
+                    c_size_t(cap_io_length(len(buffer))),
                     flags,
                 ),
                 "recv",
@@ -223,23 +231,19 @@ struct Socket(not Deinitable, Movable):
         """Writes some of `bytes` with the given `MSG_*` flags, and returns how
         many it wrote.
 
+        A send to a peer that has closed raises an error instead of `SIGPIPE`,
+        which would end the process.
+
         macOS ignores `MSG_DONTWAIT` here, and blocks on a full buffer anyway.
         """
 
-        # TODO(https://github.com/modular/modular/issues/7475): a send to a peer
-        # that has closed raises `SIGPIPE`, which ends the process by default.
-        # Suppress it with `MSG_NOSIGNAL` on each send on Linux, and with
-        # `SO_NOSIGPIPE` on macOS, set in `open_socket` and `accept_socket`.
-        # TODO(https://github.com/modular/modular/issues/7476): macOS fails a
-        # `send` of more than `INT_MAX` bytes with `EINVAL` instead of writing
-        # less. Cap the length there.
         def attempt() raises IOError {imm} -> Int:
             return check(
                 unix.send(
                     self.unsafe_fd(),
                     bytes.unsafe_ptr(),
-                    c_size_t(len(bytes)),
-                    flags,
+                    c_size_t(cap_io_length(len(bytes))),
+                    flags | MSG_NOSIGNAL,
                 ),
                 "send",
             )

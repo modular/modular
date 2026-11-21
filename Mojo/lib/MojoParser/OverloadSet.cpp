@@ -595,13 +595,18 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     if (!operandsAlreadySpilled.insert(operandIdx).second)
       continue; // Ignore duplicates.
 
-    // Handle the result slot if we have to materialize it into memory.
+    // Handle the result slot if we have to materialize it into memory. If the
+    // destination can supply memory, for example a 'var' pattern, resolve it
+    // so that inference can use it. Otherwise make a temporary. Do not replace
+    // the destination: the call result must still go to it as an owned value.
     if (operandIdx == OperandNeedingOrigin::kExprDestOperandIdx) {
-      MLValue addr = operands.dest.getMLValueForResult(
+      if (operands.dest.getDefinedMLValueIfExists(expectedArgType, emitter))
+        continue;
+      ExprDest temporary(operands.dest.getContext());
+      operands.resultSlot = temporary.getMLValueForResult(
           operands.getExprLoc(), expectedArgType, emitter);
-      if (!addr)
+      if (!operands.resultSlot)
         return failure();
-      operands.dest = ExprDest(addr, operands.dest.getContext());
       continue;
     }
 

@@ -1350,6 +1350,7 @@ struct VariadicPack[
     Copyable where not is_owned else "Cannot copy an owned variadic pack.",
     RegisterPassable,
     Sized,
+    Writable where Ts.all_conforms_to[Writable](),
 ):
     """A utility class to access heterogeneous variadic function arguments.
 
@@ -1563,7 +1564,7 @@ struct VariadicPack[
     comptime _kgen_pack_with_pointer_type = __mlir_type[
         `!kgen.struct<:param_list<type> `,
         Self._variadic_pointer_types,
-        ` isParamPack>`,
+        `>`,
     ]
     """This is the !kgen.struct type with pointer elements."""
 
@@ -1584,7 +1585,7 @@ struct VariadicPack[
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.struct<:param_list<type> `,
         Self._variadic_with_pointers_removed,
-        ` isParamPack>`,
+        `>`,
     ]
     """This is the `!kgen.struct` type that happens if one loads all the elements
     of the pack.
@@ -1669,11 +1670,17 @@ struct VariadicPack[
         Args:
             writer: The object to write to.
         """
-        self._write_to[is_repr=True](
-            writer,
-            start=StaticString("("),
-            end=StaticString(")"),
-        )
+
+        def fields(mut w: Some[Writer]) {imm}:
+            self._write_to[is_repr=True](
+                w,
+                start=StaticString(""),
+                end=StaticString(""),
+            )
+
+        FormatStruct(writer, "VariadicPack").params(
+            TypeNames[*Self.Ts]()
+        ).fields(fields)
 
 
 @inline(.always)

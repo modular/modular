@@ -33,8 +33,8 @@ N = 192
 def _build(epilogue: str, escaping: bool) -> Graph:
     """Builds the routed up projection followed by an elementwise epilogue.
 
-    With ``escaping`` the matmul output is also a graph output, so the fused
-    epilogue stores it beside the epilogue's result.
+    With ``escaping`` the matmul output is also a graph output, so the
+    epilogue runs as a kernel of its own.
     """
     with Graph(
         f"grouped_matmul_{epilogue}",
@@ -111,7 +111,9 @@ def test_grouped_matmul_fused_epilogue(epilogue: str, num_tokens: int) -> None:
     # The comparisons below pass even if fusion stops happening, so check the
     # compiled kernels too.
     assert _fuses_whole_epilogue(fused, epilogue), fused.kernel_summaries
-    assert _fuses_whole_epilogue(escaping, epilogue), escaping.kernel_summaries
+    assert not _fuses_whole_epilogue(escaping, epilogue), (
+        escaping.kernel_summaries
+    )
 
     # Unseeded data occasionally put an output on the relu boundary, where
     # bf16 rounding flips it past the tolerance.
@@ -161,7 +163,7 @@ def test_grouped_matmul_fused_epilogue(epilogue: str, num_tokens: int) -> None:
         ref = torch.relu(up + bias.float()) * row_scale.float()[order_np]
     torch.testing.assert_close(out_t.float(), ref, rtol=2e-2, atol=2e-2)
 
-    # The matmul output the epilogue stores, in the escaping run's row order.
+    # The returned matmul output, in the escaping run's row order.
     escaping_rows = x.float()[escaping_order_np]
     escaping_experts = weight.float()[topk_ids[escaping_order_np]]
     escaping_ref = torch.einsum("rk,rnk->rn", escaping_rows, escaping_experts)

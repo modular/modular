@@ -25,7 +25,7 @@ namespace M::KGEN {
 
 mlir::Type lowerAggregateArgToMemory(mlir::Type type) {
   auto structType = mlir::dyn_cast<StructType>(type);
-  if (!structType || structType.getIsParamPack())
+  if (!structType)
     return {};
 
   bool hasPointer = false;

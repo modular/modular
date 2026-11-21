@@ -202,7 +202,7 @@ private:
   LogicalResult inferOptionalLiteralSize();
 
   LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
-                                const ExprDest &dest);
+                                const CallOperands &operands);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not

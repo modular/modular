@@ -147,10 +147,12 @@ modular_py_test(
     name = "test_ep_tail_batching",
     srcs = ["test_ep_tail_batching.py"],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/dspark_mistral_large4_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",

@@ -530,6 +530,24 @@ class PipelineRegistry:
             or arch
         )
 
+    def refuse_mach_only(self, pipeline_config: PipelineConfig) -> None:
+        """Raises if Mach, not ``max serve``, serves the config's architecture.
+
+        Args:
+            pipeline_config: The config to serve.
+
+        Raises:
+            ValueError: If the architecture is
+                :attr:`~max.pipelines.lib.arch_lookup.SupportedArchitecture.mach_only`.
+        """
+        arch = self.architecture_for_config(pipeline_config)
+        if arch is not None and arch.mach_only:
+            raise ValueError(
+                f"{arch.name} is served on Mach only: max serve does not serve it."
+                " Export it with `max export` and serve the artifact on Mach"
+                " (mach/docs/serving.md#serving-a-pipeline-artifact)."
+            )
+
     def get_active_huggingface_config(
         self,
         huggingface_repo: HuggingFaceRepo,
@@ -886,6 +904,9 @@ class PipelineRegistry:
                 Callable[[], PipelineTypes],
                 functools.partial(pipeline_class, **pixel_factory_kwargs),
             )
+            pipeline_factory = self._maybe_quantizing_factory(
+                pipeline_config, pipeline_factory
+            )
 
             # Cast tokenizer for return (pixel generation tokenizer doesn't have eos)
             typed_tokenizer = cast(
@@ -919,6 +940,9 @@ class PipelineRegistry:
             audio_pipeline_factory = cast(
                 Callable[[], PipelineTypes],
                 functools.partial(pipeline_class, **audio_factory_kwargs),
+            )
+            audio_pipeline_factory = self._maybe_quantizing_factory(
+                pipeline_config, audio_pipeline_factory
             )
             return RetrievedPipeline(
                 tokenizer=cast(
@@ -999,7 +1023,10 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "weight_adapters": arch.checkpoint_adapters(huggingface_config),
+            "weight_adapters": arch.checkpoint_adapters(
+                huggingface_config,
+                artifact_export=pipeline_config.artifact_export,
+            ),
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
         }
@@ -1007,6 +1034,9 @@ class PipelineRegistry:
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
             functools.partial(pipeline_class, **factory_kwargs),
+        )
+        pipeline_factory = self._maybe_quantizing_factory(
+            pipeline_config, pipeline_factory
         )
 
         if not tokenizer.eos_token_ids:
@@ -1018,6 +1048,26 @@ class PipelineRegistry:
             tokenizer=tokenizer,
             factory=pipeline_factory,
             memory_plan=memory_plan,
+        )
+
+    def _maybe_quantizing_factory(
+        self,
+        pipeline_config: PipelineConfig,
+        factory: Callable[[], PipelineTypes],
+    ) -> Callable[[], PipelineTypes]:
+        """Wraps ``factory`` with on-the-fly quantizers when configured.
+
+        Selected from ``pipeline_config.quant_config`` when that config
+        quantizes on load (``source=QUANTIZE``).
+        """
+        quant_config = pipeline_config.quant_config
+        if quant_config is None or not quant_config.quantizes_on_load:
+            return factory
+        from max.pipelines.lib.quantization import quantizing_factory
+
+        return cast(
+            Callable[[], PipelineTypes],
+            quantizing_factory(factory, quant_config),
         )
 
     def retrieve_context_type(

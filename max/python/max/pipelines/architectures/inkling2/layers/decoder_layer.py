@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 
 from max.dtype import DType
@@ -25,11 +26,16 @@ from max.tensor import Tensor
 
 from ..model_config import ExpertFormat, Inkling2TextConfig
 from .attention import Inkling2Attention
-from .attn_res import attn_res_mix
+from .attn_res import attn_res_mix, attn_res_mix_norm, can_fuse_mix_norm
+from .loop import Inkling2MessageControllers
 from .moe import Inkling2MoE
 from .norm import Inkling2RMSNorm
 from .placement import as_partial, reduce_partial
 from .short_convolution import LayerConvState, ShortConvolution
+
+# The attn_res mixture and the sublayer norm run as one `inkling2_mix_norm`
+# launch per query row; set INKLING2_UNFUSED_MIX_NORM=1 for the unfused ops.
+_FUSED_MIX_NORM = os.environ.get("INKLING2_UNFUSED_MIX_NORM", "") != "1"
 
 
 class _AttentionSite(TransparentModule[..., Tensor]):
@@ -37,17 +43,30 @@ class _AttentionSite(TransparentModule[..., Tensor]):
 
     Name-transparent, so the checkpoint names stay under the layer. Every
     layer of one kind shares one compiled subgraph for it.
+
+    It returns the float32 residual after the attention, not the attention
+    output alone: the residual sum is elementwise on the all-reduce's result,
+    so inside the subgraph the compiler fuses it into the all-reduce's
+    epilogue, where outside it would be a launch of its own.
     """
 
-    def __init__(self, attn: Inkling2Attention, attn_sconv: ShortConvolution):
+    def __init__(
+        self,
+        attn: Inkling2Attention,
+        attn_sconv: ShortConvolution,
+        *,
+        is_block_boundary: bool,
+    ):
         self.attn = attn
         self.attn_sconv = attn_sconv
+        self.is_block_boundary = is_block_boundary
 
     def forward(
         self,
         x_q: Tensor,
         x_k: Tensor,
         x_v: Tensor,
+        h: Tensor,
         *,
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
@@ -56,7 +75,11 @@ class _AttentionSite(TransparentModule[..., Tensor]):
         conv: LayerConvState,
         cache_layer_idx: Tensor,
     ) -> Tensor:
-        """Returns the block's output, summed over the devices."""
+        """Returns the float32 residual after the attention.
+
+        That is the attention output summed over the devices, plus ``h``
+        unless this layer starts a new attn_res block.
+        """
         attn = self.attn(
             x_q,
             x_k,
@@ -71,7 +94,7 @@ class _AttentionSite(TransparentModule[..., Tensor]):
         # Each rank convolves its full-width partial sum of the branch
         # output. The convolution is linear, so reducing afterwards matches
         # reducing first.
-        return reduce_partial(
+        attn = reduce_partial(
             as_partial(
                 self.attn_sconv(
                     attn, conv.attn_out, input_row_offsets, positions
@@ -79,6 +102,11 @@ class _AttentionSite(TransparentModule[..., Tensor]):
                 x_q.mesh,
             )
         )
+        # The sum stays float32 until the layer output rounds it once.
+        residual = attn.cast(DType.float32)
+        if self.is_block_boundary:
+            return residual
+        return h.cast(DType.float32) + residual
 
 
 class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
@@ -98,15 +126,18 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         device: DeviceRef,
         expert_format: ExpertFormat,
         use_subgraphs: bool,
+        loop_rank: int | None = None,
     ) -> None:
         self.is_local = text_config.is_local_attention(layer_idx)
         self.is_block_boundary = text_config.is_block_boundary(layer_idx)
         self.normalize_values = text_config.attn_res_normalize_values
         # Layers of one kind share a subgraph; the mixtures and the output
         # convolutions stay out because their signatures differ by depth and
-        # by layer kind.
+        # by layer kind. A layer that starts a block leaves its input out of
+        # the residual, so it compiles its own attention subgraph.
         self.attn_subgraph = (
-            f"inkling2_{'local' if self.is_local else 'global'}_attention"
+            f"inkling2_{'local' if self.is_local else 'global'}"
+            f"{'_block_start' if self.is_block_boundary else ''}_attention"
             if use_subgraphs
             else None
         )
@@ -115,6 +146,12 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         )
         hidden = text_config.hidden_size
         eps = text_config.rms_norm_eps
+        # Only a loop core layer reads a bank, so only it carries controllers.
+        self.controllers = (
+            None
+            if loop_rank is None
+            else Inkling2MessageControllers(hidden, loop_rank)
+        )
         if self.is_local:
             self.attn_norm = Inkling2RMSNorm(hidden, eps=eps)
         else:
@@ -131,6 +168,7 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             ShortConvolution(
                 channels=hidden, kernel_size=text_config.sconv_kernel_size
             ),
+            is_block_boundary=self.is_block_boundary,
         )
         self.mlp_norm = Inkling2RMSNorm(hidden, eps=eps)
         self.mlp = Inkling2MoE(
@@ -144,18 +182,75 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         )
 
     def _attention_inputs(
-        self, h: Tensor, blocks: Sequence[Tensor], attn_query: Tensor | None
+        self,
+        h: Tensor,
+        blocks: Sequence[Tensor],
+        attn_query: Tensor | None,
+        messages: Sequence[Tensor] | None,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Returns the normalized q, k and v inputs of the attention."""
+        """Returns the normalized q, k and v inputs of the attention.
+
+        A looped pass mixes the bank's messages into the streams before the
+        norms, which is why the fused mixture-and-norm op is unavailable then.
+        """
         if attn_query is None:
             # Layer 0 reads the embeddings, with no mixture.
             mixes = [h] * (1 if self.is_local else 3)
+        elif (
+            messages is None
+            and _FUSED_MIX_NORM
+            and can_fuse_mix_norm(blocks, h)
+        ):
+            norms = (
+                [self.attn_norm]
+                if self.is_local
+                else [self.q_input_norm, self.k_input_norm, self.v_input_norm]
+            )
+            xs = [
+                attn_res_mix_norm(
+                    blocks,
+                    h,
+                    attn_query,
+                    norm.weight,
+                    query_row=row,
+                    norm_eps=norm.eps,
+                    normalize_values=self.normalize_values,
+                )
+                for row, norm in enumerate(norms)
+            ]
+            if self.is_local:
+                return xs[0], xs[0], xs[0]
+            return xs[0], xs[1], xs[2]
         else:
             mixes = attn_res_mix(
                 [*blocks, h],
                 attn_query,
                 normalize_values=self.normalize_values,
             )
+        if messages is not None:
+            assert self.controllers is not None
+            streams = [mixes[0]] * 3 if self.is_local else mixes
+            # Rows 0..2 are attn, k and v; row 3 belongs to the MLP input.
+            mixed = [
+                controller(stream, message)
+                for controller, stream, message in zip(
+                    (
+                        self.controllers.attn,
+                        self.controllers.k,
+                        self.controllers.v,
+                    ),
+                    streams,
+                    messages[:3],
+                    strict=True,
+                )
+            ]
+            norms = (
+                [self.attn_norm] * 3
+                if self.is_local
+                else [self.q_input_norm, self.k_input_norm, self.v_input_norm]
+            )
+            xs = [norm(x) for norm, x in zip(norms, mixed, strict=True)]
+            return xs[0], xs[1], xs[2]
         if self.is_local:
             x = self.attn_norm(mixes[0])
             return x, x, x
@@ -177,6 +272,7 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         tau: Tensor,
         conv: LayerConvState,
         cache_layer_idx: Tensor,
+        loop_messages: Sequence[Tensor] | None = None,
     ) -> tuple[Tensor, list[Tensor]]:
         """Runs the layer over one ragged batch.
 
@@ -191,22 +287,27 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             tau: ``[tokens]`` float32 log-scaling factor.
             conv: This layer's conv rings.
             cache_layer_idx: The layer's index within its cache group.
+            loop_messages: The bank's four messages on a looped pass, or
+                ``None`` on the first pass and on every unlooped layer.
 
         Returns:
             The new partial sum and the stored blocks. A block boundary adds
             this layer's input to the blocks and restarts the partial sum at
             the attention output.
         """
-        x_q, x_k, x_v = self._attention_inputs(h, blocks, attn_query)
+        x_q, x_k, x_v = self._attention_inputs(
+            h, blocks, attn_query, loop_messages
+        )
         attend = (
             self.attn_site
             if self.attn_subgraph is None
             else as_subgraph(self.attn_site, name=self.attn_subgraph)
         )
-        attn = attend(
+        residual = attend(
             x_q,
             x_k,
             x_v,
+            h,
             kv_collection=kv_collection,
             input_row_offsets=input_row_offsets,
             positions=positions,
@@ -214,17 +315,34 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             conv=conv,
             cache_layer_idx=cache_layer_idx,
         )
-        # The sum stays float32 until the layer output rounds it once.
-        residual = attn.cast(DType.float32)
         if self.is_block_boundary:
             blocks = [*blocks, h]
+        # The fused mix reads the mixture without the loop bank's controller,
+        # so a looped pass takes the unfused path that applies it.
+        if (
+            _FUSED_MIX_NORM
+            and loop_messages is None
+            and can_fuse_mix_norm(blocks, residual)
+        ):
+            mlp_input = attn_res_mix_norm(
+                blocks,
+                residual,
+                mlp_query,
+                self.mlp_norm.weight,
+                query_row=0,
+                norm_eps=self.mlp_norm.eps,
+                normalize_values=self.normalize_values,
+            )
         else:
-            residual = h.cast(DType.float32) + residual
-        (mixed,) = attn_res_mix(
-            [*blocks, residual],
-            mlp_query,
-            normalize_values=self.normalize_values,
-        )
+            (mixed,) = attn_res_mix(
+                [*blocks, residual],
+                mlp_query,
+                normalize_values=self.normalize_values,
+            )
+            if loop_messages is not None:
+                assert self.controllers is not None
+                mixed = self.controllers.mlp(mixed, loop_messages[3])
+            mlp_input = self.mlp_norm(mixed)
         mlp = (
             self.mlp
             if self.mlp_subgraph is None
@@ -233,7 +351,7 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         moe = reduce_partial(
             as_partial(
                 self.mlp_sconv(
-                    mlp(self.mlp_norm(mixed)),
+                    mlp(mlp_input),
                     conv.mlp_out,
                     input_row_offsets,
                     positions,

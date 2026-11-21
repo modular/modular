@@ -90,11 +90,11 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
   // A pack element that this target passes in memory is not promoted.
   // CHECK-LABEL: promote_to_imm_mem
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
+  kgen.func export @promote_to_imm_mem(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>)>> pack_imm_mem) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK-NEXT: kgen.struct.create(%arg0)
     // CHECK: pop.load {{.*}} : !kgen.pointer<struct<(pointer<none>)>>
-    %0 = pop.load %arg0 : !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>>
-    %1 = kgen.struct.extract %0[0] : <(pointer<struct<(pointer<none>)>>) isParamPack>
+    %0 = pop.load %arg0 : !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>)>>
+    %1 = kgen.struct.extract %0[0] : <(pointer<struct<(pointer<none>)>>)>
     %2 = pop.load %1 : !kgen.pointer<struct<(pointer<none>)>>
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
@@ -102,9 +102,9 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
 
   // CHECK-LABEL: promote_to_imm_mem_call
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
+  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>)>> pack_imm_mem) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK: kgen.call @promote_to_imm_mem(%{{.*}}) : (!kgen.pointer<struct<(pointer<none>)>> imm_mem)
-    %0 = kgen.call @promote_to_imm_mem(%arg0) : (!kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none
+    %0 = kgen.call @promote_to_imm_mem(%arg0) : (!kgen.pointer<struct<(pointer<struct<(pointer<none>)>>)>> pack_imm_mem) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
   }
@@ -128,16 +128,16 @@ module attributes {M.target_info = #M.target<triple = "air64-unknown-unknown", a
   // CHECK-SAME: (%arg0: !kgen.pointer<pointer<none>> imm_mem,
   // CHECK-SAME: %arg1: !kgen.pointer<pointer<none>> imm_mem,
   // CHECK-SAME: %arg2: !kgen.scalar<f32>
-  kgen.func @pack_with_pointers(%arg0: !kgen.pointer<!kgen.struct<(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>) isParamPack>> pack_imm_mem) -> !kgen.none always_inline {
+  kgen.func @pack_with_pointers(%arg0: !kgen.pointer<!kgen.struct<(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>)>> pack_imm_mem) -> !kgen.none always_inline {
     // CHECK-NEXT: pop.stack_allocation 1 x scalar<f32>
     // CHECK-NEXT: pop.store {{.*}} : !kgen.pointer<scalar<f32>>
     // CHECK: pop.load {{.*}} : !kgen.pointer<pointer<none>>
     // CHECK: pop.load {{.*}} : !kgen.pointer<pointer<none>>
     // CHECK: pop.load {{.*}} : !kgen.pointer<scalar<f32>>
-    %0 = pop.load %arg0 : !kgen.pointer<!kgen.struct<(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>) isParamPack>>
-    %1 = kgen.struct.extract %0[0] : <(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>) isParamPack>
-    %2 = kgen.struct.extract %0[1] : <(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>) isParamPack>
-    %3 = kgen.struct.extract %0[2] : <(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>) isParamPack>
+    %0 = pop.load %arg0 : !kgen.pointer<!kgen.struct<(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>)>>
+    %1 = kgen.struct.extract %0[0] : <(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>)>
+    %2 = kgen.struct.extract %0[1] : <(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>)>
+    %3 = kgen.struct.extract %0[2] : <(pointer<pointer<none>>, pointer<pointer<none>>, pointer<scalar<f32>>)>
     %5 = pop.load %1 : !kgen.pointer<pointer<none>>
     %6 = pop.load %2 : !kgen.pointer<pointer<none>>
     %7 = pop.load %3 : !kgen.pointer<scalar<f32>>

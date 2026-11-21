@@ -15,6 +15,9 @@
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
 #include "Mojo/Compiler/Target/TargetBackend.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/RuntimeLibcallInfo.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -180,6 +183,14 @@ void MCLinker::prepareMachineModuleInfo(
         }
       };
 
+  // A split looks its functions up here by name, so it does not scan every
+  // function of the linked module.
+  llvm::MapVector<llvm::StringRef, llvm::Function *> linkedFns;
+  for (llvm::Function &fn : linkedModule->functions()) {
+    if (!fn.isDeclaration())
+      linkedFns.try_emplace(fn.getName(), &fn);
+  }
+
   for (auto [i, smcInfos] : llvm::enumerate(symbolAndMCInfos)) {
     for (auto [j, mcInfo] : llvm::enumerate(smcInfos->mcInfos)) {
       // Move MachineFunctions from each split's codegen result
@@ -194,16 +205,21 @@ void MCLinker::prepareMachineModuleInfo(
       mcInfo->machineModuleInfo->getContext().setObjectFileInfo(
           llvmTargetMachine.getObjFileLowering());
 
-      for (auto &fn : linkedModule->functions()) {
-        if (fn.isDeclaration())
-          continue;
+      // Visit the split's functions in the order of the linked module.
+      llvm::SmallVector<std::pair<size_t, const llvm::Function *>> splitFns;
+      for (const auto &[name, splitFn] : fnNameToFnPtr) {
+        auto linkedIter = linkedFns.find(name);
+        if (linkedIter != linkedFns.end())
+          splitFns.emplace_back(linkedIter - linkedFns.begin(), splitFn);
+      }
+      llvm::sort(splitFns, llvm::less_first());
+
+      for (auto [fnIndex, splitFn] : splitFns) {
+        llvm::Function &fn = *linkedFns.getArrayRef()[fnIndex].second;
         if (machineModInfoPass->getMMI().getMachineFunction(fn))
           continue;
 
-        auto fnPtrIter = fnNameToFnPtr.find(fn.getName().str());
-        if (fnPtrIter == fnNameToFnPtr.end())
-          continue;
-        auto mfPtrIter = machineFunctions.find(fnPtrIter->second);
+        auto mfPtrIter = machineFunctions.find(splitFn);
         if (mfPtrIter == machineFunctions.end())
           continue;
 

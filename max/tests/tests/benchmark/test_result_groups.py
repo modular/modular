@@ -15,18 +15,24 @@
 
 from __future__ import annotations
 
+import pytest
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
-    InteractivityMetrics,
     PixelGenAggregates,
+    RatePercentileMetrics,
     StandardPercentileMetrics,
     TextGenAggregates,
     build_result_groups,
 )
 from max.benchmark.benchmark_shared.model_csv import columns_for_type
+from tests.benchmark.benchmark_fakes import (
+    make_sample_interactivity,
+    make_text_aggregates,
+)
 
 
 def _text_result(**kwargs: object) -> BenchmarkResult:
+    interactivity = make_sample_interactivity()
     defaults: dict[str, object] = {
         "task_type": "text",
         "max_concurrency": 8,
@@ -39,14 +45,7 @@ def _text_result(**kwargs: object) -> BenchmarkResult:
         "steady_state_window_count": 3,
         "steady_state_mode": "mad",
         "num_outliers_rejected": 2,
-        "text_data": TextGenAggregates(
-            duration=60.0,
-            completed=100,
-            failures=0,
-            request_throughput=1.66,
-            total_input=5000,
-            total_output=8000,
-            nonempty_response_chunks=8000,
+        "text_data": make_text_aggregates(
             latency_ms=StandardPercentileMetrics(
                 [0.114, 0.115], scale_factor=1000.0, unit="ms"
             ),
@@ -59,35 +58,10 @@ def _text_result(**kwargs: object) -> BenchmarkResult:
             itl_ms=StandardPercentileMetrics(
                 [0.0082, 0.0083], scale_factor=1000.0, unit="ms"
             ),
-            interactivity_tok_s=InteractivityMetrics(
-                mean=120.0,
-                p50=120.0,
-                p75=115.0,
-                p90=110.0,
-                p95=105.0,
-                p99=100.0,
-            ),
-            full_response_interactivity_tok_s=InteractivityMetrics(
-                mean=110.0,
-                p50=110.0,
-                p75=106.0,
-                p90=102.0,
-                p95=98.0,
-                p99=94.0,
-            ),
-            e2e_normalized_interactivity_tok_s=InteractivityMetrics(
-                mean=100.0,
-                p50=100.0,
-                p75=96.0,
-                p90=92.0,
-                p95=88.0,
-                p99=84.0,
-            ),
+            interactivity_tok_s=interactivity.content_bounded,
+            full_response_interactivity_tok_s=interactivity.full_response,
+            e2e_normalized_interactivity_tok_s=interactivity.e2e_normalized,
             total_tokens_per_second_per_gpu=2500.0,
-            max_input=100,
-            max_output=200,
-            max_total=300,
-            global_cached_token_rate=0.42,
         ),
     }
     defaults.update(kwargs)
@@ -109,12 +83,6 @@ def _pixel_result() -> BenchmarkResult:
             ),
         ),
     )
-
-
-def test_result_auto_fills_result_groups() -> None:
-    result = _text_result()
-    assert result.result_groups is not None
-    assert result.result_groups.summary.completed == 100
 
 
 def test_text_groups_cover_expected_sections() -> None:
@@ -230,3 +198,42 @@ def test_result_groups_csv_column_stays_opaque() -> None:
     columns = list(columns_for_type(BenchmarkResult))
     assert "result_groups" in columns
     assert not any(c.startswith("result_groups.") for c in columns)
+
+
+def test_client_loop_stats_land_in_diagnostics_and_the_json() -> None:
+    lag = StandardPercentileMetrics(
+        [0.002, 0.120], scale_factor=1000.0, unit="ms"
+    )
+    busy = RatePercentileMetrics([0.6, 0.97])
+    result = _pixel_result().updated(
+        client_loop_lag_ms=lag,
+        client_loop_lag_max_ms=121.5,
+        client_loop_busy=busy,
+        client_warning="saturated",
+    )
+    groups = result.result_groups
+    assert groups is not None
+    assert groups.diagnostics is not None
+    stored_lag = groups.diagnostics.client_loop_lag_ms
+    stored_busy = groups.diagnostics.client_loop_busy
+    assert stored_lag is not None
+    assert stored_lag.p99 == lag.p99
+    assert stored_busy is not None
+    assert stored_busy.p90 == busy.p90
+    assert groups.diagnostics.client_loop_lag_max_ms == 121.5
+    assert groups.diagnostics.client_warning == "saturated"
+
+    payload = result.to_result_dict()
+    assert payload["p99_client_loop_lag_ms"] == lag.p99
+    assert payload["client_loop_lag_max_ms"] == 121.5
+    assert payload["mean_client_loop_busy"] == busy.mean
+    assert payload["client_loop_busy_confidence"] == "insufficient_data"
+    assert payload["client_warning"] == "saturated"
+
+
+def test_updated_rejects_a_name_that_is_not_a_model_field() -> None:
+    # ``model_copy(update=...)`` would store the typo nowhere and read back
+    # the old value, so the update refuses a name the model does not declare.
+    # A raise, not an assert, so ``python -O`` keeps the check.
+    with pytest.raises(ValueError, match="not model fields"):
+        _text_result().updated(client_loop_lagg_ms=None)

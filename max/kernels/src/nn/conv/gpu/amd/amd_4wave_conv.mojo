@@ -158,6 +158,9 @@ def amd_4wave_conv[
     # and the `source_ptr`/`source_row_stride`/`beta` args are unused
     # at comptime.
     has_residual: Bool = False,
+    # `b` is the RSCF filter as stored, a row-major `[K_real, Cout]` matrix,
+    # instead of the K-padded FRSC `[Cout, K_padded]` repack. 16-bit only.
+    b_rscf: Bool = False,
     # Conv geometry (defaults reproduce the M1 1×1 case).
     H: Int = 1,
     W: Int = 1,
@@ -252,6 +255,11 @@ def amd_4wave_conv[
             When False (default), `source_ptr` / `source_row_stride` /
             `beta` are unused and the epilogue is byte-identical to the
             no-residual kernel.
+        b_rscf: When True, `b` is the RSCF filter viewed as a row-major
+            `[R*S*C_in, Cout]` tensor and the kernel reads it directly (K-major
+            LDS tiles, transposing LDS reads), so the caller needs no FRSC
+            repack. Requires 16-bit inputs, `block_k_override=64`, and
+            `Cout % 8 == 0`.
         H: Input height.
         W: Input width.
         H_out: Output height (= `(H + 2*pad_h - dilation_h*(R-1) - 1) //
@@ -290,7 +298,8 @@ def amd_4wave_conv[
     Args:
         a: 4D NHWC input tile-tensor of shape `(N, H, W, C)`.
         b: 2D filter tile-tensor of shape `(Cout, K)` where K = R*S*C_in
-            (possibly K-padded to a multiple of 256).
+            (possibly K-padded to a multiple of 256), or `(K, Cout)` with
+            unpadded K when `b_rscf` is set.
         c: 2D output tile-tensor of shape `(N*H_out*W_out, Cout)`:
             a view of the NHWC output buffer.
         ctx: Device context used to enqueue the kernel.
@@ -361,6 +370,7 @@ def amd_4wave_conv[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_kernel[config: MatmulKernelConfig]() raises {imm}:
         # Dispatch via `AMD4WaveMatmul.run_conv2d` — the unified entry
         # point that hosts the 4-wave conv2d body alongside the matmul.
@@ -386,6 +396,7 @@ def amd_4wave_conv[
             has_residual=has_residual,
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
+            b_rscf=b_rscf,
         ]
 
         # 1D launch grid for the HK chiplet/L2 swizzle. The kernel

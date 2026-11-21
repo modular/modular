@@ -1971,6 +1971,7 @@ def _run_test_sparse_qkv_fp8[
         t" num_keys= {num_keys}"
     )
 
+    @__allow_legacy_any_origin_fields
     def _decode(
         q_buf: DeviceBuffer[.float8_e4m3fn],
         mut out_buf: DeviceBuffer[.bfloat16],
@@ -2876,6 +2877,7 @@ def _run_test_sparse_qkv_fp8_attn_sink[
         None
     )
 
+    @__allow_legacy_any_origin_fields
     def _decode(mut out_buf: DeviceBuffer[.bfloat16]) raises {imm}:
         var out_tt = TileTensor(
             out_buf, row_major(batch_size, Idx[num_heads], Idx[V_DEPTH])

@@ -312,6 +312,8 @@ http_archive(
         "//bazel/public-patches:nixl-libfabric-src-addr-peer-limit.patch",
         # TODO(CLIN-2277): drop once the fix ships in a tagged NIXL release.
         "//bazel/public-patches:nixl-libfabric-reestablish-reply.patch",
+        # TODO(GEX-4552): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-parked-posts.patch",
     ],
     sha256 = "1dc9d1c070491ed8ed89942f14124c5d914b85be279cf694678203fd7a94c927",
     strip_prefix = "nixl-1.5.0",

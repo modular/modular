@@ -3546,6 +3546,7 @@ struct Grouped1D1DMatmulKernel[
             var lane_row_is_even = (lane_row & UInt32(1)) == UInt32(0)
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _ip_stage(
                 var upper_ip: PartialType,
                 var lower_ip: PartialType,
@@ -3920,6 +3921,7 @@ struct Grouped1D1DMatmulKernel[
         # bf16 SMEM scratchpad is byte-identical to the standalone
         # matmul's BF16 GMEM output (chain reference).
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def store_scaled_pair(
             smem_idx_a: UInt32,
             smem_idx_b: UInt32,
@@ -3930,6 +3932,7 @@ struct Grouped1D1DMatmulKernel[
             smem_bf16_ptr.unsafe_store(Int(SWIZZLE_BF(smem_idx_b)), pair_bf[1])
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _scatter_stage(
             upper_partial: PartialType,
             lower_partial: PartialType,

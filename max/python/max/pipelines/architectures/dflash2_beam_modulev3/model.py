@@ -35,6 +35,11 @@ from max.pipelines.lib.interfaces.arch_config import (
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.module_registration import device_mesh
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.pipelines.lib.weight_transform import (
+    CheckpointRole,
+    WeightEntry,
+    WeightTransform,
+)
 from max.pipelines.speculative import DrafterExport, sampleable_vocab_size
 from max.tensor import default_device, default_dtype
 from transformers import AutoConfig
@@ -169,3 +174,17 @@ class DFlash2BeamDraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         """Returns the weights the built drafter compiles with, by name."""
         del config
         return dict(_checkpoint(context))
+
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: DFlash2BeamDraftConfig
+    ) -> list[WeightEntry]:
+        """Returns the rules that name the drafter's own checkpoint weights.
+
+        A draft without rules keeps its fused graph unnamed and compiles
+        with :meth:`checkpoint_weights` instead.
+        """
+        del config
+        if not isinstance(context.adapter, WeightTransform):
+            return []
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

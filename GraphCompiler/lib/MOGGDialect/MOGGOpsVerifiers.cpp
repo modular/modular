@@ -86,6 +86,8 @@ static LogicalResult verifyMaxSimdWidth(LaunchOpT op) {
 
 LogicalResult CallForeachOp::verify() { return verifyMaxSimdWidth(*this); }
 
+LogicalResult GraphBlobForeachOp::verify() { return verifyMaxSimdWidth(*this); }
+
 LogicalResult RoutineOp::verify() {
   // A chain result, if present, is last (mirrors `IterElementwiseOp::verify()`
   // / `RoutineOp::maybeGetOutChain()`) and never gets a body block argument.
@@ -297,17 +299,22 @@ LogicalResult GraphBlobOp::verifyRegions() {
   for (Operation &op : getBody().getOps()) {
     if (!op.hasTrait<MOGG::CallLike>())
       continue;
-    auto call = dyn_cast<CallOpaqueOp>(op);
-    if (!call)
-      return emitOpError("calls kernels only through 'mogg.call.opaque', but "
-                         "holds '")
+    Value callCtx;
+    if (auto call = dyn_cast<CallOpaqueOp>(op)) {
+      if (call.getDeviceContexts().size() != 1 ||
+          !isa<ContextType>(call.getDeviceContexts().front().getType()))
+        return emitOpError("calls each kernel on one device context");
+      callCtx = call.getDeviceContexts().front();
+    } else if (auto foreach = dyn_cast<CallForeachOp>(op)) {
+      callCtx = foreach.getDeviceContext();
+    } else {
+      return emitOpError("calls kernels only through 'mogg.call.opaque' and "
+                         "'mogg.call.foreach', but holds '")
              << op.getName() << "'";
-    if (call.getDeviceContexts().size() != 1 ||
-        !isa<ContextType>(call.getDeviceContexts().front().getType()))
-      return emitOpError("calls each kernel on one device context");
+    }
     if (!ctx)
-      ctx = call.getDeviceContexts().front();
-    else if (call.getDeviceContexts().front() != ctx)
+      ctx = callCtx;
+    else if (callCtx != ctx)
       return emitOpError("calls kernels on more than one device context");
   }
   if (!ctx)
@@ -336,6 +343,13 @@ LogicalResult TileStoreOp::verify() {
   return verifyTileElementType(*this, getTensor(), getValue().getType());
 }
 
+LogicalResult IndexConcatSelectOp::verify() {
+  // Emit casts the result to a SIMD; the type verifier checks the dtype.
+  if (!isa<SimdType>(getResult().getType()))
+    return emitOpError("yields a !mogg.simd, got ") << getResult().getType();
+  return success();
+}
+
 LogicalResult CallRowwiseOp::verify() {
   if (failed(verifyMaxSimdWidth(*this)))
     return failure();
@@ -351,10 +365,10 @@ LogicalResult CallRowwiseOp::verify() {
       return emitOpError("has a fold after a map phase");
     afterMap |= isa<RowwiseMapOp>(op);
   }
-  // `Row.emit` isn't phase-aware, so it can't run in a body that writes
-  // every element.
-  if (afterMap && !body.getOps<RowwiseEmitOp>().empty())
-    return emitOpError("has both per-row stores and a map phase");
+  // `Row.emit` runs once per row, so the row can't split across launches.
+  if (afterMap && !body.getOps<RowwiseEmitOp>().empty() && getDtypeSize() &&
+      *getDtypeSize() != 0)
+    return emitOpError("splits its row and has per-row stores");
   // A body without a map phase launches as one phase, whose split-row tiers
   // join one fold per row.
   if (!afterMap && llvm::range_size(body.getOps<RowwiseReduceOp>()) > 1)

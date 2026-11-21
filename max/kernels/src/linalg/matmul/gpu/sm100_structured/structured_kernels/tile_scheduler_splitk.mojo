@@ -45,7 +45,6 @@ from max.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
 from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
 
 from linalg.structuring import SMemPtr
 from .tmem import TmemAddress, TmemTensor
@@ -147,7 +146,7 @@ struct WaitAndAdvanceContextSplitK[
 
 struct WorkIteratorSplitK[
     num_stages: Int,
-    reduction_tile_shape: IndexList[3],
+    reduction_tile_shape: Tuple[Int, Int, Int],
     cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
@@ -234,7 +233,7 @@ struct WorkIteratorSplitK[
 
 struct SchedulerWorkIteratorSplitK[
     num_stages: Int,
-    reduction_tile_shape: IndexList[3],
+    reduction_tile_shape: Tuple[Int, Int, Int],
     cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
@@ -342,7 +341,7 @@ struct SchedulerWorkIteratorSplitK[
 
 struct TileScheduler[
     num_stages: Int,
-    reduction_tile_shape: IndexList[3],
+    reduction_tile_shape: Tuple[Int, Int, Int],
     cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
@@ -1172,10 +1171,10 @@ def splitk_k_tiles_per_split(
 
 @inline(.always)
 def get_num_tiles(
-    problem_shape: IndexList[3],
+    problem_shape: Tuple[Int, Int, Int],
     block_tile_shape: Tuple[Int, Int, Int],
     cluster_shape: Tuple[Int, Int],
-) -> IndexList[2]:
+) -> Tuple[Int, Int]:
     """Computes the number of output tiles aligned up to the cluster shape.
 
     Args:
@@ -1192,14 +1191,14 @@ def get_num_tiles(
     var problem_blocks_m = align_up(num_block_m, cluster_shape[0])
     var problem_blocks_n = align_up(num_block_n, cluster_shape[1])
 
-    return Index(problem_blocks_m, problem_blocks_n)
+    return (problem_blocks_m, problem_blocks_n)
 
 
 @inline(.always)
 def get_required_locks_buffer_size_bytes[
     accum_type: DType
 ](
-    problem_shape: IndexList[3],
+    problem_shape: Tuple[Int, Int, Int],
     block_tile_shape: Tuple[Int, Int, Int],
     cluster_shape: Tuple[Int, Int],
 ) -> Int:

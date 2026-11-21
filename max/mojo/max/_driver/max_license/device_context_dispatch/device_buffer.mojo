@@ -23,6 +23,7 @@ from std.os import abort
 from std.sys import is_gpu, size_of
 
 from max._driver.max_license.hal import Buffer, Context, get_device_spec
+from max._driver.max_license.hal.extensions.traits import SupportsHostPointerV1
 from max.gpu.host._driver_handles import (
     _DeviceBufferPtr as _HALDeviceBufferPtr,
 )
@@ -114,71 +115,6 @@ struct _HALDeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable):
     var _inner: ArcPointer[_HALBufferInner]
 
 
-def _wrap_hal_memory[
-    dtype: DType
-](
-    ctx: DeviceContext,
-    ptr: Pointer[Scalar[dtype], ...],
-    size: Int,
-    *,
-    owning: Bool,
-) raises -> DeviceBuffer[dtype]:
-    """Wraps an externally-managed device pointer in a HAL buffer.
-
-    Parameters:
-        dtype: The buffer's element dtype.
-
-    Args:
-        ctx: The device context the pointer belongs to.
-        ptr: The device pointer to wrap.
-        size: Number of elements addressable through the pointer.
-        owning: Whether releasing the buffer should free the pointer.
-
-    Returns:
-        The buffer that wraps `ptr`.
-
-    Raises:
-        If the plugin refuses to wrap the memory.
-    """
-    comptime assert (
-        not use_legacy_backend()
-    ), "_wrap_hal_memory is only available in a HAL DeviceContext build"
-    var byte_size = UInt64(size * size_of[dtype]())
-    var addr = UInt64(Int(ptr))
-    try:
-        # The plugin rejects wrapping a null address; represent the empty
-        # buffer the way a zero-byte allocation does (null memory handle).
-        var buffer = ctx._impl._context[].alloc_sync(
-            0
-        ) if addr == 0 else ctx._impl._context[].wrap_memory(
-            addr, byte_size, owning=owning
-        )
-        # The plugin may give the wrapped region an address of its own.
-        # If it can't report one, keep the address we were given.
-        if addr != 0:
-            try:
-                addr = ctx._impl._context[].memory_get_address(buffer)
-            except:
-                pass
-        return DeviceBuffer[dtype](
-            _impl=rebind_var[DeviceBuffer[dtype]._Impl](
-                _HALDeviceBuffer[dtype](
-                    _HALDeviceBuffer[dtype]._DevicePtr(
-                        unsafe_from_address=Int(addr)
-                    ),
-                    ctx.into_unknown_target(),
-                    ArcPointer(
-                        _HALBufferInner(
-                            buffer^, ctx._impl._context, addr, [], []
-                        )
-                    ),
-                )
-            )
-        )
-    except e:
-        raise Error(t"DeviceBuffer: failed to wrap external memory: {e}")
-
-
 struct DeviceBuffer[dtype: DType](
     DevicePassable, ImplicitlyCopyable, Sized, Writable
 ):
@@ -257,7 +193,7 @@ struct DeviceBuffer[dtype: DType](
         size: Int,
         *,
         owning: Bool,
-    ):
+    ) raises:
         """Constructs a `DeviceBuffer` that wraps an externally-managed device
         pointer.
 
@@ -266,15 +202,14 @@ struct DeviceBuffer[dtype: DType](
         `owning` is False the wrapper is non-owning; releasing it leaves the
         underlying pointer to whoever allocated it.
 
-        This mirrors the non-raising legacy constructor; a wrap failure
-        aborts rather than raising. The HAL C exports call
-        `_wrap_hal_memory` instead, to return the failure to their caller.
-
         Args:
             ctx: The device context the pointer belongs to.
             ptr: The device pointer to wrap.
             size: Number of elements addressable through the pointer.
             owning: Whether releasing this buffer should free the pointer.
+
+        Raises:
+            If the HAL plugin refuses to wrap the memory.
         """
         comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
@@ -285,12 +220,32 @@ struct DeviceBuffer[dtype: DType](
             )
             return
 
-        # The HAL plugin can refuse the wrap, and this signature has no error
-        # channel.
+        var byte_size = UInt64(size * size_of[Self.dtype]())
+        var addr = UInt64(Int(ptr))
         try:
-            self = _wrap_hal_memory(ctx, ptr, size, owning=owning)
+            # The plugin rejects wrapping a null address; represent the empty
+            # buffer the way a zero-byte allocation does (null memory handle).
+            var buffer = ctx._impl._context[].alloc_sync(
+                0
+            ) if addr == 0 else ctx._impl._context[].wrap_memory(
+                addr, byte_size, owning=owning
+            )
+            # The plugin may give the wrapped region an address of its own.
+            # If it can't report one, keep the address we were given.
+            if addr != 0:
+                try:
+                    addr = ctx._impl._context[].memory_get_address(buffer)
+                except:
+                    pass
+            self._impl = Self._HAL(
+                Self._DevicePtr(unsafe_from_address=Int(addr)),
+                ctx.into_unknown_target(),
+                ArcPointer(
+                    _HALBufferInner(buffer^, ctx._impl._context, addr, [], [])
+                ),
+            )
         except e:
-            abort(String(e))
+            raise Error(t"DeviceBuffer: failed to wrap external memory: {e}")
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend buffer.
@@ -310,7 +265,14 @@ struct DeviceBuffer[dtype: DType](
         comptime __guard not use_legacy_backend() else:
             return Self(_impl=Self._Legacy.empty(context._impl))
 
-        return Self(context, Self._DevicePtr.unsafe_dangling(), 0, owning=False)
+        # `empty` has no error channel, and only a broken plugin refuses to
+        # wrap zero bytes.
+        try:
+            return Self(
+                context, Self._DevicePtr.unsafe_dangling(), 0, owning=False
+            )
+        except e:
+            abort(String(e))
 
     # ===-------------------------------------------------------------------===#
     # Trait: DevicePassable
@@ -499,12 +461,30 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If this device's memory is not host-accessible.
         """
-        comptime assert (
-            use_legacy_backend()
-        ), "unsafe_host_ptr is only available on the legacy DeviceContext"
-        return rebind[Pointer[Scalar[Self.dtype], origin]](
-            self._impl.unsafe_host_ptr()
-        )
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+            return rebind[Pointer[Scalar[Self.dtype], origin]](
+                self._impl.unsafe_host_ptr()
+            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        # A backend without the extension raises rather than failing to
+        # compile, matching the legacy `DeviceContext`.
+        comptime Ext = type_of(self._impl._inner[]._context[].extensions())
+        comptime if conforms_to(Ext, SupportsHostPointerV1):
+            ref ext = self._impl._inner[]._context[].extensions()
+            var host_ptr = ext.unsafe_host_ptr(self._impl._inner[]._buffer)
+            return (
+                host_ptr.unsafe_bitcast[Scalar[Self.dtype]]()
+                .unsafe_mut_cast[mut]()
+                .unsafe_origin_cast[origin]()
+            )
+        else:
+            raise Error(
+                "DeviceBuffer.unsafe_host_ptr: this device's HAL plugin does"
+                " not support host pointers"
+            )
 
     def context(self) raises -> DeviceContext[]:
         """Returns the device context associated with this buffer.

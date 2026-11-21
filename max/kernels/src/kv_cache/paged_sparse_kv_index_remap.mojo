@@ -644,3 +644,77 @@ def paged_sparse_kv_index_remap[
         log_stride1,
         ctx,
     )
+
+
+def _sparse_selection_rows_kernel[
+    R: SparseIndexRemap
+](
+    remap: R,
+    positions: ImmPointer[Int32, ImmUntrackedOrigin],
+    row_offsets: ImmPointer[UInt32, ImmUntrackedOrigin],
+    num_slots: Int32,
+    top_k: Int32,
+    num_batches: Int32,
+):
+    var tid = block_idx.x * block_dim.x + thread_idx.x
+    if tid >= Int(num_slots):
+        return
+    var batch = _find_batch_for_row(
+        tid // Int(top_k), row_offsets, Int(num_batches)
+    )
+    remap.store(tid, Int(batch), positions[unsafe_offset=tid])
+
+
+def sparse_selection_rows[
+    R: SparseIndexRemap
+](
+    remap: R,
+    positions: ImmPointer[Int32, _],
+    row_offsets: ImmPointer[UInt32, _],
+    num_rows: Int,
+    top_k: Int,
+    num_batches: Int,
+    ctx: DeviceContext,
+) raises:
+    """Writes the remapped rows of a selection's logical token positions.
+
+    The selection is `[num_rows, top_k]` logical positions, row-major, as an
+    indexer writes them. Each row's batch entry comes from the ragged
+    `row_offsets`, and `remap` writes what it derives from each position.
+
+    Parameters:
+        R: The remap that writes each position's rows.
+
+    Args:
+        remap: Writes each slot's rows into its own output.
+        positions: The `[num_rows, top_k]` logical positions, `-1` past a
+            token's selection.
+        row_offsets: Ragged row offsets, `num_batches + 1` of them.
+        num_rows: Rows of the selection.
+        top_k: Positions per row.
+        num_batches: Batch entries in `row_offsets`.
+        ctx: Device context used to enqueue the GPU kernel.
+    """
+    var num_slots = num_rows * top_k
+    comptime if ctx.target.is_cpu():
+        for i in range(num_slots):
+            var batch = _find_batch_for_row(
+                i // top_k, row_offsets, num_batches
+            )
+            remap.store(i, Int(batch), positions[unsafe_offset=i])
+    else:
+        if num_slots == 0:
+            return
+        var gpu_ctx = ctx
+        comptime BLOCK = 256
+        comptime kernel = _sparse_selection_rows_kernel[R]
+        gpu_ctx.enqueue_function[kernel](
+            remap,
+            positions.unsafe_origin_cast[ImmUntrackedOrigin](),
+            row_offsets.unsafe_origin_cast[ImmUntrackedOrigin](),
+            Int32(num_slots),
+            Int32(top_k),
+            Int32(num_batches),
+            grid_dim=ceildiv(num_slots, BLOCK),
+            block_dim=BLOCK,
+        )

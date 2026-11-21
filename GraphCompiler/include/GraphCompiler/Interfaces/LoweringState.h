@@ -98,7 +98,7 @@ public:
     });
 
     typeConverter.addConversion([](MO::ChainType type) -> std::optional<Type> {
-      return MEF::ChainType::get(type.getContext());
+      return MLRT::MEF::ChainType::get(type.getContext());
     });
 
     // Foreign types.
@@ -146,10 +146,10 @@ public:
 
     /// The input chain passed as the first argument to the 'execute' block,
     /// or an equivalent SSA value in a control flow sub-block.
-    TypedValue<MEF::ChainType> rootChain;
+    TypedValue<MLRT::MEF::ChainType> rootChain;
 
     /// Sequences side-effecting operations such as printing.
-    TypedValue<MEF::ChainType> currentChain;
+    TypedValue<MLRT::MEF::ChainType> currentChain;
 
     /// Out-chains of control flow ops not yet folded into currentChain. An op
     /// after control flow waits on one only if it reads a result of the
@@ -287,19 +287,21 @@ public:
   }
 
   void setRootExecuteChain(Value chain) {
-    execute.rootChain = cast<TypedValue<MEF::ChainType>>(chain);
+    execute.rootChain = cast<TypedValue<MLRT::MEF::ChainType>>(chain);
   }
 
   /// The 'root' chain of the 'execute' block, for non-side-effecting
   /// operations.
-  TypedValue<MEF::ChainType> getExecuteChain() { return execute.rootChain; }
+  TypedValue<MLRT::MEF::ChainType> getExecuteChain() {
+    return execute.rootChain;
+  }
 
   /// The 'current' chain of the 'execute' block, for side-effecting
   /// operations.
   Value getCurrentExecuteChain() { return execute.currentChain; }
 
   void setCurrentExecuteChain(Value chain) {
-    execute.currentChain = cast<TypedValue<MEF::ChainType>>(chain);
+    execute.currentChain = cast<TypedValue<MLRT::MEF::ChainType>>(chain);
   }
 
   /// Records a control flow op's out-chain without ordering later ops after
@@ -612,13 +614,13 @@ struct MOOpLoweringState {
     return tensor;
   }
 
-  Value hostBufferConstant(TypedValue<MEF::ChainType> inChain,
+  Value hostBufferConstant(TypedValue<MLRT::MEF::ChainType> inChain,
                            ElementsAttr value, Type moTensorType) {
     return loweringState.getHostBufferBuilder().bufferConstant(
         builder, loc, inChain, context, value);
   }
 
-  Value hostBufferConstantExternal(TypedValue<MEF::ChainType> inChain,
+  Value hostBufferConstantExternal(TypedValue<MLRT::MEF::ChainType> inChain,
                                    TypedValue<MGP::OpaqueType> name,
                                    uint64_t size, uint64_t align, bool hasAlias,
                                    bool isPlaceholder) {
@@ -628,7 +630,7 @@ struct MOOpLoweringState {
   }
 
   Value deviceBufferConstantExternal(DeviceRefAttr device,
-                                     TypedValue<MEF::ChainType> inChain,
+                                     TypedValue<MLRT::MEF::ChainType> inChain,
                                      TypedValue<MGP::OpaqueType> name,
                                      uint64_t size, uint64_t align,
                                      bool hasAlias, bool isPlaceholder) {
@@ -725,7 +727,7 @@ struct MOOpLoweringState {
         .bufferSetWithIndex(builder, loc, context, buffer, values);
   }
 
-  Value hostBufferAlloc(TypedValue<MEF::ChainType> inChain, Value size,
+  Value hostBufferAlloc(TypedValue<MLRT::MEF::ChainType> inChain, Value size,
                         uint64_t align) {
     auto deviceContext =
         loweringState.getExecuteDevice(loweringState.getHostDevice());
@@ -733,7 +735,7 @@ struct MOOpLoweringState {
         builder, loc, context, inChain, size, deviceContext, align);
   }
 
-  Value bufferAlloc(TypedValue<MEF::ChainType> inChain, Value size,
+  Value bufferAlloc(TypedValue<MLRT::MEF::ChainType> inChain, Value size,
                     uint64_t align, Type moTensorType) {
     auto deviceRef = getStorageBufferBuilder(moTensorType).getDevice();
     auto deviceContext = loweringState.getExecuteDevice(deviceRef);

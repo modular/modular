@@ -697,9 +697,8 @@ struct PythonTypeBuilder(Copyable):
         # correctness. This check here ensures that the user is not accidentally
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
-        var type_id = self._type_id
-        if type_id:
-            _register_py_type_object(type_id[], type_obj)
+        if case .Some(type_id) = self._type_id:
+            _register_py_type_object(type_id, type_obj)
 
         Python.add_object(module, self.type_name, type_obj)
         self.methods.clear()

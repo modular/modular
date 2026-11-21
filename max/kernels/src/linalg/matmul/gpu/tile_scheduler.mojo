@@ -26,7 +26,6 @@ from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
 from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
 
 from ...utils_gpu import block_swizzle
 
@@ -200,10 +199,10 @@ struct MatmulSchedule(EnumLike, TrivialRegisterPassable):
 
 
 struct TileScheduler[
-    problem_shape: IndexList[3],
+    problem_shape: Tuple[Int, Int, Int],
     tile_shape: Coord[Int, Int, Int],
-    grid_shape: IndexList[2],
-    cluster: IndexList[3] = Index(1, 1, 1),
+    grid_shape: Tuple[Int, Int],
+    cluster: Tuple[Int, Int, Int] = (1, 1, 1),
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ](TrivialRegisterPassable):
@@ -225,14 +224,14 @@ struct TileScheduler[
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
-    comptime wave_shape = Index[dtype=DType.uint32](
+    comptime wave_shape = (
         Self.tile_shape[0] * Self.grid_shape[1],
         Self.tile_shape[1] * Self.grid_shape[0],
     )
     # This has to match the grid dimension for the kernel launch.
     comptime num_grids: UInt32 = UInt32(Self.grid_shape[0] * Self.grid_shape[1])
     var idx: UInt32
-    var prob_shape: IndexList[3]  # M x N x K
+    var prob_shape: Coord[Int, Int, Int]  # M x N x K
     var num_waves_m: UInt32
     var num_waves_n: UInt32
     var log_num_waves_n: FastDiv[.uint32]
@@ -248,7 +247,7 @@ struct TileScheduler[
     )
 
     @inline(.always)
-    def __init__(out self, prob_shape: IndexList[3]):
+    def __init__(out self, prob_shape: Coord[Int, Int, Int]):
         comptime if Self.schedule == MatmulSchedule.TILE2D:
             comptime assert _check_cluster(
                 Self.cluster, Self.raster_dim
@@ -334,18 +333,18 @@ struct TileScheduler[
     @inline(.always)
     def _index_to_mn_tile1d(self) -> Tuple[Int, Int]:
         # Grid dim as if there is no persist kernel
-        var logical_grid_dim = Index[dtype=DType.uint32](
-            ceildiv(self.prob_shape[1], Self.tile_shape[1]),
-            ceildiv(self.prob_shape[0], Self.tile_shape[0]),
+        var logical_grid_dim = (
+            UInt32(ceildiv(self.prob_shape[1], Self.tile_shape[1])),
+            UInt32(ceildiv(self.prob_shape[0], Self.tile_shape[0])),
         )
 
-        var by, bx = udivmod(Int(self.idx), logical_grid_dim[0])
+        var by, bx = udivmod(Int(self.idx), Int(logical_grid_dim[0]))
         var block_xy_swizzle = block_swizzle(
-            Index[dtype=DType.uint32](bx, by), logical_grid_dim
+            (UInt32(bx), UInt32(by)), logical_grid_dim
         )
 
-        var m: Int = block_xy_swizzle[1] * Self.tile_shape[0]
-        var n: Int = block_xy_swizzle[0] * Self.tile_shape[1]
+        var m: Int = Int(block_xy_swizzle[1]) * Self.tile_shape[0]
+        var n: Int = Int(block_xy_swizzle[0]) * Self.tile_shape[1]
 
         return (m, n)
 
@@ -458,10 +457,12 @@ struct TileScheduler[
         return True
 
 
-def _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
+def _check_cluster(
+    cluster_dims: Tuple[Int, Int, Int], raster_dim: UInt32
+) -> Bool:
     """Check if block cluster is along the raster dimension."""
 
-    for i in range(3):
+    comptime for i in range(3):
         if cluster_dims[i] > 1 and i != Int(raster_dim):
             return False
 

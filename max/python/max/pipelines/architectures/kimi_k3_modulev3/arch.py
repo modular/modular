@@ -15,7 +15,7 @@
 The only Kimi K3 architecture: a checkpoint that names
 ``KimiK3ForConditionalGeneration`` resolves to it.
 
-TP, EP and MXFP4 are all wired (see ``layers/ep.py`` and
+TP, EP and MXFP4 are all wired (see :mod:`max.nn.ep` and
 ``layers/moe_latent.py``); EP and MXFP4 are mutually exclusive, matching
 ``moonshotai/Kimi-K3`` (MXFP4) vs ``moonshotai/Kimi-K3-ep`` (EP, bf16).
 The tower builds for a speculative pairing through the framework's
@@ -29,12 +29,15 @@ package (``kimi_k3_modulev3.dspark``).
 from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
-from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.lib import GraphRole, SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import KimiK3BatchProcessor
+from .context import KimiK3TextAndVisionContext
 from .kimi_k3 import KimiK3Decoder
+from .layers.vision.transformer import KimiK3VisionEncoder
 from .model_config import KimiK3Config
+from .tokenizer import kimi_k3_tokenizer
 from .weight_adapters import kimi_k3_weight_rules
 
 __all__ = ["kimi_k3_modulev3_arch"]
@@ -46,9 +49,15 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=KimiK3Config.DEFAULT_ENCODING,
     supported_encodings=KimiK3Config.SUPPORTED_ENCODINGS,
-    modules={GraphRole.DECODER: KimiK3Decoder},
-    tokenizer=TextTokenizer,
-    context_type=TextContext,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    modules={
+        GraphRole.DECODER: KimiK3Decoder,
+        GraphRole.VISION: KimiK3VisionEncoder,
+    },
+    batching=KimiK3BatchProcessor,
+    tokenizer=kimi_k3_tokenizer,
+    tokenizer_family=("kimi-k3", None),
+    context_type=KimiK3TextAndVisionContext,
     weight_rules=kimi_k3_weight_rules,
     use_weight_rules=True,
     required_arguments={

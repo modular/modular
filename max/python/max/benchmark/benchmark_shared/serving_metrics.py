@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import statistics
 import warnings
 from collections.abc import Mapping, Sequence
@@ -40,6 +41,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
     ServerTokenStats,
+    compute_chunk_tpots,
     measured_window_duration,
 )
 from max.benchmark.benchmark_shared.steady_state import (
@@ -330,6 +332,16 @@ def calculate_metrics(
     ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
     result. ``None`` leaves both unreported.
     """
+    # A caller that builds metrics straight from request outputs skips the
+    # post-run pass that turns these offsets into TPOT. Say so, rather than
+    # report a run whose per-chunk TPOT quietly went missing. One end offset
+    # describes no interval, so a single-chunk response has no TPOT to lose.
+    if any(len(output.pending_tpot_ends) > 1 for output in outputs):
+        logger.warning(
+            "Some responses still carry per-chunk TPOT offsets, so"
+            " compute_chunk_tpots() did not run and their per-chunk TPOT is"
+            " missing from these metrics."
+        )
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -929,6 +941,58 @@ def _session_sort_key(sid: str) -> tuple[int, int, str]:
         return (1, 0, sid)
 
 
+def _nearest_rank(counts: Mapping[int, int], quantile: float) -> float:
+    """Returns the nearest-rank *quantile* of a ``{value: count}`` multiset."""
+    rank = math.ceil(quantile * sum(counts.values()))
+    seen = 0
+    for value in sorted(counts):
+        seen += counts[value]
+        if seen >= rank:
+            return float(value)
+    return float(max(counts))
+
+
+def _stream_read_stats(
+    outputs: Sequence[BaseRequestFuncOutput],
+) -> tuple[int, int, int, float, float] | None:
+    """Pools the client's socket reads and the text events each one carried.
+
+    Returns ``(reads, bunched_reads, max, p99, mean)`` over the reads that
+    carried generated text, or ``None`` when no request streamed any: a run
+    with nothing to say must not report zeros that read as measurements.
+    """
+    counts: dict[int, int] = {}
+    for output in outputs:
+        if not isinstance(output, RequestFuncOutput):
+            continue
+        for size, reads in output.stream_events_per_read.items():
+            counts[size] = counts.get(size, 0) + reads
+    reads_total = sum(counts.values())
+    if not reads_total:
+        return None
+    return (
+        reads_total,
+        sum(n for size, n in counts.items() if size > 1),
+        max(counts),
+        _nearest_rank(counts, 0.99),
+        sum(size * n for size, n in counts.items()) / reads_total,
+    )
+
+
+def _itl_unresolved(outputs: Sequence[BaseRequestFuncOutput]) -> int:
+    """Counts the text events a request's first read left without an ITL.
+
+    A request's first text read gives its other text events no gap to measure,
+    so its sample count falls short of one per text event after the first. This
+    is that shortfall, over the outputs whose ITL the run reports.
+    """
+    return sum(
+        output.itl_unresolved
+        for output in outputs
+        if isinstance(output, RequestFuncOutput)
+    )
+
+
 def run_cache_hit_rate(
     outputs: Sequence[BaseRequestFuncOutput],
 ) -> float | None:
@@ -977,6 +1041,7 @@ def build_text_generation_result(
     steady_state_filtering: bool = True,
     goodput_targets: GoodputTargets | None = None,
     num_gpus: int | None = None,
+    disable_tqdm: bool | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
@@ -1003,7 +1068,11 @@ def build_text_generation_result(
     ``steady_state_window_count``, ``steady_state_mode``,
     ``steady_state_warning``, ``num_outliers_rejected``) are attached to
     the returned ``BenchmarkResult`` for observability without duplicating
-    the full metric set.
+    the full metric set. So are the client's socket-read statistics
+    (``stream_reads``, ``stream_reads_bunched``, ``events_per_read_*``,
+    ``itl_unresolved``), which say whether the ITLs came from one event per
+    read or from reads the client fell behind on, and how many text events a
+    read left without a sample.
 
     Per-request server token stats are attached grouped by session (numeric
     session ids in integer order) when ``outputs_by_session`` is given, else
@@ -1016,12 +1085,20 @@ def build_text_generation_result(
     ``num_gpus`` (the number of GPUs the server used) derives
     ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
     result; ``None`` leaves both unreported.
+
+    ``disable_tqdm`` hides the per-chunk TPOT progress bar; ``None``
+    autodetects.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
             "Expected all outputs to be RequestFuncOutput"
             " in text-generation benchmark flow."
         )
+
+    # Tokenizing the recorded chunks here, rather than per chunk on the event
+    # loop, keeps the client out of the way of the streams it measures. It has
+    # to run before steady-state detection, which reads ``tpot``.
+    compute_chunk_tpots(outputs, tokenizer, disable_tqdm=disable_tqdm)
 
     # FIXME (CENG-1381): Failed requests are excluded so that replies the server
     # ends without any text don't fail the run. Remove this once those replies
@@ -1035,6 +1112,28 @@ def build_text_generation_result(
             len(failed),
         )
         metric_outputs = [o for o in outputs if o.success or o.cancelled]
+
+    # Over the same outputs the other metrics use, so a failed request's reads
+    # do not skew them.
+    read_stats = _stream_read_stats(metric_outputs)
+    itl_unresolved: int | None = None
+    if read_stats is None:
+        (
+            stream_reads,
+            stream_reads_bunched,
+            events_per_read_max,
+            events_per_read_p99,
+            events_per_read_mean,
+        ) = (None, None, None, None, None)
+    else:
+        (
+            stream_reads,
+            stream_reads_bunched,
+            events_per_read_max,
+            events_per_read_p99,
+            events_per_read_mean,
+        ) = read_stats
+        itl_unresolved = _itl_unresolved(metric_outputs)
 
     steady = (
         detect_steady_state(metric_outputs, max_concurrency=max_concurrency)
@@ -1194,18 +1293,22 @@ def build_text_generation_result(
     else:
         aggregate_server_stats = [out.server_token_stats for out in outputs]
 
-    return text_metrics.model_copy(
-        update={
-            "session_server_stats": session_server_stats,
-            "aggregate_server_stats": aggregate_server_stats,
-            "steady_state_detected": steady.detected if steady else None,
-            "steady_state_window_count": (
-                steady.steady_state_count if steady else None
-            ),
-            "steady_state_mode": mode,
-            "steady_state_warning": steady.warning if steady else None,
-            "num_outliers_rejected": num_outliers_rejected,
-            "spec_decode_stats": spec_decode_stats,
-            "task_type": "text",
-        }
+    return text_metrics.updated(
+        session_server_stats=session_server_stats,
+        aggregate_server_stats=aggregate_server_stats,
+        steady_state_detected=steady.detected if steady else None,
+        steady_state_window_count=(
+            steady.steady_state_count if steady else None
+        ),
+        steady_state_mode=mode,
+        steady_state_warning=steady.warning if steady else None,
+        num_outliers_rejected=num_outliers_rejected,
+        stream_reads=stream_reads,
+        stream_reads_bunched=stream_reads_bunched,
+        events_per_read_max=events_per_read_max,
+        events_per_read_p99=events_per_read_p99,
+        events_per_read_mean=events_per_read_mean,
+        itl_unresolved=itl_unresolved,
+        spec_decode_stats=spec_decode_stats,
+        task_type="text",
     )

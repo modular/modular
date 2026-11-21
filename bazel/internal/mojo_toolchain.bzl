@@ -1,6 +1,5 @@
 """An internal Mojo toolchain to point to our local tools."""
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@cfg_workaround.bzl", "CFG_WORKAROUND")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_mojo//mojo:providers.bzl", "MojoInfo", "MojoToolchainInfo")
@@ -30,12 +29,6 @@ def _mojo_toolchain_impl(ctx):
             is_x86_64 = ctx.target_platform_has_constraint(ctx.attr._x86_64_constraint[platform_common.ConstraintValueInfo])
             arch = "x86_64" if is_x86_64 else "arm64"
             copts.append("--target-triple={}-apple-macosx{}".format(arch, min_os))
-
-    hal_device_context = ctx.attr._hal_device_context[BuildSettingInfo].value
-    if hal_device_context:
-        # Mojo code reads this define when a compile elaborates it, so every
-        # Mojo compile needs it, not only the compile of the `max` package.
-        copts.extend(["-D", "HAL_DEVICE_CONTEXT"])
 
     copts_toolchain = ctx.toolchains["@rules_mojo//:copts_toolchain_type"]
     if copts_toolchain:
@@ -135,9 +128,6 @@ mojo_toolchain = rule(
         ),
         "_x86_64_constraint": attr.label(
             default = Label("@platforms//cpu:x86_64"),
-        ),
-        "_hal_device_context": attr.label(
-            default = Label("//:hal_device_context"),
         ),
     },
     toolchains = [

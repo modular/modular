@@ -16,6 +16,8 @@ on:
 
 jobs:
   labeler:
+    # The Merged-status backfill reopens landed PRs as modularbot; skip them.
+    if: github.event.action != 'reopened' || github.actor != 'modularbot'
     permissions:
       contents: read
       pull-requests: write

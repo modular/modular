@@ -191,6 +191,12 @@ def select_pooled(
         # pools after it, which the sparse attention's causal mask discards.
         MHAMaskVariant.CAUSAL_MASK,
         kpool=kpool,
+        # By default the selection's column order, and which pools survive a
+        # tie at the cut-off, follow the order the kernel's threads finish in,
+        # so the sparse MLA reduces over them differently each launch and
+        # greedy decode stops reproducing. Mistral-Large-4 sets this for the
+        # same reason.
+        deterministic=True,
     )
     return mla_kpool_expand_topk(
         pool_ids,

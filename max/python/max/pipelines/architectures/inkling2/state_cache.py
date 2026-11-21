@@ -15,7 +15,8 @@
 There is one pool per conv site and layer kind per device. A slot is a ring of
 conv inputs indexed by position (see
 :mod:`max.nn._graph_ops.state_space.short_conv_ring`) holding
-``kernel_size - 1`` entries. Slots are never cleared: taps before position zero
+``kernel_size - 1`` entries, plus the most positions a speculative verify can
+roll back. Slots are never cleared: taps before position zero
 read as zero, so a fresh request never sees the previous tenant's inputs.
 """
 
@@ -54,13 +55,13 @@ class ConvStateLayout:
     """
 
     ring_len: int
-    """Entries per slot: ``kernel_size - 1``."""
+    """Entries per slot: ``kernel_size - 1`` plus the largest rollback."""
 
     layers: tuple[tuple[int, int, int, int], ...]
     is_local: tuple[bool, ...]
-    """Which layers are sliding-window, in :attr:`layers` order. A layer's K
-    and V widths follow this, so it also splits the pool into uniformly shaped
-    leaves."""
+    """Which layer visits are sliding-window, in :attr:`layers` order. A
+    visit's K and V widths follow this, so it also splits the pool into
+    uniformly shaped leaves."""
 
     @property
     def kinds(self) -> tuple[bool, ...]:
@@ -70,7 +71,7 @@ class ConvStateLayout:
         )
 
     def layers_of_kind(self, is_local: bool) -> tuple[int, ...]:
-        """Layer indices of one kind, in order."""
+        """Visit indices of one kind, in order."""
         return tuple(
             idx for idx, local in enumerate(self.is_local) if local == is_local
         )
@@ -95,25 +96,35 @@ class ConvStateLayout:
             for first in (self.layers_of_kind(is_local)[0],)
         )
 
-    def row_for(self, layer_idx: int, site: ConvSite) -> tuple[int, int]:
-        """Returns the leaf a layer's site lives in, and its row within it.
+    def row_for(self, visit_idx: int, site: ConvSite) -> tuple[int, int]:
+        """Returns the leaf a visit's site lives in, and its row within it.
 
         The leaf is a position among :meth:`regions`, which is how a device's
         ``leaves`` tuple is addressed.
         """
-        is_local = self.is_local[layer_idx]
-        ordinal = self.layers_of_kind(is_local).index(layer_idx)
+        is_local = self.is_local[visit_idx]
+        ordinal = self.layers_of_kind(is_local).index(visit_idx)
         leaf = self.kinds.index(is_local) * len(ConvSite) + int(site)
         return leaf, ordinal
 
     @classmethod
     def from_config(
-        cls, text_config: Inkling2TextConfig, *, tp_size: int = 1
+        cls,
+        text_config: Inkling2TextConfig,
+        *,
+        tp_size: int = 1,
+        max_rollback: int = 0,
     ) -> Self:
-        """Derives the layout from the checkpoint config."""
+        """Derives the layout from the checkpoint config.
+
+        ``max_rollback`` is the most positions a verify step can reject. A
+        verify commits every row it scores, so the ring keeps that many more
+        entries than the kernel reads: the rejected rows then land in slots
+        the accepted history does not occupy.
+        """
         is_local = tuple(
-            text_config.is_local_attention(i)
-            for i in range(text_config.num_hidden_layers)
+            text_config.is_local_attention(layer_idx)
+            for layer_idx in text_config.visit_layer_ids()
         )
         # The residual sites are not channel-sharded: each rank convolves a
         # full-width partial sum and the ranks are summed afterwards.
@@ -127,7 +138,7 @@ class ConvStateLayout:
             for local in is_local
         )
         return cls(
-            ring_len=text_config.sconv_kernel_size - 1,
+            ring_len=text_config.sconv_kernel_size - 1 + max_rollback,
             layers=layers,
             is_local=is_local,
         )

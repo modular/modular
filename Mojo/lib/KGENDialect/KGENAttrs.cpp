@@ -1224,8 +1224,29 @@ static DenseBoolArrayAttr mergeDischargedConstraints(
 
 BindParamsAttr BindParamsAttr::getFromBytecode(TypedAttr generator,
                                                ParamsBindingArrayAttr params,
-                                               DenseBoolArrayAttr discharged) {
-  return Base::get(generator.getContext(), generator, params, discharged);
+                                               DenseBoolArrayAttr discharged,
+                                               Type type) {
+  return Base::get(generator.getContext(), generator, params, discharged, type);
+}
+
+Attribute BindParamsAttr::parse(AsmParser &p, Type type) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  TypedAttr generator;
+  ParamsBindingArrayAttr params;
+  DenseBoolArrayAttr discharged;
+  if (p.parseLess() || parseBindParams(p, generator, params, discharged) ||
+      p.parseGreater())
+    return {};
+  if (failed(verify([&] { return p.emitError(loc); }, generator, params,
+                    discharged, type)))
+    return {};
+  return get(p.getContext(), generator, params, discharged, type);
+}
+
+void BindParamsAttr::print(AsmPrinter &p) const {
+  p << "<";
+  printBindParams(p, getGenerator(), getParams(), getDischarged());
+  p << ">";
 }
 
 static bool isEagerlyInstantiatable(GeneratorType generator) {
@@ -1327,13 +1348,6 @@ Type BindParamsAttr::inferResultType(
   return inferResultType(genType, params, /*discharged=*/{}, evaluationContext);
 }
 
-Type BindParamsAttr::getType() const {
-  return inferBindParamsResultType(
-      sugarCast<GeneratorType>(getGenerator().getType()), getParams(),
-      getDischarged(),
-      /*evaluationContext=*/nullptr);
-}
-
 /// Strips top-level sugar, including rebinds between canonically equal types,
 /// which canonicalization would remove. The result may differ from `value` in
 /// type sugar, so it is only suitable for deciding whether a fold applies.
@@ -1351,13 +1365,14 @@ static TypedAttr stripSugarAndSugarRebinds(TypedAttr value) {
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                               ParamsBindingArrayAttr params,
-                              DenseBoolArrayAttr discharged,
+                              DenseBoolArrayAttr discharged, Type resultType,
                               ParameterEvaluationContext *evaluationContext) {
   auto genType = sugarCast<GeneratorType>(generator.getType());
   assert(params.size() == genType.getInputParamTypes().size() &&
          "params must cover every generator input");
-  Type type =
-      inferBindParamsResultType(genType, params, discharged, evaluationContext);
+  Type type = resultType ? resultType
+                         : inferBindParamsResultType(
+                               genType, params, discharged, evaluationContext);
 
   // No bindings to apply: the generator already has the requested type.
   if (params.getBoundValues().empty() && (!discharged || discharged.empty()) &&
@@ -1389,7 +1404,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     }
     TypedAttr flattened =
         BindParamsAttr::get(bindParams.getContext(), bindParams.getGenerator(),
-                            mergedParams, mergedMask, evaluationContext);
+                            mergedParams, mergedMask, type, evaluationContext);
     if (!flattened)
       return {};
     assert(isEqualCanon(flattened.getType(), type) &&
@@ -1432,17 +1447,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
   }
 
   // No simplification applies. Build the BindParamsAttr directly.
-  TypedAttr result =
-      Base::get(generator.getContext(), generator, params, discharged);
-
-  // The inferred type could be more concrete as a evaluation context is used
-  // for folding. When the trivially inferred type does not agree, simply
-  // rebind?
-  //
-  // TODO: does this means that we missed a case in `simplifyBindParams`.
-  if (result.getType() != type)
-    result = ParamOperatorAttr::getRebind(result, type);
-  return result;
+  return Base::get(generator.getContext(), generator, params, discharged, type);
 }
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
@@ -1453,7 +1458,8 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       context,
       sugarCast<GeneratorType>(generator.getType()).getInputParamTypes().size(),
       paramValues);
-  return get(context, generator, params, discharged, evaluationContext);
+  return get(context, generator, params, discharged, /*resultType=*/{},
+             evaluationContext);
 }
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
@@ -1467,11 +1473,12 @@ TypedAttr
 BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            MLIRContext *context, TypedAttr generator,
                            ParamsBindingArrayAttr params,
-                           DenseBoolArrayAttr discharged,
+                           DenseBoolArrayAttr discharged, Type resultType,
                            ParameterEvaluationContext *evaluationContext) {
-  if (failed(verify(emitError, generator, params, discharged)))
+  if (failed(verify(emitError, generator, params, discharged, resultType)))
     return {};
-  return get(context, generator, params, discharged, evaluationContext);
+  return get(context, generator, params, discharged, resultType,
+             evaluationContext);
 }
 
 bool BindParamsAttr::isConstant() const { return false; }
@@ -1513,7 +1520,7 @@ verifyGeneratorAndDischarged(function_ref<InFlightDiagnostic()> emitError,
 LogicalResult
 BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr generator, ParamsBindingArrayAttr params,
-                       DenseBoolArrayAttr discharged) {
+                       DenseBoolArrayAttr discharged, Type type) {
   if (failed(verifyGeneratorAndDischarged(emitError, generator, discharged)))
     return failure();
   size_t numInputs =
@@ -5995,6 +6002,9 @@ SIMDAttr SIMDAttr::getZeroValue(SIMDType type) {
   } else if (dtype.isInt()) {
     APSInt aps(dtype.getIntegerWidthInBits(), /*isUnsigned=*/dtype.isUInt());
     zeroValue = DTypeValue(aps, dtype);
+  } else if (dtype.isIndex() || dtype.isUIndex() || dtype.isAddress()) {
+    // Zero doesn't depend on the target's index bit width.
+    zeroValue = DTypeValue(int64_t{0}, dtype);
   } else if (auto *sem = dtype.getFloatSemantics()) {
     zeroValue = DTypeValue(APFloat::getZero(*sem), dtype);
   }

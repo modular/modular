@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
-from max.nn import Module
+from max.nn import Module, TransparentModule
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import RowParallelLinear, col_parallel
@@ -27,6 +27,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.linear import Linear
+from max.support.math import ceildiv
 from max.tensor import Tensor
 
 from ..model_config import Inkling2TextConfig
@@ -53,6 +54,100 @@ class _RelLogitsProj(Module[[], None]):
 
     def __init__(self, d_rel: int, extent: int) -> None:
         self.proj = Tensor.zeros([d_rel, extent])
+
+
+_ROW_ALIGN = 8
+"""Rows per head in the fused weight round up to this, for 16-byte bf16 rows."""
+
+
+class _QuerySideProjection(
+    TransparentModule[[Tensor], tuple[Tensor, Tensor, Tensor, Tensor]]
+):
+    """The q, r, gate and sink projections behind one GEMM.
+
+    At decode each projection is a weight-bound GEMV, so one launch over their
+    row interleaved weight replaces four. The rows are head-major, placing
+    each head's q block, r block, gate block and sink row together, so the
+    output reshapes to ``[tokens, heads, q | r | gate | sink | pad]`` and splits on
+    the last axis. That keeps the split off the head axis, where the
+    column-parallel weights shard: each rank's rows are its own heads' four
+    blocks, where a plain ``[q; r; gate; sink]`` row concat would hand a rank
+    a slice of every projection instead.
+
+    Each head's rows are padded with zeros to a multiple of 8, so a rank's
+    output row stays 16-byte aligned for the SM100 matmul. Unpadded, 12 heads
+    of 273 rows is 3276 columns, which the dispatcher hands to cuBLAS's sm80
+    kernel at several times the cost.
+
+    Name-transparent, so the checkpoint's four names still load. The weights
+    are dense bf16; a quantized projection would have to interleave its scale
+    blocks in the same head-major order.
+    """
+
+    def __init__(
+        self,
+        *,
+        hidden: int,
+        num_heads: int,
+        head_dim: int,
+        d_rel: int,
+    ) -> None:
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.d_rel = d_rel
+        self.hidden = hidden
+        self.width = 2 * head_dim + d_rel + 1
+        self.padded_width = ceildiv(self.width, _ROW_ALIGN) * _ROW_ALIGN
+        self.wq_du = col_parallel(
+            Linear(hidden, num_heads * head_dim, bias=False)
+        )
+        self.wr_du = col_parallel(Linear(hidden, num_heads * d_rel, bias=False))
+        self.gate_attn = col_parallel(
+            Linear(hidden, num_heads * head_dim, bias=False)
+        )
+        self.attn_sink_proj = col_parallel(
+            Linear(hidden, num_heads, bias=False)
+        )
+
+    @property
+    def fused_weight(self) -> Tensor:
+        """The interleaved ``[heads * padded_width, hidden]`` weight, one GEMM."""
+        parts = [
+            self.wq_du.weight.reshape(
+                [self.num_heads, self.head_dim, self.hidden]
+            ),
+            self.wr_du.weight.reshape(
+                [self.num_heads, self.d_rel, self.hidden]
+            ),
+            self.gate_attn.weight.reshape(
+                [self.num_heads, self.head_dim, self.hidden]
+            ),
+            self.attn_sink_proj.weight.reshape(
+                [self.num_heads, 1, self.hidden]
+            ),
+        ]
+        pad = self.padded_width - self.width
+        if pad:
+            parts.append(
+                F.zeros_like(
+                    F.broadcast_to(parts[3], [self.num_heads, pad, self.hidden])
+                )
+            )
+        return F.concat(parts, axis=1).reshape(
+            [self.num_heads * self.padded_width, self.hidden]
+        )
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Projects ``x`` to per-head q, r, gate and sink with one matmul."""
+        per_head = (x @ self.fused_weight.T).reshape(
+            [-1, self.num_heads, self.padded_width]
+        )
+        sizes = [self.head_dim, self.d_rel, self.head_dim, 1]
+        pad = self.padded_width - self.width
+        if pad:
+            sizes.append(pad)
+        q, r, gate, sink = per_head.split(sizes, axis=-1)[:4]
+        return q, r, gate, sink.reshape([-1, self.num_heads])
 
 
 def l2_clip(x: Tensor, threshold: float, scale: Tensor | None = None) -> Tensor:
@@ -120,14 +215,14 @@ class Inkling2Attention(Module[..., Tensor]):
         q_dim = num_heads * self.head_dim
         kv_dim = num_kv_heads * self.head_dim
         d_rel = text_config.d_rel
-        self.wq_du = col_parallel(Linear(hidden, q_dim, bias=False))
+        self.q_side = _QuerySideProjection(
+            hidden=hidden,
+            num_heads=num_heads,
+            head_dim=self.head_dim,
+            d_rel=d_rel,
+        )
         self.wk_dv = col_parallel(Linear(hidden, kv_dim, bias=False))
         self.wv_dv = col_parallel(Linear(hidden, kv_dim, bias=False))
-        self.wr_du = col_parallel(Linear(hidden, num_heads * d_rel, bias=False))
-        self.gate_attn = col_parallel(Linear(hidden, q_dim, bias=False))
-        self.attn_sink_proj = col_parallel(
-            Linear(hidden, num_heads, bias=False)
-        )
         self.wo_ud = RowParallelLinear(q_dim, hidden, bias=False)
         self.q_l2_clip = _ScaleParam([num_heads, self.head_dim])
         self.rel_l2_clip = _ScaleParam([num_heads, d_rel])
@@ -231,15 +326,10 @@ class Inkling2Attention(Module[..., Tensor]):
             v.cast(DType.float32).reshape([-1, kv_heads, dim]),
             text_config.rms_norm_eps,
         ).cast(v.dtype)
-        q = l2_clip(
-            self.wq_du(x_q).reshape([-1, heads, dim]),
-            text_config.qk_l2_clip_threshold,
-            self.q_l2_clip.scale,
-        )
+        q, r, gate, sink = self.q_side(x_q)
+        q = l2_clip(q, text_config.qk_l2_clip_threshold, self.q_l2_clip.scale)
         r = l2_clip(
-            self.wr_du(x_q).reshape([-1, heads, text_config.d_rel]),
-            text_config.rel_l2_clip_threshold,
-            self.rel_l2_clip.scale,
+            r, text_config.rel_l2_clip_threshold, self.rel_l2_clip.scale
         )
         if not self.is_local:
             q = scale_rows(q, tau)
@@ -266,9 +356,9 @@ class Inkling2Attention(Module[..., Tensor]):
             scale=dim**-0.5,
             local_window_size=-1 if self.window is None else self.window,
             rel_logits=bias,
-            token_sink=self.attn_sink_proj(x_q),
+            token_sink=sink,
         )
         attn = as_sharded(attn, x_q.mesh, axis=1)
-        gate = F.sigmoid(self.gate_attn(x_q).cast(DType.float32))
-        gated = attn.cast(DType.float32).reshape([-1, heads * dim]) * gate
-        return self.wo_ud(gated.cast(x_q.dtype))
+        gate = F.sigmoid(gate.cast(DType.float32))
+        gated = attn.cast(DType.float32) * gate
+        return self.wo_ud(gated.reshape([-1, heads * dim]).cast(x_q.dtype))

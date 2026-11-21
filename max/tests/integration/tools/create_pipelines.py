@@ -806,46 +806,6 @@ class KimiK2_5PipelineOracle(_KimiK2_5BaseOracle):
         return test_data.KIMIK2_5_REQUESTS + text_only_requests
 
 
-class KimiK2_7PipelineOracle(KimiK2_5PipelineOracle):
-    """Pipeline oracle for Kimi-K2.7-Code-NVFP4 (vLLM only).
-
-    K2.7-Code reuses the Kimi-K2.5 MAX architecture — confirmed via the HF
-    config (``architectures: KimiK25ForConditionalGeneration``, ``vision_config``
-    present), same as K2.5 and K2.6. It therefore inherits K2.5's vLLM golden
-    setup verbatim: multimodal (``KIMIK2_5_REQUESTS``) + text inputs and the
-    vision ``_vllm_extra_kwargs`` (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt``
-    on the ``vision_chunk`` mm-data key).
-
-    The MAX pipeline runs in TP+EP mode (``data_parallel_degree=1``,
-    ``ep_size=8``, ``ep_use_allreduce=True``) to match the served K2.7-Code
-    deployment (same layout as K2.6), rather than the K2.5 base oracle's DP+EP
-    (``dp=8``) layout.
-    """
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        config = pipelines.PipelineArgs.from_flat_kwargs(
-            device_specs=device_specs,
-            quantization_encoding=encoding,
-            model_path=self.model_path,
-            max_length=4096,
-            trust_remote_code=self.trust_remote_code,
-            max_batch_input_tokens=4096,
-            ep_size=8,
-            data_parallel_degree=1,
-            ep_use_allreduce=True,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-        assert isinstance(pipeline, TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -2144,9 +2104,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
-    ),
-    "nvidia/Kimi-K2.7-Code-NVFP4": KimiK2_7PipelineOracle(
-        "nvidia/Kimi-K2.7-Code-NVFP4"
     ),
     # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
     # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.

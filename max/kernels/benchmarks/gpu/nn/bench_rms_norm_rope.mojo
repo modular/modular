@@ -21,14 +21,13 @@ from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, row_major
 from builtin_kernels.rowwise_normalization import rms_norm_rope
 
-from std.utils.index import Index, IndexList
-
 
 def bench_rms_norm_rope_gpu[
-    rank: Int, //, dtype: DType, shape: IndexList[rank]
+    dtype: DType, shape: Coord
 ](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
-    comptime cols = shape[rank - 1]
-    comptime rows = shape.flattened_length() // cols
+    comptime rank = shape.rank
+    comptime cols = Int(shape[rank - 1])
+    comptime rows = Int(shape.product()) // cols
 
     var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
     var gamma_h = List(length=cols, fill=Scalar[dtype](0))
@@ -49,13 +48,11 @@ def bench_rms_norm_rope_gpu[
     var sin_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var output_d = ctx.enqueue_create_buffer[dtype](rows * cols)
 
-    var param_shape = Index(cols)
-
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var output_buf = TileTensor(output_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
-    var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
+    var data_buf = TileTensor(data_d, row_major(shape))
+    var output_buf = TileTensor(output_d, row_major(shape))
+    var gamma = TileTensor(gamma_d, row_major(Coord(cols)))
+    var cos_vals = TileTensor(cos_d, row_major(shape))
+    var sin_vals = TileTensor(sin_d, row_major(shape))
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -114,7 +111,7 @@ def bench_rms_norm_rope_gpu[
                 cos_fn,
                 sin_fn,
                 output_fn,
-                Coord(shape),
+                shape,
                 Int(cols),
                 gamma,
                 epsilon,

@@ -77,17 +77,24 @@ def _convolve(
     input_row_offsets: Tensor,
     positions: Tensor,
 ) -> Tensor:
-    """Returns ``(x + conv(x)) / sqrt(K + 1)`` on one device."""
+    """Returns ``(x + conv(x)) / sqrt(K + 1)`` on one device.
+
+    The kernel convolves in float32 and divides before it rounds to ``x``'s
+    dtype, so the bfloat16 input and taps go in as they are: widening them
+    first would be exact and cost a launch each.
+    """
     taps = conv.weight.reshape([-1, conv.kernel_size])
-    y = ring_conv(
-        x.cast(DType.float32),
-        taps.cast(DType.float32),
-        site,
+    return _short_conv_ring(
+        x,
+        taps.cast(x.dtype),
+        site.ring,
         input_row_offsets,
         positions,
+        site.rows,
+        site.layer_row,
         commit=True,
+        out_divisor=(conv.kernel_size + 1) ** 0.5,
     )
-    return (y / (conv.kernel_size + 1) ** 0.5).cast(x.dtype)
 
 
 class ShortConvolution(Module[..., Tensor]):
@@ -151,7 +158,14 @@ def _dynamic_convolve(
     input_row_offsets: Tensor,
     positions: Tensor,
 ) -> Tensor:
-    """Convolves ``x`` on one device, in ``x``'s dtype."""
+    """Convolves ``x`` on one device, in ``x``'s dtype.
+
+    The taps stay ``[tokens, channels]``, with each head's projected value
+    spread over its channels by a view of the projection. The graph compiler
+    cannot fuse an elementwise op into one that reads it through a reshape,
+    so a per-head ``[tokens, heads, head_dim]`` form split this sum into
+    several launches; the values and the order of every add are the same.
+    """
     kernel = conv.kernel_size
     channels = int(x.shape[-1])
     num_heads = int(conv.weight_proj.shape[0]) // kernel
@@ -160,19 +174,19 @@ def _dynamic_convolve(
     dynamic = (dynamic_input @ conv.weight_proj.T).cast(DType.float32)
     dynamic = dynamic.reshape([-1, num_heads, kernel])
     static = conv.static_w.cast(DType.float32)
-    heads = [-1, num_heads, head_dim]
 
     def tap(lag: int, shifted: Tensor) -> Tensor:
-        weight = static[lag].reshape([num_heads, head_dim])
-        weight = weight + dynamic[:, :, lag : lag + 1]
-        return weight * shifted.reshape(heads)
+        per_head = F.broadcast_to(
+            dynamic[:, :, lag : lag + 1],
+            [dynamic.shape[0], num_heads, head_dim],
+        ).reshape([-1, channels])
+        return (static[lag] + per_head) * shifted
 
     total = tap(0, x32)
     for lag in range(1, kernel):
         shifted = _lag(x32, kernel, lag, site, input_row_offsets, positions)
         total = total + tap(lag, shifted)
-    total = total.reshape([-1, channels]) + x32
-    return (total / (2 * kernel + 1) ** 0.5).cast(x.dtype)
+    return ((total + x32) / (2 * kernel + 1) ** 0.5).cast(x.dtype)
 
 
 class DynamicShortConvolution(Module[..., Tensor]):

@@ -27,13 +27,26 @@
 namespace M::MO {
 class Var;
 
+/// How a `ParamExprBuilder` names the parameters it declares.
+enum class ParamNaming {
+  /// Names come from `graphOp`'s counter, which advances with each name.
+  Real,
+  /// For result-type inference, where bindings are discarded after
+  /// propagation. Names come from a counter local to the builder, prefixed
+  /// with `$` so they cannot collide with user or `Real` names, and leave
+  /// `graphOp` untouched. They must not escape into inferred types.
+  Inference,
+};
+
 /// Builds parameter expressions, recording each non-trivial one as a
-/// `ParamBinding` in `createdOps`. `graphOp` generates parameter names.
+/// `ParamBinding` in `createdOps`. `graphOp` generates parameter names unless
+/// `naming` is `ParamNaming::Inference`.
 class ParamExprBuilder {
 public:
   ParamExprBuilder(GraphOp graphOp, Location loc,
-                   SmallVectorImpl<ParamBinding> *createdOps)
-      : graphOp(graphOp), loc(loc), createdOps(createdOps) {}
+                   SmallVectorImpl<ParamBinding> *createdOps,
+                   ParamNaming naming = ParamNaming::Real)
+      : graphOp(graphOp), loc(loc), createdOps(createdOps), naming(naming) {}
 
   /// `Var` holds a pointer to its builder.
   ParamExprBuilder(const ParamExprBuilder &other) = delete;
@@ -85,6 +98,10 @@ private:
   GraphOp graphOp;
   Location loc;
   SmallVectorImpl<ParamBinding> *createdOps;
+  ParamNaming naming;
+  int64_t inferenceCounter = 0;
+
+  KGEN::ParamDeclAttr newParamDecl(StringRef prefix, Type type);
 };
 
 /// Wraps a parameter attribute to build expressions via operator overloading.
@@ -293,8 +310,11 @@ expandMatmulInputsForBroadcasting(ShapeAttr lhsShape, ShapeAttr rhsShape);
 //----------------------------------------------------------------------------//
 //------------------------Shape functions begin-------------------------------//
 
-// `GraphOp` generates parameter names and `Location` is used for created
-// ops. Each `TypedAttr` input is one of:
+// `GraphOp` generates parameter names (unless `ParamNaming::Inference` is
+// requested) and `Location` is used for created ops. The `materializeRmo*`
+// functions only serve result-type inference and always use
+// `ParamNaming::Inference`; the others take `naming` from their caller. Each
+// `TypedAttr` input is one of:
 //   - `IntegerAttr` (a constant integer)
 //   - `KGEN::ParamDeclRefAttr` (a parameter)
 //   - `KGEN::ParamOperatorAttr` (a parameter expression)
@@ -341,30 +361,31 @@ ShapeMaterializeResult materializeBroadcastShapeShape(GraphOp graphOp,
                                                       TypedAttr rhsShapeAttr);
 
 /// Materialize the shape logic for `MO::BroadcastToOp`.
-ShapeMaterializeResult materializeBroadcastToShape(GraphOp graphOp,
-                                                   Location loc,
-                                                   TypedAttr inputShapeAttr,
-                                                   TypedAttr targetShapeAttr);
+ShapeMaterializeResult
+materializeBroadcastToShape(GraphOp graphOp, Location loc,
+                            TypedAttr inputShapeAttr, TypedAttr targetShapeAttr,
+                            ParamNaming naming = ParamNaming::Real);
 
 /// Materialize the shape logic for `MO::ConcatOp`.
 ShapeMaterializeResult
 materializeConcatShape(GraphOp graphOp, Location loc, TypedAttr axisAttr,
-                       ArrayRef<TypedAttr> inputShapeAttrs);
+                       ArrayRef<TypedAttr> inputShapeAttrs,
+                       ParamNaming naming = ParamNaming::Real);
 
 /// Materialize the shape logic for `MO::ConvOp`.
-ShapeMaterializeResult
-materializeConvShape(GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
-                     TypedAttr filterShapeAttr, TypedAttr stridesAttr,
-                     TypedAttr dilationsAttr, TypedAttr paddingsAttr,
-                     TypedAttr numGroupsAttr, StringAttr inputLayoutAttr,
-                     LayoutAttr filterLayoutAttr);
+ShapeMaterializeResult materializeConvShape(
+    GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
+    TypedAttr filterShapeAttr, TypedAttr stridesAttr, TypedAttr dilationsAttr,
+    TypedAttr paddingsAttr, TypedAttr numGroupsAttr, StringAttr inputLayoutAttr,
+    LayoutAttr filterLayoutAttr, ParamNaming naming = ParamNaming::Real);
 
 /// Materialize the shape logic for `MO::ConvTransposeOp`.
 ShapeMaterializeResult materializeConvTransposeShape(
     GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
     TypedAttr filterShapeAttr, TypedAttr stridesAttr, TypedAttr dilationsAttr,
     TypedAttr paddingsAttr, TypedAttr outputPaddingsAttr,
-    StringAttr inputLayoutAttr, LayoutAttr filterLayoutAttr);
+    StringAttr inputLayoutAttr, LayoutAttr filterLayoutAttr,
+    ParamNaming naming = ParamNaming::Real);
 
 /// Materialize the shape logic for `MO::GatherOp`.
 ShapeMaterializeResult materializeGatherShape(GraphOp graphOp, Location loc,
@@ -389,7 +410,7 @@ ShapeMaterializeResult
 materializePoolShape(GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
                      TypedAttr filterAttr, TypedAttr stridesAttr,
                      TypedAttr dilationsAttr, TypedAttr paddingsAttr,
-                     bool ceilMode);
+                     bool ceilMode, ParamNaming naming = ParamNaming::Real);
 
 /// Materialize the shape logic for `MO::RangeOp`.
 ShapeMaterializeResult materializeRangeShape(GraphOp graphOp, Location loc,
@@ -407,9 +428,10 @@ ShapeMaterializeResult materializeReduceShape(GraphOp graphOp, Location loc,
 /// Returns `targetShapeAttr` as the output shape and accumulates an assertion
 /// that `inputShapeAttr` and `targetShapeAttr` have the same number of
 /// elements.
-ShapeMaterializeResult materializeReshapeShape(GraphOp graphOp, Location loc,
-                                               TypedAttr inputShapeAttr,
-                                               TypedAttr targetShapeAttr);
+ShapeMaterializeResult
+materializeReshapeShape(GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
+                        TypedAttr targetShapeAttr,
+                        ParamNaming naming = ParamNaming::Real);
 
 /// Materialize the shape logic for `MO::RoiAlignOp`.
 ShapeMaterializeResult materializeRoiAlignShape(GraphOp graphOp, Location loc,

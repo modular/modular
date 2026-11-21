@@ -15,8 +15,10 @@
 #define KGEN_MOJOTOOLING_PARSERDRIVER_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "llvm/ADT/ArrayRef.h"
 #include <filesystem>
 #include <memory>
+#include <string>
 
 namespace llvm {
 class SourceMgr;
@@ -84,7 +86,12 @@ public:
   ///
   /// In the case of success, the corresponding decl is returned.
   /// In the case of an error, a null decl is returned.
-  ASTDecl *parseFileOrPackage(const std::filesystem::path &path);
+  ///
+  /// If \p outputNamespace is not empty and \p path is a source package, the
+  /// package is bound at that namespace, then its own name, before it is
+  /// parsed. See `ModuleLoader::bindPrecompiledPackage`.
+  ASTDecl *parseFileOrPackage(const std::filesystem::path &path,
+                              llvm::ArrayRef<std::string> outputNamespace = {});
 
   /// Parse a module or package with the given path, without resolving any of
   /// the nested decls. The returned decl provides only a partial view of the

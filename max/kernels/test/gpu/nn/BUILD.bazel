@@ -31,6 +31,8 @@ _EXTRA_CONSTRAINTS = {
     }),
     # The key tail's LayerNorm tree asserts a 32-lane warp.
     "test_indexer_k_quantize_store.mojo": ["//:nvidia_gpu"],
+    # The query tail runs on the same 32-lane head layout as the key tail.
+    "test_indexer_q_rope_quantize.mojo": ["//:nvidia_gpu"],
     # MXFP4 packing uses SM100 conversion instructions.
     "test_indexer_k_store.mojo": select({
         "//:b200_gpu": [],
@@ -172,18 +174,66 @@ _EXTRA_CONSTRAINTS = {
     "test_topk_split_amd.mojo": ["//:mi355_gpu"],
     "test_cudnn_bindings.mojo": ["//:nvidia_gpu"],
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
+    "test_conv_gpu_residual_fallback.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
     # + chiplet/L2 swizzle; not compilable on other AMD parts.
+    "test_amd_4wave_conv_admission.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_dtypes.mojo": ["//:mi355_gpu"],
+    "test_amd_conv_filter_transpose.mojo": ["//:mi355_gpu"],
+    "test_amd_conv_rscf_direct.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_residual.mojo": ["//:mi355_gpu"],
+    # The wave-specialized conv2d kernels read DMA-to-LDS and the 16x16x32
+    # bf16 MFMA, both gfx950.
+    "test_amd_conv2d_ring.mojo": ["//:mi355_gpu"],
+    "test_amd_conv2d_ring_dispatch.mojo": ["//:mi355_gpu"],
     "test_attention_fp8_tail_stress_amd.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
     # `mhc_pre` projects on the gfx950-only bf16 16x16x32 MFMA.
     "test_mhc_pre.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_narrow_out.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_fp32_small_c.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_column.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_patch.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f96.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f96_epilogue.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_k1x5.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_k1x5_epilogue.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f192.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f192_epilogue.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -195,7 +245,27 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_conv3d_qslice_sm100_graph_replay.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv3d_sm100_col_umma.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv3d_sm100_tap_umma.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv3d_sm100_route.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
+    "test_conv_dgrad_fp32.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
     # Apple M5+ (cc>=5) FA2-prefill: the kernel uses the 16x16 simdgroup MMA
@@ -647,6 +717,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # TODO(KERN-4060): On Apple GPU, a split row draws a different token than
+    # a single block in about half of the runs.
+    "test_topk_coop_parity.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_scatter_set_constant.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -703,7 +779,6 @@ _EXTRA_DEPS = {
     "test_rowwise_pdl_race.mojo": ["//max:builtin_kernels"],
     "test_topk_gpu.mojo": ["//max:max_mojo"],
     "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
-    "test_topk_softmax_sample_topk_arr.mojo": ["//max:max_mojo"],
     "test_topk_greedy_tiebreak.mojo": ["//max:max_mojo"],
     "test_topk_topp_degenerate_row.mojo": ["//max:max_mojo"],
     "test_toppminp_gpu.mojo": ["//max:max_mojo"],
@@ -728,8 +803,11 @@ _GPU_MEMORY = {
     "attention/test_mha_sm100_ws_bm32.mojo": "3",
     "probe_block_scan_metal.mojo": "4",
     "test_amd_4wave_conv3d.mojo": "2",
+    "test_amd_4wave_conv_admission.mojo": "2",
     "test_amd_4wave_conv_miopen.mojo": "2",
     "test_amd_4wave_conv_residual.mojo": "2",
+    "test_amd_conv2d_ring.mojo": "2",
+    "test_amd_conv2d_ring_dispatch.mojo": "2",
     "test_amd_4wave_conv_rt_hw.mojo": "2",
     "test_apple_fa_prefill.mojo": "4",
     "test_apple_fa_softmax_unit.mojo": "4",
@@ -769,6 +847,7 @@ _GPU_MEMORY = {
     "test_mla_prefill_per_token_scale_fp8.mojo": "4",
     "test_mla_prefill_sparse_kv_fp8_gather.mojo": "4",
     "test_mla_prefill_sparse_qkv_fp8.mojo": "3",
+    "test_moe_gather_quantize.mojo": "3",
     "test_rms_norm.mojo": "3",
     "test_rope_split_store.mojo": "3",
     "test_topk_warp_isa_amd.mojo": "4",

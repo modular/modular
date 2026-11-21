@@ -231,6 +231,7 @@ def _run_case[
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`. Writing both outputs lets it hit the same oracles.
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def two_launch() raises {imm}:
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
                     in_bufs, world_sum, rank_sigs, list_of_ctx[i], my_rank=i
@@ -499,12 +500,14 @@ def _rms_norm_shard[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[
         width: Int
     ](coords: Coord) {var src_view} -> SIMD[in_dtype, width]:
         return src_view.load[width=width](coords)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) {var dst_view} -> None:
@@ -684,6 +687,7 @@ def _run_prod_oracle_case[
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`.
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def two_launch() raises {imm}:
                 reducescatter[
                     dtype=in_dtype,

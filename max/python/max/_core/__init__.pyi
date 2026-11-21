@@ -37,6 +37,9 @@ from . import (
     engine as engine,
 )
 from . import (
+    gguf as gguf,
+)
+from . import (
     graph as graph,
 )
 from . import (

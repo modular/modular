@@ -33,12 +33,15 @@ no ``max`` package installed and therefore cannot import anything from here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import Enum
 from typing import Literal
 
 # Locally launched inference frameworks that the config generator fans
 # manifests out over.
-FrameworkName = Literal["atom", "mach", "modular", "sglang", "trtllm", "vllm"]
+FrameworkName = Literal[
+    "atom", "mach", "modular", "sglang", "tokenspeed", "trtllm", "vllm"
+]
 
 # Server backends the load generator can target. Superset of ``FrameworkName``
 # that adds the externally managed ``mcloud`` endpoint (not a locally launched
@@ -56,10 +59,19 @@ Backend = (
         "atom-chat",
         "modular-chat",
         "sglang-chat",
+        "tokenspeed-chat",
         "trtllm-chat",
         "vllm-chat",
     ]
 )
+
+# Route that answers 200 only once a backend can serve, for backends whose
+# ``health`` route answers before then. TokenSpeed's gateway answers every
+# route while its engine still loads, and ``readiness`` waits for the engine.
+SERVER_READY_PATH_MAP: Mapping[str, str] = {
+    "tokenspeed": "readiness",
+    "tokenspeed-chat": "readiness",
+}
 
 
 class BackendEnum(str, Enum):
@@ -84,4 +96,5 @@ class BackendEnum(str, Enum):
     SGLANG = "sglang"
     ATOM = "atom"
     MACH = "mach"
+    TOKENSPEED = "tokenspeed"
     TRTLLM = "trtllm"

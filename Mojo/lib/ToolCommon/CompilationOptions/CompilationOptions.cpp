@@ -130,6 +130,9 @@ void CompilationOptions::print(raw_ostream &os) const {
     os << ", sanitizers:";
     sanitizers.print(os);
   }
+  if (denormalFP32Mode)
+    os << ", denormalFP32Mode: "
+       << llvm::denormalModeKindName(*denormalFP32Mode);
 
   os << ", relocModel: " << stringifyRelocationModel(relocModel);
 
@@ -198,4 +201,59 @@ bool M::KGEN::overrideExported(const llvm::Triple &triple) {
 
 bool M::KGEN::overrideExported(const CompilationOptions &options) {
   return overrideExported(llvm::Triple(options.targetTriple));
+}
+
+bool M::KGEN::isInterceptedEmissionOption(llvm::StringRef item) {
+  return item.starts_with("target-abi=") ||
+         item.starts_with("denormal-fp-math-f32=");
+}
+
+ErrorOrSuccess
+M::KGEN::applyInterceptedEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
+                                         CompilationOptions &options) {
+  options.targetABI.clear();
+  options.denormalFP32Mode.reset();
+  for (llvm::StringRef value : items) {
+    if (value.consume_front("target-abi=")) {
+      options.targetABI = value.str();
+    } else if (value.consume_front("denormal-fp-math-f32=")) {
+      if (!llvm::Triple(options.targetTriple).isNVPTX())
+        return Error(
+            "emission option 'denormal-fp-math-f32' is only supported for "
+            "NVIDIA GPU targets");
+      // The parser reads an empty value as `ieee`.
+      llvm::DenormalMode::DenormalModeKind kind =
+          value.empty() ? llvm::DenormalMode::Invalid
+                        : llvm::parseDenormalFPAttributeComponent(value);
+      if (kind == llvm::DenormalMode::Invalid)
+        return Error(
+            "invalid value '" + value +
+            "' for emission option 'denormal-fp-math-f32', expected 'ieee', "
+            "'preserve-sign', 'positive-zero' or 'dynamic'");
+      options.denormalFP32Mode = kind;
+    }
+  }
+  return success();
+}
+
+ErrorOrSuccess M::KGEN::applyOffloadEmissionOptions(
+    llvm::StringRef emissionOptions, llvm::StringRef linkOptions,
+    FpMode hostFpMode, CompilationOptions &options) {
+  options.fpMode = hostFpMode;
+  std::string filtered;
+  if (std::optional<std::string> badItem =
+          splitFpModeEmissionOptions(emissionOptions, options.fpMode, filtered))
+    return Error("invalid fp-mode emission option '" + *badItem +
+                 "', expected 'contract=fast' or 'contract=off'");
+
+  llvm::SmallVector<llvm::StringRef> items;
+  llvm::StringRef(filtered).split(items, ',', /*MaxSplit=*/-1,
+                                  /*KeepEmpty=*/false);
+  if (ErrorOrSuccess applied = applyInterceptedEmissionOptions(items, options);
+      applied.isError())
+    return applied;
+
+  options.emissionOptions = filtered;
+  options.emissionLinkOptions = linkOptions.str();
+  return success();
 }

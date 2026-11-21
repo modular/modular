@@ -56,11 +56,23 @@ class KVLoadFailed(Exception):
     Raised by ``load`` when posting the copy fails, and by the
     :class:`KVTransfer` it returned once a posted copy fails. Either way
     nothing is still writing into the destination blocks by the time it is
-    raised, so the caller may free them. The cache manager frees them without
-    committing and recomputes the request's prefix without the connector.
+    raised, so the caller may free them, unless it is a
+    :class:`KVLoadAbandoned`. The cache manager frees them without committing,
+    or keeps them for good on a :class:`KVLoadAbandoned`, and recomputes the
+    request's prefix without the connector.
 
     A transport fault, where :class:`KVLoadRefused` is the connector declining
     before it moves anything.
+    """
+
+
+class KVLoadAbandoned(KVLoadFailed):
+    """A load the connector gave up on while its copy may still be running.
+
+    The transport took the copy and never reported that it ended, so it may
+    write the destination blocks at any later time. The cache manager keeps
+    those blocks out of use for the life of the engine rather than freeing
+    them, and recomputes the request's prefix as it does for any failed load.
     """
 
 
@@ -174,8 +186,9 @@ class KVTransfer(Protocol):
         Raising :class:`KVLoadFailed` is how a connector reports a load that
         failed terminally rather than completed: the destination blocks then
         hold no valid KV, so reading ``True`` would publish garbage. The
-        manager unpins that transfer's blocks without committing them and
-        rolls the request's prefix back at its next ``alloc``.
+        manager unpins that transfer's blocks without committing them, or
+        keeps them pinned for good on a :class:`KVLoadAbandoned`, and rolls
+        the request's prefix back at its next ``alloc``.
         """
         ...
 
@@ -325,6 +338,20 @@ class KVProbe(Protocol):
         """
         ...
 
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Returns each replica's co-located run per leaf.
+
+        The run is how many blocks, from the probe's first, the store on
+        the replica's own node held, apart from blocks a remote instance
+        adds past it. A leaf missing from a replica's mapping has no known
+        run. ``None`` when the connector has no such answer, which can be
+        the case even when :meth:`masks` answered, and the reverse.
+
+        Raises:
+            RuntimeError: If the connector has not answered yet.
+        """
+        ...
+
 
 class CompletedProbe:
     """An already-answered :class:`KVProbe`."""
@@ -341,6 +368,10 @@ class CompletedProbe:
     def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
         """Returns the answers the probe came back with, or ``None``."""
         return self._answers
+
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Returns ``None``, since an answer given in place has no runs."""
+        return None
 
 
 @runtime_checkable
@@ -474,7 +505,9 @@ class KVConnector(Protocol):
             KVLoadRefused: If it cannot move every block it was asked for.
                 Loading less is not an option -- see :class:`KVLoadRefused`.
             KVLoadFailed: If posting the copy failed. A copy that fails after
-                it was posted raises from the returned transfer instead.
+                it was posted raises from the returned transfer instead. It is
+                a :class:`KVLoadAbandoned` when a copy already posted for the
+                load may still write the destination blocks.
         """
         ...
 
@@ -484,6 +517,7 @@ class KVConnector(Protocol):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         """Starts a :meth:`lookup` and returns at once.
 
@@ -492,6 +526,12 @@ class KVConnector(Protocol):
         meanwhile, so a connector whose lookup is a round trip keeps it off
         the scheduler thread. A handle the manager does not load from goes
         back through :meth:`abandon_lookup`.
+
+        ``colocated_runs`` is, per leaf, how many of ``block_hashes`` from
+        the first the request's probe found on the store on this node, as
+        :meth:`KVProbe.colocated_runs` reports it. A connector that asks a
+        remote instance alongside that store can start the remote read past
+        it. It changes where the lookup asks, never what it answers.
 
         By default the lookup runs here and comes back already answered,
         which is right for a connector that answers from local memory.

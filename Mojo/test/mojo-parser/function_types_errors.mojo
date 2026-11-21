@@ -59,7 +59,7 @@ def device_func(i: Int):
 
 
 def test_infer_variadic():
-    # expected-error @below {{converted from 'def device_func(i: Int) thin -> None' to 'def(x: Int, y: Int, *args: *ArgTypes) thin -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: Int) thin -> None' to 'def(x: Int, y: Int, *args: *ArgTypes) thin -> None', expected at least 2 arguments, found 1}}
     infer_variadic[device_func]()
 
 
@@ -93,7 +93,7 @@ def device_func(i: ZInt, j: ZInt):
 
 
 def test_infer_variadic():
-    # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) thin -> None' to 'def(*args: *ArgTypes) thin -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) thin -> None' to 'def(*args: *ArgTypes) thin -> None', argument 'i' of type 'ZInt' does not match variadic element type 'Sprongling'}}
     infer_variadic[device_func]()
 
 
@@ -155,13 +155,13 @@ def compile[
 
 
 def test_reject_generic_device_func_unusedT():
-    # expected-error @below {{converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) thin -> Int' to 'def(*args: *ArgTypes) thin -> Int'}}
+    # expected-error @below {{converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) thin -> Int' to 'def(*args: *ArgTypes) thin -> Int', compile-time parameter 'T' has no match in the expected type}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
 def test_reject_generic_device_func_usedT():
-    # expected-error @below {{converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) thin -> Int' to 'def(*args: *ArgTypes) thin -> Int'}}
+    # expected-error @below {{converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) thin -> Int' to 'def(*args: *ArgTypes) thin -> Int', compile-time parameter 'T' has no match in the expected type}}
     var thing = compile[device_func_usedT]()
 
 
@@ -213,7 +213,7 @@ def compile[
 
 
 def main():
-    # expected-error @below {{converted from 'def device_func(a: Int, b: Bool) raises thin -> Int' to 'def(*args: *ArgTypes) thin -> Int'}}
+    # expected-error @below {{converted from 'def device_func(a: Int, b: Bool) raises thin -> Int' to 'def(*args: *ArgTypes) thin -> Int', function must not be 'raises'}}
     compile[device_func]()
 
 
@@ -328,7 +328,7 @@ def plain(x: Int) -> Int:
 
 
 def test_plain_to_abi_c():
-    # expected-error @below {{cannot be converted from 'def plain(x: Int) thin -> Int' to 'def(Int) abi("C") thin -> Int'}}
+    # expected-error @below {{cannot be converted from 'def plain(x: Int) thin -> Int' to 'def(Int) abi("C") thin -> Int', function must be 'abi("C")'}}
     takes_abi_c(plain)
 
 
@@ -345,7 +345,7 @@ def takes_plain(f: def(Int) thin -> Int):
 
 
 def test_abi_c_to_plain(f: def(Int) thin abi("C") -> Int):
-    # expected-error @below {{cannot be converted from 'def(Int) abi("C") thin -> Int' to 'def(Int) thin -> Int'}}
+    # expected-error @below {{cannot be converted from 'def(Int) abi("C") thin -> Int' to 'def(Int) thin -> Int', function must not be 'abi("C")'}}
     takes_plain(f)
 
 
@@ -422,5 +422,76 @@ def plain_func(i: Int):
 
 
 def test_infer_meta_variadic():
-    # expected-error @below {{invalid call to 'infer_meta_variadic': value passed to 'func' cannot be converted from 'def plain_func(i: Int) thin -> None' to 'def(*args: *ArgTypes) thin -> None'}}
+    # expected-error @below {{invalid call to 'infer_meta_variadic': value passed to 'func' cannot be converted from 'def plain_func(i: Int) thin -> None' to 'def(*args: *ArgTypes) thin -> None', argument 'i' of type 'Int' does not match variadic element type 'AnyStruct[MyStruct]'}}
     infer_meta_variadic[plain_func]()
+
+
+# // -----
+
+
+# The following tests check the reason given for a function type mismatch.
+
+
+# expected-note @below {{function declared here}}
+def takes_two(f: def(Int, Int) thin -> None):
+    pass
+
+
+def one_arg(x: Int):
+    pass
+
+
+def test_arg_count():
+    # expected-error @below {{cannot be converted from 'def one_arg(x: Int) thin -> None' to 'def(Int, Int) thin -> None', expected 2 arguments, found 1}}
+    takes_two(one_arg)
+
+
+# // -----
+
+
+# expected-note @below {{function declared here}}
+def takes_read(f: def(Int) thin -> None):
+    pass
+
+
+def mut_arg(mut x: Int):
+    pass
+
+
+def test_convention():
+    # expected-error @below {{cannot be converted from 'def mut_arg(mut x: Int) thin -> None' to 'def(Int) thin -> None', argument 'x': expected 'imm' convention, found 'mut'}}
+    takes_read(mut_arg)
+
+
+# // -----
+
+
+# expected-note @below {{function declared here}}
+def takes_kw(f: def(*, a: Int) thin -> None):
+    pass
+
+
+def kw_b(*, b: Int):
+    pass
+
+
+def test_keyword_name():
+    # expected-error @below {{cannot be converted from 'def kw_b(*, b: Int) thin -> None' to 'def(*, a: Int) thin -> None', expected keyword-only argument 'a', found 'b'}}
+    takes_kw(kw_b)
+
+
+# // -----
+
+
+# expected-note @below {{function declared here}}
+def takes_no_kwargs(f: def(Int) thin -> None):
+    pass
+
+
+def with_kwargs(x: Int, var **kwargs: Int):
+    pass
+
+
+def test_kwargs():
+    # expected-error @below {{cannot be converted from 'def with_kwargs(x: Int, var **kwargs: Int) thin -> None' to 'def(Int) thin -> None', function must not take a '**kwargs' argument}}
+    takes_no_kwargs(with_kwargs)

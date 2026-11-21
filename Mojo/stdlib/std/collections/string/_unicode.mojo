@@ -68,7 +68,7 @@ def _to_index(lookup: Span[UInt32, ImmStaticOrigin], rune: Codepoint) -> Int:
         return -1
 
 
-__enum _CaseMapping(Copyable, Equatable, Writable):
+__union _CaseMapping(Copyable, Equatable, Writable):
     """The full case mapping of a codepoint, which is 1 to 3 codepoints."""
 
     case single(Array[Codepoint, 1])

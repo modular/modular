@@ -1,8 +1,11 @@
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
+    "//max_private:__subpackages__",  # keep
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+exports_files(["tokenizer.json"])
 
 filegroup(
     name = "testdata",

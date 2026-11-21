@@ -1037,6 +1037,11 @@ def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
     assert failures["num_valid"] == 2
     assert len(failures["failures"]) == 2
     assert all(f["failure_type"] == "timeout" for f in failures["failures"])
+    # Spelled like the CSV's spec column so reports can join on it.
+    assert sorted(f["spec"] for f in failures["failures"]) == [
+        "sample_failure/$sleep_secs=100.0",
+        "sample_failure/$sleep_secs=200.0",
+    ]
 
     # Verify capture files are cleaned up after execution.
     remaining_logs = list(out_dir.rglob("*_stdout.log")) + list(

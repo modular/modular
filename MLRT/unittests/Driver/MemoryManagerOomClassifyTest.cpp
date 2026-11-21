@@ -20,7 +20,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 
 #include "gtest/gtest.h"
 

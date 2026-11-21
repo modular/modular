@@ -60,10 +60,10 @@ def FuseHorizontal : Pass<"map-fuse-horizontal", "MO::GraphOp"> {
     Merges two `map.iter.elementwise` ops over the same index space that share an
     input into one multi-output kernel, so the shared operand is loaded once
     rather than by each kernel. Pairs siblings, where the other fusers pair a
-    producer with its consumer. Also moves a consumer into its producer's
-    epilogue when the producer's result has other readers, which output
-    fusion leaves alone; a consumer that reads a strided window of the result
-    runs there under a `map.index.slice.select`.
+    producer with its consumer. Also merges an elementwise producer with its
+    consumer when the producer's result has other readers, which input fusion
+    leaves alone; a consumer that reads a strided window of the result runs
+    under a `map.index.slice.select`. Opaque kernels are never merged.
   }];
 
   let dependentDialects = [
@@ -280,7 +280,7 @@ def InferMaxSimdWidth
     Runs last in the MAP pipeline, after `LoopInvariantViewMotion` has hoisted
     every load-side view out of the loop bodies. Sets each
     `map.iter.elementwise.body`'s and `map.iter.rowwise.body`'s
-    `max_simd_width` to the limit every SIMD width of the kernel must divide,
+    `max_simd_width` to a number every SIMD width of the kernel must divide,
     from `MAP::MaxSimdWidthInterface`, simplified; leaves it unset when nothing
     limits the width.
 

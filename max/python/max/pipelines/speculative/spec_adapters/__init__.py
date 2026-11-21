@@ -111,6 +111,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "GraniteForCausalLM": ".llama3.spec_adapters",
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
     "HYV4ForCausalLM_ModuleV3": ".hy_v4.spec_adapters",
+    "Inkling2ForConditionalGeneration_ModuleV3": ".inkling2.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
     "InklingForConditionalGeneration_ModuleV3": (
         ".inkling_modulev3.spec_adapters"
@@ -352,6 +353,13 @@ def signal_buffer_index(target_arch: str) -> int | None:
     fix it.
     """
     return _adapter(target_arch).signal_buffer_index
+
+
+def takes_vision_inputs(
+    target_arch: str, method: str, target_config: Any
+) -> bool:
+    """Returns whether this deployment takes cached vision inputs."""
+    return _adapter(target_arch, method).takes_vision_inputs(target_config)
 
 
 def trailing_input_types(

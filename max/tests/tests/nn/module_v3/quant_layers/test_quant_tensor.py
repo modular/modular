@@ -1022,3 +1022,176 @@ def test_mxfp4_quantizer_packs_on_first_use() -> None:
         assert list(qt.weight.shape) == [128, 32]
         assert qt.weight_scale.dtype == DType.float8_e8m0fnu
         assert list(qt.weight_scale.shape) == [128, 2]
+
+
+# --------------------------------------------------------------------------- #
+# A block-scaled FP8 source
+# --------------------------------------------------------------------------- #
+
+_QUANTIZERS = (NVFP4TensorQuantizer, MXFP8Quantizer, MXFP4Quantizer)
+
+
+def _fp8_source(rows: int = 128, cols: int = 256) -> FP8BlockTensor:
+    """An FP8 weight and its block scales, as a checkpoint holds them."""
+    return FP8BlockTensor.zeros((rows, cols))
+
+
+def test_dequantize_keeps_the_shape_and_takes_the_dtype() -> None:
+    with F.lazy():
+        source = _fp8_source()
+
+        out = source.dequantize()
+        assert list(out.shape) == [128, 256]
+        assert out.dtype == DType.bfloat16
+
+        wide = source.dequantize(DType.float32)
+        assert wide.dtype == DType.float32
+
+
+@pytest.mark.parametrize(
+    ("weight_shape", "scale_shape", "block", "match"),
+    [
+        ((128, 256), (1, 3), (128, 128), "must have shape"),
+        ((128, 256), (2, 2), (128, 128), "must have shape"),
+        ((100, 256), (1, 2), (128, 128), "multiples of the block"),
+        ((128, 200), (1, 2), (128, 128), "multiples of the block"),
+        ((2, 128, 256), (2, 1, 2), (128, 128), "rank 2"),
+    ],
+)
+def test_dequantize_rejects_shapes_that_do_not_tile(
+    weight_shape: tuple[int, ...],
+    scale_shape: tuple[int, ...],
+    block: tuple[int, int],
+    match: str,
+) -> None:
+    with F.lazy():
+        source = FP8BlockTensor(
+            weight=Tensor.zeros(weight_shape, dtype=DType.float8_e4m3fn),
+            weight_scale_inv=Tensor.zeros(scale_shape, dtype=DType.float32),
+            block_size=block,
+        )
+        with pytest.raises(ValueError, match=match):
+            source.dequantize()
+
+
+def test_dequantize_takes_a_block_other_than_128() -> None:
+    with F.lazy():
+        source = FP8BlockTensor(
+            weight=Tensor.zeros((64, 96), dtype=DType.float8_e4m3fn),
+            weight_scale_inv=Tensor.zeros((2, 6), dtype=DType.float32),
+            block_size=(32, 16),
+        )
+
+        out = source.dequantize()
+
+        assert list(out.shape) == [64, 96]
+
+
+@pytest.mark.parametrize("quantizer_cls", _QUANTIZERS)
+def test_quantizer_wraps_an_fp8_container(
+    quantizer_cls: type[NVFP4TensorQuantizer],
+) -> None:
+    with F.lazy():
+        source = _fp8_source()
+
+        qt = quantizer_cls(source)
+
+        assert qt._tensor is source
+        assert list(qt.shape) == [128, 256]
+
+
+def test_a_native_source_reads_its_tensor_as_the_values() -> None:
+    """A plain tensor needs no decode."""
+    with F.lazy():
+        raw = Tensor.zeros((8, 32), dtype=DType.bfloat16)
+
+        qt = NVFP4TensorQuantizer(raw)
+
+        assert qt._source_values is raw
+
+
+def test_an_fp8_source_decodes_to_bfloat16_values() -> None:
+    with F.lazy():
+        qt = NVFP4TensorQuantizer(_fp8_source())
+
+        values = qt._source_values
+
+        assert values.dtype == DType.bfloat16
+        assert list(values.shape) == [128, 256]
+        assert qt._source_values is values  # decoded once, then cached
+
+
+def test_an_fp8_source_loads_as_the_checkpoints_two_tensors() -> None:
+    """``weight`` and ``weight_scale_inv`` are the checkpoint's own names."""
+
+    class _Wrapper(Module[[], None]):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = MXFP8Quantizer(_fp8_source())
+
+        def forward(self) -> None:  # pragma: no cover - never called
+            raise NotImplementedError
+
+    with F.lazy():
+        parameters = dict(_Wrapper().parameters)
+
+        assert set(parameters) == {"proj.weight", "proj.weight_scale_inv"}
+
+
+def test_an_fp8_source_survives_the_compile_rebuild() -> None:
+    """Rebuilding skips ``__init__``; the container and its block ride along."""
+    with F.lazy():
+        source = _fp8_source()
+        qt = NVFP4TensorQuantizer(source)
+        leaves, treedef = tree.flatten(qt)
+        rebuilt = tree.unflatten(treedef, leaves)
+
+        assert isinstance(rebuilt, NVFP4TensorQuantizer)
+        container = rebuilt._tensor
+        assert isinstance(container, FP8BlockTensor)
+        assert container.weight is source.weight
+        assert container.weight_scale_inv is source.weight_scale_inv
+        assert container.block_size == (128, 128)
+
+
+def test_a_native_source_adds_no_scale_leaf() -> None:
+    with F.lazy():
+        qt = NVFP4TensorQuantizer(Tensor.zeros((8, 32), dtype=DType.bfloat16))
+
+        children, _ = qt.__tree_flatten__()
+
+        assert set(children) == {
+            "weight",
+            "_block_size",
+            "_report_error",
+            "_mse_sweep_scales",
+        }
+
+
+def test_an_fp8_source_to_moves_both_tensors_and_drops_the_caches() -> None:
+    with F.lazy(), patch("max.graph.type.Accelerator") as mock:
+        mock.side_effect = _fake_gpu
+        device = mock(0)
+        qt = NVFP4TensorQuantizer(_fp8_source())
+        qt.__dict__["_source_values"] = object()
+        qt.__dict__["quant_tensor"] = object()
+
+        moved = qt.to(device)
+
+        assert moved is qt
+        container = qt._tensor
+        assert isinstance(container, FP8BlockTensor)
+        assert container.weight.device == device
+        assert container.weight_scale_inv.device == device
+        assert "_source_values" not in qt.__dict__
+        assert "quant_tensor" not in qt.__dict__
+
+
+def test_an_fp8_source_must_match_its_block_grid() -> None:
+    with F.lazy():
+        source = FP8BlockTensor(
+            weight=Tensor.zeros((128, 256), dtype=DType.float8_e4m3fn),
+            weight_scale_inv=Tensor.zeros((1, 3), dtype=DType.float32),
+        )
+        with pytest.raises(ValueError, match="must have shape"):
+            NVFP4TensorQuantizer(source)

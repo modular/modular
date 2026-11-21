@@ -17,6 +17,20 @@ the short_path values in those vars resolve.
 
 load("@cfg_workaround.bzl", "CFG_WORKAROUND")
 
+def _accel_resource_set(_os_name, _inputs_size):
+    """Resources for an accelerator warm: WARM_DEVICE_COUNT compiles at once.
+
+    Measured on conv: each slot's compile holds ~2.5 cores and peaks at
+    ~2.5 GiB, so the action needs 8 cores and 8 GiB. Declaring it keeps Bazel
+    from packing several of these onto one worker, and declaring it any larger
+    than it is throttles the build.
+    """
+    return {"cpu": 8, "memory": 8 * 1024}
+
+def _cpu_resource_set(_os_name, _inputs_size):
+    """Resources for a CPU warm: one compile, ~2 cores and ~2 GiB."""
+    return {"cpu": 2, "memory": 2 * 1024}
+
 def _warm_interp_cache_impl(ctx):
     store_dir = ctx.actions.declare_directory(ctx.attr.name + "_store")
 
@@ -65,6 +79,12 @@ cd "${EXE}.runfiles/_main"
         outputs = [store_dir],
         mnemonic = "WarmInterpCache",
         progress_message = "Warming eager interpreter GC cache %{output}",
+        # The producer compiles one artifact per swept device in parallel
+        # worker processes (~2.5 cores and ~2.5 GiB each, measured on conv), so
+        # declare that, and Bazel packs fewer of these onto one worker.
+        resource_set = (
+            _accel_resource_set if ctx.attr.target else _cpu_resource_set
+        ),
     )
 
     return [DefaultInfo(files = depset([store_dir]))]

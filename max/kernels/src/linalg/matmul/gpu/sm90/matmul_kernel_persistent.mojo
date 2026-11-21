@@ -32,7 +32,6 @@ from layout import Coord, TensorLayout, TileTensor
 from layout.tma_async import TMATensorTile
 from max.gpu.memory import external_memory
 
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule, TileScheduler
@@ -66,7 +65,7 @@ __extension HopperMatmulSM90Kernel:
         a_desc_shape: Coord,
         b_desc_shape: Coord,
         c_desc_shape: Coord,
-        grid_shape: IndexList[2],
+        grid_shape: Tuple[Int, Int],
         schedule: MatmulSchedule,
         c_tensor_layout: TensorLayout,
         EpilogueFnType: ElementwiseEpilogueFn,
@@ -80,7 +79,7 @@ __extension HopperMatmulSM90Kernel:
         c: TileTensor[
             c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
-        problem_shape: IndexList[3],
+        problem_shape: Coord[Int, Int, Int],
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
     ):
@@ -120,7 +119,7 @@ __extension HopperMatmulSM90Kernel:
         comptime N = b_layout.static_shape[0]
         comptime M = a_layout.static_shape[0]
         var scheduler = TileScheduler[
-            Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
+            (M, N, K), block_tile_shape, grid_shape, schedule=schedule
         ](problem_shape)
         var work_info = scheduler.get_current_work_info()
 
@@ -265,8 +264,8 @@ __extension HopperMatmulSM90Kernel:
             warpgroup_reg_dealloc[32]()
 
             Self.producer_main_loop_pipeline[num_k_iters=num_k_iters](
-                block_idx_swizzle[1],
-                block_idx_swizzle[0],
+                Int(block_idx_swizzle[1]),
+                Int(block_idx_swizzle[0]),
                 0,
                 a_loader,
                 b_loader,
@@ -313,8 +312,8 @@ __extension HopperMatmulSM90Kernel:
                 warp_group_thread_idx,
                 local_warp_group_idx,
                 thread_idx.x - WARPGROUP_SIZE,
-                block_idx_swizzle[1],
-                block_idx_swizzle[0],
+                Int(block_idx_swizzle[1]),
+                Int(block_idx_swizzle[0]),
                 epilogue_fn,
                 compute_fn,
             )

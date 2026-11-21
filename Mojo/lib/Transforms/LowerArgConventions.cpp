@@ -28,6 +28,7 @@
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/POPDialect/POPOps.h"
+#include "Mojo/POPDialect/POPUtils.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Target/TargetLowering.h"
@@ -46,13 +47,6 @@ namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERARGCONVENTIONS
 #include "Mojo/KGENPasses.h.inc"
 } // namespace M::KGEN
-
-static StructType getIfParamPack(Type type) {
-  if (auto packStruct = ::dyn_cast<StructType>(type))
-    if (packStruct.getIsParamPack())
-      return packStruct;
-  return {};
-}
 
 /// If the specified value has uses, replace them with a dummy value.
 static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
@@ -305,8 +299,7 @@ transformNonResultValue(Transform *transform, unsigned operandIndex,
 
   /// LOWER PACK. Split the pack vararg into its elements.
   if (packEltConvention) {
-    auto packStruct = getIfParamPack(type);
-    assert(packStruct && "packEltConvention without a param pack");
+    auto packStruct = cast<StructType>(type);
     assert(convention == ArgConvention::ImmReg &&
            "Unexpected convention for a pack");
 
@@ -889,57 +882,27 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
   return success(!transform.hasError);
 }
 
-/// Expand pack operands on `pop.external_call` into individual elements.
+/// Replaces the pack operand of a call-like POP op with the elements of the
+/// pack, one level deep.
 ///
-/// Before this, an `external_call` taking a pack looks like:
-///   pop.external_call @foo(%pack) : (!kgen.struct<[i32, f32] isParamPack>)->()
+/// Before:
+///   pop.external_call @foo(%pack) : (!kgen.struct<(si32, f32)>) -> ()
+///     <expandPackOperandIdx = 0 : index>
 ///
-/// After expansion:
-///   %0 = kgen.struct.extract %pack[0] : <[i32, f32]>
-///   %1 = kgen.struct.extract %pack[1] : <[i32, f32]>
-///   pop.external_call @foo(%0, %1) : (i32, f32) -> ()
-///
-/// Recursively flatten a pack-typed value into individual scalar operands.
-/// Nested packs (e.g. from variadic C calls like `printf(pack(fmt,
-/// pack(*args))`) are fully expanded so that every operand passed to the
-/// external call is a non-pack value.
-static void flattenPackOperand(OpBuilder &builder, Location loc, Value pack,
-                               StructType packStruct,
-                               SmallVectorImpl<Value> &results) {
-  ParamListAttr variadic = packStruct.getVariadicIfResolved();
-  assert(variadic && "unresolved variadic pack on pop.external_call");
-
-  for (auto [i, typeExpr] : llvm::enumerate(variadic.getValues())) {
-    Type elemTy = cast<TypeParamAttr>(typeExpr).getMlirType();
-    Value extracted =
-        StructExtractOp::create(builder, loc, elemTy, pack,
-                                IntegerAttr::get(builder.getIndexType(), i));
-
-    if (auto nestedPackStruct = getIfParamPack(elemTy))
-      flattenPackOperand(builder, loc, extracted, nestedPackStruct, results);
-    else
-      results.push_back(extracted);
-  }
-}
-
-static void lowerExternalCallOpImpl(POP::ExternalCallOp op) {
-  SmallVector<Value> newOperands;
-  bool changed = false;
-
+/// After:
+///   %0 = kgen.struct.extract %pack[0] : <(si32, f32)>
+///   %1 = kgen.struct.extract %pack[1] : <(si32, f32)>
+///   pop.external_call @foo(%0, %1) : (si32, f32) -> ()
+template <typename CallLikeOp>
+static void lowerPackOperand(CallLikeOp op) {
+  IntegerAttr expandPackOperandIdx = op.getExpandPackOperandIdxAttr();
+  if (!expandPackOperandIdx)
+    return;
   OpBuilder builder(op);
-
-  for (Value operand : op.getOperands()) {
-    if (auto packTy = getIfParamPack(operand.getType())) {
-      changed = true;
-      flattenPackOperand(builder, op.getLoc(), operand, packTy, newOperands);
-    } else {
-      newOperands.push_back(operand);
-      continue;
-    }
-  }
-
-  if (changed)
-    op.getOperandsMutable().assign(newOperands);
+  SmallVector<Value> args = POP::getOperandsWithPackExpanded(
+      builder, op.getLoc(), op->getOperands(), expandPackOperandIdx);
+  op->setOperands(args);
+  op.removeExpandPackOperandIdxAttr();
 }
 
 void LowerArgConventionsPass::runOnOperation() {
@@ -958,7 +921,11 @@ void LowerArgConventionsPass::runOnOperation() {
       return lowerCallOpImpl(callOp, callOp.getCallee().getType().getBody(),
                              spAttr, maxInlineSize);
     if (auto extCall = dyn_cast<POP::ExternalCallOp>(op))
-      return lowerExternalCallOpImpl(extCall);
+      return lowerPackOperand(extCall);
+    if (auto intrinsic = dyn_cast<POP::CallLLVMIntrinsicOp>(op))
+      return lowerPackOperand(intrinsic);
+    if (auto inlineAsm = dyn_cast<POP::InlineAsmOp>(op))
+      return lowerPackOperand(inlineAsm);
   });
 
   // We must do this in a second pass, otherwise ops like kgen.call_indirect

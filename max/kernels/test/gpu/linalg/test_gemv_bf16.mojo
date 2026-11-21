@@ -115,6 +115,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext[]) raises:
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             .float32,

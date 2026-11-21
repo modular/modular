@@ -363,3 +363,30 @@ kgen.func @external_call_negative_num_fixed_args(%a: !kgen.simd<1, ui32>) {
     : (!kgen.simd<1, ui32>) -> () <numFixedArgs = -1 : index>
   hlcf.return
 }
+
+// -----
+
+kgen.func @external_call_pack_operand_out_of_range(%a: !kgen.struct<(scalar<si32>)>) {
+  // expected-error @below {{'pop.external_call' op 'expandPackOperandIdx' 1 is out of range for 1 operands}}
+  pop.external_call @bar(%a)
+    : (!kgen.struct<(scalar<si32>)>) -> () <expandPackOperandIdx = 1>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @intrinsic_pack_operand_not_struct(%a: !kgen.scalar<si32>) {
+  // expected-error @below {{'pop.call_llvm_intrinsic' op 'expandPackOperandIdx' must refer to an operand of '!kgen.struct' type, found '!kgen.scalar<si32>'}}
+  pop.call_llvm_intrinsic "llvm.foo", (%a)
+    : (!kgen.scalar<si32>) -> () <expandPackOperandIdx = 0>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @inline_asm_pack_operand_not_struct(%a: !kgen.scalar<si32>) {
+  // expected-error @below {{'pop.inline_asm' op 'expandPackOperandIdx' must refer to an operand of '!kgen.struct' type, found '!kgen.scalar<si32>'}}
+  pop.inline_asm "nop", "r", (%a)
+    : (!kgen.scalar<si32>) -> () <expandPackOperandIdx = 0>
+  hlcf.return
+}

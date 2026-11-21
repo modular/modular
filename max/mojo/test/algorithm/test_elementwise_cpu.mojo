@@ -115,60 +115,61 @@ def test_elementwise_implicit_runtime() raises:
         assert_equal(vector.unsafe_ptr()[unsafe_offset=i], 42)
 
 
+def _assert_coord_equal(got: Coord, want: Coord) raises:
+    comptime assert got.rank == want.rank
+    comptime for i in range(got.rank):
+        assert_equal(Int(got[i]), Int(want[i]), msg=String(got))
+
+
 def test_indices_conversion() raises:
-    var shape = IndexList[4](3, 4, 5, 6)
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[0](10, shape),
-        IndexList[4](0, 0, 1, 4),
+    var shape = Coord(3, 4, 5, 6)
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[0](10, shape), Coord(0, 0, 1, 4)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[1](10, shape),
-        IndexList[4](0, 2, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[1](10, shape), Coord(0, 2, 0, 0)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[2](10, shape),
-        IndexList[4](2, 2, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[2](10, shape), Coord(2, 2, 0, 0)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[3](2, shape),
-        IndexList[4](2, 0, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[3](2, shape), Coord(2, 0, 0, 0)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[4](0, shape),
-        IndexList[4](0, 0, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[4](0, shape), Coord(0, 0, 0, 0)
     )
 
 
 def _assert_start_indices_match[
     rank: Int, use_32bit: Bool
-](coord_shape: Coord, index_shape: IndexList[rank], n_max: Int) raises:
-    """Compares `_start_indices_of_nth_element` against the `IndexList` helper.
+](coord_shape: Coord, ref_shape: Coord, n_max: Int) raises:
+    """Compares `_start_indices_of_nth_element` against
+    `_get_start_indices_of_nth_subvolume`.
     """
     for n in range(n_max):
         var got_0 = _start_indices_of_nth_element[
             rank, type_of(coord_shape).ParamListType, use_32bit, 0
         ](n, coord_shape)
-        var want_0 = _get_start_indices_of_nth_subvolume[0](n, index_shape)
+        var want_0 = _get_start_indices_of_nth_subvolume[0](n, ref_shape)
         var got_1 = _start_indices_of_nth_element[
             rank, type_of(coord_shape).ParamListType, use_32bit, 1
         ](n, coord_shape)
-        var want_1 = _get_start_indices_of_nth_subvolume[1](n, index_shape)
-        for i in range(rank):
-            assert_equal(got_0[i], want_0[i])
-            assert_equal(got_1[i], want_1[i])
+        var want_1 = _get_start_indices_of_nth_subvolume[1](n, ref_shape)
+        comptime for i in range(rank):
+            assert_equal(got_0[i], Int(want_0[i]))
+            assert_equal(got_1[i], Int(want_1[i]))
 
 
 def test_start_indices_equivalence() raises:
     # All-dynamic extents take the runtime `divmod` path in both widths.
     var dynamic_shape = Coord(3, 4, 5, 6)
-    var index_shape = IndexList[4](3, 4, 5, 6)
-    _assert_start_indices_match[4, True](dynamic_shape, index_shape, 60)
-    _assert_start_indices_match[4, False](dynamic_shape, index_shape, 60)
+    _assert_start_indices_match[4, True](dynamic_shape, dynamic_shape, 60)
+    _assert_start_indices_match[4, False](dynamic_shape, dynamic_shape, 60)
 
     # Mixed static/dynamic extents take the compile-time divisor fold.
     var mixed_shape = Coord(ComptimeInt[3](), 4, ComptimeInt[5](), 6)
-    _assert_start_indices_match[4, True](mixed_shape, index_shape, 60)
-    _assert_start_indices_match[4, False](mixed_shape, index_shape, 60)
+    _assert_start_indices_match[4, True](mixed_shape, dynamic_shape, 60)
+    _assert_start_indices_match[4, False](mixed_shape, dynamic_shape, 60)
 
 
 def main() raises:

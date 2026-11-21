@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Protocol, TypeVar, overload
 
 from max.driver import accelerator_api
@@ -244,6 +245,19 @@ class InputScaleSpec:
         return self.granularity == ScaleGranularity.BLOCK
 
 
+#: The dtype of a weight stored in each format, as its checkpoint holds it.
+#: Formats missing here are not stored by a ModuleV3 container, and report
+#: bfloat16. :class:`~max.nn.common_layers.quant_tensor.MXFP8Tensor` and its
+#: siblings state the same dtype as ``storage_dtype``; a test keeps the two
+#: in step.
+_STORAGE_DTYPES: dict[QuantFormat, DType] = {
+    QuantFormat.BLOCKSCALED_FP8: DType.float8_e4m3fn,
+    QuantFormat.NVFP4: DType.uint8,
+    QuantFormat.MXFP8: DType.float8_e4m3fn,
+    QuantFormat.MXFP4: DType.uint8,
+}
+
+
 @dataclass
 class QuantConfig:
     """Configures scaled quantization settings for a layer or model section.
@@ -364,6 +378,42 @@ class QuantConfig:
     :attr:`WeightSource.QUANTIZE`. The graph then also dequantizes each
     quantized weight and prints its error against the native-precision
     source, named after the weight.
+    """
+
+    mse_sweep_scales: bool = False
+    """Whether an on-the-fly NVFP4 quantizer searches a per-block scale.
+
+    Only :class:`~max.nn.common_layers.quant_tensor.NVFP4TensorQuantizer`
+    reads it. When set, each block's scale is the multiplier of its abs-max,
+    from 0.25 to 4.0 in steps of 0.1 and always including 1.0, with the
+    smallest quantization MSE. When unset (the default), the scale is the
+    block's own abs-max. Other formats ignore it.
+    """
+
+    targets: tuple[str, ...] = ()
+    """Tensor-name regexes of the linears to wrap for on-the-fly quantization.
+
+    Used when ``source`` is :attr:`WeightSource.QUANTIZE` and layers are
+    selected by name rather than by :attr:`mlp_quantized_layers` /
+    :attr:`attn_quantized_layers` indices. Empty means no name-based wrap.
+    """
+
+    error_report_dir: Path | None = None
+    """Directory for per-weight quantization error dumps.
+
+    When set with :attr:`report_error`, the compiling session prepares this
+    directory for the graph's error prints. A later process that runs the
+    graph writes dumps here only if it enables the same debug-print option.
+    """
+
+    verbose: bool = False
+    """Whether to print the patched module before the on-the-fly quantizer count."""
+
+    source_format: str | None = None
+    """Optional asserted storage format of targeted on-the-fly weights.
+
+    ``bf16`` or ``fp8``. When set, a targeted weight stored as anything else
+    raises. When unset, each weight's own format decides.
     """
 
     @classmethod
@@ -624,6 +674,18 @@ class QuantConfig:
         checkpoint already holds them that way.
         """
         return self.source is WeightSource.QUANTIZE
+
+    @property
+    def storage_dtype(self) -> DType:
+        """The dtype of a weight as the checkpoint holds it.
+
+        A pre-quantized checkpoint holds the format's own dtype (packed
+        ``uint8`` for FP4, ``float8_e4m3fn`` for FP8 and MXFP8). A weight
+        quantized on load is bfloat16 on disk, whatever it becomes.
+        """
+        if self.quantizes_on_load:
+            return DType.bfloat16
+        return _STORAGE_DTYPES.get(self.format, DType.bfloat16)
 
     @overload
     def per_tensor_scale(self, stored: None) -> None: ...

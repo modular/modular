@@ -47,9 +47,13 @@ from max.nn.common_layers.quant_tensor import (
     QuantAwareTensor,
 )
 from max.nn.ep_config import EPConfig
-from max.nn.kernels.quant import stack_blockwise_mega_ffn_b
+from max.nn.kernels.quant import (
+    _nvfp4_grouped_matmul_rule,
+    stack_blockwise_mega_ffn_b,
+)
 from max.nn.quant_config import QuantConfig, QuantFormat
 from max.tensor import Tensor, default_dtype
+from max.tensor.sharding import Replicated, TensorLayout
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128
@@ -107,6 +111,23 @@ def test_storage_dtype_follows_the_source_not_the_format(
         quant_ops.routed_weight_dtype(nvfp4_fake_quant_config) == DType.bfloat16
     )
     assert quant_ops.routed_weight_dtype(None) == DType.bfloat16
+
+
+def test_storage_dtype_matches_the_containers_and_follows_the_source(
+    fp8_quant_config: QuantConfig,
+    nvfp4_quant_config: QuantConfig,
+    nvfp4_fake_quant_config: QuantConfig,
+    mxfp8_quant_config: QuantConfig,
+    mxfp4_quant_config: QuantConfig,
+) -> None:
+    """``QuantConfig.storage_dtype`` is what each container allocates."""
+    assert fp8_quant_config.storage_dtype == DType.float8_e4m3fn
+    assert nvfp4_quant_config.storage_dtype == DType.uint8
+    assert mxfp8_quant_config.storage_dtype == MXFP8Tensor.storage_dtype
+    assert mxfp4_quant_config.storage_dtype == MXFP4Tensor.storage_dtype
+
+    # Quantized on load, the checkpoint holds bf16.
+    assert nvfp4_fake_quant_config.storage_dtype == DType.bfloat16
 
 
 def test_only_nvfp4_needs_dispatch_scales_and_offsets(
@@ -201,8 +222,8 @@ def test_quantized_weight_nvfp4_fake(
         assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
         # The dtype the checkpoint holds, not whatever device happens to be
         # available: this matches what `routed_weight_dtype` promises.
-        assert weight._tensor.dtype == DType.bfloat16
-        assert weight._tensor.dtype == quant_ops.routed_weight_dtype(
+        assert weight._weight.dtype == DType.bfloat16
+        assert weight._weight.dtype == quant_ops.routed_weight_dtype(
             nvfp4_fake_quant_config
         )
 
@@ -1086,6 +1107,44 @@ def test_nvfp4_swiglu_kernel_per_output_dtype(
     assert quantizes == (1 if fused else 2)
 
 
+@pytest.mark.parametrize("accum_dtype", [None, DType.float32])
+def test_bf16_experts_take_bf16_down_rows(
+    mock_accelerator: MagicMock, accum_dtype: DType | None
+) -> None:
+    """Unquantized experts hand the down matmul bf16 rows.
+
+    A float32 gate/up accumulation, which DeepSeek-V3.2's non-EP MoEs and so
+    GLM-5.3's bf16 NextN layer take, casts the SwiGLU back before the down
+    projection.
+    """
+    device = mock_accelerator()
+    with F.lazy():
+        out = quant_ops.grouped_matmul_silu(
+            Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM), dtype=DType.bfloat16, device=device
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS, 2 * _MOE_DIM, _HIDDEN_DIM),
+                dtype=DType.bfloat16,
+                device=device,
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM),
+                dtype=DType.bfloat16,
+                device=device,
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+            ),
+            Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+            Tensor.zeros((2,), dtype=DType.uint32, device=device),
+            None,
+            accum_dtype=accum_dtype,
+        )
+    assert isinstance(out, Tensor)
+    assert out.dtype == DType.bfloat16
+
+
 # --------------------------------------------------------------------------- #
 # MXFP8
 # --------------------------------------------------------------------------- #
@@ -1195,8 +1254,8 @@ def test_quantized_weight_mxfp8_fake(
         assert isinstance(weight, MXFP8Tensor)
         assert weight.block_size == (1, 32)
         assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
-        assert weight._tensor.dtype == DType.bfloat16
-        assert weight._tensor.dtype == quant_ops.routed_weight_dtype(
+        assert weight._weight.dtype == DType.bfloat16
+        assert weight._weight.dtype == quant_ops.routed_weight_dtype(
             mxfp8_fake_quant_config
         )
 
@@ -1244,7 +1303,7 @@ def test_quantized_weight_mxfp4_fake(
         assert isinstance(weight, MXFP4Quantizer)
         assert isinstance(weight, MXFP4Tensor)
         assert list(weight.shape) == [_MOE_DIM, _HIDDEN_DIM]
-        assert weight._tensor.dtype == DType.bfloat16
+        assert weight._weight.dtype == DType.bfloat16
 
 
 def test_stack_mxfp4_adds_expert_axis_to_both_leaves() -> None:
@@ -1347,3 +1406,91 @@ def test_interleave_grouped_scales_passes_interleaved_scales_through() -> None:
         )
 
         assert quant_ops.interleave_grouped_scales(scales) is scales
+
+
+@pytest.mark.parametrize("with_estimate", [False, True])
+@pytest.mark.parametrize("with_row_scales", [False, True])
+def test_grouped_matmul_sharding_keeps_optional_row_scales_replicated(
+    with_estimate: bool,
+    with_row_scales: bool,
+) -> None:
+    device = CPU()
+    inputs = (
+        TensorLayout(DType.uint8, [8, 128], device),
+        TensorLayout(DType.uint8, [4, 128, 128], device),
+        TensorLayout(DType.float8_e4m3fn, [5, 4, 32, 4, 4], device),
+        TensorLayout(DType.float8_e4m3fn, [4, 4, 16], device),
+        TensorLayout(DType.uint32, [5], device),
+        TensorLayout(DType.uint32, [4], device),
+        TensorLayout(DType.int32, [4], device),
+        TensorLayout(DType.float32, [4], device),
+        TensorLayout(DType.uint32, [2], device),
+    )
+    estimate = (
+        TensorLayout(DType.uint32, [1], device) if with_estimate else None
+    )
+    row_scales = (
+        TensorLayout(DType.bfloat16, [8], device) if with_row_scales else None
+    )
+    assignments = _nvfp4_grouped_matmul_rule(
+        *inputs, estimated_total_m=estimate, a_row_scales=row_scales
+    )
+    for assignment in assignments:
+        assert len(assignment.needed_inputs) == 9 + int(with_estimate) + int(
+            with_row_scales
+        )
+        assert all(
+            isinstance(p, Replicated) for p in assignment.needed_inputs[4:]
+        )
+
+
+# --------------------------------------------------------------------------- #
+# A block-scaled FP8 source
+# --------------------------------------------------------------------------- #
+
+
+def test_quantize_on_load_wraps_an_fp8_container(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    with F.lazy():
+        source = FP8BlockTensor.zeros((128, 256))
+
+        weight = quant_ops.quantize_on_load(source, nvfp4_fake_quant_config)
+
+    assert isinstance(weight, NVFP4TensorQuantizer)
+    assert weight._tensor is source
+    assert list(weight.shape) == [128, 256]
+    assert {name for name, _ in weight.parameters} == {
+        "weight",
+        "weight_scale_inv",
+    }
+
+
+def test_quantize_on_load_wraps_a_native_tensor(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    with F.lazy():
+        raw = Tensor.zeros((128, 256), dtype=DType.bfloat16)
+
+        weight = quant_ops.quantize_on_load(raw, nvfp4_fake_quant_config)
+
+    assert isinstance(weight, NVFP4TensorQuantizer)
+    assert weight._tensor is raw
+
+
+def test_quantize_on_load_needs_a_config_that_quantizes_on_load(
+    nvfp4_quant_config: QuantConfig,
+) -> None:
+    with F.lazy(), pytest.raises(ValueError, match="quantizes on load"):
+        quant_ops.quantize_on_load(
+            Tensor.zeros((128, 256), dtype=DType.bfloat16), nvfp4_quant_config
+        )
+
+
+def test_an_fp8_source_that_does_not_tile_fails_when_wrapped(
+    nvfp4_fake_quant_config: QuantConfig,
+) -> None:
+    with F.lazy(), pytest.raises(ValueError, match="multiples of the block"):
+        quant_ops.quantize_on_load(
+            FP8BlockTensor.zeros((100, 256)), nvfp4_fake_quant_config
+        )

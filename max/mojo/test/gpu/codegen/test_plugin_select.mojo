@@ -74,7 +74,7 @@ struct PayloadStdPlugin(StdPlugin):
 
 
 struct PayloadStdPluginHooks(PluginHooks):
-    comptime device_kind = TargetDeviceKind.gpu
+    comptime device_kind = TargetDeviceKind.gpu()
 
 
 # Named only by its triple, as `--target-triple` builds it: no

@@ -414,6 +414,7 @@ def bench_rs_norm_gemm_pdl[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_pair_iter(
             mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_bufs, imm}:

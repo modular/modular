@@ -54,7 +54,7 @@ def test_decoder_feeds_the_text_tower_in_its_graph_input_order(
         indices,
         full,
         sliding,
-        *(ep_buffers or ()),
+        ep=ep_buffers,
     )
     assert outputs.next_token_logits is logits
     assert outputs.logits is None

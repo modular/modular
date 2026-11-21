@@ -48,6 +48,28 @@ modular_py_test(
     ],
 )
 
+modular_py_test(
+    name = "test_preprocess_graph",
+    srcs = ["test_preprocess_graph.py"],
+    # Numerical parity against the tokenizer's reference: rule 3 of the
+    # idiomatic bring-up keeps reference sweeps out of ordinary CI.
+    tags = ["manual"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:vision_preprocess_parity",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
 modular_py_library(
     name = "utils",
     testonly = True,

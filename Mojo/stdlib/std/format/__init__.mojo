@@ -73,6 +73,7 @@ print(repr(p)) # Point: x=1.5, y=2.7
 ```
 """
 
+from std.builtin._enum import __Union
 from std.builtin.constrained import _field_conforms_to_error
 from std.builtin.enum_like import EnumLike
 from std.builtin.rebind import downcast
@@ -337,13 +338,12 @@ def _enum_reflection_write_to[
         if discriminant == i:
             writer.write_string(StaticString(names[i]))
 
-            comptime if types[i] != Tuple[]:
-                comptime assert conforms_to(
-                    types[i], __TupleLike
-                ), "every case payload of an `EnumLike` type must be a `Tuple`"
-                _enum_write_payload_elements[f=f](
-                    this._unsafe_get_enum_payload[i](), writer
-                )
+            # Enum value cases omit the constructor's parentheses.
+            comptime if not conforms_to(T, __Union) and types[i] == Tuple[]:
+                return
+            _enum_write_payload_elements[f=f](
+                this._unsafe_get_enum_payload[i](), writer
+            )
             return
 
 

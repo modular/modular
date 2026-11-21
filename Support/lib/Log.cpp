@@ -367,18 +367,23 @@ public:
 
 class StdoutSink : public Sink {
   std::mutex outputMutex;
+  // Bound in the constructor, which runs inside the Logger's: llvm::outs() is
+  // a function-local static, so building it before the Logger finishes
+  // construction destroys it after the Logger, whose consumer thread may
+  // still be writing during static destruction.
+  llvm::raw_fd_ostream &out = llvm::outs();
 
   // Note: outputMutex only serializes accesses made through this sink.
   // llvm::outs() is a process-global stream, so third-party writers that
   // use it directly are outside this synchronization.
   void write(llvm::StringRef msg) override {
     std::lock_guard<std::mutex> lock(outputMutex);
-    llvm::outs() << msg << "\n";
+    out << msg << "\n";
   }
 
   void flush() override {
     std::lock_guard<std::mutex> lock(outputMutex);
-    llvm::outs().flush();
+    out.flush();
   }
 };
 

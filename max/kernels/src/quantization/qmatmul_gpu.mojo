@@ -701,7 +701,7 @@ def multistage_qgemm_kernel[
     var block_idx = block_swizzle(
         (block_idx.x, block_idx.y),
         (grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index(block_idx.x, block_idx.y)
+    ) if swizzle_block else (block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
     var warp_y, warp_x = udivmod(warp_id, num_warps_n)
@@ -943,6 +943,7 @@ def multistage_qgemm_kernel[
     var c_rows_left = M - block_idx[1] * BM - Int(warp_y) * WM
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def apply_epilogue() {imm}:
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures

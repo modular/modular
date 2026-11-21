@@ -611,7 +611,7 @@ bool ASTType::isTypeCheckErrorType() const {
 /// parameter, otherwise return null.
 TypedAttr ASTType::isOriginStruct() const {
   auto structType = sugarDynCast<LIT::StructType>(mlirType);
-  if (structType &&
+  if (structType && structType.getSymbol().getRootReference() == "std" &&
       structType.getSymbol().getLeafReference().strref() == "Origin" &&
       structType.getParamValues().size() == 2) {
     auto result = structType.getParamValues()[1];

@@ -161,6 +161,7 @@ def bench_bmm[
     comptime pack_size = simd_width_of[c_type, target=ctx.target]()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var val = c_device.load[width=simd_width](idx)
         comptime element_lambda = lambda_fn.value()
@@ -172,6 +173,7 @@ def bench_bmm[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut bench: Bencher,
     ) {var a_device, var b_device, var c_device, imm}:

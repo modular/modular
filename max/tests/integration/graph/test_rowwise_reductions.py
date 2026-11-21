@@ -80,6 +80,7 @@ from _rowwise_reduction_specs import (
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, ops
 from test_common.reduction_graphs import LAYER_NORM_EPS, RMS_NORM_EPS
 
 # Ops whose output is integer indices.
@@ -551,3 +552,37 @@ def test_softmax_edges(session: InferenceSession, spec: SoftmaxSpec) -> None:
             else torch.log_softmax(xf, dim=-1)
         ).numpy()
         _assert_close(got, ref, spec.op, spec.dtype, f"shape={shape}")
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu"])
+def test_per_row_output_next_to_a_map_phase(
+    session: InferenceSession, device: str
+) -> None:
+    """A sum the graph outputs, also read by a per-element and a per-row
+    consumer, fuses into one rowwise kernel: the per-row outputs are written
+    once per row, next to the map phase that writes every element."""
+    dev = DeviceRef.CPU() if device == "cpu" else DeviceRef.GPU()
+    x_t = TensorType(DType.float32, ["r", "c"], device=dev)
+    with Graph(f"per_row_output_{device}", input_types=[x_t]) as graph:
+        x = graph.inputs[0].tensor
+        s = ops.sum(x, axis=-1)
+        graph.output(x / s, s, s * 2.0)
+    model = session.load(graph)
+    # Without the fusion, the division runs in a kernel of its own.
+    summaries = model.kernel_summaries
+    rowwise = [k for k in summaries if "Rowwise(" in k]
+    assert len(rowwise) == 1, summaries
+    assert "mo.div" in rowwise[0] and "mo.mul" in rowwise[0], rowwise
+    assert sum("mo.div" in k for k in summaries) == 1, summaries
+
+    for shape in ((3, 129), (64, 4096)):
+        torch.manual_seed(0)
+        x_in = torch.randn(shape) + 2.0
+        y, s_out, t = (_read_f32(b) for b in _feed(model, [x_in]))
+        s_ref = x_in.sum(-1, keepdim=True).numpy()
+        label = f"device={device} shape={shape}"
+        np.testing.assert_allclose(s_out, s_ref, rtol=1e-4, err_msg=label)
+        np.testing.assert_allclose(t, s_ref * 2.0, rtol=1e-4, err_msg=label)
+        np.testing.assert_allclose(
+            y, x_in.numpy() / s_ref, rtol=1e-4, atol=1e-6, err_msg=label
+        )

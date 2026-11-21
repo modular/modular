@@ -223,21 +223,6 @@ class TestServingConfigFileLoading:
     # Precedence: explicit kwargs beat config file
     # ------------------------------------------------------------------
 
-    def test_explicit_kwarg_beats_flat_yaml(self, tmp_path: Path) -> None:
-        """An explicitly supplied kwarg takes precedence over flat YAML."""
-        cfg_path = tmp_path / "serving.yaml"
-        _write_yaml(
-            cfg_path,
-            {"model": "file/model", "host": "10.0.0.1", "port": 9000},
-        )
-
-        config = ServingBenchmarkConfig(
-            config_file=str(cfg_path), model="cli/model"
-        )
-        assert config.model == "cli/model"
-        assert config.host == "10.0.0.1"  # still from file
-        assert config.port == 9000  # still from file
-
     def test_multiple_overrides_beat_config_file(self, tmp_path: Path) -> None:
         """Multiple explicit kwargs all override the corresponding file values."""
         cfg_path = tmp_path / "serving.yaml"

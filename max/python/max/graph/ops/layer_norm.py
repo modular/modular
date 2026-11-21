@@ -21,6 +21,7 @@ from ..graph import Graph
 from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
+from .validation import assert_same_device
 
 
 def layer_norm(
@@ -106,6 +107,7 @@ def layer_norm(
 
     input, gamma = dtype_promotion._promote_weak_dtypes(input, gamma)
     input, beta = dtype_promotion._promote_weak_dtypes(input, beta)
+    assert_same_device(input=input, gamma=gamma, beta=beta)
     return Graph.current._add_op_generated(
         mo.ReduceLayerNormOp,
         input._mlir_value.type,

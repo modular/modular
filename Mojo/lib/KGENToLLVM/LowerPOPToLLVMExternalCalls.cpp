@@ -154,6 +154,10 @@ public:
   LogicalResult matchAndRewrite(ExternalCallOp op,
                                 ExternalCallOpAdaptor adaptor,
                                 DirectRewriter &rewriter) const override {
+    if (op.getExpandPackOperandIdxAttr()) {
+      return op.emitOpError(
+          "pack operand must be expanded by lower-arg-conventions");
+    }
     Location loc = op.getLoc();
     const llvm::Triple &triple = getTypeConverter()->getTarget().getTriple();
     CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());

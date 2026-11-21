@@ -389,7 +389,7 @@ def _elementwise_impl_gpu_clc[
             unpacked_tail_length,
             packed_region_length,
         )
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             k,
             grid_dim=num_tiles,
             block_dim=block_size,
@@ -572,7 +572,7 @@ def _elementwise_impl_gpu_grid_stride[
             unpacked_tail_length,
             packed_region_length,
         )
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             k,
             grid_dim=num_blocks,
             block_dim=block_size,
@@ -810,7 +810,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
             packed_region_1,
             max_packed,
         )
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             k,
             grid_dim=num_blocks,
             block_dim=block_size,

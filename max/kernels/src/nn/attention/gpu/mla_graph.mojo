@@ -73,7 +73,7 @@ from linalg.fp4_utils import (
 )
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.activations import sigmoid
-from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
+from nn.fused_qk_rope import rope_q_proj, rope_value
 from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import KVCacheStaticParams
 from kv_cache.mixed_step_split import (
@@ -801,188 +801,6 @@ def _store_nvfp4_latent_slice[
 
 # Manually fused MLA RoPE and RMSNorm kernel
 # ===-----------------------------------------------------------------------===#
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
-)
-@__name(t"fused_rope_rmsnorm_{dtype}")
-def fused_rope_rmsnorm_kernel[
-    dtype: DType,
-    freq_dtype: DType,
-    gamma_dtype: DType,
-    QRopeOutputLayoutType: TensorLayout,
-    QRopeLayoutType: TensorLayout,
-    InputRowOffsetsLayoutType: TensorLayout,
-    FreqsCisLayoutType: TensorLayout,
-    GammaLayoutType: TensorLayout,
-    cache_t: KVCacheT,
-    block_size: Int,
-    n_rope_blocks: Int,
-    n_rms_blocks: Int,
-](
-    q_rope_output: TileTensor[
-        mut=True, dtype, QRopeOutputLayoutType, MutUntrackedOrigin
-    ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
-    input_row_offsets: TileTensor[
-        .uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
-    ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
-    k_cache: cache_t,
-    epsilon: Float32,
-) -> None:
-    """Fused GPU kernel that applies RoPE to query projections and RMSNorm to KV
-    cache.
-
-    This kernel processes tokens in parallel across GPU blocks, with separate
-    block groups handling RoPE and RMSNorm operations. The RoPE blocks apply
-    rotary position embeddings to both the query rope part (in-place) and the
-    key cache rope part (in-place). The RMSNorm blocks normalize the first
-    `kv_norm_dim` elements of the key cache entries.
-
-    Parameters:
-        dtype: Data type of query tensors.
-        freq_dtype: Data type of frequency cosine/sine values.
-        gamma_dtype: Data type of RMSNorm gamma weights.
-        QRopeOutputLayoutType: Layout types of the output query rope tensor.
-        QRopeLayoutType: Layout types of the input query rope tensor.
-        InputRowOffsetsLayoutType: Layout types of the row offset indices tensor.
-        FreqsCisLayoutType: Layout types of the frequency tensor.
-        GammaLayoutType: Layout types of the gamma weights tensor.
-        cache_t: Type of the KV cache.
-        block_size: Number of threads per block.
-        n_rope_blocks: Number of blocks allocated for RoPE computation.
-        n_rms_blocks: Number of blocks allocated for RMSNorm computation.
-
-    Args:
-        q_rope_output: Output tensor for RoPE-applied query projections.
-            Shape: [tot_seq_len, num_heads, rope_dim].
-        q_rope: Input query rope projections. Shape: [tot_seq_len, num_heads, rope_dim].
-        input_row_offsets: Row offsets indicating request boundaries.
-            Shape: [num_batches + 1].
-        freqs_cis: Precomputed RoPE frequency values. Shape: [max_seq_len, rope_dim].
-        gamma: RMSNorm gamma weights. Shape: [kv_norm_dim].
-        k_cache: Key cache to apply RoPE and RMSNorm to.
-        epsilon: Small constant for numerical stability in RMSNorm.
-    """
-    comptime assert (
-        cache_t.kv_params.num_heads == 1
-    ), "num_heads should be 1 for MLA"
-    comptime assert q_rope_output.flat_rank == 3
-    comptime assert q_rope.flat_rank == 3
-    comptime assert input_row_offsets.flat_rank == 1
-    comptime assert freqs_cis.flat_rank == 2
-    comptime assert gamma.flat_rank == 1
-
-    # Evidence asserts for TileTensor load/store Coord constraints.
-    comptime assert (
-        TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin].flat_rank
-        >= 2
-    )
-    comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin].flat_rank
-        >= 1
-    )
-
-    comptime num_q_heads = q_rope.static_shape[1]
-    comptime rope_dim = q_rope.static_shape[2]
-    comptime kv_norm_dim = gamma.static_shape[0]
-
-    var worker_idx = block_idx.y
-    var num_workers = grid_dim.y
-    var num_tokens = q_rope.dim(0)
-
-    with PDL():
-        for global_token_idx in range(worker_idx, Int(num_tokens), num_workers):
-            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
-
-            # First n_rope_blocks blocks of this worker process RoPE.
-            if block_idx.x < n_rope_blocks:
-                comptime q_width = simd_width_of[dtype]()
-                comptime assert (
-                    rope_dim % q_width == 0
-                ), "rope_dim should be divisible by q_width"
-
-                var head_idx, head_dim_idx = divmod(
-                    global_idx.x * q_width, rope_dim
-                )
-                var f_c = freqs_cis.load[width=q_width](
-                    (post_seq_idx, head_dim_idx)
-                )
-
-                if head_idx < num_q_heads:
-                    rope_q_proj[interleaved=True](
-                        q_rope,
-                        q_rope_output,
-                        (global_token_idx, head_idx, head_dim_idx),
-                        f_c,
-                        rope_dim,
-                    )
-                elif head_idx == num_q_heads:
-                    rope_k_cache[interleaved=True](
-                        k_cache,
-                        batch_idx,
-                        0,  # num_k_heads is 1 for MLA
-                        post_seq_idx,
-                        head_dim_idx + kv_norm_dim,
-                        f_c,
-                        rope_dim,
-                    )
-
-            # The last block of this worker processes RMSNorm.
-            else:
-                comptime k_dtype = cache_t.dtype
-                comptime k_width = simd_width_of[k_dtype]()
-                comptime accum_type = get_accum_type[k_dtype]()
-                comptime warps_per_block = block_size // WARP_SIZE
-
-                comptime assert (
-                    kv_norm_dim % k_width == 0
-                ), "kv_norm_dim should be divisible by k_width"
-
-                var vec_data = SIMD[accum_type, k_width](0)
-                var gamma_val = SIMD[gamma_dtype, k_width](0)
-
-                var idx = thread_idx.x * k_width
-                if idx < kv_norm_dim:
-                    vec_data = k_cache.load[width=k_width](
-                        batch_idx,
-                        0,  # num_k_heads is 1 for MLA
-                        post_seq_idx,
-                        idx,
-                    ).cast[accum_type]()
-                    # Prefetch gamma before reduction.
-                    gamma_val = gamma.load[
-                        width=k_width,
-                        alignment=align_of[SIMD[gamma_dtype, k_width]](),
-                    ](Coord(idx))
-
-                var norm_val = _rms_norm_warp_tiling_subkernel[
-                    warps_per_block,
-                    False,  # Do not multiply the gamma before casting.
-                ](
-                    global_token_idx,
-                    idx,
-                    vec_data,
-                    gamma_val,
-                    epsilon,
-                    0.0,
-                    kv_norm_dim,
-                )
-
-                if idx < kv_norm_dim:
-                    k_cache.store(
-                        batch_idx,
-                        0,  # num_k_heads is 1 for MLA
-                        post_seq_idx,
-                        idx,
-                        cast_saturating[k_dtype](norm_val),
-                    )
 
 
 @inline(.always)
@@ -4038,6 +3856,7 @@ def mla_prefill_decode_graph_fp8[
                 return
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def decode_branch[skip_masked_tiles: Bool]() raises {imm}:
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,
@@ -6107,6 +5926,7 @@ def mla_prefill_decode_graph_bf16[
                 return
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def decode_branch[skip_masked_tiles: Bool]() raises {imm}:
         mla_decode_branch_bf16[
             mask_str=mask_str,
@@ -6152,6 +5972,7 @@ def mla_prefill_decode_graph_bf16[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def sparse_prefill_branch() raises {imm}:
         """Runs sparse MLA prefill on the prefill kernels."""
         # Sparse MLA prefill is implemented only for SM100; a non-SM100 build

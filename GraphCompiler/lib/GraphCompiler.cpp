@@ -56,11 +56,12 @@
 #include "mlir/Support/Timing.h"
 
 using namespace M;
+using namespace M::MLRT;
 using namespace MO;
 
 void M::MO::loadDialects(mlir::DialectRegistry &registry) {
   registry.insert<MO::MODialect, MOSH::MOSHDialect, MOGG::MOGGDialect,
-                  MGP::MGPDialect, GRT::GRTDialect, RMO::RMODialect,
+                  MGP::MGPDialect, MLRT::GRT::GRTDialect, RMO::RMODialect,
                   MAP::MAPDialect>();
   M::registerAllKGENDialects(registry);
   M::registerKGENToLLVMTranslation(registry);

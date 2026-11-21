@@ -73,13 +73,6 @@ def test_variants_preserve_key_model_path_and_speculation() -> None:
     assert mtp_recipe.speculative is not None
     assert mtp_recipe.speculative.num_speculative_tokens == 3
 
-    kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["nvidia/Kimi-K2.7-Code-NVFP4"]
-    )
-    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.7-Code-NVFP4"
-    assert kimi_recipe.speculative is not None
-    assert kimi_recipe.speculative.num_speculative_tokens == 3
-
 
 def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
     recipe = smoke_test._load_recipe(
@@ -124,9 +117,9 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
     """Regression: an 8-GPU recipe on a 4-GPU runner scales down to 4."""
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
-    # amd/Kimi-K2.7-Code-MXFP4 pins device_specs [0..7] and ep_size 8.
+    # zai-org/GLM-5.3__fp8_tpep_mi355 pins device_specs [0..7] and ep_size 8.
     cmd, _ = smoke_test.get_server_cmd(
-        "max", "amd/Kimi-K2.7-Code-MXFP4", gpu_spec=("AMD MI355X", 4)
+        "max", "zai-org/GLM-5.3__fp8_tpep_mi355", gpu_spec=("AMD MI355X", 4)
     )
 
     assert cmd[cmd.index("--devices") + 1] == "gpu:0,1,2,3"
@@ -139,7 +132,7 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
 
     cmd, _ = smoke_test.get_server_cmd(
         "max",
-        "amd/Kimi-K2.7-Code-MXFP4",
+        "zai-org/GLM-5.3__fp8_tpep_mi355",
         autoscale_devices=False,
         gpu_spec=("AMD MI355X", 4),
     )
@@ -432,3 +425,30 @@ def test_lfm3_smoke_uses_architecture_defaults(
         "--enable-overlap-scheduler",
         "--no-enable-overlap-scheduler",
     }.intersection(cmd)
+
+
+@pytest.mark.parametrize(
+    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
+)
+@pytest.mark.parametrize("model", ["moonshotai/Kimi-K3", "MOONSHOTAI/KIMI-K3"])
+def test_kimi_k3_vision_detection(model: str, framework: str | None) -> None:
+    assert smoke_test.is_vision_model(model, framework) is (
+        framework == "mach-ci"
+    )
+
+
+@pytest.mark.parametrize(
+    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
+)
+def test_kimi_k3_dspark_stays_text_only(framework: str | None) -> None:
+    assert not smoke_test.is_vision_model(
+        "moonshotai/Kimi-K3__dspark", framework
+    )
+    assert not smoke_test.is_vision_model(
+        "MOONSHOTAI/KIMI-K3__DSPARK", framework
+    )
+
+
+@pytest.mark.parametrize("model", ["other/Kimi-K3", "moonshotai/Kimi-K3-extra"])
+def test_kimi_k3_vision_detection_requires_exact_repo(model: str) -> None:
+    assert not smoke_test.is_vision_model(model, "mach-ci")

@@ -20,6 +20,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // Stringification and printing methods

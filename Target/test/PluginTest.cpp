@@ -884,6 +884,47 @@ TEST_F(DriverPluginQueueTest, QueueLaunchHostFunc) {
   EXPECT_EQ(flag, 42u);
 }
 
+TEST_F(DriverPluginContextTest, HostReachableAgreesWithHostAddress) {
+  // Out-of-tree plugins that share this suite predate the property.
+  if (api != "CUDA" && api != "HIP" && api != "Metal" && api != "cpu")
+    GTEST_SKIP() << "plugin does not report host_reachable";
+  // CUDA and HIP report only pinned memory reachable, even on an integrated
+  // GPU.
+  const bool deviceAllocReachable = api == "Metal" || api == "cpu";
+
+  auto check = [&](M_driver_memory_t memory, bool expected) {
+    bool reachable = !expected;
+    ASSERT_SUCCESS(memory_property(
+        memory, M_DRIVER_MEMORY_PROPERTY_HOST_REACHABLE, &reachable));
+    EXPECT_EQ(reachable, expected);
+    void *host = nullptr;
+    M_driver_status_t hostStatus =
+        memory_property(memory, M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS, &host);
+    if (!reachable) {
+      EXPECT_NE(hostStatus, M_DRIVER_STATUS_SUCCESS);
+      return;
+    }
+    ASSERT_SUCCESS(hostStatus);
+    ASSERT_NE(host, nullptr);
+    *static_cast<volatile uint32_t *>(host) = 0xC0FFEEu;
+    EXPECT_EQ(*static_cast<volatile uint32_t *>(host), 0xC0FFEEu);
+  };
+
+  for (M_driver_context_t context : contexts) {
+    M_driver_memory_t pinned = nullptr;
+    ASSERT_SUCCESS(memory_alloc_pinned(context, 64, &pinned));
+    auto freePinned =
+        llvm::scope_exit([&] { memory_free_pinned(context, pinned); });
+    check(pinned, /*expected=*/true);
+
+    M_driver_memory_t device = nullptr;
+    ASSERT_SUCCESS(memory_alloc_sync(context, 64, &device));
+    auto freeDevice =
+        llvm::scope_exit([&] { memory_free_sync(context, device); });
+    check(device, deviceAllocReachable);
+  }
+}
+
 TEST_F(DriverPluginContextTest, MemoryWrapUnwrapErrors) {
   for (M_driver_context_t context : contexts) {
     // A live allocation gives us a valid address and handle for the argument

@@ -84,7 +84,7 @@ def MAP_IterOpaqueOp : MAP_Op<"iter.opaque", [
       %epi = map.iter.epilogue (%val : bf16, %idx : !map.index<2>) capturing {%cap = %out : !mo.tensor<[M, N], bf16>} {
         map.store %cap[%idx] = %val : !mo.tensor<[M, N], bf16>
       } : !mo.tensor<[M, N], bf16>
-      map.call.opaque @builtin_kernels.linalg.Matmul[transpose_b = false]
+      map.call.opaque @builtin_kernels.linalg_ops.Matmul[transpose_b = false]
         inputs (%A, %B) outputs (%epi) : (...) -> (...)
     }
     ```
@@ -215,6 +215,16 @@ def MAP_IterEpilogueOp : MAP_Op<"iter.epilogue", [
 
   let hasCustomAssemblyFormat = 1;
   let hasCanonicalizer = 1;
+
+  let extraClassDeclaration = [{
+  private:
+    /// The tile half of `lowerToMOGG`.
+    ::mlir::LogicalResult lowerTile(
+        ::M::MAP::MAPToMOGGState &state, bool isCompute,
+        ::mlir::Value outShape, ::llvm::ArrayRef<::mlir::Value> moggCaptures,
+        ::mlir::Value outputPtr,
+        ::M::MOGG::TensorArgContractAttr contractAttr);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -275,7 +285,7 @@ def MAP_CallOpaqueOp : MAP_Op<"call.opaque", [
   let summary = "Invoke an opaque Mojo kernel by symbol.";
   let description = [{
     Calls the kernel declared under `callee` (a `mogg.kernel.decl` symbol, e.g.
-    `@builtin_kernels.linalg.Matmul`) with the given `inputs` and `outputs`. The
+    `@builtin_kernels.linalg_ops.Matmul`) with the given `inputs` and `outputs`. The
     kernel parameters (e.g. `packed_b`, `transpose_b`) are carried in brackets
     immediately after the callee symbol, e.g.
     `@...Matmul[packed_b = false, transpose_b = false]`.
@@ -432,12 +442,51 @@ def MAP_IterElementwiseBodyOp : MAP_Op<"iter.elementwise.body", [
 
   let arguments = (ins MOSH_ShapeAttr:$shape,
                        Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
-                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
+                       OptionalAttr<MAP_SimdWidthAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+  private:
+    /// The captures, lowered: each (kernel I/O or hoisted view) is defined,
+    /// and so lowered, earlier in the block.
+    ::llvm::SmallVector<::mlir::Value>
+    lowerCaptures(::M::MAP::MAPToMOGGState &state);
+
+    /// Lowers this body into `call`'s region, whose block takes one argument
+    /// per capture, then the index.
+    ::mlir::LogicalResult lowerBody(::mlir::Operation *call,
+                                    ::M::MAP::MAPToMOGGState &state,
+                                    ::llvm::ArrayRef<::mlir::Value> capturing,
+                                    ::mlir::Type indexType);
+
+    /// The callee and device of this body's `ForeachOpT` kernel.
+    template <typename ForeachOpT>
+    std::pair<::mlir::FlatSymbolRefAttr, ::mlir::StringAttr>
+    calleeFor(::M::MAP::MAPToMOGGState &state);
+
+    /// Lowers this body into a `mogg.call.foreach`, passing on its width
+    /// limit.
+    ::mlir::LogicalResult buildSimdCall(::M::MAP::MAPToMOGGState &state,
+                                        ::mlir::Value loopShape,
+                                        ::mlir::Type indexType);
+
+    /// Lowers this body into a `mogg.call.foreach.tile`.
+    ::mlir::LogicalResult buildTileCall(::M::MAP::MAPToMOGGState &state,
+                                        ::mlir::Value loopShape,
+                                        ::mlir::Type indexType);
+
+    /// The tile half of `lowerToMOGG`.
+    ::mlir::LogicalResult lowerTileBody(::M::MAP::MAPToMOGGState &state,
+                                        ::mlir::Value loopShape);
+
+    /// Checks this body against what the tile foreach driver supports.
+    ::mlir::LogicalResult verifyTileBody(::mlir::Value output,
+                                         ::llvm::ArrayRef<::mlir::Value> inputs);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -573,7 +622,7 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
   let arguments = (ins MOSH_ShapeAttr:$shape,
                        I64Attr:$axis,
                        Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
-                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
+                       OptionalAttr<MAP_SimdWidthAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
@@ -992,7 +1041,7 @@ def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
   NoTerminator,
   RecursiveMemoryEffects,
   // The verifier keeps the innermost dim whole, so the body's index has the
-  // loop's innermost coordinate and its width limits hold as they are.
+  // loop's innermost coordinate and its SIMD width hold as it is.
   MAP_MaxSimdWidthInterface,
   DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,

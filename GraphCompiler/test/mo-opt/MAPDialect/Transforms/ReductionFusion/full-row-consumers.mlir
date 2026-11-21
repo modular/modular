@@ -91,17 +91,41 @@ mo.graph @epilogue(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   mo.output %z : !mo.tensor<[8, 128], f32>
 }
 
-// The sum is also a graph output, and a per-row store can't sit next to a map
-// phase yet: the division stays its own kernel.
+// The sum is also a graph output: it stays a per-row store, before the map
+// phase the division joins.
 // CHECK-LABEL: mo.graph @perRowOutputKept
-// CHECK:       map.iter.rowwise
-// CHECK-NOT:     map.iter.map
-// CHECK:       map.iter.elementwise<[8, 128]>
+// CHECK:       %[[R:.*]]:2 = map.iter.rowwise<[8, 128], axis = 1>
+// CHECK:         map.iter.reduce
+// CHECK:         map.store %{{.*}}[%{{.*}}] = %acc : !mo.tensor<[8, 1], f32>
+// CHECK:         map.iter.map
+// CHECK-NOT:   map.iter.elementwise
+// CHECK:       mo.output %[[R]]#{{[01]}}, %[[R]]#{{[01]}}
 mo.graph @perRowOutputKept(%x: !mo.tensor<[8, 128], f32>) -> (!mo.tensor<[8, 128], f32>, !mo.tensor<[8, 1], f32>) {
   %s = mo.reduce.add(%x) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
   %sb = mo.static.broadcast_to(%s) : !mo.tensor<[8, 1], f32> -> !mo.tensor<[8, 128], f32>
   %y = mo.div(%x, %sb) : !mo.tensor<[8, 128], f32>
   mo.output %y, %s : !mo.tensor<[8, 128], f32>, !mo.tensor<[8, 1], f32>
+}
+
+// A per-row consumer of a reduction whose body already has a map phase joins
+// it as row-level ops before the map phase, which stays last.
+// CHECK-LABEL: mo.graph @perRowConsumerAfterMapPhase
+// CHECK:       map.iter.rowwise<[8, 128], axis = 1>
+// CHECK:         map.iter.reduce
+// CHECK:         map.call.elementwise @{{.*}}Mul
+// CHECK:         map.store %{{.*}} : !mo.tensor<[8, 1], f32>
+// CHECK:         map.iter.map
+// CHECK-NEXT:      map.load
+// CHECK:       }
+// CHECK-NOT:   map.iter.elementwise
+mo.graph @perRowConsumerAfterMapPhase(%x: !mo.tensor<[8, 128], f32>) -> (!mo.tensor<[8, 128], f32>, !mo.tensor<[8, 1], f32>) {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
+  %sb = mo.static.broadcast_to(%s) : !mo.tensor<[8, 1], f32> -> !mo.tensor<[8, 128], f32>
+  %y = mo.div(%x, %sb) : !mo.tensor<[8, 128], f32>
+  %two = mo.constant <#M.dense_array<2.0> : tensor<f32>> : !mo.tensor<[], f32>
+  %twob = mo.static.broadcast_to(%two) : !mo.tensor<[], f32> -> !mo.tensor<[8, 1], f32>
+  %t = mo.mul(%s, %twob) : !mo.tensor<[8, 1], f32>
+  mo.output %y, %t : !mo.tensor<[8, 128], f32>, !mo.tensor<[8, 1], f32>
 }
 
 // Through the transpose, element (i, j) reads row j's sum: not fused.

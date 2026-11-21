@@ -1721,6 +1721,7 @@ def ssd_combined_cpu[
             (defaults to `None`).
     """
 
+    @__allow_legacy_any_origin_fields
     def worker(idx: Int) {imm}:
         var b, d = divmod(idx, dim)
 
@@ -2069,6 +2070,7 @@ def mamba_split_conv1d_scan_combined_cpu[
     var xBC_start = dim
     var dt_start = 2 * dim + 2 * ngroups * DSTATE
 
+    @__allow_legacy_any_origin_fields
     def worker(idx: Int) raises {imm}:
         var b, d = divmod(idx, dim)
         var h, p = divmod(d, headdim)

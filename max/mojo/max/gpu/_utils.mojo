@@ -320,7 +320,7 @@ comptime _kgen_pack_splat_type[dtype: DType, n: Int] = __mlir_type[
     ~TypeList.splat[
         Trait=TrivialRegisterPassable, count=n, type=Scalar[dtype]
     ]().values,
-    ` isParamPack>`,
+    `>`,
 ]
 
 

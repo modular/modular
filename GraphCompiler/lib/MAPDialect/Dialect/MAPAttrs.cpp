@@ -12,13 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 //
-// MAP attributes: the view specs and the SIMD width limits.
+// MAP attributes: the view specs and the SIMD widths.
 //
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPAttrs.h"
 #include "GraphCompiler/MAPDialect/Dialect/MAPDialect.h"
-#include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h"
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
 #include "GraphCompiler/MOSHDialect/MOSHAttrs.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -40,7 +39,7 @@ Type GCDAttr::getType() const {
   return MOSH::ShapeAttr::getDimType(getContext());
 }
 
-bool MAP::isWidthLimit(Attribute attr) {
+bool GCDAttr::isSimdWidth(Attribute attr) {
   if (isa_and_nonnull<GCDAttr>(attr))
     return true;
   auto dim = dyn_cast_or_null<TypedAttr>(attr);
@@ -51,22 +50,21 @@ bool MAP::isWidthLimit(Attribute attr) {
   return MOSH::ShapeAttr::getStaticDim(dim) || isa<KGEN::ParamDeclRefAttr>(dim);
 }
 
-void MAP::collectWidthLimitDims(TypedAttr limit,
-                                SmallVectorImpl<TypedAttr> &dims) {
-  if (auto gcd = dyn_cast<GCDAttr>(limit)) {
-    for (TypedAttr inner : gcd.getLimits())
-      collectWidthLimitDims(inner, dims);
+void GCDAttr::collectDims(TypedAttr width, SmallVectorImpl<TypedAttr> &dims) {
+  if (auto gcd = dyn_cast<GCDAttr>(width)) {
+    for (TypedAttr inner : gcd.getWidths())
+      collectDims(inner, dims);
     return;
   }
-  dims.push_back(limit);
+  dims.push_back(width);
 }
 
-TypedAttr MAP::simplifyWidthLimit(TypedAttr limit) {
-  if (!limit)
+TypedAttr GCDAttr::getSimplified(TypedAttr width) {
+  if (!width)
     return {};
-  MLIRContext *ctx = limit.getContext();
+  MLIRContext *ctx = width.getContext();
   SmallVector<TypedAttr> leaves;
-  collectWidthLimitDims(limit, leaves);
+  collectDims(width, leaves);
   // 0 is the GCD of no constants: it divides nothing away.
   int64_t constant = 0;
   SmallVector<TypedAttr> dims;
@@ -83,13 +81,13 @@ TypedAttr MAP::simplifyWidthLimit(TypedAttr limit) {
   return dims.size() == 1 ? dims.front() : GCDAttr::get(ctx, dims);
 }
 
-ParseResult MAP::parseWidthLimit(AsmParser &parser, TypedAttr &limit) {
+ParseResult GCDAttr::parseSimdWidth(AsmParser &parser, TypedAttr &width) {
   if (parser.getCurrentLocation().getPointer()[0] == '#') {
     Attribute attr;
     if (parser.parseAttribute(attr))
       return failure();
-    limit = dyn_cast<GCDAttr>(attr);
-    if (!limit)
+    width = dyn_cast<GCDAttr>(attr);
+    if (!width)
       return parser.emitError(parser.getCurrentLocation(),
                               "expected a dim or a #map.gcd, got ")
              << attr;
@@ -98,61 +96,61 @@ ParseResult MAP::parseWidthLimit(AsmParser &parser, TypedAttr &limit) {
   Type type;
   if (KGEN::parseColonTypeOrDefault(
           parser, type, MOSH::ShapeAttr::getDimType(parser.getContext())) ||
-      KGEN::parseParamValue(parser, limit, type))
+      KGEN::parseParamValue(parser, width, type))
     return failure();
-  if (!isWidthLimit(limit))
+  if (!isSimdWidth(width))
     return parser.emitError(parser.getCurrentLocation(),
                             "expected a constant or a parameter dim, got ")
-           << limit;
+           << width;
   return success();
 }
 
-void MAP::printWidthLimit(AsmPrinter &printer, TypedAttr limit) {
-  if (isa<GCDAttr>(limit))
-    printer.printAttributeWithoutType(limit);
+void GCDAttr::printSimdWidth(AsmPrinter &printer, TypedAttr width) {
+  if (isa<GCDAttr>(width))
+    printer.printAttributeWithoutType(width);
   else
-    MOSH::printDimensionValue(printer, limit);
+    MOSH::printDimensionValue(printer, width);
 }
 
 LogicalResult GCDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                              ArrayRef<TypedAttr> limits) {
-  if (limits.empty())
-    return emitError() << "expected a GCD of at least one limit";
-  for (TypedAttr limit : limits)
-    if (!isWidthLimit(limit))
+                              ArrayRef<TypedAttr> widths) {
+  if (widths.empty())
+    return emitError() << "expected a GCD of at least one width";
+  for (TypedAttr width : widths)
+    if (!isSimdWidth(width))
       return emitError() << "expected a constant, a parameter dim or a "
                             "#map.gcd, got "
-                         << limit;
+                         << width;
   return success();
 }
 
 Attribute GCDAttr::parse(AsmParser &parser, Type /*type*/) {
-  SmallVector<TypedAttr> limits;
+  SmallVector<TypedAttr> widths;
   if (parser.parseLess() ||
       parser.parseCommaSeparatedList(
           AsmParser::Delimiter::Square,
-          [&] { return parseWidthLimit(parser, limits.emplace_back()); }) ||
+          [&] { return parseSimdWidth(parser, widths.emplace_back()); }) ||
       parser.parseGreater())
     return {};
   return getChecked([&] { return parser.emitError(parser.getNameLoc()); },
-                    parser.getContext(), limits);
+                    parser.getContext(), widths);
 }
 
 void GCDAttr::print(AsmPrinter &printer) const {
   printer << "<[";
-  llvm::interleaveComma(getLimits(), printer, [&](TypedAttr limit) {
-    printWidthLimit(printer, limit);
+  llvm::interleaveComma(getWidths(), printer, [&](TypedAttr width) {
+    printSimdWidth(printer, width);
   });
   printer << "]>";
 }
 
-TypedAttr GCDAttr::getSimplified(MLIRContext *ctx, ArrayRef<TypedAttr> limits) {
+TypedAttr GCDAttr::getSimplified(MLIRContext *ctx, ArrayRef<TypedAttr> widths) {
   SmallVector<TypedAttr> inputs = llvm::filter_to_vector(
-      limits, [](TypedAttr limit) { return bool(limit); });
+      widths, [](TypedAttr width) { return bool(width); });
   if (inputs.empty())
     return {};
-  return simplifyWidthLimit(inputs.size() == 1 ? inputs.front()
-                                               : GCDAttr::get(ctx, inputs));
+  return getSimplified(inputs.size() == 1 ? inputs.front()
+                                          : GCDAttr::get(ctx, inputs));
 }
 
 //===----------------------------------------------------------------------===//

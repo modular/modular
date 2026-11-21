@@ -20,8 +20,8 @@ construction.
 
 from .format import WeightsFormat, weights_format
 from .load import load_weights
+from .load_gguf import GGUFWeights
 from .load_safetensors import SafetensorWeights
-from .loader_wrappers import GGUFWeights
 from .weights import WeightData, Weights, WeightsAdapter
 
 __all__ = [

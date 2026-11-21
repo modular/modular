@@ -515,6 +515,58 @@ class PipelineArgs(ConfigFileModel):
         description="The LoRA config.",
     )
 
+    # ------------------------------------------------------------------ #
+    # On-the-fly quantization (assembled into QuantConfig in from_args)
+    # ------------------------------------------------------------------ #
+
+    quantization_format: str | None = Field(
+        default=None,
+        description=(
+            "On-the-fly quantizer format, such as ``nvfp4``. When set with "
+            "``targets``, :class:`~max.pipelines.lib.PipelineConfig` carries "
+            "a :class:`~max.nn.quant_config.QuantConfig` with "
+            "``source=QUANTIZE``."
+        ),
+    )
+
+    targets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tensor-name regexes of the linears to quantize (repeatable). "
+            "Required when ``quantization_format`` is set."
+        ),
+    )
+
+    error_report_dir: Path | None = Field(
+        default=None,
+        description=(
+            "Directory for per-weight quantization error dumps from "
+            "on-the-fly quantizers."
+        ),
+    )
+
+    verbose: bool = Field(
+        default=False,
+        description="Print the patched module before the quantizer count.",
+    )
+
+    mse_sweep_scales: bool = Field(
+        default=False,
+        description=(
+            "For NVFP4 on-the-fly quantizers, search multipliers of each "
+            "block's abs-max and keep the scale with the smallest "
+            "quantization MSE. Other formats ignore it."
+        ),
+    )
+
+    source_format: str | None = Field(
+        default=None,
+        description=(
+            "Assert that every targeted weight is stored as ``bf16`` or "
+            "``fp8``. When unset, each weight's own format decides."
+        ),
+    )
+
     speculative: Annotated[SpeculativeConfig | None, Parameter(name="*")] = (
         Field(
             default=None,

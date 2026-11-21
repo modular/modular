@@ -13,9 +13,8 @@
 
 # RUN: not kgen -elaborate %s -o /dev/null 2>&1 | FileCheck %s
 
-# Enum-valued llvm cl options (e.g. `denormal-fp-math-f32`) are settable
-# through `emission_option`; a value the option's own parser rejects must
-# surface as an error rather than being silently ignored.
+# An invalid `denormal-fp-math-f32` value in `emission_option` must surface as
+# an error rather than being silently ignored.
 
 from std.collections.string.string_span import StaticString, _get_kgen_string
 from max.gpu.host.info import A100
@@ -63,6 +62,7 @@ def hello():
 
 
 def main():
-    # CHECK: invalid value "not-a-denormal-mode" for emission option "denormal-fp-math-f32"
+    # CHECK: invalid value 'not-a-denormal-mode' for emission option 'denormal-fp-math-f32'
+    # CHECK-SAME: expected 'ieee', 'preserve-sign', 'positive-zero' or 'dynamic'
     var t1 = _compile_info[hello]()
     print(t1.kernel)

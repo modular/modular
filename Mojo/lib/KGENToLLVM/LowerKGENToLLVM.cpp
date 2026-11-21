@@ -14,6 +14,7 @@
 #include "CABICallHelpers.h"
 #include "LLVMLoweringUtils.h"
 #include "LowerKGENToLLVMRewriteCABIFns.h"
+#include "LowerKGENToLLVMUtils.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -42,6 +43,8 @@
 #include "mlir/IR/Threading.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
+
+#include <mutex>
 
 using namespace M;
 using namespace KGEN;
@@ -184,9 +187,10 @@ mapToTypedLLVMFuncAttr(LLVM::LLVMFuncOp func, NamedAttrList &attrs,
                  "' is temporarily not supported via @__llvm_metadata");
   }
 
+  if (suffix == "denormal_fp_math" || suffix == "denormal_fp_math_f32")
+    return setDenormalFPEnv(func, attrs, suffix, value);
+
   static llvm::StringMap<llvm::StringLiteral> allowedAttrsMap = {
-      {"denormal_fp_math", "denormal-fp-math"},
-      {"denormal_fp_math_f32", "denormal-fp-math-f32"},
       {"fp_contract", "fp-contract"},
       {"unsafe_fp_math", "unsafe-fp-math"},
       {"no_infs_fp_math", "no-infs-fp-math"},
@@ -1447,11 +1451,15 @@ void LowerKGENToLLVMPass::runOnOperation() {
   // KGEN must fully lower here, except the struct instances erased below.
   // HLCF's return and unreachable also lower to LLVM here, and a debug op must
   // not keep types the converter cannot handle.
-  auto mustConvert = [&typeConverter](Operation *op) {
+  // The driver calls `mustConvert` from several threads, and the struct
+  // conversion of the type converter writes a cache without a lock.
+  std::mutex typeConverterMutex;
+  auto mustConvert = [&](Operation *op) {
     if (isa<HLCF::ReturnOp, HLCF::UnreachableOp>(op)) {
       return true;
     }
     if (isa_and_present<DebugInfo::DebugInfoDialect>(op->getDialect())) {
+      std::lock_guard<std::mutex> lock(typeConverterMutex);
       return !typeConverter.isLegal(op);
     }
     return isa_and_present<KGENDialect>(op->getDialect()) &&

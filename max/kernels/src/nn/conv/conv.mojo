@@ -19,7 +19,7 @@ for 1D, 2D, and 3D convolutions in NHWC/NDHWC layouts.
 """
 
 from std.collections import Optional
-from std.math import align_down, ceildiv
+from std.math import align_down, align_up, ceildiv
 from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
 
@@ -110,7 +110,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host import HIP
 from max.gpu.host import CUDA
-from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -158,6 +158,8 @@ from .conv_utils import (
 from .gpu.amd.dispatch_3d import dispatch_amd_4wave_conv3d
 from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from .gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
+from .gpu.nvidia.cudnn_filter import fcrs_to_krsc
+from .gpu.nvidia.sm100.conv3d_dispatch import dispatch_conv3d_sm100
 from .gpu.nvidia.sm100.qslice_conv3d import dispatch_qslice_conv3d_sm100
 from nn.shapes import get_sliding_window_out_dim
 from nn.pad_gpu import pad_constant as pad_constant_gpu
@@ -413,6 +415,7 @@ def _reduce_output[
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def sum[
             width: Int
         ](offset: Int) {F, scratch, num_partitions, output, imm buf_size, mut}:
@@ -1677,6 +1680,7 @@ struct ConvDirectNHWC[
                 # The bases can't be captured mutably, so derive the per-tile
                 # pointers from wo instead of incrementing across calls.
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def work_fn[
                     height: Int, effected_by_padding: Bool
                 ](wo: Int) {
@@ -1909,6 +1913,7 @@ struct ConvDirectNHWC[
                 var stride_w = conv_attr_dyn.strides()[1]
 
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def update_middle[
                     height: Int
                 ](wo: Int) {
@@ -3952,7 +3957,11 @@ def _conv2d_gpu_naive_nhwc_rscf_impl[
                         )
 
         comptime if has_epilogue_fn:
-            epilogue_fn(
+            # The element's address is naturally aligned. Left at the default
+            # alignment of 1 the closure's store is split into byte stores,
+            # which the remote B200 executors' toolchain miscompiles after a
+            # half-precision add (low byte wrong).
+            epilogue_fn[alignment=align_of[output_type]()](
                 (n, h, w, co),
                 value.cast[output_type](),
             )
@@ -4305,12 +4314,14 @@ def _conv_cudnn[
             )
         )
 
-        # Update Filter Descriptor (NCHW for filter)
+        # Update Filter Descriptor. The filter arrives FCRS; the transpose
+        # below hands cuDNN a KRSC copy so it does not run its own, far
+        # slower, NCHW -> NHWC conversion before every convolution.
         check_cudnn_error(
             cudnnSetFilter4dDescriptor(
                 ptr_meta[].ptr_filter_desc,
                 get_cudnn_dtype[filter_type](),
-                cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
+                cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
                 Int32(filt[0]),
                 Int32(filt[1]),
                 Int32(filt[2]),
@@ -4417,10 +4428,27 @@ def _conv_cudnn[
         ptr_meta[].stride = stride
         ptr_meta[].dil = dil
 
-    # Allocate workspace per-call using ctx (runtime-managed buffer)
-    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](
-        ptr_meta[].workspace_size
+    # One scratch allocation per call (stream-ordered, runtime-managed): the
+    # KRSC filter copy, then the workspace. Two allocations cost a graph
+    # memory node each.
+    var filter_bytes = align_up(
+        filter.num_elements() * size_of[filter_type](), 256
     )
+    var scratch = ctx.enqueue_create_buffer[.uint8](
+        filter_bytes + ptr_meta[].workspace_size
+    )
+    var filter_krsc = TileTensor(
+        scratch.unsafe_ptr()
+        .unsafe_bitcast[Scalar[filter_type]]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
+        row_major(
+            Int(filter.dim[0]()),
+            Int(filter.dim[2]()),
+            Int(filter.dim[3]()),
+            Int(filter.dim[1]()),
+        ),
+    )
+    fcrs_to_krsc(filter, filter_krsc, ctx)
 
     var alpha: Float32 = 1.0
     var beta: Float32 = 0.0
@@ -4432,17 +4460,19 @@ def _conv_cudnn[
             ptr_meta[].ptr_input_desc,
             input.ptr.unsafe_bitcast[NoneType](),
             ptr_meta[].ptr_filter_desc,
-            filter.ptr.unsafe_bitcast[NoneType](),
+            filter_krsc.unsafe_ptr().unsafe_bitcast[NoneType](),
             ptr_meta[].ptr_conv_desc,
             ptr_meta[].best_algo,
-            workspace_buffer.unsafe_ptr().unsafe_bitcast[NoneType](),
+            scratch.unsafe_ptr()
+            .unsafe_offset(filter_bytes)
+            .unsafe_bitcast[NoneType](),
             ptr_meta[].workspace_size,
             Pointer(to=beta).unsafe_bitcast[NoneType](),
             ptr_meta[].ptr_output_desc,
             output.ptr.unsafe_bitcast[NoneType](),
         )
     )
-    _ = workspace_buffer^
+    _ = scratch^
 
 
 def conv_cudnn[
@@ -4909,6 +4939,9 @@ def _conv_miopen[
                 False,  # non-exhaustive search
             )
         )
+        # MIOpen's search ran its candidates in this workspace through its
+        # address; keep the scratch alive until the call returns.
+        _ = find_workspace^
 
         if returned_count == 0:
             raise Error("MIOpen: no algorithm found for convolution")
@@ -4951,6 +4984,10 @@ def _conv_miopen[
             ptr_meta[].workspace_size,
         )
     )
+    # MIOpen read the filter and workspace through their addresses; keep the
+    # scratch alive until the convolution is enqueued.
+    _ = filter_frsc_buf^
+    _ = forward_workspace^
 
 
 def _conv_miopen[
@@ -4993,6 +5030,7 @@ def _conv_miopen[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def miopen_epilogue[
             _width: Int, alignment: Int = 1
         ](coords: Coord) {var output_tmp, var epilogue_fn}:
@@ -5097,6 +5135,305 @@ def _conv_compute_in_place[
     )
 
 
+def _conv_gpu_with_residual_epilogue[
+    EpilogueFnType: ConvSimdEpilogueFn,
+    ComputeFnType: ConvSimdComputeFn,
+    //,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    has_epilogue_fn: Bool,
+    filter_is_fcrs: Bool,
+    has_compute_fn: Bool,
+](
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    symmetric_padding: Coord[Int, Int],
+    num_groups: Int,
+    ctx: DeviceContext,
+    source_ptr: Optional[MutPointer[Scalar[output_type], MutAnyOrigin]],
+    beta: Float32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+) raises:
+    """Runs `conv_gpu` for a residual on a path that cannot fuse one.
+
+    The paths after the fused SM100, RDNA and AMD 4-wave kernels (im2col
+    matmul, MIOpen, cuDNN, the naive kernels) never read `source_ptr`. This
+    folds `D = Conv(A, B) + beta * C` into the store epilogue they all honor:
+    the epilogue adds `beta * C` to the convolution's value in the output
+    dtype, then applies `compute_fn` or hands the sum to `epilogue_fn`, or
+    stores it when there is neither. That is the order and the arithmetic of
+    the fused paths.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        has_epilogue_fn: `epilogue_fn` stores the output.
+        filter_is_fcrs: The filter is FCRS rather than RSCF.
+        has_compute_fn: `compute_fn` transforms the output.
+
+    Args:
+        input: Input activation, NHWC.
+        filter: Filter weights.
+        output: Output, NHWC.
+        stride: Stride along the height and width.
+        dilation: Dilation along the height and width.
+        symmetric_padding: Padding along the height and width.
+        num_groups: Number of convolution groups.
+        ctx: Device context.
+        source_ptr: Residual source `C`, dense NHWC like `output`.
+        beta: Residual scale factor.
+        epilogue_fn: Storing epilogue, used when `has_epilogue_fn`.
+        compute_fn: Transforming epilogue, used when `has_compute_fn`.
+    """
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
+    # The closure reads and writes dense NHWC views of its own. `conv_gpu`
+    # takes `output` mutably too, so a closure that borrowed it would alias.
+    var dense = row_major(output.layout.shape_coord())
+    # SAFETY: the caller checked `has_residual`.
+    var src = TileTensor(source_ptr.value(), dense)
+    var dst = TileTensor(
+        output.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](), dense
+    )
+    var beta_out = Scalar[output_type](beta)
+
+    @inline(.always)
+    @__allow_legacy_any_origin_fields
+    def residual_epilogue[
+        _dtype: DType, _width: SIMDLength, alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]) {
+        var dst,
+        var src,
+        var beta_out,
+        var epilogue_fn,
+        var compute_fn,
+    }:
+        # The coordinates are not guaranteed to be vector-aligned, so access
+        # at the element alignment.
+        comptime elem_align = align_of[output_type]()
+        var c = src.load[width=_width, alignment=elem_align](coords)
+        var sum = val + beta_out.cast[_dtype]() * c.cast[_dtype]()
+
+        comptime if has_epilogue_fn:
+            epilogue_fn[alignment=max(alignment, align_of[output_type]())](
+                coords, sum
+            )
+        elif has_compute_fn:
+            dst.store[alignment=elem_align](
+                coords,
+                rebind[SIMD[output_type, _width]](compute_fn(coords, sum)),
+            )
+        else:
+            dst.store[alignment=elem_align](
+                coords, rebind[SIMD[output_type, _width]](sum)
+            )
+
+    conv_gpu[
+        input_type,
+        filter_type,
+        output_type,
+        has_epilogue_fn=True,
+        filter_is_fcrs=filter_is_fcrs,
+    ](
+        input,
+        filter,
+        output,
+        stride,
+        dilation,
+        Coord[Int, Int, Int, Int](
+            symmetric_padding[0],
+            symmetric_padding[0],
+            symmetric_padding[1],
+            symmetric_padding[1],
+        ),
+        num_groups,
+        ctx,
+        None,
+        Float32(0.0),
+        residual_epilogue,
+    )
+
+
+def _conv_gpu_sm100_fp16_dedicated[
+    EpilogueFnType: ConvSimdEpilogueFn,
+    ComputeFnType: ConvSimdComputeFn,
+    //,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    has_epilogue_fn: Bool,
+    filter_is_fcrs: Bool,
+    has_residual: Bool,
+    has_compute_fn: Bool,
+](
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    symmetric_padding: Coord[Int, Int],
+    num_groups: Int,
+    ctx: DeviceContext,
+    source_ptr: Optional[MutPointer[Scalar[output_type], MutAnyOrigin]],
+    beta: Float32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
+) raises -> Bool:
+    """Runs an fp16 `conv_gpu` on the SM100 kernel dedicated to its shape.
+
+    The dedicated kernels are the 1x5 Conv1D (512 -> 1024 channels), the
+    192 -> 192 channel 3x3 (RSCF filter only) and the 3x3 with 96 output
+    channels, each ahead of cuDNN on the shape it serves. They fuse the
+    residual and both epilogues, except a compute epilogue after a residual,
+    which the caller keeps off this path. The closures take `conv_gpu`'s NHWC
+    coordinates and the arithmetic runs in fp16, as cuDNN followed by an
+    elementwise kernel does.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output tensor.
+        has_epilogue_fn: `epilogue_fn` stores the output.
+        filter_is_fcrs: The filter is FCRS rather than RSCF.
+        has_residual: Fuse `D = Conv(A, B) + beta * C`.
+        has_compute_fn: `compute_fn` transforms the output.
+
+    Args:
+        input: Input activation, NHWC.
+        filter: Filter weights.
+        output: Output, NHWC.
+        stride: Stride along the height and width.
+        dilation: Dilation along the height and width.
+        symmetric_padding: Padding along the height and width.
+        num_groups: Number of convolution groups.
+        ctx: Device context.
+        source_ptr: Residual source `C`, dense NHWC like `output`.
+        beta: Residual scale factor.
+        epilogue_fn: Storing epilogue, used when `has_epilogue_fn`.
+        compute_fn: Transforming epilogue, used when `has_compute_fn`.
+
+    Returns:
+        True if a dedicated kernel ran; False, with nothing enqueued,
+        otherwise.
+    """
+    from nn.conv.gpu.nvidia.sm100.conv2d_column_fprop import (
+        conv2d_column_dispatch,
+    )
+    from nn.conv.gpu.nvidia.sm100.conv2d_f192_fprop import (
+        conv2d_f192_dispatch,
+    )
+    from nn.conv.gpu.nvidia.sm100.conv2d_f96_dispatch import (
+        conv2d_f96_dispatch,
+    )
+    from nn.conv.gpu.nvidia.sm100.conv2d_k1x5_fprop import (
+        conv2d_k1x5_dispatch,
+    )
+
+    if (
+        stride[0] != 1
+        or stride[1] != 1
+        or dilation[0] != 1
+        or dilation[1] != 1
+        or num_groups != 1
+    ):
+        return False
+
+    if conv2d_k1x5_dispatch[
+        filter_is_fcrs,
+        has_residual=has_residual,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
+        nhwc_coords=True,
+        round_first=True,
+    ](
+        input,
+        filter,
+        output,
+        symmetric_padding[0],
+        symmetric_padding[1],
+        ctx,
+        source_ptr,
+        beta,
+        epilogue_fn,
+        compute_fn,
+    ):
+        return True
+
+    comptime if not filter_is_fcrs:
+        if conv2d_f192_dispatch[
+            filter_is_fcrs,
+            has_residual=has_residual,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+            nhwc_coords=True,
+            round_first=True,
+        ](
+            input,
+            filter,
+            output,
+            symmetric_padding[0],
+            symmetric_padding[1],
+            ctx,
+            source_ptr,
+            beta,
+            epilogue_fn,
+            compute_fn,
+        ):
+            return True
+
+    if conv2d_column_dispatch[
+        filter_is_fcrs,
+        has_residual=has_residual,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
+        nhwc_coords=True,
+        round_first=True,
+    ](
+        input,
+        filter,
+        output,
+        symmetric_padding[0],
+        symmetric_padding[1],
+        ctx,
+        source_ptr,
+        beta,
+        epilogue_fn,
+        compute_fn,
+    ):
+        return True
+
+    return conv2d_f96_dispatch[
+        filter_is_fcrs,
+        has_residual=has_residual,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
+        nhwc_coords=True,
+        round_first=True,
+    ](
+        input,
+        filter,
+        output,
+        symmetric_padding[0],
+        symmetric_padding[1],
+        ctx,
+        source_ptr,
+        beta,
+        epilogue_fn,
+        compute_fn,
+    )
+
+
 def conv_gpu[
     EpilogueFnType: ConvSimdEpilogueFn = type_of(no_conv_simd_epilogue_fn),
     ComputeFnType: ConvSimdComputeFn = type_of(no_conv_simd_compute_fn),
@@ -5127,6 +5464,10 @@ def conv_gpu[
     AMD 4-wave, Apple M5 fused, cuDNN, MIOpen, and naive reference kernels,
     with optional asymmetric padding pre-processing and elementwise epilogue
     fusion.
+
+    On NVIDIA the dedicated kernels are tried first, and cuDNN is the fallback
+    for the 2-D (FCRS filter) and 3-D (FCQRS filter) convolutions none of them
+    serves.
 
     Parameters:
         EpilogueFnType: Type of `epilogue_fn` (inferred).
@@ -5339,6 +5680,39 @@ def conv_gpu[
         comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
         comptime _is_supported_dtype = input_type == DType.bfloat16
 
+        # fp16 has no general SM100 conv kernel; the shapes with a dedicated
+        # one are routed there.
+        comptime if (
+            _is_sm100
+            and input_type == .float16
+            and filter_type == .float16
+            and output_type == .float16
+            and not (has_residual and has_compute_fn)
+        ):
+            if _conv_gpu_sm100_fp16_dedicated[
+                input_type,
+                filter_type,
+                output_type,
+                has_epilogue_fn,
+                filter_is_fcrs,
+                has_residual,
+                has_compute_fn,
+            ](
+                input,
+                filter,
+                output,
+                _int_coord[2](stride),
+                _int_coord[2](dilation),
+                _int_coord[2](symmetric_padding),
+                num_groups,
+                ctx,
+                source_ptr,
+                beta,
+                epilogue_fn,
+                compute_fn,
+            ):
+                return
+
         comptime if _is_sm100 and _is_supported_dtype:
             from nn.conv.gpu.nvidia.sm100.dispatch import (
                 dispatch_sm100_conv2d,
@@ -5353,11 +5727,10 @@ def conv_gpu[
             # out_c (GEMM N) does NOT need MMA_N alignment: the output TMA
             # descriptor is created with the actual out_c as its N bound, so
             # the hardware drops OOB stores for the tail, and the filter TMA
-            # zero-fills OOB rows on load. The only remaining constraint is
-            # SIMD-pair alignment in the epilogue lambda path (the
-            # `top_col >= self.N` guard in epilogue_components.mojo fires at
-            # pair granularity, not per-element), hence
-            # `out_c * sizeof(output) % 4 == 0` (bf16: out_c % 2 == 0).
+            # zero-fills OOB rows on load. out_c is still the row stride of
+            # that descriptor, which TMA requires to be a multiple of 16
+            # bytes, hence `out_c * sizeof(output) % 16 == 0` (bf16:
+            # out_c % 8 == 0); a narrower output takes a route below.
             var s = _int_coord[2](stride)
             var d = _int_coord[2](dilation)
             var in_c = Int(input.dim[input.rank - 1]())
@@ -5474,6 +5847,32 @@ def conv_gpu[
                     comptime if has_compute_fn:
                         _conv_compute_in_place(output, compute_fn, ctx)
                 return
+
+        # None of the paths above fuses the residual, and the ones below never
+        # read `source_ptr`: add it in the store epilogue they do honor.
+        comptime if has_residual and not ctx.target.is_amd_gpu():
+            _conv_gpu_with_residual_epilogue[
+                input_type,
+                filter_type,
+                output_type,
+                has_epilogue_fn,
+                filter_is_fcrs,
+                has_compute_fn,
+            ](
+                input,
+                filter,
+                output,
+                _int_coord[2](stride),
+                _int_coord[2](dilation),
+                _int_coord[2](symmetric_padding),
+                num_groups,
+                ctx,
+                source_ptr,
+                beta,
+                epilogue_fn,
+                compute_fn,
+            )
+            return
 
         # SM100 im2col+matmul: route non-128-aligned channels through
         # `_matmul_gpu` (UMMA-on-Blackwell for bf16) instead of the naive
@@ -5599,6 +5998,7 @@ def conv_gpu[
             from nn.conv.gpu.amd.dispatch import dispatch_amd_4wave_conv2d
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _amd_4wave_dispatch[
                 GemmEpilogueFnType: ElementwiseEpilogueFn,
                 GemmComputeFnType: ElementwiseComputeFn,
@@ -5713,6 +6113,31 @@ def conv_gpu[
                         _conv_compute_in_place(output, compute_fn, ctx)
                     return
 
+        # The RDNA and 4-wave kernels above fuse the residual; MIOpen does not.
+        comptime if has_residual and ctx.target.is_amd_gpu():
+            _conv_gpu_with_residual_epilogue[
+                input_type,
+                filter_type,
+                output_type,
+                has_epilogue_fn,
+                filter_is_fcrs,
+                has_compute_fn,
+            ](
+                input,
+                filter,
+                output,
+                _int_coord[2](stride),
+                _int_coord[2](dilation),
+                _int_coord[2](symmetric_padding),
+                num_groups,
+                ctx,
+                source_ptr,
+                beta,
+                epilogue_fn,
+                compute_fn,
+            )
+            return
+
         # AMD GPU path: fall back to MIOpen for conv2d.
         comptime if ctx.target.is_amd_gpu():
             _conv_miopen[
@@ -5722,9 +6147,9 @@ def conv_gpu[
                 input,
                 filter,
                 output,
-                stride,
-                dilation,
-                symmetric_padding,
+                _int_coord[2](stride),
+                _int_coord[2](dilation),
+                _int_coord[2](symmetric_padding),
                 num_groups,
                 ctx,
                 epilogue_fn,
@@ -5744,6 +6169,134 @@ def conv_gpu[
                     " device; the FCRS-filter fallback path is implemented"
                     " only via cuDNN (NVIDIA)."
                 )
+
+            # The 3 -> 96 channel 3x3 (the VAE `conv_in`) runs on a dedicated
+            # fp32 FMA kernel: its 27-term reduction is too short for a tensor
+            # core tile to pay back, and fusing the epilogue beats cuDNN
+            # followed by an elementwise kernel. Measured on B200 only. A
+            # residual reaches it as a store epilogue, folded by
+            # `_conv_gpu_with_residual_epilogue`.
+            comptime if (
+                ctx.default_device_info == B200
+                and input_type == .float32
+                and filter_type == .float32
+                and output_type == .float32
+                and not has_compute_fn
+                and not has_residual
+            ):
+                from nn.conv.gpu.nvidia.sm100.conv2d_fp32_small_c import (
+                    conv2d_fp32_small_c,
+                    conv2d_fp32_small_c_supported,
+                )
+
+                var _sc_s = _int_coord[2](stride)
+                var _sc_d = _int_coord[2](dilation)
+                var _sc_pad = _int_coord[2](symmetric_padding)
+                # With an epilogue (a bias, or a residual folded into one) the
+                # route beat the old path, cuDNN plus an elementwise kernel, at
+                # every geometry measured on B200: batch 1 and 4, 240x416 and
+                # 512x512, stride and dilation 1 and 2. Without one it beat
+                # cuDNN on every dilation 1 output measured up to 120000
+                # pixels, lost at dilation 2 (cuDNN is faster there) and lost
+                # up to 1.4x on larger outputs.
+                comptime plain_max_pixels = 120_000
+                var _sc_pixels = (
+                    Int(output.dim[0]())
+                    * Int(output.dim[1]())
+                    * Int(output.dim[2]())
+                )
+                var _sc_plain_ok = (
+                    _sc_pixels <= plain_max_pixels
+                    and _sc_d[0] == 1
+                    and _sc_d[1] == 1
+                )
+                if (
+                    num_groups == 1
+                    and (has_epilogue_fn or _sc_plain_ok)
+                    and conv2d_fp32_small_c_supported(
+                        Int(input.dim[3]()),
+                        Int(output.dim[3]()),
+                        Int(filter.dim[2]()),
+                        Int(filter.dim[3]()),
+                    )
+                ):
+                    conv2d_fp32_small_c[has_epilogue_fn](
+                        input,
+                        filter,
+                        output,
+                        _sc_s[0],
+                        _sc_s[1],
+                        _sc_d[0],
+                        _sc_d[1],
+                        _sc_pad[0],
+                        _sc_pad[1],
+                        ctx,
+                        epilogue_fn,
+                    )
+                    return
+
+            # fp32 FCRS convolutions that run on the tf32 tensor core ahead of
+            # cuDNN's tf32 engine (the same arithmetic contract), measured on
+            # B200 only: the 14x14 stride 14 patch embed and the 3x3 channel
+            # conv2d the column kernel serves. Each fuses the storing and
+            # compute epilogues; a residual reaches them already folded into
+            # the store epilogue.
+            comptime if (
+                ctx.default_device_info == B200
+                and input_type == .float32
+                and filter_type == .float32
+                and output_type == .float32
+            ):
+                from nn.conv.gpu.nvidia.sm100.conv2d_column_fprop import (
+                    conv2d_column_dispatch,
+                )
+                from nn.conv.gpu.nvidia.sm100.conv2d_patch_fprop import (
+                    conv2d_patch_dispatch,
+                )
+
+                var _tf_s = _int_coord[2](stride)
+                var _tf_d = _int_coord[2](dilation)
+                var _tf_pad = _int_coord[2](symmetric_padding)
+                if conv2d_patch_dispatch[
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](
+                    input,
+                    filter,
+                    output,
+                    _tf_s,
+                    _tf_d,
+                    _tf_pad,
+                    num_groups,
+                    ctx,
+                    epilogue_fn,
+                    compute_fn,
+                ):
+                    return
+                if (
+                    _tf_s[0] == 1
+                    and _tf_s[1] == 1
+                    and _tf_d[0] == 1
+                    and _tf_d[1] == 1
+                    and num_groups == 1
+                    and conv2d_column_dispatch[
+                        filter_is_fcrs,
+                        has_epilogue_fn=has_epilogue_fn,
+                        has_compute_fn=has_compute_fn,
+                    ](
+                        input,
+                        filter,
+                        output,
+                        _tf_pad[0],
+                        _tf_pad[1],
+                        ctx,
+                        None,
+                        0.0,
+                        epilogue_fn,
+                        compute_fn,
+                    )
+                ):
+                    return
 
             # Construct row-major TileTensors for cuDNN (shared by both
             # epilogue and non-epilogue paths).
@@ -5798,7 +6351,9 @@ def conv_gpu[
                     var vec = output_tmp.load[
                         width=_width, alignment=align_of[output_type]()
                     ](coords)
-                    epilogue_fn(coords, vec)
+                    epilogue_fn[
+                        alignment=max(alignment, align_of[output_type]())
+                    ](coords, vec)
 
                 elementwise[simd_width_of[output_type]()](
                     epilogue_wrapper,
@@ -5869,6 +6424,33 @@ def conv_gpu[
                     _conv_compute_in_place(output, compute_fn, ctx)
 
     elif input.rank == 5:
+        comptime assert (
+            not has_residual
+        ), "a 3D conv has no residual path; no caller fuses one"
+
+        # The WAN VAE's 3-D convs run on dedicated SM100 kernels in either
+        # filter layout; they fuse the store and compute epilogues in the
+        # kernel's own store, and decline every convolution they were not
+        # measured on.
+        comptime if ctx.default_device_info == B200:
+            if dispatch_conv3d_sm100[
+                filter_is_fcrs,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
+                input,
+                filter,
+                output,
+                _int_coord[3](stride),
+                _int_coord[3](dilation),
+                _int_coord[3](symmetric_padding),
+                num_groups,
+                ctx,
+                epilogue_fn,
+                compute_fn,
+            ):
+                return
+
         comptime if filter_is_fcrs:
             # cuDNN writes `output` directly and takes no store epilogue, so
             # with one this path would drop the fused ops, and the fused
@@ -6405,7 +6987,8 @@ def _conv3d_gpu_naive_ndhwc_qrscf_impl[
         var value = simd_value.reduce_add() + scalar_value
 
         comptime if has_epilogue_fn:
-            epilogue_fn(
+            # Naturally aligned scalar element; see the 2-D naive kernel.
+            epilogue_fn[alignment=align_of[output_type]()](
                 (n, d_out_idx, h_out_idx, w_out_idx, co),
                 value.cast[output_type](),
             )
@@ -6862,9 +7445,18 @@ def _conv3d_cudnn[
     )
 
     # --- Algorithm selection (cached per shape) ---
+    # The key carries the dtypes: FindEx's pick and its workspace depend on
+    # them, so a shape met at two dtypes in one process would otherwise reuse
+    # the first dtype's algorithm and fail with CUDNN_STATUS_BAD_PARAM.
     var cache_key = String(
         "CONV3D_ALGO_",
         ctx.device().id,
+        "_",
+        String(input_type),
+        "_",
+        String(filter_type),
+        "_",
+        String(output_type),
         "_",
         input.dim[0](),
         "_",

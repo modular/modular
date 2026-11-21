@@ -85,6 +85,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_bf16() raises {imm}:
         comptime kernel = matmul_kernel_naive[
             .bfloat16,
@@ -136,6 +137,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_fp32() raises {imm}:
         comptime kernel = matmul_kernel_naive[
             .float32,
@@ -271,6 +273,7 @@ def run_matmul[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive() raises {imm}:
         comptime kernel = matmul_kernel_naive[
             dtype,
@@ -557,6 +560,7 @@ def run_matmul_transpose[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_func_naive() raises {imm}:
         comptime kernel = matmul_kernel_naive[
             dtype,

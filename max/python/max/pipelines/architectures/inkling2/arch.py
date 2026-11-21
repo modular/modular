@@ -14,12 +14,19 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Inkling2BatchProcessor
+from .dspark_config import Inkling2DSparkConfig
+from .dspark_draft import (
+    inkling2_dspark_draft_arch as make_inkling2_dspark_draft_arch,
+)
 from .model_config import Inkling2Config
 from .modules import Inkling2Decoder
 from .reasoning import (
@@ -31,6 +38,43 @@ from .tool_parser import (
 )
 from .vision import Inkling2Vision
 from .weight_adapters import inkling2_weight_rules
+
+
+def inkling2_dspark_draft_width(
+    speculative: Any,
+    target_huggingface_config: Any,
+    draft_huggingface_config: Any,
+) -> int:
+    """Returns the DSpark draft width this checkpoint was trained for.
+
+    The drafter ships in the checkpoint, so its block is the target config's
+    ``mtp_config``: one draft token per mask row, ``block_size - 1``.
+
+    Args:
+        speculative: The pipeline's speculative configuration.
+        target_huggingface_config: The target's Hugging Face config.
+        draft_huggingface_config: The draft's, unread: this drafter has no
+            config of its own.
+
+    Returns:
+        The width, which becomes ``num_speculative_tokens``.
+
+    Raises:
+        ValueError: If a different ``num_speculative_tokens`` is requested.
+    """
+    del draft_huggingface_config
+    width = Inkling2DSparkConfig.from_hf(
+        target_huggingface_config
+    ).num_speculative_tokens
+    requested = speculative.num_speculative_tokens
+    if requested is not None and requested != width:
+        raise ValueError(
+            f"Inkling 2's DSpark block drafts exactly {width} tokens per step,"
+            " one per mask row of its trained block; got"
+            f" num_speculative_tokens={requested}."
+        )
+    return width
+
 
 inkling2_arch = SupportedArchitecture(
     name="Inkling2ForConditionalGeneration_ModuleV3",
@@ -54,4 +98,22 @@ inkling2_arch = SupportedArchitecture(
     use_weight_rules=True,
     multi_gpu_supported=True,
     checkpoints_recurrent_state=True,
+    checkpoint_draft_width=inkling2_dspark_draft_width,
+    checkpoint_drafts={"dspark": "Inkling2DSparkDraftModel_ModuleV3"},
+    # The serving engine boots the fused graph by this name.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkInkling2ModuleV3"},
 )
+
+inkling2_loop_arch = replace(
+    inkling2_arch,
+    name="Inkling2LoopForConditionalGeneration_ModuleV3",
+    example_repo_ids=["thinkingmachines/Inkling-2-Mini"],
+    # The drafter taps the unlooped decoder's block outputs, and nothing has
+    # validated those taps against the loop's 48-visit walk. Naming no draft
+    # makes a speculative request fail to resolve instead of serving a drafter
+    # fed by the wrong activations.
+    checkpoint_drafts={},
+    spec_decode_graph_names={},
+)
+
+inkling2_dspark_draft_arch = make_inkling2_dspark_draft_arch(inkling2_arch)

@@ -26,8 +26,8 @@ import logging
 import os
 import time
 from bisect import bisect_left
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from itertools import chain
 
 from max._core.driver import _batch_copy_rows
@@ -46,6 +46,7 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedLookup,
     CompletedTransfer,
     KVConnector,
+    KVLoadAbandoned,
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
@@ -144,6 +145,13 @@ _PRESENCE_PROBE_AGE_S = 5.0
 # chunk and its offload take to land in the store. Past that the lease
 # decides, as it did without the probe.
 _PROBED_MISS_AGE_S = 1.0
+
+# A probed co-located run older than this no longer moves where a lease
+# starts its overlapped peer read. A run goes stale only through eviction,
+# and a run that shrank costs the lease one serial peer read from where the
+# co-located run really ends, so it is trusted longer than a miss. Set to
+# Mach's bound for the same run, engine-kv's PREFETCH_FRESH.
+_PROBED_RUN_AGE_S = 5.0
 
 ASYNC_PRESENCE_ENV_VAR = "MAX_SERVE_CONNECTOR_ASYNC_PRESENCE"
 """Whether DP balance pricing starts the connector's presence probe.
@@ -383,9 +391,10 @@ class _PendingProbe:
     wherever the request's device hit ends when it is read. Pricing reads
     it again while the request waits in its pool, and the request's first
     allocation reads it to skip the lease a miss would have found nothing
-    with. It is never waited on: a handle that has not answered, that
-    raised when polled, or that answered nothing reads as no answer, and
-    the lease decides what the connector holds as it did without a probe.
+    with, and hands the lease the co-located run it found. It is never
+    waited on: a handle that has not answered, that raised when polled, or
+    that answered nothing reads as no answer, and the lease decides what
+    the connector holds as it did without a probe.
     """
 
     _logged_failure = False
@@ -402,6 +411,7 @@ class _PendingProbe:
         self._handle = handle
         self._started_at = started_at
         self._answers: Sequence[Mapping[str, Sequence[bool]]] | None = None
+        self._runs: Sequence[Mapping[str, int]] | None = None
         self._answered = False
 
     def age_s(self) -> float:
@@ -420,6 +430,7 @@ class _PendingProbe:
             if self._handle.is_complete():
                 self._answers = self._handle.masks()
                 self._answered = True
+                self._runs = self._read_runs()
         except Exception:
             # Once per process, since a connector that fails one read fails
             # every request's, and the scheduler thread logs each.
@@ -445,6 +456,28 @@ class _PendingProbe:
         if not self.is_answered():
             return None
         return self._answers
+
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Returns the co-located run per replica and leaf, or ``None``."""
+        if not self.is_answered():
+            return None
+        return self._runs
+
+    def _read_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Reads the answered handle's co-located runs, ``None`` if it raises.
+
+        The runs only move where a lease starts its peer read, so a handle
+        that fails here keeps its masks.
+        """
+        try:
+            return self._handle.colocated_runs()
+        except Exception:
+            logger.debug(
+                "reading a %s presence answer's co-located runs failed",
+                self._connector.name,
+                exc_info=True,
+            )
+            return None
 
 
 class _PendingLookupTransfer:
@@ -895,6 +928,8 @@ class JengaBlockManager:
         # on every replica. While none exist nothing can be held, so the hold
         # scans are skipped, as with the option off.
         self._holders_outstanding = 0
+        # Blocks of abandoned loads, kept out of use for the life of the engine.
+        self._quarantined_blocks = 0
 
     # ============================================================================
     # Request Lifecycle APIs
@@ -1825,10 +1860,15 @@ class JengaBlockManager:
                 try:
                     complete = pending.event.is_complete()
                 except KVLoadFailed as failure:
-                    # Settled on the way to failing, so its pages can go back,
-                    # unpublished: they hold no valid KV.
-                    for block in pending.pinned_blocks():
-                        pool.free_block(block)
+                    # The pages hold no valid KV, so none is published. A copy
+                    # that settled on the way to failing lets them go back, and
+                    # one the connector abandoned may still write them, so they
+                    # keep their pin for good instead.
+                    if isinstance(failure, KVLoadAbandoned):
+                        self._quarantine(pool, pending.pinned_blocks(), failure)
+                    else:
+                        for block in pending.pinned_blocks():
+                            pool.free_block(block)
                     self._holders_outstanding -= bool(pending.publishes)
                     if pending.splice is not None:
                         self._fail_onload(pending.splice, failure)
@@ -2013,6 +2053,38 @@ class JengaBlockManager:
             self._longest_connector_hit(covered, covered_only=True),
             len(remaining),
         )
+
+    def _probed_colocated_runs(
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        first: int,
+        remaining: Sequence[bytes],
+    ) -> dict[str, int] | None:
+        """Returns the co-located run past the device hit the probe found.
+
+        Per leaf, counted from block ``first`` of the request's chain over
+        ``remaining``, as the lease asks. A leaf whose run ends at or before
+        ``first`` is left out, since the probe cannot say what the store holds
+        from there. ``None`` without a probe that answered runs, is younger
+        than ``_PROBED_RUN_AGE_S`` and was asked over this chain, or when no
+        leaf is left. The probe's masks need not have answered.
+        """
+        probe = self._pending_probes.get(ctx.request_id)
+        if probe is None or probe.age_s() >= _PROBED_RUN_AGE_S:
+            return None
+        answers = probe.colocated_runs()
+        if answers is None or replica_idx >= len(answers):
+            return None
+        last = first + len(remaining)
+        if probe.hashes[first:last] != list(remaining):
+            return None
+        runs = {
+            leaf_id: min(run - first, len(remaining))
+            for leaf_id, run in answers[replica_idx].items()
+            if leaf_id in self._cacheable_groups and run > first
+        }
+        return runs or None
 
     def _longest_connector_hit(
         self,
@@ -2212,8 +2284,9 @@ class JengaBlockManager:
         except (KVLoadRefused, KVLoadFailed) as err:
             # Evicted between the two calls, no room to stage the copy, or a
             # transport fault while posting or on this first poll; nothing is
-            # in flight into the rows either way, and nothing is spliced yet.
-            # There is no shorter hit to fall back to: a windowed leaf's
+            # spliced yet, and nothing is in flight into the rows unless the
+            # connector abandoned a copy it posted, whose rows it may still
+            # write. There is no shorter hit to fall back to: a windowed leaf's
             # remaining run no longer ends where the prefix does.
             if isinstance(err, KVLoadFailed):
                 self._skip_connector_after_failure(request_id, err)
@@ -2227,9 +2300,12 @@ class JengaBlockManager:
                 self._record_lookup_drop(
                     reason, "offered", aligned, hinted=self._routes_hint(hint)
                 )
-            for blocks in rows.values():
-                for block in blocks:
-                    pool.free_block(block)
+            if isinstance(err, KVLoadAbandoned):
+                self._quarantine(pool, chain.from_iterable(rows.values()), err)
+            else:
+                for blocks in rows.values():
+                    for block in blocks:
+                        pool.free_block(block)
             return miss
 
         # Every leaf's row has to be `aligned` long: the groups splice them onto
@@ -2407,6 +2483,38 @@ class JengaBlockManager:
         if state is not None:
             state.skips_connector = True
 
+    def _quarantine(
+        self,
+        pool: JengaBlockPool,
+        blocks: Iterable[LittleKVCacheBlock],
+        failure: KVLoadAbandoned,
+    ) -> None:
+        """Keeps the blocks of an abandoned load out of use for good.
+
+        They are never freed, so neither the free list nor eviction can hand
+        them to another request while the copy the connector gave up on may
+        still write them. Nothing reports when it stops, so they stay out for
+        the life of the engine. A null block pads a windowed leaf and no copy
+        writes it, so it goes back as usual and is not counted.
+        """
+        count = 0
+        for block in blocks:
+            if block.is_null:
+                pool.free_block(block)
+            else:
+                count += 1
+        self._quarantined_blocks += count
+        assert self._connector is not None
+        logger.warning(
+            "%s gave up on a load whose copy may still write its %d device "
+            "blocks, so they stay out of use for the life of the engine, "
+            "%d blocks in all: %s",
+            self._connector.name,
+            count,
+            self._quarantined_blocks,
+            failure,
+        )
+
     def _fail_onload(
         self, splice: _OnloadSplice, failure: KVLoadFailed
     ) -> None:
@@ -2512,7 +2620,7 @@ class JengaBlockManager:
         metrics = self._metrics
         if self._connector is not None:
             metrics += self._connector.metrics
-        return metrics
+        return self._with_levels(metrics)
 
     def take_metrics(self) -> KVCacheMetrics:
         """Reads and clears this manager's and its connector's metrics."""
@@ -2520,7 +2628,17 @@ class JengaBlockManager:
         self._metrics = KVCacheMetrics()
         if self._connector is not None:
             metrics += self._connector.take_metrics()
-        return metrics
+        return self._with_levels(metrics)
+
+    def _with_levels(self, metrics: KVCacheMetrics) -> KVCacheMetrics:
+        """Returns a copy of ``metrics`` carrying this manager's levels.
+
+        Levels are read fresh for every snapshot rather than kept in the
+        per-window deltas that ``take_metrics`` clears.
+        """
+        return replace(
+            metrics, connector_quarantined_blocks=self._quarantined_blocks
+        )
 
     @property
     def effective_max_seq_length(self) -> int | None:
@@ -3072,6 +3190,9 @@ class JengaBlockManager:
             # the reuse serves the chunk from the device hit alone.
             first = state.committed_idx // self._block_size + num_device_blocks
             probed = self._probed_run(ctx, replica_idx, first, remaining)
+            colocated_runs = self._probed_colocated_runs(
+                ctx, replica_idx, first, remaining
+            )
             probe = self._pending_probes.pop(ctx.request_id, None)
             # A probe that is the connector's lookup, read fresh enough to
             # trust, is loaded from rather than asked again, and a miss it
@@ -3099,7 +3220,11 @@ class JengaBlockManager:
             if probed == 0:
                 return True
             pending = self._start_connector_lookup(
-                ctx, remaining, replica_idx, first_block=num_device_blocks
+                ctx,
+                remaining,
+                replica_idx,
+                first_block=num_device_blocks,
+                colocated_runs=colocated_runs,
             )
             return pending.is_answered()
 
@@ -3172,11 +3297,13 @@ class JengaBlockManager:
         remaining: Sequence[bytes],
         replica_idx: int,
         first_block: int,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> _PendingLookup:
         """Starts a lookup over ``remaining`` for a later ``alloc`` to read.
 
         ``remaining`` begins ``first_block`` blocks past the committed index,
         and the lookup becomes the request's ``pending_lookup``.
+        ``colocated_runs`` is what :meth:`_probed_colocated_runs` found.
         """
         assert self._connector is not None
         committed_blocks = self._state_of(ctx).committed_idx // self._block_size
@@ -3202,6 +3329,7 @@ class JengaBlockManager:
                 replica_idx=replica_idx,
                 hint=ctx.dkv_cache_hint,
                 chain_start=committed_blocks + first_block,
+                colocated_runs=colocated_runs,
             ),
             first_block=first_block,
             started_at=started_at,

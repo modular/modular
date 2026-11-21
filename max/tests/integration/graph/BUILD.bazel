@@ -52,7 +52,6 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_pinned.py",
     "test_graph_telemetry.py",
     "test_invalidated_capture_eager.py",
-    "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_matmul_swiglu_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
@@ -64,6 +63,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_rowwise_reductions_fuzz.py",
     "test_runtime_source_notes.py",
     "test_nms.py",
+    "test_op_log_trace_names.py",
     "test_scatter.py",
     "test_side_stream_host_wait_capture.py",
     "test_splitk_matmul_device_graph.py",
@@ -114,7 +114,6 @@ _GRAPH_COMMON_DEPS = [
     "//max/python/max/nn/legacy",
     "//max/tests/integration/test_common:graph_utils",
     "//max/tests/integration/test_common:modular_graph_test",
-    requirement("gguf"),
     requirement("hypothesis"),
     requirement("numpy"),
     requirement("pillow"),
@@ -152,8 +151,6 @@ modular_py_test(
         "//conditions:default": [],
     }),
     ignore_extra_deps = [
-        # Optional dep of max.graph, used to test loading weights
-        requirement("gguf"),
         # Loaded automatically by pytest; not imported by any test source.
         requirement("pytest-asyncio"),
     ],
@@ -177,6 +174,7 @@ modular_py_test(
     },
     precompile_mefs = True,
     precompile_shards = {
+        "test_kda_ops.py": 4,
         "test_mamba2_fused_inputs.py": 4,
         "test_resize_linear.py": 4,
         "test_resize_nearest.py": 8,
@@ -613,6 +611,24 @@ modular_py_test(
     ],
 )
 
+# Op log output for a single-matmul graph: the compiler wraps the kernel
+# dispatch in an op-level scope and the kernel opens its own, so the two
+# LAUNCH lines must name the graph op and the kernel separately.
+modular_py_test(
+    name = "test_op_log_trace_names",
+    srcs = [
+        "conftest.py",
+        "test_op_log_trace_names.py",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+    ],
+)
+
 # Kept out of `cpu_tests` so it does not inherit "external-exclusive". Not
 # sharded: the file compiles all its graphs in one `load_all`, which each
 # shard would repeat.
@@ -727,6 +743,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/tests/integration/test_common:reduction_graphs",
         requirement("hypothesis"),
         requirement("numpy"),
@@ -1088,28 +1105,6 @@ modular_py_test(
         "//max/python/max/graph",
         requirement("hypothesis"),
         requirement("numpy"),
-    ],
-)
-
-modular_py_test(
-    name = "test_load_weights_no_deps",
-    srcs = [
-        "test_load_weights_no_deps.py",
-    ],
-    data = [
-        "//max/tests/tests/graph/testdata",
-    ],
-    env = {
-        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
-    },
-    ignore_extra_deps = [
-        # max.graph.weights -> buffer_utils imports max.engine; test sources do
-        # not reference engine directly, so pydeps treats this dep as extra.
-        "//max/python/max/engine",
-    ],
-    deps = [
-        "//max/python/max/engine",
-        "//max/python/max/graph",
     ],
 )
 

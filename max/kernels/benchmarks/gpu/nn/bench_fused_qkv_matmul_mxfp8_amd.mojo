@@ -333,6 +333,7 @@ def bench_shape[
 
     # ============ FUSED: one GEMM, scatter from the epilogue ============
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def fused_launch(
         ctx: DeviceContext[], iteration: Int
     ) raises {
@@ -436,6 +437,7 @@ def bench_shape[
 
     # ============ UNFUSED: one dense GEMM per output band ============
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def unfused_launch(
         ctx: DeviceContext[], iteration: Int
     ) raises {

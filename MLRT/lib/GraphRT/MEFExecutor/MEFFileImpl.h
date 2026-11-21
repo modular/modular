@@ -23,7 +23,7 @@
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 #include "llvm/ADT/ArrayRef.h"
 
-namespace M {
+namespace M::MLRT {
 class MEFInvokableImpl;
 
 /// This class is the implementation details behind the MEFFile::Open method,
@@ -109,6 +109,6 @@ public:
   MEFFileImpl *const owner;
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEFEXECUTOR_MEFFILEIMPL_H

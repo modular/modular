@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Mapping, Sequence
 from typing import cast
 
@@ -23,7 +24,6 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     EngramLookbackBatchState,
 )
@@ -32,6 +32,7 @@ from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
 )
 from max.pipelines.architectures.deepseekV41.replay import ReplayPlan
 from max.pipelines.context import TextContext
+from max.pipelines.lib.ep_initializer import EPInitializerLike
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -119,7 +120,10 @@ class DeepseekV41BatchProcessor(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
-        self._v41 = v41_config(runtime.pipeline_config.model.huggingface_config)
+        self._v41 = v41_config(
+            runtime.pipeline_config.model.huggingface_config,
+            artifact_export=runtime.pipeline_config.artifact_export,
+        )
         # A DSpark pairing's trunk pinned its tables as it built, and its
         # graph takes the extras a verify reads; serving the trunk alone
         # binds the tables after the load.
@@ -130,7 +134,7 @@ class DeepseekV41BatchProcessor(
             self._verifies = bool(config.dspark_trailing_inputs)
             self._image_token_id = config.image_token_id
         self._dp_degree = runtime.pipeline_config.model.data_parallel_degree
-        self._ep_comm_initializer: EPCommInitializer | None = None
+        self._ep_comm_initializer: EPInitializerLike | None = None
         self._lookback = EngramLookbackBatchState()
 
     def bind_engram(self, static_inputs: Mapping[str, Buffer]) -> None:
@@ -138,13 +142,13 @@ class DeepseekV41BatchProcessor(
         self._engram_static = dict(static_inputs)
 
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: EPInitializerLike | None
     ) -> None:
         """Wires the EP buffers the model's load created, if it did."""
         self._ep_comm_initializer = initializer
 
     def _ep_inputs(self) -> tuple[Buffer, ...]:
-        """The EP comm buffers, in ``EPBatchManager.input_types`` order."""
+        """The EP buffers, in the leaf order of the decoder's ``ep`` tree."""
         if self._ep_comm_initializer is None:
             return ()
         return tuple(self._ep_comm_initializer.model_inputs())
@@ -195,6 +199,8 @@ class DeepseekV41BatchProcessor(
         row_offsets: np.ndarray,
         return_n_logits: int = 1,
         data_parallel_splits: np.ndarray | None = None,
+        *,
+        artifact: bool = False,
     ) -> tuple[Buffer, ...]:
         device0 = self.runtime.devices[0]
         batch = len(context_batch)
@@ -240,7 +246,7 @@ class DeepseekV41BatchProcessor(
             name: Buffer.from_numpy(array).to(device0)
             for name, array in per_request.items()
         }
-        if self._v41.engram_lookback_history:
+        if self._v41.engram_lookback_history and not self._v41.artifact_export:
             buffers["engram_lookback_history"] = self._lookback.ensure_history(
                 capacity=self.runtime.max_global_batch_size,
                 batch=batch,
@@ -258,8 +264,13 @@ class DeepseekV41BatchProcessor(
                 if self._verifies
                 else 0,
                 splits=data_parallel_splits,
+                artifact=artifact,
             )
-        names = extra_input_names(self._v41, self._dp_degree)
+        names = extra_input_names(
+            self._v41,
+            self._dp_degree,
+            artifact=artifact,
+        )
         missing = [
             n
             for n in names
@@ -302,11 +313,45 @@ class DeepseekV41BatchProcessor(
         *,
         verify_width: int,
         splits: np.ndarray | None,
+        artifact: bool = False,
     ) -> None:
         """Stages the keep-everything plan the graph's replay inputs read."""
         device0 = self.runtime.devices[0]
         plan = keep_all_plan(context_batch, verify_width)
         boundaries = [0, len(context_batch)] if splits is None else list(splits)
+        if artifact:
+            # Each replica's share, on its own device: its indices count from
+            # its first merged row, its bounds from 0, and its longest kept
+            # span is an extent of zero bytes.
+            merged = np.cumsum(
+                [
+                    0,
+                    *(
+                        ctx.tokens.active_length + verify_width
+                        for ctx in context_batch
+                    ),
+                ]
+            )
+            buffers["replay.kept_skip"] = Buffer.from_numpy(plan.kept_skip).to(
+                device0
+            )
+            longest = plan.kept_longest(boundaries)
+            for r, (begin, end) in enumerate(itertools.pairwise(boundaries)):
+                device = (
+                    self.runtime.devices[r] if self._dp_degree > 1 else device0
+                )
+                kept = plan.kept_offsets[begin : end + 1].astype(np.int64)
+                rows = plan.kept_indices[kept[0] : kept[-1]] - merged[begin]
+                buffers[f"replay.row_indices.{r}"] = Buffer.from_numpy(
+                    rows.astype(np.int32)
+                ).to(device)
+                buffers[f"replay.kept_offsets.{r}"] = Buffer.from_numpy(
+                    (kept - kept[0]).astype(np.uint32)
+                ).to(device)
+                buffers[f"replay.longest_rows.{r}"] = Buffer.from_numpy(
+                    np.zeros(int(longest[r]), np.uint8)
+                ).to(device)
+            return
         buffers["replay.kept_offsets"] = Buffer.from_numpy(
             plan.kept_offsets
         ).to(device0)

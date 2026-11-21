@@ -214,7 +214,7 @@ def register_all_models() -> None:
         ),
         _LazyArch(
             "Gemma3ForConditionalGeneration_ModuleV3",
-            ".gemma3multimodal_modulev3",
+            ".gemma3_modulev3",
             "gemma3_multimodal_modulev3_arch",
         ),
         _LazyArch("Gemma4ForConditionalGeneration", ".gemma4", "gemma4_arch"),
@@ -291,6 +291,16 @@ def register_all_models() -> None:
             "Inkling2ForConditionalGeneration_ModuleV3",
             ".inkling2",
             "inkling2_arch",
+        ),
+        _LazyArch(
+            "Inkling2LoopForConditionalGeneration_ModuleV3",
+            ".inkling2",
+            "inkling2_loop_arch",
+        ),
+        _LazyArch(
+            "Inkling2DSparkDraftModel_ModuleV3",
+            ".inkling2",
+            "inkling2_dspark_draft_arch",
         ),
         _LazyArch(
             "InklingForConditionalGeneration", ".inkling", "inkling_arch"

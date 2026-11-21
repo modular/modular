@@ -26,6 +26,7 @@ from layout import Idx, TileTensor, coord, row_major
 from layout.owned_tensor import OwnedGPUTensor
 from layout.layout import Layout as TileLayout
 from layout.atoms.tmem import TMemLoad, TMemStore
+from layout.building_blocks import wait_issues
 from layout.tmem_engine import TMEM_NUM_LANES, TMemEngine, TMemStorage
 
 from max.gpu import WARP_SIZE, barrier, lane_id, warp_id
@@ -81,7 +82,7 @@ def tmem_atom_kernel[
             row[:, Idx[h * ATOM_COLS] : Idx[(h + 1) * ATOM_COLS]],
             regs[:, Idx[h * ATOM_COLS] : Idx[(h + 1) * ATOM_COLS]],
         )
-    TMemStore[.float32, ATOM_COLS].Completion.wait()
+    wait_issues[TMemStore[.float32, ATOM_COLS].Completion]()
 
     var back_owned = OwnedGPUTensor[.float32, .LOCAL](row_major[1, NUM_COLS]())
     var back = TileTensor(back_owned)
@@ -90,7 +91,7 @@ def tmem_atom_kernel[
             back[:, Idx[h * ATOM_COLS] : Idx[(h + 1) * ATOM_COLS]],
             row[:, Idx[h * ATOM_COLS] : Idx[(h + 1) * ATOM_COLS]],
         )
-    TMemLoad[.float32, ATOM_COLS].Completion.wait()
+    wait_issues[TMemLoad[.float32, ATOM_COLS].Completion]()
     comptime for c in range(NUM_COLS):
         output[unsafe_offset=lane * NUM_COLS + c] = back[Idx[0], Idx[c]]
 

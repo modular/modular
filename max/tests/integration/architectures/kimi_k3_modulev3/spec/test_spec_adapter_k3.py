@@ -23,10 +23,12 @@ Graph-level checks, ahead of the end-to-end pair in
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from _dspark_test_data import TINY_DRAFT_CONFIG
@@ -66,7 +68,15 @@ from max.pipelines.architectures.kimi_k3_modulev3.state_cache import (
     kda_state_regions,
     with_verify_ring,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.tokenizer import (
+    KimiK3VLTokenizer,
+)
 from max.pipelines.kv_cache import KVCacheConfig
+from max.pipelines.modeling.types import (
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
+from max.pipelines.request import RequestID
 from max.pipelines.speculative import SpeculativeConfig
 from max.pipelines.speculative import spec_adapters as spec_adapters_registry
 from max.pipelines.speculative.block_driver import BlockBatch
@@ -148,6 +158,55 @@ def test_the_registry_routes_the_modulev3_target_to_its_adapter() -> None:
     assert adapter.primary_kv == ATTN_CACHE_KEY
     assert adapter.verify is ADAPTER.verify
     assert adapter.block_proposer is ADAPTER.block_proposer
+
+
+def test_dspark_omits_vision_inputs_for_a_vision_checkpoint() -> None:
+    assert not spec_adapters_registry.takes_vision_inputs(
+        "KimiK3ForConditionalGeneration_ModuleV3",
+        "dspark",
+        SimpleNamespace(vision_config=SimpleNamespace(patch_size=14)),
+    )
+
+
+@pytest.mark.parametrize(
+    "dspark, image", [(True, True), (True, False), (False, True)]
+)
+def test_image_requests_are_rejected_only_for_dspark(
+    dspark: bool, image: bool
+) -> None:
+    tokenizer = object.__new__(KimiK3VLTokenizer)
+    tokenizer._speculative_config = (
+        SpeculativeConfig(speculative_method="dspark") if dspark else None
+    )
+    request = TextGenerationRequest(
+        request_id=RequestID(),
+        model_name="test",
+        messages=[
+            TextGenerationRequestMessage.model_validate(
+                {
+                    "role": "user",
+                    "content": [{"type": "image"}] if image else "Hello",
+                }
+            )
+        ],
+        images=[b"unopened image"] if image else [],
+    )
+    with patch(
+        "max.pipelines.architectures.kimi_k3_modulev3.tokenizer."
+        "run_with_default_executor",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("image preparation reached"),
+    ) as prepare:
+        if dspark and image:
+            with pytest.raises(
+                ValueError, match="DSpark does not support image"
+            ):
+                asyncio.run(tokenizer.new_context(request))
+            prepare.assert_not_awaited()
+        else:
+            with pytest.raises(RuntimeError, match="image preparation reached"):
+                asyncio.run(tokenizer.new_context(request))
+            prepare.assert_awaited_once()
 
 
 def test_the_verify_binds_the_buffers_the_model_mutates() -> None:

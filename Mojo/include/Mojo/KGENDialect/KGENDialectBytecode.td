@@ -76,7 +76,6 @@ def StructType : DialectType<(type
   TypedAttr:$elementTypesVariadic,
   TypedAttr:$isMemoryOnly,
   TypedAttr:$minAlignment,
-  Bool:$isParamPack,
   EnumAttr<"::M::KGEN::StructDomain">:$domain
 )>;
 
@@ -246,7 +245,8 @@ def WrappedTypeParamAttr : DialectAttribute<(attr
 def BindParamsAttr : DialectAttribute<(attr
   ConcreteAttribute<"TypedAttr">:$generator,
   ConcreteAttribute<"ParamsBindingArrayAttr">:$params,
-  ConcreteOptionalAttribute<"DenseBoolArrayAttr">:$discharged
+  ConcreteOptionalAttribute<"DenseBoolArrayAttr">:$discharged,
+  Type:$type
 )> {
   let cBuilder = "BindParamsAttr::getFromBytecode($_args)";
 }

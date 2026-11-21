@@ -25,7 +25,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/MathExtras.h"
 
-namespace M {
+namespace M::MLRT {
 
 /// This helper class implements low level binary parsing logic for a byte
 /// range.  The general protocol for failable parsing routines is that they
@@ -170,7 +170,7 @@ public:
     while (uintptr_t(contents.data()) & (uintptr_t(alignment) - 1)) {
       if (parseByte(padding))
         return true;
-      if (padding != MEF::kAlignmentByte)
+      if (padding != MLRT::MEF::kAlignmentByte)
         return emitError("expected alignment byte, got '" +
                          Twine(int(padding)) + "' instead");
     }
@@ -234,7 +234,7 @@ public:
     size_t length;
     if (parseByte(sectionID) || parseVBR(length))
       return true;
-    if (sectionID == (unsigned)MEF::SectionID::kInvalid)
+    if (sectionID == (unsigned)MLRT::MEF::SectionID::kInvalid)
       return emitError("invalid section ID");
 
     // The low bit of the size is a boolean indicating whether there is an
@@ -257,6 +257,6 @@ private:
   llvm::unique_function<void(Error) const> errorFunction;
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEF_MEFREADER_H

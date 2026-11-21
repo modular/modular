@@ -20,10 +20,12 @@ from typing import Any
 
 import aiohttp
 import pytest
+from max.benchmark.benchmark_serving import _build_session
 from max.benchmark.benchmark_shared.backend_names import Backend
 from max.benchmark.benchmark_shared.config import (
     PIXEL_GENERATION_TASKS,
     BenchmarkTask,
+    ServingBenchmarkConfig,
     get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.pixel_synthetic import (
@@ -32,18 +34,83 @@ from max.benchmark.benchmark_shared.datasets.pixel_synthetic import (
 from max.benchmark.benchmark_shared.datasets.types import (
     PixelGenerationImageOptions,
     PixelGenerationSampledRequest,
+    RequestSamples,
 )
 from max.benchmark.benchmark_shared.request import (
+    OpenResponsesRequestDriver,
     PixelGenerationRequestFuncInput,
     _add_input_reference,
     _build_pixel_generation_payload,
     _build_sglang_video_form,
+    get_request_driver_class,
 )
+from max.benchmark.benchmark_shared.single_turn import (
+    build_single_turn_request_input,
+)
+from tests.benchmark.benchmark_fakes import unused_session
 
 
 @pytest.mark.parametrize("task", ["text-to-video", "image-to-video"])
 def test_video_task_is_a_pixel_generation_task(task: str) -> None:
     assert task in PIXEL_GENERATION_TASKS
+
+
+@pytest.mark.parametrize("task", ["text-to-video", "image-to-video"])
+def test_mach_video_session_routes_sampled_payload_to_responses(
+    task: BenchmarkTask,
+) -> None:
+    args = ServingBenchmarkConfig(
+        backend="mach",
+        benchmark_task=task,
+        model="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        dataset_name="synthetic-pixel",
+        num_prompts=1,
+        image_width=832,
+        image_height=480,
+        image_steps=50,
+        image_guidance_scale=4.0,
+        num_frames=81,
+    )
+    session = _build_session(args)
+    assert session.endpoint == "/v1/responses"
+    assert session.api_url == "http://localhost:8000/v1/responses"
+    driver_class = get_request_driver_class(session.api_url, task=task)
+    assert driver_class is OpenResponsesRequestDriver
+    driver = driver_class(session=unused_session(), backend=args.backend)
+    assert driver.backend == "mach"
+    assert isinstance(session.samples, RequestSamples)
+    (sample,) = session.samples.requests
+    assert isinstance(sample, PixelGenerationSampledRequest)
+    func_input = build_single_turn_request_input(
+        benchmark_task=task,
+        request=sample,
+        model_id=session.model_id,
+        lora_id=None,
+        api_url=session.api_url,
+        sampling=args.sampling,
+        max_output_len=None,
+    )
+    assert isinstance(func_input, PixelGenerationRequestFuncInput)
+    payload = _build_pixel_generation_payload(func_input)
+    assert payload["provider_options"] == {
+        "video": {
+            "width": 832,
+            "height": 480,
+            "steps": 50,
+            "guidance_scale": 4.0,
+            "num_frames": 81,
+        }
+    }
+    if task == "image-to-video":
+        content = payload["input"][0]["content"]
+        assert content[0]["type"] == "input_image"
+        assert content[0]["image_url"].startswith("data:image/png;base64,")
+        assert content[1] == {
+            "type": "input_text",
+            "text": sample.prompt_formatted,
+        }
+    else:
+        assert payload["input"] == sample.prompt_formatted
 
 
 def test_synthetic_pixel_dataset_propagates_num_frames() -> None:

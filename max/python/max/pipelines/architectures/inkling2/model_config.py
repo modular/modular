@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -66,6 +66,85 @@ class ExpertFormat(Enum):
 
 
 @dataclass(kw_only=True, frozen=True)
+class Inkling2LoopConfig:
+    """How a looped checkpoint revisits its core layers.
+
+    The looped checkpoints declare ``loop_config`` in their ``text_config``;
+    the unlooped checkpoint declares none and runs every layer once.
+    """
+
+    core_start: int
+    core_end: int
+    """One past the last core layer."""
+
+    num_passes: int
+    gate_rank: int
+    """The rank of the message controllers' low-rank state."""
+
+    is_varloop: bool
+    """Whether the checkpoint varies its pass count at run time."""
+
+    def __post_init__(self) -> None:
+        """Rejects a loop the core layer range cannot describe."""
+        if not 0 <= self.core_start < self.core_end:
+            raise ValueError(
+                "loop_config declares core layers "
+                f"[{self.core_start}, {self.core_end}), which is empty; "
+                "core_start must precede core_end."
+            )
+        if self.num_passes < 1:
+            raise ValueError(
+                "loop_config declares num_passes="
+                f"{self.num_passes}; a looped layer runs at least once."
+            )
+        if self.gate_rank < 1:
+            raise ValueError(
+                "loop_config declares gate_rank="
+                f"{self.gate_rank}; the message controllers need a rank."
+            )
+        if self.is_varloop:
+            raise ValueError(
+                "loop_config declares is_varloop=true, which varies the number"
+                " of passes at run time. The released looped checkpoints run a"
+                " fixed num_passes, and the decoder sizes its caches from that"
+                " count, so a varloop checkpoint cannot be served here."
+            )
+
+    @classmethod
+    def from_hf(
+        cls, loop_config: Mapping[str, Any] | PretrainedConfig
+    ) -> Inkling2LoopConfig:
+        """Reads the checkpoint's ``text_config.loop_config``.
+
+        A released checkpoint carries the block as a plain mapping, but a
+        transformers release that parses this family itself would hand over a
+        config object, so both are read.
+        """
+
+        def field(name: str) -> Any:
+            if isinstance(loop_config, Mapping):
+                return loop_config[name]
+            return getattr(loop_config, name)
+
+        return cls(
+            core_start=int(field("core_start")),
+            core_end=int(field("core_end")),
+            num_passes=int(field("num_passes")),
+            gate_rank=int(field("gate_rank")),
+            is_varloop=bool(field("is_varloop")),
+        )
+
+    @property
+    def core_layer_ids(self) -> tuple[int, ...]:
+        """The layers the core revisits, in order."""
+        return tuple(range(self.core_start, self.core_end))
+
+    def is_core_layer(self, layer_idx: int) -> bool:
+        """Whether this layer is inside the loop core."""
+        return self.core_start <= layer_idx < self.core_end
+
+
+@dataclass(kw_only=True, frozen=True)
 class Inkling2TextConfig:
     """Text-backbone config, parsed from the checkpoint's ``text_config``."""
 
@@ -97,6 +176,9 @@ class Inkling2TextConfig:
     sconv_kernel_size: int
     local_layer_ids: tuple[int, ...]
 
+    loop_config: Inkling2LoopConfig | None = None
+    """The loop the checkpoint declares, or ``None`` for an unlooped one."""
+
     n_layers_per_attn_res_block: int
     attn_res_normalize_values: bool
 
@@ -110,15 +192,63 @@ class Inkling2TextConfig:
     final_logit_softcapping: float
     model_max_length: int
 
-    @property
-    def num_local_layers(self) -> int:
-        """How many layers use sliding-window attention."""
-        return len(self.local_layer_ids)
+    def __post_init__(self) -> None:
+        """Rejects a loop the decoder cannot walk."""
+        loop = self.loop_config
+        if loop is None:
+            return
+        if loop.core_end > self.num_hidden_layers:
+            raise ValueError(
+                f"loop_config declares core layers [{loop.core_start}, "
+                f"{loop.core_end}) but the checkpoint has "
+                f"{self.num_hidden_layers} layers. The visit list and both "
+                "caches are sized from the core, so the loop has to name "
+                "layers the decoder has."
+            )
+        if not self.is_block_boundary(loop.core_start):
+            raise ValueError(
+                f"loop_config starts its core at layer {loop.core_start}, "
+                "which is inside an attn_res block of "
+                f"{self.n_layers_per_attn_res_block} layers. A pass reads the "
+                "blocks the prelude left behind, so the core starts where one "
+                "of them begins."
+            )
+
+    def visit_layer_ids(self) -> tuple[int, ...]:
+        """The layer each visit executes, in the order they run.
+
+        A looped core layer runs several times and every visit keeps its own
+        attention KV and convolution state, so both caches are sized by visits
+        rather than by layers. The passes are whole passes over the core, not a
+        layer's repeats in a row: the prelude runs once, then each pass runs
+        the whole core, then the coda runs once.
+        """
+        if self.loop_config is None:
+            return tuple(range(self.num_hidden_layers))
+        loop = self.loop_config
+        return (
+            *range(loop.core_start),
+            *(
+                layer_idx
+                for _ in range(loop.num_passes)
+                for layer_idx in loop.core_layer_ids
+            ),
+            *range(loop.core_end, self.num_hidden_layers),
+        )
 
     @property
-    def num_global_layers(self) -> int:
-        """How many layers attend over the whole sequence."""
-        return self.num_hidden_layers - self.num_local_layers
+    def num_local_visits(self) -> int:
+        """How many sliding-window visits the cache holds."""
+        return sum(
+            1
+            for layer_idx in self.visit_layer_ids()
+            if self.is_local_attention(layer_idx)
+        )
+
+    @property
+    def num_global_visits(self) -> int:
+        """How many whole-sequence visits the cache holds."""
+        return len(self.visit_layer_ids()) - self.num_local_visits
 
     def is_local_attention(self, layer_idx: int) -> bool:
         """Whether this layer uses sliding-window attention."""
@@ -163,6 +293,7 @@ class Inkling2TextConfig:
     @classmethod
     def from_hf(cls, text_config: PretrainedConfig) -> Inkling2TextConfig:
         """Reads the checkpoint's ``text_config``."""
+        loop_config = getattr(text_config, "loop_config", None)
         return cls(
             hidden_size=text_config.hidden_size,
             num_hidden_layers=text_config.num_hidden_layers,
@@ -184,6 +315,11 @@ class Inkling2TextConfig:
             rel_l2_clip_threshold=text_config.rel_l2_clip_threshold,
             sconv_kernel_size=text_config.sconv_kernel_size,
             local_layer_ids=tuple(text_config.local_layer_ids),
+            loop_config=(
+                Inkling2LoopConfig.from_hf(loop_config)
+                if loop_config is not None
+                else None
+            ),
             n_layers_per_attn_res_block=text_config.n_layers_per_attn_res_block,
             attn_res_normalize_values=text_config.attn_res_normalize_values,
             n_routed_experts=text_config.n_routed_experts,
@@ -262,8 +398,18 @@ class Inkling2Config(ArchConfigWithKVCache, DeploymentConfig):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
-        """One cache per attention flavor, plus the conv state."""
+        """One cache per attention flavor, plus the conv state.
+
+        A speculative deployment sizes both for the draft tokens one verify
+        step scores and may reject.
+        """
         text_config = Inkling2TextConfig.from_hf(huggingface_config.text_config)
+        speculative = pipeline_config.speculative
+        num_draft_tokens = (
+            speculative.num_speculative_tokens or 0
+            if speculative is not None
+            else 0
+        )
 
         def params_for(
             n_kv_heads: int,
@@ -278,7 +424,10 @@ class Inkling2Config(ArchConfigWithKVCache, DeploymentConfig):
                 num_layers=num_layers,
                 devices=devices,
                 data_parallel_degree=pipeline_config.model.data_parallel_degree,
-                num_draft_tokens=0,
+                speculative_method=speculative.speculative_method
+                if speculative is not None
+                else None,
+                num_draft_tokens=num_draft_tokens,
                 window_size=window_size,
             )
 
@@ -287,19 +436,21 @@ class Inkling2Config(ArchConfigWithKVCache, DeploymentConfig):
                 GLOBAL_ATTENTION: params_for(
                     text_config.num_key_value_heads,
                     text_config.head_dim,
-                    text_config.num_global_layers,
+                    text_config.num_global_visits,
                 ),
                 LOCAL_ATTENTION: params_for(
                     text_config.swa_num_key_value_heads,
                     text_config.swa_head_dim,
-                    text_config.num_local_layers,
+                    text_config.num_local_visits,
                     window_size=text_config.sliding_window_size,
                 ),
             }
         )
         state = RecurrentStateParams(
             regions=ConvStateLayout.from_config(
-                text_config, tp_size=len(devices)
+                text_config,
+                tp_size=len(devices),
+                max_rollback=num_draft_tokens,
             ).regions(),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
@@ -401,3 +552,24 @@ class Inkling2Config(ArchConfigWithKVCache, DeploymentConfig):
             by_dtype[state_dict[f"layers.{i}.mlp.experts.w13_weight"].dtype]
             for i in range(self.text_config.num_hidden_layers)
         )
+
+        # The loop is switched on by the config alone, so a checkpoint whose
+        # two halves disagree would serve the wrong graph rather than fail:
+        # the controllers would go unused, or the passes would mix nothing.
+        ships_controllers = any(
+            name.endswith("controllers.attn.down_weight") for name in state_dict
+        )
+        if ships_controllers != (self.text_config.loop_config is not None):
+            raise ValueError(
+                "The checkpoint's weights and its text config disagree about "
+                "the loop: "
+                + (
+                    "the weights ship message controllers but the config "
+                    "declares no loop_config, so the core layers would run "
+                    "once and every controller would go unused."
+                    if ships_controllers
+                    else "the config declares loop_config but no controller "
+                    "weights ship, so the passes would mix nothing."
+                )
+                + " Fix the checkpoint's config.json, or drop the controllers."
+            )

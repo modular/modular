@@ -14,39 +14,28 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any, ClassVar
 
-from max.driver import Device, is_virtual_device_mode
+from max import tree
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
+from max.graph.weights import SafetensorWeights
 from max.nn.common_layers.mesh_axis import DP, TP
-from max.nn.ep_config import EPConfig
+from max.nn.ep import init as ep_init
 from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.outputs import ReturnLogits
-from max.pipelines.lib import (
-    KVCacheConfig,
-    ModelInputs,
-    ModelOutputs,
-    PipelineConfig,
-)
+from max.pipelines.lib import ModelInputs, ModelOutputs
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
-from max.pipelines.lib.memory_plan import MemoryPlan
-from max.pipelines.lib.registration_runtime import ModuleRuntime
-from max.tensor import default_device
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelInputs,
+    ModuleRuntime,
+)
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV2_modulev3.model import DeepseekV2Model
 from .batch_processor import DeepseekV3ModuleV3BatchProcessor
-from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
-
-logger = logging.getLogger("max.pipelines")
 
 
 class DeepseekV3Model(DeepseekV2Model):
@@ -56,34 +45,6 @@ class DeepseekV3Model(DeepseekV2Model):
     batch_processor_cls: ClassVar[type[DeepseekV3ModuleV3BatchProcessor]] = (
         DeepseekV3ModuleV3BatchProcessor
     )
-
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        *,
-        memory_plan: MemoryPlan,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        max_batch_size: int = 1,
-    ) -> None:
-        # Capture the session so _init_distributed_runtime() can initialize EP
-        # communication, and default the EP buffers so execute() works without EP.
-        self.session = session
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter=adapter,
-            return_logits=return_logits,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
-        )
 
     def _module_runtime(self) -> ModuleRuntime:
         """Returns the deployment the config is completed with."""
@@ -102,15 +63,6 @@ class DeepseekV3Model(DeepseekV2Model):
             ep_size=runtime.ep_size,
             ep_use_allreduce=runtime.ep_use_allreduce,
         )
-
-    def _build_ep_config(self, model_config: DeepseekV3Config) -> EPConfig:
-        """Build the expert-parallel config from the pipeline ep_size."""
-        if self.pipeline_config.runtime.ep_fuse_ffn_combine_send:
-            logger.warning(
-                "ep_fuse_ffn_combine_send is not implemented on ModuleV3; the"
-                " MoE FFN output is materialized before the combine."
-            )
-        return model_config.expert_parallel_config(self._module_runtime())
 
     @classmethod
     def get_kv_params(
@@ -168,46 +120,27 @@ class DeepseekV3Model(DeepseekV2Model):
     @override
     def _init_distributed_runtime(self, model_config: Any) -> None:
         super()._init_distributed_runtime(model_config)
-        self._ep_batch_manager = None
-
-        ep_size = self.pipeline_config.runtime.ep_size
-        if ep_size > 1:
-            # Expert parallelism: ep_size > 1 distributes routed experts across
-            # the devices via the NVSHMEM EPBatchManager. The communication
-            # buffers are allocated once here and threaded through the graph as
-            # extra inputs.
-            if ep_size % len(self.devices) != 0:
-                raise ValueError(
-                    f"ep_size={ep_size} must be divisible by the number of"
-                    f" GPUs on this node ({len(self.devices)}); for"
-                    f" single-node set ep_size={len(self.devices)}."
+        if self.pipeline_config.runtime.ep_size > 1:
+            # The decoder takes the exchange's buffers after its other
+            # inputs, flat in the order of the registered decoder's ``ep``.
+            ep, self.ep_comm_initializer, modules = (
+                ExpertParallelInputs().initialize(
+                    self._session,
+                    model_config.expert_parallel_config(self._module_runtime()),
+                    model_config.mesh,
                 )
-            ep_config = self._build_ep_config(model_config)
-            model_config.ep_config = ep_config
-            self._ep_batch_manager = EPBatchManager(ep_config)
-            self._modulev3_extra_input_types = (
-                self._ep_batch_manager.input_types()
             )
-            if not is_virtual_device_mode():
-                self.ep_comm_initializer = self._init_ep_comm(
-                    self.session, ep_config
-                )
-                ep_config.node_id = self.ep_comm_initializer.config.node_id
-
+            self.compiled_modules = {**self.compiled_modules, **modules}
+            model_config.ep_config = ep
+            self._modulev3_extra_input_types = tree.leaves(
+                ep_init.payload_types(ep)
+            )
         # Hybrid HiSparse (a partly host-resident MLA latent) appends its three
-        # input groups after the EP buffers; with EP off they are the only
-        # extra inputs. Only the V3.2 config family carries the field.
+        # input groups after the EP buffers. Only the V3.2 config family
+        # carries the field.
         if getattr(model_config, "hisparse", None) is not None:
             self._modulev3_extra_input_types.extend(
                 model_config.hisparse_input_types()
-            )
-
-    @override
-    def _instantiate_module(self, model_config: Any) -> Any:
-        assert model_config.mesh is not None
-        with default_device(model_config.mesh):
-            return DeepseekV3(
-                model_config, self.kv_params, self._ep_batch_manager
             )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:

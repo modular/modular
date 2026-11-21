@@ -23,18 +23,19 @@ from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
+    CoordLike,
     Idx,
     ImmTileTensor,
     MutTileTensor,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from std.memory import unsafe_memcpy
 from std.sys import simd_width_of, size_of
 
 from std.utils import IndexList, StaticTuple
+from std.utils.coord import DynamicCoord
 
 
 struct CoordinateTransformationMode(ImplicitlyCopyable):
@@ -352,18 +353,20 @@ def resize_nearest_neighbor[
                 def nn_shift[
                     simd_width: Int, alignment: Int = 1
                 ](out_coords: Coord) {var}:
-                    var in_coords = IndexList[input.rank](0)
+                    var in_coords = DynamicCoord[DType.int, input.rank]()
 
                     comptime for i in range(last):
-                        in_coords[i] = Int(out_coords[i]) >> shift_scales[i]
+                        in_coords.replace_dynamic[i](
+                            Int(out_coords[i]) >> shift_scales[i]
+                        )
 
                     var out_last = Int(out_coords[last])
                     var values = SIMD[dtype, simd_width]()
                     comptime for lane in range(simd_width):
-                        in_coords[last] = (out_last + lane) >> shift_scales[
-                            last
-                        ]
-                        values[lane] = input.load[width=1](Coord(in_coords))
+                        in_coords.replace_dynamic[last](
+                            (out_last + lane) >> shift_scales[last]
+                        )
+                        values[lane] = input.load[width=1](in_coords)
 
                     output.store[alignment=alignment](out_coords, values)
 
@@ -373,16 +376,20 @@ def resize_nearest_neighbor[
                 def nn_div[
                     simd_width: Int, alignment: Int = 1
                 ](out_coords: Coord) {var}:
-                    var in_coords = IndexList[input.rank](0)
+                    var in_coords = DynamicCoord[DType.int, input.rank]()
 
                     comptime for i in range(last):
-                        in_coords[i] = Int(out_coords[i]) // int_scales[i]
+                        in_coords.replace_dynamic[i](
+                            Int(out_coords[i]) // int_scales[i]
+                        )
 
                     var out_last = Int(out_coords[last])
                     var values = SIMD[dtype, simd_width]()
                     comptime for lane in range(simd_width):
-                        in_coords[last] = (out_last + lane) // int_scales[last]
-                        values[lane] = input.load[width=1](Coord(in_coords))
+                        in_coords.replace_dynamic[last](
+                            (out_last + lane) // int_scales[last]
+                        )
+                        values[lane] = input.load[width=1](in_coords)
 
                     output.store[alignment=alignment](out_coords, values)
 
@@ -430,30 +437,34 @@ def resize_nearest_neighbor[
         simd_width: Int, alignment: Int = 1
     ](out_coords: Coord) {var}:
         comptime last = input.rank - 1
-        var in_coords = IndexList[input.rank](0)
+        var in_coords = DynamicCoord[DType.int, input.rank]()
 
         comptime for i in range(last):
-            in_coords[i] = _nearest_source_index[
-                coordinate_transformation_mode, round_mode
-            ](
-                Int(out_coords[i]),
-                Int(input.dim(i)),
-                Int(output.dim(i)),
-                scales[i],
+            in_coords.replace_dynamic[i](
+                _nearest_source_index[
+                    coordinate_transformation_mode, round_mode
+                ](
+                    Int(out_coords[i]),
+                    Int(input.dim(i)),
+                    Int(output.dim(i)),
+                    scales[i],
+                )
             )
 
         var out_last = Int(out_coords[last])
         var values = SIMD[dtype, simd_width]()
         comptime for lane in range(simd_width):
-            in_coords[last] = _nearest_source_index[
-                coordinate_transformation_mode, round_mode
-            ](
-                out_last + lane,
-                Int(input.dim(last)),
-                Int(output.dim(last)),
-                scales[last],
+            in_coords.replace_dynamic[last](
+                _nearest_source_index[
+                    coordinate_transformation_mode, round_mode
+                ](
+                    out_last + lane,
+                    Int(input.dim(last)),
+                    Int(output.dim(last)),
+                    scales[last],
+                )
             )
-            values[lane] = input.load[width=1](Coord(in_coords))
+            values[lane] = input.load[width=1](in_coords)
 
         output.store[alignment=alignment](out_coords, values)
 
@@ -508,15 +519,26 @@ def cubic_filter(x: Float32, a: Float32) -> Float32:
 
 
 @inline(.always)
+def _coord_to_array[
+    element_types: TypeList[Trait=CoordLike, ...]
+](coords: Coord[*element_types]) -> Array[Int, coords.rank]:
+    var res = Array[Int, coords.rank](fill=0)
+    comptime for i in range(coords.rank):
+        res[i] = Int(coords[i])
+    return res^
+
+
+@inline(.always)
 def interpolate_point_1d[
     InputLayoutType: TensorLayout,
+    rank: Int,
     //,
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
     dtype: DType,
 ](
     dim: Int,
-    out_coords: IndexList[InputLayoutType.rank],
+    out_coords: Array[Int, rank],
     scale: Float32,
     input: TileTensor[
         mut=False, dtype, InputLayoutType, address_space=.GENERIC, ...
@@ -527,6 +549,7 @@ def interpolate_point_1d[
 
     Parameters:
         InputLayoutType: The layout type of the input tensor.
+        rank: The rank of the input and output tensors.
         coordinate_transformation_mode: The coordinate transformation mode to apply.
         antialias: Whether to stretch the filter to antialias when downsampling.
         dtype: The element type of the input and output tensors.
@@ -548,7 +571,7 @@ def interpolate_point_1d[
     var filter_scale = 1 / scale if antialias and scale < 1 else 1
     var xmin = max(Int(center - filter_scale + 0.5), 0)
     var xmax = min(Int(input.dim(dim)), Int(center + filter_scale + 0.5))
-    var in_coords = out_coords
+    var in_coords = out_coords.copy()
     # Accumulate in float32 so 16-bit dtypes don't round every tap.
     comptime acc_dtype = DType.float64 if dtype == .float64 else DType.float32
     var sum = Scalar[acc_dtype](0)
@@ -599,10 +622,10 @@ def resize_linear[
         )
     var scales = StaticTuple[Float32, input.rank]()
     var resize_dims = List[Int](capacity=input.rank)
-    var tmp_dims = IndexList[input.rank](0)
+    var tmp_size = 1
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling
-        tmp_dims[i] = max(Int(input.dim(i)), Int(output.dim(i)))
+        tmp_size *= max(Int(input.dim(i)), Int(output.dim(i)))
         scales[i] = _axis_scale(Int(input.dim(i)), Int(output.dim(i)))
         if Int(input.dim(i)) != Int(output.dim(i)):
             resize_dims.append(i)
@@ -620,20 +643,16 @@ def resize_linear[
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
         out_ptr = output.ptr.unsafe_origin_cast[MutAnyOrigin]()
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
-        tmp_buffer1 = List[Scalar[dtype]](
-            unsafe_uninit_length=tmp_dims.flattened_length()
-        )
+        tmp_buffer1 = List[Scalar[dtype]](unsafe_uninit_length=tmp_size)
         out_ptr = tmp_buffer1.unsafe_ptr().as_unsafe_any_origin()
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
-        tmp_buffer2 = List[Scalar[dtype]](
-            unsafe_uninit_length=tmp_dims.flattened_length()
-        )
-    var in_shape = coord_to_index_list(input.layout.shape_coord())
-    var out_shape = coord_to_index_list(input.layout.shape_coord())
+        tmp_buffer2 = List[Scalar[dtype]](unsafe_uninit_length=tmp_size)
+    var in_shape = _coord_to_array(input.layout.shape_coord())
+    var out_shape = in_shape.copy()
     # interpolation is separable, so perform 1d interpolation across each
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
@@ -647,8 +666,10 @@ def resize_linear[
 
         var num_rows = out_buf.num_elements() // out_shape[resize_dim]
         for row_idx in range(num_rows):
-            var coords = _get_nd_indices_from_flat_index(
-                row_idx, out_shape, resize_dim
+            var coords = _coord_to_array(
+                _get_nd_indices_from_flat_index(
+                    row_idx, Coord(out_shape), resize_dim
+                )
             )
             for i in range(out_shape[resize_dim]):
                 coords[resize_dim] = i
@@ -658,13 +679,13 @@ def resize_linear[
                     antialias,
                 ](
                     resize_dim,
-                    rebind[IndexList[in_buf.rank]](coords),
+                    coords,
                     scales[resize_dim],
                     in_buf,
                     out_buf,
                 )
 
-        in_shape = out_shape
+        in_shape = out_shape.copy()
         in_ptr = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
 
         # Form both pointers before the ternary: CheckLifetimes rejects an
@@ -707,9 +728,9 @@ def resize_linear_gpu[
     _check_resize_shapes(input, output)
     comptime rank = input.rank
 
-    var in_shape = coord_to_index_list(input.layout.shape_coord())
-    var out_shape = in_shape
-    var final_shape = coord_to_index_list(output.layout.shape_coord())
+    var in_shape = _coord_to_array(input.layout.shape_coord())
+    var out_shape = in_shape.copy()
+    var final_shape = _coord_to_array(output.layout.shape_coord())
     var scales = StaticTuple[Float32, rank]()
     var resize_dims = List[Int](capacity=rank)
     for i in range(rank):
@@ -734,7 +755,7 @@ def resize_linear_gpu[
         var out_ptr = output.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         if dim_idx != len(resize_dims) - 1:
             var buffer = ctx.enqueue_create_buffer[dtype](
-                out_shape.flattened_length()
+                Int(Coord(out_shape).product())
             )
             out_ptr = buffer.unsafe_ptr().unsafe_origin_cast[
                 MutUntrackedOrigin
@@ -754,7 +775,7 @@ def resize_linear_gpu[
                 antialias,
             ](
                 resize_dim,
-                rebind[IndexList[in_buf.rank]](coord_to_index_list(coords)),
+                _coord_to_array(coords),
                 scale,
                 in_buf,
                 out_buf,
@@ -762,7 +783,7 @@ def resize_linear_gpu[
 
         elementwise[1](interpolate, out_buf.layout.shape_coord(), ctx)
 
-        in_shape = out_shape
+        in_shape = out_shape.copy()
         in_ptr = out_ptr
 
     _ = scratch^

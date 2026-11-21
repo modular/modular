@@ -1115,6 +1115,7 @@ def run_nvfp4_vs_fp8[
 
     comptime if perf_iters > 0:
 
+        @__allow_legacy_any_origin_fields
         def _launch_fp8(ctx: DeviceContext[]) raises {imm}:
             _decode[num_heads, use_causal, skip=skip, has_lengths=has_lengths](
                 kv_fp8,
@@ -1129,6 +1130,7 @@ def run_nvfp4_vs_fp8[
                 lengths_ptr,
             )
 
+        @__allow_legacy_any_origin_fields
         def _launch_fp4(ctx: DeviceContext[]) raises {imm}:
             _decode[num_heads, use_causal, skip=skip, has_lengths=has_lengths](
                 kv_fp4,

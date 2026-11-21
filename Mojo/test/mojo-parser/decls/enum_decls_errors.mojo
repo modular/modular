@@ -12,160 +12,92 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
+# RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s --check-prefix PAYLOAD
 
-# Only `case name` and `case name(T, ...)` declare a case; every other spelling
-# after `case` is rejected.
-__enum Reserved:
-    # expected-note @+1 {{previous definition here}}
-    case a
-    # expected-error @+1 {{invalid redefinition of 'a'}}
-    case a
-    """A doc string after a rejected case is still consumed."""
-    # expected-error @+1 {{labeled payloads in enum cases are not supported; use positional types, e.g. 'case C(T, U)'}}
-    case labeled(x: Int)
-    # expected-error @+1 {{labeled payloads in enum cases are not supported; use positional types, e.g. 'case C(T, U)'}}
-    case keyword(Int, y=Int)
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case struct Nested:
-        pass
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case typed: Int
-    """A doc string after a rejected case is still consumed."""
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case valued = 1
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case several, names
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case 1
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
+# Checks:
+# 1. Reject `()` on an enum case without a payload.
+# 2. Select enum wording for shared diagnostics.
+
+__enum EmptyParens:
+    # PAYLOAD: "fixIts":[],"location":{"column":14,"line":[[#@LINE+3]]}
+    # PAYLOAD-SAME: "message":"enum case 'empty' must not have a payload; declare 'EmptyParens' with '__union'"
+    # expected-error @+1 {{enum case 'empty' must not have a payload; declare 'EmptyParens' with '__union'}}
     case empty()
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case trailing(Int) junk
-    # expected-error @+1 {{enum case must have the form 'case name' or 'case name(T, ...)'}}
-    case missing_comma(Int Int)
-    # expected-error @+2 {{'case' statement does not support decorators; remove the decorator}}
-    @always_inline
-    case decorated
 
 
-# A rejected case still takes its name, so a later case with that name is a
-# redefinition. A duplicate is rejected before its payload is resolved.
-__enum Dropped:
-    # expected-error @+2 {{labeled payloads in enum cases are not supported; use positional types, e.g. 'case C(T, U)'}}
-    # expected-note @+1 {{previous definition here}}
-    case a(x: Int)
-    # expected-error @+1 {{invalid redefinition of 'a'}}
-    case a
-    # expected-error @+2 {{use of unknown declaration 'NotAType'}}
-    # expected-note @+1 {{previous definition here}}
-    case b(NotAType)
-    # expected-error @+1 {{invalid redefinition of 'b'}}
-    case b(AlsoNotAType)
+__enum Payload:
+    # expected-error @+1 {{enum case 'data' must not have a payload; declare 'Payload' with '__union'}}
+    case data(Int)
 
 
-struct Box[T: AnyType]:
-    pass
-
-
-__enum Payloads:
-    # expected-error @+1 {{enum case payloads do not support trait types; 'AnyType' is a trait, use a concrete type or compile-time generic}}
-    case trait_payload(AnyType)
-    # expected-error @+1 {{use of unknown declaration 'NotAType'}}
-    case unknown_payload(NotAType)
-    # expected-note @below {{missing parameter 'T'}}
-    # expected-error @+1 {{'Box[_]' is not concrete, use '[]' to bind missing parameters}}
-    case unbound_payload(Box)
+__enum Malformed:
+    case value
+    # expected-error @+1 {{enum case must have the form 'case name'}}
+    case typed: Int
 
 
 __enum Stateful:
-    case a
-    # expected-error @+1 {{enums do not support 'var' fields; store state in a case payload}}
+    case value
+    # expected-error @+1 {{enums do not support 'var' fields; use '__union' to store case payloads}}
     var x: Int
-    """A doc string after a rejected field is still consumed."""
 
 
-# A method body of only `...` is reserved in an enum.
 __enum Bodies:
-    case a
+    case value
 
-    def no_result(self):
+    def method(self):
         # expected-error @+1 {{enum methods must have a body; '...' is reserved}}
         ...
 
-    def with_result(self) -> Int:
-        # expected-error @+1 {{enum methods must have a body; '...' is reserved}}
-        ...
 
-    @staticmethod
-    def static_method():
-        """A doc string does not count as a body."""
-        # expected-error @+1 {{enum methods must have a body; '...' is reserved}}
-        ...
-
-    # expected-error @+1 {{enum methods must have a body; '...' is reserved}}
-    def one_line(self): ...
-
-    # expected-error @+1 {{enum methods must have a body; '...' is reserved}}
-    def with_semicolon(self): ...;
-
-    def two_ellipses(self):
-        # expected-error @+1 {{enum methods must have a body; '...' is reserved}}
-        ...
-        ...
-
-    def more_than_ellipsis(self):
-        ...
-        pass
-
-    def outer(self):
-        def nested():
-            ...
-
-        nested()
-
-    @unavailable("use 'a'")
-    def unavailable(self):
-        ...
-
-
-__extension Bodies:
-    def extension_method(self):
-        # expected-error @+1 {{enum methods must have a body; '...' is reserved}}
-        ...
-
-    @unavailable("use 'a'")
-    def extension_unavailable(self):
-        ...
+# expected-error @+1 {{'@fieldwise_init' cannot be applied to an enum}}
+@fieldwise_init
+__enum Fieldwise:
+    case value
 
 
 # expected-error @+1 {{expected ':' in enum definition}}
 __enum NoColon
-    case a
+    case value
 
 
 struct OuterStruct:
     # expected-error @+1 {{nested enum not supported here}}
     __enum Inner:
-        case a
+        case value
 
 
 trait OuterTrait:
     # expected-error @+1 {{nested enum in a trait not supported here}}
     __enum Inner:
-        case a
+        case value
 
 
 def outer_function():
     # expected-error @+1 {{enum inside a function not supported here}}
     __enum Inner:
-        case a
+        case value
 
 
 def comptime_enum():
     # expected-error @+1 {{'comptime' cannot be used with '__enum'}}
     comptime __enum = 1
+
+
+__enum NotImplicitlyCopyable(not ImplicitlyCopyable):
+    case a
+
+
+def materialize_not_implicitly_copyable() -> NotImplicitlyCopyable:
+    # expected-error @+2 {{cannot materialize comptime value of type 'NotImplicitlyCopyable' to runtime because it is not 'ImplicitlyCopyable'}}
+    # expected-note @+1 {{use 'materialize' to explicitly materialize the value}}
+    return NotImplicitlyCopyable.a
+
+
+# expected-error @+2 {{trait 'TrivialRegisterPassable' requires ancestor trait 'Deinitable', which is opted out with 'not'; remove one of the entries}}
+# expected-note @+1 {{opted out here}}
+__enum NotDeinitableTrivial(not Deinitable, TrivialRegisterPassable):
+    case a
 
 
 # expected-error @+1 {{expected enum name}}

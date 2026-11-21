@@ -41,27 +41,18 @@ from layout import Coord, TileTensor, row_major
 from nn.pool import avg_pool_gpu, max_pool_gpu
 from nn.shapes import get_sliding_window_out_dim
 
-from std.utils.index import IndexList
-
 
 def bench_pool_gpu[
-    in_rank: Int,
-    kernel_rank: Int,
-    stride_rank: Int,
-    //,
     dtype: DType,
     op: StaticString,
-    in_shape: IndexList[in_rank],
-    kernel: IndexList[kernel_rank],
-    stride: IndexList[stride_rank],
+    in_shape: Coord,
+    kernel: Coord,
+    stride: Coord,
     pad: Int,
 ](ctx: DeviceContext[], mut b: Bench) raises:
     """Benchmarks one pool shape.
 
     Parameters:
-        in_rank: Rank of the input shape.
-        kernel_rank: Rank of the window shape.
-        stride_rank: Rank of the stride shape.
         dtype: Data type of the input and output tensors.
         op: Pooling method, either `"maxpool"` or `"avgpool"`.
         in_shape: NHWC input shape.
@@ -69,18 +60,18 @@ def bench_pool_gpu[
         stride: Pool stride, `(stride_h, stride_w)`.
         pad: Symmetric padding per side, on both spatial dimensions.
     """
-    var out_shape = IndexList[in_rank](
-        in_shape[0],
+    var out_shape = Coord(
+        Int(in_shape[0]),
         get_sliding_window_out_dim(
-            in_shape[1], kernel[0], 1, stride[0], 2 * pad
+            Int(in_shape[1]), Int(kernel[0]), 1, Int(stride[0]), 2 * pad
         ),
         get_sliding_window_out_dim(
-            in_shape[2], kernel[1], 1, stride[1], 2 * pad
+            Int(in_shape[2]), Int(kernel[1]), 1, Int(stride[1]), 2 * pad
         ),
-        in_shape[3],
+        Int(in_shape[3]),
     )
-    var input_size = in_shape.flattened_length()
-    var output_size = out_shape.flattened_length()
+    var input_size = Int(in_shape.product())
+    var output_size = Int(out_shape.product())
 
     var filter_stack: Array[Int32, _] = [
         Int32(kernel[0]),
@@ -105,8 +96,8 @@ def bench_pool_gpu[
     ctx.enqueue_memset(in_device, 1)
     ctx.synchronize()
 
-    var input = TileTensor(in_device, row_major(Coord(in_shape)))
-    var output = TileTensor(out_device, row_major(Coord(out_shape)))
+    var input = TileTensor(in_device, row_major(in_shape))
+    var output = TileTensor(out_device, row_major(out_shape))
 
     @inline(.always)
     def bench_fn(

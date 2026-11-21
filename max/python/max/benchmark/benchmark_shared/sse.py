@@ -18,10 +18,12 @@ Implements the WHATWG HTML Living Standard §9.2 "Server-sent events".
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterable, AsyncIterator
+import re
 from dataclasses import dataclass
 
 _UTF8_BOM = b"\xef\xbb\xbf"
+
+_LINE_BREAK = re.compile(rb"\r\n|\r|\n")
 
 
 @dataclass
@@ -33,109 +35,106 @@ class SSEEvent:
     last_event_id: str = ""
 
 
-async def iter_lines(chunks: AsyncIterable[bytes]) -> AsyncIterator[bytes]:
-    """Yield lines from a stream of byte chunks, per the SSE spec.
+class _LineSplitter:
+    """Splits a byte stream into lines at CRLF, bare LF or bare CR.
 
-    Handles all three SSE-spec line endings: CRLF, bare LF, bare CR.
-    Strips a leading UTF-8 BOM from the very start of the stream if present.
-    Assumes the BOM, if present, arrives entirely within the first non-empty chunk.
+    Strips a leading UTF-8 BOM from the start of the stream, however the reads
+    split it. Holds back an unterminated tail line, so :meth:`feed` returns
+    only lines a break ended. Nothing reads the tail back: an event dispatches
+    on the blank line after it, so a stream that ends without one dispatches
+    nothing.
     """
-    current_line = bytearray()
-    prev_was_cr = False
-    bom_checked = False
 
-    async for chunk in chunks:
+    def __init__(self) -> None:
+        self._remainder = b""
+        # A chunk ending in CR is ambiguous until the next chunk arrives: a
+        # leading LF there completes that CRLF rather than starting a new line.
+        self._ends_with_cr = False
+        self._bom_checked = False
+        # Bytes that could still turn out to be a BOM prefix, held back until
+        # the next read decides. Left in the first field name, a split BOM's
+        # bytes would make the field unrecognizable and drop the event.
+        self._held = b""
+
+    def feed(self, chunk: bytes) -> list[bytes]:
+        """Returns the lines *chunk* terminated, in order."""
         if not chunk:
-            continue
+            return []
 
-        if not bom_checked:
-            bom_checked = True
-            if chunk[:3] == _UTF8_BOM:
-                chunk = chunk[3:]
+        if not self._bom_checked:
+            data = self._held + chunk
+            window = data[: len(_UTF8_BOM)]
+            if _UTF8_BOM.startswith(window):
+                if len(data) < len(_UTF8_BOM):
+                    self._held = data
+                    return []
+                data = data[len(_UTF8_BOM) :]
+            self._bom_checked = True
+            self._held = b""
+            chunk = data
             if not chunk:
-                continue
+                return []
 
-        for b in chunk:
-            if prev_was_cr:
-                prev_was_cr = False
-                if b == 0x0A:  # LF following CR -> CRLF sequence, consume LF
-                    continue
-                # Lone CR already ended the previous line; fall through to
-                # process this byte as the start of the next line.
+        if self._ends_with_cr and chunk[:1] == b"\n":
+            chunk = chunk[1:]
 
-            if b == 0x0D:  # CR
-                yield bytes(current_line)
-                current_line = bytearray()
-                prev_was_cr = True
-            elif b == 0x0A:  # LF
-                yield bytes(current_line)
-                current_line = bytearray()
-            else:
-                current_line.append(b)
-
-    # A trailing CR already caused its line to be yielded via prev_was_cr.
-    # Yield any remaining unterminated content as a final line.
-    if current_line:
-        yield bytes(current_line)
+        data = self._remainder + chunk if self._remainder else chunk
+        self._ends_with_cr = data.endswith(b"\r")
+        lines = _LINE_BREAK.split(data)
+        self._remainder = lines.pop()
+        return lines
 
 
-async def iter_events(chunks: AsyncIterable[bytes]) -> AsyncIterator[SSEEvent]:
-    """Yield dispatched SSE events from a stream of byte chunks.
+class SSEDecoder:
+    """Turns a byte stream into dispatched SSE events, one read at a time.
 
-    Splits chunks into lines via :func:`iter_lines`, then implements the
-    WHATWG HTML spec field processing and dispatch rules:
-    - ``data``: appended to the data buffer (with a trailing LF).
-    - ``event``: sets the event type buffer.
-    - ``id``: sets the last-event-ID buffer (ignored if value contains NULL).
-    - ``retry``: silently consumed (connection-level; not surfaced in SSEEvent).
-    - Lines starting with ``:`` are comments and are ignored.
-    - An empty line triggers a dispatch; if the data buffer is empty, the event
-      is suppressed.
-    - Pending data at end-of-stream (no trailing blank line) is discarded.
+    :meth:`feed` takes the bytes of one socket read and returns the events
+    they completed, so a reader can stamp a whole read with one clock read
+    instead of one per event.
     """
-    data_buffer = ""
-    event_type_buffer = ""
-    last_event_id_buffer = ""
-    last_event_id = ""
 
-    async for line_bytes in iter_lines(chunks):
-        line = line_bytes.decode("utf-8")
+    def __init__(self) -> None:
+        self._lines = _LineSplitter()
+        self._data = ""
+        self._event_type = ""
+        self._id_buffer = ""
+        self._last_event_id = ""
 
+    def feed(self, chunk: bytes) -> list[SSEEvent]:
+        """Returns the events *chunk* completed, in order."""
+        events: list[SSEEvent] = []
+        for line_bytes in self._lines.feed(chunk):
+            event = self._consume(line_bytes.decode("utf-8"))
+            if event is not None:
+                events.append(event)
+        return events
+
+    def _consume(self, line: str) -> SSEEvent | None:
+        """Processes one line, returning the event it dispatched if any."""
         if not line:
-            # Empty line: dispatch the event.
-            last_event_id = last_event_id_buffer
-            if not data_buffer:
-                event_type_buffer = ""
-                continue
-            data_buffer = data_buffer.removesuffix("\n")
-            yield SSEEvent(
-                data=data_buffer,
-                event_type=event_type_buffer or "message",
-                last_event_id=last_event_id,
+            self._last_event_id = self._id_buffer
+            if not self._data:
+                self._event_type = ""
+                return None
+            event = SSEEvent(
+                data=self._data.removesuffix("\n"),
+                event_type=self._event_type or "message",
+                last_event_id=self._last_event_id,
             )
-            data_buffer = ""
-            event_type_buffer = ""
-            continue
+            self._data = ""
+            self._event_type = ""
+            return event
 
         if line[0] == ":":
-            continue  # Comment; ignore.
+            return None
 
-        if ":" in line:
-            colon_idx = line.index(":")
-            field = line[:colon_idx]
-            value = line[colon_idx + 1 :]
-            value = value.removeprefix(" ")
-        else:
-            field = line
-            value = ""
-
+        field, _, value = line.partition(":")
+        value = value.removeprefix(" ")
         if field == "data":
-            data_buffer += value + "\n"
+            self._data += value + "\n"
         elif field == "event":
-            event_type_buffer = value
+            self._event_type = value
         elif field == "id":
             if "\x00" not in value:
-                last_event_id_buffer = value
-        elif field == "retry":
-            pass  # Connection-level; not surfaced in SSEEvent.
-        # Unknown fields are ignored per spec.
+                self._id_buffer = value
+        return None

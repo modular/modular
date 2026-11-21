@@ -309,6 +309,25 @@ def test_dkv_orphan_metrics_record_on_their_own_instruments(
     )
 
 
+def test_connector_quarantined_blocks_record_on_a_gauge() -> None:
+    """Quarantined blocks are a level, so they land on a gauge."""
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.cache_connector_quarantined_blocks(7)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (measurement.instrument_name, measurement.value) == (
+        "max.cache.connector_quarantined_blocks",
+        7,
+    )
+    assert isinstance(
+        metrics.SERVE_METRICS["max.cache.connector_quarantined_blocks"],
+        _ProxyGauge,
+    )
+
+
 def test_dkv_unused_hints_record_on_their_own_instruments() -> None:
     """Unused hints land on their own total and per-reason instruments."""
     client = mock.Mock()
@@ -742,6 +761,10 @@ def test_dkv_overlapped_lookup_counters_are_counters() -> None:
         "max.dkv.own_runs_short_of_hint",
         "max.dkv.split_loads",
         "max.dkv.overlapped_peer_lookups",
+        "max.dkv.overlap_reads_moved_by_probe",
+        "max.dkv.overlap_blocks_moved_by_probe",
+        "max.dkv.own_runs_short_of_probe",
+        "max.dkv.own_run_blocks_short_of_probe",
         "max.dkv.hinted_lookups",
     ):
         assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name

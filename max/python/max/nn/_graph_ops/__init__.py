@@ -1169,6 +1169,65 @@ def indexer_k_quantize_store(
     )
 
 
+def _indexer_q_quantize(
+    op_name: str,
+    q: TensorValue,
+    ssmax_operands: Sequence[TensorValue],
+    freqs_cis: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    *,
+    scales_dtype: DType,
+    rope_dim: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Checks the operands the fused indexer query ops share and stages one.
+
+    Args:
+        op_name: The custom op to stage.
+        q: ``[rows, heads, 128]`` BF16 query projection.
+        ssmax_operands: The op's operands between ``q`` and ``freqs_cis``;
+            empty for the op without SSMax.
+        freqs_cis: ``[positions, rope_dim]`` BF16 interleaved RoPE table.
+        input_row_offsets: ``[batch + 1]`` uint32 ragged row offsets.
+        start_pos: ``[batch]`` uint32 RoPE start of each request.
+        scales_dtype: The dtype of the ``[rows, heads]`` scales the op writes.
+        rope_dim: Leading columns of each head to rotate; 0 for none.
+
+    Returns:
+        The ``[rows, heads, 128]`` FP8 query and its ``[rows, heads]`` scales.
+
+    Raises:
+        ValueError: If a shared operand has the wrong rank or dtype, or if the
+            RoPE table is not ``rope_dim`` wide.
+    """
+    _check_rank(3, q=q)
+    _check_dtype(DType.bfloat16, q=q)
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, start_pos=start_pos
+    )
+    if rope_dim:
+        _check_dtype(DType.bfloat16, freqs_cis=freqs_cis)
+        if int(freqs_cis.shape[1]) != rope_dim:
+            raise ValueError(
+                f"freqs_cis is {freqs_cis.shape[1]} wide; rope_dim={rope_dim}"
+            )
+    # As in `rope_ragged`: a cross-device table must be materialized on the
+    # kernel's device rather than fused in as a view.
+    if freqs_cis.device != q.device:
+        freqs_cis = freqs_cis.to(q.device)
+    result = ops.custom(
+        op_name,
+        device=q.device,
+        values=[q, *ssmax_operands, freqs_cis, input_row_offsets, start_pos],
+        out_types=[
+            TensorType(DType.float8_e4m3fn, q.shape, device=q.device),
+            TensorType(scales_dtype, [q.shape[0], q.shape[1]], device=q.device),
+        ],
+        parameters={"rope_dim": rope_dim},
+    )
+    return result[0].tensor, result[1].tensor
+
+
 def indexer_q_ssmax_rope_quantize(
     q: TensorValue,
     positions: TensorValue,
@@ -1203,45 +1262,57 @@ def indexer_q_ssmax_rope_quantize(
         The ``[rows, heads, 128]`` FP8 query and its ``[rows, heads]`` E8M0
         scales.
     """
-    _check_rank(3, q=q)
-    _check_dtype(DType.bfloat16, q=q, ssmax_s=ssmax_s, ssmax_b=ssmax_b)
-    _check_dtype(
-        DType.uint32,
-        positions=positions,
-        input_row_offsets=input_row_offsets,
-        start_pos=start_pos,
-    )
-    if rope_dim:
-        _check_dtype(DType.bfloat16, freqs_cis=freqs_cis)
-        if int(freqs_cis.shape[1]) != rope_dim:
-            raise ValueError(
-                f"freqs_cis is {freqs_cis.shape[1]} wide; rope_dim={rope_dim}"
-            )
-    # As in `rope_ragged`: a cross-device table must be materialized on the
-    # kernel's device rather than fused in as a view.
-    if freqs_cis.device != q.device:
-        freqs_cis = freqs_cis.to(q.device)
-    result = ops.custom(
+    _check_dtype(DType.bfloat16, ssmax_s=ssmax_s, ssmax_b=ssmax_b)
+    _check_dtype(DType.uint32, positions=positions)
+    return _indexer_q_quantize(
         "indexer.q.ssmax_rope_quantize.fp8",
-        device=q.device,
-        values=[
-            q,
-            positions,
-            ssmax_s,
-            ssmax_b,
-            freqs_cis,
-            input_row_offsets,
-            start_pos,
-        ],
-        out_types=[
-            TensorType(DType.float8_e4m3fn, q.shape, device=q.device),
-            TensorType(
-                DType.float8_e8m0fnu, [q.shape[0], q.shape[1]], device=q.device
-            ),
-        ],
-        parameters={"rope_dim": rope_dim},
+        q,
+        [positions, ssmax_s, ssmax_b],
+        freqs_cis,
+        input_row_offsets,
+        start_pos,
+        scales_dtype=DType.float8_e8m0fnu,
+        rope_dim=rope_dim,
     )
-    return result[0].tensor, result[1].tensor
+
+
+def indexer_q_rope_quantize(
+    q: TensorValue,
+    freqs_cis: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    *,
+    rope_dim: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Applies RoPE to an index query and FP8-quantizes it.
+
+    :func:`indexer_q_ssmax_rope_quantize` for an indexer without SSMax. One
+    launch computes, bit for bit, :func:`rope_ragged` over the leading
+    ``rope_dim`` columns of each head (interleaved), then
+    :func:`quantize_dynamic_scaled_float8` of each 128-wide head with its
+    power-of-two scale written as float32.
+
+    Args:
+        q: ``[rows, heads, 128]`` BF16 query projection.
+        freqs_cis: ``[positions, rope_dim]`` BF16 interleaved RoPE table.
+        input_row_offsets: ``[batch + 1]`` uint32 ragged row offsets.
+        start_pos: ``[batch]`` uint32 RoPE start of each request.
+        rope_dim: Leading columns of each head to rotate; 0 for none.
+
+    Returns:
+        The ``[rows, heads, 128]`` FP8 query and its ``[rows, heads]`` float32
+        scales.
+    """
+    return _indexer_q_quantize(
+        "indexer.q.rope_quantize.fp8",
+        q,
+        [],
+        freqs_cis,
+        input_row_offsets,
+        start_pos,
+        scales_dtype=DType.float32,
+        rope_dim=rope_dim,
+    )
 
 
 @_rejects_split_head_dims
@@ -4342,6 +4413,68 @@ def mla_fp8_index_top_k(
         write_logical=True,
         deterministic=deterministic,
     )[0]
+
+
+@_rejects_split_head_dims
+def mla_sparse_selection_rows(
+    positions: TensorValue,
+    input_row_offsets: TensorValue,
+    mla_collection: PagedCacheValues,
+) -> TensorValue:
+    """Maps a top-k selection's token positions to MLA cache rows.
+
+    Returns the rows :func:`mla_fp8_index_top_k_with_physical` writes beside
+    the positions it selects, resolved against ``mla_collection``. A row names
+    a page of the cache it was resolved against, so a pipeline stage resolves
+    the positions the previous stage selected against its own cache.
+
+    Args:
+        positions: ``[rows, top_k]`` logical token positions, ``-1`` past a
+            token's selection.
+        input_row_offsets: Ragged row offsets ``[batch_size + 1]``.
+        mla_collection: The MLA cache the rows index.
+
+    Returns:
+        Each position's physical row, ``block_id * page_size + offset``,
+        ``[rows, top_k]``. For an NVFP4 ``mla_collection`` the rows are twice
+        as wide: the physical rows, then each position's row in the scale
+        pool. ``-1`` where the position is ``-1`` or its page is unmapped.
+    """
+    top_k = int(positions.shape[1])
+    values: list[Value[Any]] = [
+        positions,
+        input_row_offsets,
+        mla_collection.kv_blocks,
+        mla_collection.lookup_table,
+    ]
+    op_name = "attention.mla.sparse.selection_rows"
+    width = top_k
+    if mla_collection.kv_blocks.dtype == DType.uint8:
+        assert (
+            mla_collection.kv_scales is not None
+            and mla_collection.scales_page_stride is not None
+            and mla_collection.scales_lookup_table is not None
+        ), "an NVFP4 MLA cache must carry its scale operands"
+        op_name += ".nvfp4"
+        width = 2 * top_k
+        values += [
+            mla_collection.kv_scales,
+            mla_collection.scales_page_stride,
+            mla_collection.scales_lookup_table,
+        ]
+    return ops.inplace_custom(
+        op_name,
+        device=positions.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(positions.shape[0], width),
+                device=positions.device,
+            )
+        ],
+        parameters={"k": top_k},
+    )[0].tensor
 
 
 @_rejects_split_head_dims
@@ -16247,6 +16380,82 @@ def rope_quantize_dynamic_block_scaled(
     return result[0].tensor, result[1].tensor
 
 
+def quantize_block_scaled_with_amax(
+    input: TensorValue,
+    block_amax: TensorValue,
+    tensor_sf: TensorValue | float = 1.0,
+    sf_vector_size: int = 16,
+) -> tuple[TensorValue, TensorValue]:
+    """Quantizes a bf16 tensor to NVFP4 with each block's amax given.
+
+    Matches :func:`quantize_dynamic_block_scaled` for NVFP4, except that
+    each 16-element block's scale comes from ``block_amax`` instead of the
+    block's own abs-max. Values past a block's amax saturate, as clipping
+    the input to it first would. Runs on NVIDIA SM100 and SM120.
+
+    Args:
+        input: The bfloat16 input. Shape: ``[M, N]`` with a static ``N``.
+        block_amax: The float32 amax of each block. Shape:
+            ``[M, N // sf_vector_size]``.
+        tensor_sf: The tensor-wise scale factor, inverted as for
+            :func:`quantize_dynamic_block_scaled`.
+        sf_vector_size: The block size for the scaling factors. Must be 16.
+
+    Returns:
+        The packed ``[M, N // 2]`` FP4 input and its rank-5 interleaved
+        ``float8_e4m3fn`` scales.
+
+    Raises:
+        ValueError: If the GPU is not SM100 or SM120, ``input`` is not a
+            rank-2 bfloat16 tensor with a static width of whole blocks,
+            ``block_amax`` is not a float32 ``[M, N // sf_vector_size]``
+            tensor, or ``sf_vector_size`` is not 16.
+    """
+    if not (_is_sm10x_gpu() or _is_sm12x_gpu()):
+        raise ValueError(
+            "quantize_block_scaled_with_amax requires an NVIDIA SM100 or"
+            " SM120 GPU"
+        )
+    if sf_vector_size != 16:
+        raise ValueError(
+            f"quantize_block_scaled_with_amax only supports NVFP4's 16-element"
+            f" blocks, got sf_vector_size={sf_vector_size}"
+        )
+    if input.rank != 2 or input.dtype != DType.bfloat16:
+        raise ValueError("input must be a rank 2 bfloat16 tensor")
+    width = input.shape[1]
+    if not isinstance(width, StaticDim) or int(width) % sf_vector_size:
+        raise ValueError(
+            f"input.shape[1] must be a static multiple of {sf_vector_size},"
+            f" got {width}"
+        )
+    if block_amax.rank != 2 or block_amax.dtype != DType.float32:
+        raise ValueError("block_amax must be a rank 2 float32 tensor")
+    block_amax = block_amax.rebind(
+        [input.shape[0], int(width) // sf_vector_size]
+    )
+
+    result = ops.custom(
+        "quantization.quantize.block.scaled.with.amax",
+        device=input.device,
+        values=[input, block_amax, _tensor_sf_value(tensor_sf)],
+        out_types=_block_scaled_quantize_out_types(
+            input.shape[0],
+            width,
+            "input.shape[1]",
+            sf_vector_size,
+            DType.float8_e4m3fn,
+            DType.uint8,
+            input.device,
+        ),
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
 def rms_norm_quantize_mxfp8_q_kv(
     x: TensorValue,
     q_weight: TensorValue,
@@ -16342,6 +16551,8 @@ def grouped_quantize_dynamic_block_scaled(
     out_type: DType = DType.uint8,
     indices: TensorValue | None = None,
     indices_divisor: int = 1,
+    restore: TensorValue | None = None,
+    top_k: int = 0,
 ) -> tuple[TensorValue, TensorValue]:
     """Grouped dynamic NVFP4/MXFP4/MXFP8 quantization for MoE experts.
 
@@ -16369,6 +16580,14 @@ def grouped_quantize_dynamic_block_scaled(
             Passing the routing slot order from
             :func:`moe_create_indices` with the top-k as the divisor reads
             each slot's token row without a separate division kernel.
+        restore: Optional sorted position of each routing slot, as
+            :func:`moe_create_indices` returns it, in place of ``indices``.
+            Shape: ``[tokens * top_k]``, dtype ``uint32``. Input row ``t``
+            goes to the output rows ``restore[t * top_k + k]``: each token
+            row is read and quantized once rather than once per slot, with
+            the same result as ``indices`` set to the matching slot order.
+            NVFP4 only, with a column count that is a multiple of 64.
+        top_k: Routing slots per token, which ``restore`` needs.
         sf_vector_size: The block size for the scaling factors.
         scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
         out_type: Output dtype. ``uint8`` for packed FP4.
@@ -16387,11 +16606,24 @@ def grouped_quantize_dynamic_block_scaled(
     if out_type not in (DType.uint8, DType.float8_e4m3fn):
         raise ValueError("out_type must be uint8 (FP4x2) or float8_e4m3fn")
 
+    if indices is not None and restore is not None:
+        raise ValueError("pass indices or restore, not both")
     if indices is not None:
         if indices.dtype not in (DType.int32, DType.uint32):
             raise ValueError("indices dtype must be int32 or uint32")
         if indices_divisor < 1:
             raise ValueError("indices_divisor must be positive")
+    if restore is not None:
+        if restore.dtype != DType.uint32:
+            raise ValueError("restore dtype must be uint32")
+        if top_k < 1:
+            raise ValueError("restore needs a positive top_k")
+        if (out_type, scales_type, sf_vector_size) != (
+            DType.uint8,
+            DType.float8_e4m3fn,
+            16,
+        ):
+            raise ValueError("restore supports NVFP4 only")
 
     if not _is_sm10x_gpu():
         # route to the fallback kernel
@@ -16404,7 +16636,8 @@ def grouped_quantize_dynamic_block_scaled(
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
     SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
-    num_rows = indices.shape[0] if indices is not None else input.shape[0]
+    slots = indices if indices is not None else restore
+    num_rows = slots.shape[0] if slots is not None else input.shape[0]
     total_m_tiles = ceildiv(num_rows, Dim(SF_MN_GROUP_SIZE))
     # A row belongs to exactly one group, so the number of non-empty groups
     # is bounded by both the group count and the row count; padding one tile
@@ -16428,6 +16661,12 @@ def grouped_quantize_dynamic_block_scaled(
         op_name = "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices"
         values.append(indices)
         parameters["row_index_divisor"] = indices_divisor
+    elif restore is not None:
+        op_name = (
+            "quantization.grouped.quantize.dynamic.block.scaled.from_sources"
+        )
+        values.append(restore)
+        parameters["top_k"] = top_k
 
     result = ops.custom(
         op_name,
@@ -17104,7 +17343,7 @@ def mtp_eh_norm(
     enorm_weight: TensorValue,
     hnorm_weight: TensorValue,
     epsilon: float,
-    block_threads: int = 256,
+    block_threads: int | None = None,
 ) -> TensorValue:
     """Normalizes both inputs of an MTP draft layer into one projection input.
 
@@ -17125,6 +17364,11 @@ def mtp_eh_norm(
         hnorm_weight: Hidden-state norm weight ``[hidden_size]``.
         epsilon: Added inside the square root.
         block_threads: Threads per block; must be a whole number of warps.
+            ``None`` picks ``hidden_size // 16``, at which each thread holds
+            its 16 columns of the row in registers, when ``hidden_size`` is a
+            multiple of 1024 (whole 64-lane warps, so whole warps on 32- and
+            64-lane GPUs alike) and that width is at most 1024; otherwise it
+            picks 256.
 
     Returns:
         ``[num_tokens, 2 * hidden_size]`` with the normalized embedding in the
@@ -17174,6 +17418,19 @@ def mtp_eh_norm(
             f"mtp_eh_norm does not support {embed.dtype}: it accumulates in"
             " float32, where ops.rms_norm reduces float8 in float16"
         )
+    if not isinstance(embed.shape[1], StaticDim):
+        raise ValueError(
+            "the hidden size (embed.shape[1]) must be statically known, got"
+            f" {embed.shape[1]}"
+        )
+    hidden_size = int(embed.shape[1])
+    if block_threads is None:
+        register_width = hidden_size // 16
+        block_threads = (
+            register_width
+            if hidden_size % (16 * 64) == 0 and register_width <= 1024
+            else 256
+        )
     if block_threads <= 0 or block_threads % 32 != 0:
         raise ValueError(
             "block_threads must be a positive multiple of 32, got"
@@ -17184,13 +17441,6 @@ def mtp_eh_norm(
             "block_threads must not exceed 1024, the largest block any"
             f" supported GPU allows, got {block_threads}"
         )
-
-    if not isinstance(embed.shape[1], StaticDim):
-        raise ValueError(
-            "the hidden size (embed.shape[1]) must be statically known, got"
-            f" {embed.shape[1]}"
-        )
-    hidden_size = int(embed.shape[1])
 
     return ops.custom(
         "speculative.mtp.eh_norm",
@@ -18820,10 +19070,11 @@ def learnable_2d_interp_pos_emb(
     weight: TensorValueLike,
     grid_thws: TensorValueLike,
     time_weight: TensorValueLike,
+    interpolation_mode: str = "bicubic",
 ) -> TensorValue:
     """Applies learnable 2D interpolated position embedding (Kimi K2.5).
 
-    For each video described by ``grid_thws``, bicubic-interpolates ``weight``
+    For each video described by ``grid_thws``, interpolates ``weight``
     from (H, W) to (h, w), optionally adds temporal sincos embedding when
     ``t > 1``, and adds the result element-wise to ``x``.
 
@@ -18833,13 +19084,22 @@ def learnable_2d_interp_pos_emb(
         grid_thws: Per-video ``(t, h, w)`` of shape ``(N, 3)``, dtype int64.
         time_weight: 1D sincos temporal embedding of shape
             ``(num_frames, dim)``, dtype float32.
+        interpolation_mode: Spatial interpolation, ``"bicubic"`` or
+            ``"bilinear"``. Bilinear rounds the positional intermediate to
+            the input dtype before adding the patch embeddings.
 
     Returns:
         Tensor of shape ``(L, dim)`` with position embeddings added.
 
     Raises:
-        ValueError: On invalid input shapes or dtypes.
+        ValueError: On invalid input shapes or dtypes, or an unsupported
+            ``interpolation_mode``.
     """
+    if interpolation_mode not in ("bicubic", "bilinear"):
+        raise ValueError(
+            "interpolation_mode must be 'bicubic' or 'bilinear', got"
+            f" {interpolation_mode!r}"
+        )
     x = TensorValue(x)
     weight = TensorValue(weight)
     grid_thws = TensorValue(grid_thws)
@@ -18862,6 +19122,7 @@ def learnable_2d_interp_pos_emb(
         "learnable_2d_interp_pos_emb",
         device=x.device,
         values=[x, weight, grid_thws, time_weight],
+        parameters={"bilinear": interpolation_mode == "bilinear"},
         out_types=[
             TensorType(
                 dtype=x.dtype,

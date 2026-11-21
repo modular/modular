@@ -34,6 +34,7 @@ from max.nn._graph_ops import (
 )
 from max.nn._graph_ops.ep import uses_mx_ep_token_format
 from max.nn.activation import GatedActivation
+from max.nn.ep import Grouped
 from max.nn.ep_config import EPConfig
 from max.nn.kernels import (
     block_scales_interleave,
@@ -145,8 +146,9 @@ class EPDispatchPayload:
         """Parse the per-device dispatch tuples into named per-column fields.
 
         Args:
-            dispatch_results: Per-device dispatch output tuples (the return of
-                :meth:`~max.nn.legacy.comm.ep.EPBatchManager.ep_dispatch`).
+            dispatch_results: Per-device dispatch output tuples: the
+                kernel's results before the route, then the grouped matmul
+                bounds, as :meth:`from_grouped` builds them.
             quant_config: Routed-expert quant config selecting the format.
             ep_config: EP batch-manager config; its ``dispatch_dtype`` decides
                 whether a ``scales`` column is present (a separate axis from the
@@ -204,6 +206,45 @@ class EPDispatchPayload:
                 usage_stats=usage_stats,
                 scales=columns[1] if fp8_dispatch else None,
             )
+
+    @classmethod
+    def from_grouped(
+        cls,
+        grouped: Grouped,
+        quant_config: QuantConfig | None,
+        ep_config: EPConfig,
+    ) -> EPDispatchPayload:
+        """Splits a :mod:`max.nn.ep` dispatch's results into per-device fields.
+
+        Each device's tuple holds the kernel's results in the kernel's order,
+        then the grouped matmul bounds, and :meth:`from_dispatch` parses it.
+        So every format keeps the columns that :meth:`from_dispatch` keeps.
+
+        Args:
+            grouped: The tokens that a :func:`~max.nn.ep.dispatch` received.
+            quant_config: Routed-expert quant config selecting the format.
+            ep_config: The expert-parallel configuration of the dispatch.
+        """
+        fields = (
+            grouped.tokens,
+            grouped.scales,
+            grouped.row_scales,
+            grouped.expert_start,
+            grouped.scales_offset,
+            grouped.expert_ids,
+            grouped.bounds,
+        )
+        n_devices = len(grouped.tokens.local_shards)
+        # One dispatch launch builds one bounds tensor that every device
+        # reads; a launch per device builds one per device.
+        columns = [
+            list(field.local_shards) * (n_devices // len(field.local_shards))
+            for field in fields
+            if field is not None
+        ]
+        return cls.from_dispatch(
+            list(zip(*columns, strict=True)), quant_config, ep_config
+        )
 
     def per_device_tokens(
         self,
@@ -326,14 +367,19 @@ class _ContainerFactory(Protocol):
 
 
 class _QuantizerFactory(Protocol):
-    """Wraps a native-precision tensor, quantizing it on first use."""
+    """Wraps a weight, quantizing it on first use.
+
+    The weight is a native-precision tensor, or an FP8 container that the
+    wrapper decodes first.
+    """
 
     def __call__(
         self,
-        tensor: Tensor,
+        tensor: Tensor | FP8BlockTensor,
         block_size: tuple[int, int],
         *,
         report_error: bool = False,
+        mse_sweep_scales: bool = False,
     ) -> QuantAwareTensor: ...
 
 
@@ -353,23 +399,49 @@ _QUANTIZERS: dict[QuantFormat, _QuantizerFactory] = {
     QuantFormat.MXFP4: MXFP4Quantizer,
 }
 
-#: Dtype of the weight as the CHECKPOINT holds it, per format.
-_STORAGE_DTYPES: dict[QuantFormat, DType] = {
-    QuantFormat.BLOCKSCALED_FP8: DType.float8_e4m3fn,
-    QuantFormat.NVFP4: DType.uint8,
-    QuantFormat.MXFP8: MXFP8Tensor.storage_dtype,
-    QuantFormat.MXFP4: MXFP4Tensor.storage_dtype,
-}
-
 
 def routed_weight_dtype(quant_config: QuantConfig | None) -> DType:
     """The storage dtype :func:`quantized_weight` picks for ``quant_config``.
 
-    Weights quantized on the fly are bf16 on disk whatever they will become.
+    bfloat16 without a config; otherwise :attr:`QuantConfig.storage_dtype`.
     """
-    if quant_config is None or quant_config.quantizes_on_load:
+    if quant_config is None:
         return DType.bfloat16
-    return _STORAGE_DTYPES.get(quant_config.format, DType.bfloat16)
+    return quant_config.storage_dtype
+
+
+def quantize_on_load(
+    weight: Tensor | FP8BlockTensor, quant_config: QuantConfig
+) -> QuantAwareTensor:
+    """Wraps ``weight`` in the quantizer of ``quant_config``'s format.
+
+    ``weight`` is a native-precision tensor, or an :class:`FP8BlockTensor`
+    that the quantizer decodes to bfloat16 first. It keeps whatever
+    placement it has.
+
+    Raises:
+        ValueError: If ``quant_config`` does not quantize on load, or its
+            format has no on-the-fly quantizer.
+    """
+    if not quant_config.quantizes_on_load:
+        raise ValueError(
+            "quantize_on_load needs a config that quantizes on load; got "
+            f"source={quant_config.source.value}"
+        )
+    if quant_config.format not in _QUANTIZERS:
+        known = ", ".join(sorted(f.value for f in _QUANTIZERS))
+        raise ValueError(
+            f"Quant type {quant_config.format} is not yet supported for "
+            f"on-the-fly quantization; known: {known}."
+        )
+    block_size = quant_config.weight_scale.block_size
+    assert block_size is not None
+    return _QUANTIZERS[quant_config.format](
+        weight,
+        block_size=block_size,
+        report_error=quant_config.report_error,
+        mse_sweep_scales=quant_config.mse_sweep_scales,
+    )
 
 
 def quantized_weight(
@@ -404,32 +476,24 @@ def quantized_weight(
             "there is no quantization to measure otherwise"
         )
 
-    registry = _QUANTIZERS if quant_config.quantizes_on_load else _CONTAINERS
-    if quant_config.format not in registry:
-        known = ", ".join(sorted(f.value for f in registry))
-        raise ValueError(
-            f"Quant type {quant_config.format} is not yet supported"
-            + (
-                " for on-the-fly quantization"
-                if quant_config.quantizes_on_load
-                else ""
-            )
-            + f"; known: {known}."
-        )
-
-    block_size = quant_config.weight_scale.block_size
-    assert block_size is not None
     if quant_config.quantizes_on_load:
         # Pinned, not left to the ambient default. `Tensor.zeros` picks
         # float32 on CPU and bfloat16 on an accelerator, which would make a
         # parameter's dtype depend on the hardware present when it is built
-        # -- and disagree with what `routed_weight_dtype` tells callers the
-        # checkpoint holds.
-        return _QUANTIZERS[quant_config.format](
-            Tensor.zeros(shape, dtype=routed_weight_dtype(quant_config)),
-            block_size=block_size,
-            report_error=quant_config.report_error,
+        # -- and disagree with `QuantConfig.storage_dtype`, which tells
+        # callers what the checkpoint holds.
+        return quantize_on_load(
+            Tensor.zeros(shape, dtype=quant_config.storage_dtype),
+            quant_config,
         )
+    if quant_config.format not in _CONTAINERS:
+        known = ", ".join(sorted(f.value for f in _CONTAINERS))
+        raise ValueError(
+            f"Quant type {quant_config.format} is not yet supported; "
+            f"known: {known}."
+        )
+    block_size = quant_config.weight_scale.block_size
+    assert block_size is not None
     # The same format, stored with compressed-tensors' global scales.
     container: _ContainerFactory = (
         CompressedTensorsNVFP4Tensor
@@ -1568,9 +1632,10 @@ def grouped_matmul_silu(
         or (isinstance(down, NVFP4Tensor) and accum_dtype is not None)
         else None
     )
+    out_dtype = gate_up_out.dtype
     if accum_dtype is not None:
         gate_up_out = gate_up_out.cast(accum_dtype)
-    return grouped_silu(
+    silu_out = grouped_silu(
         gate_up_out,
         expert_start_indices,
         requant_weight,
@@ -1579,6 +1644,13 @@ def grouped_matmul_silu(
         activation=activation,
         swiglu_limit=swiglu_limit,
     )
+    # An unquantized down weight takes the SwiGLU back in the activation
+    # dtype, as DeepSeek-V3.2 does (``.type_as(x)``). The grouped matmul has
+    # no tensor-core path for float32 rows against bf16 weights.
+    if accum_dtype is not None and isinstance(down, Tensor):
+        assert isinstance(silu_out, Tensor)
+        silu_out = silu_out.cast(out_dtype)
+    return silu_out
 
 
 def _quantize_activation_fp8(
