@@ -1643,13 +1643,13 @@ def mha_sm100_dispatch[
             # prefill), the same groups fuse into the 1Q BM=128 tile, which
             # holds 14 (group 9) or 21 (group 6) positions: one CTA per KV head
             # rather than one per q-head on the unfused BM=32 tile. Split-K is
-            # sized as on the 1Q carve below. Only 16-bit Q/KV is validated on
-            # this tile.
+            # sized as on the 1Q carve below. Only 16-bit and e4m3 Q/KV are
+            # validated on this tile.
             comptime fa4_config_1q_fused = fa4_config_2q.with_bm(
                 128, fuse_nondividing=True
             )
             comptime if (
-                KVType.dtype.is_half_float()
+                (KVType.dtype.is_half_float() or KVType.dtype == .float8_e4m3fn)
                 and fa4_config_ws_fused.fuse_nondividing
                 and fa4_config_1q_fused.fuse_nondividing
                 and fa4_config_1q_fused.supported()
