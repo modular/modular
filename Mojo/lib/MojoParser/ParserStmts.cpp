@@ -1989,6 +1989,16 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
         return failure();
       subject = subjectMRValue;
     }
+    if (bindingInsertionAnchor) {
+      IREmitter subjectEmitter = getEmitter();
+      MBValue subjectBValue = subjectEmitter.emitMBValue(
+          {subject, currentClause.conditionExpr}, EC_MatchSubject);
+      if (!subjectBValue)
+        return failure();
+      subject = subjectBValue;
+      if (subjectEmitter.builder)
+        builder = *subjectEmitter.builder;
+    }
 
     PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
     const PatternPath *rootPath =
@@ -2009,6 +2019,17 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
                                          /*caseRegionsCount=*/1);
     if (!bindingInsertionAnchor)
       bindingInsertionAnchor = matchOp;
+
+    // A later clause is emitted in the preceding clause's match region, but
+    // its temporary subject can back a binding that survives the whole guard.
+    // Hoist its storage with the binding declarations so lifetime cleanup and
+    // the continuation both remain in a region it dominates.
+    if (auto subjectBValue = subject.getIfMBValue())
+      if (auto varDecl = subjectBValue.getDefiningOp<VarDeclOp>();
+          varDecl && varDecl.isSynthetic() &&
+          varDecl->getBlock() != bindingInsertionAnchor->getBlock())
+        varDecl->moveBefore(bindingInsertionAnchor);
+
     Block &caseBlock = matchOp.getCaseRegions().front().emplaceBlock();
     Block &elseBlock = matchOp.getElseRegion().emplaceBlock();
 
