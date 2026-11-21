@@ -1319,11 +1319,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmocr_2_7b_fp8_golden/1/7177335f99779ffdf6dd516a1c6082d75ce3d26b9a7dbe06ec88ebbd729a090e/torch_olmocr_2_7b_fp8_golden.tar.gz",
     },
     {
-        "name": "torch_olmo2_1124_7b_float32_golden.tar.gz",
-        "sha256": "65d0d4860591ae05c7ae3cf062bc0bb5429733db08b49635f3deeeb7369eb122",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo2_1124_7b_float32_golden/1/65d0d4860591ae05c7ae3cf062bc0bb5429733db08b49635f3deeeb7369eb122/torch_olmo2_1124_7b_float32_golden.tar.gz",
-    },
-    {
         "name": "torch_idefics3_8b_llama3_golden.tar.gz",
         "sha256": "996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_idefics3_8b_llama3_golden/3/996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283/torch_idefics3_8b_llama3_golden.tar.gz",

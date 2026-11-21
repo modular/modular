@@ -719,20 +719,6 @@ logit_verification_pipelines:
     tags: [nvidia-only]
     cos_dist_threshold: .6 # FIXME: Reduce to ~.0015 after MODELS-1490 is closed
 
-  # TODO(MODELS-1099): Re-enable once upstream tokenizer is fixed.
-  allenai/OLMo-2-1124-7B-float32:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "allenai/OLMo-2-1124-7B"
-    compatible_with: [cpu, gpu]
-    encoding: float32
-    tags: [manual]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_olmo2_1124_7b_float32_golden/1/65d0d4860591ae05c7ae3cf062bc0bb5429733db08b49635f3deeeb7369eb122/torch_olmo2_1124_7b_float32_golden.tar.gz"
-      json_file: "olmo2_1124_7b_float32_torch_goldens.json"
-    cos_dist_threshold: 2.1e-5
-    kl_div_threshold: 4.6e-7
-
   HuggingFaceM4/Idefics3-8B-Llama3:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []

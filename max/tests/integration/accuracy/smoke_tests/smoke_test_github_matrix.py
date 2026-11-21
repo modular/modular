@@ -68,7 +68,6 @@ MACH = {"MACH"}
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
 MODELS: Mapping[str, set[str]] = {
-    "allenai/Olmo-3-7B-Instruct": _1xB200 | _1xMI355,
     "allenai/olmOCR-2-7B-1025-FP8": _1xB200 | _1xMI355,
     "amd/MiniMax-M3-MXFP4": NIGHTLY | _4xMI355,
     "ByteDance-Seed/academic-ds-9B": DISABLE,  # TODO(SERVOPT-1120)

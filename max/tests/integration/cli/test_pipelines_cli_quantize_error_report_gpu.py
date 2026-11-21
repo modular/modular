@@ -20,8 +20,7 @@ same model under each format is what makes the reports comparable.
 
 Why these models fit the formats: the SM100 MXFP8 kernel needs the contraction
 dimension to be a multiple of 128, and every targeted weight here satisfies
-it (Gemma-3 1B: 1024 for ``o_proj``, 6912 for ``down_proj``; OLMo-2 1B: 2048
-and 8192).
+it (Gemma-3 1B: 1024 for ``o_proj``, 6912 for ``down_proj``).
 
 The table is printed into the test log (``--test_output=all``), headed
 ``=== <repo> / <format> ===``. Each run's report directory is
@@ -67,10 +66,6 @@ MODELS = {
     # 1.86 GiB of weights.
     "gemma3_1b": _Model(
         "google/gemma-3-1b-it", gated=True, memory_utilization=0.9
-    ),
-    # About 3 GB of weights.
-    "olmo2_1b": _Model(
-        "allenai/OLMo-2-0425-1B-Instruct", gated=False, memory_utilization=0.9
     ),
 }
 
