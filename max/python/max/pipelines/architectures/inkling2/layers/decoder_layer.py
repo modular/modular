@@ -42,17 +42,30 @@ class _AttentionSite(TransparentModule[..., Tensor]):
 
     Name-transparent, so the checkpoint names stay under the layer. Every
     layer of one kind shares one compiled subgraph for it.
+
+    It returns the float32 residual after the attention, not the attention
+    output alone: the residual sum is elementwise on the all-reduce's result,
+    so inside the subgraph the compiler fuses it into the all-reduce's
+    epilogue, where outside it would be a launch of its own.
     """
 
-    def __init__(self, attn: Inkling2Attention, attn_sconv: ShortConvolution):
+    def __init__(
+        self,
+        attn: Inkling2Attention,
+        attn_sconv: ShortConvolution,
+        *,
+        is_block_boundary: bool,
+    ):
         self.attn = attn
         self.attn_sconv = attn_sconv
+        self.is_block_boundary = is_block_boundary
 
     def forward(
         self,
         x_q: Tensor,
         x_k: Tensor,
         x_v: Tensor,
+        h: Tensor,
         *,
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
@@ -61,7 +74,11 @@ class _AttentionSite(TransparentModule[..., Tensor]):
         conv: LayerConvState,
         cache_layer_idx: Tensor,
     ) -> Tensor:
-        """Returns the block's output, summed over the devices."""
+        """Returns the float32 residual after the attention.
+
+        That is the attention output summed over the devices, plus ``h``
+        unless this layer starts a new attn_res block.
+        """
         attn = self.attn(
             x_q,
             x_k,
@@ -76,7 +93,7 @@ class _AttentionSite(TransparentModule[..., Tensor]):
         # Each rank convolves its full-width partial sum of the branch
         # output. The convolution is linear, so reducing afterwards matches
         # reducing first.
-        return reduce_partial(
+        attn = reduce_partial(
             as_partial(
                 self.attn_sconv(
                     attn, conv.attn_out, input_row_offsets, positions
@@ -84,6 +101,11 @@ class _AttentionSite(TransparentModule[..., Tensor]):
                 x_q.mesh,
             )
         )
+        # The sum stays float32 until the layer output rounds it once.
+        residual = attn.cast(DType.float32)
+        if self.is_block_boundary:
+            return residual
+        return h.cast(DType.float32) + residual
 
 
 class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
@@ -109,9 +131,11 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         self.normalize_values = text_config.attn_res_normalize_values
         # Layers of one kind share a subgraph; the mixtures and the output
         # convolutions stay out because their signatures differ by depth and
-        # by layer kind.
+        # by layer kind. A layer that starts a block leaves its input out of
+        # the residual, so it compiles its own attention subgraph.
         self.attn_subgraph = (
-            f"inkling2_{'local' if self.is_local else 'global'}_attention"
+            f"inkling2_{'local' if self.is_local else 'global'}"
+            f"{'_block_start' if self.is_block_boundary else ''}_attention"
             if use_subgraphs
             else None
         )
@@ -136,6 +160,7 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             ShortConvolution(
                 channels=hidden, kernel_size=text_config.sconv_kernel_size
             ),
+            is_block_boundary=self.is_block_boundary,
         )
         self.mlp_norm = Inkling2RMSNorm(hidden, eps=eps)
         self.mlp = Inkling2MoE(
@@ -229,10 +254,11 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             if self.attn_subgraph is None
             else as_subgraph(self.attn_site, name=self.attn_subgraph)
         )
-        attn = attend(
+        residual = attend(
             x_q,
             x_k,
             x_v,
+            h,
             kv_collection=kv_collection,
             input_row_offsets=input_row_offsets,
             positions=positions,
@@ -240,12 +266,8 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             conv=conv,
             cache_layer_idx=cache_layer_idx,
         )
-        # The sum stays float32 until the layer output rounds it once.
-        residual = attn.cast(DType.float32)
         if self.is_block_boundary:
             blocks = [*blocks, h]
-        else:
-            residual = h.cast(DType.float32) + residual
         if _FUSED_MIX_NORM and can_fuse_mix_norm(blocks, residual):
             mlp_input = attn_res_mix_norm(
                 blocks,

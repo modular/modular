@@ -146,8 +146,19 @@ class Inkling2BlockTarget:
             conv,
             self.taps,
         )
+        # The drafter's taps end with the final hidden state of every row,
+        # which the head would otherwise mix again for the window's rows.
+        final_hidden = (
+            out.taps[-1]
+            if model.text_config.num_hidden_layers in self.taps
+            else None
+        )
         logits = model.window_logits(
-            out.blocks, out.h, out.input_row_offsets, b.return_n_logits
+            out.blocks,
+            out.h,
+            out.input_row_offsets,
+            b.return_n_logits,
+            final_hidden=final_hidden,
         )
         payload: Taps = (F.concat(out.taps, axis=-1), out.input_row_offsets)
         return Verified(logits=as_graph_values(logits), hidden=payload)

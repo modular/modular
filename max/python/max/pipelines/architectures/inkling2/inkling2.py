@@ -417,7 +417,11 @@ class Inkling2(Module[..., DecoderOutputs]):
 
     def _lm_head(self, blocks: list[Tensor], h: Tensor) -> Tensor:
         """Mixes the blocks, then returns softcapped float32 logits."""
-        logits = self.unembed(self.final_hidden(blocks, h))
+        return self._head_logits(self.final_hidden(blocks, h))
+
+    def _head_logits(self, hidden: Tensor) -> Tensor:
+        """Returns the softcapped float32 logits of final hidden states."""
+        logits = self.unembed(hidden)
         if logits.is_distributed:
             logits = F.allgather(logits, tensor_axis=-1).local_shards[0]
         cap = self.text_config.final_logit_softcapping
@@ -437,10 +441,22 @@ class Inkling2(Module[..., DecoderOutputs]):
         h: Tensor,
         input_row_offsets: Tensor,
         return_n_logits: Tensor,
+        final_hidden: Tensor | None = None,
     ) -> Tensor:
         """The logits of each sequence's last ``return_n_logits`` rows.
 
         Flat and sequence-major, as a spec-decode accept reads them.
+
+        Args:
+            blocks: The stored sums of the completed attn_res blocks.
+            h: The partial sum of the last block.
+            input_row_offsets: The ragged row offsets.
+            return_n_logits: How many trailing rows of each sequence get
+                logits.
+            final_hidden: :meth:`final_hidden` of every row, when the caller
+                already has it. The mixture is position-local, so gathering
+                its rows gives the same values as mixing the gathered rows,
+                without a second mixture and a gather per block.
         """
         count = return_n_logits[0]
         distance = F.range(
@@ -454,6 +470,8 @@ class Inkling2(Module[..., DecoderOutputs]):
         indices = (input_row_offsets[1:].unsqueeze(-1) - distance).reshape(
             (-1,)
         )
+        if final_hidden is not None:
+            return self._head_logits(F.gather(final_hidden, indices, axis=0))
         return self._lm_head(
             [F.gather(b, indices, axis=0) for b in blocks],
             F.gather(h, indices, axis=0),

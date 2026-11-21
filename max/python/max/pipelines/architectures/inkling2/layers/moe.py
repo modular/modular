@@ -84,11 +84,13 @@ class Inkling2Gate(Module[[Tensor], tuple[Tensor, Tensor]]):
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """Returns ``[tokens, top_k]`` float32 weights and int32 expert ids."""
-        x32 = x.cast(DType.float32)
         weight = self.weight.cast(DType.float32)
         if self.fused:
+            # The kernel widens the bfloat16 rows to the gate's float32 as it
+            # loads them, which is exact, so widening them first would only
+            # cost a launch per layer.
             indices, weights = moe_sigmoid_gemv_router(
-                x32,
+                x,
                 weight,
                 self.bias,
                 n_experts_per_tok=self.top_k,
@@ -99,6 +101,7 @@ class Inkling2Gate(Module[[Tensor], tuple[Tensor, Tensor]]):
         # Serves expert counts that are not a multiple of 32, as in the
         # minimized fixture, with an exact float32 product: a float32 matmul
         # would round its operands to TF32 on GPU.
+        x32 = x.cast(DType.float32)
         logits = (x32.unsqueeze(1) * weight).sum(axis=-1).squeeze(-1)
         scores = F.sigmoid(logits)
         _, indices = F.top_k(scores + self.bias, self.top_k, axis=-1)
