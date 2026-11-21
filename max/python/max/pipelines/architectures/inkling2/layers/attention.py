@@ -31,6 +31,8 @@ from max.support.math import ceildiv
 from max.tensor import Tensor
 
 from ..model_config import Inkling2TextConfig
+from .kv_prologue import can_fuse as can_fuse_kv_prologue
+from .kv_prologue import kv_prologue
 from .norm import unweighted_rms_norm
 from .placement import as_sharded, shard_axis
 from .short_convolution import (
@@ -310,22 +312,37 @@ class Inkling2Attention(Module[..., Tensor]):
         """
         heads, kv_heads, dim = self.num_heads, self.num_kv_heads, self.head_dim
         text_config = self.text_config
-        k, v = self._convolve_kv(
-            self.wk_dv(x_k),
-            self.wv_dv(x_v),
-            x_k,
-            x_v,
-            conv,
-            input_row_offsets,
-            positions,
-        )
-        k = l2_clip(
-            k.reshape([-1, kv_heads, dim]), text_config.qk_l2_clip_threshold
-        )
-        v = unweighted_rms_norm(
-            v.cast(DType.float32).reshape([-1, kv_heads, dim]),
-            text_config.rms_norm_eps,
-        ).cast(v.dtype)
+        k_in = self.wk_dv(x_k)
+        v_in = self.wv_dv(x_v)
+        fused = False
+        if self.is_local:
+            assert isinstance(self.k_sconv, ShortConvolution)
+            fused = can_fuse_kv_prologue(
+                k_in,
+                conv.k,
+                conv.v,
+                kv_collection,
+                kernel=self.k_sconv.kernel_size,
+                head_dim=dim,
+            )
+        if not fused:
+            k, v = self._convolve_kv(
+                k_in,
+                v_in,
+                x_k,
+                x_v,
+                conv,
+                input_row_offsets,
+                positions,
+            )
+            k = l2_clip(
+                k.reshape([-1, kv_heads, dim]),
+                text_config.qk_l2_clip_threshold,
+            )
+            v = unweighted_rms_norm(
+                v.cast(DType.float32).reshape([-1, kv_heads, dim]),
+                text_config.rms_norm_eps,
+            ).cast(v.dtype)
         q, r, gate, sink = self.q_side(x_q)
         q = l2_clip(q, text_config.qk_l2_clip_threshold, self.q_l2_clip.scale)
         r = l2_clip(
@@ -336,12 +353,31 @@ class Inkling2Attention(Module[..., Tensor]):
             r = scale_rows(r, tau)
         bias = r @ self.rel_logits_proj.proj
 
-        store_k_cache_ragged(
-            kv_collection, k, input_row_offsets, cache_layer_idx
-        )
-        store_v_cache_ragged(
-            kv_collection, v, input_row_offsets, cache_layer_idx
-        )
+        if fused:
+            assert isinstance(self.k_sconv, ShortConvolution)
+            assert isinstance(self.v_sconv, ShortConvolution)
+            kv_prologue(
+                k_in,
+                v_in,
+                self.k_sconv.weight.reshape([-1, self.k_sconv.kernel_size]),
+                self.v_sconv.weight.reshape([-1, self.v_sconv.kernel_size]),
+                conv.k,
+                conv.v,
+                kv_collection,
+                positions,
+                input_row_offsets=input_row_offsets,
+                layer_idx=cache_layer_idx,
+                clip=text_config.qk_l2_clip_threshold,
+                clip_eps=_CLIP_EPS,
+                eps=text_config.rms_norm_eps,
+            )
+        else:
+            store_k_cache_ragged(
+                kv_collection, k, input_row_offsets, cache_layer_idx
+            )
+            store_v_cache_ragged(
+                kv_collection, v, input_row_offsets, cache_layer_idx
+            )
         attn = flash_attention_ragged(
             self.kv_params,
             input=q,

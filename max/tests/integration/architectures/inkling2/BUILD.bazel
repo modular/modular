@@ -239,3 +239,46 @@ modular_py_test(
         "//max/python/max/dtype",
     ],
 )
+
+# Guards layers/kv_prologue.py's gate by tracing one attention block on the
+# host: with INKLING2_FUSED_KV_PROLOGUE unset the graph is the composed K/V
+# path, node for node; with it set every local layer takes the fused op.
+modular_py_test(
+    name = "test_kv_prologue_graph",
+    srcs = ["test_kv_prologue_graph.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+# The fused K/V prologue against MAX's composed ops on a real paged cache:
+# decode at batch 1 and 8, and a ragged batch of prefill chunks and decode rows
+# at two ring lengths. One compiled graph per ring length.
+modular_py_test(
+    name = "test_kv_prologue_gpu",
+    size = "enormous",
+    srcs = ["test_kv_prologue_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+    ],
+)
