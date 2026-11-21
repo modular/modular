@@ -2344,7 +2344,19 @@ struct SIMD[dtype: DType, length: SIMDLength](
         comptime if Self.dtype.is_integral():
             if ndigits >= 0:
                 return self
-            return self - (self % Self(10) ** -(ndigits))
+            # A scale that doesn't fit the dtype is larger than every value,
+            # so they round to 0 (or to a result the dtype can't hold).
+            var scale = Scalar[Self.dtype](1)
+            for _ in range(-ndigits):
+                if scale > Scalar[Self.dtype].MAX // 10:
+                    return Self(0)
+                scale *= 10
+            var half = Self(scale // 2)
+            var quotient, remainder = divmod(self, Self(scale))
+            var up = remainder.gt(half) | (
+                remainder.eq(half) & (quotient & 1).ne(0)
+            )
+            return (quotient + up.cast[Self.dtype]()) * scale
 
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
