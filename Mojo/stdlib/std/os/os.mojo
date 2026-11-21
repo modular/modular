@@ -86,6 +86,17 @@ struct _dirent_macos(Copyable):
     """Name of entry."""
 
 
+# `_dirent_macos` is the 64-bit-inode `struct dirent`. On x86_64 macOS the plain
+# `opendir` and `readdir` symbols are the legacy 32-bit-inode ABI, and the
+# 64-bit-inode functions are `opendir$INODE64` and `readdir$INODE64`. arm64 has
+# only the 64-bit-inode ABI, under the plain names.
+comptime _MACOS_INODE64 = (
+    CompilationTarget.is_macos() and CompilationTarget.is_x86()
+)
+comptime _OPENDIR = "opendir$INODE64" if _MACOS_INODE64 else "opendir"
+comptime _READDIR_MACOS = "readdir$INODE64" if _MACOS_INODE64 else "readdir"
+
+
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
@@ -98,7 +109,7 @@ struct _DirHandle:
           path: The path to open.
         """
         __guard case .Some(handle) = external_call[
-            "opendir", Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
+            _OPENDIR, Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
         ](path.as_c_string_span()) else:
             raise IOError.last_os_error("opendir")._with_subject(.path(path))
         self._handle = handle
@@ -155,7 +166,7 @@ struct _DirHandle:
         var res = List[String]()
 
         while case .Some(ep) = external_call[
-            "readdir", Optional[Pointer[_dirent_macos, MutUntrackedOrigin]]
+            _READDIR_MACOS, Optional[Pointer[_dirent_macos, MutUntrackedOrigin]]
         ](self._handle):
             ref name = ep.unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()

@@ -13,9 +13,17 @@
 
 from std.collections import Array
 from std.ffi import external_call
+from std.sys import CompilationTarget
 from std.time.time import _CTimeSpec
 
 from .fstat import stat_result
+
+# `_c_stat` is the 64-bit-inode `struct stat`. On x86_64 macOS the plain `stat`
+# and `lstat` symbols are the legacy 32-bit-inode ABI, and the 64-bit-inode
+# functions are `stat$INODE64` and `lstat$INODE64`. arm64 has only the
+# 64-bit-inode ABI, under the plain names.
+comptime _STAT = "stat$INODE64" if CompilationTarget.is_x86() else "stat"
+comptime _LSTAT = "lstat$INODE64" if CompilationTarget.is_x86() else "lstat"
 
 comptime dev_t = Int32
 comptime mode_t = UInt16
@@ -114,7 +122,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
 @inline(.always)
 def _stat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
-    var err = external_call["stat", Int32](
+    var err = external_call[_STAT, Int32](
         path.as_c_string_span(), Pointer(to=stat)
     )
     if err == -1:
@@ -125,7 +133,7 @@ def _stat(var path: String) raises -> _c_stat:
 @inline(.always)
 def _lstat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
-    var err = external_call["lstat", Int32](
+    var err = external_call[_LSTAT, Int32](
         path.as_c_string_span(), Pointer(to=stat)
     )
     if err == -1:
