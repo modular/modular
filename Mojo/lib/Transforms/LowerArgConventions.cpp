@@ -671,6 +671,34 @@ static FuncType lowerSignature(FuncType sig, TargetInfoAttr target,
   return newSig;
 }
 
+/// A `tail` call promises that the callee does not access any alloca in the
+/// caller's frame. Lowering can introduce such an alloca at the call site: a
+/// by-memory argument is spilled to a new `pop.stack_allocation`, and a
+/// by-reference result slot is often one already. The front end's origin
+/// analysis cannot see these synthesized temporaries, so drop the marker here.
+static void clearTailForCallerStackAllocations(Operation *op) {
+  // Operand 0 of an indirect call is the callee.
+  unsigned firstArg = isa<CallIndirectOp>(op) ? 1 : 0;
+  bool hasStackAllocation = false;
+  auto operands = op->getOperands();
+  for (unsigned i = firstArg, e = operands.size(); i < e; ++i) {
+    if (isa_and_nonnull<POP::StackAllocationOp>(operands[i].getDefiningOp())) {
+      hasStackAllocation = true;
+      break;
+    }
+  }
+  if (!hasStackAllocation)
+    return;
+
+  if (auto call = dyn_cast<CallOp>(op)) {
+    if (call.getTailKind() == TailKind::Tail)
+      call.setTailKind(TailKind::None);
+  } else if (auto call = dyn_cast<CallIndirectOp>(op)) {
+    if (call.getTailKind() == TailKind::Tail)
+      call.setTailKind(TailKind::None);
+  }
+}
+
 /// Helper to perform the bulk of the lowering for `kgen.call` and
 /// `kgen.call_indirect` ops.
 static void lowerCallOpImpl(Operation *op, FuncType oldSig,
@@ -782,6 +810,8 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
     callOp.setCalleeAttr(
         FuncSymbolGenerator::getParamLess(callOp.getCalleeSymbol(), newSig));
   }
+
+  clearTailForCallerStackAllocations(op);
 }
 
 /// Emit IR for repacking the returned variant in the body of a throwing

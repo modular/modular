@@ -538,3 +538,44 @@ kgen.func @call_remove_never_error_slot(%err: !kgen.pointer<!kgen.never>,
   // CHECK-NEXT: hlcf.return [[FALSE]] : !kgen.scalar<bool>
   hlcf.return %0 : !kgen.scalar<bool>
 }
+
+//===----------------------------------------------------------------------===//
+// Tail calls and caller stack allocations
+//===----------------------------------------------------------------------===//
+
+// A `tail` marker promises that the callee does not access the caller's frame
+// (LLVM LangRef). A call that passes a pointer to a `pop.stack_allocation`
+// breaks that promise, so the marker must be dropped.
+
+// CHECK-LABEL: kgen.func @tail_stack_allocation_arg
+// CHECK-NOT: kgen.call tail
+// CHECK: kgen.call @mem_only_arg(%{{.*}}) : (!kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) -> ()
+kgen.func @tail_stack_allocation_arg() {
+  %0 = pop.stack_allocation 1 x struct<(index, index) memoryOnly>
+  kgen.call tail @mem_only_arg(%0) : (!kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) -> ()
+  hlcf.return
+}
+
+// CHECK-LABEL: kgen.func @mem_only_arg
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<(index, index) memoryOnly>> imm_mem)
+kgen.func @mem_only_arg(%arg0: !kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) {
+  hlcf.return
+}
+
+// A call that does not pass a stack allocation keeps its marker.
+// CHECK-LABEL: kgen.func @tail_kept_for_non_alloca
+// CHECK: kgen.call tail @mem_only_arg(%arg0)
+kgen.func @tail_kept_for_non_alloca(%arg0: !kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) {
+  kgen.call tail @mem_only_arg(%arg0) : (!kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) -> ()
+  hlcf.return
+}
+
+// CHECK-LABEL: kgen.func @tail_indirect_stack_allocation_arg(
+// CHECK-SAME: %arg0: !kgen.generator<(!kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) -> ()>
+kgen.func @tail_indirect_stack_allocation_arg(%arg0: !kgen.generator<(!kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) -> ()>) {
+  // CHECK-NOT: kgen.call_indirect tail
+  // CHECK: kgen.call_indirect %arg0(%{{.*}}) : (!kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) -> ()
+  %0 = pop.stack_allocation 1 x struct<(index, index) memoryOnly>
+  kgen.call_indirect tail %arg0(%0) : (!kgen.pointer<struct<(index, index) memoryOnly>> imm_mem) -> ()
+  hlcf.return
+}
