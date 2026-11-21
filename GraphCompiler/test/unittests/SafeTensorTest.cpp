@@ -110,3 +110,29 @@ TEST(SafeTensor, HeaderTooLarge) {
   ASSERT_STREQ(safeTensorOr.getError(),
                "header length is greater than the max header size");
 }
+
+TEST(SafeTensor, TensorInfoNotAnObject) {
+  auto device = makeCPU();
+  auto buffer = getDeserializedBuffer("\x10\x00\x00\x00\x00\x00\x00\x00"
+                                      "{\"test\":5}      ",
+                                      device);
+
+  auto safeTensorOr = SafeTensor::get(device, buffer);
+  ASSERT_TRUE(safeTensorOr.isError()) << safeTensorOr.getError();
+  ASSERT_STREQ(safeTensorOr.getError(),
+               "tensor info is not a JSON object: test");
+}
+
+TEST(SafeTensor, TensorOffsetsOutsideDataRegion) {
+  auto device = makeCPU();
+  auto buffer = getDeserializedBuffer(
+      "<\x00\x00\x00\x00\x00\x00\x00"
+      "{\"test\":{\"dtype\":\"I32\",\"shape\":[2,2],\"data_offsets\":[0,18]}}"
+      "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+      device);
+
+  auto safeTensorOr = SafeTensor::get(device, buffer);
+  ASSERT_TRUE(safeTensorOr.isError()) << safeTensorOr.getError();
+  ASSERT_STREQ(safeTensorOr.getError(),
+               "tensor 'test' has data_offsets outside the data region");
+}

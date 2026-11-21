@@ -13,7 +13,25 @@
 
 #include "GraphCompiler/Support/SafeTensor/SafeTensor.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "Support/PlatformUtils.h"
 #include "Support/Preprocessor.h"
+#include "llvm/Support/Process.h"
+
+#include <algorithm>
+#include <cerrno>
+#include <cstring>
+
+// `madvise(MADV_WILLNEED)` is worth issuing on macOS only. Linux's mmap read
+// path already read-aheads aggressively, and its `MADV_WILLNEED` submits the
+// I/O synchronously, which serializes the reads a cold load depends on running
+// in parallel: on a cold 2 GiB shard of 52 KiB tensors it measured 2.2x slower
+// than the faults it replaces, and it was neutral on 64 MiB tensors.
+#if MODULAR_MACOS
+#include <sys/mman.h>
+#define SAFETENSOR_PREFETCH_PAGES 1
+#else
+#define SAFETENSOR_PREFETCH_PAGES 0
+#endif
 
 using namespace M;
 
@@ -21,6 +39,48 @@ static constexpr size_t kHeaderBinarySize = 8;
 static constexpr size_t kHeaderMaxSize = 100'000'000;
 
 #define DEBUG_TYPE "safetensor"
+
+//===----------------------------------------------------------------------===//
+// Page-cache hints
+//===----------------------------------------------------------------------===//
+
+/// Asks the kernel to read `[offset, offset + length)` of `buffer` ahead of the
+/// accesses that follow.
+///
+/// macOS pays a minor fault per page and issues a small readahead window per
+/// fault, so a cold 6 GiB shard of 64 MiB tensors loads at 0.7 GB/s;
+/// `MADV_WILLNEED` submits the range in one call instead, which takes the same
+/// load to 3.6 GB/s, and 3.3 GB/s to 10 GB/s once the pages are cached.
+///
+/// Best-effort: the advice may be ignored, and a buffer that is not a
+/// page-aligned file mapping fails the call harmlessly.
+static void prefetchPages(const M::Driver::DeviceBuffer &buffer, size_t offset,
+                          size_t length) {
+#if SAFETENSOR_PREFETCH_PAGES
+  const size_t bufferSize = buffer.byteSize();
+  if (offset >= bufferSize || length == 0)
+    return;
+  length = std::min(length, bufferSize - offset);
+
+  // `madvise` requires a page-aligned address, while tensor sub-buffers are
+  // aligned to the tensor only, so widen to the enclosing pages.
+  const size_t pageSize = llvm::sys::Process::getPageSizeEstimate();
+  const uintptr_t base = reinterpret_cast<uintptr_t>(buffer.ptr());
+  const uintptr_t firstPage = base + (offset / pageSize) * pageSize;
+  const uintptr_t lastPage =
+      base + ((offset + length + pageSize - 1) / pageSize) * pageSize;
+
+  if (::madvise(reinterpret_cast<void *>(firstPage), lastPage - firstPage,
+                MADV_WILLNEED) != 0) {
+    LLVM_DEBUG(llvm::dbgs() << "madvise(MADV_WILLNEED) failed: "
+                            << std::strerror(errno) << "\n");
+  }
+#else
+  (void)buffer;
+  (void)offset;
+  (void)length;
+#endif
+}
 
 // f8e4m3 maps to f8e4m3fn intentionally, matching HF's `safetensor`.
 #define TYPE_MAPPING(X)                                                        \
@@ -103,7 +163,8 @@ SafeTensor::TensorInfo::get(const llvm::json::Object &tensorInfo) {
   shape.reserve(shapeArray->size());
   for (const auto &shapeValue : *shapeArray) {
     std::optional<int64_t> shapeValueAsInteger = shapeValue.getAsInteger();
-    assert(shapeValueAsInteger && "shape value is not an integer");
+    if (!shapeValueAsInteger || *shapeValueAsInteger < 0)
+      return Error("shape value is not a non-negative integer");
     shape.push_back(*shapeValueAsInteger);
   }
 
@@ -114,14 +175,16 @@ SafeTensor::TensorInfo::get(const llvm::json::Object &tensorInfo) {
   if (!dataOffsetsArrayOr)
     return Error("data_offsets is not an array");
 
-  llvm::json::Array dataOffsetsArray = *dataOffsetsArrayOr;
+  const llvm::json::Array &dataOffsetsArray = *dataOffsetsArrayOr;
   if (dataOffsetsArray.size() != 2)
     return Error("data_offsets must have exactly two elements");
 
   std::optional<int64_t> dataOffsets0 = dataOffsetsArray[0].getAsInteger();
   std::optional<int64_t> dataOffsets1 = dataOffsetsArray[1].getAsInteger();
-  assert(dataOffsets0 && "data_offsets[0] is not an integer");
-  assert(dataOffsets1 && "data_offsets[1] is not an integer");
+  if (!dataOffsets0 || !dataOffsets1)
+    return Error("data_offsets values are not integers");
+  if (*dataOffsets0 < 0 || *dataOffsets1 < *dataOffsets0)
+    return Error("data_offsets must be non-negative and ordered");
 
   return SafeTensor::TensorInfo(*dtype, shape, {*dataOffsets0, *dataOffsets1});
 }
@@ -144,6 +207,13 @@ llvm::json::Value SafeTensor::TensorInfo::toJSON() const {
 
 ErrorOr<SafeTensor> SafeTensor::get(M::Driver::DeviceContextRef device,
                                     M::Driver::DeviceBufferRef parentBuffer) {
+  return get(std::move(device), std::move(parentBuffer),
+             /*isFileMapping=*/false);
+}
+
+ErrorOr<SafeTensor> SafeTensor::get(M::Driver::DeviceContextRef device,
+                                    M::Driver::DeviceBufferRef parentBuffer,
+                                    bool isFileMapping) {
   size_t bufferSize = parentBuffer->byteSize();
 
   if (bufferSize < kHeaderBinarySize)
@@ -161,6 +231,11 @@ ErrorOr<SafeTensor> SafeTensor::get(M::Driver::DeviceContextRef device,
 
   if (headerLength + kHeaderBinarySize > bufferSize)
     return Error("header length is greater than the file size");
+
+  // Start the header read while the parser walks it: the header is up to 100 MB
+  // of the file and nothing else touches those pages.
+  if (isFileMapping)
+    prefetchPages(*parentBuffer, kHeaderBinarySize, headerLength);
 
   StringRef jsonString(reinterpret_cast<const char *>(parentBuffer->ptr()) +
                            kHeaderBinarySize,
@@ -180,39 +255,51 @@ ErrorOr<SafeTensor> SafeTensor::get(M::Driver::DeviceContextRef device,
   if (!jsonValueAsObject)
     return Error("failed to convert JSON value to object");
 
+  // The data region starts after the header and is what every tensor's
+  // `data_offsets` indexes into.
+  const size_t dataRegionSize = bufferSize - kHeaderBinarySize - headerLength;
+
   llvm::json::Object metadata;
   llvm::DenseMap<std::string, TensorInfo> tensorInfo;
+  tensorInfo.reserve(jsonValueAsObject->size());
   for (const auto &[key, value] : *jsonValueAsObject) {
     if (key == "__metadata__") {
       if (!metadata.empty())
         return Error("duplicate metadata while deserializing safetensor");
-      assert(value.getAsObject() && "metadata is not a JSON object");
-      metadata = *value.getAsObject();
+      auto *metadataObject = value.getAsObject();
+      if (!metadataObject)
+        return Error("metadata is not a JSON object");
+      metadata = *metadataObject;
       continue;
     }
 
-    auto tensorInfoOr = TensorInfo::get(*value.getAsObject());
+    auto *tensorInfoObject = value.getAsObject();
+    if (!tensorInfoObject)
+      return Error(Twine("tensor info is not a JSON object: ") + key.str());
+
+    auto tensorInfoOr = TensorInfo::get(*tensorInfoObject);
     if (tensorInfoOr.isError())
       return tensorInfoOr.takeError();
+    if (tensorInfoOr->offsets.second > dataRegionSize)
+      return Error(Twine("tensor '") + key.str() +
+                   "' has data_offsets outside the data region");
+
     auto [_, seen] = tensorInfo.try_emplace(key.str(), *tensorInfoOr);
     if (!seen)
       return Error(Twine("duplicate tensor name: ") + key.str());
   }
 
   return SafeTensor(headerLength, std::move(device), std::move(parentBuffer),
-                    std::move(metadata), std::move(tensorInfo));
+                    std::move(metadata), std::move(tensorInfo), isFileMapping);
 }
 
 ErrorOr<SafeTensor> SafeTensor::get(const std::filesystem::path &path,
                                     M::Driver::DeviceContextRef device) {
-  // TODO: Read once on the CPU path. The GPU path reads twice: metadata, then
-  // the data sent to the GPU.
-
   auto result = device->memmapFile(path);
   if (result)
     return result.takeError();
 
-  return get(std::move(device), std::move(*result));
+  return get(std::move(device), std::move(*result), /*isFileMapping=*/true);
 }
 
 ErrorOr<SafeTensor::TensorInfo>
@@ -227,8 +314,17 @@ SafeTensor::getTensorInfo(StringRef name) const {
 
 M::Driver::DeviceBufferRef
 SafeTensor::getTensorMemory(const TensorInfo &info) const {
-  auto subBuffer = parentBuffer->createSubBuffer(
-      8 + headerLength + info.offsets.first, info.getSizeInBytes());
+  const size_t byteOffset =
+      kHeaderBinarySize + headerLength + info.offsets.first;
+  const size_t byteSize = info.getSizeInBytes();
+
+  // Hand the kernel the whole tensor before the caller reads it: the copy that
+  // follows then runs on resident pages instead of faulting them in one at a
+  // time.
+  if (isFileMapping)
+    prefetchPages(*parentBuffer, byteOffset, byteSize);
+
+  auto subBuffer = parentBuffer->createSubBuffer(byteOffset, byteSize);
   assert(!subBuffer.isError() &&
          "sub-buffer dimensions should already have been validated");
 
@@ -244,7 +340,7 @@ SafeTensorBundle::get(ArrayRef<std::filesystem::path> paths,
                       M::Driver::DeviceContextRef ctx) {
   DenseMap<std::string, size_t> tensorNameToIndex;
   SmallVector<SafeTensor> files;
-  files.reserve(files.size());
+  files.reserve(paths.size());
 
   for (const auto &[i, path] : llvm::enumerate(paths)) {
     auto safeTensorOr = SafeTensor::get(path, ctx);
@@ -260,15 +356,16 @@ SafeTensorBundle::get(ArrayRef<std::filesystem::path> paths,
 
 ErrorOr<M::Driver::DeviceBufferRef>
 SafeTensorBundle::getTensorMemory(StringRef name) const {
-  auto it = tensorNameToIndex.find(name.str());
+  // Both maps are keyed by `std::string`, so build the key once and reuse it
+  // rather than allocating one per lookup.
+  const std::string key = name.str();
+  auto it = tensorNameToIndex.find(key);
   if (it == tensorNameToIndex.end())
     return Error(Twine("the tensor named '") + name +
                  "' was not found in the safetensor bundle");
 
   const SafeTensor &file = files[it->second];
-
-  // TODO: Avoid this .str().
-  auto it2 = file.getTensorInfo().find(name.str());
+  auto it2 = file.getTensorInfo().find(key);
 
   assert(it2 != file.getTensorInfo().end());
 

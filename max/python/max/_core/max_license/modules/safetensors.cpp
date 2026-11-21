@@ -45,8 +45,13 @@ void M::Graph::Python::bindSafetensorsModule(nb::module_ m) {
       .def(
           "keys",
           [](SafeTensorWrapper &self) {
-            auto keys = self.impl.getTensorInfo().keys();
-            return std::vector<std::string>(keys.begin(), keys.end());
+            const auto &allInfo = self.impl.getTensorInfo();
+            auto keys = allInfo.keys();
+            std::vector<std::string> names;
+            names.reserve(allInfo.size());
+            for (const auto &key : keys)
+              names.emplace_back(key);
+            return names;
           },
           "Returns the list of tensor keys present.")
       .def(
@@ -98,7 +103,13 @@ void M::Graph::Python::bindSafetensorsModule(nb::module_ m) {
         Driver::Python::PyDeviceTy device =
             maybeDevice ? std::move(maybeDevice.value())
                         : Driver::Python::getCpuDevice(0);
-        auto result = SafeTensor::get(filepath, device->ctx);
+        M::Driver::DeviceContextRef ctx = device->ctx;
+        // Mapping and parsing a shard touches no Python state, so let other
+        // threads (the loader opens shards in parallel) make progress.
+        ErrorOr<SafeTensor> result = [&]() {
+          nb::gil_scoped_release release;
+          return SafeTensor::get(filepath, std::move(ctx));
+        }();
         if (result.isError())
           //  TODO: more specific error
           throw nb::value_error(result.getError());
