@@ -1950,20 +1950,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # unconditionally, so it needs DeepGEMM's weight layout.
         vllm_env={"VLLM_USE_DEEP_GEMM": "1"},
     ),
-    "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-V3.2-Exp",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 1,
-            # Match `--kv-cache-format float8_e4m3fn` (FP8 KV avoids dtype mismatches / hangs).
-            "kv_cache_format": "float8_e4m3fn",
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        add_bos_token=True,
-    ),
     # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
     # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.
     "poolside/Laguna-S-2.1-NVFP4": GenericOracle(

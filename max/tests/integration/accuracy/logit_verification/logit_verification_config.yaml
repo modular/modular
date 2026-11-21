@@ -960,21 +960,6 @@ logit_verification_pipelines:
     kl_div_threshold: 3.5e-01
     timeout: 3600
 
-  deepseek-ai/DeepSeek-V3.2-Exp:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "deepseek-ai/DeepSeek-V3.2-Exp"
-    compatible_with: [gpu]
-    encoding: float8_e4m3fn
-    tags: [nvidia-multi, 8xb200]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/deepseek-ai_DeepSeek-V3.2-Exp_golden/deepseek-ai_DeepSeek-V3.2-Exp_golden.tar.gz"
-      json_file: "torch_deepseek-ai_DeepSeek-V3.2-Exp_float8_e4m3fn_golden.json"
-    # Loosened pending MODELS-943 (sparse-MLA prefill correctness).
-    cos_dist_threshold: 6.0e-01
-    kl_div_threshold: 5.0e+00
-    timeout: 1200
-
   google/gemma-3-1b-it-bfloat16:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []

@@ -54,7 +54,6 @@ SKIP_MODELS: set[str] = {
     "austinpowers/kimi-k2.5-nvfp4-deepseekv3",
     "minimaxai/minimax-m2.7",
     "lukealonso/minimax-m2.7-nvfp4",
-    "deepseek-ai/deepseek-v3.2-exp",
     "modularai/llama-3.1-405b-instruct-autofp8",
     "deepseek-ai/deepseek-r1",
     "deepseek-ai/deepseek-v3.1-terminus",
