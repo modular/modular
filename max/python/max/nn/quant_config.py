@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Protocol, TypeVar, overload
 
 from max.driver import accelerator_api
@@ -387,6 +388,32 @@ class QuantConfig:
     from 0.25 to 4.0 in steps of 0.1 and always including 1.0, with the
     smallest quantization MSE. When unset (the default), the scale is the
     block's own abs-max. Other formats ignore it.
+    """
+
+    targets: tuple[str, ...] = ()
+    """Tensor-name regexes of the linears to wrap for on-the-fly quantization.
+
+    Used when ``source`` is :attr:`WeightSource.QUANTIZE` and layers are
+    selected by name rather than by :attr:`mlp_quantized_layers` /
+    :attr:`attn_quantized_layers` indices. Empty means no name-based wrap.
+    """
+
+    error_report_dir: Path | None = None
+    """Directory for per-weight quantization error dumps.
+
+    When set with :attr:`report_error`, the compiling session prepares this
+    directory for the graph's error prints. A later process that runs the
+    graph writes dumps here only if it enables the same debug-print option.
+    """
+
+    verbose: bool = False
+    """Whether to print the patched module before the on-the-fly quantizer count."""
+
+    source_format: str | None = None
+    """Optional asserted storage format of targeted on-the-fly weights.
+
+    ``bf16`` or ``fp8``. When set, a targeted weight stored as anything else
+    raises. When unset, each weight's own format decides.
     """
 
     @classmethod

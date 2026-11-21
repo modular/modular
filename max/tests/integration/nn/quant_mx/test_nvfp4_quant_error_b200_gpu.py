@@ -33,10 +33,6 @@ import numpy as np
 import pytest
 from max import driver
 from max import functional as F
-from max._entrypoints.cli.quantize import (
-    insert_quantized_linears,
-    on_the_fly_config,
-)
 from max.driver import Accelerator, accelerator_count
 from max.driver.buffer import load_max_buffer
 from max.dtype import DType
@@ -51,6 +47,10 @@ from max.nn.common_layers.quant_tensor import (
 )
 from max.nn.kernels import nvfp4_dequant
 from max.nn.module import Module, module_dataclass
+from max.pipelines.lib.quantization import (
+    insert_quantized_linears,
+    on_the_fly_config,
+)
 from max.pipelines.weights.fp4_quantization import (
     FP4Format,
     dequantize_nvfp4,

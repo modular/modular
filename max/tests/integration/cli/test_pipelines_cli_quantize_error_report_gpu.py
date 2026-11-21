@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``max quantize --error-report-dir`` end to end on real models.
+"""On-the-fly quant error reporting end to end on real models.
 
 One test, parametrized by quantization format, for the model named by
 ``$QUANT_MODEL`` (a key of :data:`MODELS`). Each Bazel target pins one model
@@ -27,10 +27,14 @@ The table is printed into the test log (``--test_output=all``), headed
 ``=== <repo> / <format> ===``. Each run's report directory is
 ``$TEST_UNDECLARED_OUTPUTS_DIR/quant_error/<model>/<format>``, which
 BuildBuddy lists under the invocation's Artifacts tab.
+
+Drives the pipeline registry with an on-the-fly ``QuantConfig`` and one
+token of generation so the graph's error prints land in the report dir.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -38,8 +42,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from max._entrypoints import pipelines
-from max._entrypoints.cli.quant_error_report import JSON_NAME
+from max._entrypoints.cli.generate import stream_text_to_console
+from max._entrypoints.cli.quant_error_report import JSON_NAME, write_report
+from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.context import SamplingParams, SamplingParamsInput
+from max.pipelines.lib import (
+    PipelineArgs,
+    PipelineConfig,
+)
+from max.pipelines.modeling.types import Pipeline
 
 
 @dataclass(frozen=True)
@@ -85,32 +96,53 @@ def test_quantize_error_report_lists_every_targeted_layer(
     if model.gated and not os.environ.get("HF_TOKEN"):
         pytest.skip(f"{model.repo_id} is gated; set HF_TOKEN")
     out_dir = _report_dir(tmp_path, fmt)
-    try:
-        pipelines.main(
-            [
-                "quantize",
-                "--model-path",
-                model.repo_id,
-                "--prefer-module-v3",
-                "--trust-remote-code",
-                f"--device-memory-utilization={model.memory_utilization}",
-                # One short prompt, one token. Left alone the planner sizes
-                # the KV cache to fill the memory budget, and on a shared GPU
-                # that request can exceed what the allocator can hand out.
-                "--max-batch-size=1",
-                "--max-length=4096",
-                "--max-new-tokens=1",
-                "--quantization-encoding=bfloat16",
-                "--quantization-format",
-                fmt,
-                "--devices=gpu",
-                "--error-report-dir",
-                str(out_dir),
-            ]
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    from max._entrypoints.cli.device_options import DevicesOptionType
+
+    pipeline_args = PipelineArgs.from_flat_kwargs(
+        model_path=model.repo_id,
+        prefer_module_v3=True,
+        trust_remote_code=True,
+        device_memory_utilization=model.memory_utilization,
+        max_batch_size=1,
+        max_length=4096,
+        quantization_encoding="bfloat16",
+        device_specs=DevicesOptionType.device_specs("gpu"),
+        quantization_format=fmt,
+        targets=[
+            r"^language_model\.layers\.\d+\.mlp\.down_proj$",
+            r"^language_model\.layers\.\d+\.self_attn\.o_proj$",
+            r"^model\.layers\.\d+\.mlp\.down_proj$",
+            r"^model\.layers\.\d+\.self_attn\.o_proj$",
+        ],
+        error_report_dir=out_dir,
+    )
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
+    assert pipeline_config.quant_config is not None
+    assert pipeline_config.quant_config.quantizes_on_load
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
+    pipeline = retrieved.factory()
+    assert isinstance(pipeline, Pipeline)
+
+    sampling = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(max_new_tokens=1),
+        sampling_params_defaults=(
+            pipeline_config.model.sampling_params_defaults
+        ),
+    )
+    asyncio.run(
+        stream_text_to_console(
+            pipeline,
+            retrieved.tokenizer,
+            "I believe the meaning of life is",
+            images=[],
+            sampling_params=sampling,
+            metrics=None,
+            print_tokens=False,
         )
-    except SystemExit as exit_info:
-        # click exits through SystemExit even on success.
-        assert exit_info.code in (0, None), exit_info.code
+    )
+    write_report(out_dir)
     captured = capsys.readouterr()
 
     # Pytest hides a passing test's output; put the table in the test log.

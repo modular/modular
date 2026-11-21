@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,16 +25,9 @@ import pytest
 from max import functional as F
 from max import tree
 from max._entrypoints.cli.quantize import (
-    _check_expert_parallel_target,
-    _enable_error_prints,
-    _graphs_without_compile,
     _ignore_pattern,
-    _retarget_dispatch,
     checkpoint_quantization_config,
     export_quantized_checkpoint,
-    insert_quantized_linears,
-    on_the_fly_config,
-    quant_formats,
 )
 from max.driver import accelerator_count
 from max.dtype import DType
@@ -57,6 +51,20 @@ from max.nn.common_layers.quant_tensor import (
 )
 from max.nn.ep_config import EPConfig
 from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
+from max.nn.sequential import ModuleList
+from max.pipelines.lib.interfaces.pipeline_model import (
+    ModuleV3PipelineModelWithKVCache,
+)
+from max.pipelines.lib.quantization import (
+    _check_expert_parallel_target,
+    _enable_error_prints,
+    _graphs_without_compile,
+    _retarget_dispatch,
+    insert_quantized_linears,
+    on_the_fly_config,
+    quant_formats,
+    quantizing_factory,
+)
 from max.pipelines.weights.checkpoint_files import (
     ShardWriter,
     _host_tensor,
@@ -1146,3 +1154,157 @@ def test_the_dispatch_follows_the_experts_to_an_fp4_format(
     assert dispatch.dispatch_quant_config is config
     assert dispatch.dispatch_quant_config.is_nvfp4 is is_nvfp4
     assert dispatch.dispatch_quant_config.is_mxfp4 is not is_nvfp4
+
+
+#: The defaults ``max export --quantization-format`` uses. They name Gemma 4
+#: ModuleV3's down and output projections.
+_GEMMA4_EXPORT_TARGETS = (
+    r"^language_model\.layers\.\d+\.mlp\.down_proj$",
+    r"^language_model\.layers\.\d+\.self_attn\.o_proj$",
+)
+
+
+class _OutputProj(Module[[Tensor], Tensor]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.o_proj = Linear(32, 32, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.o_proj(x)
+
+
+class _GemmaLayer(Module[[Tensor], Tensor]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.self_attn = _OutputProj()
+        self.mlp = MLP(32, 64, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x
+
+
+class _GemmaText(Module[[Tensor], Tensor]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.layers = ModuleList([_GemmaLayer()])
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x
+
+
+class _GemmaShape(Module[[Tensor], Tensor]):
+    """The slice of Gemma 4 the export targets name."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.language_model = _GemmaText()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x
+
+
+def test_gemma4_export_targets_quantize_bf16_weights() -> None:
+    """Export targets wrap Gemma 4's down and o projections.
+
+    The wrapped parameter stays bfloat16, which is the dtype the MEF binds
+    from the unquantized checkpoint.
+    """
+    with F.lazy():
+        model = _GemmaShape()
+        insert_quantized_linears(
+            model, _GEMMA4_EXPORT_TARGETS, on_the_fly_config("nvfp4")
+        )
+
+    layer = model.language_model.layers[0]
+    assert isinstance(layer.mlp.down_proj, QuantizedLinear)
+    assert isinstance(layer.self_attn.o_proj, QuantizedLinear)
+    assert isinstance(layer.mlp.gate_proj, Linear)
+    assert not isinstance(layer.mlp.gate_proj, QuantizedLinear)
+    for proj in (layer.mlp.down_proj, layer.self_attn.o_proj):
+        assert isinstance(proj.weight, NVFP4TensorQuantizer)
+        leaves, _ = proj.weight.__tree_flatten__()
+        assert leaves["weight"].dtype == DType.bfloat16
+
+
+def test_quantizing_factory_compiles_modulev3_graphs() -> None:
+    """The MEF factory inserts quantizers and leaves compilation on."""
+
+    class _Model(ModuleV3PipelineModelWithKVCache[Any, Any]):
+        pass
+
+    factory = functools.partial(lambda **_kwargs: None, pipeline_model=_Model)
+    wrapped = quantizing_factory(
+        factory,
+        on_the_fly_config("nvfp4", targets=_GEMMA4_EXPORT_TARGETS),
+    )
+    assert isinstance(wrapped, functools.partial)
+    model_cls = wrapped.keywords["pipeline_model"]
+    assert model_cls.__name__ == "Quantizing_Model"
+    assert getattr(model_cls, "_export_only", False) is False
+
+
+def _closed_over(fn: Any) -> list[Any]:
+    return [cell.cell_contents for cell in (fn.__closure__ or ())]
+
+
+def test_quantizing_factory_puts_error_reporting_in_the_graph(
+    tmp_path: Path,
+) -> None:
+    """An error-report directory builds quantizers that print from the graph."""
+
+    class _Model(ModuleV3PipelineModelWithKVCache[Any, Any]):
+        pass
+
+    factory = functools.partial(lambda **_kwargs: None, pipeline_model=_Model)
+    wrapped = quantizing_factory(
+        factory,
+        on_the_fly_config(
+            "nvfp4",
+            targets=_GEMMA4_EXPORT_TARGETS,
+            error_report_dir=tmp_path,
+        ),
+    )
+    assert isinstance(wrapped, functools.partial)
+    model_cls = wrapped.keywords["pipeline_model"]
+    configs = [
+        value
+        for value in _closed_over(model_cls._instantiate_module)
+        if isinstance(value, QuantConfig)
+    ]
+    assert len(configs) == 1
+    assert configs[0].report_error
+    assert tmp_path in _closed_over(model_cls.load_graphs)
+
+
+def test_quantizing_factory_leaves_error_reporting_out_by_default() -> None:
+    class _Model(ModuleV3PipelineModelWithKVCache[Any, Any]):
+        pass
+
+    factory = functools.partial(lambda **_kwargs: None, pipeline_model=_Model)
+    wrapped = quantizing_factory(
+        factory,
+        on_the_fly_config("nvfp4", targets=_GEMMA4_EXPORT_TARGETS),
+    )
+    assert isinstance(wrapped, functools.partial)
+    model_cls = wrapped.keywords["pipeline_model"]
+    configs = [
+        value
+        for value in _closed_over(model_cls._instantiate_module)
+        if isinstance(value, QuantConfig)
+    ]
+    assert len(configs) == 1
+    assert not configs[0].report_error
+
+
+def test_quantizing_factory_refuses_a_graph_api_model() -> None:
+    class _GraphModel:
+        pass
+
+    factory = functools.partial(
+        lambda **_kwargs: None, pipeline_model=_GraphModel
+    )
+    with pytest.raises(TypeError, match="ModuleV3"):
+        quantizing_factory(
+            factory,
+            on_the_fly_config("nvfp4", targets=_GEMMA4_EXPORT_TARGETS),
+        )

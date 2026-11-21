@@ -265,6 +265,13 @@ _QUANT_ERROR_CASES = [
     ("olmo2_1b", "amd", "mxfp4", "//:mi355_gpu", "10"),
 ]
 
+# Architectures are loaded by name from the registry, so pydeps sees them as
+# unused even though retrieve_factory needs them on the import path.
+_QUANT_ERROR_ARCHES = [
+    "//max/python/max/pipelines/architectures/gemma3_modulev3",
+    "//max/python/max/pipelines/architectures/olmo2_modulev3",
+]
+
 [
     modular_py_test(
         name = "test_pipelines_cli_quantize_error_report_{}_{}_gpu".format(model, hardware),
@@ -279,14 +286,18 @@ _QUANT_ERROR_CASES = [
             "test.resources:gpu-memory": gpu_memory,
         },
         gpu_constraints = [gpu_constraint],
+        ignore_extra_deps = _QUANT_ERROR_ARCHES,
         tags = [
             "gpu",
             "no-sandbox",
             "requires-network",
         ],
-        deps = [
+        deps = _QUANT_ERROR_ARCHES + [
             "//max/python/max/_entrypoints",
-            "//max/python/max/_entrypoints:pipelines",
+            "//max/python/max/pipelines",
+            "//max/python/max/pipelines/context",
+            "//max/python/max/pipelines/lib",
+            "//max/python/max/pipelines/modeling",
         ],
     )
     for model, hardware, formats, gpu_constraint, gpu_memory in _QUANT_ERROR_CASES

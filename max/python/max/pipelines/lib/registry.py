@@ -904,6 +904,9 @@ class PipelineRegistry:
                 Callable[[], PipelineTypes],
                 functools.partial(pipeline_class, **pixel_factory_kwargs),
             )
+            pipeline_factory = self._maybe_quantizing_factory(
+                pipeline_config, pipeline_factory
+            )
 
             # Cast tokenizer for return (pixel generation tokenizer doesn't have eos)
             typed_tokenizer = cast(
@@ -937,6 +940,9 @@ class PipelineRegistry:
             audio_pipeline_factory = cast(
                 Callable[[], PipelineTypes],
                 functools.partial(pipeline_class, **audio_factory_kwargs),
+            )
+            audio_pipeline_factory = self._maybe_quantizing_factory(
+                pipeline_config, audio_pipeline_factory
             )
             return RetrievedPipeline(
                 tokenizer=cast(
@@ -1029,6 +1035,9 @@ class PipelineRegistry:
             Callable[[], PipelineTypes],
             functools.partial(pipeline_class, **factory_kwargs),
         )
+        pipeline_factory = self._maybe_quantizing_factory(
+            pipeline_config, pipeline_factory
+        )
 
         if not tokenizer.eos_token_ids:
             logger.warning(
@@ -1039,6 +1048,26 @@ class PipelineRegistry:
             tokenizer=tokenizer,
             factory=pipeline_factory,
             memory_plan=memory_plan,
+        )
+
+    def _maybe_quantizing_factory(
+        self,
+        pipeline_config: PipelineConfig,
+        factory: Callable[[], PipelineTypes],
+    ) -> Callable[[], PipelineTypes]:
+        """Wraps ``factory`` with on-the-fly quantizers when configured.
+
+        Selected from ``pipeline_config.quant_config`` when that config
+        quantizes on load (``source=QUANTIZE``).
+        """
+        quant_config = pipeline_config.quant_config
+        if quant_config is None or not quant_config.quantizes_on_load:
+            return factory
+        from max.pipelines.lib.quantization import quantizing_factory
+
+        return cast(
+            Callable[[], PipelineTypes],
+            quantizing_factory(factory, quant_config),
         )
 
     def retrieve_context_type(

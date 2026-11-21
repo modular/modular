@@ -891,229 +891,46 @@ def cli_pipeline(
     )
 
 
-@main.command(name="quantize", cls=WithLazySamplingAndPipelineOptions)
-@click.option(
-    "--targets",
-    default=[
-        r"^language_model\.layers\.\d+\.mlp\.down_proj$",
-        r"^language_model\.layers\.\d+\.self_attn\.o_proj$",
-    ],
-    type=str,
-    multiple=True,
-    help="Tensor-name regex to quantize (repeatable)",
-)
-@click.option(
-    "--quantization-format",
-    type=str,
-    default="nvfp4",
-    show_default=True,
-    help=(
-        "Format the targeted weights are quantized into on load. Only"
-        " formats that can be produced on the fly are accepted; the error"
-        " lists them."
-    ),
-)
-@click.option(
-    "--source-format",
-    type=click.Choice(["bf16", "fp8"]),
-    default=None,
-    help=(
-        "Check that every targeted weight is stored as this: bf16 (native"
-        " precision) or fp8 (block-scaled float8_e4m3fn with"
-        " weight_scale_inv). A targeted weight stored as anything else is an"
-        " error that names the layer, so a mistaken --targets pattern cannot"
-        " quietly re-quantize the wrong layers. Optional: when omitted, each"
-        " weight is handled by its own format, so one set of targets can mix"
-        " bf16 and fp8 weights. Leave it out for such a mix."
-    ),
-)
-@click.option(
-    "--error-report-dir",
-    type=click.Path(file_okay=False, path_type=Path),
-    default=None,
-    help=(
-        "Measure each quantized weight's error against its native-precision"
-        " source inside the compiled graph, and write the per-layer report"
-        " (table on stdout, quant_error_report.json) to this directory."
-        " A format that cannot measure its error is rejected. Costs extra"
-        " memory while the graph runs. Rebuild a report later from the"
-        " directory with `max quantize-report`."
-    ),
-)
-@click.option(
-    "--mse-sweep-scales/--no-mse-sweep-scales",
-    default=False,
-    show_default=True,
-    help=(
-        "For NVFP4, search multipliers of each block's abs-max, from 0.25 to"
-        " 4.0 in steps of 0.1 and always including 1.0, and keep the scale"
-        " with the smallest quantization MSE. Off by default, which uses the"
-        " block's own abs-max. Other formats ignore this."
-    ),
-)
-@click.option(
-    "--verbose",
-    is_flag=True,
-    default=False,
-    help="Print the patched module before the quantizer count.",
-)
+@main.command(name="quantize", cls=WithLazyPipelineOptions)
 @click.option(
     "--export-path",
     type=click.Path(file_okay=False, path_type=Path),
-    default=None,
-    help=(
-        "Write a quantized checkpoint to this directory. The model is"
-        " exported without running generation."
-    ),
-)
-@click.option(
-    "--prompt",
-    type=str,
-    default="I believe the meaning of life is",
-    help="The text prompt to use for further generation.",
-)
-@click.option(
-    "--image_url",
-    type=str,
-    multiple=True,
-    default=[],
-    help=(
-        "Images to include along with prompt, specified as URLs."
-        " The images are ignored if the model does not support"
-        " image inputs."
-    ),
-)
-@click.option(
-    "--num-warmups",
-    type=int,
-    default=0,
-    show_default=True,
-    help="Number of warmup iterations to run before the final timed run.",
-)
-@click.option(
-    "--profile",
-    is_flag=True,
-    default=False,
-    show_default=True,
-    help=(
-        "Capture a rudimentary profile of the timed run. If Nsight Systems "
-        "(`nsys`) and an NVIDIA GPU are available, captures the GPU kernel "
-        "trace into an .nsys-rep file and prints the top kernels. Always "
-        "captures a Python/CPU profile via cProfile."
-    ),
-)
-@click.option(
-    "--profile-output",
-    type=str,
-    default=None,
-    help=(
-        "Path for the .nsys-rep file when `--profile` is on. Default: "
-        "$BUILD_WORKSPACE_DIRECTORY/max-profile.nsys-rep, or "
-        "./max-profile.nsys-rep."
-    ),
-)
-@click.option(
-    "--profile-top-n",
-    type=int,
-    default=15,
-    show_default=True,
-    help="Number of rows to show in the GPU kernel and Python profile tables.",
+    required=True,
+    help="Write a quantized checkpoint to this directory.",
 )
 def quantize(
-    targets: list[str],
-    quantization_format: str,
-    source_format: str | None,
-    error_report_dir: Path | None,
-    mse_sweep_scales: bool,
-    verbose: bool,
-    export_path: Path | None,
-    prompt: str,
-    image_url: list[str],
-    num_warmups: int,
-    profile: bool,
-    profile_output: str | None,
-    profile_top_n: int,
-    top_k: int,
-    top_p: float,
-    min_p: float,
-    temperature: float,
-    frequency_penalty: float,
-    presence_penalty: float,
-    repetition_penalty: float,
-    max_new_tokens: int,
-    min_new_tokens: int,
-    ignore_eos: bool,
-    stop: list[str],
-    stop_token_ids: list[int],
-    detokenize: bool,
-    seed: int,
+    export_path: Path,
     **config_kwargs: Any,
 ) -> None:
-    """Quantize the specified model.
+    """Quantize the specified model and write a quantized checkpoint.
 
-    With ``--export-path``, the model is exported without running generation.
+    Requires ``--export-path`` and ``--targets``. On-the-fly settings
+    (``--quantization-format``, ``--targets``, ``--error-report-dir``,
+    ``--verbose``, ``--mse-sweep-scales``) come from the pipeline's
+    quantization config; the format defaults to ``nvfp4`` when unset.
+    For graph-level error measurement without a checkpoint export, use
+    ``max export``.
     """
     from max._entrypoints.cli.quantize import quantize_pipeline
-    from max.pipelines.context import SamplingParams, SamplingParamsInput
-    from max.profiler import maybe_reexec_under_nsys
-
-    # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec
-    # under nsys *before* loading any model state. The child process picks
-    # up the same argv, detects it is running under nsys, and runs normally.
-    # This keeps the parent process's wasted work to ~zero.
-    if profile:
-        maybe_reexec_under_nsys(profile_output, top_n=profile_top_n)
-
-    params = SamplingParamsInput(
-        top_k=top_k,
-        top_p=top_p,
-        min_p=min_p,
-        temperature=temperature,
-        frequency_penalty=frequency_penalty,
-        presence_penalty=presence_penalty,
-        repetition_penalty=repetition_penalty,
-        # Limit generate default max_new_tokens to 100.
-        max_new_tokens=max_new_tokens or 100,
-        min_new_tokens=min_new_tokens,
-        ignore_eos=ignore_eos,
-        stop=stop,
-        stop_token_ids=stop_token_ids,
-        detokenize=detokenize,
-        seed=seed,
-    )
-
-    # Load tokenizer & pipeline.
     from max.pipelines import PipelineArgs
-    from max.pipelines.lib import MAXModelConfig
 
+    # Checkpoint export always needs a format; match the previous CLI default.
+    if not config_kwargs.get("quantization_format"):
+        config_kwargs["quantization_format"] = "nvfp4"
+    if not config_kwargs.get("targets"):
+        raise click.ClickException(
+            "Pass --targets with one or more tensor-name regexes of the"
+            " linears to quantize."
+        )
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
-    if error_report_dir is not None:
+    if pipeline_args.error_report_dir is not None:
         _refuse_eager(
             pipeline_args.runtime.eager,
             "--error-report-dir names each weight by its checkpoint path, "
             "which only a compiled graph keeps, so it can't be combined with "
             "--eager.",
         )
-    model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
-    quantize_pipeline(
-        pipeline_args,
-        sampling_params=SamplingParams.from_input_and_generation_config(
-            params,
-            sampling_params_defaults=model_config.sampling_params_defaults,
-        ),
-        targets=targets,
-        prompt=prompt,
-        quantization_format=quantization_format,
-        source_format=source_format,
-        verbose=verbose,
-        error_report_dir=error_report_dir,
-        mse_sweep_scales=mse_sweep_scales,
-        image_urls=image_url,
-        num_warmups=num_warmups,
-        profile=profile,
-        profile_top_n=profile_top_n,
-        export_path=export_path,
-    )
+    quantize_pipeline(pipeline_args, export_path=export_path)
 
 
 @main.command(name="quantize-report")
@@ -1124,7 +941,7 @@ def quantize(
 def quantize_report(directory: Path) -> None:
     """Rebuild the quantization error report from a finished run.
 
-    Reads the dumps `max quantize --error-report-dir DIRECTORY` left behind,
+    Reads the dumps an ``--error-report-dir DIRECTORY`` run left behind,
     prints the per-layer table and rewrites quant_error_report.json. Needs
     neither the model nor a GPU.
     """
@@ -1280,6 +1097,14 @@ def cli_export(
     engine may load. For an architecture with weight rules, it also holds the
     rules its checkpoint loads through. With ``--target``, it compiles for
     that target on virtual devices, so no GPU is needed.
+
+    With ``--quantization-format`` and ``--targets``, the named linears
+    quantize inside those graphs via the pipeline's on-the-fly quantization
+    config. The weights the MEFs load stay the checkpoint's.
+
+    With ``--error-report-dir``, the graphs also measure each quantized
+    weight's error. The print stays in the MEF and runs whenever the graph
+    runs.
     """
     from max._artifact import ArtifactError
     from max._artifact.export import export_pipeline
@@ -1300,6 +1125,31 @@ def cli_export(
         "--eager runs the decoder without compiling it, so max export has "
         "nothing to export. Drop --eager."
     )
+    ctx = click.get_current_context()
+    quantization_format = config_kwargs.get("quantization_format")
+    targets = config_kwargs.get("targets") or ()
+    if (
+        quantization_format is None
+        and ctx.get_parameter_source("targets")
+        is not click.core.ParameterSource.DEFAULT
+    ):
+        raise click.ClickException(
+            "Pass --quantization-format to insert the --targets quantizers"
+            " into the exported graphs."
+        )
+    if quantization_format is not None and not targets:
+        raise click.ClickException(
+            "Pass --targets with one or more tensor-name regexes of the"
+            " linears to quantize."
+        )
+    if (
+        config_kwargs.get("error_report_dir") is not None
+        and quantization_format is None
+    ):
+        raise click.ClickException(
+            "--error-report-dir measures the --quantization-format"
+            " quantizers, so it needs that option."
+        )
     _refuse_eager(config_kwargs.get("eager"), refusal)
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
     _refuse_eager(pipeline_args.runtime.eager, refusal)

@@ -242,3 +242,7 @@ def test_export_help_lists_pipeline_options() -> None:
     assert "--target" in result.output
     assert "--prefill-token-budget" in result.output
     assert "--prefill-graph-max-tokens" in result.output
+    assert "--quantization-format" in result.output
+    assert "--targets" in result.output
+    assert "--error-report-dir" in result.output
+    assert "--mse-sweep-scales" in result.output

@@ -1208,6 +1208,13 @@ def export_pipeline(
     name each graph's weights if its naming is rules, and the overlap helper
     graphs a serving engine may load, as roles beside the pipeline's.
 
+    With ``pipeline_config.quant_config`` (``source=QUANTIZE``), each
+    targeted linear is wrapped in an on-the-fly quantizer before those
+    graphs compile. The MEFs still bind the checkpoint's unquantized
+    weights; the quantizers are ops in the graph. When that config sets
+    ``error_report_dir``, those quantizers also print their error against
+    the native-precision weight.
+
     Args:
         pipeline_config: The pipeline's configuration.
         path: Where to write the artifact. ``.m`` is appended unless present.

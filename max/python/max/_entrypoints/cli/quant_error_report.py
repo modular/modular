@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Reads the quantization-error dumps a ``max quantize`` run leaves behind.
+"""Reads the quantization-error dumps an ``--error-report-dir`` run leaves.
 
 With an error-report directory set, each quantized weight prints
 ``[sum_sq_error, sum_sq_source, max_abs_error]`` from inside the compiled
