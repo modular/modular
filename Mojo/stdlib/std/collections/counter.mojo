@@ -397,6 +397,9 @@ struct Counter[
         for e in self.keys():
             if self.get(e, 0) > other.get(e, 0):
                 return False
+        for e in other.keys():
+            if self.get(e, 0) > other.get(e, 0):
+                return False
         return True
 
     def lt(self, other: Self) -> Bool:
@@ -426,6 +429,9 @@ struct Counter[
         """
 
         for e in self.keys():
+            if self.get(e, 0) >= other.get(e, 0):
+                return False
+        for e in other.keys():
             if self.get(e, 0) >= other.get(e, 0):
                 return False
         return True
