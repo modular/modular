@@ -314,7 +314,11 @@ build:remote --config=cache
 build:remote --remote_executor=grpcs://modular.buildbuddy.io
 build:remote --local_test_jobs=HOST_CPUS
 build:remote --jobs=1000
-build:remote --repo_env=MODULAR_REMOTE_EXEC=1
+build:remote --config=remote-repo-env
+# Repository rules read this, so a command that misses it, such as `query`,
+# fetches them again and the next build analyzes every target again. Commands
+# that do not inherit `build` get it from `common --config=remote-repo-env`.
+common:remote-repo-env --repo_env=MODULAR_REMOTE_EXEC=1
 
 # Enable dynamic execution
 build --internal_spawn_scheduler
