@@ -296,6 +296,33 @@ def merged_numeric_try():
         var converted: Float32 = err
 
 
+# CHECK-LABEL: lit.fn @"typed_except
+def typed_except():
+    # CHECK: %__try_error__ = lit.var.decl "__try_error__" synth : !lit.ref{{.*}}Int
+    # CHECK-NEXT: %err = lit.var.decl "err" var : !lit.ref{{.*}}Float32
+    try:
+        # CHECK: %[[INT_ERROR:.*]] = lit.ref.load {{.*}} : {{.*}}Int
+        # CHECK-NEXT: %[[FLOAT_ERROR:.*]] = lit.call tail {{.*}}SIMD::@"__init__{{.*}}(%[[INT_ERROR]])
+        # CHECK-NEXT: %[[FLOAT_ERROR_ALIAS:.*]] = kgen.rebind %[[FLOAT_ERROR]]
+        # CHECK-NEXT: lit.ref.store %[[FLOAT_ERROR_ALIAS]], %err : {{.*}}Float32
+        raise_int()
+    except Float32 __as err:
+        # CHECK: } except {
+        # CHECK-NEXT: %converted = lit.var.decl "converted" var : !lit.ref{{.*}}Float32
+        # CHECK-NEXT: %[[EXCEPT_ERROR:.*]] = lit.ref.load %err : {{.*}}Float32
+        # CHECK-NEXT: lit.ref.store %[[EXCEPT_ERROR]], %converted : {{.*}}Float32
+        var converted: Float32 = err
+
+
+# CHECK-LABEL: lit.fn @"inferred_except_as
+def inferred_except_as():
+    # CHECK: %err = lit.var.decl "err" var : !lit.ref{{.*}}Int
+    try:
+        raise_int()
+    except __as err:
+        var converted: Int = err
+
+
 struct FirstError(ErrorConversionTrait):
     def __init__(out self):
         pass

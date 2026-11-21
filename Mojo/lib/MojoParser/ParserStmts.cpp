@@ -3771,8 +3771,9 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   return success();
 }
 
-/// try_stmt ::= "try" ":" suite "except" [expression ["as" identifier]] ":"
-///              suite ["else" suite]
+/// try_stmt ::= "try" ":" suite "except"
+///              [expression "as" identifier | "as" identifier | expression]
+///              ":" suite ["else" suite]
 ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   SMLoc smLoc = consumeToken(Token::kw_try).getLoc();
   Location loc = translateLocation(smLoc);
@@ -3812,45 +3813,50 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   }
   TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
-  if (inExceptRegion) {
-    auto emitter = getEmitter();
-    tryContext.finalizeErrorSlots(emitter);
-  }
-
-  // If nothing in the try body raised, the error vardecl may still be
-  // unresolved.  Force it to Error type if so, so any uses of it complain about
-  // Error.
   VarDeclOp errDecl;
-  if (inExceptRegion) {
-    MLValue errSlot = tryContext.getErrorSlot();
-    if (!errSlot) {
-      auto emitter = getEmitter();
-      errSlot = tryContext.getOrCreateErrorSlot(
-          emitter, UnresolvedType::get(getContext()), loc);
-    }
-    errDecl = cast<VarDeclOp>(errSlot.getDefiningOp());
-    if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
-      if (auto errorType =
-              shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
-        errDecl.changeElementType(errorType);
-    }
-  }
+  auto finalizeErrorSlot = [&](ASTType requiredErrorType = {}) {
+    assert(inExceptRegion && "expected an exception region");
+    auto emitter = getEmitter();
+    MLValue errorSlot = tryContext.finalizeErrorSlots(
+        emitter, requiredErrorType, /*isSlotRequired=*/true);
+    assert(errorSlot && "expected required exception slot");
+    errDecl = cast<VarDeclOp>(errorSlot.getDefiningOp());
+  };
 
   bool hasFinally = false;
   if (consumeIf(Token::kw_except)) {
-    // Parse an optional target to bind the error.
-    // FIXME: Our behavior is completely wrong here. "except Kind" is supposed
-    // to be a type pattern, and we should be parsing it as such. You need to
-    // use "except Kind as name" to bind the error to a name.
+    // Parse either a legacy error binding, `except error:`, or a
+    // Python-compatible typed binding, `except Type as error:`. The latter
+    // prescribes the error slot type before the except suite is emitted.
     ExprNode *errExpr = nullptr;
-    if (getToken().isNot(Token::colon)) {
+    ASTType requiredErrorType;
+    if (consumeIf(Token::kw___as)) {
       if (parseTargetListExpr(errExpr, curIndent))
         return failure();
-      errDecl->setLoc(translateLocation(errExpr->getLoc()));
+    } else if (getToken().isNot(Token::colon)) {
+      ExprNode *headerExpr = nullptr;
+      if (parseTargetListExpr(headerExpr, curIndent))
+        return failure();
+
+      if (consumeIf(Token::kw___as)) {
+        requiredErrorType =
+            getEmitter().emitExprType(headerExpr, TypeStrictness::kConcrete);
+        if (!requiredErrorType)
+          return failure();
+        if (parseTargetListExpr(errExpr, curIndent))
+          return failure();
+      } else {
+        errExpr = headerExpr;
+      }
     }
 
     if (parseToken(Token::colon, "expected ':' after 'except'"))
       return failure();
+
+    if (inExceptRegion)
+      finalizeErrorSlot(requiredErrorType);
+    if (errExpr)
+      errDecl->setLoc(translateLocation(errExpr->getLoc()));
 
     builder.createBlock(&tryOp.getExceptRegion());
 
@@ -3909,6 +3915,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       return emitTokenError("expected 'except' or 'finally' block");
     // In a raising context, the default 'except' block just forwards the error.
     if (inExceptRegion) {
+      finalizeErrorSlot();
       builder.createBlock(&tryOp.getExceptRegion());
       auto emitter = getEmitter();
       MLValue errSlot = emitter.getRaiseContext()->getOrCreateErrorSlot(

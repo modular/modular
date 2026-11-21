@@ -153,6 +153,7 @@ TOK_KEYWORD(while)
 TOK_KEYWORD(with)
 TOK_KEYWORD(yield)
 TOK_KEYWORD(__async) // Mojo extension: unstable async support.
+TOK_KEYWORD(__as) // Experimental typed-except binding.
 TOK_KEYWORD(__await) // Mojo extension: unstable async support.
 TOK_KEYWORD(__extension)  // Mojo extension extension.
 TOK_KEYWORD(__generator_type) // Mojo extension: generator type literal.
