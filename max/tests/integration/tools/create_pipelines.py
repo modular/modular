@@ -1622,13 +1622,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
-    "LiquidAI/LFM2.5-1.2B-Instruct": GenericOracle(
-        model_path="LiquidAI/LFM2.5-1.2B-Instruct",
-        config_params={"trust_remote_code": True},
-        device_encoding_map={
-            "gpu": ["float32", "bfloat16"],
-        },
-    ),
     "LiquidAI/LFM3-1.7B": GenericOracle(
         model_path="LiquidAI/LFM3-1.7B",
         config_params={"max_length": 8192, "trust_remote_code": True},

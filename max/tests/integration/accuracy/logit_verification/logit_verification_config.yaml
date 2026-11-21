@@ -315,19 +315,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 6.0e-03
     kl_div_threshold: 1.5e-02
 
-  LiquidAI/LFM2.5-1.2B-Instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "LiquidAI/LFM2.5-1.2B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: []
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/LiquidAI_LFM2.5-1.2B-Instruct_golden/1/1345a0b62a1bf36cacd821e131e533d008d44ece232009eb35d871226adb4e60/LiquidAI_LFM2.5-1.2B-Instruct_golden.tar.gz"
-      json_file: "torch_LiquidAI_LFM2.5-1.2B-Instruct_bfloat16_golden.json"
-    cos_dist_threshold: 5.0e-03
-    kl_div_threshold: 1.0e-02
-
   meta-llama/Llama-3.3-70B-Instruct-bfloat16:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
