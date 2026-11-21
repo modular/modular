@@ -27,6 +27,7 @@
 #include "llvm/Linker/Linker.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
@@ -44,6 +45,7 @@ ErrorOrSuccess LLVMModuleAndContext::create(
     function_ref<ErrorOr<std::unique_ptr<llvm::Module>>(llvm::LLVMContext &)>
         createModule) {
   assert(!module && "already have a module");
+  ctx->getLibraryOptions().assign(getEmissionLibraryOptions());
   auto moduleOr = createModule(*ctx);
   if (moduleOr.isError())
     return moduleOr.takeError();

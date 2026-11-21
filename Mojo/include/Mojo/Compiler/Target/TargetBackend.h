@@ -50,6 +50,9 @@ class Triple;
 class raw_pwrite_stream;
 template <class C>
 struct object_creator;
+namespace cl {
+class LibraryOptionsContext;
+} // namespace cl
 } // namespace llvm
 
 namespace mlir {
@@ -78,6 +81,13 @@ using TransformCache = BlobCache<TransformCacheKey>;
 namespace M::KGEN {
 
 class MCLinker;
+
+/// Returns the values that emission options set for the LLVM options declared
+/// in TableGen. LLVM reads such an option from the `LLVMContext` of the code
+/// and from the target machine, not from a process-wide value. So every
+/// context that holds code to compile copies these values, and every target
+/// machine that `defaultCreateTargetMachine` creates refers to them.
+llvm::cl::LibraryOptionsContext &getEmissionLibraryOptions();
 
 /// Creates an LLVM TargetMachine from already-effective `options`.
 /// Runs entirely in the host's LLVM instance (it uses the target registry,

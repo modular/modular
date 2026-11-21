@@ -52,6 +52,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -1245,15 +1246,31 @@ setEmissionOptions(llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options,
 
   llvm::cl::Option *opt = options.lookup(key);
   if (!opt) {
-    // Only `ParseCommandLineOptions` reaches options LLVM declares in TableGen.
-    // TODO: Reset them once LLVM can reset a single such option.
-    if (reset)
+    // LLVM declares this option in TableGen, so its value lives in
+    // `getEmissionLibraryOptions`, which only `parseCommandLineOptions` sets.
+    llvm::cl::LibraryOptionsContext &libraryOptions =
+        getEmissionLibraryOptions();
+    if (reset) {
+      // Parse the other set options again into an empty context.
+      std::string prefix = ("-" + key + "=").str();
+      SmallVector<std::string> keptArgs;
+      for (const char *arg : libraryOptions.args())
+        if (!StringRef(arg).starts_with(prefix))
+          keptArgs.push_back(arg);
+      SmallVector<const char *> argv = {"mojo"};
+      for (const std::string &arg : keptArgs)
+        argv.push_back(arg.c_str());
+      llvm::cl::LibraryOptionsContext kept;
+      if (!llvm::cl::parseCommandLineOptions(kept, argv, "", &llvm::nulls()))
+        return Error("cannot reset emission option \"" + Twine(key) + "\"");
+      libraryOptions.assign(kept);
       return success();
+    }
     std::string arg = ("-" + key + "=" + normalizedValue).str();
     const char *argv[] = {"mojo", arg.c_str()};
     std::string parseErrors;
     llvm::raw_string_ostream errs(parseErrors);
-    if (llvm::cl::ParseCommandLineOptions(2, argv, "", &errs))
+    if (llvm::cl::parseCommandLineOptions(libraryOptions, argv, "", &errs))
       return success();
     if (StringRef(parseErrors).contains("Unknown command line argument"))
       return Error("emission option \"" + Twine(key) + "\" is not found");
