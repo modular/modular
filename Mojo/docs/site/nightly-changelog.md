@@ -630,6 +630,13 @@ Most code that no longer compiles matches one of these patterns:
 - `VariadicPack` now conforms to `Writable` when all of its element types do,
   so a pack can be passed to `print()`, `String()` and `repr()`.
 
+- `Counter.lt()` and `Counter.gt()` now compare counters as proper sub-multisets
+  and super-multisets. `lt()` is `True` when every count is less than or equal
+  to the corresponding count in the other counter *and* the counters are not
+  equal, and `gt()` is the mirror image. Previously, `lt()` required every count
+  to be strictly less, which made `Counter([1]).lt(Counter([1, 2]))` `False`; an
+  empty counter was also less than a counter that held only zero-count keys.
+
 - `find()` and `rfind()` on `String`, `StringSpan` and `StringLiteral` now
   honor `start` when the substring is empty. `"abc".find("", 2)` returns `2`
   instead of `0`, and both methods return `None` when `start` is past the end
