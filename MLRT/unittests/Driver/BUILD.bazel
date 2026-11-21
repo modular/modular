@@ -1320,7 +1320,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "GraphCaptureMultiDeviceTest",
-    size = "small",
+    size = "medium",
     srcs = ["GraphCaptureMultiDeviceTest.cpp"],
     exec_properties = {
         # Measured peak GPU memory: ~628 MB, set to 2x for safety margin.
