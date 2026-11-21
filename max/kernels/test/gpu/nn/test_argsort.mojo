@@ -17,6 +17,7 @@ from layout import TileTensor, row_major
 
 from nn.argsort import argsort
 from std.testing import assert_equal, assert_false, assert_true
+from std.utils.numerics import inf, neg_inf
 
 
 def linear_filler(i: Int, n: Int) -> Float32:
@@ -33,6 +34,28 @@ def scrambled_filler(i: Int, n: Int) -> Float32:
 
 def repeated_filler(i: Int, n: Int) -> Float32:
     return Float32((i * 73) % 17 - 8)
+
+
+def inf_filler(i: Int, n: Int) -> Float32:
+    # +-inf sort beyond any finite padding value; they must not be dropped.
+    if i % 7 == 0:
+        return inf[DType.float32]()
+    if i % 11 == 3:
+        return neg_inf[DType.float32]()
+    return scrambled_filler(i, n)
+
+
+def sentinel_filler(i: Int, n: Int) -> Float32:
+    # Real values equal to the largest / smallest finite value.
+    if i % 5 == 0:
+        return Float32.MAX_FINITE
+    if i % 5 == 1:
+        return Float32.MIN_FINITE
+    return scrambled_filler(i, n)
+
+
+def all_inf_filler(i: Int, n: Int) -> Float32:
+    return inf[DType.float32]() if i % 2 == 0 else neg_inf[DType.float32]()
 
 
 def test_argsort[
@@ -138,8 +161,20 @@ def test_argsort_multiblock[
         test_argsort[dtype, filler=repeated_filler, ascending=ascending](ctx, n)
 
 
+def test_argsort_extreme_values[
+    *, dtype: DType, ascending: Bool
+](ctx: DeviceContext) raises:
+    # Sizes below 256 and non-powers of two are padded on the GPU.
+    for n in [1, 3, 4, 64, 128, 255, 256, 257, 300, 1000, 1024, 4096]:
+        test_argsort[dtype, filler=inf_filler, ascending=ascending](ctx, n)
+        test_argsort[dtype, filler=sentinel_filler, ascending=ascending](ctx, n)
+        test_argsort[dtype, filler=all_inf_filler, ascending=ascending](ctx, n)
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        test_argsort_extreme_values[dtype=DType.float32, ascending=True](ctx)
+        test_argsort_extreme_values[dtype=DType.float32, ascending=False](ctx)
         test_argsort_multiblock[dtype=DType.float32, ascending=True](ctx)
         test_argsort_multiblock[dtype=DType.float32, ascending=False](ctx)
         test_argsort_multiblock[dtype=DType.int64, ascending=True](ctx)
