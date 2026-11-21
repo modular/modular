@@ -1355,3 +1355,27 @@ def test_every_coordinator_initializes_retyped_memory(kind: str) -> None:
             huge_bid = block.bid // pool.cache_ratios[target.leaf_id]
             for slab in manager._replica_slabs[0]:
                 np.testing.assert_array_equal(slab[huge_bid, :].to_numpy(), 0)
+
+
+def _metric_counts(mgr: JengaKVCacheManager) -> tuple[int, int, int]:
+    m = mgr.get_metrics_aggregated()
+    return (m.input_tokens, m.cache_tokens, m.prompt_tokens)
+
+
+def test_failed_allocs_do_not_count_the_prompt() -> None:
+    """A request that hits InsufficientBlocksError is retried; each attempt
+    must not add its prompt to input_tokens."""
+    mgr = make_single_leaf_manager(num_huge_blocks=6)
+    held = make_ctx(num_tokens=4)
+    mgr.claim(held)
+    mgr.alloc(held)
+    waiting = make_ctx(num_tokens=3)
+    mgr.claim(waiting)
+    for _ in range(5):
+        with pytest.raises(InsufficientBlocksError):
+            mgr.alloc(waiting)
+    assert _metric_counts(mgr) == (4, 0, 4)
+
+    mgr.release(held)
+    mgr.alloc(waiting)
+    assert _metric_counts(mgr) == (7, 0, 7)
