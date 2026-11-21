@@ -5636,7 +5636,7 @@ static Type getLocalCanonical(Type type) {
 
   // Otherwise, see if the LIT type knows how to elide itself.
   if (auto sugarItf = dyn_cast<KGEN::SugaredTypeInterface>(type))
-    return sugarItf.getCachedCanonicalType(type);
+    return sugarItf.getCachedCanonicalType();
 
   return {};
 }

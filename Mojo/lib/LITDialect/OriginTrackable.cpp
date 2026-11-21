@@ -411,7 +411,10 @@ void OperationEffects::analyzeCallOp(Operation &op) {
       TypedAttr extraOrigin;
       for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(
                arg, extraOrigin)) {
-        if (!isa<RefPackType>(getCanonicalType(elt.getType()))) {
+        // Check for a plain reference first: canonicalizing its type walks
+        // the origin union of every element, which is O(N^2) for N elements.
+        auto refPackType = sugarDynCast<RefPackType>(elt.getType());
+        if (!refPackType) {
           addArgument(elt, argConvention);
           continue;
         }
@@ -419,7 +422,7 @@ void OperationEffects::analyzeCallOp(Operation &op) {
         // in its type. The element convention of the callee decides if they
         // are mutated. A `mut` pack of the caller can go into a `read` pack.
         operands.push_back({elt, OperandEffect::regUse});
-        for (TypedAttr origin : originFinder.findOriginsIn({elt.getType()})) {
+        for (TypedAttr origin : originFinder.findOriginsIn({refPackType})) {
           if (originsAccessesAreReadOnly || argConvention != ArgConvention::Mut)
             origin = OriginMutCastAttr::get(origin, false);
           origins.push_back({origin, elt});
@@ -716,7 +719,7 @@ static Value findArgPassedToVariadicConstructor(Value val) {
   // available.  However, it gets passed by-ref to function calls.
   // If the operand is already a reference to a pack, then use it.  Otherwise
   // we must have a register pack.  Figure out how it is formed.
-  if (::isa<RefType>(getCanonicalType(val.getType()))) {
+  if (sugarIsa<RefType>(val.getType())) {
     loadOperand = RefImmutOp::stripRebinds(val);
   } else {
     if (auto load = val.getDefiningOp<RefLoadOp>())
@@ -754,9 +757,9 @@ static Value findArgPassedToVariadicConstructor(Value val) {
 
 /// Return the immutable origin parameter of a VariadicPack or VariadicList.
 static TypedAttr getVariadicContainerOrigin(Value value) {
-  Type type = getCanonicalType(value.getType());
-  if (auto refType = dyn_cast<RefType>(type))
-    type = getCanonicalType(refType.getElementType());
+  Type type = value.getType();
+  if (auto refType = sugarDynCast<RefType>(type))
+    type = refType.getElementType();
 
   auto structType = sugarDynCast<LIT::StructType>(type);
   if (!structType)

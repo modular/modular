@@ -461,12 +461,11 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   return {};
 }
 
-Type LIT::StructType::getCachedCanonicalType(Type type) const {
+Type LIT::StructType::getCachedCanonicalType() const {
   // Struct type has a canonical type cache to cut recursive walks.
-  auto structType = cast<LIT::StructType>(type);
-  if (auto can = structType.getCanonical())
+  if (auto can = getCanonical())
     return can;
-  return structType;
+  return *this;
 }
 
 SymbolRefAttr LIT::StructType::getSymbolRef() const {
@@ -1040,15 +1039,24 @@ TypedAttr OriginType::stripMutCastAndRebind(TypedAttr origin) {
   return origin;
 }
 
+/// Returns true when `wider` is at least as wide as `narrower`, i.e.
+/// `union(wider, mutcast(narrower, wider's mutability))` collapses to
+/// `wider`; this compares origin sets, not mutability.
 bool OriginType::covers(TypedAttr wider, TypedAttr narrower) {
-  wider = getCanonicalAttr(wider);
-  narrower = getCanonicalAttr(narrower);
-  auto widerType = dyn_cast<OriginType>(wider.getType());
+  // A member of a union is covered by it. Check this before canonicalizing,
+  // which walks the whole union and is O(N^2) across the N upcasts of a large
+  // variadic call.
+  if (auto widerUnion = dyn_cast<OriginUnionAttr>(wider))
+    if (narrower.getType() == wider.getType() &&
+        llvm::is_contained(widerUnion.getOperands(), narrower))
+      return true;
+
+  auto widerType = sugarDynCast<OriginType>(wider.getType());
   if (!widerType)
     return false;
   auto originUnion = OriginUnionAttr::get(
       {wider, OriginMutCastAttr::get(narrower, widerType)}, widerType);
-  return wider == originUnion;
+  return isEqualCanon(wider, originUnion);
 }
 
 std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
@@ -1071,7 +1079,7 @@ std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   return {};
 }
 
-Type OriginType::getCachedCanonicalType(Type type) const { return {}; }
+Type OriginType::getCachedCanonicalType() const { return {}; }
 
 //===----------------------------------------------------------------------===//
 // OriginSetType
