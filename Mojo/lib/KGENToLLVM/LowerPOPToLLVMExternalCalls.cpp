@@ -69,14 +69,12 @@ private:
   /// are not part of the function type and their attributes go on the call.
   mlir::ArrayAttr buildLLVMArgAttrs(mlir::ArrayAttr argAttrs,
                                     const SignatureClassification &sigClass,
-                                    ExternalCallOp op, size_t numFixedArgs,
+                                    mlir::TypeRange argTypes,
+                                    mlir::Type llvmRetType, size_t numFixedArgs,
                                     DirectRewriter &rewriter) const {
     SmallVector<Type> llvmArgTypes;
-    for (Type t : op.getOperandTypes())
+    for (Type t : argTypes)
       llvmArgTypes.push_back(getTypeConverter()->convertType(t));
-    Type llvmRetType;
-    if (!op.getResults().empty())
-      llvmRetType = getTypeConverter()->convertType(op.getResult().getType());
     SmallVector<mlir::NamedAttrList> paramAttrs = sigClass.getParamAttrs(
         llvmArgTypes, llvmRetType, argAttrs, numFixedArgs);
 
@@ -158,8 +156,27 @@ public:
     const llvm::Triple &triple = getTypeConverter()->getTarget().getTriple();
     CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
 
+    // Empty struct arguments have no ABI representation and are dropped from
+    // the function signature by dropEmptyStructArguments. Drop them here too,
+    // together with their argument attributes, so that classification and the
+    // LLVM parameter indices stay aligned.
+    SmallVector<Type> argTypes;
+    SmallVector<Value> args;
+    SmallVector<Attribute> filteredArgAttrs;
+    mlir::ArrayAttr operandAttrs = op.getArgAttrsAttr();
+    for (auto [idx, operand] : llvm::enumerate(adaptor.getOperands())) {
+      if (isEmptyType(operand.getType()))
+        continue;
+      argTypes.push_back(op.getOperandTypes()[idx]);
+      args.push_back(operand);
+      if (operandAttrs)
+        filteredArgAttrs.push_back(operandAttrs[idx]);
+    }
+    mlir::ArrayAttr argAttrs =
+        operandAttrs ? rewriter.getArrayAttr(filteredArgAttrs) : nullptr;
+
     // Determine number of fixed arguments (for variadic functions).
-    size_t numFixedArgs = adaptor.getOperands().size();
+    size_t numFixedArgs = args.size();
     std::optional<mlir::TypedAttr> declaredFixedArgs = op.getNumFixedArgs();
     bool isVariadic = declaredFixedArgs.has_value();
     if (isVariadic) {
@@ -177,7 +194,11 @@ public:
                                "'numFixedArgs' must not exceed the number of "
                                "call operands: expected at most ")
                << adaptor.getOperands().size() << ", found " << declared;
-      numFixedArgs = declared;
+      // Translate the operand-based count into the filtered argument index.
+      numFixedArgs = 0;
+      for (size_t i = 0; i < static_cast<size_t>(declared); ++i)
+        if (!isEmptyType(adaptor.getOperands()[i].getType()))
+          ++numFixedArgs;
     }
 
     // Classify arguments/return and build the coerced LLVM signature + args.
@@ -189,9 +210,8 @@ public:
       returnType = op.getResult().getType();
       llvmReturnType = getTypeConverter()->convertType(returnType);
     }
-    auto prep =
-        cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
-                         returnType, loc, rewriter, numFixedArgs, isVariadic);
+    auto prep = cabi.prepareCall(argTypes, args, returnType, loc, rewriter,
+                                 numFixedArgs, isVariadic);
     const SignatureClassification &sigClass = prep.classification;
     const LLVM::LLVMFunctionType &signature = prep.signature;
 
@@ -203,12 +223,11 @@ public:
     // initialize a new one from the same source of truth.
     mlir::ArrayAttr passthrough = attachTargetPassthroughAttrs(
         rewriter, getTypeConverter()->getTarget(), op.getFuncAttrsAttr());
-    mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
     mlir::DictionaryAttr resAttrs = op.getResAttrsAttr();
     auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
 
-    mlir::ArrayAttr expectedArgAttrs =
-        buildLLVMArgAttrs(argAttrs, sigClass, op, numFixedArgs, rewriter);
+    mlir::ArrayAttr expectedArgAttrs = buildLLVMArgAttrs(
+        argAttrs, sigClass, argTypes, llvmReturnType, numFixedArgs, rewriter);
     // resAttrs are dropped when sret is active (no LLVM-level return value).
     mlir::ArrayAttr expectedResAttrs;
     if (!sigClass.ret.useSRet) {

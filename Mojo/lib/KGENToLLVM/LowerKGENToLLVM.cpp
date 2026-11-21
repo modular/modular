@@ -624,25 +624,6 @@ static void convertInlineLevel(LLVM::LLVMFuncOp func, InlineLevel inlineLevel) {
   func.setPassthroughAttr(b.getArrayAttr(passthrough));
 }
 
-/// Returns true if type is an empty !llvm.struct type, or an array of empty
-/// types e.g !llvm.array<0 x ..any type..>, !llvm.array<N x empty_struct>
-/// TODO: Consider querying size from DataLayout instead.
-static bool isEmptyType(Type type) {
-  return TypeSwitch<Type, bool>(type)
-      .Case([](LLVM::LLVMArrayType arrayType) {
-        if (arrayType.getNumElements() == 0)
-          return true;
-        return isEmptyType(arrayType.getElementType());
-      })
-      .Case([](LLVM::LLVMStructType structType) {
-        bool emptyType = true;
-        for (Type innerType : structType.getBody())
-          emptyType &= isEmptyType(innerType);
-        return emptyType;
-      })
-      .Default([](Type /* default */) { return false; });
-}
-
 /// Drops empty struct arguments from funcOp and replace usage with an undef
 /// struct.
 static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
@@ -709,15 +690,6 @@ static bool isCABICallee(const SymbolTable &symtab, FlatSymbolRefAttr sym) {
   if (auto llvmFunc = dyn_cast_or_null<LLVM::LLVMFuncOp>(calleeOp))
     return llvmFunc->hasAttr(kCABIFuncAttr);
   return false;
-}
-
-/// Get the KGEN types of the C ABI arguments: the arguments that are left
-/// after the arguments of empty type are dropped.
-static SmallVector<Type> getCABIArgTypes(TypeRange argTypes,
-                                         const TypeConverter &typeConverter) {
-  return llvm::to_vector(llvm::make_filter_range(argTypes, [&](Type type) {
-    return !isEmptyType(typeConverter.convertType(type));
-  }));
 }
 
 /// Get the type of the C ABI result: the KGEN type of one result, or
@@ -945,14 +917,22 @@ struct ConvertKGENCallIndirect
       return false;
     };
 
+    // Drop empty struct arguments. They have no ABI representation and are
+    // dropped from function signatures by dropEmptyStructArguments.
+    auto filteredArgValues = to_vector(
+        llvm::make_filter_range(adaptor.getArguments(), [](Value operand) {
+          return !isEmptyType(operand.getType());
+        }));
+
     if (isCABIFnPtr(callee.getType())) {
       // C ABI function-pointer call: apply platform C ABI coercion.
       CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
       Location loc = op.getLoc();
 
       auto prep = cabi.prepareCall(
-          op.getArguments().getTypes(), adaptor.getArguments(),
-          getCABIResultType(op.getResultTypes(), resultType), loc, rewriter);
+          getCABIArgTypes(op.getArguments().getTypes(), *getTypeConverter()),
+          filteredArgValues, getCABIResultType(op.getResultTypes(), resultType),
+          loc, rewriter);
       // Insert the indirect call target.
       prep.callArgs.insert(prep.callArgs.begin(), adaptor.getCallee());
 
@@ -967,10 +947,13 @@ struct ConvertKGENCallIndirect
     // Note: adaptor.getOperands() is a list of callee followed by inputs.
     SmallVector<Type> wrapperFnArgTypes;
     llvm::append_range(wrapperFnArgTypes, adaptor.getArguments().getTypes());
+    wrapperFnArgTypes = to_vector(llvm::make_filter_range(
+        wrapperFnArgTypes, [](Type type) { return !isEmptyType(type); }));
     auto wrapperFnType = LLVM::LLVMFunctionType::get(getContext(), resultType,
                                                      wrapperFnArgTypes, 0);
-    llvmCall = createLLVMCall(rewriter, op.getLoc(), wrapperFnType,
-                              adaptor.getOperands());
+    SmallVector<Value> callArgs = {adaptor.getCallee()};
+    llvm::append_range(callArgs, filteredArgValues);
+    llvmCall = createLLVMCall(rewriter, op.getLoc(), wrapperFnType, callArgs);
     applyTailKind(llvmCall, op.getTailKind());
     replaceCallWithLLVMCall(rewriter, op, llvmCall);
     return success();

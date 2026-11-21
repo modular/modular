@@ -25,10 +25,45 @@
 #include "Mojo/KGENDialect/KGENEnums.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include <memory>
 
 namespace M::KGEN {
+
+/// Returns true if `type` is an empty LLVM struct type, or an array of empty
+/// types e.g. !llvm.array<0 x ..any type..>, !llvm.array<N x empty_struct>.
+/// Empty values have no ABI representation, so they are dropped from function
+/// signatures and call arguments.
+///
+/// TODO: Consider querying size from DataLayout instead.
+inline bool isEmptyType(mlir::Type type) {
+  return mlir::TypeSwitch<mlir::Type, bool>(type)
+      .Case([](mlir::LLVM::LLVMArrayType arrayType) {
+        if (arrayType.getNumElements() == 0)
+          return true;
+        return isEmptyType(arrayType.getElementType());
+      })
+      .Case([](mlir::LLVM::LLVMStructType structType) {
+        bool emptyType = true;
+        for (mlir::Type innerType : structType.getBody())
+          emptyType &= isEmptyType(innerType);
+        return emptyType;
+      })
+      .Default([](mlir::Type /* default */) { return false; });
+}
+
+/// Get the KGEN types of the C ABI arguments: the arguments that are left
+/// after the arguments of empty type are dropped.
+inline mlir::SmallVector<mlir::Type>
+getCABIArgTypes(mlir::TypeRange argTypes,
+                const mlir::TypeConverter &typeConverter) {
+  return llvm::to_vector(
+      llvm::make_filter_range(argTypes, [&](mlir::Type type) {
+        return !isEmptyType(typeConverter.convertType(type));
+      }));
+}
 
 /// Apply the tail-call kind from a kgen.call / kgen.call_indirect to the
 /// already-created llvm.call.  Extracted here so both ConvertKGENCall and
