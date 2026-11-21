@@ -741,7 +741,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 # They are set to be inlined further down graph compiler stack.
 @doc_hidden
 @inline(.always)
-def simd_store_into_managed_tensor_slice[
+def _simd_store_at_flat_index[
     dtype: DType,
     rank: Int,
     simd_width: SIMDLength,
@@ -750,11 +750,9 @@ def simd_store_into_managed_tensor_slice[
     element_alignment: Int = 1,
 ](
     tensor: ManagedTensorSlice[static_spec=static_spec, ...],
-    indices: IndexList[rank],
+    flat_index: Int,
     value: SIMD[dtype, simd_width],
 ):
-    var flat_index = tensor._compute_offset(indices)
-
     # Store alignment cannot exceed the data type's alignment.
     comptime max_alignment = _gcd_pow2[
         tensor.alignment, element_alignment * align_of[dtype]()
@@ -810,6 +808,45 @@ def simd_store_into_managed_tensor_slice[
                 store_stride1()
             case _:
                 store_strided(_last_stride_value)
+
+
+@doc_hidden
+@inline(.always)
+def simd_store_into_managed_tensor_slice[
+    dtype: DType,
+    rank: Int,
+    simd_width: SIMDLength,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: IndexList[rank],
+    value: SIMD[dtype, simd_width],
+):
+    _simd_store_at_flat_index[element_alignment=element_alignment](
+        tensor, tensor._compute_offset(indices), value
+    )
+
+
+@doc_hidden
+@inline(.always)
+def _simd_store_into_managed_tensor_slice_coord[
+    dtype: DType,
+    rank: Int,
+    simd_width: SIMDLength,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: Coord,
+    value: SIMD[dtype, simd_width],
+):
+    comptime assert indices.rank == rank
+    _simd_store_at_flat_index[element_alignment=element_alignment](
+        tensor, tensor._compute_offset(indices), value
+    )
 
 
 @doc_hidden
@@ -915,7 +952,7 @@ def _strided_lanes_mask[width: Int, stride: Int]() -> IndexList[width]:
 
 @doc_hidden
 @inline(.always)
-def simd_load_from_managed_tensor_slice[
+def _simd_load_at_flat_index[
     dtype: DType,
     rank: Int,
     simd_width: Int,
@@ -924,9 +961,8 @@ def simd_load_from_managed_tensor_slice[
     element_alignment: Int = 1,
 ](
     tensor: ManagedTensorSlice[static_spec=static_spec, ...],
-    indices: IndexList[rank],
+    flat_index: Int,
 ) -> SIMD[dtype, simd_width]:
-    var flat_index = tensor._compute_offset(indices)
     comptime _last_stride_is_static = tensor.static_spec.static_layout._stride_types[
         rank - 1
     ].is_static_value
@@ -1033,6 +1069,43 @@ def simd_load_from_managed_tensor_slice[
                             simd_width, mask.as_index_tuple()
                         ](v)
                 return load_strided(_last_stride_value)
+
+
+@doc_hidden
+@inline(.always)
+def simd_load_from_managed_tensor_slice[
+    dtype: DType,
+    rank: Int,
+    simd_width: Int,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: IndexList[rank],
+) -> SIMD[dtype, simd_width]:
+    return _simd_load_at_flat_index[
+        simd_width=simd_width, element_alignment=element_alignment
+    ](tensor, tensor._compute_offset(indices))
+
+
+@doc_hidden
+@inline(.always)
+def _simd_load_from_managed_tensor_slice_coord[
+    dtype: DType,
+    rank: Int,
+    simd_width: Int,
+    //,
+    static_spec: StaticTensorSpec[dtype, rank, ...],
+    element_alignment: Int = 1,
+](
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
+    indices: Coord,
+) -> SIMD[dtype, simd_width]:
+    comptime assert indices.rank == rank
+    return _simd_load_at_flat_index[
+        simd_width=simd_width, element_alignment=element_alignment
+    ](tensor, tensor._compute_offset(indices))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1308,6 +1381,22 @@ struct ManagedTensorSlice[
         return self._ptr[unsafe_offset=offset]
 
     @inline(.always)
+    def __getitem__(self, indices: Coord) -> Scalar[Self.dtype]:
+        """Gets the value at the specified coordinates.
+
+        Args:
+          indices: The coordinates of the value to retrieve.
+
+        Returns:
+          The value at the specified coordinates.
+        """
+        comptime assert indices.rank == Self.rank
+        comptime assert (
+            not Self._has_input_fusion
+        ), "Direct load on fused tensor is forbidden"
+        return self._ptr[unsafe_offset=self._compute_offset(indices)]
+
+    @inline(.always)
     def __getitem__(self, *indices: Int) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.
 
@@ -1358,6 +1447,21 @@ struct ManagedTensorSlice[
         ), "Direct store on fused tensor is forbidden"
         var offset = self._compute_offset(indices)
         self._ptr[unsafe_offset=offset] = val
+
+    @inline(.always)
+    def __setitem__(self, indices: Coord, val: Scalar[Self.dtype]):
+        """Stores the value at the specified coordinates.
+
+        Args:
+          indices: The coordinates of the value to store.
+          val: The value to store.
+
+        """
+        comptime assert indices.rank == Self.rank
+        comptime assert (
+            not Self._has_output_store_fusion
+        ), "Direct store on fused tensor is forbidden"
+        self._ptr[unsafe_offset=self._compute_offset(indices)] = val
 
     @inline(.always)
     def shape(self) -> IndexList[Self.rank]:
@@ -1596,9 +1700,9 @@ struct ManagedTensorSlice[
             Data from this tensor slice at dimension `index`.
         """
         comptime assert index.rank == Self.rank
-        return self.load[width, element_alignment=element_alignment](
-            rebind[IndexList[Self.rank]](coord_to_index_list(index))
-        )
+        return _simd_load_from_managed_tensor_slice_coord[
+            simd_width=width, element_alignment=element_alignment
+        ](self, index)
 
     @inline(.always)
     def _fused_load[
@@ -1759,9 +1863,9 @@ struct ManagedTensorSlice[
             val: The data to set into this tensor slice.
         """
         comptime assert index.rank == Self.rank
-        self.store[width, element_alignment=element_alignment](
-            rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
-        )
+        _simd_store_into_managed_tensor_slice_coord[
+            simd_width=width, element_alignment=element_alignment
+        ](self, index, val)
 
     @__allow_legacy_custom_self_type
     @inline(.always)
