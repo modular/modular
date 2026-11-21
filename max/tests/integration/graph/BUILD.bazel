@@ -178,6 +178,7 @@ modular_py_test(
     },
     precompile_mefs = True,
     precompile_shards = {
+        "test_kda_ops.py": 4,
         "test_mamba2_fused_inputs.py": 4,
         "test_resize_linear.py": 4,
         "test_resize_nearest.py": 8,
