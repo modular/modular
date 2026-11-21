@@ -910,6 +910,14 @@ trait ImplicitlyCopyable(Copyable):
     pass
 
 
+trait Equatable:
+    pass
+
+
+trait Hashable:
+    pass
+
+
 trait TrivialRegisterPassable(
     Deinitable, ImplicitlyCopyable, Movable, RegisterPassable
 ):
@@ -963,6 +971,12 @@ trait EnumLike:
         Self._enum_case_types
     ]()[id]
 
+    comptime _is_empty_payload[Type: AnyType] = Type == Tuple[]
+
+    comptime _enum_has_no_payloads: Bool = TypeList[
+        Trait=AnyType, Self._enum_case_types
+    ].all[Self._is_empty_payload]()
+
     def _get_enum_discriminant(self) -> Int:
         ...
 
@@ -973,6 +987,13 @@ trait EnumLike:
         id: Int
     ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
         ...
+
+
+# An enum declared in a module `std.builtin._enum` depends on: checking its
+# members resolves `_enum`, which imports this module.
+__enum _StubsEnum:
+    case a
+    case b
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1156,6 +1177,12 @@ struct TypeList[
         this_element: Self.Trait,
     ] = last_value or predicate[this_element]
 
+    comptime _AllSatisfiesReducer[
+        predicate: __generator_type[Type: Self.Trait] Bool,
+        last_value: Bool,
+        this_element: Self.Trait,
+    ] = last_value and predicate[this_element]
+
     @always_inline("builtin")
     @staticmethod
     def any[
@@ -1164,6 +1191,16 @@ struct TypeList[
         return Self.reduce[
             False,
             Self._AnySatisfiesReducer[predicate, ...],
+        ]
+
+    @always_inline("builtin")
+    @staticmethod
+    def all[
+        predicate: __generator_type[Type: Self.Trait] Bool,
+    ]() -> Bool:
+        return Self.reduce[
+            True,
+            Self._AllSatisfiesReducer[predicate, ...],
         ]
 
     @always_inline("builtin")
@@ -1608,7 +1645,7 @@ struct Tuple[*element_types: Movable](
         `!kgen.struct<:`,
         _MLIR.KGENParamListType[Movable],
         Self.element_types.values,
-        ` isParamPack>`,
+        `>`,
     ]
     var _mlir_value: Self._mlir_type
 

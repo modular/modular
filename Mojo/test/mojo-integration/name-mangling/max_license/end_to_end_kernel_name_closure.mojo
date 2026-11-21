@@ -47,7 +47,7 @@ def launch_kernel[
         if idx < Int(len):
             buf[unsafe_offset=idx] = buf[unsafe_offset=idx] + 1
 
-    ctx.enqueue_function(_kernel, grid_dim=1, block_dim=n // width)
+    ctx.enqueue_closure(_kernel, grid_dim=1, block_dim=n // width)
 
 
 def main() raises:

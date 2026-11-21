@@ -325,6 +325,7 @@ def fa4_mma[
     # Called after consumer_s[*].wait(phase), which orders the vote write
     # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def blasst_should_skip(wg: UInt32, phase: UInt32) {imm} -> Bool:
         return blasst_vote_unanimous(blasst_vote, wg, phase)
 
@@ -549,6 +550,7 @@ def fa4_mma[
     # it last if anything is ever appended here.
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _body_1q() {
         mut consumer_s1,
         mut o1_tmem,
@@ -1744,6 +1746,7 @@ def fa4_mma[
             _commit(pipeline_o1.producer_mbar())
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _body_2q() {imm}:
         comptime if config.use_shared_kv:
             # ---- Shared KV mode ----

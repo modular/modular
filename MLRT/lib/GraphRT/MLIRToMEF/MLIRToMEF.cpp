@@ -41,6 +41,7 @@
 #include <climits>
 
 using namespace M;
+using namespace M::MLRT;
 
 /// This holds an offset into a MEF section.
 struct MEFOffset {
@@ -146,7 +147,7 @@ public:
 
     // Emit dummy padding bytes to get up to the right offset.
     while (neededPadding--)
-      emitByte(MEF::kAlignmentByte);
+      emitByte(MLRT::MEF::kAlignmentByte);
 
     // Keep track of the maximum required alignment.
     requiredAlignment = std::max(requiredAlignment, alignment);
@@ -192,9 +193,9 @@ public:
   /// Emit an offset to a primitive, which is known to be aligned, so we can
   /// emit a smaller number.
   void emitPrimitiveOffsetNumber(MEFOffset offset) {
-    assert((offset.value & (MEF::kPrimitiveEntryAlignment - 1)) == 0 &&
+    assert((offset.value & (MLRT::MEF::kPrimitiveEntryAlignment - 1)) == 0 &&
            "offset to primitive isn't correctly aligned");
-    emitVBR(offset.value / MEF::kPrimitiveEntryAlignment);
+    emitVBR(offset.value / MLRT::MEF::kPrimitiveEntryAlignment);
   }
 
   // Many parts of the emitter logic includes forward references into stuff
@@ -212,7 +213,7 @@ public:
 
   /// Emit a section record with the contents of the specified other emitter as
   /// the data within it.  This takes the contents of the emitter.
-  void emitSection(MEF::SectionID sectionID, MEFEmitter &emitter) {
+  void emitSection(MLRT::MEF::SectionID sectionID, MEFEmitter &emitter) {
     // Take the data from the sub-emitter.
     ConcatenationTree sectionData = emitter.takeContents();
     unsigned alignment = emitter.getRequiredAlignment();
@@ -318,7 +319,7 @@ public:
 
   unsigned getPrimitiveID(Operation *primitive) const {
     StringAttr name;
-    if (auto opaque = dyn_cast<MEF::OpaqueOp>(primitive))
+    if (auto opaque = dyn_cast<MLRT::MEF::OpaqueOp>(primitive))
       name = opaque.getOpNameAttr();
     else
       name = primitive->getName().getIdentifier();
@@ -447,7 +448,7 @@ static RegionSignature getRegionSignature(Region *region) {
     return RegionSignature{0, 0};
 
   // MEF regions produce results with the "mef.output" operation.
-  auto output = dyn_cast<MEF::OutputOp>(&block->back());
+  auto output = dyn_cast<MLRT::MEF::OutputOp>(&block->back());
   size_t numResults = output ? output->getNumOperands() : 0;
   return RegionSignature{block->getNumArguments(), numResults};
 }
@@ -525,7 +526,7 @@ bool EntityTable::collect(ModuleOp module, bool enableMEFMetadata) {
   auto opWalker = [&](Operation *op) -> WalkResult {
     // Ignore the OutputOp: it gets special handling, instead of being treated
     // like a primitive.  Similarly, ignore ef.invokable.
-    if (isa<MEF::OutputOp>(op))
+    if (isa<MLRT::MEF::OutputOp>(op))
       return WalkResult::advance();
 
     addLocation(op->getLoc());
@@ -595,7 +596,7 @@ bool EntityTable::collect(ModuleOp module, bool enableMEFMetadata) {
         };
 
     // Opaque MEF operations encode some fields in a special way.
-    if (auto opaque = dyn_cast<MEF::OpaqueOp>(op)) {
+    if (auto opaque = dyn_cast<MLRT::MEF::OpaqueOp>(op)) {
       addPrimitiveOpcode(opaque.getOpNameAttr());
 
       // Encode the attributes in the attrs array, not all the attributes on the
@@ -669,9 +670,11 @@ public:
   MEFOffset emitAttribute(Attribute attr, Location loc);
 
 private:
-  void emitAttributeKind(MEF::AttributeKind kind) { emitByte((uint8_t)kind); }
-  FailureOr<MEF::AttributeKind> deriveAttributeKind(Type eltType,
-                                                    Location loc) const;
+  void emitAttributeKind(MLRT::MEF::AttributeKind kind) {
+    emitByte((uint8_t)kind);
+  }
+  FailureOr<MLRT::MEF::AttributeKind> deriveAttributeKind(Type eltType,
+                                                          Location loc) const;
   void moveMetadataImmediatelyBeforeValue(MEFOffset metadataStartOffset,
                                           MEFOffset metadataEndOffset,
                                           MEFOffset valueStartOffset);
@@ -684,8 +687,8 @@ private:
   /// the actual data begins. If numElements is non-zero then the returned
   /// offset will be aligned to at least alignment. However so such alignment
   /// is enforced if numElements is zero.
-  MEFOffset emitIntOrFloatRange(MEF::AttributeKind kind, size_t numElements,
-                                size_t alignment,
+  MEFOffset emitIntOrFloatRange(MLRT::MEF::AttributeKind kind,
+                                size_t numElements, size_t alignment,
                                 function_ref<void()> emitRangeFn);
 
   MEFOffset emitArrayElementsAttr(ArrayElementsAttr value, Location loc);
@@ -712,28 +715,28 @@ private:
 
 /// Given a MEF attribute category and its bitwidth, construct the MEF attribute
 /// kind.
-static MEF::AttributeKind getAttributeKind(MEF::AttrCategory category,
-                                           size_t bitwidth) {
-  return MEF::AttributeKind(uint8_t(category) << 1 | llvm::Log2_32(bitwidth / 8)
-                                                         << 3);
+static MLRT::MEF::AttributeKind
+getAttributeKind(MLRT::MEF::AttrCategory category, size_t bitwidth) {
+  return MLRT::MEF::AttributeKind(uint8_t(category) << 1 |
+                                  llvm::Log2_32(bitwidth / 8) << 3);
 }
 
 /// Given an MLIR type, construct the corresponding MEF attribute type.
-FailureOr<MEF::AttributeKind>
+FailureOr<MLRT::MEF::AttributeKind>
 AttributesEmitter::deriveAttributeKind(Type eltType, Location loc) const {
   if (eltType.isSignlessInteger(1))
-    return MEF::AttributeKind::kBool;
+    return MLRT::MEF::AttributeKind::kBool;
 
-  MEF::AttrCategory category;
+  MLRT::MEF::AttrCategory category;
   if (eltType.isSignedInteger())
-    category = MEF::AttrCategory::Signed;
+    category = MLRT::MEF::AttrCategory::Signed;
   else if (eltType.isUnsignedInteger())
-    category = MEF::AttrCategory::Unsigned;
+    category = MLRT::MEF::AttrCategory::Unsigned;
   else if (eltType.isSignlessInteger())
     return entities.emitError(loc)
            << "signless integer attributes not supported";
   else if (eltType.isF32() || eltType.isF64())
-    category = MEF::AttrCategory::Float;
+    category = MLRT::MEF::AttrCategory::Float;
   else
     return entities.emitError(loc) << "unknown type " << eltType;
 
@@ -762,7 +765,7 @@ void AttributesEmitter::moveMetadataImmediatelyBeforeValue(
     memmove(getRawPointer(valueStartOffset) - sizeOfArraySizeInBytes,
             getRawPointer(metadataStartOffset), sizeOfArraySizeInBytes);
     // Set the unused bytes to the alignment filler.
-    memset(getRawPointer(metadataStartOffset), MEF::kAlignmentByte,
+    memset(getRawPointer(metadataStartOffset), MLRT::MEF::kAlignmentByte,
            valueStartOffset.value - metadataEndOffset.value);
   }
 }
@@ -800,7 +803,7 @@ MEFOffset AttributesEmitter::emitStringAttribute(StringRef value) {
   // bytes before it specify how long the string is.  To enforce this notion, we
   // don't emit a zero byte at the end of the string data.
   emitInvertedVBR(value.size());
-  emitAttributeKind(MEF::AttributeKind::kString);
+  emitAttributeKind(MLRT::MEF::AttributeKind::kString);
   auto offset = getOffset();
   emitStringData(value);
   return offset;
@@ -813,14 +816,14 @@ MEFOffset AttributesEmitter::emitSymbolAttribute(StringRef value) {
   // bytes before it specify how long the string is.  To enforce this notion, we
   // don't emit a zero byte at the end of the string data.
   emitInvertedVBR(value.size());
-  emitAttributeKind(MEF::AttributeKind::kSymbolRef);
+  emitAttributeKind(MLRT::MEF::AttributeKind::kSymbolRef);
   auto offset = getOffset();
   emitStringData(value);
   return offset;
 }
 
 MEFOffset
-AttributesEmitter::emitIntOrFloatRange(MEF::AttributeKind kind,
+AttributesEmitter::emitIntOrFloatRange(MLRT::MEF::AttributeKind kind,
                                        size_t numElements, size_t alignment,
                                        function_ref<void()> emitRangeFn) {
   MEFOffset sizeStart = getOffset();
@@ -832,7 +835,7 @@ AttributesEmitter::emitIntOrFloatRange(MEF::AttributeKind kind,
 
   // Emit the byte for the attribute kind just after the inverted VBR for the
   // elements.
-  emitAttributeKind(MEF::getArrayOf(kind));
+  emitAttributeKind(MLRT::MEF::getArrayOf(kind));
 
   MEFOffset sizeAndKindEnd = getOffset();
 
@@ -924,7 +927,7 @@ MEFOffset AttributesEmitter::emitArrayElementsAttr(ArrayElementsAttr value,
 MEFOffset AttributesEmitter::emitArrayAttribute(ArrayAttr value, Location loc) {
   // Emit the size of the array and the attribute kind.
   emitInvertedVBR(value.size());
-  emitAttributeKind(MEF::AttributeKind::kList);
+  emitAttributeKind(MLRT::MEF::AttributeKind::kList);
 
   MEFOffset startOffset = getOffset();
 
@@ -943,7 +946,7 @@ MEFOffset AttributesEmitter::emitDictionaryAttribute(DictionaryAttr value,
                                                      Location loc) {
   // Emit the size of the dict and the attribute kind.
   emitInvertedVBR(value.size());
-  emitAttributeKind(MEF::AttributeKind::kDictionary);
+  emitAttributeKind(MLRT::MEF::AttributeKind::kDictionary);
 
   // This is the offset into the dict we want to provide - essentially a table
   // of name:offset pairs that we can use when parsing.
@@ -1046,9 +1049,9 @@ public:
   LogicalResult emitType(Type type);
 
 private:
-  ErrorOr<MEF::TypeKind> getFloatTypeEncoding(FloatType type);
-  ErrorOr<MEF::TypeKind> getIntegerTypeEncoding(IntegerType type);
-  ErrorOr<MEF::TypeKind> getIntFPComplexTypeEncoding(Type type);
+  ErrorOr<MLRT::MEF::TypeKind> getFloatTypeEncoding(FloatType type);
+  ErrorOr<MLRT::MEF::TypeKind> getIntegerTypeEncoding(IntegerType type);
+  ErrorOr<MLRT::MEF::TypeKind> getIntFPComplexTypeEncoding(Type type);
   LogicalResult emitIntFPComplexType(Type type);
   LogicalResult emitShapedType(ShapedType type);
   LogicalResult emitFunctionType(FunctionType type);
@@ -1062,21 +1065,22 @@ private:
 };
 } // namespace
 
-ErrorOr<MEF::TypeKind> TypeEmitter::getFloatTypeEncoding(FloatType type) {
+ErrorOr<MLRT::MEF::TypeKind> TypeEmitter::getFloatTypeEncoding(FloatType type) {
 #define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, ...)           \
   if (isa<MLIR_TYPE>(type))                                                    \
-    return MEF::TypeKind::SHORT_NAME;
+    return MLRT::MEF::TypeKind::SHORT_NAME;
 #include "Support/ML/FloatTypes.def"
 #undef DECLARE_FLOAT
   return Error("unknown float type");
 }
 
 /// Emit an integer type we know how to encode into a MEF file.
-ErrorOr<MEF::TypeKind> TypeEmitter::getIntegerTypeEncoding(IntegerType type) {
+ErrorOr<MLRT::MEF::TypeKind>
+TypeEmitter::getIntegerTypeEncoding(IntegerType type) {
   unsigned bitWidth = type.getWidth();
 
   if (bitWidth == 1 && type.isSignless())
-    return MEF::TypeKind::kBool;
+    return MLRT::MEF::TypeKind::kBool;
 
   if (type.isSignless())
     return Error("signless integers not supported");
@@ -1085,11 +1089,12 @@ ErrorOr<MEF::TypeKind> TypeEmitter::getIntegerTypeEncoding(IntegerType type) {
   if (failed(eltType))
     return Error("integer cannot be converted to MEF type");
 
-  return MEF::TypeKind(eltType->getValue());
+  return MLRT::MEF::TypeKind(eltType->getValue());
 }
 
 /// Helper to get int, float or complex encoding.
-ErrorOr<MEF::TypeKind> TypeEmitter::getIntFPComplexTypeEncoding(Type type) {
+ErrorOr<MLRT::MEF::TypeKind>
+TypeEmitter::getIntFPComplexTypeEncoding(Type type) {
   if (auto floatType = dyn_cast<FloatType>(type))
     return getFloatTypeEncoding(floatType);
   if (auto intType = dyn_cast<IntegerType>(type))
@@ -1098,7 +1103,7 @@ ErrorOr<MEF::TypeKind> TypeEmitter::getIntFPComplexTypeEncoding(Type type) {
     auto eltTypeOr = getIntFPComplexTypeEncoding(complexType.getElementType());
     if (eltTypeOr.isError())
       return eltTypeOr.takeError();
-    return MEF::TypeKind(DType::getComplex(*eltTypeOr).getValue());
+    return MLRT::MEF::TypeKind(DType::getComplex(*eltTypeOr).getValue());
   }
 
   std::string str;
@@ -1112,7 +1117,7 @@ LogicalResult TypeEmitter::emitIntFPComplexType(Type type) {
   // mgp.tensor_type uses NoneType to represent unknown dtype - encode it as
   // MEF::TypeKind::invalid.
   if (isa<NoneType>(type)) {
-    emitter->emitByte(MEF::TypeKind::invalid);
+    emitter->emitByte(MLRT::MEF::TypeKind::invalid);
     return success();
   }
 
@@ -1133,7 +1138,7 @@ LogicalResult TypeEmitter::emitIntFPComplexType(Type type) {
 /// Unranked tensors are encoded with a rank of
 /// std::numeric_limits<uint8_t>::max() and no dimension entries.
 LogicalResult TypeEmitter::emitShapedType(ShapedType type) {
-  emitter->emitByte(MEF::TypeKind::tensor);
+  emitter->emitByte(MLRT::MEF::TypeKind::tensor);
   Type elementType = type.getElementType();
 
   if (failed(emitType(elementType)))
@@ -1175,7 +1180,7 @@ LogicalResult TypeEmitter::emitStorageAndExpressedTypes(QuantizedType type) {
 /// For the example type above, the output format would look like this:
 ///   TypeKind::quantized | TypeKind::si8 | TypeKind::f32 | 0.1 | -128
 LogicalResult TypeEmitter::emitUniformQuantizedType(UniformQuantizedType type) {
-  emitter->emitByte(MEF::TypeKind::quantized);
+  emitter->emitByte(MLRT::MEF::TypeKind::quantized);
 
   if (failed(emitStorageAndExpressedTypes(type)))
     return failure();
@@ -1205,7 +1210,7 @@ LogicalResult TypeEmitter::emitUniformQuantizedType(UniformQuantizedType type) {
 ///   1 | 2 | 0.2 | 0.1 | 128 | -128
 LogicalResult
 TypeEmitter::emitUniformQuantizedPerAxisType(UniformQuantizedPerAxisType type) {
-  emitter->emitByte(MEF::TypeKind::quantizedPerAxis);
+  emitter->emitByte(MLRT::MEF::TypeKind::quantizedPerAxis);
 
   if (failed(emitStorageAndExpressedTypes(type)))
     return failure();
@@ -1229,7 +1234,7 @@ TypeEmitter::emitUniformQuantizedPerAxisType(UniformQuantizedPerAxisType type) {
 }
 
 LogicalResult TypeEmitter::emitFunctionType(FunctionType type) {
-  emitter->emitByte(MEF::TypeKind::function);
+  emitter->emitByte(MLRT::MEF::TypeKind::function);
   emitter->emitVBR(type.getNumInputs());
   emitter->emitVBR(type.getNumResults());
   for (auto input : type.getInputs()) {
@@ -1258,14 +1263,14 @@ LogicalResult TypeEmitter::emitType(Type type) {
     return emitUniformQuantizedPerAxisType(qType);
 
   // Chains are super easy, just emit the byte that says "I'm a chain".
-  if (isa<MEF::ChainType>(type)) {
-    emitter->emitByte(MEF::TypeKind::chain);
+  if (isa<MLRT::MEF::ChainType>(type)) {
+    emitter->emitByte(MLRT::MEF::TypeKind::chain);
     return success();
   }
 
   // Interface for foreign types.
-  if (isa<MEF::MEFAnyTypeInterface>(type)) {
-    emitter->emitByte(MEF::TypeKind::any);
+  if (isa<MLRT::MEF::MEFAnyTypeInterface>(type)) {
+    emitter->emitByte(MLRT::MEF::TypeKind::any);
     return success();
   }
 
@@ -1280,7 +1285,7 @@ LogicalResult TypeEmitter::emitType(Type type) {
 /// emitTypeAttribute handles type emission for floats, integers, and ranked
 /// tensor types and returns the start offset for the attribute in question.
 MEFOffset AttributesEmitter::emitTypeAttribute(Type type, Location loc) {
-  emitAttributeKind(MEF::AttributeKind::kType);
+  emitAttributeKind(MLRT::MEF::AttributeKind::kType);
   MEFOffset startOffset = getOffset();
 
   TypeEmitter typeEmitter(this, loc);
@@ -1405,7 +1410,7 @@ void RegionEmitter::emitRegion(Region *region) {
     ++numPrimitives;
 
   for (auto &op : block.getOperations()) {
-    if (!isa<MEF::OutputOp>(op))
+    if (!isa<MLRT::MEF::OutputOp>(op))
       primitiveIndices[&op] = numPrimitives++;
   }
 
@@ -1431,17 +1436,17 @@ void RegionEmitter::emitRegion(Region *region) {
 
   for (auto &op : block) {
     // Output primitive gets special processing.
-    if (isa<MEF::OutputOp>(op))
+    if (isa<MLRT::MEF::OutputOp>(op))
       continue;
 
     bool isNonStrict = false;
-    if (auto opaque = dyn_cast<MEF::OpaqueOp>(op))
+    if (auto opaque = dyn_cast<MLRT::MEF::OpaqueOp>(op))
       isNonStrict = opaque.getNonstrict();
     else
-      isNonStrict = isa<MEF::NonStrictInterface>(op);
+      isNonStrict = isa<MLRT::MEF::NonStrictInterface>(op);
 
     // Offset of the primitive in the list.
-    primitiveList.alignTo(MEF::kPrimitiveEntryAlignment);
+    primitiveList.alignTo(MLRT::MEF::kPrimitiveEntryAlignment);
     emitPrimitiveOffsetNumber(primitiveList.getOffset());
     // Number of operands that need to be available before it is ready to go.
     auto numOperandsBeforeRunning = op.getNumOperands();
@@ -1458,7 +1463,7 @@ void RegionEmitter::emitRegion(Region *region) {
 
   // Emit the result registers list at the end, if present.
   if (!block.empty()) {
-    if (auto outputOp = dyn_cast<MEF::OutputOp>(block.back())) {
+    if (auto outputOp = dyn_cast<MLRT::MEF::OutputOp>(block.back())) {
       for (auto operand : outputOp.getOperands())
         emitVBR(getRegisterNumber(operand));
     }
@@ -1467,7 +1472,7 @@ void RegionEmitter::emitRegion(Region *region) {
   // Once we're done, we can emit the primitive data after the primitive index
   // list. Note that primitive entries are fixed32 integers with 4-byte
   // alignment.
-  alignTo(MEF::kPrimitiveEntryAlignment);
+  alignTo(MLRT::MEF::kPrimitiveEntryAlignment);
   emitEmitter(primitiveList);
 
   primitiveIndices.clear();
@@ -1499,7 +1504,7 @@ unsigned RegionEmitter::getNumNonOutputUsers(Value result) const {
   int numUsers = 0;
   for (auto *user : result.getUsers()) {
     // Ignore the 'mef.output' op, it gets special handling.
-    if (!isa<MEF::OutputOp>(user))
+    if (!isa<MLRT::MEF::OutputOp>(user))
       ++numUsers;
   }
   return numUsers;
@@ -1509,7 +1514,7 @@ void RegionEmitter::emitPrimitiveResultUsers(Value result,
                                              MEFEmitter &primitiveBody) const {
   for (auto *user : result.getUsers()) {
     // Ignore the 'mef.output' op, it gets special handling.
-    if (isa<MEF::OutputOp>(user))
+    if (isa<MLRT::MEF::OutputOp>(user))
       continue;
 
     auto it = primitiveIndices.find(user);
@@ -1572,7 +1577,7 @@ void RegionEmitter::emitPrimitive(Operation *op,
 
   // mef.opaque operands store attributes in an explicit way since we don't know
   // the attribute names.
-  if (auto opaque = dyn_cast<MEF::OpaqueOp>(op)) {
+  if (auto opaque = dyn_cast<MLRT::MEF::OpaqueOp>(op)) {
     // All encoded attributes are stored in a single array.
     for (auto attr : opaque.getAttrs())
       processAttr(StringAttr::get(op->getContext()), attr);
@@ -1680,7 +1685,7 @@ void MEFModuleEmitter::emitStrings() {
     stringSection.emitNulTerminatedString(string ? string.getValue() : "");
   }
 
-  emitSection(MEF::SectionID::kStrings, stringSection);
+  emitSection(MLRT::MEF::SectionID::kStrings, stringSection);
 }
 
 void MEFModuleEmitter::extractStringsMD(MEFEmitter &stringsMDSection) {
@@ -1717,7 +1722,7 @@ void MEFModuleEmitter::emitAttributesAndExtractIndexMD(
     attrMDSection.emitOffset(offset);
   }
 
-  emitSection(MEF::SectionID::kAttributes, attributesSection);
+  emitSection(MLRT::MEF::SectionID::kAttributes, attributesSection);
 }
 
 void MEFModuleEmitter::emitPrimitiveNames() {
@@ -1728,7 +1733,7 @@ void MEFModuleEmitter::emitPrimitiveNames() {
   for (auto op : entities.primitives)
     primitivesNamesSection.emitOffset(entities.getStringOffset(op));
 
-  emitSection(MEF::SectionID::kPrimitiveNames, primitivesNamesSection);
+  emitSection(MLRT::MEF::SectionID::kPrimitiveNames, primitivesNamesSection);
 }
 
 /// Emit the INVOKABLES_BODIES section.  If optional metadata is enabled,
@@ -1760,7 +1765,7 @@ void MEFModuleEmitter::emitInvokablesAndExtractMD(
     invokablesSection.emitRegion(region);
   }
 
-  emitSection(MEF::SectionID::kTopLevelOpBodies, invokablesSection);
+  emitSection(MLRT::MEF::SectionID::kTopLevelOpBodies, invokablesSection);
 }
 
 void MEFModuleEmitter::emitInvokableIndex() {
@@ -1772,7 +1777,7 @@ void MEFModuleEmitter::emitInvokableIndex() {
     invokableIndexSection.emitVBR(entry.signature.numResults);
   }
 
-  emitSection(MEF::SectionID::kTopLevelOpIndex, invokableIndexSection);
+  emitSection(MLRT::MEF::SectionID::kTopLevelOpIndex, invokableIndexSection);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1787,8 +1792,8 @@ void MEFModuleEmitter::emitInvokableIndex() {
 ///
 /// On error, this emits the error message through the MLIR error handler,
 /// and returns an empty vector.
-ConcatenationTree M::translateMLIRToMEF(ModuleOp module,
-                                        bool enableMEFMetadata) {
+ConcatenationTree M::MLRT::translateMLIRToMEF(ModuleOp module,
+                                              bool enableMEFMetadata) {
   MEFModuleEmitter emitter(module);
 
   // Build the entities table.
@@ -1807,7 +1812,8 @@ ConcatenationTree M::translateMLIRToMEF(ModuleOp module,
       mlirTypesSection;
 
   // Emit magic numbers and format version.
-  emitter.emitBytes({MEF::kMagic1, MEF::kMagic2 + MEF::kVersion0});
+  emitter.emitBytes(
+      {MLRT::MEF::kMagic1, MLRT::MEF::kMagic2 + MLRT::MEF::kVersion0});
   emitter.extractLocationInfo(locationFilenames, locationPositions);
   emitter.emitStrings();
   if (enableMEFMetadata) {
@@ -1827,19 +1833,23 @@ ConcatenationTree M::translateMLIRToMEF(ModuleOp module,
 
   // Now that we've emitted all of the critical sections used in the common case
   // of the MEF emitter, emit metadata sections.
-  emitter.emitSection(MEF::SectionID::kLocationFilenames, locationFilenames);
-  emitter.emitSection(MEF::SectionID::kLocationPositions, locationPositions);
+  emitter.emitSection(MLRT::MEF::SectionID::kLocationFilenames,
+                      locationFilenames);
+  emitter.emitSection(MLRT::MEF::SectionID::kLocationPositions,
+                      locationPositions);
 
   // Unconditionally emit metadata that describes the attribute section, this
   // is the minimal metadata needed by MEF2MLIR.
-  emitter.emitSection(MEF::SectionID::kAttributeIndexMD, attrIndexMDSection);
+  emitter.emitSection(MLRT::MEF::SectionID::kAttributeIndexMD,
+                      attrIndexMDSection);
 
   // Emit all the optional sections at the end if they're requested.
   if (enableMEFMetadata) {
-    emitter.emitSection(MEF::SectionID::kMLIRTypeMD, mlirTypesSection);
-    emitter.emitSection(MEF::SectionID::kStringsMD, stringsMDSection);
-    emitter.emitSection(MEF::SectionID::kAttributeNamesMD, attrNamesSection);
-    emitter.emitSection(MEF::SectionID::kMLIRTypeStringsMD,
+    emitter.emitSection(MLRT::MEF::SectionID::kMLIRTypeMD, mlirTypesSection);
+    emitter.emitSection(MLRT::MEF::SectionID::kStringsMD, stringsMDSection);
+    emitter.emitSection(MLRT::MEF::SectionID::kAttributeNamesMD,
+                        attrNamesSection);
+    emitter.emitSection(MLRT::MEF::SectionID::kMLIRTypeStringsMD,
                         typeStringsMDSection);
   }
 

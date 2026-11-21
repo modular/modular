@@ -145,6 +145,7 @@ modular_py_test(
         ["*_gpu.py"],
         exclude = _NN_LIGHT_GPU_TESTS + _NN_MEDIUM_GPU_TESTS + [
             "*_distributed_gpu.py",
+            "bench_eplb_accumulate_gpu.py",
             "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_fused_qkv_mxfp8_matmul_gpu.py",
@@ -295,6 +296,33 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
         requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "bench_eplb_accumulate_gpu",
+    size = "large",
+    srcs = ["bench_eplb_accumulate_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    main = "bench_eplb_accumulate_gpu.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("torch"),
     ],
 )
 

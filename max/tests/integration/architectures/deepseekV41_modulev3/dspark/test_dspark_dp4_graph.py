@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from dspark_test_support import (
     _full_hf,
     _real_config,
@@ -69,12 +70,19 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 _DP = 4
 
 
+@pytest.fixture(params=[4, 8], autouse=True)
+def _replica_count(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(globals(), "_DP", request.param)
+
+
 @contextmanager
 def _virtual_devices(n_devices: int) -> Iterator[None]:
     """SM100 virtual devices: graph staging with no GPU attached."""
     set_virtual_device_api("cuda")
     set_virtual_device_target_arch("sm_100a")
-    set_virtual_device_count(n_devices)
+    set_virtual_device_count(max(n_devices, 8))
     try:
         yield
     finally:

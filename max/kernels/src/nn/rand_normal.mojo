@@ -96,6 +96,7 @@ def random_normal[
         grid_block = numel
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert (
             width == 1

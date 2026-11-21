@@ -31,28 +31,33 @@ map's `avoid` bits.
 
 Orchestration is not an atom's job: tiling operands into issues, choosing
 which threads issue, partitioning tiles among them, and waiting on
-asynchronous instructions belong to the libraries built on top. An atom
-only advertises how its results complete, through its `Completion` type,
-which wraps the wait instructions of the atom's instruction family and is
-one of:
+asynchronous instructions belong to the libraries built on top.
+
+An atom contains no synchronization of any kind: no wait, commit, fence,
+barrier arrival or barrier wait. It only describes how its results
+complete, through its `Completion` type, a description with no
+instructions of its own. The instructions that wait on or commit a
+completion are the building block's, in `layout.building_blocks`, the only
+layer that synchronizes. A completion is one of:
 
 - `Synchronous`: the results are ready when the call returns.
 - A `BarrierCompletion`: the atom is built with a caller's barrier, such as
-  an mbarrier for a TMA load, and the instruction signals it; anyone can
-  wait on the barrier.
+  an mbarrier for a TMA load, and the instruction itself signals it as part
+  of its one issue; the building block arms the barrier and waits on it.
 - A `HandleCompletion`: the instruction produces a handle, such as a DMA
-  id, which the call returns as its `Result`; the target's wait instruction
-  takes it.
+  id, which the call returns as its `Result`; the building block passes it
+  to the target's wait instruction.
 - A `CounterCompletion`: the family's wait instruction is tied to the
   instruction type rather than to one call, such as `tcgen05.wait::ld` or
   `cp.async.wait_group`, and waits for all of this thread's outstanding
   issues or all but a given number.
-- A `BatchCompletion`: issues join a batch the caller opens, without naming
-  it; the caller commits the batch and waits on it, as with
-  `cp.async.bulk.commit_group` and `cp.async.bulk.wait_group`.
+- A `BatchCompletion`: issues join a batch the building block opens,
+  without naming it; the building block commits the batch and waits on it,
+  as with `cp.async.bulk.commit_group` and `cp.async.bulk.wait_group`.
 
-An instruction family shares one completion type, so code that waits can
-tell which issues one wait covers.
+An instruction family shares one completion type, whose `family`, a
+`CompletionFamily`, names it, so code that waits can tell which issues one
+wait covers.
 
 Operand dtypes and engines are checked rather than pinned in signatures. A
 view's engine is its parent's `OffsetResultType`, and an atom's associated
@@ -69,7 +74,7 @@ You can import these APIs from the `layout.atoms` package:
 
 ```mojo
 from layout.atoms import CastAtom, LoadAtom, MmaAtom, StoreAtom, TransferAtom
-from layout.atoms import OperandMap, Synchronous, same_engine
+from layout.atoms import CompletionFamily, OperandMap, Synchronous, same_engine
 from layout.atoms import AddressEncoding, registers_map, vector_map
 ```
 """
@@ -241,12 +246,56 @@ def vector_map(values: Int, element_bytes: Int) -> OperandMap:
     }
 
 
+__enum CompletionFamily(Equatable, ImplicitlyCopyable, Writable):
+    """Names what completes together: the issues one wait covers.
+
+    A family says what completes, not which instruction waits for it; each
+    target's wait or commit for a family is in `layout.building_blocks`.
+    """
+
+    case synchronous
+    """No family: the results are ready when the call returns."""
+    case tensor_memory_load
+    """Loads from tensor memory, drained together; on SM100, `tcgen05.ld`,
+    which `tcgen05.wait::ld` drains."""
+    case tensor_memory_store
+    """Stores to tensor memory, drained together; on SM100, `tcgen05.st`,
+    which `tcgen05.wait::st` drains."""
+    case async_copy_group
+    """Copies collected into groups that are committed and waited on; on
+    SM100, `cp.async` with `cp.async.commit_group` and `wait_group`."""
+    case barrier_bytes
+    """Copies that complete by their bytes arriving on a barrier; on SM100,
+    `cp.async.bulk` completing transaction bytes on an mbarrier."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Returns whether two families are the same.
+
+        Args:
+            other: The family to compare with.
+
+        Returns:
+            True when they are the same family.
+        """
+        return self._get_enum_discriminant() == other._get_enum_discriminant()
+
+
 trait AtomCompletion:
-    """Advertises how an instruction family's results complete."""
+    """Describes how an instruction family's results complete.
+
+    A completion is a description only: it has no methods that issue
+    instructions. The building block that issued the atoms waits on, commits
+    or fences the completion with `layout.building_blocks`, keyed by
+    `family`.
+    """
 
     comptime Result: Movable & Deinitable
     """What each call returns: the instruction's handle for a
     `HandleCompletion`, else `NoneType`."""
+
+    comptime family: CompletionFamily
+    """The instruction family whose issues one wait covers. Atoms of one
+    family share one completion type."""
 
 
 struct Synchronous(AtomCompletion):
@@ -254,12 +303,14 @@ struct Synchronous(AtomCompletion):
 
     comptime Result = NoneType
     """Nothing: the call returns no handle."""
+    comptime family = CompletionFamily.synchronous
+    """No family: nothing is left to wait on."""
 
 
 trait BarrierCompletion(AtomCompletion):
     """The atom is built with a caller's barrier, and the instruction
-    signals it when its results are ready; anyone can wait on the barrier.
-    """
+    signals it when its results are ready; the building block arms the
+    barrier and any thread may wait on it."""
 
     comptime Barrier: AnyType
     """The barrier type the atom takes from its caller."""
@@ -267,7 +318,8 @@ trait BarrierCompletion(AtomCompletion):
 
 trait HandleCompletion(AtomCompletion):
     """The instruction produces a handle, which the call returns as its
-    `Result`; the target's wait instruction takes it."""
+    `Result`; the building block passes it to the target's wait
+    instruction."""
 
     pass
 
@@ -275,51 +327,22 @@ trait HandleCompletion(AtomCompletion):
 trait CounterCompletion(AtomCompletion):
     """The family's wait instruction is tied to the instruction type, not to
     a call: it waits until at most a given number of this thread's issues
-    of the family are outstanding."""
+    of the family are outstanding. `layout.building_blocks.wait_issues`
+    emits it."""
 
     comptime max_pending: Int
-    """The largest number `wait` can leave outstanding; 0 when the family
+    """The largest number a wait can leave outstanding; 0 when the family
     can only wait for all of its issues."""
-
-    @staticmethod
-    def wait[pending: Int = 0]():
-        """Blocks until at most `pending` of the family's issues are
-        outstanding.
-
-        Parameters:
-            pending: The issues that may stay outstanding, at most
-                `max_pending`.
-        """
-        ...
 
 
 trait BatchCompletion(AtomCompletion):
-    """Issues join the batch the caller opened, without naming it; the
-    caller commits the batch and waits on it."""
+    """Issues join the batch the building block opened, without naming it;
+    the building block commits the batch and waits on it, with
+    `layout.building_blocks.commit_batch` and `wait_batches`."""
 
     comptime max_pending: Int
-    """The largest number of committed batches `wait` can leave
+    """The largest number of committed batches a wait can leave
     outstanding; 0 when it can only wait for all of them."""
-
-    @staticmethod
-    def open():
-        """Opens a batch for the issues that follow."""
-        ...
-
-    @staticmethod
-    def commit():
-        """Closes the open batch."""
-        ...
-
-    @staticmethod
-    def wait[pending: Int = 0]():
-        """Blocks until at most `pending` committed batches are outstanding.
-
-        Parameters:
-            pending: The batches that may stay outstanding, at most
-                `max_pending`.
-        """
-        ...
 
 
 trait Atom(TrivialRegisterPassable):
@@ -327,8 +350,9 @@ trait Atom(TrivialRegisterPassable):
 
     A call issues the intrinsic and nothing else, and returns what the
     instruction produces: `Completion.Result`, which is `NoneType` unless
-    the instruction yields a handle. Waiting for an asynchronous atom is the
-    caller's job, with the instructions its `Completion` wraps.
+    the instruction yields a handle. An atom never synchronizes: waiting for
+    an asynchronous atom is the building block's job, with
+    `layout.building_blocks`.
     """
 
     comptime Completion: AtomCompletion

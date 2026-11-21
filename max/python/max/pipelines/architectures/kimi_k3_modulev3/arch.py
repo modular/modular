@@ -15,7 +15,7 @@
 The only Kimi K3 architecture: a checkpoint that names
 ``KimiK3ForConditionalGeneration`` resolves to it.
 
-TP, EP and MXFP4 are all wired (see ``layers/ep.py`` and
+TP, EP and MXFP4 are all wired (see :mod:`max.nn.ep` and
 ``layers/moe_latent.py``); EP and MXFP4 are mutually exclusive, matching
 ``moonshotai/Kimi-K3`` (MXFP4) vs ``moonshotai/Kimi-K3-ep`` (EP, bf16).
 The tower builds for a speculative pairing through the framework's

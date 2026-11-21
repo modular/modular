@@ -20,10 +20,10 @@ import pytest
 from max.benchmark import benchmark_serving
 from max.benchmark.benchmark_shared.datasets import (
     BenchmarkDataset,
-    SampledRequest,
     ShareGPTBenchmarkDataset,
 )
 from max.benchmark.benchmark_shared.datasets.types import RequestSamples
+from tests.benchmark.benchmark_fakes import make_sampled_request
 
 
 @pytest.fixture
@@ -50,12 +50,8 @@ def offline_dryrun_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_dataset.has_multiturn_chat_support = False
     mock_dataset.sample_requests.return_value = RequestSamples(
         requests=[
-            SampledRequest(
-                prompt_formatted="hi",
-                prompt_len=2,
-                output_len=8,
-                encoded_images=[],
-                ignore_eos=False,
+            make_sampled_request(
+                "hi", prompt_len=2, output_len=8, ignore_eos=False
             )
         ]
     )

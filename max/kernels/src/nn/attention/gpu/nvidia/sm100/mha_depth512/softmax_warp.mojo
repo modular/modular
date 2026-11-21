@@ -176,6 +176,7 @@ def depth512_scale_write_output[
 
     # ---- Helper: load from TMEM, scale, write to SMEM --------------------
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def read_scale_write(
         o_tmem: TmemAddress,
         col_base: Int,
@@ -497,6 +498,7 @@ def depth512_softmax[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def exchange_reduce[
         op: StringLiteral,  # "max" or "add"
     ](partial_val: Float32) {imm} -> Float32:
@@ -628,6 +630,7 @@ def depth512_softmax[
     # score_to_logit_ratio, then write P to SMEM in batches.
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_exp(row_max: Float32) {imm} -> f32x2:
         comptime exp_simd = 2
         comptime vs_len = effective_bn // exp_simd
@@ -794,6 +797,7 @@ def depth512_softmax[
     var s_nxt_tmem = s_even_tmem
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def main_loop_body[
         mask_strategy: MaskStrategy
     ]() {

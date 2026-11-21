@@ -151,7 +151,7 @@ public:
   API api() const { return api_; }
   int id() const { return id_; }
   /// Whether this is a virtual (compile-only) device.
-  bool isVirtual() const { return compilationDevice_ != nullptr; }
+  bool isVirtual() const { return virtualArch_.has_value(); }
   ErrorOr<const char *> getArchName() const;
   const std::string &name() const { return name_; }
   ErrorOrSuccess isCompatible() const;
@@ -199,26 +199,22 @@ public:
 
 private:
   friend class DeviceContext;
-  Device(MojoHALContextBox *mojoCtx, API api, std::string apiStr, int id,
-         std::string name)
-      : mojoCtx_(mojoCtx), api_(api), apiStr_(std::move(apiStr)), id_(id),
-        name_(std::move(name)) {}
+  Device(MojoHALContextBox *mojoCtx, API api, int id, std::string name)
+      : mojoCtx_(mojoCtx), api_(api), id_(id), name_(std::move(name)) {}
 
   /// Virtual (compile-only) device: no Mojo HAL box, every device query
-  /// answered from `compilationDevice` or a constant.
-  Device(std::unique_ptr<CompilationDevice> compilationDevice, API api,
-         std::string apiStr, int id, std::string name)
-      : mojoCtx_(nullptr), api_(api), apiStr_(std::move(apiStr)), id_(id),
-        name_(std::move(name)),
-        compilationDevice_(std::move(compilationDevice)) {}
+  /// answered from `virtualArch` or a constant.
+  Device(std::string virtualArch, API api, int id, std::string name)
+      : mojoCtx_(nullptr), api_(api), id_(id), name_(std::move(name)),
+        virtualArch_(std::move(virtualArch)) {}
 
   MojoHALContextBox *mojoCtx_; // DeviceContext owned by this Device.
   API api_;
-  std::string apiStr_; // Plugin api string as passed to create().
   int id_;
   std::string name_;
   mutable std::string archName_;
-  std::unique_ptr<CompilationDevice> compilationDevice_;
+  /// The target arch of a virtual device; empty for a real one.
+  std::optional<std::string> virtualArch_;
 };
 
 // Numeric device attributes, by CUDA-style `CUdevice_attribute` code. Mirrors

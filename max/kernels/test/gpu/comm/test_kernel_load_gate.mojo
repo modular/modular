@@ -237,6 +237,7 @@ def _spin_and_release(
     """
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch[index: Int]() raises {imm ctx0, imm ctx1, imm flag, imm clock}:
         comptime if index == 0:
             _enqueue_spinner(ctx0, flag, clock)

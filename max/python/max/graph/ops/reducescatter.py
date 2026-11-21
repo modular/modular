@@ -102,6 +102,11 @@ def sum(
             f"input tensors. Got: {devices=}"
         )
 
+    # A one-device group keeps its whole input. The kernels key their barrier
+    # counter bank on the group size, and bank 1 is reserved, so stage nothing.
+    if group_size == 1 and num_devices > 1:
+        return inputs
+
     # Resolve negative axis before passing to MLIR.
     input_dtype = inputs[0].dtype
     if axis < 0:

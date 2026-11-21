@@ -19,7 +19,10 @@ from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 from kv_cache.paged_sparse_kv_index_remap import (
+    PagedKVRemap,
+    PagedKVScaleRemap,
     paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch,
+    sparse_selection_rows,
 )
 
 
@@ -95,6 +98,215 @@ def _reference_row_offsets_remap(
             page_size,
             invalid_block_id,
         )
+
+
+def test_sparse_selection_rows_resolve_value_rows(ctx: DeviceContext) raises:
+    """A selection's positions map to the rows of an FP8 cache's pages.
+
+    Each row's positions resolve through its own batch entry's table, and a
+    position that is `-1` or on an unmapped page gives `-1`.
+    """
+    comptime PAGE_SIZE = 128
+    comptime TOP_K = 2
+    comptime ROWS = 3
+    comptime LUT_COLS = 4
+    comptime NUM_BATCHES = 2
+    comptime INVALID_BLOCK = 512
+
+    var h_row_off = unsafe_alloc[UInt32](NUM_BATCHES + 1)
+    h_row_off[0] = 0
+    h_row_off[1] = 2
+    h_row_off[2] = 3
+
+    var h_lut = unsafe_alloc[UInt32](NUM_BATCHES * LUT_COLS)
+    var blocks: List[UInt32] = [
+        10,
+        5,
+        INVALID_BLOCK,
+        INVALID_BLOCK,
+        3,
+        20,
+        INVALID_BLOCK,
+        INVALID_BLOCK,
+    ]
+    for i in range(NUM_BATCHES * LUT_COLS):
+        h_lut[i] = blocks[i]
+
+    # Rows 0 and 1 belong to batch entry 0, row 2 to entry 1.
+    var positions: List[Int32] = [0, 129, -1, 256, 200, 5]
+    var h_pos = unsafe_alloc[Int32](ROWS * TOP_K)
+    for i in range(ROWS * TOP_K):
+        h_pos[i] = positions[i]
+
+    var expected: List[Int32] = [
+        10 * PAGE_SIZE + 0,
+        5 * PAGE_SIZE + 1,
+        -1,
+        -1,
+        20 * PAGE_SIZE + 72,
+        3 * PAGE_SIZE + 5,
+    ]
+    var h_out = unsafe_alloc[Int32](ROWS * TOP_K)
+
+    var d_pos = ctx.enqueue_create_buffer[.int32](ROWS * TOP_K)
+    var d_row_off = ctx.enqueue_create_buffer[.uint32](NUM_BATCHES + 1)
+    var d_lut = ctx.enqueue_create_buffer[.uint32](NUM_BATCHES * LUT_COLS)
+    var d_out = ctx.enqueue_create_buffer[.int32](ROWS * TOP_K)
+    ctx.enqueue_copy(d_pos, h_pos)
+    ctx.enqueue_copy(d_row_off, h_row_off)
+    ctx.enqueue_copy(d_lut, h_lut)
+
+    var remap = PagedKVRemap[PAGE_SIZE](
+        d_out.unsafe_ptr(),
+        d_lut.unsafe_ptr().as_imm(),
+        LUT_COLS,
+        NUM_BATCHES,
+        UInt32(INVALID_BLOCK),
+    )
+    sparse_selection_rows(
+        remap,
+        d_pos.unsafe_ptr().as_imm(),
+        d_row_off.unsafe_ptr().as_imm(),
+        ROWS,
+        TOP_K,
+        NUM_BATCHES,
+        ctx,
+    )
+    ctx.enqueue_copy(h_out, d_out)
+    # TODO(GPUA-92): keep the inputs alive until the kernel has run, as in
+    # `main`.
+    _ = d_pos^
+    _ = d_row_off^
+    _ = d_lut^
+    ctx.synchronize()
+
+    for i in range(ROWS * TOP_K):
+        assert_equal(Int(h_out[i]), Int(expected[i]), "selection row mismatch")
+
+    h_row_off.unsafe_free()
+    h_lut.unsafe_free()
+    h_pos.unsafe_free()
+    h_out.unsafe_free()
+
+
+def test_sparse_selection_rows_resolve_scale_rows(ctx: DeviceContext) raises:
+    """A selection's positions map to value rows and scale-pool rows.
+
+    The scale pool has its own block ids and a block stride other than the
+    page size, so each half needs its own table.
+    """
+    comptime PAGE_SIZE = 128
+    comptime TOP_K = 2
+    comptime ROWS = 3
+    comptime LUT_COLS = 4
+    comptime NUM_BATCHES = 2
+    comptime INVALID_BLOCK = 512
+    comptime INVALID_SCALE_BLOCK = 64
+    comptime SCALE_ROWS_PER_BLOCK = 384
+
+    var h_row_off = unsafe_alloc[UInt32](NUM_BATCHES + 1)
+    h_row_off[0] = 0
+    h_row_off[1] = 2
+    h_row_off[2] = 3
+
+    # Value and scale block ids of each batch entry's logical pages.
+    var h_lut = unsafe_alloc[UInt32](NUM_BATCHES * LUT_COLS)
+    var h_scales_lut = unsafe_alloc[UInt32](NUM_BATCHES * LUT_COLS)
+    var value_blocks: List[UInt32] = [
+        10,
+        5,
+        INVALID_BLOCK,
+        INVALID_BLOCK,
+        3,
+        20,
+        INVALID_BLOCK,
+        INVALID_BLOCK,
+    ]
+    var scale_blocks: List[UInt32] = [
+        7,
+        2,
+        INVALID_SCALE_BLOCK,
+        INVALID_SCALE_BLOCK,
+        4,
+        9,
+        INVALID_SCALE_BLOCK,
+        INVALID_SCALE_BLOCK,
+    ]
+    for i in range(NUM_BATCHES * LUT_COLS):
+        h_lut[i] = value_blocks[i]
+        h_scales_lut[i] = scale_blocks[i]
+
+    # Rows 0 and 1 belong to batch entry 0, row 2 to entry 1.
+    var positions: List[Int32] = [0, 129, -1, 256, 200, 5]
+    var h_pos = unsafe_alloc[Int32](ROWS * TOP_K)
+    for i in range(ROWS * TOP_K):
+        h_pos[i] = positions[i]
+
+    var expected: List[Int32] = [
+        10 * PAGE_SIZE + 0,
+        5 * PAGE_SIZE + 1,
+        7 * SCALE_ROWS_PER_BLOCK + 0,
+        2 * SCALE_ROWS_PER_BLOCK + 1,
+        -1,
+        -1,
+        -1,
+        -1,
+        20 * PAGE_SIZE + 72,
+        3 * PAGE_SIZE + 5,
+        9 * SCALE_ROWS_PER_BLOCK + 72,
+        4 * SCALE_ROWS_PER_BLOCK + 5,
+    ]
+    var h_out = unsafe_alloc[Int32](ROWS * 2 * TOP_K)
+
+    var d_pos = ctx.enqueue_create_buffer[.int32](ROWS * TOP_K)
+    var d_row_off = ctx.enqueue_create_buffer[.uint32](NUM_BATCHES + 1)
+    var d_lut = ctx.enqueue_create_buffer[.uint32](NUM_BATCHES * LUT_COLS)
+    var d_scales_lut = ctx.enqueue_create_buffer[.uint32](
+        NUM_BATCHES * LUT_COLS
+    )
+    var d_out = ctx.enqueue_create_buffer[.int32](ROWS * 2 * TOP_K)
+    ctx.enqueue_copy(d_pos, h_pos)
+    ctx.enqueue_copy(d_row_off, h_row_off)
+    ctx.enqueue_copy(d_lut, h_lut)
+    ctx.enqueue_copy(d_scales_lut, h_scales_lut)
+
+    var remap = PagedKVScaleRemap[PAGE_SIZE, TOP_K](
+        d_out.unsafe_ptr(),
+        d_lut.unsafe_ptr().as_imm(),
+        d_scales_lut.unsafe_ptr().as_imm(),
+        LUT_COLS,
+        LUT_COLS,
+        NUM_BATCHES,
+        UInt32(INVALID_BLOCK),
+        UInt32(INVALID_SCALE_BLOCK),
+        SCALE_ROWS_PER_BLOCK,
+    )
+    sparse_selection_rows(
+        remap,
+        d_pos.unsafe_ptr().as_imm(),
+        d_row_off.unsafe_ptr().as_imm(),
+        ROWS,
+        TOP_K,
+        NUM_BATCHES,
+        ctx,
+    )
+    ctx.enqueue_copy(h_out, d_out)
+    # TODO(GPUA-92): keep the inputs alive until the kernel has run, as in
+    # `main`.
+    _ = d_pos^
+    _ = d_row_off^
+    _ = d_lut^
+    _ = d_scales_lut^
+    ctx.synchronize()
+
+    for i in range(ROWS * 2 * TOP_K):
+        assert_equal(Int(h_out[i]), Int(expected[i]), "selection row mismatch")
+
+    h_row_off.unsafe_free()
+    h_lut.unsafe_free()
+    h_scales_lut.unsafe_free()
+    h_pos.unsafe_free()
+    h_out.unsafe_free()
 
 
 def main() raises:
@@ -196,6 +408,8 @@ def main() raises:
         _ = d_lut^
 
         ctx.synchronize()
+        test_sparse_selection_rows_resolve_value_rows(ctx)
+        test_sparse_selection_rows_resolve_scale_rows(ctx)
 
     for i in range(NUM_IDX):
         assert_equal(Int(h_out[i]), Int(h_expected[i]), "gpu remap mismatch")

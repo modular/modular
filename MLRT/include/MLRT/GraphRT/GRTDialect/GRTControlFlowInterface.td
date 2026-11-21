@@ -21,7 +21,7 @@ def GRTControlFlowInterface : OpInterface<"GRTControlFlowInterface"> {
     This interface describes common properties of GRT control flow operators.
   }];
 
-  let cppNamespace = "::M::GRT";
+  let cppNamespace = "::M::MLRT::GRT";
 
   let methods = [
     InterfaceMethod<
@@ -77,7 +77,7 @@ def GRTControlFlowInterface : OpInterface<"GRTControlFlowInterface"> {
          - Exactly one of the sub-blocks is executed.
          - All the sub-blocks outputs agree with the control flow op results.
       }],
-      "M::GRT::ControlFlowFlavor", "getFlavor", (ins)
+      "M::MLRT::GRT::ControlFlowFlavor", "getFlavor", (ins)
     >,
     InterfaceMethod<
       [{
@@ -89,7 +89,7 @@ def GRTControlFlowInterface : OpInterface<"GRTControlFlowInterface"> {
   ];
 
   let verify = [{
-    return M::GRT::verifyControlFlowInterfaceOp($_op);
+    return M::MLRT::GRT::verifyControlFlowInterfaceOp($_op);
   }];
 }
 

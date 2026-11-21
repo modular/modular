@@ -41,6 +41,7 @@ from transformers.models.auto.configuration_auto import AutoConfig
 # (``M``) and MLP (``-``) layers; only the attention count and head geometry
 # matter for KV param construction.
 _HYBRID_PATTERN = "M-*M"
+_NUM_Q_HEADS = 32
 _NUM_KV_HEADS = 8
 _HEAD_DIM = 128
 
@@ -48,6 +49,7 @@ _HEAD_DIM = 128
 def _hf_config() -> SimpleNamespace:
     return SimpleNamespace(
         hybrid_override_pattern=_HYBRID_PATTERN,
+        num_attention_heads=_NUM_Q_HEADS,
         num_key_value_heads=_NUM_KV_HEADS,
         head_dim=_HEAD_DIM,
         mamba_num_heads=4,

@@ -35,7 +35,7 @@ using DeviceContextValue = mlir::TypedValue<DeviceContextType>;
 // Device graphs have no chains: staged chain inputs are dead pass-throughs and
 // chain outputs come from host-side `mogg.async.ready`. Chains are dropped
 // from the graph I/O; the execute op produces a fresh one.
-bool isChain(Value v) { return isa<MEF::ChainType>(v.getType()); }
+bool isChain(Value v) { return isa<MLRT::MEF::ChainType>(v.getType()); }
 
 SmallVector<Value> nonChainValues(ValueRange v) {
   return llvm::filter_to_vector(v, [](Value v) { return !isChain(v); });
@@ -354,7 +354,7 @@ LogicalResult finalizeCollectiveOp(DeviceGraphCollectiveOp collectiveOp,
 
   rewriter.setInsertionPoint(collectiveOp);
   auto executeOp = DeviceGraphCollectiveExecuteOp::create(
-      rewriter, loc, /*chain=*/MEF::ChainType::get(ctx),
+      rewriter, loc, /*chain=*/MLRT::MEF::ChainType::get(ctx),
       /*outputs=*/TypeRange(outputTypes),
       /*graphs=*/regionOp.getResults(),
       /*inputs=*/allInputs);

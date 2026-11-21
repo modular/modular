@@ -53,6 +53,7 @@ from .config import (
     Backend,
     BenchmarkTask,
     SamplingConfig,
+    get_video_request_schema,
 )
 from .datasets.types import (
     ChatMessage,
@@ -1491,8 +1492,15 @@ class SglangVideoPayload(TypedDict):
 
 def _build_sglang_video_payload(
     request_func_input: PixelGenerationRequestFuncInput,
-) -> SglangVideoPayload:
+) -> SglangVideoPayload | Mapping[str, object]:
     """Build JSON payload for sglang's POST /v1/videos endpoint."""
+    options = request_func_input.image_options
+    schema = get_video_request_schema(
+        options.request_schema if options else None
+    )
+    if schema is not None:
+        return schema.build_payload(request_func_input)
+
     payload = SglangVideoPayload(
         model=request_func_input.model,
         prompt=request_func_input.prompt,
@@ -1557,6 +1565,32 @@ def _build_sglang_video_form(
 _SGLANG_VIDEO_POLL_INTERVAL_S = 1.0
 
 
+async def _fetch_sglang_video_content(
+    session: aiohttp.ClientSession,
+    poll_url: str,
+    headers: dict[str, str],
+    output: PixelGenerationRequestFuncOutput,
+) -> bool:
+    """Downloads the mp4 of a completed sglang video job.
+
+    Returns whether the download succeeded; on failure the reason is recorded on
+    ``output.error``.
+    """
+    async with session.get(url=f"{poll_url}/content", headers=headers) as resp:
+        if resp.status != 200:
+            body = await resp.text()
+            output.error = (
+                f"Content HTTP {resp.status}: {body}"
+                if body
+                else (resp.reason or "")
+            )
+            return False
+        if not await resp.read():
+            output.error = "Empty mp4 in sglang video content response."
+            return False
+    return True
+
+
 class SglangVideoRequestDriver(RequestDriver):
     """Request driver for sglang's async /v1/videos endpoint.
 
@@ -1578,11 +1612,12 @@ class SglangVideoRequestDriver(RequestDriver):
             raise ValueError("Sglang video URL must end with '/videos'.")
         base_url = api_url.rstrip("/")
 
-        # image-to-video uploads the conditioning image, which requires
-        # multipart/form-data; text-to-video stays JSON. Let aiohttp set the
-        # multipart Content-Type (with boundary) for the form path.
+        options = request_func_input.image_options
+        schema = get_video_request_schema(
+            options.request_schema if options else None
+        )
         headers = dict(openai_bearer_auth_headers())
-        if request_func_input.input_image_paths:
+        if request_func_input.input_image_paths and schema is None:
             post_kwargs: dict[str, Any] = {
                 "data": _build_sglang_video_form(request_func_input)
             }
@@ -1642,6 +1677,15 @@ class SglangVideoRequestDriver(RequestDriver):
                         status = poll_body.get("status", "")
 
                         if status == "completed":
+                            if (
+                                schema is not None
+                                and not await _fetch_sglang_video_content(
+                                    session, poll_url, headers, output
+                                )
+                            ):
+                                output.latency = time.perf_counter() - start
+                                output.success = False
+                                return output
                             output.latency = time.perf_counter() - start
                             output.num_generated_outputs = 1
                             output.success = True
@@ -1654,7 +1698,7 @@ class SglangVideoRequestDriver(RequestDriver):
                                 )
                             return output
 
-                        if status == "failed":
+                        if status in ("failed", "error"):
                             output.latency = time.perf_counter() - start
                             error_info = poll_body.get("error", {})
                             output.error = (
@@ -2041,7 +2085,7 @@ def get_request_driver_class(
       /v1/chat/completions   -> VllmOmniPixelGenerationRequestDriver
     The correct endpoint is typically auto-selected by PIXEL_GEN_DEFAULT_ENDPOINT
     (or VIDEO_GEN_DEFAULT_ENDPOINT for text-to-video) in benchmark_serving.py
-    based on the --backend flag and task.
+    based on the backend, task and any registered video request schema.
     """
     if task in PIXEL_GENERATION_TASKS:
         if api_url.endswith("responses"):

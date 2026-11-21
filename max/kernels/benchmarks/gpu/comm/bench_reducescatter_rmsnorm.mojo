@@ -83,12 +83,14 @@ def _launch_norm[
     var out_buf = TileTensor(out_ptr, row_major(Coord(local_rows, num_cols)))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[
         width: Int
     ](coords: Coord) {var in_buf} -> SIMD[in_dtype, width]:
         return in_buf.load[width=width](coords)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) {var out_buf} -> None:
@@ -670,6 +672,7 @@ def bench_reducescatter_rmsnorm[
 
     # ===== Variant 1: reduce-scatter only -> t_RS =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_rs_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
@@ -700,6 +703,7 @@ def bench_reducescatter_rmsnorm[
 
     # ===== Variant 2: standalone RMSNorm on a cold shard -> t_norm(shard) =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
@@ -728,6 +732,7 @@ def bench_reducescatter_rmsnorm[
 
     # ===== Variant 3: RS then RMSNorm on the live RS output -> t_chained =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
@@ -770,6 +775,7 @@ def bench_reducescatter_rmsnorm[
 
     # ===== Variant 4: fused reduce-scatter + RMSNorm kernel -> t_fused =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
@@ -810,6 +816,7 @@ def bench_reducescatter_rmsnorm[
     # dispatch auto-routes on per-rank shard size (fused below
     # `RS_NORM_FUSE_THRESHOLD`, two-launch above).
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:

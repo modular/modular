@@ -76,7 +76,6 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn:core",
@@ -86,7 +85,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         # test_dspark_weight_adapter.py checks the drafter's UE8M0 records
         # against the V2 arch's shared E4M3/E8M0 decoders.
-        "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/architectures/dspark_deepseekV41_modulev3",
         "//max/python/max/pipelines/context",
@@ -172,4 +170,10 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
     ],
+)
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
 )

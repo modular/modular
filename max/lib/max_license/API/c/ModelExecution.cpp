@@ -101,7 +101,7 @@ ErrorOr<ExecResultType>
 extractDriverResults(const M::Engine::Context &context,
                      M::AsyncExecutableModel executableModel,
                      MutableArrayRef<AnyAsyncValueRef> results) {
-  M_PROFILE_RANGE("extractDriverResults", M_PROFILE_COLOR_TEAL);
+  M_PROFILE_SPAN("extractDriverResults", M_PROFILE_COLOR_TEAL);
 
   // Await async model so we can execute synchronously.
   M::AsyncExecutableModel asyncModel = executableModel.copy();
@@ -193,7 +193,7 @@ ErrorOr<ExecResultType>
 executeFromDriver(const M::Engine::Context &context,
                   M::AsyncExecutableModel executableModel,
                   SmallVectorImpl<AnyAsyncValueRef> &inputs) {
-  M_PROFILE_RANGE("executeFromDriver", M_PROFILE_COLOR_TEAL);
+  M_PROFILE_SPAN("executeFromDriver", M_PROFILE_COLOR_TEAL);
   // Every way into the runtime funnels through here, so one
   // guard covers a forward pass whoever the caller is.
   M::Log::SpanGuard executeSpan("model_execute");

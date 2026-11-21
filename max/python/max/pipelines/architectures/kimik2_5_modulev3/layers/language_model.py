@@ -35,8 +35,8 @@ from max.nn.common_layers.kv_cache import (
     kv_input_values,
 )
 from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.ep import EPBuffers
 from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
@@ -73,15 +73,10 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
         llm = config.llm_config
         if llm.mesh is None:
             raise ValueError("Kimi K2.5 needs a mesh: apply the runtime first")
-        self.ep_batch_manager = (
-            None if llm.ep_config is None else EPBatchManager(llm.ep_config)
-        )
         # Quantized checkpoints keep norms, biases and embeddings in bf16.
         dtype = DType.bfloat16 if llm.quant_config is not None else llm.dtype
         with default_dtype(dtype):
-            self.language_model = DeepseekV3TextModel(
-                llm, self.ep_batch_manager
-            )
+            self.language_model = DeepseekV3TextModel(llm)
         # The checkpoint names the text model's weights from its root.
         self.language_model.name_transparent = True
         self.config = llm
@@ -114,13 +109,6 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
             self.kv_params.unflatten_kv_inputs(kv_inputs),
             leaf=KVCacheInputsPerDevice,
         )
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            assert inputs.ep is not None
-            comm_buffers = self.ep_batch_manager.comm_buffers(
-                [x._graph_value for x in tree.leaves(inputs.ep)]
-            )
-
         kv_collection = PagedCacheValues.from_upstream(
             kv_collections,
             DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
@@ -134,7 +122,7 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
             batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            inputs.ep,
         )
         return DecoderOutputs(next_token_logits=logits)
 
@@ -148,7 +136,7 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None,
         input_row_offsets_i64: Tensor | None,
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
     ) -> Tensor:
         lm = self.language_model
         mesh = lm.mesh
@@ -213,7 +201,7 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
                 input_row_offsets,
                 freqs_cis,
                 mla_prefill_metadata,
-                comm_buffers,
+                ep,
             )
 
         last_token_h = gather_last_tokens(h, input_row_offsets)

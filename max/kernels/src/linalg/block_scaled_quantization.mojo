@@ -2162,6 +2162,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         scales_tensor.dim[1]()
     )
 
+    @__allow_legacy_any_origin_fields
     def launch_quant_fp4_kernel[k_tiles_per_block: Int]() raises {imm}:
         comptime kernel = grouped_quantize_dynamic_scaled_fp4_async_kernel[
             output_dtype,
@@ -2497,6 +2498,7 @@ def grouped_quantize_nvfp4_row_amax_kernel[
                 # lane`, with zeros past the end of the row, so that the scale
                 # columns the last k-tile does not fill are written as zero.
                 @always_inline
+                @__allow_legacy_any_origin_fields
                 def quantize_chunk(
                     v: InVec, col: Int, inv_row_scale: Float32
                 ) {imm}:
@@ -3239,6 +3241,7 @@ def block_scaled_matmul[
             raise Error("Heuristic and outliers dispatch failed")
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def description_fn() {imm} -> String:
         # fmt: off
         return String(
@@ -3810,6 +3813,7 @@ def rope_quantize_dynamic_block_scaled[
     ]
     var freqs = rebind[FreqsTensor](freqs_device.as_unsafe_any_origin())
 
+    @__allow_legacy_any_origin_fields
     def launch[num_max_threads: Int, grid_by_occupancy: Bool]() raises {imm}:
         quantize_dynamic_scaled_fp4fp8[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,

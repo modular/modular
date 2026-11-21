@@ -127,6 +127,7 @@ def test_concat_4_inputs_rank5[
     var output_any = output_dyn.as_unsafe_any_origin()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def epilogue_plus_one[
         c_type: DType, width: SIMDLength, *, alignment: Int
     ](coord: Coord, val: SIMD[c_type, width]) {var output_any}:

@@ -17,7 +17,6 @@ from __future__ import annotations
 from max import tree
 from max.graph import TensorType
 from max.nn import Module
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor, default_dtype
 
@@ -43,9 +42,8 @@ class MuseSparkDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
     def __init__(self, config: MuseSparkConfig) -> None:
         super().__init__()
         assert config.mesh is not None
-        manager = None if config.ep is None else EPBatchManager(config.ep)
         with default_dtype(compute_dtype(config)):
-            self.model = MuseSpark(config, config.mesh, manager)
+            self.model = MuseSpark(config, config.mesh, config.ep)
         self.model.name_transparent = True
 
     def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
@@ -58,7 +56,7 @@ class MuseSparkDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
             inputs.vision.embeddings,
             inputs.vision.scatter_indices,
             *tree.leaves(inputs.kv),
-            *(() if inputs.ep is None else tree.leaves(inputs.ep)),
+            ep=inputs.ep,
         )
         return DecoderOutputs(
             next_token_logits=outputs[0],

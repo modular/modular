@@ -73,11 +73,11 @@ def register[
     Build `cond` from the aliases in `extensibility.platforms` and the atoms in
     `extensibility.platform_predicates`. Give each platform that uses the
     `type`, `api`, `arch`, or `model` atoms a name with `comptime`, and pass
-    that name as `cond`. In the alias, state every level of the device above
-    the narrowest one that it tests, even when a helper already implies it:
+    that name as `cond`. Each field test must narrow a condition at the level
+    above it, as `arch()` narrows `CUDA`:
 
     ```mojo
-    comptime TCGEN05 = ACCELERATOR & CUDA & (arch("sm_100a") | arch("sm_103a"))
+    comptime TCGEN05 = CUDA & (arch("sm_100a") | arch("sm_103a"))
 
     @extensibility.register("mo.matmul", CPU)
     struct CpuMatmul:

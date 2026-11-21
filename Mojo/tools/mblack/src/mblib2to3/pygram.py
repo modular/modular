@@ -73,6 +73,8 @@ class _python_symbols(Symbols):
     comp_iter: int
     comp_op: int
     comparison: int
+    conditional_guard_clause_tail: int
+    conditional_if_clause_tail: int
     compound_stmt: int
     comptime_assert_stmt_body: int
     comptime_stmt: int
@@ -106,6 +108,7 @@ class _python_symbols(Symbols):
     guard: int
     guard_stmt: int
     if_stmt: int
+    inline_if_conditions: int
     import_as_name: int
     import_as_names: int
     import_from: int
@@ -115,6 +118,7 @@ class _python_symbols(Symbols):
     listmaker: int
     match_stmt: int
     metaparams: int
+    multiline_if_conditions: int
     named_effect: int
     namedexpr_test: int
     not_test: int

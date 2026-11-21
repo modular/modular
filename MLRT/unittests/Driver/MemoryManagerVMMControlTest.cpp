@@ -20,7 +20,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "TestUtils.h"
 
 #include "gtest/gtest.h"
@@ -52,16 +53,16 @@ protected:
     ErrorOr<Device::MemInfo> memInfo = device.getMemoryInfo();
     if (memInfo.isError())
       return nullptr;
-    return std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
+    return createDeviceMemoryManager(
         device, *memInfo, device.allocationAlignment(),
-        /*memoryLimit=*/static_cast<int64_t>(budgetBytes)));
+        /*memoryLimit=*/static_cast<int64_t>(budgetBytes));
   }
 };
 
 // Same fragmentation as the VMM test, but with VMM off the 1.5 GiB request
 // cannot be satisfied and must return an error.
 TEST_F(MemoryManagerVMMControlTest, FragmentedRequestFailsWithoutVmm) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const size_t kBudget = 4 * kGiB;
   const size_t kChunk = 1 * kGiB;
   const size_t kBig = 3 * kGiB / 2;

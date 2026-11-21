@@ -90,7 +90,6 @@ from max.pipelines.lib.registration_runtime import (
     ExpertParallelInputs,
     ModuleRuntime,
     batch_context_length_types,
-    ep_input_tree,
     prepare_weights,
     role_weights,
 )
@@ -1352,7 +1351,7 @@ def _denoised_model(
     model.devices = [CPU()]
     model.device_refs = [DeviceRef.CPU()]
     model.kv_params = NonCallableMock(get_symbolic_inputs=lambda: (X,))
-    model._runtime = NonCallableMock(spec=ModuleRuntime, ep=None)
+    model._runtime = NonCallableMock(spec=ModuleRuntime, ep=None, mesh=None)
     model._checkpoint = {"gain": np.full(1, 2, dtype=np.float32)}
     return model
 
@@ -1469,24 +1468,6 @@ def test_finalize_config_rejects_another_config_type() -> None:
         finalize_config(Wrong(), _HF_CONFIG, {}, ModelOutputConfig())
 
 
-class _TailInputs(ExpertParallelInputs):
-    def input_tree(self, ep: EPConfig) -> object:
-        return ("tail", ep.n_experts)
-
-
-@dataclass(frozen=True)
-class _TailConfig(ShardedExpertsConfig):
-    expert_parallel_inputs: ClassVar[ExpertParallelInputs] = _TailInputs()
-
-
-def test_a_decoder_can_take_the_exchange_in_its_own_layout() -> None:
-    ep = NonCallableMock(spec=EPConfig, n_experts=32)
-    assert type(ShardedExpertsConfig.expert_parallel_inputs) is (
-        ExpertParallelInputs
-    )
-    assert ep_input_tree(_TailConfig(), ep) == ("tail", 32)
-
-
 _EP = NonCallableMock(spec=EPConfig)
 
 
@@ -1524,6 +1505,10 @@ class MeshDecoder(ToyDecoder):
 
 
 def _target_context(started: list[EPConfig], *, ep_size: int) -> Any:
+    def start(ep: EPConfig) -> EPConfig:
+        started.append(ep)
+        return ep
+
     return SimpleNamespace(
         pipeline_config=SimpleNamespace(
             model=SimpleNamespace(data_parallel_degree=1),
@@ -1543,7 +1528,7 @@ def _target_context(started: list[EPConfig], *, ep_size: int) -> Any:
         return_logits=ReturnLogits.VARIABLE,
         return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
         target_layer_ids=(3, 7),
-        start_ep=started.append,
+        start_ep=start,
     )
 
 
@@ -1582,6 +1567,42 @@ def test_a_composed_decoder_completes_its_config_as_serving_does(
         "scale.weight": weight
     }
     assert builder.checkpoint_weights(context, config) == {}
+
+
+def test_a_modulev3_model_initializes_expert_parallelism_with_max_nn_ep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cls = module_pipeline_model(
+        TargetConfig, ((GraphRole.DECODER, MeshDecoder),), None
+    )
+    model: Any = cls.__new__(cls)
+    model.pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(
+            data_parallel_degree=1, huggingface_config=_HF_CONFIG
+        ),
+        runtime=SimpleNamespace(
+            max_batch_input_tokens=8, ep_size=2, ep_use_allreduce=False
+        ),
+    )
+    model.arch_config = TargetConfig()
+    model.return_logits = ReturnLogits.LAST_TOKEN
+    model.return_hidden_states = ReturnHiddenStates.NONE
+    model.memory_plan = SimpleNamespace(planned_max_batch_total_tokens=32)
+    model.devices = [CPU(), CPU()]
+    model.max_batch_size = 4
+    model._session = NonCallableMock(spec=InferenceSession)
+    started: list[object] = []
+
+    def initialize(
+        self: object, session: object, ep: object, mesh: object
+    ) -> tuple[object, None, dict[str, object]]:
+        started.append(ep)
+        return ep, None, {}
+
+    monkeypatch.setattr(ExpertParallelInputs, "initialize", initialize)
+    config = model._create_model_config({})
+    assert started == [_EP]
+    assert config.runtime.ep is _EP
 
 
 def test_a_composed_decoder_takes_no_expert_parallelism_unasked(
@@ -1763,7 +1784,7 @@ def _staged_model(
     model.devices = [CPU()]
     model.device_refs = [DeviceRef.CPU()]
     model.kv_params = NonCallableMock(get_symbolic_inputs=lambda: (X,))
-    model._runtime = NonCallableMock(spec=ModuleRuntime, ep=None)
+    model._runtime = NonCallableMock(spec=ModuleRuntime, ep=None, mesh=None)
     model._checkpoint = {
         f"layer_{i}.weight": np.full(2, i + 2, dtype=np.float32)
         for i in range(2)

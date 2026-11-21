@@ -91,7 +91,7 @@ static Chain print_i32(int32_t value, Chain chain) {
   return chain;
 }
 // ...
-void M::registerGraphRTIntegerPrimitives(PrimitiveRegistry &registry) {
+void M::MLRT::registerGraphRTIntegerPrimitives(PrimitiveRegistry &registry) {
   ADD_PRIMITIVE(registry, "grt.add.si32", add_i32);
   ADD_PRIMITIVE(registry, "grt.lessequal.si32", lessequal_i32);
   ADD_PRIMITIVE(registry, "grt.print.si32", print_i32);

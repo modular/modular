@@ -186,13 +186,18 @@ struct TCPSocket(Movable):
             The listener.
 
         Raises:
-            If the listen fails.
+            If `backlog` doesn't fit in a C `int`, or the listen fails.
         """
         # The listener owns the socket from here, so it closes on any error.
         var listener = TCPListener(self._socket^)
-        # TODO(https://github.com/modular/modular/issues/7509): Reject a
-        # `backlog` outside the `c_int` range instead of wrapping it.
-        listener._socket.listen(backlog=c_int(backlog))
+        var c_backlog: c_int
+        try:
+            c_backlog = backlog.try_cast[c_int.dtype]()
+        except:
+            raise IOError(
+                .invalid_input, "backlog out of range", operation="listen"
+            )
+        listener._socket.listen(backlog=c_backlog)
         return listener^
 
     def connect(deinit self, addr: SocketAddr) raises IOError -> TCPStream:

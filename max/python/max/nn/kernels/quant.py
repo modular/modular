@@ -334,6 +334,7 @@ def _nvfp4_grouped_matmul_rule(
     expert_usage_stats_host: TensorLayout,
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorLayout | None = None,
+    a_row_scales: TensorLayout | None = None,
 ) -> list[AxisAssignment]:
     """Sharding rule for the NVFP4 block-scaled grouped (MoE) matmul."""
     layouts = (
@@ -347,7 +348,9 @@ def _nvfp4_grouped_matmul_rule(
         expert_scales,
         expert_usage_stats_host,
         *((estimated_total_m,) if estimated_total_m is not None else ()),
+        *((a_row_scales,) if a_row_scales is not None else ()),
     )
+    # Per-row scales do not shard with the contraction or output channels.
     metadata = (R,) * (len(layouts) - 4)
     return [
         AxisAssignment((R, R, R, R, *metadata), (R,)),

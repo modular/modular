@@ -277,6 +277,7 @@ struct Matmul2dFp8[
         # does), which the TileTensor-idioms-only rule forbids here. `_write4`
         # reaches the same 2-vector-store result.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _apply_epilogue[bounded: Bool]() {imm}:
             var c_sub = c.tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
             # 4 contiguous out cols = one SIMD unit; element alignment only (the
@@ -421,6 +422,7 @@ struct Matmul2dFp8[
         var c_ptr = c.ptr
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def group_epilogue_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int
         ](idx: Coord, val: SIMD[dtype, width]) {

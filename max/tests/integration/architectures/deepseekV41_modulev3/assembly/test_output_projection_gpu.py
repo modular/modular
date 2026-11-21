@@ -472,11 +472,11 @@ class _PassFFN(Module[..., Tensor]):
         self,
         x: Tensor,
         mask: Tensor,
-        comm_buffers: object = None,
+        ep: object = None,
         total_rows: Tensor | None = None,
         x_rows: object = None,
     ) -> Tensor:
-        del mask, comm_buffers, total_rows, x_rows
+        del mask, ep, total_rows, x_rows
         return x
 
 

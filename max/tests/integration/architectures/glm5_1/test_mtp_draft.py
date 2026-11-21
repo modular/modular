@@ -175,6 +175,11 @@ def _configure(
     monkeypatch.setattr(mtp, "Glm5_1Config", _Config)
     monkeypatch.setattr(mtp, "parse_state_dict_from_weights", lambda *args: {})
     started: list[object] = []
+
+    def start(ep: object) -> object:
+        started.append(ep)
+        return ep
+
     context: Any = SimpleNamespace(
         pipeline_config=SimpleNamespace(
             model=SimpleNamespace(data_parallel_degree=1),
@@ -199,7 +204,7 @@ def _configure(
         ),
         max_seq_len=16,
         max_batch_total_tokens=32,
-        start_ep=started.append,
+        start_ep=start,
     )
     return (
         mtp.configure_mtp_draft(context, draft_weights),

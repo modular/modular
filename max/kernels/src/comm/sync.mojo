@@ -21,18 +21,21 @@ consumed by allreduce, scatter, and other collective operations.
 from std.collections import Array
 from std.utils import StaticTuple
 from std.math.uutils import umod
-from std.sys import size_of, is_amd_gpu
+from std.sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic, size_of
 
 from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu import (
+    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
 )
+from max.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, cp_async_bulk_wait_group, syncwarp
 from max.gpu.sync import named_barrier
+from std.sys._assembly import inlined_assembly
 from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
 
 
@@ -435,6 +438,22 @@ def _multi_gpu_barrier[
     participate in this barrier, the inter-GPU sync still expects local thread idx 0-ngpus
     to participate! In other words, it is safe to call this with only warp-0, but not safe
     to call this with only warp 1, 2 etc.
+
+    Caller contract. The barrier pairs thread blocks by their linear block id:
+    block `b` on one rank waits for block `b` on every other rank and for
+    nothing else. Two things must therefore hold, and a violation is a hang or
+    silent counter corruption rather than an error:
+
+    1. Every rank runs the same set of block ids through the same sequence of
+       barrier calls. A kernel that uses cluster launch control work stealing
+       breaks this: `clusterlaunchcontrol_try_cancel` cancels a different set
+       of blocks on each rank, so a block that runs on one rank waits forever
+       for copies that never launched (KERN-3999). Such a kernel must
+       synchronize on completed work instead; see
+       `_multi_gpu_tile_barrier_start` and `_multi_gpu_tile_barrier_end`.
+    2. The linear block id is below `MAX_NUM_BLOCKS_UPPER_BOUND`, the counter
+       slots in one domain. A larger id would write into the next domain's
+       counters, so this function traps instead.
     """
     comptime assert (
         ngpus <= MAX_GPUS
@@ -442,6 +461,10 @@ def _multi_gpu_barrier[
     comptime assert (
         0 <= domain_id < NUM_BARRIER_DOMAINS
     ), "domain_id out of range for barrier counter banks"
+    comptime assert domain_id != TILE_BARRIER_DOMAIN, (
+        "a one-rank group maps to domain TILE_BARRIER_DOMAIN, which holds the"
+        " tile barrier's state; do not stage a collective for one rank"
+    )
 
     comptime assert arrive or wait, "a barrier call must arrive or wait"
     comptime assert not is_start or (
@@ -470,6 +493,12 @@ def _multi_gpu_barrier[
     )
 
     if thread_idx.x < ngpus:
+        # A larger id indexes past this domain's counter slots into the next
+        # domain's, which corrupts every later barrier that shares the buffer
+        # instead of failing (contract item 2 above). Checked only in the
+        # threads that index with it.
+        if bid >= MAX_NUM_BLOCKS_UPPER_BOUND:
+            llvm_intrinsic["llvm.trap", NoneType]()
         # NOTE: (MOCO-1431) the use of pointer arithmetic here is a temporary workaround
         # to avoid functional issues that arise with increased register pressure when
         # dealing with static tuples
@@ -562,3 +591,193 @@ def _multi_gpu_barrier[
             named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
         else:
             barrier()
+
+
+# ===-----------------------------------------------------------------------===#
+# Tile-count barrier
+# ===-----------------------------------------------------------------------===#
+
+comptime TILE_BARRIER_DOMAIN = 1
+"""The counter bank whose `self_counter` words hold the tile barrier's state.
+
+Collectives map a group of width `w` to domain `0 if w == ngpus else w`, and
+the relays to `2 * w`, so only a one-rank group on a multi-GPU graph maps to
+domain 1. The graph ops do not stage such a group (it is a no-op), and
+`_multi_gpu_barrier` rejects domain 1 at compile time. So the state needs no
+new field, and the `Signal` size and every host-side mirror of its layout stay
+unchanged.
+"""
+
+comptime _TB_OFFSET = TILE_BARRIER_DOMAIN * MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS
+"""Word offset of the tile barrier's state: `self_counter[TILE_BARRIER_DOMAIN]`."""
+comptime _TB_BASE = 0
+"""This rank's completed tiles over all earlier launches. Written only by the
+last block of a launch, read by every block at entry."""
+comptime _TB_COUNT = 32
+"""Tiles completed by this rank's blocks, cumulative and atomic. A cache line
+of its own: every block adds to it once."""
+comptime _TB_STARTED = 64
+"""`[MAX_GPUS]`: `_TB_STARTED + q` is written by rank `q` when it starts a
+launch and polled here."""
+comptime _TB_FINISHED = 96
+"""`[MAX_GPUS]`: `_TB_FINISHED + q` is written by rank `q` once all of its tiles
+for a launch are written and polled here."""
+
+
+@inline(.always)
+def _tb_word[
+    origin: MutOrigin, //
+](sg: MutPointer[Signal, origin], idx: Int) -> MutPointer[
+    Scalar[Signal.flag_t], origin
+]:
+    return (
+        sg.unsafe_bitcast[Scalar[Signal.flag_t]]()
+        .unsafe_offset(_TB_OFFSET)
+        .unsafe_offset(idx)
+    )
+
+
+@inline(.always)
+def _multi_gpu_tile_barrier_start[
+    ngpus: Int,
+    *,
+    named_barrier_threads: Int,
+    named_barrier_id: Int = 1,
+](
+    rank_sigs: Array[MutPointer[Signal, _], ngpus],
+    self_sg: MutPointer[Signal, _],
+    my_rank: Int,
+) -> Scalar[Signal.flag_t]:
+    """Waits until every rank has started this launch. Call once per block.
+
+    A rank-level barrier for kernels whose blocks do not match across ranks,
+    such as the fused matmul plus reduce-scatter under cluster launch control
+    work stealing, which cancels a different set of blocks on each rank. It
+    tells a block that every peer has started the same launch, so the peers'
+    output buffers were zeroed (the zeroing runs before the kernel on each
+    rank's stream) and may be reduce-added into.
+
+    Every rank must run the same sequence of launches through this barrier,
+    each with the same grid. When the kernel is launched with programmatic
+    dependent launch, the caller must `wait_on_dependent_grids()` first: the
+    returned base is only final once the previous launch has completed.
+
+    Parameters:
+        ngpus: Number of ranks.
+        named_barrier_threads: The threads of this block that call this
+            function; thread indices `0..ngpus-1` must be among them.
+        named_barrier_id: Hardware named-barrier id for those threads.
+
+    Args:
+        rank_sigs: Signal pointers of all ranks.
+        self_sg: This rank's signal pointer.
+        my_rank: This rank.
+
+    Returns:
+        The rank's tile total from earlier launches, to pass to
+        `_multi_gpu_tile_barrier_end`.
+    """
+    comptime assert ngpus <= MAX_GPUS, "too many GPUs for the tile barrier"
+    comptime assert is_nvidia_gpu(), "the tile barrier is NVIDIA-only"
+    var base = _tb_word(self_sg, _TB_BASE).unsafe_load[volatile=True]()
+    if thread_idx.x < ngpus:
+        var peer = thread_idx.x
+        var target = base + 1
+        Atomic[Scalar[Signal.flag_t]].store[ordering=.release](
+            _tb_word(rank_sigs[peer], _TB_STARTED + my_rank), target
+        )
+        var mine = _tb_word(self_sg, _TB_STARTED + peer)
+        while (
+            Atomic[Scalar[Signal.flag_t]].load[ordering=.acquire](mine)
+            != target
+        ):
+            pass
+    named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
+    return base
+
+
+@inline(.always)
+def _multi_gpu_tile_barrier_end[
+    ngpus: Int,
+    *,
+    named_barrier_threads: Int,
+    named_barrier_id: Int = 1,
+](
+    rank_sigs: Array[MutPointer[Signal, _], ngpus],
+    self_sg: MutPointer[Signal, _],
+    my_rank: Int,
+    base: Scalar[Signal.flag_t],
+    block_tiles: Scalar[Signal.flag_t],
+    total_tiles: Scalar[Signal.flag_t],
+):
+    """Counts this block's tiles; the rank's last block waits for every rank.
+
+    Cancellation changes which block writes a tile, never how many tiles a
+    launch has: each of the `total_tiles` grid slots is processed once, by the
+    block launched in it or by one that cancelled it. So a rank has finished
+    when its blocks' tile counts add up to `total_tiles`, whichever blocks ran.
+
+    Every block adds its count. The block whose add reaches the total is the
+    rank's last; only it tells the peers and waits for theirs, so the kernel
+    does not complete before every peer finished adding into this rank's
+    buffer. The others exit at once: a waiting block holds its SM, and only the
+    last block can wait without keeping unlaunched blocks off the SMs.
+
+    Parameters:
+        ngpus: Number of ranks.
+        named_barrier_threads: The threads of this block that call this
+            function; they must include all of warp 0.
+        named_barrier_id: Hardware named-barrier id for those threads.
+
+    Args:
+        rank_sigs: Signal pointers of all ranks.
+        self_sg: This rank's signal pointer.
+        my_rank: This rank.
+        base: The value `_multi_gpu_tile_barrier_start` returned.
+        block_tiles: Tiles this block wrote.
+        total_tiles: Tiles in the launch: the grid's block count.
+    """
+    comptime assert (
+        is_nvidia_gpu()
+    ), "the tile barrier waits on NVIDIA bulk async copies"
+    # The reduce-adds into the peers are bulk async copies. `wait_group.read`
+    # only retires their shared-memory reads; wait for the global writes too,
+    # in every thread that issued one, and order them ahead of the release.
+    cp_async_bulk_wait_group[0, read=False]()
+    inlined_assembly["fence.proxy.async.global;", NoneType, constraints=""]()
+    named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
+    # Warp 0 only: lane 0 adds this block's tiles and the warp learns whether
+    # this is the rank's last block. Lanes 0..ngpus-1 then signal and wait on
+    # one peer each, in parallel, as `_multi_gpu_barrier` does: one thread
+    # doing all peers in turn would put ngpus system-scope fences in a row on
+    # the kernel's tail.
+    if thread_idx.x < WARP_SIZE:
+        var target = base + total_tiles
+        var before = Scalar[Signal.flag_t](0)
+        if thread_idx.x == 0:
+            before = Atomic[Scalar[Signal.flag_t]].fetch_add[
+                ordering=.acquire_release
+            ](_tb_word(self_sg, _TB_COUNT), block_tiles)
+        before = warp.broadcast(before)
+        # A shuffle orders no memory: syncwarp makes what lane 0 acquired
+        # (every block's completed writes) part of what lanes 0..ngpus-1
+        # release to the peers.
+        syncwarp()
+        if before + block_tiles == target:
+            if thread_idx.x < ngpus:
+                var peer = thread_idx.x
+                Atomic[Scalar[Signal.flag_t]].store[ordering=.release](
+                    _tb_word(rank_sigs[peer], _TB_FINISHED + my_rank), target
+                )
+                var theirs = _tb_word(self_sg, _TB_FINISHED + peer)
+                while (
+                    Atomic[Scalar[Signal.flag_t]].load[ordering=.acquire](
+                        theirs
+                    )
+                    != target
+                ):
+                    pass
+            # Once every waiting lane has seen its peer, publish the new base.
+            syncwarp()
+            if thread_idx.x == 0:
+                _tb_word(self_sg, _TB_BASE).unsafe_store[volatile=True](target)

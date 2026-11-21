@@ -55,6 +55,19 @@ bool isAMDGPU(TargetInfoAttr target,
   return llvm::is_contained(allowedGPUs, target.getArch());
 }
 
+/// gfx942 implements the `fnuz` fp8 pair, CDNA4 and newer the OCP pair. Both
+/// reach them through the same `cvt.pk.fp8` mnemonic, so lowering a cast on
+/// the architecture that implements the other encoding is off by a binade: the
+/// two differ in exponent bias. These report the same window as the stdlib's
+/// `_amdgcn_native_float8_cast`.
+bool hasNativeFNUZFloat8(TargetInfoAttr target) {
+  return isAMDGPU(target, {"gfx942"});
+}
+
+bool hasNativeOCPFloat8(TargetInfoAttr target) {
+  return isAMDGPU(target, {"gfx950", "gfx1250"});
+}
+
 LLVM::InlineAsmOp createInlineAsm(POPLoweringBuilder &builder, Location loc,
                                   StringRef asmStr, StringRef asmConstraints,
                                   Type resultType,
@@ -551,11 +564,9 @@ private:
       // what stdlib does for now. Might be better to use approach similar to
       // NVPTX backend of getting SM version and expecting targeted GPU has at
       // least that version.
-      if (simd) {
-        if (target.getTriple().isAMDGPU()) {
-          return convertF32ToF8OnAMDGPU(rewriter, cast, value,
-                                        fromFloatSemantics, toFloatSemantics);
-        }
+      if (simd && hasNativeOCPFloat8(target)) {
+        return convertF32ToF8OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
+                                      toFloatSemantics);
       }
       return failure();
     }
@@ -564,7 +575,7 @@ private:
     if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
         (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ ||
          toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ)) {
-      if (simd && target.getTriple().isAMDGPU()) {
+      if (simd && hasNativeFNUZFloat8(target)) {
         return convertF32ToF8OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
                                       toFloatSemantics);
       }
@@ -579,12 +590,9 @@ private:
       // what stdlib does for now. Might be better to use approach similar to
       // NVPTX backend of getting SM version and expecting targeted GPU has at
       // least that version.
-      if (simd) {
-        if (target.getTriple().isAMDGPU()) {
-          // Convert F8 (either e4m3fn or e5m2) to F32 on amd mi355x and newer.
-          return convertF8ToF32OnAMDGPU(rewriter, cast, value,
-                                        fromFloatSemantics, toFloatSemantics);
-        }
+      if (simd && hasNativeOCPFloat8(target)) {
+        return convertF8ToF32OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
+                                      toFloatSemantics);
       }
       return failure();
     }
@@ -594,7 +602,7 @@ private:
          fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ) &&
         toFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle) {
 
-      if (simd && target.getTriple().isAMDGPU()) {
+      if (simd && hasNativeFNUZFloat8(target)) {
         return convertF8ToF32OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
                                       toFloatSemantics);
       }
@@ -741,14 +749,24 @@ public:
       TargetInfoAttr target,
       llvm::function_ref<void(KGENDType from, KGENDType to)> addConversion)
       const override {
-    addConversion(KGENDType::f8e5m2, KGENDType::f32);
-    addConversion(KGENDType::f8e5m2fnuz, KGENDType::f32);
-    addConversion(KGENDType::f8e4m3fn, KGENDType::f32);
-    addConversion(KGENDType::f8e4m3fnuz, KGENDType::f32);
-    addConversion(KGENDType::f32, KGENDType::f8e5m2);
-    addConversion(KGENDType::f32, KGENDType::f8e5m2fnuz);
-    addConversion(KGENDType::f32, KGENDType::f8e4m3fn);
-    addConversion(KGENDType::f32, KGENDType::f8e4m3fnuz);
+    // Which fp8 types convert natively depends on the architecture: gfx942
+    // implements the `fnuz` pair, and CDNA4 and newer implement the OCP pair.
+    // The two use a different exponent bias, so declaring one where the
+    // hardware has the other lowers to an instruction that is off by a
+    // binade. This window is what the stdlib's `_amdgcn_native_float8_cast`
+    // reports.
+    if (hasNativeFNUZFloat8(target)) {
+      addConversion(KGENDType::f8e5m2fnuz, KGENDType::f32);
+      addConversion(KGENDType::f8e4m3fnuz, KGENDType::f32);
+      addConversion(KGENDType::f32, KGENDType::f8e5m2fnuz);
+      addConversion(KGENDType::f32, KGENDType::f8e4m3fnuz);
+    }
+    if (hasNativeOCPFloat8(target)) {
+      addConversion(KGENDType::f8e5m2, KGENDType::f32);
+      addConversion(KGENDType::f8e4m3fn, KGENDType::f32);
+      addConversion(KGENDType::f32, KGENDType::f8e5m2);
+      addConversion(KGENDType::f32, KGENDType::f8e4m3fn);
+    }
   }
 
   // This is max only target

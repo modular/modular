@@ -20,7 +20,6 @@ from .device_attribute import DeviceAttribute
 from .device_context import (
     LegacyCompletionFlag,
     LegacyDeviceBuffer,
-    LegacyDeviceClosureFunction,
     LegacyDeviceContext,
     LegacyDeviceContextArray,
     LegacyDeviceEvent,

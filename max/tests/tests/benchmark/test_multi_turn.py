@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import time
-from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -53,7 +52,11 @@ from max.benchmark.benchmark_shared.request import (
 )
 from max.benchmark.benchmark_shared.single_turn import prime_shared_contexts
 from pytest_mock import MockerFixture
-from tests.benchmark.benchmark_fakes import CapturingDriver
+from tests.benchmark.benchmark_fakes import (
+    CapturingDriver,
+    make_request_input,
+    mock_chat_stream,
+)
 
 
 def _make_4turn_session(
@@ -1102,39 +1105,18 @@ async def test_serialized_payload_carries_the_turn_response_format(
     constrained-decoding numbers for requests the server never constrained,
     which the in-memory request cannot catch.
     """
-    mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
     response_format: ResponseFormat = {"type": "json_object"}
-    request_input = RequestFuncInput(
-        model="test-model",
-        session_id=None,
-        sampling=SamplingConfig(),
+    request_input = make_request_input(
+        "http://localhost:8000/v1/chat/completions",
         prompt=[
             ChatMessage(role="user", content=[TextContentBlock(text="hi")])
         ],
-        images=[],
-        api_url="http://localhost:8000/v1/chat/completions",
-        prompt_len=10,
         max_tokens=16,
-        ignore_eos=False,
         response_format=response_format,
     )
-
-    session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
+    client = mock_chat_stream(
+        mocker, [b'data: {"choices": [{"delta": {"content": "{}"}}]}\n\n']
     )
-    client = session_class.return_value.__aenter__.return_value
-
-    async def body() -> AsyncIterator[bytes]:
-        yield b'data: {"choices": [{"delta": {"content": "{}"}}]}\n\n'
-        yield b"data: [DONE]\n\n"
-
-    response = mocker.AsyncMock()
-    response.status = 200
-    response.content = body()
-    post_ctx = mocker.AsyncMock()
-    post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
-    post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
-    client.post = mocker.Mock(return_value=post_ctx)
 
     await OpenAIChatCompletionsRequestDriver().request(request_input)
 
@@ -1193,43 +1175,12 @@ def test_chat_session_driver_sends_each_turns_own_tools() -> None:
     assert sent == [(None, True), (tools, True), (None, True)]
 
 
-def _mock_chat_stream(mocker: MockerFixture, chunks: list[bytes]) -> MagicMock:
-    """Patches aiohttp so a chat request streams ``chunks`` back.
-
-    Returns the mocked client, whose ``post`` records the sent payload.
-    """
-    mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
-    )
-    client = session_class.return_value.__aenter__.return_value
-
-    async def body() -> AsyncIterator[bytes]:
-        for chunk in chunks:
-            yield chunk
-        yield b"data: [DONE]\n\n"
-
-    response = mocker.AsyncMock()
-    response.status = 200
-    response.content = body()
-    post_ctx = mocker.AsyncMock()
-    post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
-    post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
-    client.post = mocker.Mock(return_value=post_ctx)
-    return client
-
-
 def _chat_input(tools: list[dict[str, object]] | None) -> RequestFuncInput:
-    return RequestFuncInput(
-        model="test-model",
-        session_id=None,
-        sampling=SamplingConfig(),
+    return make_request_input(
+        "http://localhost:8000/v1/chat/completions",
         prompt=[
             ChatMessage(role="user", content=[TextContentBlock(text="hi")])
         ],
-        images=[],
-        api_url="http://localhost:8000/v1/chat/completions",
-        prompt_len=10,
         max_tokens=16,
         ignore_eos=True,
         tools=tools,
@@ -1256,7 +1207,7 @@ async def test_serialized_payload_carries_tools_and_flags_a_tool_call(
     tools: list[dict[str, object]] = [
         {"type": "function", "function": {"name": "read_file"}}
     ]
-    client = _mock_chat_stream(mocker, [_TOOL_CALL_CHUNK])
+    client = mock_chat_stream(mocker, [_TOOL_CALL_CHUNK])
 
     output = await OpenAIChatCompletionsRequestDriver().request(
         _chat_input(tools)
@@ -1273,7 +1224,7 @@ async def test_serialized_payload_carries_tools_and_flags_a_tool_call(
 async def test_plain_answer_to_offered_tools_is_not_a_tool_call(
     mocker: MockerFixture,
 ) -> None:
-    _mock_chat_stream(
+    mock_chat_stream(
         mocker, [b'data: {"choices": [{"delta": {"content": "done"}}]}\n\n']
     )
     output = await OpenAIChatCompletionsRequestDriver().request(
@@ -1287,7 +1238,7 @@ async def test_plain_answer_to_offered_tools_is_not_a_tool_call(
 async def test_request_without_tools_is_not_counted_as_offering_them(
     mocker: MockerFixture,
 ) -> None:
-    client = _mock_chat_stream(
+    client = mock_chat_stream(
         mocker, [b'data: {"choices": [{"delta": {"content": "done"}}]}\n\n']
     )
     output = await OpenAIChatCompletionsRequestDriver().request(

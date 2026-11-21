@@ -16,7 +16,7 @@ A config built from the checkpoint doesn't know where it runs. After the
 config is finalized, and before any module is constructed, the framework
 hands it a :class:`ModuleRuntime`: the device mesh, the batch limits the
 memory planner chose and, under expert parallelism, the initialized
-:class:`~max.nn.legacy.comm.ep.EPConfig`.
+:class:`~max.nn.ep_config.EPConfig`.
 
 A registered config takes part by subclassing :class:`DeploymentConfig`, or
 :class:`ExpertParallelDeploymentConfig` when it serves its experts across
@@ -34,18 +34,22 @@ from types import MappingProxyType
 from typing import Any, ClassVar, Protocol, TypeVar
 
 from max import tree
-from max.driver import Buffer, is_virtual_device_mode
+from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import CompilationStopped, InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData
-from max.nn.ep_config import EPConfig
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
+from max.nn.ep import check_supported
+from max.nn.ep import init as ep_init
+from max.nn.ep_config import EPConfig, _ep_fused_moe_requested
+from max.nn.legacy.graph_groups import EPPayload
 from max.pipelines.context import TextContext
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
+from .ep_initializer import EPInitializerFactory, EPInitializerLike
+from .graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from .interfaces.pipeline_model import (
     ModelLoadContext,
     compile_ep_init,
@@ -61,9 +65,11 @@ __all__ = [
     "ExpertParallelExchange",
     "ExpertParallelInputs",
     "ModuleRuntime",
+    "allocate_static_buffers",
     "batch_context_length_types",
     "ep_input_tree",
     "initialize_ep_comm_buffers",
+    "initialize_static_inputs",
     "prepare_weights",
     "role_weights",
     "uses_expert_parallel_exchange",
@@ -82,6 +88,32 @@ class ConstantInputs:
 
     input_types: tree.Tree[TensorType | BufferType]
     buffers: tree.Tree[Buffer]
+    initializer: GraphSpec | None = None
+    devices: tuple[Device, ...] = ()
+    _initialized: bool = dataclasses.field(
+        default=False, init=False, compare=False
+    )
+
+    def __del__(self) -> None:
+        # Custom kernels dereference these host pointers directly. Their
+        # allocation cannot retire until all consuming device streams drain.
+        if getattr(self, "_initialized", False):
+            for device in self.devices:
+                device.synchronize()
+
+    def initialize(
+        self,
+        compiled: CompiledCallable[..., Any],
+        session: InferenceSession | None = None,
+    ) -> None:
+        """Fills the owned buffers once, before a decoder can read them."""
+        if self._initialized or is_virtual_device_mode():
+            return
+        if self.initializer is None:
+            raise ValueError("constant inputs declare no static initializer")
+        object.__setattr__(self, "_execution_owner", (session, compiled))
+        compiled.execute_raw(*tree.leaves(self.buffers))
+        object.__setattr__(self, "_initialized", True)
 
     def __post_init__(self) -> None:
         if is_virtual_device_mode() and not self.buffers:
@@ -90,6 +122,63 @@ class ConstantInputs:
             return
         _, structure = tree.flatten(self.input_types)
         structure.flatten_up_to(self.buffers)
+
+
+def allocate_static_buffers(
+    input_types: tree.Tree[TensorType | BufferType], devices: Sequence[Device]
+) -> tree.Tree[Buffer]:
+    """Allocates statically shaped CPU deployment buffers pinned to the GPU.
+
+    A virtual export records the declarations without allocating the buffers.
+    """
+    if is_virtual_device_mode():
+        return {}
+    if not devices or devices[0].is_host:
+        raise ValueError(
+            "static buffers require an accelerator for host pinning"
+        )
+
+    def allocate(spec: TensorType | BufferType) -> Buffer:
+        if (
+            not isinstance(spec, TensorType | BufferType)
+            or not spec.device.is_cpu()
+        ):
+            raise ValueError("static resources must be CPU tensors or buffers")
+        try:
+            shape = tuple(int(dim) for dim in spec.shape)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "static buffers require static dimensions"
+            ) from error
+        if any(dim <= 0 for dim in shape):
+            raise ValueError(
+                "static buffers require positive static dimensions"
+            )
+        buffer = Buffer(
+            shape=shape,
+            dtype=spec.dtype,
+            device=devices[0],
+            usage=Usage.STAGING,
+        )
+        if not buffer.pinned:
+            raise ValueError("static buffer allocation is not pinned")
+        return buffer
+
+    return tree.map(allocate, input_types)
+
+
+def initialize_static_inputs(
+    session: InferenceSession,
+    constants: ConstantInputs | None,
+) -> dict[str, CompiledCallable[..., Any]]:
+    """Compiles and runs deployment-buffer initialization, when declared."""
+    if constants is None or constants.initializer is None:
+        return {}
+    modules = compile_and_init_graphs(
+        session, {GraphRole.STATIC_INIT: constants.initializer}
+    )
+    constants.initialize(modules[GraphRole.STATIC_INIT], session)
+    return modules
 
 
 @dataclass(frozen=True)
@@ -123,6 +212,14 @@ class ModuleRuntime:
     """The most requests a step holds, as the memory planner sized it, or
     ``None`` when the caller doesn't size batches."""
 
+    def __post_init__(self) -> None:
+        n_devices = len(self.mesh.devices)
+        if self.ep_size > 1 and self.ep_size % n_devices:
+            raise ValueError(
+                f"ep_size={self.ep_size} must be a multiple of the number of "
+                f"devices on this node ({n_devices})"
+            )
+
 
 class ExpertParallelExchange(Protocol):
     """The initialized exchange's buffers, as each batch passes them."""
@@ -135,23 +232,65 @@ class ExpertParallelExchange(Protocol):
 class ExpertParallelInputs:
     """How a decoder's graph takes the expert-parallel exchange.
 
-    The default takes :class:`~max.nn.legacy.comm.ep.EPBatchManager`'s
-    inputs: both buffer groups' atomic counters on every device, then their
-    send, receive and count pointer tables. A config whose decoder takes
-    them in another layout sets
-    :attr:`ExpertParallelDeploymentConfig.expert_parallel_inputs` to a
-    subclass.
+    The graph takes each buffer of each device as its own input, named and
+    ordered as the serving engine binds them
+    (:func:`~max.nn.ep.init.payload_types`). A ModuleV3 decoder reads them
+    as :class:`~max.nn.ep.EPBuffers`.
     """
 
-    def input_tree(self, ep: EPConfig) -> object:
+    def input_tree(self, ep: EPConfig) -> EPPayload:
         """Returns the decoder's ``ep`` input types for ``ep``."""
-        return EPBatchManager(ep).input_tree()
+        return ep_init.payload_types(ep)
 
     def exchange(
-        self, initializer: EPCommInitializer
+        self, initializer: EPInitializerLike
     ) -> ExpertParallelExchange:
-        """Returns the buffers of ``initializer`` the graph takes."""
+        """Returns the buffers of a graph-API ``initializer``."""
         return initializer
+
+    def initialize(
+        self, session: InferenceSession, ep: EPConfig, mesh: DeviceMesh
+    ) -> tuple[
+        EPConfig,
+        ExpertParallelExchange | None,
+        dict[str, CompiledCallable[..., Any]],
+    ]:
+        """Sets up the exchange of a ModuleV3 decoder.
+
+        Compiles the ``ep_init`` graph, which an export records for the
+        serving engine, and runs it unless the devices are virtual. It sets
+        up the fused MoE when ``MODULAR_EP_FUSED_MOE=1`` asks for it.
+
+        Args:
+            session: The session that compiles and runs the init graph.
+            ep: The sized expert-parallel config.
+            mesh: The decoder's mesh.
+
+        Returns:
+            ``ep`` with the node ID and fused MoE readiness that init found,
+            the buffers each step passes, and the init graph by role. On
+            virtual devices init finds nothing and there are no buffers; a
+            ``pre-jit`` stop there also leaves no init graph.
+
+        Raises:
+            ValueError: If the exchange cannot run ``ep`` on ``mesh``.
+        """
+        check_supported(ep, mesh)
+        ep = dataclasses.replace(ep, fused_moe=_ep_fused_moe_requested())
+        init = ep_init.init_graph(ep)
+        specs: dict[str, GraphSpec] = {
+            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
+        }
+        if is_virtual_device_mode():
+            try:
+                return ep, None, compile_and_init_graphs(session, specs)
+            except CompilationStopped:
+                # `pre-jit` stops every compile, and this graph compiles
+                # before the decoder's, which must still be emitted.
+                return ep, None, {}
+        modules = compile_and_init_graphs(session, specs)
+        exchange = ep_init.start(ep, modules[GraphRole.EP_INIT].engine_model)
+        return exchange.config, exchange, modules
 
 
 class DeploymentConfig:
@@ -314,6 +453,7 @@ def initialize_ep_comm_buffers(
     config: ExpertParallelDeploymentConfig,
     runtime: ModuleRuntime,
     session: InferenceSession,
+    initializer_cls: EPInitializerFactory,
 ) -> tuple[
     ModuleRuntime,
     ExpertParallelExchange | None,
@@ -330,6 +470,8 @@ def initialize_ep_comm_buffers(
         runtime: The deployment, with ``ep_size`` above one and without
             ``ep``.
         session: The session that compiles the init graph.
+        initializer_cls: Makes the initializer: the one of the pipeline
+            model's module API.
 
     Returns:
         ``runtime`` with :attr:`ModuleRuntime.ep` set, the buffers the
@@ -339,35 +481,25 @@ def initialize_ep_comm_buffers(
         ``compiled_modules``. On virtual devices, which can't run the init
         graph, the graph is only compiled and the buffers are ``None``. A
         ``pre-jit`` stop leaves no init graph.
-
-    Raises:
-        ValueError: If the expert-parallel size isn't a multiple of the
-            device count.
     """
-    n_devices = len(runtime.mesh.devices)
-    if runtime.ep_size % n_devices != 0:
-        raise ValueError(
-            f"ep_size={runtime.ep_size} must be a multiple of the number of "
-            f"devices on this node ({n_devices})"
-        )
     ep = config.expert_parallel_config(runtime)
     if is_virtual_device_mode():
         try:
-            _, modules = compile_ep_init(session, ep)
+            _, modules = compile_ep_init(session, ep, initializer_cls)
         except CompilationStopped:
             # `pre-jit` stops every compile, and this graph compiles before
             # the decoder's. Propagating would leave the decoder unemitted.
             modules = {}
         return dataclasses.replace(runtime, ep=ep), None, modules
-    initializer, modules = init_ep_comm(session, ep)
-    ep.node_id = initializer.config.node_id
+    initializer, modules = init_ep_comm(session, ep, initializer_cls)
+    ep = initializer.config
     exchange = config.expert_parallel_inputs.exchange(initializer)
     return dataclasses.replace(runtime, ep=ep), exchange, modules
 
 
 def ep_input_tree(
     config: ExpertParallelDeploymentConfig, ep: EPConfig
-) -> object:
+) -> EPPayload:
     """Returns the decoder's ``ep`` input types for an initialized config."""
     return config.expert_parallel_inputs.input_tree(ep)
 

@@ -374,12 +374,71 @@ mo.graph @prologue(%arg0: !mo.tensor<[2, 2], f32, gpu:0>, %arg1: !mo.tensor<[2, 
   mo.output %0#1 : !mo.tensor<[2, 2], f32, gpu:0>
 }
 
+// A generated loop has no configuration, so it runs on the whole launch. Its
+// region rebuilds its shape and captures from the launch's arguments and runs
+// the loop as a `mogg.graph_blob.foreach`.
+
+// CHECK-LABEL: mo.graph @foreach
+// CHECK:        inputs (%[[A:[^ ,)]+]], %[[BIAS:[^ ,)]+]])
+// CHECK-NEXT:   outputs (%[[B:[^ ,)]+]], %[[C:[^ ,)]+]])
+// CHECK-NEXT:   context (%[[CTX:[^ ,)]+]])
+// CHECK-NOT:    mogg.graph_blob {
+// CHECK:        %[[CFG0:.+]] = mogg.call.execute_configuration @testing_kernels.testing_kernels.MapLowerDeclarative
+// CHECK-NEXT:   %[[LAUNCH:.+]] = mogg.graph_blob.launch_config context(%[[CTX]])
+// CHECK-NEXT:   %[[ACT0:.+]] = mogg.graph_blob.active_threads %[[CFG0]] in %[[LAUNCH]]
+// CHECK-NEXT:   %[[ACT1:.+]] = mogg.graph_blob.active_threads %[[LAUNCH]] in %[[LAUNCH]]
+// CHECK-NEXT:   mogg.graph_blob.launch context(%[[CTX]]) config(%[[LAUNCH]]) args {%[[X:[^ ]+]] = %[[A]] : !mogg.pointer, %[[Y:[^ ]+]] = %[[B]] : !mogg.pointer, %[[Z:[^ ]+]] = %[[BIAS]] : !mogg.pointer, %[[W:[^ ]+]] = %[[C]] : !mogg.pointer, %[[A0:[^ ]+]] = %[[ACT0]] : i32, %[[A1:[^ ]+]] = %[[ACT1]] : i32} {
+// CHECK-NEXT:     mogg.graph_blob.call active(%[[A0]]) {
+// CHECK:            mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative
+// CHECK-NEXT:     }
+// CHECK-NEXT:     mogg.graph_blob.barrier
+// CHECK-NEXT:     mogg.graph_blob.call active(%[[A1]]) {
+// CHECK-NEXT:       %[[SHAPE:.+]] = mogg.shape.create()
+// CHECK-DAG:        %[[IN0:.+]] = mogg.tensor.create(%[[Y]],
+// CHECK-DAG:        %[[IN1:.+]] = mogg.tensor.create(%[[Z]],
+// CHECK-DAG:        %[[OUT:.+]] = mogg.tensor.create(%[[W]],
+// CHECK:            mogg.graph_blob.foreach shape(%[[SHAPE]]) (%[[IDX:[^ ]+]] : !map.index<2>) capturing {%[[C0:[^ ]+]] = %[[IN0]] : !mogg.tensor, %[[C1:[^ ]+]] = %[[IN1]] : !mogg.tensor, %[[C2:[^ ]+]] = %[[OUT]] : !mogg.tensor} {
+// CHECK-NEXT:         mogg.tensor.load %[[C0]][%[[IDX]]]
+// CHECK-NEXT:         mogg.tensor.load %[[C1]][%[[IDX]]]
+// CHECK-NEXT:         mogg.call.elementwise @builtin_kernels.elementwise.Add
+// CHECK-NEXT:         mogg.tensor.store %[[C2]][%[[IDX]]]
+// CHECK-NEXT:       }
+// CHECK-NEXT:     }
+// CHECK-NEXT:   }
+// CHECK-NEXT: }
+mo.graph @foreach(%arg0: !mo.tensor<[2, 2], f32>, %arg1: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
+  %0:2 = mogg.routine (%arg0, %arg1 : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+    inputs (%a, %bias)
+    outputs (%b, %c)
+    context (%ctx) attributes {device = #M.device_ref<"gpu", 0>} {
+    mogg.graph_blob {
+      %s0 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
+      %a0 = mogg.tensor.create(%a, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
+      %b0 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
+      %a1 = mogg.trait.create(%a0) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+      %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a1 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      %s1 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
+      %b2 = mogg.tensor.create(%b, %s1) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
+      %bias0 = mogg.tensor.create(%bias, %s1) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
+      %c0 = mogg.tensor.create(%c, %s1) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
+      mogg.call.foreach @builtin_primitives.primitives._foreach shape(%s1) context(%ctx) (%idx : !map.index<2>) capturing {%cap0 = %b2 : !mogg.tensor, %cap1 = %bias0 : !mogg.tensor, %cap2 = %c0 : !mogg.tensor} device = "gpu" {
+        %x = mogg.tensor.load %cap0[%idx] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+        %y = mogg.tensor.load %cap1[%idx] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+        %z = mogg.call.elementwise @builtin_kernels.elementwise.Add(%x, %y) moOpName = "mo.add" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
+        mogg.tensor.store %cap2[%idx] = %z : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+      }
+    }
+  }
+  mo.output %0#1 : !mo.tensor<[2, 2], f32>
+}
+
 // A routine without a graph blob doesn't change.
 
 // CHECK-LABEL: mo.graph @no_blob
-// CHECK-NOT:    mogg.graph_blob
+// CHECK-NOT:    mogg.graph_blob {
 // CHECK:        mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%{{.+}} : !mogg.tensor) outputs(%{{.+}} : !mogg.tensor) context(%{{.+}} : !mogg.context)
-// CHECK-NOT:    mogg.graph_blob
+// CHECK-NOT:    mogg.graph_blob {
 mo.graph @no_blob(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %0 = mogg.routine (%arg0 : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
     inputs (%a)

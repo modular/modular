@@ -53,6 +53,7 @@ def _pipeline_config() -> Mock:
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = 1
     pipeline_config.model.decode_context_parallel_degree = 1
+    pipeline_config.model.pipeline_stage = None
     pipeline_config.speculative = None
     return pipeline_config
 

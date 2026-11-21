@@ -1456,7 +1456,7 @@ def launch[
                 num_rows,
                 ctx.default_device_info.sm_count * _SM_OVERPROVISION,
             )
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 _BlockKernel[shape.rank, wide_params, Body, True](
                     body,
                     shape.make_dynamic[.int64](),
@@ -1634,7 +1634,7 @@ def _launch[
                 ceildiv(num_rows, tiled_block_size * W),
                 sm_count * _SM_OVERPROVISION,
             )
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 _TiledKernel[rank, tiled_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=tiled_block_size,
@@ -1667,7 +1667,7 @@ def _launch[
                 ceildiv(num_rows, tiled_block_size),
                 sm_count * _SM_OVERPROVISION,
             )
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 _TiledKernel[rank, w1_params, Body](body, shape_dc),
                 grid_dim=w1_num_blocks,
                 block_dim=tiled_block_size,
@@ -1686,7 +1686,7 @@ def _launch[
             pdl_level=pdl_level,
         )
         var coop_num_blocks = min(num_rows, sm_count * _SM_OVERPROVISION)
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             _BlockKernel[rank, coop_params, Body](body, shape_dc),
             grid_dim=coop_num_blocks,
             block_dim=COOPERATIVE_BLOCK_SIZE,
@@ -1761,7 +1761,7 @@ def _launch[
                 # p = 0..K: same-stream ordering makes launch p's global
                 # writes visible to p+1.
                 for phase in range(num_phases):
-                    ctx.enqueue_function(
+                    ctx.enqueue_closure(
                         _PointwiseSplitkKernel[rank, splitk_params, Body](
                             body,
                             shape_dc,
@@ -1829,7 +1829,7 @@ def _launch[
                 name=name,
                 pdl_level=pdl_level,
             )
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 _WarpKernel[rank, warp_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=WARP_BLOCK_SIZE,
@@ -1938,7 +1938,7 @@ def _launch[
                     name=name,
                     pdl_level=pdl_level,
                 )
-                ctx.enqueue_function(
+                ctx.enqueue_closure(
                     _SplitkKernel[rank, splitk_params, Body](
                         body,
                         shape_dc,
@@ -2010,7 +2010,7 @@ def _launch[
                 name=name,
                 pdl_level=pdl_level,
             )
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=BS,
@@ -2052,7 +2052,7 @@ def _launch[
                 name=name,
                 pdl_level=pdl_level,
             )
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=BLOCK_SIZE,
@@ -2082,7 +2082,7 @@ def _launch[
                 name=name,
                 pdl_level=pdl_level,
             )
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=BS,

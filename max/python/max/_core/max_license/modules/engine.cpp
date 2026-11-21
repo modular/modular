@@ -49,6 +49,7 @@ namespace nb = nanobind;
 // https://nanobind.readthedocs.io/en/stable/basics.html#keyword-and-default-arguments
 using namespace nanobind::literals;
 using namespace M;
+using namespace M::MLRT;
 
 template <typename T>
 static void setMojoDefine(M::Core::InferenceSession &self, const char *key,

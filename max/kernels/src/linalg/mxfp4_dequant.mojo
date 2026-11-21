@@ -258,6 +258,7 @@ def _cast_bf16_to_fp8(
     comptime assert out_tt.mut, "output must be mutable"
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def cast_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 2, "cast_fn only supports rank-2 tensors"
         out_tt.store(

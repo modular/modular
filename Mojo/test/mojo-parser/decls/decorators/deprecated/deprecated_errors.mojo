@@ -267,6 +267,16 @@ struct InstanceMethodRefTopLevel(Movable where False):
         pass
 
 
+comptime some_top_level_value = 1
+
+
+struct ComptimeMemberRefTopLevel(Movable where False):
+    # comptime members, like methods, name a sibling member as the replacement.
+    # expected-error @below {{cannot reference unknown value 'some_top_level_value'}}
+    @deprecated(use=some_top_level_value)
+    comptime member = 1
+
+
 # ===----------------------------------------------------------------------=== #
 # Test: Cross-module deprecation warnings
 # ===----------------------------------------------------------------------=== #

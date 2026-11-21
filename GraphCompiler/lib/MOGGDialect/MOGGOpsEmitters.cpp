@@ -2850,37 +2850,41 @@ static FailureOr<MojoValue> collectDtypesTuple(EmitMojoState &state,
       dtypeMojoValues);
 }
 
-LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
-  // Emits the per-index closure directly, then calls `_foreach` with it.
-  // `_foreach`'s `Lambda` parameter needs a blanket `{var}` capture clause, the
-  // only convention that works for a closure capturing register-passable
-  // values (see `MojoBuilder::lambda`'s `captureConvention`). As in the fusion
-  // functors, each source is captured as its decomposed `ManagedTensorSlice`
-  // components, so loads/stores go through
-  // `simd_{load_from,store_into}_tensor_pointer`.
-  //
-  // The closure's comptime parameters are `[width, element_alignment]`;
-  // `TensorLoadOp`/`TensorStoreOp` read them from the context pushed below.
-  MojoValue shape = state.getMojoValueFor(getShape());
-  MojoValue context = state.getMojoValueFor(getDeviceContext());
-  ValueRange capturing = getCapturing();
+// A loop's per-index closure, and the dtypes its body touches, from which the
+// loop picks its SIMD width.
+struct ForeachClosure {
+  MojoValue lambda;
+  MojoValue dtypes;
+};
 
+// Emits the per-index closure that runs `body`, a loop's body over
+// `capturing`. The loop primitive's `Lambda` parameter needs a blanket `{var}`
+// capture clause, the only convention that works for a closure capturing
+// register-passable values (see `MojoBuilder::lambda`'s `captureConvention`).
+// As in the fusion functors, each source is captured as its decomposed
+// `ManagedTensorSlice` components, so loads/stores go through
+// `simd_{load_from,store_into}_tensor_pointer`.
+//
+// The closure's comptime parameters are `[width, element_alignment]`;
+// `TensorLoadOp`/`TensorStoreOp` read them from the context pushed below.
+static FailureOr<ForeachClosure> emitForeachClosure(EmitMojoState &state,
+                                                    Operation *op,
+                                                    ValueRange capturing,
+                                                    Region &body) {
   // Decompose each capture into the (ptr, layout) the closure captures plus its
   // static alignment, exactly as `emitMapFusionFunctor` does. Built here, in
   // the enclosing scope, so the `{var}` closure captures the (ptr, layout)
   // locals (not the slice) and can name the comptime alignment alias.
   FailureOr<SmallVector<FusedCaptureInfo>> captureInfosOr =
-      collectFusedCaptureInfos(state, *this, capturing);
+      collectFusedCaptureInfos(state, op, capturing);
   if (failed(captureInfosOr))
     return failure();
   SmallVector<FusedCaptureInfo> captureInfos = *captureInfosOr;
 
-  // Infer simd_width from all dtypes touched anywhere in the closure body.
-  FailureOr<MojoValue> dtypesTuple = collectDtypesTuple(state, getBody());
+  // The SIMD width comes from every dtype touched anywhere in the body.
+  FailureOr<MojoValue> dtypesTuple = collectDtypesTuple(state, body);
   if (failed(dtypesTuple))
-    return emitOpError("mogg.call.foreach: could not determine capture dtype");
-  MojoValue simdWidth =
-      kFnGetSimdWidthForDtypes[{*dtypesTuple, context.get("target")}]({});
+    return op->emitOpError("could not determine capture dtype");
 
   bool errOccurred = false;
   // Blanket `{var}` capture -- see the capture-convention note above.
@@ -2896,8 +2900,8 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
             /*width=*/functionBody.parameter(kParameterWidth),
             /*alignment=*/functionBody.parameter(kParameterElementAlignment));
 
-        Block &body = getBody().front();
-        ArrayRef<BlockArgument> args = body.getArguments();
+        Block &block = body.front();
+        ArrayRef<BlockArgument> args = block.getArguments();
         for (unsigned i = 0; i < captureInfos.size(); ++i) {
           // Record the captured decomposed MTS components for the body's
           // loads/stores; the closure captures trivial values only, so all are
@@ -2909,23 +2913,57 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
         state.setMojoValueFor(args.back(),
                               functionBody.arguments[0].resolvedName);
 
-        errOccurred = llvm::any_of(body, [&](Operation &op) {
-          return state.lowerOpToMojo(&op).failed();
+        errOccurred = llvm::any_of(block, [&](Operation &bodyOp) {
+          return state.lowerOpToMojo(&bodyOp).failed();
         });
       });
   if (errOccurred)
     return failure();
+  return ForeachClosure{lambdaVal, *dtypesTuple};
+}
 
-  // `_foreach` picks a width that divides the limit: at compile time when it
-  // is an `Idx`, at launch when it is known only at run time. Widths are
-  // powers of two, so a run-time limit only needs the largest power of two
-  // dividing its dims, not their GCD.
-  SmallVector<MojoValue> parameters = {
-      kParameterPreferredSimdWidth.equal(simdWidth)};
-  SmallVector<MojoValue> arguments = {shape, lambdaVal, context};
+// The loop primitive picks a width that divides the limit: at compile time
+// when it is an `Idx`, at launch when it is known only at run time. Widths are
+// powers of two, so a run-time limit only needs the largest power of two
+// dividing its dims, not their GCD.
+LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
+  MojoValue context = state.getMojoValueFor(getDeviceContext());
+  FailureOr<ForeachClosure> closure =
+      emitForeachClosure(state, *this, getCapturing(), getBody());
+  if (failed(closure))
+    return failure();
+  MojoValue simdWidth =
+      kFnGetSimdWidthForDtypes[{closure->dtypes, context.get("target")}]({});
+  SmallVector<MojoValue> arguments = {state.getMojoValueFor(getShape()),
+                                      closure->lambda, context};
   appendMaxSimdWidthArg(arguments, getMaxSimdWidth(), getDynamicMaxSimdWidth(),
                         state);
-  state.file->call(getCallee(), parameters, arguments);
+  state.file->call(getCallee(), {kParameterPreferredSimdWidth.equal(simdWidth)},
+                   arguments);
+  return success();
+}
+
+// The registered primitive picks the SIMD width from the dtypes on the target
+// the kernel compiles for:
+//
+//   def lambda_N[width: Int, element_alignment: Int = 1](idx: Coord) {var}:
+//       ...  # the body
+//   _graph_blob_foreach[dtypes = StaticTuple[DType, N](...)](shape, lambda_N)
+LogicalResult GraphBlobForeachOp::emitMojo(EmitMojoState &state) {
+  PrimitiveDeclOp primitive =
+      state.registry.lookupPrimitive(getOperationName());
+  if (!primitive)
+    return emitOpError("no primitive is registered for this op");
+  FailureOr<ForeachClosure> closure =
+      emitForeachClosure(state, *this, getCapturing(), getBody());
+  if (failed(closure))
+    return failure();
+  SmallVector<MojoValue> arguments = {state.getMojoValueFor(getShape()),
+                                      closure->lambda};
+  appendMaxSimdWidthArg(arguments, getMaxSimdWidth(), getDynamicMaxSimdWidth(),
+                        state);
+  state.file->call(MojoValue(primitiveMojoName(primitive)),
+                   {kParameterDtypes.equal(closure->dtypes)}, arguments);
   return success();
 }
 

@@ -43,6 +43,7 @@ from pathlib import Path
 
 import pytest
 from max import functional as F
+from max import tree
 from max.driver import (
     Accelerator,
     set_virtual_device_api,
@@ -58,8 +59,9 @@ from max.nn.common_layers.quant_moe import (
     TensorParallelMoE,
 )
 from max.nn.common_layers.quant_tensor import FP8BlockTensor, NVFP4Tensor
+from max.nn.ep.init import payload_types
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.architectures.mistral_large4_modulev3.config import (
@@ -227,13 +229,11 @@ def _build(
         tuple(Accelerator(i) for i in range(n_devices)), (n_devices,), ("tp",)
     )
     assert config.ep_config is None
-    ep_manager = None
     if expert_parallel:
         # The served EP arm: the same graph plus the dispatch and combine tail.
         config.ep_config = _ep_config(config, config.nvfp4_config)
-        ep_manager = EPBatchManager(config.ep_config)
     with F.lazy(), default_device(config.mesh):
-        module = MistralLarge4(config, kv_params, ep_manager)
+        module = MistralLarge4(config, kv_params, config.ep_config)
     if taps:
         module.language_model.return_hidden_states = (
             ReturnHiddenStates.SELECTED_LAYERS
@@ -246,8 +246,8 @@ def _build(
     # `MistralLarge4.forward` peels one host `batch_context_length` off its
     # variadic arguments before the cache tree.
     inputs.insert(3, TensorType(DType.int32, shape=[1], device=DeviceRef.CPU()))
-    if ep_manager is not None:
-        inputs.extend(ep_manager.input_types())
+    if config.ep_config is not None:
+        inputs.extend(tree.leaves(payload_types(config.ep_config)))
     return module, inputs
 
 

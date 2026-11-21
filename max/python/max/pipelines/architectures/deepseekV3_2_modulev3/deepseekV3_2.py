@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from itertools import islice
 from typing import ClassVar
 
 from max import functional as F
@@ -32,11 +31,13 @@ from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.multi_latent_attention import MLAPrefillMetadata
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.ep import EPBuffers
+from max.nn.ep import init as ep_init
+from max.nn.ep_config import EPConfig
+from max.nn.kernels import mla_sparse_selection_rows
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
-from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.pipelines.lib.utils import split_replicated_batch
@@ -63,7 +64,7 @@ from .layers.prefill_context_parallel import (
     prefill_predicate,
 )
 from .layers.rms_norm import MultiplyBeforeCastRMSNorm
-from .layers.sparse_mla import Selection
+from .layers.sparse_mla import CarriedSelection, Selection
 from .layers.transformer_block import (
     BlockOutput,
     DeepseekV3_2TransformerBlock,
@@ -73,6 +74,7 @@ from .model_config import (
     HiSparseInputs,
     hisparse_gather_groups,
     indexer_cache_layer_map,
+    stage_indexer_types,
 )
 
 
@@ -197,9 +199,9 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
     def __init__(
         self,
         config: DeepseekV3_2Config,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
 
         self.rope = rotary_embedding(config)
 
@@ -211,41 +213,56 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             and (config.mesh is None or TP not in config.mesh.axis_names)
             else None
         )
-        self.embed_tokens = VocabParallelEmbedding(
-            config.vocab_size,
-            dim=config.hidden_size,
-            tp_axis=tp_axis,
+        # A pipeline stage builds only its layers, under their global names;
+        # only the first embeds and only the last scores. A last stage whose
+        # NextN layer drafts also embeds, for the draft.
+        ids = (
+            range(config.num_hidden_layers)
+            if config.layer_ids is None
+            else config.layer_ids
         )
-
-        self.norm = MultiplyBeforeCastRMSNorm(
-            dim=config.hidden_size, eps=config.rms_norm_eps
-        )
-
-        self.lm_head = ColumnParallelLinear(
-            in_dim=config.hidden_size,
-            out_dim=config.vocab_size,
-            bias=False,
-            tp_axis=tp_axis,
-        )
+        self.first = ids.start == 0
+        self.last = ids.stop == config.num_hidden_layers
+        if self.first or (self.last and config.last_stage_embeds):
+            self.embed_tokens = VocabParallelEmbedding(
+                config.vocab_size,
+                dim=config.hidden_size,
+                tp_axis=tp_axis,
+            )
+        if self.last:
+            self.norm = MultiplyBeforeCastRMSNorm(
+                dim=config.hidden_size, eps=config.rms_norm_eps
+            )
+            self.lm_head = ColumnParallelLinear(
+                in_dim=config.hidden_size,
+                out_dim=config.vocab_size,
+                bias=False,
+                tp_axis=tp_axis,
+            )
 
         qk_head_dim = config.qk_rope_head_dim + config.qk_nope_head_dim
         scale = self.rope.compute_scale(math.sqrt(1.0 / qk_head_dim))
-        layers = []
-        for i in range(config.num_hidden_layers):
-            layers.append(
-                DeepseekV3_2TransformerBlock(
-                    config=config,
-                    layer_idx=i,
-                    attention_scale=scale,
-                    ep_batch_manager=ep_batch_manager
-                    if i >= config.first_k_dense_replace
-                    else None,
-                )
-            )
-
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
-        self.layers = ModuleList[DeepseekV3_2TransformerBlock](layers)
+        self.layers = {
+            i: DeepseekV3_2TransformerBlock(
+                config=config,
+                layer_idx=i,
+                attention_scale=scale,
+                ep_config=ep_config
+                if i >= config.first_k_dense_replace
+                else None,
+            )
+            for i in ids
+        }
+        # A stage before the last hands its last selection to the next stage,
+        # as token positions.
+        if not self.last:
+            for layer in self.layers.values():
+                layer.self_attn.carries_positions = True
+        # The caches hold only this stage's layers, so its indexer slots and
+        # gather widths count from its first layer.
+        self.indexer_types = stage_indexer_types(config.indexer_types, ids)
         self.kv_params = config.kv_params
         self.config = config
         self.mesh = config.mesh
@@ -255,6 +272,11 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         self.return_logits = ReturnLogits.LAST_TOKEN
         self.return_hidden_states = ReturnHiddenStates.NONE
         self.emit_last_token_logits = True
+
+    @property
+    def first_layer(self) -> DeepseekV3_2TransformerBlock:
+        """The first block this model builds."""
+        return next(iter(self.layers.values()))
 
     def forward(
         self,
@@ -266,10 +288,16 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         hisparse: HiSparseInputs | None = None,
+        boundary: Sequence[Tensor] | None = None,
     ) -> tuple[Tensor, ...]:
-        """Runs the embedding and decoder stack over the tokens."""
+        """Runs the embedding and decoder stack over the tokens.
+
+        A pipeline stage after the first starts from ``boundary``, each
+        device's hidden states from the previous stage. A stage before the
+        last returns its own, in the same form, in place of the logits.
+        """
         if self.mesh is not None:
             if self.mesh.num_devices > 1:
                 tokens = F.distributed_broadcast(tokens, self.mesh)
@@ -283,7 +311,20 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 tokens = tokens.to(self.mesh)
                 input_row_offsets = input_row_offsets.to(self.mesh)
 
-        h = self.embed_tokens(tokens)
+        carried: Tensor | None = None
+        if self.first:
+            h = self.embed_tokens(tokens)
+        else:
+            # Each device's hidden states, then its last top-k selection's
+            # token positions, which a stage that starts on a ``shared``
+            # layer reuses.
+            assert boundary is not None and self.mesh is not None
+            replicated = DeviceMapping(
+                self.mesh, tuple(Replicated() for _ in self.mesh.axis_names)
+            )
+            n = self.mesh.num_devices
+            h = Tensor.from_shard_values(boundary[:n], replicated)
+            carried = Tensor.from_shard_values(boundary[n:], replicated)
         if self.config.data_parallel_degree > 1:
             assert data_parallel_splits is not None
             assert input_row_offsets_i64 is not None
@@ -311,7 +352,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         # across layers), so compute it once and thread it into every layer
         # instead of recomputing it per layer. Decode has no prefill plan.
         mla_prefill_metadata = None
-        first_attn = self.layers[0].self_attn
+        first_attn = self.first_layer.self_attn
         if first_attn.graph_mode in ("prefill", "auto"):
             mla_prefill_metadata = first_attn.create_mla_prefill_metadata(
                 input_row_offsets, kv_collection
@@ -326,7 +367,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             input_row_offsets,
             freqs_cis,
             mla_prefill_metadata,
-            comm_buffers,
+            ep,
         )
         pcp: PrefillContextParallelStep | None = None
         if self.config.prefill_context_parallel:
@@ -335,7 +376,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             # steps keep DCP. The step's rows are predicated: each layer's
             # attention runs PCP on a PCP step's rows and DCP on any other's.
             assert self.mesh is not None
-            first_attn = self.layers[0].self_attn
+            first_attn = self.first_layer.self_attn
             active = prefill_predicate(
                 tokens, input_row_offsets, batch_context_length
             )
@@ -356,7 +397,13 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 kv_collection,
                 indexer_kv_collection,
             )
-        h = self._run_layers(h, *layer_args, pcp=pcp, hisparse=hisparse)
+        h, selection = self._run_layers(
+            h, *layer_args, pcp=pcp, hisparse=hisparse, carried=carried
+        )
+        if not self.last:
+            # The next stage's first block applies its own input norm.
+            assert isinstance(selection, CarriedSelection)
+            return (*h.local_shards, *selection.positions.local_shards)
 
         self._check_output_modes()
         outputs: list[Tensor] = []
@@ -386,15 +433,19 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None,
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         pcp: PrefillContextParallelStep | None = None,
         hisparse: HiSparseInputs | None = None,
-    ) -> Tensor:
+        carried: Tensor | None = None,
+    ) -> tuple[Tensor, Selection | None]:
         """Runs the decoder blocks over ``h``.
 
         With ``pcp`` every block's attention chooses prefill context
         parallelism per step. With ``hisparse`` every ``full`` layer resolves
-        its selection against the hot buffer and gathers the misses.
+        its selection against the hot buffer and gathers the misses. A
+        ``shared`` first layer reuses ``carried``, the token positions of the
+        previous stage's last selection, resolved against this stage's cache.
+        Returns the hidden states and the last selection.
         """
         # MoE blocks share a subgraph, as in V3. ``full`` and ``shared``
         # layers differ structurally (shared layers carry no indexer weights),
@@ -402,21 +453,28 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         # call sites reuse a body, and the cache key does not otherwise see
         # the difference.
         topk_indices: Selection | None = None
-        indexer_slots = indexer_cache_layer_map(
-            self.config.indexer_types, len(self.layers)
-        )
+        # A ``full`` first layer selects for itself, so only a ``shared`` one
+        # reads the carried positions.
+        if carried is not None and self.indexer_types[0] == "shared":
+            rows = mla_sparse_selection_rows(
+                carried, input_row_offsets, kv_collection
+            )
+            topk_indices = (
+                rows if self.last else CarriedSelection(rows, carried)
+            )
+        layers = list(self.layers.values())
+        indexer_slots = indexer_cache_layer_map(self.indexer_types, len(layers))
         # How many consecutive layers one gather launch fills at each layer:
         # the full layer and the ``shared`` layers that reuse its top-k.
-        gather_groups = hisparse_gather_groups(
-            self.config.indexer_types, len(self.layers)
-        )
+        gather_groups = hisparse_gather_groups(self.indexer_types, len(layers))
         # Each block hands the next its input norm, fused into its post-MLP
-        # all-gather, as the graph-API model does. Only the embeddings are
+        # all-gather, as the graph-API model does. Only a stage's input is
         # normalized here.
-        carry = self.layers[0].carry_next_input_norm
-        norm_h = self.layers[0].input_layernorm(h) if carry else None
-        last = len(self.layers) - 1
-        for idx, layer in enumerate(self.layers):
+        carry = self.first_layer.carry_next_input_norm
+        norm_h = self.first_layer.input_layernorm(h) if carry else None
+        last = len(layers) - 1
+        # ``idx`` is the layer's slot in this stage's cache.
+        for idx, layer in enumerate(layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
             indexer_slot_tensor = F.constant(
                 indexer_slots[idx], DType.uint32, device=CPU()
@@ -446,7 +504,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             # A block takes the next block's weight as an argument, since
             # a shared subgraph resolves only its own weights.
             next_input_gamma = (
-                self.layers[idx + 1].input_layernorm.weight.cast(h.dtype)
+                layers[idx + 1].input_layernorm.weight.cast(h.dtype)
                 if carry and idx < last
                 else None
             )
@@ -458,7 +516,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 input_row_offsets,
                 freqs_cis,
                 mla_prefill_metadata,
-                comm_buffers,
+                ep,
                 topk_indices,
                 False,
                 indexer_slot_tensor,
@@ -469,7 +527,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 hisparse_group_size=gather_group,
             )
             norm_h = rest[0] if rest else None
-        return h
+        return h, topk_indices
 
     def module_outputs(self, outputs: tuple[Tensor, ...]) -> ModuleV3Outputs:
         """Names the outputs of :meth:`forward` for the pipeline model."""
@@ -635,13 +693,12 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         self,
         config: DeepseekV3_2Config,
         kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
-        self.language_model = DeepseekV3_2TextModel(config, ep_batch_manager)
+        self.language_model = DeepseekV3_2TextModel(config, ep_config)
         self.config = config
         self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
 
     def forward(
         self,
@@ -693,15 +750,10 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         kv_collection = collection("mla")
         indexer_kv_collection = collection("indexer")
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            # The variadic graph values between the KV cache and the HiSparse
-            # tail are the EP communication buffers. Wrap them as an explicit
-            # forward argument so they thread through each MoE block's
-            # subgraph boundary.
-            n_ep = len(self.ep_batch_manager.input_types())
-            ep_buffers = list(islice(kv_inputs, n_ep))
-            comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
+        # The EP inputs sit between the KV cache and the HiSparse tail.
+        ep = ep_init.flat_buffers(
+            self.language_model.ep_config, kv_inputs, mesh
+        )
         hisparse = self._hisparse_inputs(list(kv_inputs))
         outputs = self.language_model(
             tokens,
@@ -712,7 +764,7 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
             batch_context_lengths_tensor,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            ep,
             hisparse,
         )
         return self.language_model.module_outputs(outputs)
@@ -730,7 +782,9 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         return hisparse_inputs_from_values(self.config, values)
 
 
-class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
+class DeepseekV3_2Decoder(
+    Module[[DecoderInputs], DecoderOutputs | tuple[Tensor, ...]]
+):
     """DeepSeek-V3.2's sparse-MLA decoder, registered for the ``DECODER`` role.
 
     It runs tensor-parallel attention over a ``tp`` mesh, one attention
@@ -742,6 +796,7 @@ class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
     graph_name: ClassVar[str] = "DeepseekV3_2"
     supports_data_parallel: ClassVar[bool] = True
     supports_multi_device_replicas: ClassVar[bool] = True
+    supports_pipeline_stages: ClassVar[bool] = True
 
     def __init__(self, config: DeepseekV3_2Config) -> None:
         super().__init__()
@@ -749,24 +804,25 @@ class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
             raise ValueError(
                 "DeepSeek-V3.2 needs a mesh: apply the runtime first"
             )
-        self.ep_batch_manager = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
         # Quantized checkpoints keep norms, biases and embeddings in bf16.
         dtype = (
             DType.bfloat16 if config.quant_config is not None else config.dtype
         )
         with default_dtype(dtype):
             self.language_model = DeepseekV3_2TextModel(
-                config, self.ep_batch_manager
+                config, config.ep_config
             )
         self.config = config
         self.kv_params = config.kv_params
 
-    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
-        """Runs the decoder over the batch."""
+    def forward(
+        self, inputs: DecoderInputs
+    ) -> DecoderOutputs | tuple[Tensor, ...]:
+        """Runs the decoder over the batch.
+
+        A pipeline stage before the last returns each device's hidden
+        states, which the next stage takes as its stage boundary.
+        """
         mesh = self.config.mesh
         assert mesh is not None
         assert inputs.batch_context_lengths is not None
@@ -805,12 +861,6 @@ class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
             leaves = tree.leaves(kv_tree[name], leaf=KVCacheInputsPerDevice)
             return PagedCacheValues.from_upstream(leaves, kv_mapping)
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            assert inputs.ep is not None
-            comm_buffers = self.ep_batch_manager.comm_buffers(
-                [x._graph_value for x in tree.leaves(inputs.ep)]
-            )
         outputs = self.language_model(
             inputs.tokens,
             collection("mla"),
@@ -820,6 +870,13 @@ class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):
             batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            inputs.ep,
+            boundary=(
+                None
+                if inputs.stage_boundary is None
+                else list(inputs.stage_boundary)
+            ),
         )
+        if not self.language_model.last:
+            return outputs
         return self.language_model.module_outputs(outputs)

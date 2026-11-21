@@ -139,7 +139,7 @@ def test_captured_dynamic_coord() raises:
                 dst[unsafe_offset=i] = Int64(Int(c[i].value()))
             dst[unsafe_offset=rank] = tag
 
-        ctx.enqueue_function(kernel, grid_dim=1, block_dim=1)
+        ctx.enqueue_closure(kernel, grid_dim=1, block_dim=1)
         var out_host = ctx.enqueue_create_host_buffer[.int64](rank + 1)
         ctx.enqueue_copy(out_host, out_dev)
         ctx.synchronize()

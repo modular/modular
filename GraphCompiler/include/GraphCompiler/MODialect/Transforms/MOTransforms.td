@@ -180,7 +180,7 @@ def ConstantFold : Pass<"mo-constant-fold", "ModuleOp"> {
     "M::MAP::MAPDialect",
     "M::MOGG::MOGGDialect",
     "M::MGP::MGPDialect",
-    "M::GRT::GRTDialect",
+    "M::MLRT::GRT::GRTDialect",
     "M::KGEN::KGENDialect",
     "M::KGEN::LIT::LITDialect",
     "M::KGEN::POP::POPDialect",

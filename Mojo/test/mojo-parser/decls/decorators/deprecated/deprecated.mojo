@@ -123,3 +123,17 @@ struct StaticMethodDeprecationTest(Movable where False):
     @deprecated(use=replacement_static)
     def deprecated_static_use():
         pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Test: @deprecated(use=...) for comptime members
+# ===----------------------------------------------------------------------=== #
+
+
+struct ComptimeMemberDeprecationTest(Movable where False):
+    comptime replacement_member = 1
+
+    # CHECK-LABEL: lit.alias.decl *"deprecated_member_use
+    # CHECK-SAME: deprecationInfo = <"'deprecated_member_use' is deprecated, use 'replacement_member' instead", "replacement_member">
+    @deprecated(use=replacement_member)
+    comptime deprecated_member_use = Self.replacement_member

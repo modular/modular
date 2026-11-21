@@ -30,10 +30,10 @@ def GRTDialect : Dialect {
     working with integers and implementing control flow.
   }];
 
-  let cppNamespace = "::M::GRT";
+  let cppNamespace = "::M::MLRT::GRT";
 
   // We depend on the MEF dialect for the chain type.
-  let dependentDialects = ["::M::MEF::MEFDialect"];
+  let dependentDialects = ["::M::MLRT::MEF::MEFDialect"];
 }
 
 #endif // MLRT_GRAPHRT_GRTDIALECT_GRTDIALECT_TD

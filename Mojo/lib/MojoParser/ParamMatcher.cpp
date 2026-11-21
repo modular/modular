@@ -49,6 +49,103 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 // InferenceFailure
 //===----------------------------------------------------------------------===//
 
+using FnMismatch = MatchFailure::FnTypeMismatch;
+
+static StringRef nameOrEmpty(StringAttr name) {
+  return name ? name.getValue() : StringRef();
+}
+
+/// Write "'name'" for a named argument, or its position otherwise.
+static void addArgName(MojoInflightDiag &diag, size_t argIdx,
+                       StringRef argName) {
+  if (argName.empty())
+    diag << "#" << argIdx;
+  else
+    diag << "'" << argName << "'";
+}
+
+static void addCount(MojoInflightDiag &diag, size_t count, StringRef noun) {
+  diag << count << " " << noun << (count == 1 ? "" : "s");
+}
+
+static void addFnTypeMismatchReason(MojoInflightDiag &diag,
+                                    const FnMismatch &mismatch) {
+  diag << ", ";
+  std::visit(
+      Overloaded{
+          [&](const FnMismatch::TooManyParams &d) {
+            diag << "expected at most ";
+            addCount(diag, d.expectedCount, "compile-time parameter");
+            diag << ", found " << d.actualCount;
+          },
+          [&](const FnMismatch::UnmatchedParam &d) {
+            if (d.isExpectedParam)
+              diag << "function must declare compile-time parameter '" << d.name
+                   << "'";
+            else
+              diag << "compile-time parameter '" << d.name
+                   << "' has no match in the expected type";
+          },
+          [&](const FnMismatch::RefResultRequired &) {
+            diag << "function must return a reference";
+          },
+          [&](const FnMismatch::RefResultNotCopyable &d) {
+            diag << "reference result type " << d.resultType
+                 << " must be copyable to return it as a value";
+          },
+          [&](const FnMismatch::EffectsDiffer &d) {
+            SmallVector<StringRef, 4> rules;
+            if (d.actual.isThrows() != d.expected.isThrows())
+              rules.push_back(d.expected.isThrows() ? "must be 'raises'"
+                                                    : "must not be 'raises'");
+            if (d.actual.isAsync() != d.expected.isAsync())
+              rules.push_back(d.expected.isAsync() ? "must be 'async'"
+                                                   : "must not be 'async'");
+            if (d.actual.isCABI() != d.expected.isCABI())
+              rules.push_back(d.expected.isCABI() ? "must be 'abi(\"C\")'"
+                                                  : "must not be 'abi(\"C\")'");
+            if (d.actual.isRefResult() != d.expected.isRefResult())
+              rules.push_back(d.expected.isRefResult()
+                                  ? "must return a reference"
+                                  : "must not return a reference");
+            diag << "function " << llvm::join(rules, " and ");
+          },
+          [&](const FnMismatch::KwargsDiffer &d) {
+            diag << (d.actualHasKwargs
+                         ? "function must not take a '**kwargs' argument"
+                         : "function must take a '**kwargs' argument");
+          },
+          [&](const FnMismatch::ArgConventionsIncompatible &d) {
+            diag << "argument ";
+            addArgName(diag, d.argIdx, d.argName);
+            StringRef actual = getUserSyntax(d.actual);
+            StringRef expected = getUserSyntax(d.expected);
+            // Some distinct conventions have the same spelling.
+            if (actual == expected)
+              diag << " has an incompatible '" << actual << "' convention";
+            else
+              diag << ": expected '" << expected << "' convention, found '"
+                   << actual << "'";
+          },
+          [&](const FnMismatch::ArgCountsDiffer &d) {
+            diag << "expected " << (d.expectedIsMinimum ? "at least " : "");
+            addCount(diag, d.expectedCount, "argument");
+            diag << ", found " << d.actualCount;
+          },
+          [&](const FnMismatch::KwOnlyArgNamesDiffer &d) {
+            diag << "expected keyword-only argument '" << d.expectedName
+                 << "', found '" << d.actualName << "'";
+          },
+          [&](const FnMismatch::VariadicElementTypeMismatch &d) {
+            diag << "argument ";
+            addArgName(diag, d.argIdx, d.argName);
+            diag << " of type " << d.argType
+                 << " does not match variadic element type " << d.elementType;
+          },
+      },
+      mismatch.detail);
+}
+
 void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
   SharedState *shared = diag.getSharedIfActive();
   if (!shared)
@@ -56,6 +153,11 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 
   if (isa<Unclassified>(info))
     return;
+
+  if (isa<FnTypeMismatch>(info)) {
+    addFnTypeMismatchReason(diag, cast<FnTypeMismatch>(info));
+    return;
+  }
 
   if (isa<DependsOnUnresolved>(info)) {
     auto details = cast<DependsOnUnresolved>(info);
@@ -192,7 +294,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   size_t nextActualParamIdx = 0;
 
   if (expected.getInputParamTypes().size() < actual.getInputParamTypes().size())
-    return error(MatchFailure::Unclassified{});
+    return error(FnMismatch{
+        FnMismatch::TooManyParams{actual.getInputParamTypes().size(),
+                                  expected.getInputParamTypes().size()}});
 
   for (auto [idx, pType] : llvm::enumerate(expected.getInputParamTypes())) {
     // Ran out of params or mismatch on types.
@@ -203,7 +307,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
               PassingKind::Inferred &&
           expected.getParamListAttrs().getPassingKind(idx) !=
               PassingKind::Implicit)
-        return error(MatchFailure::Unclassified{});
+        return error(FnMismatch{
+            FnMismatch::UnmatchedParam{nameOrEmpty(expected.getParamName(idx)),
+                                       /*isExpectedParam=*/true}});
 
       continue;
     }
@@ -211,7 +317,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   }
 
   if (nextActualParamIdx != actual.getInputParamTypes().size())
-    return error(MatchFailure::Unclassified{});
+    return error(FnMismatch{FnMismatch::UnmatchedParam{
+        nameOrEmpty(actual.getParamName(nextActualParamIdx)),
+        /*isExpectedParam=*/false}});
 
   auto actualFnTp =
       cast<FuncType>(state.evaluator.getReboundType(actual.getBody()));
@@ -301,7 +409,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   if (actualFnTp.isRefResult() != expectedFnTp.isRefResult()) {
     // A function returning a value can't promote to a ref result.
     if (expectedFnTp.isRefResult())
-      return error(MatchFailure::Unclassified{});
+      return error(FnMismatch{FnMismatch::RefResultRequired{}});
     // We can look through the reference to implicitly copy.
     actualResultType = actualResultType.getReferenceElementType();
     actualEffects.setRefResult(false);
@@ -317,24 +425,29 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         // when we have more strong origin support in traits.
         !actualResultType.isCopyable(expr->getLoc(), shared,
                                      /*isImplicit=*/false, state.declScope))
-      return error(MatchFailure::Unclassified{});
+      return error(
+          FnMismatch{FnMismatch::RefResultNotCopyable{actualResultType}});
   }
 
   if (actualEffects != expectedEffects)
-    return error(MatchFailure::Unclassified{});
+    return error(
+        FnMismatch{FnMismatch::EffectsDiffer{actualEffects, expectedEffects}});
 
   PROP(matchParams(actualFnTp.getCaptureOrigins(),
                    expectedFnTp.getCaptureOrigins()));
 
   if (actualKwVarArgIndex.has_value() != expectedKwVarArgIndex.has_value())
-    return error(MatchFailure::Unclassified{});
+    return error(
+        FnMismatch{FnMismatch::KwargsDiffer{actualKwVarArgIndex.has_value()}});
   if (actualKwVarArgIndex) {
     size_t actualIndex = *actualKwVarArgIndex;
     size_t expectedIndex = *expectedKwVarArgIndex;
-    if (!checkConventionsConvertible(
-            expectedFnTp.getArgConvention(expectedIndex),
-            actualFnTp.getArgConvention(actualIndex)))
-      return error(MatchFailure::Unclassified{});
+    ArgConvention actualConv = actualFnTp.getArgConvention(actualIndex);
+    ArgConvention expectedConv = expectedFnTp.getArgConvention(expectedIndex);
+    if (!checkConventionsConvertible(expectedConv, actualConv))
+      return error(FnMismatch{FnMismatch::ArgConventionsIncompatible{
+          actualIndex, nameOrEmpty(actualFnTp.getArgName(actualIndex)),
+          actualConv, expectedConv}});
 
     PROP(matchTypes(
         ASTType(actualArgTypes[actualIndex]).getKwargsDictRefValueType(),
@@ -358,11 +471,16 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     size_t numArgsAfterPack =
         expectedPositionalArgCount - *expectedPackIndex - 1;
     if (actualPositionalArgCount < *expectedPackIndex + numArgsAfterPack)
-      return error(MatchFailure::Unclassified{});
+      return error(FnMismatch{FnMismatch::ArgCountsDiffer{
+          actualPositionalArgCount, *expectedPackIndex + numArgsAfterPack,
+          /*expectedIsMinimum=*/true}});
     packBegin = *expectedPackIndex;
     packEnd = actualPositionalArgCount - numArgsAfterPack;
-  } else if (actualPositionalArgCount != expectedPositionalArgCount ||
-             actualPackIndex != expectedPackIndex) {
+  } else if (actualPositionalArgCount != expectedPositionalArgCount) {
+    return error(FnMismatch{FnMismatch::ArgCountsDiffer{
+        actualPositionalArgCount, expectedPositionalArgCount,
+        /*expectedIsMinimum=*/false}});
+  } else if (actualPackIndex != expectedPackIndex) {
     return error(MatchFailure::Unclassified{});
   }
 
@@ -376,7 +494,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     ASTType expectedAstType = expectedArgTypes[expectedArgIndex];
 
     if (!checkConventionsConvertible(expectedConv, actualConv))
-      return error(MatchFailure::Unclassified{});
+      return error(FnMismatch{FnMismatch::ArgConventionsIncompatible{
+          actualArgIndex, nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+          actualConv, expectedConv}});
 
     Type expectedValueAstType =
         RefType::stripRefConvention(expectedAstType, expectedConv);
@@ -392,7 +512,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
             PassingKind::KwOnly) {
       if (actualFnTp.getArgName(actualArgIndex) !=
           expectedFnTp.getArgName(expectedArgIndex))
-        return error(MatchFailure::Unclassified{});
+        return error(FnMismatch{FnMismatch::KwOnlyArgNamesDiffer{
+            nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+            nameOrEmpty(expectedFnTp.getArgName(expectedArgIndex))}});
     }
     return success();
   };
@@ -423,7 +545,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       if (!checkConventionsConvertible(expectedConv, actualConv))
-        return error(MatchFailure::Unclassified{});
+        return error(FnMismatch{FnMismatch::ArgConventionsIncompatible{
+            actualArgIndex, nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+            actualConv, expectedConv}});
 
       // TODO(MOCO-5418): The elements of a `mut` pack have the same origin, so
       // the conversion thunk cannot pass two of them to `mut` arguments
@@ -447,7 +571,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       if (failed(matchTypes(ASTType(actualValueAstType).extractMetaType(),
                             variadicElType))) {
         failableScope.revert();
-        return error(MatchFailure::Unclassified{});
+        return error(FnMismatch{FnMismatch::VariadicElementTypeMismatch{
+            actualArgIndex, nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+            actualValueAstType, variadicElType}});
       }
       // If the argument types line up, emit the type value.
       PValue converted = emitter.emitPValue({PValue(actualValueAstType), expr},

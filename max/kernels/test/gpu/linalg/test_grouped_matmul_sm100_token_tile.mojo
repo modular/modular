@@ -87,6 +87,7 @@ def run[
         return shift(Int(idx[0]), Int(idx[1]), val)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_fn[
         dt: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dt, width]) {var out_ptr}:

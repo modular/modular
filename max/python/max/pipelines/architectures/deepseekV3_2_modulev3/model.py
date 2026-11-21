@@ -63,5 +63,5 @@ class DeepseekV3_2Model(DeepseekV3Model):
         assert model_config.mesh is not None
         with default_device(model_config.mesh):
             return DeepseekV3_2(
-                model_config, self.kv_params, self._ep_batch_manager
+                model_config, self.kv_params, model_config.ep_config
             )

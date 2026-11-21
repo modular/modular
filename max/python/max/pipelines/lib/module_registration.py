@@ -123,6 +123,7 @@ from max.graph import BufferType, DeviceRef, TensorType, Type
 from max.graph.weights import WeightsAdapter
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
+from max.nn.ep import init as ep_init
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.graph_groups import (
     BatchContext,
@@ -187,7 +188,6 @@ from .registration_runtime import (
     ModuleRuntime,
     batch_context_length_types,
     ep_input_tree,
-    initialize_ep_comm_buffers,
     prepare_weights,
     role_weights,
     uses_expert_parallel_exchange,
@@ -543,7 +543,9 @@ def decoder_input_types(
     )
 
 
-def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
+def _decoder_fields(
+    inputs: Mapping[str, Any], ep_mesh: DeviceMesh | None = None
+) -> OrderedDict[str, Any]:
     """Returns a decoder graph's named inputs as its role's fields.
 
     The graph takes ``vision`` as a ``vision_merge`` group, which the decoder
@@ -551,8 +553,12 @@ def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
     It takes ``batch_context_lengths``, ``scratch`` and multi-axis
     ``token_positions`` as ``batch_context``, ``decoder_scratch`` and
     ``mrope_positions`` groups, which it reads as their tensors alone.
+    Given ``ep_mesh``, the decoder reads ``ep`` as
+    :class:`~max.nn.ep.EPBuffers` over it.
     """
     fields = OrderedDict(inputs)
+    if (ep := fields.get("ep")) is not None and ep_mesh is not None:
+        fields["ep"] = ep_init.payload_buffers(ep, ep_mesh)
     if isinstance(positions := fields.get("token_positions"), MRoPEPositions):
         fields["token_positions"] = positions["position_ids"]
     if (vision := fields.get("vision")) is not None:
@@ -662,7 +668,7 @@ class DecoderModelInputs(ModelInputs):
     constants: tree.Tree[Buffer] | None = None
     """The checkpoint-backed inputs, retained across steps."""
 
-    state: tuple[Buffer, ...] = ()
+    state: tuple[tree.Tree[Buffer], ...] = ()
     """The decoder's per-request state inputs, when it declares any."""
 
     scratch: tuple[Buffer, ...] = ()
@@ -932,6 +938,14 @@ _GroupedOutputs: TypeAlias = (
 names them."""
 
 
+_Decoder: TypeAlias = (
+    Module[[DecoderInputs], DecoderOutputs]
+    | Module[[DecoderInputs], DecoderOutputs | tuple[Tensor, ...]]
+)
+"""A decoder module. One that builds pipeline stages returns a tuple in place
+of its outputs on a stage before the last."""
+
+
 class _DecoderGraph(
     Module[[DecoderGraphInputs], _GroupedOutputs | DecoderOutputs]
 ):
@@ -948,11 +962,12 @@ class _DecoderGraph(
 
     def __init__(
         self,
-        decoder: Module[[DecoderInputs], DecoderOutputs],
+        decoder: _Decoder,
         *,
         lora_manager: LoRAManagerV3 | None = None,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         last_stage: bool = True,
+        ep_mesh: DeviceMesh | None = None,
     ) -> None:
         super().__init__()
         # The LoRA weight adapter nests every checkpoint key under `model.`.
@@ -961,18 +976,22 @@ class _DecoderGraph(
         self.lora_manager = lora_manager
         self.return_hidden_states = return_hidden_states
         self.last_stage = last_stage
+        self.ep_mesh = ep_mesh
 
     def forward(
         self, inputs: DecoderGraphInputs
     ) -> _GroupedOutputs | DecoderOutputs:
         """Groups the graph's inputs into fields and runs the decoder."""
-        fields = DecoderInputs(**_decoder_fields(inputs))
+        fields = DecoderInputs(**_decoder_fields(inputs, self.ep_mesh))
         if fields.lora is not None:
             assert self.lora_manager is not None
             self.lora_manager.bind_inputs(self.model, fields.lora)
         outputs = self.model(fields)
         if not self.last_stage:
-            return outputs
+            # Only the export reads a stage's tuple, so the graph keeps the
+            # last stage's output type for its other callers.
+            return cast(DecoderOutputs, outputs)
+        assert isinstance(outputs, DecoderOutputs)
         return _grouped_outputs(outputs, self.return_hidden_states)
 
 
@@ -1258,6 +1277,14 @@ class ModuleV3DecoderPipelineModel(
         """
         self._session = session
         models = super().load_graphs(session)
+        constants = getattr(self.batch_processor, "constant_inputs", None)
+        if (
+            isinstance(constants, ConstantInputs)
+            and constants.initializer is not None
+        ):
+            initializer = self.compiled_modules[GraphRole.STATIC_INIT]
+            assert isinstance(initializer, CompiledCallable)
+            constants.initialize(initializer, session)
         # A pipeline stage after the first compiles no VISION graph.
         vision_model = self.compiled_graphs.get(GraphRole.VISION)
         if (
@@ -1322,10 +1349,15 @@ class ModuleV3DecoderPipelineModel(
                     f"{type(config).__qualname__} doesn't support expert "
                     "parallelism"
                 )
-            runtime, self.ep_comm_initializer, ep_init = (
-                initialize_ep_comm_buffers(config, runtime, self._session)
+            ep, self.ep_comm_initializer, modules = (
+                config.expert_parallel_inputs.initialize(
+                    self._session,
+                    config.expert_parallel_config(runtime),
+                    runtime.mesh,
+                )
             )
-            self.compiled_modules = {**self.compiled_modules, **ep_init}
+            runtime = dataclasses.replace(runtime, ep=ep)
+            self.compiled_modules = {**self.compiled_modules, **modules}
         self._runtime = runtime
         if isinstance(config, DeploymentConfig):
             config = config.apply_runtime(runtime)
@@ -1650,6 +1682,7 @@ class ModuleV3DecoderPipelineModel(
             lora_manager=lora_manager,
             return_hidden_states=self.return_hidden_states,
             last_stage=stage is None or stage.is_last,
+            ep_mesh=self._runtime.mesh,
         )
         if stage is not None:
             # A stage holds only its own layers.
@@ -1671,6 +1704,13 @@ class ModuleV3DecoderPipelineModel(
         if stage is not None and not stage.is_last and stage.trace_only:
             raise_stage_traced(_returned_types(spec))
         specs: dict[str, GraphSpec] = {GraphRole.DECODER: spec}
+        if constants is not None and constants.initializer is not None:
+            specs[GraphRole.STATIC_INIT] = constants.initializer
+            if entries := self.weight_naming.get(GraphRole.DECODER):
+                self.weight_naming = {
+                    **self.weight_naming,
+                    GraphRole.STATIC_INIT: entries,
+                }
         if vision_spec is not None:
             specs[GraphRole.VISION] = vision_spec
         return specs
@@ -2087,8 +2127,7 @@ class RegisteredDecoderBuilder:
                     f"{type(config).__qualname__} doesn't support expert "
                     "parallelism"
                 )
-            ep = config.expert_parallel_config(runtime)
-            context.start_ep(ep)
+            ep = context.start_ep(config.expert_parallel_config(runtime))
             runtime = dataclasses.replace(runtime, ep=ep)
         if isinstance(config, DeploymentConfig):
             config = config.apply_runtime(runtime)

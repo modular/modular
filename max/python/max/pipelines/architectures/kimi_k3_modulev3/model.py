@@ -56,6 +56,7 @@ from max.nn.common_layers.kv_cache import (
     kv_input_values,
 )
 from max.nn.common_layers.mesh_axis import TP
+from max.nn.ep import EPBuffers
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
@@ -75,10 +76,8 @@ from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     NamedMapping,
-    Sharded,
 )
 
-from .layers import ep
 from .layers.attn_residual import (
     PendingAttnResStream,
     attn_res_mix_op,
@@ -446,11 +445,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             quant_config: MXFP4 config for the routed experts. Mutually
             exclusive with ``ep_config``.
             ep_config: The routed experts' expert-parallel exchange setup, or
-            ``None`` to run them replicated or TP-sharded. Only the config
-            lives here: the exchange's real buffers aren't a checkpoint
-            weight, so ``forward`` reads them off the tail of ``kv_inputs``
-            instead of a stored attribute (which ``Module.stage`` would
-            otherwise declare as one).
+            ``None`` to run them replicated or TP-sharded.
             max_tokens_per_expert: Rows one forward can route to an expert
             (``KimiK3Config.max_tokens_per_expert``), a serving-time bound
             like ``mla_buffer_size``.
@@ -469,7 +464,6 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             mla_rope_table_rows = mla_buffer_size
         self.mla_rope_table_rows = mla_rope_table_rows
         self._pin_kda_fma = _pins_kda_decode_fma(kv_params)
-        self.ep_config = ep_config
         attn_params = attn_cache(kv_params) if kv_params is not None else None
         self.embed_tokens = Embedding(
             vocab_size=config.vocab_size, dim=config.hidden_size
@@ -534,6 +528,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     moe_renormalize=config.moe_renormalize,
                     quant_config=quant_config,
                     max_tokens_per_expert=max_tokens_per_expert,
+                    ep_config=ep_config,
                 )
 
             layers.append(
@@ -586,6 +581,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
+        ep: EPBuffers | None = None,
     ) -> ModuleV3Outputs:
         """Runs the decoder stack over the tokens.
 
@@ -595,9 +591,11 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             return_n_logits: ``[1]``, see ``kimi_k3_output_head``.
             input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
             kv_inputs: This model's flattened cache tree, followed by the host
-                MLA prefill extent when the attention leaf is an MLA cache and
-                any EP buffers. Empty runs every MLA layer padded; a KDA layer
-                always needs its state here, since it has no padded form.
+                MLA prefill extent when the attention leaf is an MLA cache.
+                Empty runs every MLA layer padded; a KDA layer always needs
+                its state here, since it has no padded form.
+            ep: The routed experts' exchange buffers, under expert
+                parallelism.
 
         Returns the logits as before, plus ``hidden_states`` when this model
         was built with ``ReturnHiddenStates.SELECTED_LAYERS``: the tapped
@@ -612,7 +610,6 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         state = None
         mla_prefill_plan = None
         mla_freqs_cis = None
-        ep_buffers = None
         if kv_inputs:
             assert self.kv_params is not None, (
                 "KimiK3Model needs kv_params to serve a real kv_inputs tensor"
@@ -658,30 +655,6 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     else mla_freqs_cis.to(hidden_states.device)
                 )
 
-            if self.ep_config is not None:
-                # Not a checkpoint weight, so it arrives via the tail of
-                # `kv_inputs` instead of a stored attribute (see `__init__`).
-                # `counters` is one graph value per device; the other six
-                # leaves share a single CPU-resident pointer table.
-                mesh = self.embed_tokens.weight.mesh
-                counters = cache_tensor(
-                    [next(graph_values) for _ in range(mesh.num_devices)],
-                    DeviceMapping(mesh, (Sharded(axis=0),) * mesh.ndim),
-                )
-                ep_buffers = ep.EPBuffers(
-                    counters=counters,
-                    dispatch=ep.Tables(
-                        send=cache_tensor([next(graph_values)]),
-                        recv=cache_tensor([next(graph_values)]),
-                        count=cache_tensor([next(graph_values)]),
-                    ),
-                    combine=ep.Tables(
-                        send=cache_tensor([next(graph_values)]),
-                        recv=cache_tensor([next(graph_values)]),
-                        count=cache_tensor([next(graph_values)]),
-                    ),
-                )
-
         # Draft taps: a pure read after each listed layer, off the state the
         # NEXT layer's front-end will consume -- the running stream and the
         # committed-block bank the layer just returned. ``None`` builds the
@@ -708,8 +681,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     state_pool=recurrent.pool,
                     recurrent_row_id=recurrent.live_row_ids[kda_idx],
                     input_row_offsets=input_row_offsets,
-                    ep_config=self.ep_config,
-                    ep_buffers=ep_buffers,
+                    ep=ep,
                 )
                 kda_idx += 1
             else:
@@ -720,8 +692,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     kv_collection=kv_collection,
                     mla_prefill_plan=mla_prefill_plan,
                     mla_freqs_cis=mla_freqs_cis,
-                    ep_config=self.ep_config,
-                    ep_buffers=ep_buffers,
+                    ep=ep,
                 )
             if capture_after is not None and layer_idx in capture_after:
                 # The tap layers run with the fold off, so the boundary
@@ -846,8 +817,8 @@ def expert_parallel_kimi_k3_model(
 
     Everything else -- attention, dense MLPs, ``lm_head`` -- stays
     replicated; the experts' exchange is this mode's only communication.
-    Call :meth:`KimiK3Model.forward` with ``ep_config``/``ep_buffers`` set to
-    use the sharded experts.
+    Call :meth:`KimiK3Model.forward` with ``ep`` set to use the sharded
+    experts.
     """
     for layer in model.layers:
         expert_parallel_decoder_layer(layer, mesh)

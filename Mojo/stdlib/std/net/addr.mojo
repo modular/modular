@@ -261,7 +261,7 @@ struct Ipv6Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
             writer.write("::")
 
 
-__enum IpAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
+__union IpAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
     """Represents either an IPv4 or an IPv6 address."""
 
     case v4(Ipv4Addr)
@@ -435,7 +435,7 @@ struct SocketAddrV6(Equatable, Hashable, ImplicitlyCopyable, Writable):
             t"[{self._ip}%{self._scope_id}]:{self._port}".write_to(writer)
 
 
-__enum SocketAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
+__union SocketAddr(Equatable, Hashable, ImplicitlyCopyable, Writable):
     """Represents either an IPv4 or an IPv6 socket address."""
 
     case v4(SocketAddrV4)

@@ -18,6 +18,7 @@
 
 // CHECK:      def lambda_{{_+[0-9]+}}[width : Int, element_alignment : Int = 1](idx: layout.Coord) {var}:
 // CHECK-NEXT:   var [[IDX:var_+[0-9]+]] = std.utils.coord.coord_to_index_list(idx)
+// CHECK-NEXT:   @__allow_legacy_any_origin_fields
 // CHECK-NEXT:   @inline(.always)
 // CHECK-NEXT:   def [[INPUTS:concat_inputs_+[0-9]+]][input_index : Int](i: layout.Coord) {var} -> SIMD[DType.float32, width]:
 // CHECK-NEXT:     comptime if input_index == 0:

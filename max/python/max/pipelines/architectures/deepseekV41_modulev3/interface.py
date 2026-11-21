@@ -35,6 +35,9 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MultiKVCacheParams,
+    RecurrentLeafInputs,
+    RecurrentStateParams,
+    RecurrentStateRegion,
 )
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.speculative.config import SpeculativeMethod
@@ -142,19 +145,37 @@ class V41Config:
     has_vision: bool
     decoder_replay: bool = DECODER_REPLAY_DEFAULT
     """Whether the graph takes the host-planned kept rows of the decoder
-    (the layers past the last KV source). Read off the export's text config
-    so the interface, the trunk and the engine's contract cannot disagree."""
+    (the layers past the last KV source). On for a pipeline artifact unless
+    the text config names it, so the interface, the trunk and the engine's
+    contract cannot disagree."""
 
     engram_lookback_history: bool = ENGRAM_LOOKBACK_HISTORY_DEFAULT
     """Whether the graph's Engram lookback window is read from a device
     history the previous step recorded, beside the host window and a
-    per-row source map (the V2 overlap mechanism). Read off the export's
-    text config like ``decoder_replay``, so the default export's inputs
-    stay the host-built window alone."""
+    per-row source map (the V2 overlap mechanism). On for a pipeline
+    artifact unless the text config names it, like ``decoder_replay``, so
+    MAX Serve's inputs stay the host-built window alone."""
+
+    artifact_export: bool = False
+    """Whether the graph is a pipeline artifact's
+    (``PipelineConfig.artifact_export``). An artifact keeps the Engram
+    history in a recurrent KV leaf; a bare MEF keeps the registry contract
+    Mach checks, six KV groups plus the ``engram_lookback_history`` buffer
+    input."""
 
     @classmethod
-    def from_hf(cls, config: Mapping[str, Any]) -> V41Config:
-        """Reads the interface fields off an HF ``config.json`` mapping."""
+    def from_hf(
+        cls, config: Mapping[str, Any], *, artifact_export: bool = False
+    ) -> V41Config:
+        """Reads the interface fields off an HF ``config.json`` mapping.
+
+        Args:
+            config: The HF config, which is only read.
+            artifact_export: Whether the pipeline is built for a pipeline
+                artifact (``PipelineConfig.artifact_export``), which turns on
+                ``decoder_replay`` and ``engram_lookback_history`` unless the
+                text config names them.
+        """
         text = config["text_config"]
         return cls(
             vocab_size=text["vocab_size"],
@@ -192,14 +213,17 @@ class V41Config:
             engram_layer_ids=tuple(text["engram_layer_ids"]),
             has_vision=has_vision_tower(config),
             decoder_replay=bool(
-                text.get("decoder_replay", DECODER_REPLAY_DEFAULT)
+                text.get(
+                    "decoder_replay", artifact_export or DECODER_REPLAY_DEFAULT
+                )
             ),
             engram_lookback_history=bool(
                 text.get(
                     "engram_lookback_history",
-                    ENGRAM_LOOKBACK_HISTORY_DEFAULT,
+                    artifact_export or ENGRAM_LOOKBACK_HISTORY_DEFAULT,
                 )
             ),
+            artifact_export=artifact_export,
         )
 
     def ratio(self, layer: int) -> int:
@@ -835,7 +859,7 @@ def build_kv_params(
             f"step, which needs a {ring_rows}-row compressor-state ring; "
             f"this interface's ring holds {STATE_RING_ROWS} rows."
         )
-    children: dict[str, KVCacheParams] = {}
+    children: dict[str, KVCacheParams | RecurrentStateParams] = {}
     for spec in kv_leaf_specs(config):
         children[spec.key] = kv_cache_config.to_params(
             dtype=spec.dtype,
@@ -856,6 +880,20 @@ def build_kv_params(
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
+    if config.engram_lookback_history and config.artifact_export:
+        children["lookback_history"] = RecurrentStateParams(
+            regions=(
+                RecurrentStateRegion(
+                    leaf_id="lookback_history",
+                    num_layers=1,
+                    row_shape=(_NUM_LAST_TOKEN_LOOKBACK,),
+                    dtype=DType.int64,
+                    scratch=True,
+                ),
+            ),
+            devices=devices,
+            data_parallel_degree=data_parallel_degree,
+        )
     return MultiKVCacheParams.from_params(children)
 
 
@@ -870,6 +908,7 @@ def extra_inputs(
     data_parallel_degree: int = 1,
     *,
     verify_rows: bool = False,
+    artifact: bool = False,
 ) -> list[tuple[str, TensorType | BufferType]]:
     """Returns the forward inputs after the KV leaves, in graph order.
 
@@ -892,6 +931,11 @@ def extra_inputs(
             ``image_token_mask`` gates every row of the merged window, the
             prompt's and each request's drafts, under the dim the block
             driver's merge names them by.
+        artifact: Whether the graph is a pipeline artifact's, built from raw
+            checkpoint tensors. Its host tables are static buffers a static
+            initializer fills, its token map is a module constant, and its
+            replay plan is the minimal one :func:`_artifact_replay_extras`
+            declares. Otherwise the bare-MEF ABI is kept.
 
     Returns:
         The ``(name, tensor type)`` pairs, in the order the forward reads
@@ -903,13 +947,10 @@ def extra_inputs(
     batch_rows = (
         _BATCH_SYMBOL if data_parallel_degree == 1 else "global_batch_rows"
     )
-    # The V2 overlap mechanism replaces the host-built window with the
-    # window plus its device history: the host window arrives as int64
-    # ids, each row says where to read its real window from (a history
-    # row the previous step recorded, or -1 for the host window), and the
-    # history is a persistent device buffer. The dead companion stays a
-    # host input; for a row that reads the history, the graph marks the
-    # image tokens of the recorded ids instead.
+    # A nonnegative source selects the window the previous step recorded:
+    # an artifact's in this request's recurrent live row, a bare MEF's in
+    # that row of the ``engram_lookback_history`` buffer. -1 selects the
+    # host window, including the first prefix-replay chunk.
     if config.engram_lookback_history:
         i64 = DType.int64
         lookback: list[tuple[str, TensorType | BufferType]] = [
@@ -918,15 +959,18 @@ def extra_inputs(
                 TensorType(i64, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
             ),
             ("engram_lookback_source", TensorType(i64, [batch_rows], gpu0)),
-            (
-                "engram_lookback_history",
-                BufferType(
-                    i64,
-                    ["engram_history_rows", _NUM_LAST_TOKEN_LOOKBACK],
-                    device=gpu0,
-                ),
-            ),
         ]
+        if not config.artifact_export:
+            lookback.append(
+                (
+                    "engram_lookback_history",
+                    BufferType(
+                        i64,
+                        ["engram_history_rows", _NUM_LAST_TOKEN_LOOKBACK],
+                        device=gpu0,
+                    ),
+                )
+            )
     else:
         lookback = [
             (
@@ -956,9 +1000,7 @@ def extra_inputs(
             (
                 f"engram_table_{ordinal}_weight",
                 TensorType(
-                    DType.float8_e4m3fn,
-                    [rows, config.engram_head_dim],
-                    cpu,
+                    DType.float8_e4m3fn, [rows, config.engram_head_dim], cpu
                 ),
             )
         )
@@ -972,13 +1014,20 @@ def extra_inputs(
                 ),
             )
         )
-    extras.append(
-        ("engram_token_map", TensorType(i32, [config.vocab_size], gpu0))
-    )
+    if not artifact:
+        extras.append(
+            ("engram_token_map", TensorType(i32, [config.vocab_size], gpu0))
+        )
     # Only the extent matters: the graph reads the decoder's row count off it.
     extras.append(("decoder_rows", TensorType(u8, ["decoder_rows"], gpu0)))
     if config.decoder_replay:
-        extras.extend(_replay_extras(gpu0, data_parallel_degree, batch_rows))
+        extras.extend(
+            _artifact_replay_extras(
+                device_refs, data_parallel_degree, batch_rows
+            )
+            if artifact
+            else _replay_extras(gpu0, data_parallel_degree, batch_rows)
+        )
     return extras
 
 
@@ -1020,8 +1069,60 @@ def _replay_extras(
     return extras
 
 
+def _artifact_replay_extras(
+    device_refs: Sequence[DeviceRef],
+    data_parallel_degree: int,
+    batch_rows: str,
+) -> list[tuple[str, TensorType | BufferType]]:
+    """The artifact's replay plan: device inputs only, so a step captures.
+
+    ``kept_skip`` is each request's dropped front rows over the global
+    batch. Each replica ``r`` then takes its own ``row_indices.{r}`` (each
+    kept row's source row, counted from the replica's first merged row) and
+    ``kept_offsets.{r}`` (the replica's cumulative kept rows, from 0) on its
+    own device, so no replica's share is cut by a host index. Their extents
+    are the replica's own dims. ``longest_rows.{r}`` is extent only: its row
+    count is the replica's longest kept span, the exact launch bound the
+    kept rows' select ops read on the host, carried by a shape so no host
+    input bakes into a captured step.
+    """
+    gpu0 = device_refs[0]
+    extras: list[tuple[str, TensorType | BufferType]] = [
+        ("replay.kept_skip", TensorType(DType.int32, [batch_rows], gpu0)),
+    ]
+    devices = [
+        device_refs[r] if data_parallel_degree > 1 else gpu0
+        for r in range(data_parallel_degree)
+    ]
+    extras.extend(
+        (
+            f"replay.row_indices.{r}",
+            TensorType(DType.int32, [f"replay_kept_rows_{r}"], device),
+        )
+        for r, device in enumerate(devices)
+    )
+    extras.extend(
+        (
+            f"replay.kept_offsets.{r}",
+            TensorType(DType.uint32, [f"replay_kept_bounds_{r}"], device),
+        )
+        for r, device in enumerate(devices)
+    )
+    extras.extend(
+        (
+            f"replay.longest_rows.{r}",
+            TensorType(DType.uint8, [f"replay_longest_{r}"], device),
+        )
+        for r, device in enumerate(devices)
+    )
+    return extras
+
+
 def extra_input_names(
-    config: V41Config, data_parallel_degree: int = 1
+    config: V41Config,
+    data_parallel_degree: int = 1,
+    *,
+    artifact: bool = False,
 ) -> list[str]:
     """Returns the names of :func:`extra_inputs`, in order.
 
@@ -1029,6 +1130,7 @@ def extra_input_names(
         config: The interface config the input extents derive from.
         data_parallel_degree: The degree the graph was built at: the replay
             plan's data-parallel inputs exist only above 1.
+        artifact: Whether the names are a pipeline artifact graph's.
 
     Returns:
         The extra input names, in graph order.
@@ -1036,7 +1138,10 @@ def extra_input_names(
     return [
         name
         for name, _ in extra_inputs(
-            config, [DeviceRef.GPU(0)], data_parallel_degree
+            config,
+            [DeviceRef.GPU(r) for r in range(data_parallel_degree)],
+            data_parallel_degree,
+            artifact=artifact,
         )
     ]
 
@@ -1047,14 +1152,17 @@ def kv_input_names(kv_params: MultiKVCacheParams) -> list[str]:
     A per-device record flattens to its non-``None`` fields in declaration
     order, which is how the names are read off it.
     """
-    names = [
-        f"kv.{path}.{field.name}"
-        for path, record in tree.nodes(
-            kv_params.get_symbolic_inputs(), KVCacheInputsPerDevice
-        ).items()
-        for field in dataclasses.fields(record)
-        if getattr(record, field.name) is not None
-    ]
+    names: list[str] = []
+    for path, record in tree.nodes(
+        kv_params.get_symbolic_inputs(),
+        (KVCacheInputsPerDevice, RecurrentLeafInputs),
+    ).items():
+        assert isinstance(record, (KVCacheInputsPerDevice, RecurrentLeafInputs))
+        names.extend(
+            f"kv.{path}.{field.name}"
+            for field in dataclasses.fields(record)
+            if getattr(record, field.name) is not None
+        )
     assert len(names) == len(kv_params.flattened_kv_inputs())
     return names
 

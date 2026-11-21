@@ -1,14 +1,13 @@
 """Generate MEF files from python Graphs."""
 
 load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
-load("@mojo//:mojo.bzl", "INTERNAL_KERNEL_MOJOPKGS")
+load("@mojo//:mojo.bzl", "BUILTIN_KERNEL_MOJOPKGS", "INTERNAL_KERNEL_MOJOPKGS")
 load(":modular_genrule.bzl", "modular_genrule")
 load(":modular_py_binary.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:kernels
 MOJO_DEPS = [
     "//max:algorithm",
-    "//max:builtin_kernels",
     "//max:builtin_primitives",
     "//max:_cublas",
     "//max:_cudnn",
@@ -73,9 +72,16 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
             "MODULAR_MOJO_MAX_IMPORT_PATH=" + ",".join([
                 "$$(dirname $(location {}))".format(dep)
                 for dep in mojo_deps
+            ] + [
+                # The built-in kernels are a namespace: their packages sit in
+                # `builtin_kernels/`, which resolves from its parent. One entry
+                # covers them all, so the list stays the length of `mojo_deps`.
+                "$$(dirname $$(dirname $(location {})))".format(
+                    BUILTIN_KERNEL_MOJOPKGS[0],
+                ),
             ]),
             "$(location :" + py_binary_name + ")",
             "$(location :" + mef_name + ")",
         ] + args),
-        tools = [":" + py_binary_name] + mojo_deps,
+        tools = [":" + py_binary_name] + mojo_deps + BUILTIN_KERNEL_MOJOPKGS,
     )

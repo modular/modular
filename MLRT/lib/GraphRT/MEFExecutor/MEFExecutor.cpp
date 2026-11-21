@@ -19,6 +19,7 @@
 #include "MLRT/GraphRT/MEFExecutor/MEFInvokable.h"
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveDescriptor.h"
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // RunnablePrimitiveDescriptor implementation

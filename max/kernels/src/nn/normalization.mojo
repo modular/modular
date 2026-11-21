@@ -3142,7 +3142,7 @@ def rms_norm_quantize_dynamic_scaled_fp8[
             weight_offset,
             scale_ub.cast[scales_dtype](),
         )
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             kernel,
             grid_dim=(num_rows, 1, 1),
             block_dim=num_threads,

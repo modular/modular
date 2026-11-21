@@ -510,7 +510,7 @@ def _vector_addition_gpu(
             output.store[width=1](Coord(tid), result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         vector_addition_gpu_kernel, grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 ```
@@ -519,7 +519,7 @@ The `vector_addition_gpu_kernel()` closure runs once per thread on the GPU,
 adding an element from the `lhs` vector to the matching element in the `rhs`
 vector and then saving the result at the correct position in the `output`
 vector. The closure copies the tensors and the length into its captures
-(`{var ...}`), so `enqueue_function()` can launch the closure itself as the
+(`{var ...}`), so `enqueue_closure()` can launch the closure itself as the
 kernel across a grid of `BLOCK_SIZE` blocks of threads.
 
 `BLOCK_SIZE` is untuned for this device. `elementwise()` picks the launch

@@ -13,6 +13,10 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
+# Checks:
+# 1. Diagnose pattern shapes, bindings and exhaustiveness.
+# 2. Reject invalid consuming and compile-time matches.
+
 struct SomeLinearType(Movable):
     def __init__(out self):
         pass
@@ -350,50 +354,80 @@ def match_errored_case_names(value: ErroredCaseNames):
         pass
 
 
-__enum Payloads:
-    case three(Int, String, Bool)
-    case pairi(Int, Int)
+__union Tok(ImplicitlyCopyable):
+    case eof()
     case word(String)
-    case none
-    case linear(SomeLinearType, SomeLinearType)
+    case span(Int, Int)
 
 
-def match_enum_payload_arity(v: Payloads):
-    # A case pattern takes one subpattern per payload element, as the case's
-    # constructor takes one argument per element.
-    match v:
-    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
-    case .pairi(s):
+# A union case in a pattern takes its parentheses. The pattern still tests the
+# case, as the fix-it's spelling does, so the match below covers every case.
+def without_parens(t: Tok):
+    match t:
+    # expected-error @+1 {{pattern for union case 'eof' must have parentheses; add '()'}}
+    case .eof:
         pass
-    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
-    case .pairi(_):
+    # expected-error @+1 {{pattern for union case 'word' must have parentheses; add '(_)' to match any payload}}
+    case .word:
         pass
-    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
-    case .pairi((a, b)):
+    # expected-error @+1 {{pattern for union case 'span' must have parentheses; add '(_, _)' to match any payload}}
+    case Tok.span:
         pass
-    # expected-error @+1 {{expected 3 subpatterns for enum case 'three', found 4}}
-    case .three(a, b, c, d):
+
+
+# A union case has one subpattern per element of its payload.
+def subpattern_count(t: Tok):
+    match t:
+    # expected-error @+1 {{expected 0 subpatterns for union case 'eof', found 1}}
+    case .eof(x):
         pass
-    # expected-error @+1 {{expected 1 subpattern for enum case 'word', found 2}}
-    case .word(a, b):
+    # expected-error @+1 {{expected 1 subpattern for union case 'word', found 0}}
+    case .word():
         pass
-    # expected-error @+1 {{enum case 'none' has no associated value}}
-    case .none(x):
+    # expected-error @+1 {{expected 2 subpatterns for union case 'span', found 1}}
+    case .span(a):
         pass
-    # expected-error @+1 {{enum case 'pairi' requires a payload pattern inside the parentheses}}
-    case .pairi():
+    # expected-error @+1 {{expected 2 subpatterns for union case 'span', found 3}}
+    case .span(a, b, c):
         pass
     case _:
         pass
 
 
-def match_enum_consume_multi_element_payload(var v: Payloads):
-    # A consuming match copies the elements of a multi-element payload.
-    match v^:
-    # expected-error @+1 {{value of type 'SomeLinearType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
-    case .linear(var a, var b):
-        a^.consume()
-        b^.consume()
+def subpattern_forms(t: Tok):
+    match t:
+    # expected-error @+1 {{union case patterns do not support keyword arguments}}
+    case .word(w=_):
+        pass
+    # expected-error @+1 {{union case patterns do not support unpacked arguments}}
+    case .span(*rest):
+        pass
+    # expected-error @+1 {{'line' is not a case of 'Tok'}}
+    case .line():
+        pass
+    case _:
+        pass
+
+
+# An enum case of a hand-written `EnumLike` conformer has one subpattern per
+# element of its payload.
+def enum_subpattern_count(opt: Optional[Int]):
+    match opt:
+    # expected-error @+1 {{expected 1 subpattern for enum case 'Some', found 2}}
+    case .Some(a, b):
+        pass
+    case _:
+        pass
+
+
+def enum_subpattern_forms(opt: Optional[Int]):
+    match opt:
+    # expected-error @+1 {{enum case patterns do not support keyword arguments}}
+    case .Some(w=_):
+        pass
+    # expected-error @+1 {{enum case patterns do not support unpacked arguments}}
+    case .Some(*rest):
+        pass
     case _:
         pass
 
@@ -858,8 +892,8 @@ struct SourceRange:
         return True
 
 
-__enum Token:
-    case eof
+__union Token:
+    case eof()
     case source_range(SourceRange)
 
 
@@ -872,7 +906,7 @@ def print_token(tok: Token):
         # expected-error @+1 {{initializer-list patterns require field names}}
         case .source_range({x,y}):
             pass
-        case .eof:
+        case .eof():
             pass
 
 

@@ -313,6 +313,13 @@ class SupportedArchitecture:
     """Whether the pipeline loads the checkpoint through :attr:`weight_rules`
     rather than :attr:`weight_adapters`."""
 
+    weight_rules_for_artifacts_only: bool = False
+    """Whether :attr:`use_weight_rules` applies only to a pipeline artifact
+    export (``PipelineConfig.artifact_export``). Every other load, serving
+    and bare MEF exports included, keeps :attr:`weight_adapters` and the
+    weight and graph contract they produce, while an architecture migrates
+    to its artifact."""
+
     multi_gpu_supported: bool = False
     """Whether the architecture supports multi-GPU execution."""
 
@@ -550,20 +557,14 @@ class SupportedArchitecture:
     architecture name or the speculative method. A pairing not listed is named
     ``unified_{method}``."""
 
-    mla_decode_capture: bool = False
-    """Whether an engine may capture this architecture's MLA decode graph.
+    capture_cache_bound: Literal["aligned", "bucketed"] = "aligned"
+    """The host cache bound a replayed decode step keeps.
 
-    Set it once the MLA kernels' launch shape is shown to follow only what a
-    capture key holds; ``max export`` records it in the pipeline artifact.
-    """
-
-    capture_cache_bound: Literal["live", "context", "bucketed"] = "live"
-    """The host cache bound a captured decode bakes in: the batch's own, the
-    context limit, or the batch's power-of-two bucket.
-
-    A graph whose kernels size their launches from the bound pins it, since a
-    replay runs no host code to raise it; ``max export`` records it in the
-    pipeline artifact.
+    ``aligned`` stages the step's cache length aligned up to a probed one,
+    as MAX Serve's capture runner does. ``bucketed`` stages the next power
+    of two over the bound plus the step's query rows, less those rows, and
+    keys the capture on it, for kernels that pick their launch arm from the
+    bound. ``max export`` records it in the pipeline artifact.
     """
 
     unread_dispatch_caches: tuple[str, ...] = ()
@@ -664,19 +665,24 @@ class SupportedArchitecture:
             )
 
     def checkpoint_adapters(
-        self, huggingface_config: PretrainedConfig
+        self, huggingface_config: PretrainedConfig, *, artifact_export: bool
     ) -> dict[WeightsFormat, WeightsAdapter]:
         """Returns the adapters a pipeline loads the checkpoint through.
 
         Args:
             huggingface_config: The checkpoint's config, which
                 :attr:`weight_rules` reads.
+            artifact_export: Whether the pipeline is built for a pipeline
+                artifact (``PipelineConfig.artifact_export``), which
+                :attr:`weight_rules_for_artifacts_only` reads.
 
         Raises:
             ValueError: If :attr:`use_weight_rules` is set without
                 :attr:`weight_rules`.
         """
-        if not self.use_weight_rules:
+        if not self.use_weight_rules or (
+            self.weight_rules_for_artifacts_only and not artifact_export
+        ):
             return self.weight_adapters
         if self.weight_rules is None:
             raise ValueError(

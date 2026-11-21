@@ -93,6 +93,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -120,12 +121,13 @@ modular_cc_test(
     # NVIDIA-only for now. VMM is opt-in rather than refused on AMD as of
     # GEX-4056, so this could run there too, but it has not been validated on
     # AMD and HIP caps total VMM-mapped memory per process (see
-    # MemoryManager::onDevice) -- enabling it needs a budget clamp first.
+    # createDeviceMemoryManager) -- enabling it needs a budget clamp first.
     gpu_constraints = ["//:nvidia_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -154,6 +156,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -182,6 +185,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -210,6 +214,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -248,6 +253,7 @@ _MEMORY_MANAGER_OOM_ENV = {
         deps = [
             ":TestUtils",
             "//MLRT:Driver/DeviceContextImpl",
+            "//MLRT:Driver/MemoryManager",
             "//Support:Base",
             "@llvm-project//llvm:Support",
         ],
@@ -282,6 +288,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -310,6 +317,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -324,7 +332,7 @@ modular_cc_test(
     ],
     deps = [
         ":TestUtils",
-        "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -357,6 +365,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -392,6 +401,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -431,6 +441,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -468,6 +479,7 @@ modular_cc_test(
         deps = [
             ":TestUtils",
             "//MLRT:Driver/DeviceContextImpl",
+            "//MLRT:Driver/MemoryManager",
             "//Support:Base",
             "@llvm-project//llvm:Support",
         ],
@@ -521,6 +533,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -551,6 +564,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -614,6 +628,7 @@ modular_cc_test(
         ":TestUtils",
         "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "//Target:Support",
         "@llvm-project//llvm:Support",
@@ -980,6 +995,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
     ],
 )
@@ -1015,6 +1031,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
     ],
 )
@@ -1395,6 +1412,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -1416,6 +1434,25 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The memory manager over fake backing and fake streams, so its driver calls
+# and its rollback after a driver refusal are tested on the CPU. The options
+# come from the test, not the config, so there is no env.
+modular_cc_test(
+    name = "MemoryManagerFakeBackingTest",
+    size = "small",
+    srcs = [
+        "MemoryManagerFakeBackingTest.cpp",
+        "MemoryManagerFakes.h",
+    ],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],

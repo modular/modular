@@ -318,6 +318,7 @@ def dispatch_sm100_conv2d[
         var in_c_bytes = in_c * size_of[input_type]()
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _launch[
             swizzle: TensorMapSwizzle,
             num_pipeline_stages_override: Int = 0,

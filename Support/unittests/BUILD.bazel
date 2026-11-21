@@ -64,6 +64,20 @@ modular_cc_test(
     ],
 )
 
+# Own binary: it exits with the default logger mid-drain.
+modular_cc_test(
+    name = "LogExitTest",
+    srcs = [
+        "Log/LogExitTest.cpp",
+    ],
+    env = {
+        "MODULAR_LOG_NO_SUMMARY": "1",
+    },
+    deps = [
+        "//Support:Log",
+    ],
+)
+
 modular_cc_test(
     name = "LogEdgeCasesTest",
     srcs = [

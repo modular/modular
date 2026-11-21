@@ -2228,9 +2228,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     making it safe to pass across the host-device boundary via GPU closures.
     """
 
-    comptime _mlir_type = __mlir_type[
-        `!kgen.struct<`, ~Self.Ts.values, ` isParamPack>`
-    ]
+    comptime _mlir_type = __mlir_type[`!kgen.struct<`, ~Self.Ts.values, `>`]
     var _mlir_value: Self._mlir_type
 
     @inline(.nodebug)

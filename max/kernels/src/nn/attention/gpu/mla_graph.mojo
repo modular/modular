@@ -4038,6 +4038,7 @@ def mla_prefill_decode_graph_fp8[
                 return
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def decode_branch[skip_masked_tiles: Bool]() raises {imm}:
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,
@@ -6107,6 +6108,7 @@ def mla_prefill_decode_graph_bf16[
                 return
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def decode_branch[skip_masked_tiles: Bool]() raises {imm}:
         mla_decode_branch_bf16[
             mask_str=mask_str,
@@ -6152,6 +6154,7 @@ def mla_prefill_decode_graph_bf16[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def sparse_prefill_branch() raises {imm}:
         """Runs sparse MLA prefill on the prefill kernels."""
         # Sparse MLA prefill is implemented only for SM100; a non-SM100 build

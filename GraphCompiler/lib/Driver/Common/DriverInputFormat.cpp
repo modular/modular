@@ -34,7 +34,7 @@ FileFormat M::sniffInputFormat(StringRef fileExtension,
   if (fileContents.empty())
     return FileFormat::kUnknown;
 
-  if (MEF::hasMEFMagicNumber(fileContents))
+  if (MLRT::MEF::hasMEFMagicNumber(fileContents))
     return FileFormat::kMEFFile;
 
   // Fall back to recognizing a textual file of a familiar dialect.

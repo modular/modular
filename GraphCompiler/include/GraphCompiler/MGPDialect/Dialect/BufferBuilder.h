@@ -77,10 +77,10 @@ public:
 
   /// Set up the state for emitting ops into a ModelOp. Returns the chain
   /// indicating when the runtime has been established.
-  TypedValue<MEF::ChainType> setupForModel(ModelOp modelOp,
-                                           MGPBufferBuilder *hostBufferBuilder,
-                                           OpBuilder &builder, Location loc,
-                                           TypedValue<MEF::ChainType> inChain);
+  TypedValue<MLRT::MEF::ChainType>
+  setupForModel(ModelOp modelOp, MGPBufferBuilder *hostBufferBuilder,
+                OpBuilder &builder, Location loc,
+                TypedValue<MLRT::MEF::ChainType> inChain);
 
   /// Recover the state from modelOp for this device-specific buffer builder.
   void recoverFromModel(ModelOp modelOp, MGPBufferBuilder *hostBufferBuilder);
@@ -93,13 +93,13 @@ public:
 
   /// Returns the constant buffer with given attribute as its contents.
   Value bufferConstant(OpBuilder &builder, Location loc,
-                       TypedValue<MEF::ChainType> inChain,
+                       TypedValue<MLRT::MEF::ChainType> inChain,
                        TypedValue<ContextType> context, ElementsAttr value);
 
   /// Returns an undefined, external constant with the given name.
   /// The name is an SSA value of type !mgp.opaque<"mojo_string">.
   Value bufferConstantExternal(OpBuilder &builder, Location loc,
-                               TypedValue<MEF::ChainType> inChain,
+                               TypedValue<MLRT::MEF::ChainType> inChain,
                                TypedValue<ContextType> context,
                                TypedValue<MGP::OpaqueType> weightsRegistry,
                                TypedValue<MGP::OpaqueType> name, uint64_t size,
@@ -170,9 +170,9 @@ public:
 
   /// Returns the chain indicating the given module image with given function
   /// and constant names has been loaded into the runtime.
-  TypedValue<MEF::ChainType>
+  TypedValue<MLRT::MEF::ChainType>
   moduleLoad(OpBuilder &builder, Location loc, TypedValue<ContextType> context,
-             TypedValue<MEF::ChainType> inChain, ElementsAttr image,
+             TypedValue<MLRT::MEF::ChainType> inChain, ElementsAttr image,
              ArrayAttr functionSymbols, ArrayAttr constantSymbols);
 
   /// Returns the join of all the given chain values, which must be all native
@@ -183,17 +183,17 @@ public:
   /// placement and the slot index for later retrieval. Chains are always
   /// !mef.chain, irrespective of this builder's native chain type. Generally
   /// only appropriate within the 'init' block of an mgp.model op.
-  std::pair<TypedValue<MEF::ChainType>, uint64_t>
+  std::pair<TypedValue<MLRT::MEF::ChainType>, uint64_t>
   cache(OpBuilder &builder, Location loc, TypedValue<ContextType> context,
-        TypedValue<MEF::ChainType> inChain, ContextCreateOp contextCreateOp,
-        Value buffer);
+        TypedValue<MLRT::MEF::ChainType> inChain,
+        ContextCreateOp contextCreateOp, Value buffer);
 
   /// Retrieves a buffer of the expected type from the given slot of the given
   /// !mgp.context. Note that the input chain is always a !mef.chain,
   /// irrespective of the native chain type for this builder.
   Value getCached(OpBuilder &builder, Location loc,
                   TypedValue<ContextType> context,
-                  TypedValue<MEF::ChainType> inChain, uint64_t bufferSlot,
+                  TypedValue<MLRT::MEF::ChainType> inChain, uint64_t bufferSlot,
                   Type expectedBufferType);
 
   /// Returns a chain indicating when the given input buffers have been

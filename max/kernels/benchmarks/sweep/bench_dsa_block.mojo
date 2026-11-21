@@ -352,6 +352,7 @@ def run_config[
     is_strides[1] = is_shape[2] * Int64(is_strides[2].value())
     is_strides[0] = Int64(is_shape[1].value()) * is_strides[1]
 
+    @__allow_legacy_any_origin_fields
     def index_collection_at(copy: Int) {mut cache, imm} -> IndexCollection:
         return IndexCollection(
             TileTensor(
@@ -374,6 +375,7 @@ def run_config[
     mb_strides[1] = mb_shape[2] * Int64(mb_strides[2].value())
     mb_strides[0] = Int64(mb_shape[1].value()) * mb_strides[1]
 
+    @__allow_legacy_any_origin_fields
     def mla_cache_at(copy: Int) {mut cache, imm} -> MLACollection.CacheType:
         return MLACollection(
             TileTensor(
@@ -440,6 +442,7 @@ def run_config[
     sh.timer.lap("config_setup")
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_indexer(
         launch_ctx: DeviceContext[], copy: Int
     ) raises {mut index_out, imm}:
@@ -471,6 +474,7 @@ def run_config[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_mla(
         launch_ctx: DeviceContext[], copy: Int
     ) raises {mut out_tt, imm}:

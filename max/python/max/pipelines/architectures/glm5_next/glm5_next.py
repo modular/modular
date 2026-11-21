@@ -31,12 +31,13 @@ from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import VisionInputs
@@ -110,12 +111,13 @@ class Glm5NextTextModel(Module[..., Tensor]):
     def __init__(
         self,
         config: Glm5NextConfig,
-        ep_batch_manager: EPBatchManager | None,
+        ep_config: EPConfig | None,
     ) -> None:
         if not config.layer_types:
             raise ValueError("Glm5NextConfig.layer_types is empty.")
         self.config = config
         self.mesh = config.mesh
+        self.ep_config = ep_config
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size, dim=config.hidden_size
         )
@@ -158,7 +160,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
                 Glm5NextDecoderLayer(
                     config,
                     self_attn=self_attn,
-                    mlp=build_mlp(config, layer_idx, ep_batch_manager),
+                    mlp=build_mlp(config, layer_idx, ep_config),
                 )
             )
         self.layers = ModuleList[Glm5NextDecoderLayer](layers)
@@ -170,7 +172,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
         mla: PagedCacheValues,
         indexer: PagedCacheValues,
         state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         vision: VisionInputs[Tensor] | None = None,
     ) -> Tensor:
         """Returns the logits at each request's last token."""
@@ -180,7 +182,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
             mla,
             indexer,
             state,
-            comm_buffers,
+            ep,
             vision=vision,
         )
         return project_to_logits(
@@ -199,7 +201,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
         mla: PagedCacheValues,
         indexer: PagedCacheValues,
         state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         *,
         vision: VisionInputs[Tensor] | None = None,
         subgraphs: bool = True,
@@ -218,7 +220,8 @@ class Glm5NextTextModel(Module[..., Tensor]):
             mla: The sparse layers' latent cache.
             indexer: The sparse layers' indexer key cache.
             state: Each device's recurrent-state leaves.
-            comm_buffers: The expert-parallel buffers, or ``None``.
+            ep: The exchange's buffers, or ``None`` without expert
+                parallelism.
             vision: The batch's image rows and their token positions, when
                 the checkpoint ships a vision tower.
             subgraphs: Whether layers of one kind share a subgraph. A
@@ -303,7 +306,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
                 if subgraphs
                 else layer
             )
-            streams, pending = call(streams, attn_args, comm_buffers, pending)
+            streams, pending = call(streams, attn_args, ep, pending)
 
         assert pending is not None
         streams = write_back(streams, *pending)
@@ -317,13 +320,13 @@ class Glm5Next(Module[..., ModuleV3Outputs]):
         self,
         config: Glm5NextConfig,
         kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
-        self.language_model = Glm5NextTextModel(config, ep_batch_manager)
+        self.language_model = Glm5NextTextModel(config, ep_config)
         self.config = config
         self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
 
     def forward(
         self,
@@ -332,8 +335,9 @@ class Glm5Next(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
         vision: VisionInputs[Tensor] | None = None,
+        ep: EPBuffers | None = None,
     ) -> ModuleV3Outputs:
-        """Runs the language graph over tokens and the batch's image rows."""
+        """Runs the language graph over the batch's tokens and images."""
         del return_n_logits
         mesh = self.config.mesh
         assert mesh is not None
@@ -357,16 +361,13 @@ class Glm5Next(Module[..., ModuleV3Outputs]):
         state = tree.leaves(
             kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
         )
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            comm_buffers = self.ep_batch_manager.comm_buffers(list(kv_inputs))
         logits = self.language_model(
             tokens,
             input_row_offsets,
             collection(MLA_CACHE_KEY),
             collection(INDEXER_CACHE_KEY),
             state,
-            comm_buffers,
+            ep,
             vision,
         )
         return ModuleV3Outputs(next_token_logits=logits)

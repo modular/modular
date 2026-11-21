@@ -1058,6 +1058,7 @@ __extension SM100MLA:
             var k_scale_idx: UInt32 = 0
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_kv_buffer_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
@@ -1067,6 +1068,7 @@ __extension SM100MLA:
                 )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_rope_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KRopeType.dtype]]:
@@ -1081,6 +1083,7 @@ __extension SM100MLA:
                 )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_k_scale_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[config.scale_dtype]]:
@@ -1096,6 +1099,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_fused[
                 partial: Bool,
                 with_q: Bool = False,
@@ -1637,6 +1641,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_split[
                 partial: Bool,
                 with_q: Bool = False,

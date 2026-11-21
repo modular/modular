@@ -46,7 +46,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
     RealRowScales,
 )
 from std.random import random_float64, random_ui64, seed, rand
-from std.simd import _convert_f32_to_float8_scalar
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -257,9 +256,11 @@ def _test_dispatch[
                 SF_VECTOR_SIZE,
             ):
                 if idx1 < K:
-                    var scale_value = _convert_f32_to_float8_scalar[
-                        scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[.float32]())
+                    var scale_value = (
+                        (1 << random_ui64(0, 2))
+                        .cast[.float32]()
+                        .cast[scales_dtype]()
+                    )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )

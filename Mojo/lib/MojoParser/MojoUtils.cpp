@@ -150,11 +150,30 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
   UnreachableOp::create(builder, unreachableLoc);
 }
 
+bool LIT::typeHasAnyOrigin(SharedState &shared, Type type) {
+  return llvm::any_of(
+      shared.cachedOriginFinder.findOriginsIn(getCanonicalType(type)),
+      [](TypedAttr origin) {
+        return sugarIsa<AnyOriginAttr>(
+            OriginType::stripMutCastAndRebind(origin));
+      });
+}
+
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
 
 bool LIT::isInternalName(StringRef name) { return name.starts_with('_'); }
+
+StringRef LIT::getEnumOrUnionNoun(StructDeclOp structOp) {
+  return structOp.isEnum() ? "enum" : "union";
+}
+
+StringRef LIT::getMalformedCaseMessage(StructDeclOp structOp) {
+  if (structOp.isEnum())
+    return "enum case must have the form 'case name'";
+  return "union case must have the form 'case name()' or 'case name(T, ...)'";
+}
 
 namespace {
 class IndexRefToNamedRefReplacer

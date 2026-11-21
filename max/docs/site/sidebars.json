@@ -417,6 +417,17 @@
             },
             {
               "type": "category",
+              "label": "ep",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.ep"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.ep__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "kv_cache",
               "link": {
                 "type": "doc",

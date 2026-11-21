@@ -195,6 +195,7 @@ def _launch_amd_4wave_conv2d_runtime[
     """
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _launch[stride_v: Int, pad_v: Int]() raises {imm}:
         var _rt_N = Int(input.dim[0]())
         var _rt_H = Int(input.dim[1]())
@@ -484,6 +485,7 @@ def dispatch_amd_4wave_conv2d[
         ].unsafe_dangling()
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _src_immut() {
             imm
         } -> ImmPointer[Scalar[output_type], ImmutAnyOrigin]:
@@ -503,6 +505,7 @@ def dispatch_amd_4wave_conv2d[
         comptime if _all_hw_static:
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _launch_static[
                 stride_v: Int, pad_v: Int
             ]() raises {imm} -> Bool:

@@ -73,9 +73,9 @@ static llvm::SmallVector<Value> getLiftableIndexOutputs(Operation *op) {
   return res;
 }
 
-static std::pair<TypedValue<MEF::ChainType>, uint64_t>
+static std::pair<TypedValue<MLRT::MEF::ChainType>, uint64_t>
 cacheIntValue(OpBuilder &builder, Location loc,
-              TypedValue<MEF::ChainType> inChain,
+              TypedValue<MLRT::MEF::ChainType> inChain,
               ContextCreateOp contextCreateOp, Value intValue) {
   intValue = dimensionToIndex(builder, loc, intValue);
   uint64_t intSlot = contextCreateOp.getNumSlots();
@@ -90,7 +90,7 @@ cacheIntValue(OpBuilder &builder, Location loc,
 
 static Value getCachedIntValue(OpBuilder &builder, Location loc,
                                TypedValue<ContextType> context,
-                               TypedValue<MEF::ChainType> inChain,
+                               TypedValue<MLRT::MEF::ChainType> inChain,
                                uint64_t intSlot, Type resultType) {
   auto parentOp = builder.getBlock()->getParentOp();
   if (!isa<ModelOp>(parentOp))
@@ -119,7 +119,7 @@ static Value getCachedIntValue(OpBuilder &builder, Location loc,
 static void
 cacheLiftedIndexResults(InitState &initState, ExecuteState &executeState,
                         Operation *liftedOp,
-                        TypedValue<MEF::ChainType> cacheInputChain,
+                        TypedValue<MLRT::MEF::ChainType> cacheInputChain,
                         SmallVectorImpl<Value> &finalOutChains,
                         function_ref<bool(const OpOperand &)> isUnliftable) {
   for (Value oldIndexOut : getLiftableIndexOutputs(liftedOp)) {
@@ -161,7 +161,7 @@ static bool isLiftableTrivialOp(Operation *op) {
 /// chain must then flow into the 'init' output chain, which feeds the
 /// 'execute' input chain.
 static Value getLiftableChainOp(Operation *op) {
-  if (auto createChainOp = dyn_cast<GRT::ChainCreateOp>(op))
+  if (auto createChainOp = dyn_cast<MLRT::GRT::ChainCreateOp>(op))
     return createChainOp.getResult();
   if (auto regionOp = dyn_cast<MOGG::AsyncRoutineOp>(op)) {
     // TODO(GEX-4344): The 'liftable' interfaces assume an op returns at most
@@ -172,7 +172,7 @@ static Value getLiftableChainOp(Operation *op) {
     // index and restores a dimension, so a plain integer result would change
     // type on the way back.
     if (regionOp->getNumResults() > 1) {
-      if (!isa<MEF::ChainType>(regionOp->getResult(0).getType()))
+      if (!isa<MLRT::MEF::ChainType>(regionOp->getResult(0).getType()))
         return nullptr;
       for (Value result : llvm::drop_begin(regionOp->getResults()))
         if (!MOSH::ShapeAttr::isDimType(result.getType()))
@@ -300,7 +300,7 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       analysis.flowControlFlow(
           cfOp, domainMap,
           std::bind(&DependsOnArgsAnalysis::flow, this, _1, _2));
@@ -310,7 +310,7 @@ private:
         for (Value result : op->getResults())
           analysis.setTrue(domainMap, result);
       }
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       if (!inInitBlock) {
         operationIndex->addToSet(unliftableOps, op);
       }
@@ -413,7 +413,7 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       // Usual control flow rules.
       analysis.flowControlFlow(
           cfOp, domainMap,
@@ -423,7 +423,7 @@ private:
         for (const OpOperand &opOperand : op->getOpOperands())
           analysis.setTrue(domainMap, &opOperand);
       }
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       // Ignore 'plumbing'.
     } else if (inInitBlock) {
       // Ignore the 'init' block ops.
@@ -518,7 +518,7 @@ private:
     // A result that may alias an operand (a view, per GRTMayAliasInterface)
     // passes a mutation through to that operand.
     SmallVector<bool> resultMutated(op->getNumResults(), false);
-    auto mayAlias = dyn_cast<GRT::GRTMayAliasInterface>(op);
+    auto mayAlias = dyn_cast<MLRT::GRT::GRTMayAliasInterface>(op);
     if (mayAlias && anyUsesMutatedByUnliftable) {
       for (OpResult result : op->getResults()) {
         Analysis::Set resultSet = domainMap.bottom;
@@ -547,12 +547,12 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       // Usual control flow rules.
       analysis.flowControlFlow(
           cfOp, domainMap,
           std::bind(&SuppressMutatedAnalysis::flow, this, _1, _2));
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       // Ignore 'plumbing'.
     } else if (inInitBlock) {
       // Ignore the 'init' block ops.
@@ -658,7 +658,7 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       // Usual control flow rules.
       analysis.flowControlFlow(
           cfOp, domainMap, std::bind(&NeedToCloneAnalysis::flow, this, _1, _2));
@@ -667,7 +667,7 @@ private:
         for (OpOperand &opOperand : op->getOpOperands())
           analysis.setTrue(domainMap, &opOperand);
       }
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       // Ignore 'plumbing'.
     } else if (inInitBlock) {
       // Ignore 'init' block ops.
@@ -764,7 +764,7 @@ class ExecInvariantCodeMotionPass
       return unliftableOps.contains(operand.getOwner());
     };
 
-    auto initOutputOp = cast<MEF::OutputOp>(*initState->init->rbegin());
+    auto initOutputOp = cast<MLRT::MEF::OutputOp>(*initState->init->rbegin());
     Value initOriginalChain = initState->getFinalChain();
     Location outputLoc = initOutputOp.getLoc();
     initState->builder.setInsertionPoint(initOutputOp);
@@ -772,7 +772,7 @@ class ExecInvariantCodeMotionPass
     // A host-chain placeholder gating the caching of lifted buffers until all
     // side effects on them complete; replaced once lifting is done.
     auto placeholderBufferCacheInputChain =
-        GRT::ChainCreateOp::create(initState->builder, outputLoc);
+        MLRT::GRT::ChainCreateOp::create(initState->builder, outputLoc);
 
     // TODO(#24751): The following chain dependencies may be too aggressive,
     // relax via some analysis
@@ -856,7 +856,7 @@ class ExecInvariantCodeMotionPass
                             << ") which will be further mutated "
                                "in the 'execute' block");
               for (Value res : use.getOwner()->getResults()) {
-                if (isa<MEF::MEFChainTypeInterface>(res.getType()))
+                if (isa<MLRT::MEF::MEFChainTypeInterface>(res.getType()))
                   potentialBufferActionChains.push_back(res);
               }
             }
@@ -926,12 +926,12 @@ class ExecInvariantCodeMotionPass
         initState->getWeightsRegistry(), isInInitBlock);
 
     placeholderBufferCacheInputChain.replaceAllUsesWith(
-        GRT::ChainCreateOp::create(initState->builder, outputLoc,
-                                   potentialBufferActionChains)
+        MLRT::GRT::ChainCreateOp::create(initState->builder, outputLoc,
+                                         potentialBufferActionChains)
             .getResult());
     placeholderBufferCacheInputChain.erase();
 
-    auto mergedFinalOutChain = GRT::ChainCreateOp::create(
+    auto mergedFinalOutChain = MLRT::GRT::ChainCreateOp::create(
         initState->builder, outputLoc, finalOutChains);
     initState->updateFinalChain(mergedFinalOutChain);
   }

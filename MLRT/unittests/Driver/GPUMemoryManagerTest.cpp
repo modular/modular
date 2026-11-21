@@ -11,7 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "ScopedEnvVar.h"
 #include "TestUtils.h"
 
@@ -63,7 +64,7 @@ protected:
       return nullptr;
     }
     DeviceRef device = deviceOr.takeValue();
-    return std::unique_ptr<MemoryManager>(MemoryManager::onHost(*device, 64));
+    return createHostMemoryManager(*device, 64);
   }
 };
 
@@ -80,7 +81,7 @@ TEST_F(GPUMemoryManagerTest, FreeListEmpty) {
   // Initially, the free list should be empty (no chunks allocated yet)
   EXPECT_TRUE(freeList.empty());
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // After first allocation, free list should not be empty (chunk is allocated)
   ASSIGN_NO_ERR(void *, ptr, freeList.allocate(64, mode));
@@ -117,7 +118,7 @@ TEST_F(GPUMemoryManagerTest, MemoryManagerCreation) {
     ASSIGN_NO_ERR(Device::MemInfo, memInfo, device->getMemoryInfo());
 
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128));
+        createDeviceMemoryManager(*device, memInfo, 128));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -144,7 +145,7 @@ TEST_F(GPUMemoryManagerTest, BasicAllocationAndFree) {
   MemoryManagerFreeList &freeList = *cache.freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Test basic allocation
   ASSIGN_NO_ERR(void *, ptr1, freeList.allocate(64, mode));
@@ -167,7 +168,7 @@ TEST_F(GPUMemoryManagerTest, MultipleAllocations) {
   MemoryManagerFreeList &freeList = *cache.freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Allocate multiple blocks
@@ -199,7 +200,7 @@ TEST_F(GPUMemoryManagerTest, AllocationSizes) {
   MemoryManagerFreeList &freeList = *cache.freeList();
   size_t allocAlignment = device->allocationAlignment();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<size_t> sizes = {1, 15, 64, 128, 256, 512, 1000};
   std::vector<void *> ptrs;
 
@@ -226,7 +227,7 @@ TEST_F(GPUMemoryManagerTest, CUDASpecificMemoryPatterns) {
   MemoryManager &cache = device->memoryManager();
   MemoryManagerFreeList &freeList = *cache.freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Allocate a block of GPU memory
   ASSIGN_NO_ERR(void *, ptr, freeList.allocate(1024, mode));
@@ -247,7 +248,7 @@ TEST_F(GPUMemoryManagerTest, LargeAllocationHandling) {
   MemoryManager &cache = device->memoryManager();
   MemoryManagerFreeList &freeList = *cache.freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Try to allocate a larger block suitable for GPU
   size_t largeSize = 64 * 1024; // 64KB
@@ -273,9 +274,10 @@ TEST_F(GPUMemoryManagerTest, AllocationModeHandling) {
   MemoryManagerFreeList &freeList = *cache.freeList();
 
   // Test different allocation modes relevant to CUDA
-  std::vector<Device::AllocMode> modes = {Device::AllocMode::SYNC};
+  std::vector<AllocatorContext::AllocMode> modes = {
+      AllocatorContext::AllocMode::SYNC};
 
-  for (Device::AllocMode mode : modes) {
+  for (AllocatorContext::AllocMode mode : modes) {
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(256, mode));
     EXPECT_NE(ptr, nullptr);
     EXPECT_NO_ERR(freeList.free(ptr));
@@ -294,7 +296,7 @@ TEST_F(GPUMemoryManagerTest, ConfigurationVariations) {
     MemoryManager &cache = device->memoryManager();
     MemoryManagerFreeList &freeList = *cache.freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     // Should be able to allocate with different configuration
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(1024, mode));
@@ -312,7 +314,7 @@ TEST_F(GPUMemoryManagerTest, ConfigurationVariations) {
     MemoryManager &cache = device->memoryManager();
     MemoryManagerFreeList &freeList = *cache.freeList();
 
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
     // Should still work with small chunk size
     ASSIGN_NO_ERR(void *, ptr, freeList.allocate(512, mode));
@@ -417,7 +419,7 @@ TEST_F(GPUMemoryManagerTest, ConcurrentAllocations) {
   MemoryManager &cache = device->memoryManager();
   MemoryManagerFreeList &freeList = *cache.freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const int numThreads = 4;
   const int allocationsPerThread = 10;
 
@@ -463,11 +465,11 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   MemoryManagerFreeList &freeList = *cache.freeList();
 
   // Get initial memory info
-  Device::MemInfo initialInfo = cache.getMemoryInfo();
+  AllocatorMemInfo initialInfo = cache.getMemoryInfo();
   EXPECT_GT(initialInfo.total, 0);
   size_t initialFree = initialInfo.free.value();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   std::vector<void *> ptrs;
 
   // Allocate some blocks
@@ -478,7 +480,7 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after allocations
-  Device::MemInfo afterAllocInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterAllocInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterAllocInfo.total,
             initialInfo.total); // Total should remain same
   EXPECT_LE(afterAllocInfo.free.value(),
@@ -490,7 +492,7 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after freeing
-  Device::MemInfo afterFreeInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterFreeInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterFreeInfo.total, initialInfo.total); // Total should remain same
   EXPECT_GE(afterFreeInfo.free.value(),
             afterAllocInfo.free.value()); // Free should increase
@@ -502,8 +504,9 @@ TEST_F(GPUMemoryManagerTest, BufferUnderflowTest) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, createTestDeviceContext());
   ctx->freeList().enableRedzones();
 
-  ASSIGN_NO_ERR(void *, vptr,
-                ctx->freeList().allocate(1024, Device::AllocMode::SYNC));
+  ASSIGN_NO_ERR(
+      void *, vptr,
+      ctx->freeList().allocate(1024, AllocatorContext::AllocMode::SYNC));
   ASSERT_NE(vptr, nullptr);
 
   uint8_t *ptr = static_cast<uint8_t *>(vptr);
@@ -524,8 +527,9 @@ TEST_F(GPUMemoryManagerTest, BufferOverflowTest) {
   ctx->freeList().enableRedzones();
 
   constexpr size_t size = 1024;
-  ASSIGN_NO_ERR(void *, vptr,
-                ctx->freeList().allocate(size, Device::AllocMode::SYNC));
+  ASSIGN_NO_ERR(
+      void *, vptr,
+      ctx->freeList().allocate(size, AllocatorContext::AllocMode::SYNC));
   ASSERT_NE(vptr, nullptr);
 
   uint8_t *ptr = static_cast<uint8_t *>(vptr);
@@ -545,8 +549,9 @@ TEST_F(GPUMemoryManagerTest, HostBufferUnderflowTest) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, createTestDeviceContext());
   ctx->hostFreeList().enableRedzones();
 
-  ASSIGN_NO_ERR(void *, vptr,
-                ctx->hostFreeList().allocate(1024, Device::AllocMode::HOST));
+  ASSIGN_NO_ERR(
+      void *, vptr,
+      ctx->hostFreeList().allocate(1024, AllocatorContext::AllocMode::HOST));
   ASSERT_NE(vptr, nullptr);
 
   uint8_t *ptr = static_cast<uint8_t *>(vptr);
@@ -566,8 +571,9 @@ TEST_F(GPUMemoryManagerTest, HostBufferOverflowTest) {
   ctx->hostFreeList().enableRedzones();
 
   constexpr size_t size = 1024;
-  ASSIGN_NO_ERR(void *, vptr,
-                ctx->hostFreeList().allocate(size, Device::AllocMode::HOST));
+  ASSIGN_NO_ERR(
+      void *, vptr,
+      ctx->hostFreeList().allocate(size, AllocatorContext::AllocMode::HOST));
   ASSERT_NE(vptr, nullptr);
 
   uint8_t *ptr = static_cast<uint8_t *>(vptr);

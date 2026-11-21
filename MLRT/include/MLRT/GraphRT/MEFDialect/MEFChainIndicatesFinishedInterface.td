@@ -17,7 +17,7 @@
 include "mlir/IR/OpBase.td"
 
 def ChainIndicatesFinishedInterface : OpInterface<"ChainIndicatesFinishedInterface"> {
-  let cppNamespace = "::M::MEF";
+  let cppNamespace = "::M::MLRT::MEF";
 
   let description = [{
     This interface indicates that the op is FINISHED execution when its

@@ -35,6 +35,7 @@
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/Compiler/Error.h"
 #include "Support/Compiler/ErrorTree.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -2452,13 +2453,15 @@ bool ParametricElaborator::diagnoseAndBreakRecursion(
 // ParametricElaborator::run
 //===----------------------------------------------------------------------===//
 
-static WalkResult rewriteCompileOffloadOp(
+/// Replaces `op` with its offload compilation result, or returns an error if
+/// `compiledOffload` has no result for it. Several threads call this at once,
+/// so it only reads `compiledOffload`.
+static std::optional<ErrorTree> rewriteCompileOffloadOp(
     CompileOffloadOp op, Location loc,
-    DenseMap<TargetInfoAttr,
-             llvm::DenseMap<std::string,
-                            DenseMap<uint64_t, OffloadCompilationResult>>>
-        &compiledOffload,
-    bool &failed, ErrorLimit &errorLimit, bool errorIncludePrelude) {
+    const DenseMap<TargetInfoAttr,
+                   llvm::DenseMap<std::string,
+                                  DenseMap<uint64_t, OffloadCompilationResult>>>
+        &compiledOffload) {
   // Plug offload compilation results as strings back to the elaborated IR.
   auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
@@ -2467,55 +2470,22 @@ static WalkResult rewriteCompileOffloadOp(
   std::string groupKey = makeOffloadGroupKey(op);
 
   auto targetIter = compiledOffload.find(target);
-  if (targetIter == compiledOffload.end()) {
-    ErrorTree compileOffloadError(loc, "compile offload result missing target");
-
-    emitLimitedError(
-        [&] {
-          return std::move(compileOffloadError)
-              .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", errorIncludePrelude);
-        },
-        errorLimit);
-    failed = true;
-    return WalkResult::interrupt();
-  }
+  if (targetIter == compiledOffload.end())
+    return ErrorTree(loc, "compile offload result missing target");
 
   auto iter0 = targetIter->second.find(groupKey);
-  if (iter0 == targetIter->second.end()) {
-    ErrorTree compileOffloadError(
-        loc,
-        "compile offload result missing emissionOptions \"" + groupKey + "\"");
-    emitLimitedError(
-        [&] {
-          return std::move(compileOffloadError)
-              .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", errorIncludePrelude);
-        },
-        errorLimit);
-    failed = true;
-    return WalkResult::interrupt();
-  }
+  if (iter0 == targetIter->second.end())
+    return ErrorTree(loc, "compile offload result missing emissionOptions \"" +
+                              groupKey + "\"");
 
   auto iter = iter0->second.find(kernelId);
-  if (iter == iter0->second.end()) {
-    ErrorTree compileOffloadError(loc,
-                                  "compile offload result missing kernelId " +
-                                      std::to_string(kernelId));
-    emitLimitedError(
-        [&] {
-          return std::move(compileOffloadError)
-              .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", errorIncludePrelude);
-        },
-        errorLimit);
-    failed = true;
-    return WalkResult::interrupt();
-  }
+  if (iter == iter0->second.end())
+    return ErrorTree(loc, "compile offload result missing kernelId " +
+                              std::to_string(kernelId));
 
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
-  StringAttr content = iter->second.contents[emissionKind];
-  StringAttr moduleName = iter->second.moduleNames[emissionKind];
+  StringAttr content = iter->second.contents.lookup(emissionKind);
+  StringAttr moduleName = iter->second.moduleNames.lookup(emissionKind);
   auto structType = StructType::get(op->getContext(),
                                     {content.getType(), moduleName.getType()});
 
@@ -2527,7 +2497,7 @@ static WalkResult rewriteCompileOffloadOp(
   op->replaceUsesOfWith(op.getResult(), newOp);
   op.replaceAllUsesWith(newOp.getResult());
   op.erase();
-  return WalkResult::advance();
+  return std::nullopt;
 }
 
 LogicalResult ParametricElaborator::run(
@@ -2751,21 +2721,46 @@ LogicalResult ParametricElaborator::run(
 
   renameFunctions(theModule, target.isGPU(), failed);
 
-  theModule.walk([&](Operation *op) {
-    if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
-      // Plug offload compilation results as strings back to the elaborated IR.
-      rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
-                              failed, errorLimit,
-                              options.elaborationErrorIncludePrelude);
-    } else if (auto isCompileTime =
-                   dyn_cast<IsRunInComptimeInterpreterOp>(op)) {
-      // Rewrite IsCompileTimeOp to cpuDevice value as always false.
-      OpBuilder b(op);
-      isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
-          b, op->getLoc(), SIMDAttr::getScalarBool(b.getContext(), false)));
-      op->erase();
+  // Rewrite each top-level op in parallel. Emit the errors afterward, in module
+  // order, so the error limit keeps the same errors at every thread count.
+  SmallVector<Operation *, 0> topLevelOps;
+  for (Operation &op : theModule.getOps())
+    topLevelOps.push_back(&op);
+  SmallVector<SmallVector<ErrorTree>, 0> rewriteErrors = parallelMap(
+      theModule->getContext(), topLevelOps, [&](Operation *topLevelOp) {
+        SmallVector<ErrorTree> errors;
+        topLevelOp->walk([&](Operation *op) {
+          if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
+            // Plug offload compilation results as strings back to the
+            // elaborated IR.
+            if (std::optional<ErrorTree> error = rewriteCompileOffloadOp(
+                    offloadOp, theModule.getLoc(), compiledOffload))
+              errors.push_back(std::move(*error));
+          } else if (auto isCompileTime =
+                         dyn_cast<IsRunInComptimeInterpreterOp>(op)) {
+            // Rewrite IsCompileTimeOp to cpuDevice value as always false.
+            OpBuilder b(op);
+            isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
+                b, op->getLoc(),
+                SIMDAttr::getScalarBool(b.getContext(), false)));
+            op->erase();
+          }
+        });
+        return errors;
+      });
+  for (SmallVector<ErrorTree> &errors : rewriteErrors) {
+    for (ErrorTree &error : errors) {
+      emitLimitedError(
+          [&] {
+            return std::move(error).emit(
+                [](Location loc) { return mlir::emitError(loc); },
+                "Compile offload failed.",
+                options.elaborationErrorIncludePrelude);
+          },
+          errorLimit);
+      failed = true;
     }
-  });
+  }
 
   if (config.printStats) {
     reportElaborationStats(target.isGPU(), options,

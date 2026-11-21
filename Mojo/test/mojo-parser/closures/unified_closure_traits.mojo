@@ -288,7 +288,7 @@ struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
         `!kgen.struct<:`,
         type_of(Self.element_types.values),
         Self.element_types.values,
-        ` isParamPack>`,
+        `>`,
     ]
 
     var _mlir_value: Self._mlir_type

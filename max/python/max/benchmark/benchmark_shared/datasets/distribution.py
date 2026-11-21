@@ -52,12 +52,43 @@ from __future__ import annotations
 import math
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 
 DistributionParameter = int | float | str
 """Type alias for parameters that accept a float, an int, or a distribution string."""
+
+
+class _RandomStream(Protocol):
+    """The random draws that the distributions make.
+
+    ``np.random.RandomState`` and the ``np.random`` module both satisfy it.
+    """
+
+    def choice(
+        self, a: Sequence[float], *, p: Sequence[float] | None = ...
+    ) -> float: ...
+
+    def normal(self, loc: float = ..., scale: float = ...) -> float: ...
+
+    def uniform(self, low: float = ..., high: float = ...) -> float: ...
+
+    def gamma(self, shape: float, scale: float = ...) -> float: ...
+
+    def lognormal(self, mean: float = ..., sigma: float = ...) -> float: ...
+
+    def randint(self, low: int, high: int | None = ...) -> int: ...
+
+    def negative_binomial(self, n: float, p: float) -> int: ...
+
+
+def _stream(rng: np.random.RandomState | None) -> _RandomStream:
+    """Returns ``rng``, or the global stream that ``np.random.seed`` seeds."""
+    # The np.random module functions draw from that global stream.
+    return rng if rng is not None else np.random
 
 
 def _match_distribution_args(
@@ -90,8 +121,14 @@ class BaseDistribution(ABC):
     """Abstract base class for probability distributions used in benchmarks."""
 
     @abstractmethod
-    def sample_value(self) -> float | int:
+    def sample_value(
+        self, rng: np.random.RandomState | None = None
+    ) -> float | int:
         """Sample a single value from this distribution.
+
+        Args:
+            rng: The random stream to draw from, or ``None`` for NumPy's
+                global stream.
 
         Returns:
             A sampled value (float for continuous, int for discrete).
@@ -194,7 +231,7 @@ class ContinuousDistribution(BaseDistribution):
     """Abstract base for continuous distributions that sample float values."""
 
     @abstractmethod
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Draws one sample from the continuous distribution."""
         ...
 
@@ -203,7 +240,7 @@ class DiscreteDistribution(BaseDistribution):
     """Abstract base for discrete distributions that sample integer values."""
 
     @abstractmethod
-    def sample_value(self) -> int:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> int:
         """Draws one sample from the discrete distribution."""
         ...
 
@@ -214,7 +251,7 @@ class ConstantDistribution(BaseDistribution):
 
     value: float
 
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Returns the configured constant."""
         return self.value
 
@@ -259,7 +296,7 @@ class CategoricalDistribution(BaseDistribution):
         if sum(self.weights) <= 0:
             raise ValueError("Weights must sum to a positive value")
 
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Draws a category from the configured weights."""
         # Individually finite weights can still sum to inf, which would send
         # every probability to 0. Scaling by the max preserves the ratios and
@@ -268,7 +305,7 @@ class CategoricalDistribution(BaseDistribution):
         normalized = [w / scale for w in self.weights]
         total = sum(normalized)
         probabilities = [w / total for w in normalized]
-        return float(np.random.choice(self.values, p=probabilities))
+        return float(_stream(rng).choice(self.values, p=probabilities))
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> CategoricalDistribution:
@@ -327,9 +364,9 @@ class NormalDistribution(ContinuousDistribution):
                 f"Standard deviation must be non-negative, got {self.std}"
             )
 
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Draws one sample from the normal distribution."""
-        return float(np.random.normal(loc=self.mean, scale=self.std))
+        return float(_stream(rng).normal(loc=self.mean, scale=self.std))
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> NormalDistribution:
@@ -374,9 +411,9 @@ class UniformDistribution(ContinuousDistribution):
                 f" ({self.upper})"
             )
 
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Draws one sample from the uniform distribution."""
-        return float(np.random.uniform(low=self.lower, high=self.upper))
+        return float(_stream(rng).uniform(low=self.lower, high=self.upper))
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> UniformDistribution:
@@ -420,9 +457,9 @@ class GammaDistribution(ContinuousDistribution):
         if self.scale <= 0:
             raise ValueError(f"Scale must be positive, got {self.scale}")
 
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Draws one sample from the gamma distribution."""
-        return float(np.random.gamma(shape=self.shape, scale=self.scale))
+        return float(_stream(rng).gamma(shape=self.shape, scale=self.scale))
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> GammaDistribution:
@@ -473,9 +510,9 @@ class LogNormalDistribution(ContinuousDistribution):
                 f"Standard deviation must be non-negative, got {self.std}"
             )
 
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Draws one sample from the log-normal distribution."""
-        return float(np.random.lognormal(mean=self.mean, sigma=self.std))
+        return float(_stream(rng).lognormal(mean=self.mean, sigma=self.std))
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> LogNormalDistribution:
@@ -536,9 +573,9 @@ class Burr12Distribution(ContinuousDistribution):
         if self.scale <= 0:
             raise ValueError(f"scale must be positive, got {self.scale}")
 
-    def sample_value(self) -> float:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> float:
         """Draws one sample by inverse-CDF transform on a uniform draw."""
-        u = np.random.uniform(low=0.0, high=1.0)
+        u = _stream(rng).uniform(low=0.0, high=1.0)
         # expm1/log1p form of (1 - u)**(-1/d) - 1; avoids cancellation when u ~ 0.
         inner = np.expm1(-np.log1p(-u) / self.d)
         return float(self.scale * inner ** (1.0 / self.c))
@@ -594,9 +631,9 @@ class DiscreteUniformDistribution(DiscreteDistribution):
                 f" ({self.upper})"
             )
 
-    def sample_value(self) -> int:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> int:
         """Draws an integer in ``[lower, upper]``."""
-        return int(np.random.randint(low=self.lower, high=self.upper + 1))
+        return int(_stream(rng).randint(low=self.lower, high=self.upper + 1))
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> DiscreteUniformDistribution:
@@ -653,9 +690,9 @@ class NegativeBinomialDistribution(DiscreteDistribution):
                 f"p (success probability) must be in [0, 1], got {self.p}"
             )
 
-    def sample_value(self) -> int:
+    def sample_value(self, rng: np.random.RandomState | None = None) -> int:
         """Draws a sample, shifted so the minimum value is 1."""
-        return int(np.random.negative_binomial(n=self.n, p=self.p)) + 1
+        return int(_stream(rng).negative_binomial(n=self.n, p=self.p)) + 1
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> NegativeBinomialDistribution:

@@ -1723,6 +1723,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     var b = block_idx.x
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def decode(bb: Int, token_block: Int32, key_part: UInt32) {imm} -> _Item:
         # ctaids are consumed in launch order, so map them onto token blocks
         # last-first: a causal block's key range grows with its index, and the
@@ -1925,6 +1926,7 @@ def _fp8_index_score_prefill_kernel_sm100[
             # q-scales re-hoisted, then the slot freed for the load warp. Every ring
             # cursor carries over.
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def consume_item() {mut c_state, mut k_state, mut qs_reg, imm}:
                 # `n_tiles_local` is `Int32`, so `range` yields an `Int32` induction
                 # variable directly (`range.mojo:495`) -- the whole key-index chain

@@ -63,6 +63,7 @@ from .mla import (
     mla_kpool_seed_tail,
     mla_prefill_decode_graph,
     mla_prefill_graph,
+    mla_sparse_selection_rows,
     store_mla_latent_ragged,
 )
 from .moe import (
@@ -190,6 +191,7 @@ __all__ = [
     "mla_kpool_seed_tail",
     "mla_prefill_decode_graph",
     "mla_prefill_graph",
+    "mla_sparse_selection_rows",
     "moe_create_indices",
     "moe_create_indices_packed",
     "moe_finalize",

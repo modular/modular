@@ -129,7 +129,7 @@ using hipMemcpyAttributes = struct hipMemcpyAttributes_st {
 
 // Virtual Memory Management types (mirroring CUDA's CUmem* VMM types). Used by
 // the defragmenting allocator; see
-// MLRT/lib/Driver/DeviceContext/MemoryManager.h. Layouts must match
+// MLRT/lib/Driver/MemoryManager/MemoryManager.h. Layouts must match
 // hip_runtime_api.h exactly since the driver is loaded via dlsym.
 using hipMemGenericAllocationHandle_t = struct ihipMemGenericAllocationHandle *;
 

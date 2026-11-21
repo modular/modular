@@ -330,7 +330,8 @@ def _target_config(context: ModelLoadContext) -> DeepseekV3Config:
             pipeline_config,
             load_weights(paths),
             target.checkpoint_adapters(
-                pipeline_config.model.huggingface_config
+                pipeline_config.model.huggingface_config,
+                artifact_export=pipeline_config.artifact_export,
             ).get(weights_format(paths)),
         ),
         max_seq_len=context.max_seq_len,

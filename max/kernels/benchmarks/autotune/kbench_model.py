@@ -2192,6 +2192,7 @@ class Scheduler:
                 failure_records.append(
                     {
                         "mesh_idx": idx,
+                        "spec": str(s),
                         "params": s.to_obj(),
                         "failure_type": failure_type,
                         "exec_stderr": bi_list[idx].exec_output.stderr or "",

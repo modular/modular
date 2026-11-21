@@ -41,13 +41,14 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from max import tree as max_tree
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.ep.init import payload_types
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.comm.ep.ep_manager import get_ep_local_sync_counters_size
 from max.pipelines.architectures.deepseekV3_2_modulev3.model_config import (
     DeepseekV3_2Config,
 )
@@ -315,23 +316,26 @@ def _ep_config(
     )
 
 
-def _ep_manager(checkpoint: Path) -> EPBatchManager:
-    """The collective manager the deployment's build creates.
+def _deployment_ep_config(checkpoint: Path) -> EPConfig:
+    """The expert-parallel config the deployment's build creates.
 
-    Its config is the production builder's, not a restatement of it: the arm
+    It is the production builder's, not a restatement of it: the arm
     ``gen_mef --ep-size 8 --ep-use-allreduce`` exports, every rank a
     participant, 128 routed experts, four per token.
     """
-    return EPBatchManager(
-        _ep_config(
-            _pipeline_config(checkpoint), DEVICES, DEVICES, _ep_model_config()
-        )
+    return _ep_config(
+        _pipeline_config(checkpoint), DEVICES, DEVICES, _ep_model_config()
     )
 
 
+def _ep_input_types(checkpoint: Path) -> list[Any]:
+    """The expert-parallel inputs the deployment's build declares."""
+    return max_tree.leaves(payload_types(_deployment_ep_config(checkpoint)))
+
+
 def _ep_target(checkpoint: Path) -> Any:
-    """A target built with an EP manager, which is what names the tail."""
-    return SimpleNamespace(ep_batch_manager=_ep_manager(checkpoint))
+    """A target built with an EP config, which is what names the tail."""
+    return SimpleNamespace(ep_config=_deployment_ep_config(checkpoint))
 
 
 def _input_spec(
@@ -352,13 +356,11 @@ def _input_spec(
         config.runtime.reasoning_parser is not None
         and spec_adapters.relaxed_thinking_acceptance(arch)
     )
-    target = (
-        _ep_target(checkpoint) if ep else SimpleNamespace(ep_batch_manager=None)
-    )
-    # ``_driver_call`` counts the tail off the built module -- whose manager
-    # announces exactly these inputs -- and hands the count to the spec, which
+    target = _ep_target(checkpoint) if ep else SimpleNamespace(ep_config=None)
+    # ``_driver_call`` counts the tail off the built module -- whose EP config
+    # declares exactly these inputs -- and hands the count to the spec, which
     # is where the batch processor reads it back.
-    declared = len(_ep_manager(checkpoint).input_types()) if ep else 0
+    declared = len(_ep_input_types(checkpoint)) if ep else 0
     spec = _input_type_spec(
         config,
         _devices(),
@@ -395,7 +397,6 @@ def _signature(checkpoint: Path, *, ep: bool = True) -> tuple[Any, ...]:
         samples_from_anchor=True,
         supports_zero_draft_rows=False,
     )
-    manager = _ep_manager(checkpoint) if ep else None
     driver = BlockDriver(
         cast(Any, lambda batch: None),
         cast(Any, proposer),
@@ -406,7 +407,7 @@ def _signature(checkpoint: Path, *, ep: bool = True) -> tuple[Any, ...]:
         enable_structured_output=config.needs_bitmask_constraints,
         # The target's collectives, on an undistributed signature: this
         # deployment runs EP with one attention replica.
-        ep_input_types=() if manager is None else manager.input_types(),
+        ep_input_types=_ep_input_types(checkpoint) if ep else (),
     )
     declared = tuple(driver.input_types(tree))
     # The trace appends the mesh's signal buffers after every declared input
@@ -557,22 +558,15 @@ def test_the_ep_tail_sits_between_the_kv_tree_and_the_sampling_run(
         assert str(table.dtype) == "DType.uint64", (index, table)
         assert table.device == DeviceRef.CPU(), (index, table)
         assert table.rank == 1 and int(table.shape[0]) == DEVICES, table
-    # The same 22 slots the manager announces: the number is MAX's, not this
+    # The same 22 slots the EP config declares: the number is MAX's, not this
     # test's.
-    assert (
-        len(_ep_manager(checkpoint).input_types())
-        == EP_COUNTERS + EP_POINTER_TABLES
-    )
-    # Each counter is sized from the formula the manager applies to this
-    # config's expert count, so a config change that moved the width would
-    # have to move this test with it (Mach sizes the boot's handshake off the
-    # sidecar's static shape).
-    config = _ep_manager(checkpoint).config
+    assert len(_ep_input_types(checkpoint)) == EP_COUNTERS + EP_POINTER_TABLES
+    # A config change that moved the counters' width would have to move this
+    # test with it (Mach sizes the boot's handshake off the sidecar's static
+    # shape).
+    config = _deployment_ep_config(checkpoint)
     assert config.moe_dim == 0, (
         "the fused-MoE reserve is not part of this arm's counters"
-    )
-    assert EP_COUNTER_STATIC_SHAPE == get_ep_local_sync_counters_size(
-        config.n_experts // config.n_gpus_per_node
     )
     for counter in counters:
         assert int(counter.shape[0]) == EP_COUNTER_STATIC_SHAPE, counter
@@ -611,7 +605,7 @@ def test_the_ep_tail_sits_between_the_kv_tree_and_the_sampling_run(
 
 
 def test_the_ep_tail_is_declared_only_by_an_ep_build(checkpoint: Path) -> None:
-    """The adapter names the tail from the target's manager, not the flag.
+    """The adapter names the tail from the target's EP config, not the flag.
 
     A build without expert parallelism declares none of the buffers and keeps
     the 397-slot shape Mach pins for that arm; the flag alone does not add
@@ -620,7 +614,7 @@ def test_the_ep_tail_is_declared_only_by_an_ep_build(checkpoint: Path) -> None:
     arch = _pairing().adapter_arch
     assert spec_adapters.ep_tail(arch, _ep_target(checkpoint))
     assert not spec_adapters.ep_tail(
-        arch, cast(Any, SimpleNamespace(ep_batch_manager=None))
+        arch, cast(Any, SimpleNamespace(ep_config=None))
     )
     assert len(_signature(checkpoint, ep=False)) == TOTAL_SLOTS - (
         EP_COUNTERS + EP_POINTER_TABLES

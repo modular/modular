@@ -143,3 +143,35 @@ mo.graph @fused_load_read_later(%a: !mo.tensor<[2, 2], f32, gpu:0>, %bias: !mo.t
   %e = mo.custom [symbol = "map_lower_declarative_fused_load", device = #M.device_ref<"gpu", 0>](%x) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
   mo.output %d, %e : !mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:0>
 }
+
+// Call 1 is a generated loop that reads b and writes c, so b stays busy until
+// call 1 and c gets a buffer of its own. d takes b's.
+// CHECK-LABEL: mo.graph @foreach_call
+// CHECK:       %[[R:.*]]:2 = mogg.routine
+// CHECK-NEXT:    inputs (%{{[^ ,)]+}}, %[[BIAS:[^ ,)]+]])
+// CHECK-NEXT:    outputs (%[[P0:[^ ,)]+]], %[[P1:[^ ,)]+]])
+// CHECK:         mogg.call.opaque
+// CHECK:         mogg.tensor.create(%[[P0]],
+// CHECK:         mogg.tensor.create(%[[BIAS]],
+// CHECK:         mogg.tensor.create(%[[P1]],
+// CHECK:         mogg.call.foreach
+// CHECK:         mogg.tensor.create(%[[P1]],
+// CHECK:         mogg.tensor.create(%[[P0]],
+// CHECK:         mogg.call.opaque
+// CHECK:       mo.output %[[R]]#0
+mo.graph @foreach_call(%a: !mo.tensor<[2, 2], f32, gpu:0>, %bias: !mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0> {
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  %c = mo.add(%b, %bias) : !mo.tensor<[2, 2], f32, gpu:0>
+  %d = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%c) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  mo.output %d : !mo.tensor<[2, 2], f32, gpu:0>
+}
+
+// The last call is a generated loop, and only it writes c.
+// CHECK-LABEL: mo.graph @foreach_last
+// CHECK:       %[[R:.*]]:2 = mogg.routine
+// CHECK:       mo.output %[[R]]#1
+mo.graph @foreach_last(%a: !mo.tensor<[2, 2], f32, gpu:0>, %bias: !mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0> {
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  %c = mo.add(%b, %bias) : !mo.tensor<[2, 2], f32, gpu:0>
+  mo.output %c : !mo.tensor<[2, 2], f32, gpu:0>
+}

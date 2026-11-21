@@ -70,7 +70,7 @@ comptime _ReduceGeneratorPluginHookFnType = (
 """Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
 
 
-__enum TargetDeviceKind(ImplicitlyCopyable):
+__union TargetDeviceKind(ImplicitlyCopyable):
     """The kind of device a compilation target is.
 
     `CompilationTarget.is_gpu()` and `is_accelerator()` are derived from it.
@@ -79,9 +79,9 @@ __enum TargetDeviceKind(ImplicitlyCopyable):
     diagnostics.
     """
 
-    case cpu
+    case cpu()
     """A host CPU."""
-    case gpu
+    case gpu()
     """A SIMT GPU, where the thread, block and warp primitives apply."""
     case other(StaticString, Bool)
     """Any other device, such as an NPU: its name, then whether it is an
@@ -484,4 +484,4 @@ struct DefaultPlugin(StdPlugin):
 
 
 struct DefaultPluginHooks[target: CompilationTarget](PluginHooks):
-    comptime device_kind = TargetDeviceKind.cpu
+    comptime device_kind = TargetDeviceKind.cpu()

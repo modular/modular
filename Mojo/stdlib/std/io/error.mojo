@@ -143,7 +143,7 @@ struct _Custom(ImplicitlyCopyable):
     var message: StaticString
 
 
-__enum _Cause(ImplicitlyCopyable):
+__union _Cause(ImplicitlyCopyable):
     case os(ErrNo)
     case custom(_Custom)
 
@@ -152,8 +152,8 @@ __enum _Cause(ImplicitlyCopyable):
 # would-block error on a hot path doesn't allocate.
 # TODO: Add a case for operations on two paths, such as `link` and `rename`,
 # written as `link a -> b: ...`, when the file APIs move to `IOError`.
-__enum _Subject(ImplicitlyCopyable):
-    case none
+__union _Subject(ImplicitlyCopyable):
+    case none()
     case path(String)
     case addr(SocketAddr)
 
@@ -202,7 +202,7 @@ struct IOError(ImplicitlyCopyable, Writable):
         """
         self._cause = .custom(_Custom(kind, message))
         self._operation = operation
-        self._subject = .none
+        self._subject = .none()
 
     @doc_hidden
     def __init__(out self, *, errno: ErrNo, operation: StaticString):
@@ -214,7 +214,7 @@ struct IOError(ImplicitlyCopyable, Writable):
         """
         self._cause = .os(errno)
         self._operation = operation
-        self._subject = .none
+        self._subject = .none()
 
     @staticmethod
     def last_os_error(operation: StaticString) -> Self:
@@ -266,7 +266,7 @@ struct IOError(ImplicitlyCopyable, Writable):
         """
         self._operation.write_to(writer)
         match self._subject:
-            case .none:
+            case .none():
                 pass
             case .path(path):
                 t" {path}".write_to(writer)
@@ -291,7 +291,7 @@ struct IOError(ImplicitlyCopyable, Writable):
             ref error = self_ptr[]
             t"operation={fmt.Repr(error._operation)}".write_to(w)
             match error._subject:
-                case .none:
+                case .none():
                     pass
                 case .path(path):
                     t", path={fmt.Repr(path)}".write_to(w)

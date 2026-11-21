@@ -4345,6 +4345,68 @@ def mla_fp8_index_top_k(
 
 
 @_rejects_split_head_dims
+def mla_sparse_selection_rows(
+    positions: TensorValue,
+    input_row_offsets: TensorValue,
+    mla_collection: PagedCacheValues,
+) -> TensorValue:
+    """Maps a top-k selection's token positions to MLA cache rows.
+
+    Returns the rows :func:`mla_fp8_index_top_k_with_physical` writes beside
+    the positions it selects, resolved against ``mla_collection``. A row names
+    a page of the cache it was resolved against, so a pipeline stage resolves
+    the positions the previous stage selected against its own cache.
+
+    Args:
+        positions: ``[rows, top_k]`` logical token positions, ``-1`` past a
+            token's selection.
+        input_row_offsets: Ragged row offsets ``[batch_size + 1]``.
+        mla_collection: The MLA cache the rows index.
+
+    Returns:
+        Each position's physical row, ``block_id * page_size + offset``,
+        ``[rows, top_k]``. For an NVFP4 ``mla_collection`` the rows are twice
+        as wide: the physical rows, then each position's row in the scale
+        pool. ``-1`` where the position is ``-1`` or its page is unmapped.
+    """
+    top_k = int(positions.shape[1])
+    values: list[Value[Any]] = [
+        positions,
+        input_row_offsets,
+        mla_collection.kv_blocks,
+        mla_collection.lookup_table,
+    ]
+    op_name = "attention.mla.sparse.selection_rows"
+    width = top_k
+    if mla_collection.kv_blocks.dtype == DType.uint8:
+        assert (
+            mla_collection.kv_scales is not None
+            and mla_collection.scales_page_stride is not None
+            and mla_collection.scales_lookup_table is not None
+        ), "an NVFP4 MLA cache must carry its scale operands"
+        op_name += ".nvfp4"
+        width = 2 * top_k
+        values += [
+            mla_collection.kv_scales,
+            mla_collection.scales_page_stride,
+            mla_collection.scales_lookup_table,
+        ]
+    return ops.inplace_custom(
+        op_name,
+        device=positions.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(positions.shape[0], width),
+                device=positions.device,
+            )
+        ],
+        parameters={"k": top_k},
+    )[0].tensor
+
+
+@_rejects_split_head_dims
 def mla_fp8_index_top_k_with_physical(
     q: TensorValue,
     q_s: TensorValue,

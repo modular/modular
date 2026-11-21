@@ -1652,7 +1652,7 @@ struct _RegTuple[*element_types: CoordLike](
         `!kgen.struct<:`,
         type_of(Self.element_types.values),
         Self.element_types.values,
-        ` isParamPack>`,
+        `>`,
     ]
 
     var _mlir_value: Self._mlir_type

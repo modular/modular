@@ -33,10 +33,10 @@ from typing import TypeVar
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.graph.weights import WeightData
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.layer import Module
 from max.nn.legacy.moe import apply_eplb_placement, router_fold_supported
 
+from .ep_initializer import EPInitializerLike
 from .eplb_stats import (
     EplbPlacement,
     EplbStatsAccumulator,
@@ -197,7 +197,7 @@ class EplbRuntime:
             model, state_dict, phy2log, fold_router=self._fold_router
         )
 
-    def bind(self, ep_comm_initializer: EPCommInitializer | None) -> None:
+    def bind(self, ep_comm_initializer: EPInitializerLike | None) -> None:
         """Hands the placement's device tables to the EP model inputs.
 
         A no-op without a placement, or without an initializer (virtual

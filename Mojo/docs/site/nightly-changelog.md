@@ -10,6 +10,11 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- `if`, `comptime if`, and `__guard` now support semicolon-separated
+  condition clauses that mix Boolean conditions and `case` patterns. Clauses
+  evaluate left to right, and successful pattern bindings are available to
+  later clauses and the successful path.
+
 - Added the experimental `__guard` statement for early exits from Boolean
   conditions and `case` patterns. Its `else` body must not fall through, so
   bindings from a successful pattern remain in scope on the normal path. This
@@ -43,6 +48,11 @@ This version is still a work in progress.
 
 - `match` now warns when literal cases do not include a catch-all pattern,
   helping identify unmatched values.
+
+- A closure that captures a value with an `UnsafeAnyOrigin` in its type, such
+  as a `Pointer[Int, MutUnsafeAnyOrigin]`, now produces a warning. A closure
+  does not keep the value behind such a capture alive, so Mojo can destroy that
+  value before the closure runs. Capture a value with a tracked origin instead.
 
 - Auto-parameterization now reaches `_` holes nested inside other parameterized
   types, so an unbound parameter at any depth of an argument's type becomes an
@@ -105,6 +115,23 @@ This version is still a work in progress.
           return 42  # an `Int` converts to the return type
       else:
           return None
+  ```
+
+- The error for converting a function to an invalid function type now explains
+  why the conversion cannot be made, such as a mismatch in argument counts,
+  argument conventions, effects, etc:
+
+  ```mojo
+  def takes_read(f: def(Int) thin -> None):
+      pass
+
+  def mut_arg(mut x: Int):
+      pass
+
+  # error: ... cannot be converted from 'def mut_arg(mut x: Int) thin -> None'
+  # to 'def(Int) thin -> None', argument 'x': expected 'imm' convention,
+  # found 'mut'
+  takes_read(mut_arg)
   ```
 
 ## Language changes
@@ -590,6 +617,14 @@ Most code that no longer compiles matches one of these patterns:
     exported from the prelude.
 
 ## Fixed
+
+- `find()` and `rfind()` on `String`, `StringSpan` and `StringLiteral` now
+  honor `start` when the substring is empty. `"abc".find("", 2)` returns `2`
+  instead of `0`, and both methods return `None` when `start` is past the end
+  of the string. Contributed by [@dhruvilmehta](https://github.com/dhruvilmehta)
+  in [#7451](https://github.com/modular/modular/pull/7451) and
+  [@Antony-mcw](https://github.com/Antony-mcw) in
+  [#7668](https://github.com/modular/modular/pull/7668).
 
 - A bare `raise` in an `except` block no longer crashes the compiler when
   building with debug info.

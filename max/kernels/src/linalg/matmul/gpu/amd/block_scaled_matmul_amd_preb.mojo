@@ -1453,6 +1453,7 @@ struct BlockScaledMatmulAMD_PreB[
         var k_counter = 0
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def load_a_tile_from_dram[reg_slot: Int = 0]() {mut k_counter, imm}:
             # Register-bounce load into landing-ring slot `reg_slot` (no-op in dram_to_lds mode).
             comptime if not Self.dram_to_lds:

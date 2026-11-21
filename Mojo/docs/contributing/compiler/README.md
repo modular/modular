@@ -9,9 +9,10 @@ page.
 
 ## Style Guide
 
-There's no compiler-specific style guide yet. Please match the conventions of
-the code you're changing, and run `./bazelw run //:format` before you open a
-PR. Otherwise, follow the rest of the [Mojo contributor guide](../README.md).
+C++ code in the compiler follows the
+[C++ coding standard](./CPPCodingStandard.md). Run `./bazelw run //:format`
+before you open a PR. Otherwise, follow the rest of the
+[Mojo contributor guide](../README.md).
 
 ## Onboarding
 

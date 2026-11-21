@@ -438,6 +438,7 @@ struct AMDMatmul[
         # past K in the last tile hold the next row's data, not zeros. They
         # must be zeroed in both operands before they reach the MMA.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def load_tiles_from_dram[masked: Bool]() {mut k_counter, imm}:
             var a_block = a_blockrow.tile[BM, BK](0, k_counter)
             var b_block = b_blockrow.tile[BN, BK](0, k_counter)

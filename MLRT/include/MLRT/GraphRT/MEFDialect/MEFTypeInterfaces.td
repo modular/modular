@@ -25,7 +25,7 @@ def MEF_ChainTypeInterface : TypeInterface<"MEFChainTypeInterface"> {
   let description = [{
     Interface for types which support chain-like operations.
   }];
-  let cppNamespace = "::M::MEF";
+  let cppNamespace = "::M::MLRT::MEF";
 }
 
 def MEF_AnyTypeInterface : TypeInterface<"MEFAnyTypeInterface"> {
@@ -34,7 +34,7 @@ def MEF_AnyTypeInterface : TypeInterface<"MEFAnyTypeInterface"> {
     types. These types are represented in the runtime by AnyAsyncValueRefs of
     arbitrary type.
   }];
-  let cppNamespace = "::M::MEF";
+  let cppNamespace = "::M::MLRT::MEF";
 }
 
 #endif  // MLRT_GRAPHRT_MEFDIALECT_MEFTYPEINTERFACES_TD

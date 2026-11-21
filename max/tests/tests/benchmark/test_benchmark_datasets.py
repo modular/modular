@@ -22,6 +22,7 @@ from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 import msgspec
+import numpy as np
 import pytest
 from huggingface_hub import errors as hf_hub_errors
 from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
@@ -80,8 +81,6 @@ from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
-    OpenAIImage,
-    SessionMessage,
 )
 from PIL import Image
 from tests.benchmark.benchmark_fakes import FakeTokenizer, fake_loader
@@ -1136,6 +1135,38 @@ def test_every_user_body_is_marked_distinct() -> None:
         assert abs(user.num_tokens - target_in) <= 4
 
 
+def test_a_session_does_not_depend_on_the_session_count() -> None:
+    """Session ``i`` is the same however many sessions follow it.
+
+    The warmup pool grows with concurrency, so the session count changes
+    across a sweep while the sessions must not.
+    """
+    tok = FakeTokenizer(model_max_length=50_000)
+
+    def sessions(num_sessions: int) -> list[list[tuple[str, int]]]:
+        np.random.seed(42)
+        with TokenizerPool(tok, loader=fake_loader) as pool:
+            samples = build_fitted_chat_samples(
+                pool=pool,
+                user_text_pool=["alpha body text", "beta body text"],
+                num_sessions=num_sessions,
+                num_turns="DU(1, 6)",
+                input_len="LN(4.0, 0.5)",
+                output_len="LN(3.0, 0.5)",
+                delay_between_turns_dist="U(0, 1000)",
+                sys_prompt_ratio=0.0,
+                max_num_unique_sys_prompt=1,
+                shuffle_pool=False,
+                log_prefix="test-invariant",
+            )
+        return [
+            [(m.content, m.num_tokens) for m in session.messages]
+            for session in samples.chat_sessions
+        ]
+
+    assert sessions(4) == sessions(12)[:4]
+
+
 def test_a_truncated_session_still_ends_without_a_delay() -> None:
     """A truncated session's last reply carries no delay.
 
@@ -2020,24 +2051,6 @@ def test_round_tool_mix_follows_the_weights() -> None:
     light = sum(1 for n in lens if n < 100)
     # 3:1 over 2000 draws; binomial sd is ~20, so this is generous.
     assert 0.70 < light / len(lens) < 0.80
-
-
-def test_session_message_images_defaults_to_empty() -> None:
-    """SessionMessage.images defaults to empty so existing multi-turn
-    workloads are unaffected until a later stage populates it."""
-    message = SessionMessage(source="user", content="hi", num_tokens=1)
-    assert message.images == []
-
-
-def test_session_message_images_can_be_populated() -> None:
-    image: OpenAIImage = {
-        "type": "image_url",
-        "image_url": {"url": "data:image/jpeg;base64,AAA"},
-    }
-    message = SessionMessage(
-        source="user", content="hi", num_tokens=1, images=[image]
-    )
-    assert message.images == [image]
 
 
 @pytest.mark.parametrize("max_output_len", [None, 64])

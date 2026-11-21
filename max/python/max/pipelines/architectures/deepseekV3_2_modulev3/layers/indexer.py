@@ -257,6 +257,84 @@ class Indexer(
             ``mla_collection`` of the top k keys selected for MLA to attend
             to, ``-1`` past a token's candidates.
         """
+        rows = self._select(
+            x,
+            qr,
+            freqs_cis,
+            input_row_offsets,
+            indexer_k_collection,
+            layer_idx,
+            mla_collection,
+            mask_variant,
+            hisparse,
+            with_positions=False,
+        )
+        assert isinstance(rows, Tensor)
+        return rows
+
+    def forward_with_positions(
+        self,
+        x: Tensor,
+        qr: Tensor,
+        freqs_cis: Tensor,
+        input_row_offsets: Tensor,
+        indexer_k_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        mla_collection: PagedCacheValues,
+        mask_variant: MHAMaskVariant,
+    ) -> tuple[Tensor, Tensor]:
+        """Runs :meth:`forward` and also returns the keys' token positions.
+
+        A pipeline stage hands the positions to the next stage. Such a stage
+        runs without decode context parallelism or HiSparse.
+
+        Args:
+            x: As for :meth:`forward`.
+            qr: As for :meth:`forward`.
+            freqs_cis: As for :meth:`forward`.
+            input_row_offsets: As for :meth:`forward`.
+            indexer_k_collection: As for :meth:`forward`.
+            layer_idx: As for :meth:`forward`.
+            mla_collection: As for :meth:`forward`.
+            mask_variant: As for :meth:`forward`.
+
+        Returns:
+            The selected keys' rows in ``mla_collection``, as :meth:`forward`
+            returns them, and their token positions.
+        """
+        selected = self._select(
+            x,
+            qr,
+            freqs_cis,
+            input_row_offsets,
+            indexer_k_collection,
+            layer_idx,
+            mla_collection,
+            mask_variant,
+            None,
+            with_positions=True,
+        )
+        assert isinstance(selected, tuple)
+        return selected
+
+    def _select(
+        self,
+        x: Tensor,
+        qr: Tensor,
+        freqs_cis: Tensor,
+        input_row_offsets: Tensor,
+        indexer_k_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        mla_collection: PagedCacheValues,
+        mask_variant: MHAMaskVariant,
+        hisparse: HiSparseInputs | None,
+        *,
+        with_positions: bool,
+    ) -> Tensor | tuple[Tensor, Tensor]:
+        """Runs the indexer for :meth:`forward` and its positions variant.
+
+        With ``with_positions`` it also returns the keys' token positions.
+        """
         # qr comes projected to lora rank and pre-normed;
         # q_lora_rank -> self.n_heads * self.head_dim
         q = self.wq_b(qr)
@@ -346,6 +424,22 @@ class Indexer(
             )
             return merge_topk(local_rows, local_scores, self.dcp_size)
 
+        if with_positions:
+            positions, rows = mla_fp8_index_top_k_with_physical(
+                q_fp8,
+                F.squeeze(weights, axis=-1),
+                input_row_offsets,
+                indexer_k_collection,
+                mla_collection,
+                layer_idx,
+                self.index_topk,
+                self.quant_config.scales_granularity_mnk[2],
+                mask_variant,
+            )
+            return (
+                rows.rebind_mapping(q_fp8.mapping),
+                positions.rebind_mapping(q_fp8.mapping),
+            )
         if hisparse is None:
             return mla_fp8_index_top_k_physical(
                 q_fp8,

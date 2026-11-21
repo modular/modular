@@ -32,6 +32,7 @@ import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import MLAKVCacheParams
 from max.nn.quant_config import QuantConfig, QuantFormat
 from max.pipelines.architectures.deepseekV3.model_config import (
@@ -216,8 +217,13 @@ def test_nvfp4_nextn_draft_keeps_nvfp4_dispatch_unchanged() -> None:
 def test_configuring_the_registered_head_starts_expert_parallelism() -> None:
     """The head's experts shard by the node ID the started runtime sets, so
     its registration starts it before the head is constructed."""
-    started: list[object] = []
-    context = replace(_make_context(), ep_runtime=started.append)
+    started: list[EPConfig] = []
+
+    def start(ep: EPConfig) -> EPConfig:
+        started.append(ep)
+        return ep
+
+    context = replace(_make_context(), ep_runtime=start)
     with pytest.raises(KeyError, match="NextN norm"):
         configure_mtp_draft(context, {})
     assert not started

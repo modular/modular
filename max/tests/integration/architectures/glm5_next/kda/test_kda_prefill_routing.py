@@ -43,7 +43,9 @@ from max.nn._graph_ops.state_space import kda_ring_record_elements, kimi_delta
 from max.nn._graph_ops.state_space.kimi_delta import (
     KdaGateMode,
     amd_kda_chunk_workspace_bytes,
+    kda_chunk_max_segments,
     kda_chunk_predicate,
+    kda_chunk_scratch_rows,
     kda_chunk_workspace_bytes,
 )
 from max.pipelines.architectures.glm5_next.layers import kda
@@ -386,25 +388,18 @@ def test_nvidia_verify_without_the_conv_op_keeps_the_conv_launch(
     assert "kgroup = true" in mlir
 
 
-def _legacy_predicate(
-    tokens: TensorValue, seqs: TensorValue, num_heads: int
-) -> TensorValue:
-    return kda_chunk_predicate(tokens, seqs, num_heads, HEAD_DIM)
+def _legacy_predicate(tokens: TensorValue, seqs: TensorValue) -> TensorValue:
+    return kda_chunk_predicate(tokens, seqs)
 
 
-def _layer_predicate(
-    tokens: TensorValue, seqs: TensorValue, num_heads: int
-) -> TensorValue:
+def _layer_predicate(tokens: TensorValue, seqs: TensorValue) -> TensorValue:
     taken = kda._chunk_predicate(
-        Tensor.from_graph_value(tokens),
-        Tensor.from_graph_value(seqs),
-        num_heads,
-        HEAD_DIM,
+        Tensor.from_graph_value(tokens), Tensor.from_graph_value(seqs)
     )
     return TensorValue(taken)
 
 
-_Predicate = Callable[[TensorValue, TensorValue, int], TensorValue]
+_Predicate = Callable[[TensorValue, TensorValue], TensorValue]
 
 PREDICATES = pytest.mark.parametrize(
     "predicate", [_legacy_predicate, _layer_predicate], ids=["op", "layer"]
@@ -419,7 +414,6 @@ def _takes_chunk(
     api: str,
     total_tokens: int,
     batch_size: int,
-    num_heads: int = HEADS,
 ) -> bool:
     """Evaluates a chunk predicate on concrete counts."""
     monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: api)
@@ -429,7 +423,7 @@ def _takes_chunk(
         ensure_context(),
     ):
         tokens, seqs = graph.inputs
-        graph.output(predicate(tokens.tensor, seqs.tensor, num_heads))
+        graph.output(predicate(tokens.tensor, seqs.tensor))
     model = InferenceSession(devices=[CPU()]).load(graph)
     (taken,) = model.execute(
         Buffer.from_numpy(np.array(total_tokens, dtype=np.int64)),
@@ -446,21 +440,6 @@ def test_decode_batch_skips_chunk(
 ) -> None:
     assert not _takes_chunk(monkeypatch, predicate, api, 8, 8)
     assert _takes_chunk(monkeypatch, predicate, api, 9, 8)
-
-
-@PREDICATES
-def test_amd_chunk_past_32_bit_indexing_falls_back(
-    monkeypatch: pytest.MonkeyPatch, predicate: _Predicate
-) -> None:
-    """The AMD launch raises once ``kg_t`` passes 2^31 elements.
-
-    It holds ``(T // 64 + N) * 64`` rows of ``H * 128``; at 32 heads one
-    sequence fits up to ``T = 2^19 - 64`` under the predicate's bound.
-    """
-    limit = (1 << 31) // (HEADS * HEAD_DIM) - 64
-    assert _takes_chunk(monkeypatch, predicate, "hip", limit, 1)
-    assert not _takes_chunk(monkeypatch, predicate, "hip", limit + 1, 1)
-    assert _takes_chunk(monkeypatch, predicate, "cuda", limit + 1, 1)
 
 
 def _reserved(
@@ -503,61 +482,71 @@ def test_planner_without_chunked_prefill_reserves_a_whole_prompt(
     )
 
 
-def _launch_groups(
-    chunks_per_seq: int, num_seqs: int, num_heads: int, num_cus: int
-) -> int:
-    """``kda_amd_chunk_groups`` in ``Kernels/lib/kda/amd_chunk_launch.mojo``."""
-    planes = max(num_seqs * num_heads, 1)
-    fill1, fill2 = num_cus // (2 * planes), num_cus // planes
-    groups = fill1
-    if fill2 > 0 and chunks_per_seq // fill2 >= 12:
-        groups = fill2
-    groups = min(groups, chunks_per_seq // 4, 32)
-    return groups if groups >= 4 else 1
+def _launch_bytes(tokens: int, num_seqs: int, num_heads: int) -> int:
+    """What one gfx950 ``kda_chunk`` launch on one device allocates."""
+    rows = kda_chunk_scratch_rows(tokens, num_seqs, num_heads)
+    return rows * num_heads * HEAD_DIM * 2
 
 
-def _launch_bytes(
-    tokens: int, num_seqs: int, num_heads: int, num_cus: int = 256
-) -> int:
-    """What one ``kda_amd_chunk_launch`` on one device allocates."""
-    chunk_len, plane_elems = 64, HEAD_DIM * HEAD_DIM
-    max_chunks = tokens // chunk_len + num_seqs
-    groups = _launch_groups(
-        -(-tokens // chunk_len) // max(num_seqs, 1),
-        num_seqs,
-        num_heads,
-        num_cus,
-    )
-    bf16 = (
-        3 * tokens * num_heads * HEAD_DIM
-        + tokens * num_heads * chunk_len
-        + max_chunks * num_heads * HEAD_DIM * chunk_len
-    )
-    f32 = max_chunks * num_heads * HEAD_DIM
-    if groups > 1:
-        group_planes = groups * num_seqs * num_heads
-        f32 += (
-            group_planes * (2 * plane_elems + HEAD_DIM)
-            + (group_planes * plane_elems + 1) // 2
-        )
-    return 2 * bf16 + 4 * f32 + 4 * num_seqs
+# (tokens, sequences, heads, segments, rows). `check_workspace_mirror` in
+# `Kernels/test/kda/test_kda_amd_prefill.mojo` checks the launcher against the
+# same table; change both together with the launcher's segment rule.
+_LAUNCHER_PINNED_SHAPES = [
+    (2048, 1, 8, 8, 15114),
+    (2049, 1, 8, 6, 13716),
+    (8192, 1, 8, 22, 52362),
+    (8193, 1, 8, 9, 42516),
+    (32768, 1, 12, 32, 166026),
+    (81920, 1, 2, 80, 414858),
+    (4992, 4, 8, 1, 22080),
+    (5120, 4, 8, 8, 47208),
+    (8192, 6, 8, 8, 73020),
+    (8192, 8, 8, 1, 36432),
+    (81920, 8, 12, 12, 428112),
+    (16384, 64, 64, 1, 79488),
+]
+
+
+@pytest.mark.parametrize(
+    ("tokens", "seqs", "heads", "segments", "rows"), _LAUNCHER_PINNED_SHAPES
+)
+def test_chunk_sizing_matches_the_launcher_table(
+    tokens: int, seqs: int, heads: int, segments: int, rows: int
+) -> None:
+    """The Python sizing equals the table the launcher's test pins."""
+    assert kda_chunk_max_segments(tokens, seqs, heads) == segments
+    assert kda_chunk_scratch_rows(tokens, seqs, heads) == rows
 
 
 @pytest.mark.parametrize("tensor_parallel", [1, 2, 4])
 @pytest.mark.parametrize("num_seqs", [1, 8, 64])
 @pytest.mark.parametrize("tokens", [64, 1000, 8192, 32768, 81920])
-def test_chunk_workspace_bound_covers_the_launch(
+def test_chunk_workspace_bound_covers_every_batch(
     tensor_parallel: int, num_seqs: int, tokens: int
 ) -> None:
-    """The planner's bound stays above, and near, every device's allocation."""
+    """The bound covers every batch within the budget and stays near the largest.
+
+    The full batch is not the largest: at 8192 tokens, six sequences split
+    into eight segments each where eight sequences do not split at all.
+    """
     if num_seqs > tokens:
         pytest.skip("a sequence holds at least one token")
     total_heads = 64
-    allocated = tensor_parallel * _launch_bytes(
-        tokens, num_seqs, total_heads // tensor_parallel
-    )
     bound = kda_chunk_workspace_bytes(total_heads, HEAD_DIM, tokens, num_seqs)
-    assert allocated <= bound <= 2 * allocated
+    # Both residues mod 32 so the sweep lands on every chunk-count edge and
+    # on the single-sequence rule's steps at 2048 and 8192 tokens.
+    token_counts = {*range(1, tokens + 1, 32), *range(32, tokens + 1, 32)}
+    largest = 0
+    for batch_tokens in sorted(token_counts | {tokens}):
+        for seqs in range(1, min(num_seqs, batch_tokens) + 1):
+            allocated = tensor_parallel * _launch_bytes(
+                batch_tokens, seqs, total_heads // tensor_parallel
+            )
+            assert allocated <= bound, (batch_tokens, seqs)
+            largest = max(largest, allocated)
+    # The bound mirrors the launcher's mid-length segment fill without its
+    # narrow-walk exception, so a few shapes carry up to ~26% slack.
+    assert bound <= 1.3 * largest
 
 
 @pytest.mark.parametrize(
@@ -583,17 +572,18 @@ def test_gfx950_planner_reserves_nothing_where_prefill_stays_sequential(
 
 @pytest.mark.parametrize("tensor_parallel", [1, 2, 4])
 @pytest.mark.parametrize("tokens", [32768, 81920])
-def test_chunk_workspace_bound_caps_groups_per_sequence(
+def test_chunk_workspace_bound_is_tight_for_one_long_sequence(
     tensor_parallel: int, tokens: int
 ) -> None:
-    """One long sequence splits into at most 32 groups, not one per 4 chunks.
+    """One long sequence's bound stays near what its devices allocate.
 
-    Without that cap the split workspace alone puts the bound about 1.5x over
-    the allocation here.
+    The bound takes the segment count of a one-head device, which a device
+    holding more heads clamps lower; the per-chunk rows dominate, so the
+    slack stays small.
     """
     total_heads = 64
     allocated = tensor_parallel * _launch_bytes(
         tokens, 1, total_heads // tensor_parallel
     )
     bound = kda_chunk_workspace_bytes(total_heads, HEAD_DIM, tokens, 1)
-    assert allocated <= bound <= 1.15 * allocated
+    assert allocated <= bound <= 1.2 * allocated

@@ -15,11 +15,87 @@ modular_py_test(
     ],
 )
 
+# Guards architectures/inkling2/dspark_config.py's read of the checkpoint's
+# mtp_config: max.dtype's width table through kv_bytes_per_token, and the
+# target_layer_ids the drafter's graph reads as taps, which Inkling2.run_layers
+# validates. Both turn a silent parse drift into a failed export otherwise.
+modular_py_test(
+    name = "test_dspark_config",
+    srcs = ["test_dspark_config.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+# Guards architectures/inkling2/dspark.py against the checkpoint it loads:
+# Module.compile drops a weight no parameter matches, so the drafter's
+# parameters and mtp.safetensors' header must agree both ways.
+modular_py_test(
+    name = "test_dspark_drafter",
+    size = "small",
+    srcs = ["test_dspark_drafter.py"],
+    data = ["testdata/mtp_safetensors_header.json"],
+    # Import-bound: pulling the pipelines stack outruns the 300s budget on the
+    # shared BuildBuddy macOS workers.
+    tags = ["skip-ci-macos"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards the drafter's Markov head and feature mix against NumPy transcriptions
+# of vLLM's kernels, eagerly on the host. `manual` because it compiles its host
+# graphs on first use: 800.8s on m7i at size=large after 300.2s at medium, and
+# the eager rule cannot carry it (its CPU warm has no float32 to bfloat16 cast).
+# Run it with `bazel test //max/tests/integration/architectures/inkling2:test_dspark_numerics`.
+modular_py_test(
+    name = "test_dspark_numerics",
+    size = "large",
+    srcs = ["test_dspark_numerics.py"],
+    # The eager interpreter imports its op families lazily, so pydeps cannot
+    # see the dependency: without it the test reaches the host graphs with
+    # max._interpreter_ops missing and every eager op fails to load.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    tags = [
+        "manual",
+        "skip-ci-macos",
+    ],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
         "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+modular_py_test(
+    name = "test_query_side_projection",
+    size = "enormous",
+    srcs = ["test_query_side_projection.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
     ],
 )
 
@@ -30,6 +106,25 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mix_norm_gpu",
+    size = "enormous",
+    srcs = ["test_mix_norm_gpu.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures/inkling2",
         requirement("numpy"),
     ],

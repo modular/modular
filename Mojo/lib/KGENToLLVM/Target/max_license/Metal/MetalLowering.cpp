@@ -58,46 +58,31 @@ const char *kMetalKernelAttr = "metal.kernel";
 namespace {
 
 //===----------------------------------------------------------------------===//
-// expandOperands
+// squashOperandCasts
 //===----------------------------------------------------------------------===//
 
-/// Expand any KGEN struct operands into their (remapped) LLVM field values, so
-/// AIR intrinsic calls receive the individual scalar/vector arguments.
-static SmallVector<Value> expandOperands(DirectRewriter &rewriter, Location loc,
-                                         ValueRange args, TypeRange origTypes,
-                                         const POPToLLVMTypeConverter &tc) {
+/// Returns the lowered operands without the conversion casts that would
+/// prevent folds.
+static SmallVector<Value> squashOperandCasts(ValueRange args) {
   SmallVector<Value> operands;
   operands.reserve(args.size());
-  for (auto [value, origType] : llvm::zip(args, origTypes)) {
-    // Squash pointless conversion casts that will get in the way of folds.
-    value = squashPointlessCasts(value);
-
-    // Check if the original type is a KGEN struct type.
-    if (auto kgenStructTy = dyn_cast<StructType>(origType)) {
-      // Get the element types - should be resolved at this point.
-      if (auto elemTypes = kgenStructTy.getElementTypes()) {
-        // Iterate over KGEN logical field indices and extract using remapped
-        // LLVM indices to account for any padding fields.
-        for (size_t i = 0, e = elemTypes->size(); i != e; ++i) {
-          int64_t llvmIdx = tc.getRemappedFieldIndex(kgenStructTy, i);
-          auto elt =
-              rewriter.createOrFold<LLVM::ExtractValueOp>(loc, value, llvmIdx);
-          operands.push_back(elt);
-        }
-      } else {
-        // Parametric struct - just push the value as-is.
-        operands.push_back(value);
-      }
-    } else {
-      operands.push_back(value);
-    }
-  }
+  for (Value value : args)
+    operands.push_back(squashPointlessCasts(value));
   return operands;
 }
 
 //===----------------------------------------------------------------------===//
 // doesMetalRequireAIRIntrinsicForCast
 //===----------------------------------------------------------------------===//
+
+/// Returns whether `target` is an Apple M5 GPU.
+static bool isAppleM5(TargetInfoAttr target) {
+  if (!target)
+    return false;
+  StringRef arch = target.getArch();
+  return arch == "5" || arch.starts_with("5-") || arch == "apple-m5" ||
+         arch.starts_with("apple-m5-");
+}
 
 /// Return false if `pop.cast` can be lowered to LLVM instruction. Return true
 /// otherwise, i.e. Metal emits special AIR intrinsic to do conversion from one
@@ -109,6 +94,15 @@ bool doesMetalRequireAIRIntrinsicForCast(POP::CastOp cast) {
   // https://linear.app/modularml/issue/MOCO-2875#comment-1b6b887a
   KGENDType inDType = *cast.getInput().getType().getResolvedDType();
   KGENDType outDType = *cast.getOutput().getType().getResolvedDType();
+
+  // AIR's fp8 converts exist only on M5. Elsewhere fp8 goes to the
+  // precompiled snippet, as on any target without a native conversion.
+  auto isFP8 = [](KGENDType dtype) {
+    return dtype.isFloat() && dtype.getWidthInBits() <= 8;
+  };
+  if ((isFP8(inDType) || isFP8(outDType)) && !isAppleM5(lookupTargetInfo(cast)))
+    return false;
+
   const uint64_t size = *cast.getInput().getType().getResolvedSize();
   if (size > 1) {
     // Metal always uses AIR intrinsic to do vector conversion
@@ -312,9 +306,11 @@ struct ConvertPOPCallToAIRIntrinsic
     if (!module)
       return failure();
 
-    SmallVector<Value> newOperands =
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
-                       op.getOperands().getTypes(), *getTypeConverter());
+    if (op.getExpandPackOperandIdxAttr()) {
+      return op.emitOpError(
+          "pack operand must be expanded by lower-arg-conventions");
+    }
+    SmallVector<Value> newOperands = squashOperandCasts(adaptor.getOperands());
 
     // Handle texture intrinsics with special mangling based on data type.
     // Texture intrinsics are mangled by the pixel data type only, not all args.
@@ -436,19 +432,14 @@ private:
     if (resultTypes.empty())
       return Error("expected result type");
 
-    // Extract KGENDType from the original kgen struct's A and B fields to
-    // determine the scalar-type chars.
-    if (origOpTypes.size() != 1)
-      return Error("expected single struct operand");
-
-    auto kgenStructTy = cast<StructType>(origOpTypes[0]);
-    auto elemTypes = *kgenStructTy.getElementTypes();
+    // The KGEN types of A and B give the scalar-type chars, because the LLVM
+    // types do not keep signedness.
     const uint32_t aIdx = 0;
     const uint32_t bIdx = simdgroupKind == SimdgroupMatrixKind::k16x16 ? 2 : 1;
     const uint32_t cIdx = simdgroupKind == SimdgroupMatrixKind::k16x16 ? 4 : 2;
 
-    auto aDType = *cast<SIMDType>(elemTypes[aIdx]).getResolvedDType();
-    auto bDType = *cast<SIMDType>(elemTypes[bIdx]).getResolvedDType();
+    auto aDType = *cast<SIMDType>(origOpTypes[aIdx]).getResolvedDType();
+    auto bDType = *cast<SIMDType>(origOpTypes[bIdx]).getResolvedDType();
 
     //   'f' - floating point
     //   's' - signed integer
@@ -468,10 +459,10 @@ private:
     funcName += mangleScalarTypeChar(aDType);
     funcName += '.';
     funcName += mangleScalarTypeChar(bDType);
-    funcName += "." + mangleType(resultTypes[0]);  // D
-    funcName += "." + mangleType(elemTypes[aIdx]); // A
-    funcName += "." + mangleType(elemTypes[bIdx]); // B
-    funcName += "." + mangleType(argTypes[cIdx]);  // C
+    funcName += "." + mangleType(resultTypes[0]);    // D
+    funcName += "." + mangleType(origOpTypes[aIdx]); // A
+    funcName += "." + mangleType(origOpTypes[bIdx]); // B
+    funcName += "." + mangleType(argTypes[cIdx]);    // C
 
     AIRIntrinsicName airFunctionName(funcName, /*requiresMangling=*/false);
     return createAIRFunction(rewriter, module, loc, airFunctionName, operands,

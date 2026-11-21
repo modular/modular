@@ -351,7 +351,7 @@ ExecutableModel::~ExecutableModel() = default;
 
 SmallVector<AnyAsyncValueRef>
 ExecutableModel::execute(MutableArrayRef<AnyAsyncValueRef> args) const {
-  M_PROFILE_RANGE("ExecutableModel::execute", M_PROFILE_COLOR_TEAL);
+  M_PROFILE_SPAN("ExecutableModel::execute", M_PROFILE_COLOR_TEAL);
 
   checkUniqueCPUDevice(getCPUDevice());
 

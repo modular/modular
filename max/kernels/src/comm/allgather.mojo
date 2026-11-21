@@ -260,6 +260,7 @@ def _allgather_naive[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"allgather_p2p_{dtype}")
+@__allow_legacy_any_origin_fields
 def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
@@ -555,6 +556,7 @@ def _allgather_p2p_tma[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"allgather_relay_{dtype}")
+@__allow_legacy_any_origin_fields
 def _allgather_relay_kernel[
     dtype: DType,
     ngpus: Int,
@@ -864,6 +866,7 @@ def _allgather_p2p_relay[
 
 
 @inline(.always)
+@__allow_legacy_any_origin_fields
 def _allgather_p2p[
     dtype: DType,
     rank: Int,

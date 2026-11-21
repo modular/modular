@@ -647,6 +647,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # TODO(KERN-4060): On Apple GPU, a split row draws a different token than
+    # a single block in about half of the runs.
+    "test_topk_coop_parity.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_scatter_set_constant.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

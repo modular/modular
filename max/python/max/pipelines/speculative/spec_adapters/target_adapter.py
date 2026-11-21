@@ -94,6 +94,12 @@ def _default_trailing_input_types(target_config: Any) -> list[TensorType]:
     return []
 
 
+def _default_takes_vision_inputs(target_config: Any) -> bool:
+    """Preserves architecture-declared vision inputs by default."""
+    del target_config
+    return True
+
+
 def _default_trailing_input_tree(
     target_config: Any,
 ) -> Mapping[str, object] | None:
@@ -338,6 +344,9 @@ class TargetAdapter:
     inputs of an undistributed, text-only signature; the distributed inputs
     and the image rows come ahead of it. ``None`` takes them after every
     other input, and none on one device."""
+
+    takes_vision_inputs: Callable[[Any], bool] = _default_takes_vision_inputs
+    """Whether the deployment takes the architecture's cached vision inputs."""
 
     trailing_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_trailing_input_types

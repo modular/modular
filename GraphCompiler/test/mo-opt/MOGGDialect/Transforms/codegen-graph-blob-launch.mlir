@@ -120,3 +120,55 @@ mo.graph @blob_dim<batch>(%arg0: !mo.tensor<[batch, 2], f32>) -> !mo.tensor<[bat
   }
   mo.output %0 : !mo.tensor<[batch, 2], f32>
 }
+
+// A loop in a call region builds its closure inside the kernel and calls the
+// primitive registered for `mogg.graph_blob.foreach` with the dtypes its body
+// touches and the width limit the standalone loop primitive takes.
+
+// CHECK:      def {{__[A-Za-z0-9_]+}}({{[^,]+}}, {{[^,]+}}, {{[^,]+}}, [[N:[A-Za-z0-9_]+]]: Int, [[CTX:[A-Za-z0-9_]+]]: {{.*}}DeviceContext) raises:
+// CHECK:        def [[KERNEL:execute_device_[_0-9]+]](
+// CHECK:          var [[SHAPE0:[A-Za-z0-9_]+]] = layout.Coord(
+// CHECK:          var [[LIMIT:[A-Za-z0-9_]+]] = layout.Coord(layout.Idx[8],
+// CHECK:          def [[LAMBDA0:lambda_[_0-9]+]][width : Int, element_alignment : Int = 1](idx: layout.Coord) {var}:
+// CHECK:            simd_load_from_tensor_pointer
+// CHECK:            simd_store_into_tensor_pointer
+// CHECK:          var [[DIV:[A-Za-z0-9_]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list([[LIMIT]]))
+// CHECK-NEXT:     builtin_primitives.primitives._graph_blob_foreach[dtypes = std.utils.StaticTuple[DType, 1](DType.float32)]([[SHAPE0]], [[LAMBDA0]], max_simd_width = Scalar[DType.int]([[DIV]]))
+// CHECK:          _graph_blob.barrier()
+// CHECK:          builtin_primitives.primitives._graph_blob_foreach[dtypes = {{.+}}]({{[A-Za-z0-9_]+}}, {{[A-Za-z0-9_]+}}, max_simd_width = layout.Idx[2])
+// CHECK:        builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]],
+mo.graph @blob_foreach<batch>(%arg0: !mo.tensor<[batch], f32>) -> !mo.tensor<[batch], f32> {
+  %0:2 = mogg.routine (%arg0 : !mo.tensor<[batch], f32>) -> (!mo.tensor<[batch], f32>, !mo.tensor<[batch], f32>)
+    inputs (%a)
+    outputs (%b, %c)
+    context (%ctx)
+    dims (%n : !mogg.dim<batch>) attributes {device = #M.device_ref<"gpu", 0>} {
+    %launch = mogg.graph_blob.launch_config context(%ctx)
+    %act0 = mogg.graph_blob.active_threads %launch in %launch
+    %act1 = mogg.graph_blob.active_threads %launch in %launch
+    mogg.graph_blob.launch context(%ctx) config(%launch)
+        args {%x = %a : !mogg.pointer, %y = %b : !mogg.pointer, %z = %c : !mogg.pointer, %d = %n : !mogg.dim<batch>, %a0 = %act0 : i32, %a1 = %act1 : i32} {
+      mogg.graph_blob.call active(%a0) {
+        %s0 = mogg.shape.create(%d) <shape = #mosh<ape[batch]> : !mosh.ape> : !mogg.dim<batch>
+        %t0 = mogg.tensor.create(%x, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[batch]> : !mosh.ape> : !mogg.tensor
+        %t1 = mogg.tensor.create(%y, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[batch]> : !mosh.ape> : !mogg.tensor
+        %limit = mogg.shape.create(%d) <shape = #mosh<ape[8, batch]> : !mosh.ape> : !mogg.dim<batch>
+        mogg.graph_blob.foreach shape(%s0) dynamic_max_simd_width(%limit) (%idx : !map.index<1>) capturing {%cx = %t0 : !mogg.tensor, %cy = %t1 : !mogg.tensor} {
+          %v = mogg.tensor.load %cx[%idx] : !mogg.tensor, !map.index<1> -> !mogg.simd<f32>
+          mogg.tensor.store %cy[%idx] = %v : !mogg.tensor, !map.index<1>, !mogg.simd<f32>
+        }
+      }
+      mogg.graph_blob.barrier
+      mogg.graph_blob.call active(%a1) {
+        %s1 = mogg.shape.create(%d) <shape = #mosh<ape[batch]> : !mosh.ape> : !mogg.dim<batch>
+        %t2 = mogg.tensor.create(%y, %s1) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[batch]> : !mosh.ape> : !mogg.tensor
+        %t3 = mogg.tensor.create(%z, %s1) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[batch]> : !mosh.ape> : !mogg.tensor
+        mogg.graph_blob.foreach shape(%s1) (%idx : !map.index<1>) capturing {%cx = %t2 : !mogg.tensor, %cy = %t3 : !mogg.tensor} attributes {max_simd_width = 2 : i64} {
+          %v = mogg.tensor.load %cx[%idx] : !mogg.tensor, !map.index<1> -> !mogg.simd<f32>
+          mogg.tensor.store %cy[%idx] = %v : !mogg.tensor, !map.index<1>, !mogg.simd<f32>
+        }
+      }
+    }
+  }
+  mo.output %0#1 : !mo.tensor<[batch], f32>
+}

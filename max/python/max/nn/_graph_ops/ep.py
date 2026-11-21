@@ -76,7 +76,15 @@ def _reject_dyn_global_scales(config: EPConfig, caller: str) -> None:
         )
 
 
-def _uses_block_scaled_nv_ep_layout(config: EPConfig) -> bool:
+def uses_block_scaled_nv_ep_layout(config: EPConfig) -> bool:
+    """Whether dispatch uses the NVIDIA block-scaled token layout.
+
+    NVFP4 and MXFP8 take it on cuda. It pads each local expert's scales to
+    whole tiles and returns their offsets beside the scales.
+
+    Args:
+        config: Supplies the dispatch quantization config.
+    """
     quant_config = config.dispatch_quant_config
     return (
         quant_config is not None
@@ -92,9 +100,9 @@ def _is_legacy_float8_dispatch(config: EPConfig) -> bool:
         and config.dispatch_dtype.is_float8()
         # MXFP8 is block-scaled, never legacy per-tensor float8. Without this it
         # would silently take the legacy path on AMD, where
-        # `_uses_block_scaled_nv_ep_layout` is cuda-only.
+        # `uses_block_scaled_nv_ep_layout` is cuda-only.
         and not quant_config.is_mxfp8
-        and not _uses_block_scaled_nv_ep_layout(config)
+        and not uses_block_scaled_nv_ep_layout(config)
     )
 
 
@@ -123,7 +131,7 @@ def uses_mx_ep_token_format(
         return False
     return (
         quant_config.is_mxfp4 or quant_config.is_mxfp6 or quant_config.is_mxfp8
-    ) and not _uses_block_scaled_nv_ep_layout(config)
+    ) and not uses_block_scaled_nv_ep_layout(config)
 
 
 _MX_FORMAT_NAME: Final[dict[DType, str]] = {
@@ -206,7 +214,7 @@ def _ep_dispatch_output_types(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        if _uses_block_scaled_nv_ep_layout(config):
+        if uses_block_scaled_nv_ep_layout(config):
             # NVIDIA block-scaled formats produce padded 5D scale tiles plus
             # offsets mapping each expert's token rows to those padded tiles.
             scales_offsets_type = TensorType(
@@ -327,7 +335,7 @@ def _ep_dispatch_format_parameters(
         "dispatch_dtype": config.dispatch_dtype
     }
     if config.dispatch_quant_config is not None:
-        if _uses_block_scaled_nv_ep_layout(config):
+        if uses_block_scaled_nv_ep_layout(config):
             parameters.update(
                 _block_scaled_nv_format_parameters(
                     config.dispatch_quant_config.is_nvfp4
@@ -463,7 +471,7 @@ def call_ep_dispatch_async(
 
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
-        if _uses_block_scaled_nv_ep_layout(config):
+        if uses_block_scaled_nv_ep_layout(config):
             if quant_config.is_nvfp4 and input_scales is None:
                 raise ValueError(
                     "input_scales must be provided when using NVFP4 dispatch"
@@ -587,7 +595,7 @@ def call_ep_dispatch_wait(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        if _uses_block_scaled_nv_ep_layout(config):
+        if uses_block_scaled_nv_ep_layout(config):
             op_name += ".block.scaled.nv"
             if config.fused_shared_expert and quant_config.is_nvfp4:
                 raise ValueError(
@@ -1215,7 +1223,7 @@ def call_ep_dispatch(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        if _uses_block_scaled_nv_ep_layout(config):
+        if uses_block_scaled_nv_ep_layout(config):
             if (
                 quant_config.is_nvfp4
                 and not config.nvfp4_dyn_global_scales
@@ -1287,7 +1295,7 @@ def call_distributed_ep_dispatch(
 
     quant_config = config.dispatch_quant_config
     uses_nvidia_block_scaled = (
-        quant_config is not None and _uses_block_scaled_nv_ep_layout(config)
+        quant_config is not None and uses_block_scaled_nv_ep_layout(config)
     )
     # Covers MXFP8 too; otherwise it would silently fall through to bf16.
     is_mx_token_format = uses_mx_ep_token_format(config)

@@ -1931,6 +1931,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # drive this SAME body; they differ only in how (head_idx,
         # block_tile_idx, batch_idx) are sourced (block_idx vs WorkInfo).
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _run_one_work(
             head_idx: Int,
             block_tile_idx: Int,

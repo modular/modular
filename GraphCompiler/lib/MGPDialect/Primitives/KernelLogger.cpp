@@ -114,11 +114,11 @@ getDeviceInfoString<llvm::SmallVector<M::AsyncRT::AnyAsyncValueRef>>(
     const llvm::SmallVector<M::AsyncRT::AnyAsyncValueRef> &operands);
 
 template llvm::SmallVector<M::Driver::DeviceContextRef>
-extractDeviceContexts<M::RemainingArguments>(
-    const M::RemainingArguments &operands);
+extractDeviceContexts<M::MLRT::RemainingArguments>(
+    const M::MLRT::RemainingArguments &operands);
 
-template std::string getDeviceInfoString<M::RemainingArguments>(
-    const M::RemainingArguments &operands);
+template std::string getDeviceInfoString<M::MLRT::RemainingArguments>(
+    const M::MLRT::RemainingArguments &operands);
 
 template <typename OperandContainer, typename LoggingPolicy>
 KernelLogger<OperandContainer, LoggingPolicy>::KernelLogger(
@@ -155,8 +155,8 @@ template class KernelLogger<llvm::SmallVector<M::AsyncRT::AnyAsyncValueRef>,
                             SyncLoggingPolicy>;
 template class KernelLogger<llvm::SmallVector<M::AsyncRT::AnyAsyncValueRef>,
                             AsyncLoggingPolicy>;
-template class KernelLogger<M::RemainingArguments, SyncLoggingPolicy>;
-template class KernelLogger<M::RemainingArguments, AsyncLoggingPolicy>;
+template class KernelLogger<M::MLRT::RemainingArguments, SyncLoggingPolicy>;
+template class KernelLogger<M::MLRT::RemainingArguments, AsyncLoggingPolicy>;
 
 } // namespace MGP
 } // namespace M

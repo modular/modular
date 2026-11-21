@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Sequence
-from typing import Any
 
 from max import functional as F
 from max.driver import CPU
@@ -49,6 +48,7 @@ from max.nn.common_layers.quant_moe import (
     _stack_experts,
 )
 from max.nn.common_layers.quant_tensor import NVFP4Tensor, QuantAwareTensor
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import moe_finalize
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
@@ -208,7 +208,8 @@ class MistralLarge4ExpertParallelMoE(ExpertParallelMoE):
         moe_dim: Hidden width of one expert.
         expert_quant_config: The routed experts' NVFP4 config.
         shared_expert_quant_config: The shared expert's FP8 block config.
-        ep_batch_manager: The expert-parallel runtime this layer dispatches on.
+        ep_config: The expert-parallel configuration this layer dispatches
+            with.
     """
 
     experts: ModuleList[QuantizedMLP]
@@ -223,7 +224,7 @@ class MistralLarge4ExpertParallelMoE(ExpertParallelMoE):
         moe_dim: int,
         expert_quant_config: QuantConfig | None,
         shared_expert_quant_config: QuantConfig | None,
-        ep_batch_manager: Any,
+        ep_config: EPConfig,
     ) -> None:
         # Deliberately skips ``QuantizedMoE.__init__``: it would build
         # DeepSeek's gate and hand the shared expert the routed experts' quant
@@ -235,7 +236,7 @@ class MistralLarge4ExpertParallelMoE(ExpertParallelMoE):
         self.quant_config = expert_quant_config
         self.swiglu_limit = 0.0
         self.activation: GatedActivation | None = None
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
         self.gate = MistralLarge4Router(
             hidden_dim=hidden_dim,
             num_experts=num_experts,

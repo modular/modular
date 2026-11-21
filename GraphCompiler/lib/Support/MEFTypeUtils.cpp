@@ -23,6 +23,7 @@
 #include "Support/ML/CommonAttributes.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 ErrorOrSuccess
 M::decodeQuantizedSignature(MEFFunctionType signature,

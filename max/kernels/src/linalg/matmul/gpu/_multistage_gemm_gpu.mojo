@@ -1256,6 +1256,7 @@ def _multistage_gemm_kernel_impl[
     # Stores `vec` at `(m, n)` through the output closure. `alignment` is in
     # bytes.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_output[
         dtype: DType, width: SIMDLength, //, alignment: Int
     ](m: Int, n: Int, vec: SIMD[dtype, width]) {imm}:
@@ -1268,6 +1269,7 @@ def _multistage_gemm_kernel_impl[
             epilogue_fn[dtype, width, alignment=alignment]((m, n), vec)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_c_frags[in_range: Bool]() {imm}:
         """Writes the warp's accumulator fragments to C at their true
         `(row, col)`.

@@ -17,16 +17,20 @@ from __future__ import annotations
 
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
-    InteractivityMetrics,
     PixelGenAggregates,
     StandardPercentileMetrics,
     TextGenAggregates,
     build_result_groups,
 )
 from max.benchmark.benchmark_shared.model_csv import columns_for_type
+from tests.benchmark.benchmark_fakes import (
+    make_sample_interactivity,
+    make_text_aggregates,
+)
 
 
 def _text_result(**kwargs: object) -> BenchmarkResult:
+    interactivity = make_sample_interactivity()
     defaults: dict[str, object] = {
         "task_type": "text",
         "max_concurrency": 8,
@@ -39,14 +43,7 @@ def _text_result(**kwargs: object) -> BenchmarkResult:
         "steady_state_window_count": 3,
         "steady_state_mode": "mad",
         "num_outliers_rejected": 2,
-        "text_data": TextGenAggregates(
-            duration=60.0,
-            completed=100,
-            failures=0,
-            request_throughput=1.66,
-            total_input=5000,
-            total_output=8000,
-            nonempty_response_chunks=8000,
+        "text_data": make_text_aggregates(
             latency_ms=StandardPercentileMetrics(
                 [0.114, 0.115], scale_factor=1000.0, unit="ms"
             ),
@@ -59,35 +56,10 @@ def _text_result(**kwargs: object) -> BenchmarkResult:
             itl_ms=StandardPercentileMetrics(
                 [0.0082, 0.0083], scale_factor=1000.0, unit="ms"
             ),
-            interactivity_tok_s=InteractivityMetrics(
-                mean=120.0,
-                p50=120.0,
-                p75=115.0,
-                p90=110.0,
-                p95=105.0,
-                p99=100.0,
-            ),
-            full_response_interactivity_tok_s=InteractivityMetrics(
-                mean=110.0,
-                p50=110.0,
-                p75=106.0,
-                p90=102.0,
-                p95=98.0,
-                p99=94.0,
-            ),
-            e2e_normalized_interactivity_tok_s=InteractivityMetrics(
-                mean=100.0,
-                p50=100.0,
-                p75=96.0,
-                p90=92.0,
-                p95=88.0,
-                p99=84.0,
-            ),
+            interactivity_tok_s=interactivity.content_bounded,
+            full_response_interactivity_tok_s=interactivity.full_response,
+            e2e_normalized_interactivity_tok_s=interactivity.e2e_normalized,
             total_tokens_per_second_per_gpu=2500.0,
-            max_input=100,
-            max_output=200,
-            max_total=300,
-            global_cached_token_rate=0.42,
         ),
     }
     defaults.update(kwargs)
@@ -109,12 +81,6 @@ def _pixel_result() -> BenchmarkResult:
             ),
         ),
     )
-
-
-def test_result_auto_fills_result_groups() -> None:
-    result = _text_result()
-    assert result.result_groups is not None
-    assert result.result_groups.summary.completed == 100
 
 
 def test_text_groups_cover_expected_sections() -> None:

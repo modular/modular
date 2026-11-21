@@ -39,8 +39,10 @@
 
 namespace M {
 
+namespace MLRT {
 class MEFInvokable;
 class PrimitiveDescriptor;
+} // namespace MLRT
 class ModelSpec;
 
 /// A device-resident input buffer and its tensor spec, as passed across the
@@ -157,8 +159,8 @@ public:
   ~Model() = default;
 
   StringRef getName() const { return name; }
-  const MEFInvokable *getInitFn() const { return initFn; }
-  const MEFInvokable *getExecuteFn() const { return executeFn; }
+  const MLRT::MEFInvokable *getInitFn() const { return initFn; }
+  const MLRT::MEFInvokable *getExecuteFn() const { return executeFn; }
   const EncodedLocation &getLocation() const { return location; }
 
   /// Extract dSummary strings from all mgp.generic.execute primitives in the
@@ -214,17 +216,17 @@ public:
 
   static StringLiteral getEntityName() { return "mef.model"; }
   static ErrorOr<std::unique_ptr<Model>>
-  getFromDescriptor(const PrimitiveDescriptor &descriptor);
+  getFromDescriptor(const MLRT::PrimitiveDescriptor &descriptor);
 
   Model(std::string name, SmallVector<DeviceRef> devices,
-        const MEFInvokable *initFn, const MEFInvokable *executeFn,
+        const MLRT::MEFInvokable *initFn, const MLRT::MEFInvokable *executeFn,
         ArrayRef<QuantTensorSpec> inputSpecs,
         ArrayRef<QuantTensorSpec> outputSpecs,
         SmallVector<DeviceRef> inputDevices,
         SmallVector<DeviceRef> outputDevices, EncodedLocation location);
 
   Model(std::string name, SmallVector<DeviceRef> devices,
-        const MEFInvokable *initFn, const MEFInvokable *executeFn,
+        const MLRT::MEFInvokable *initFn, const MLRT::MEFInvokable *executeFn,
         ArrayRef<QuantTensorSpec> inputSpecs,
         ArrayRef<QuantTensorSpec> outputSpecs, ArrayRef<StringRef> inputNames,
         ArrayRef<StringRef> outputNames, SmallVector<DeviceRef> inputDevices,
@@ -263,8 +265,8 @@ private:
   }
 
   std::string name;
-  const MEFInvokable *initFn = nullptr;
-  const MEFInvokable *executeFn = nullptr;
+  const MLRT::MEFInvokable *initFn = nullptr;
+  const MLRT::MEFInvokable *executeFn = nullptr;
   SmallVector<DeviceRef> devices;
   SmallVector<DeviceRef> inputDevices;
   SmallVector<DeviceRef> outputDevices;
@@ -285,7 +287,7 @@ using ModelList = SmallVector<std::unique_ptr<const Model>>;
 
 /// Load all models from an MEF file, which must outlive them.
 DRIVER_VISIBILITY_EXPORT // for MT
-    ErrorOr<ModelList> loadMGPMEFFile(RCRef<MEFFile> mefFile);
+    ErrorOr<ModelList> loadMGPMEFFile(RCRef<MLRT::MEFFile> mefFile);
 
 } // namespace M
 

@@ -104,6 +104,7 @@ bool Token::isDeclKeyword() const {
   case kw_fn:
   case kw_struct:
   case kw___enum:
+  case kw___union:
   case kw_trait:
   case kw_var:
     return true;

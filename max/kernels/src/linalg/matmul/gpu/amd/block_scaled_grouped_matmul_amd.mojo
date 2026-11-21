@@ -1395,6 +1395,7 @@ def block_scaled_grouped_matmul_amd_preb[
 
     # One launch per band; only the comptime config differs, so capture the
     # runtime args once and let each band be a single line.
+    @__allow_legacy_any_origin_fields
     def run_kernel[
         BM: Int,
         BN: Int,

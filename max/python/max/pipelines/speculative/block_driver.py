@@ -335,6 +335,9 @@ class BlockBatch(Generic[_T, _B, _V]):
     roll that state onto the accepted prefix without the driver knowing what
     the state is."""
 
+    host_input_row_offsets: _T | None = None
+    """CPU mirror of the original chunk offsets, before adding draft rows."""
+
     draft_slot_ids: TensorValue | None = None
     """Which block rows this step drafts, ``None`` on a graph that always
     drafts. Its extent is the row count: ``batch_size * K`` to draft, zero to
@@ -1024,7 +1027,7 @@ class BlockDriver(
         draft_probs_full: TensorLike | None = None,
         draft_probs_replicas: Sequence[TensorLike] | None = None,
     ) -> tuple[TensorLike, ...]:
-        """Runs one block spec-decode iteration: verify K-1, propose K-1.
+        """Runs one block iteration at the configured proposal width.
 
         Takes either graph values or single-device experimental ``Tensor``
         values, one per device wherever an argument is a list, and returns
@@ -1034,7 +1037,7 @@ class BlockDriver(
             tokens: 1-D ragged prompt token IDs ``[total_seq_len]``.
             input_row_offsets: ``[batch + 1]`` exclusive prefix sum of the
                 per-request sequence lengths.
-            draft_tokens: ``[batch, K - 1]`` proposals from the previous
+            draft_tokens: ``[batch, num_draft_tokens]`` proposals from the previous
                 iteration, or ``[batch, 0]`` on a prefill.
             kv_collections: Per-device target caches for the primary leaf.
             draft_kv_collections: Per-device draft caches.
@@ -1226,6 +1229,7 @@ class BlockDriver(
                 else None
             ),
             data_parallel_splits=data_parallel_splits,
+            host_input_row_offsets=host_input_row_offsets,
             data_parallel_degree=self.data_parallel_degree,
             batch_context_lengths=batch_context_lengths or [],
             vision_embeddings=vision_embeddings or [],

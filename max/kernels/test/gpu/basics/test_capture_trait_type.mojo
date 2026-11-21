@@ -35,7 +35,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
         var idx = thread_idx.x
         print(thing.get_val(idx) * 2)
 
-    ctx.enqueue_function(kernel_fn, grid_dim=(1,), block_dim=(size))
+    ctx.enqueue_closure(kernel_fn, grid_dim=(1,), block_dim=(size))
 
 
 def trait_repro(ctx: DeviceContext) raises:

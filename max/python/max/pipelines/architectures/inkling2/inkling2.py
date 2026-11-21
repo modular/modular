@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, NamedTuple
 
 import numpy as np
 from max import functional as F
@@ -84,6 +85,22 @@ def token_positions(
         shift, offsets[1:] - starts, axis=0, out_dim=total_tokens
     )
     return positions.cast(DType.uint32)
+
+
+class LayerOutputs(NamedTuple):
+    """What the decoder stack leaves for the head, and the captured taps."""
+
+    blocks: list[Tensor]
+    """The stored sums of the completed attn_res blocks."""
+
+    h: Tensor
+    """The partial sum of the last block."""
+
+    input_row_offsets: Tensor
+    """The row offsets, replicated across the mesh."""
+
+    taps: list[Tensor]
+    """The hidden states :meth:`Inkling2.run_layers` was asked to capture."""
 
 
 def log_scaling_tau(positions: Tensor, *, alpha: float, n_floor: int) -> Tensor:
@@ -180,9 +197,53 @@ class Inkling2(Module[..., DecoderOutputs]):
         ``vision`` carries the image embeddings and the token rows they
         replace, when a vision tower feeds the decoder.
         """
+        out = self.run_layers(tokens, input_row_offsets, vision, kv)
+        return self._logits(
+            out.blocks,
+            out.h,
+            out.input_row_offsets,
+            input_row_offsets,
+            return_n_logits,
+        )
+
+    def run_layers(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        vision: VisionInputs[Tensor] | None,
+        kv: Any,
+        taps: Sequence[int] = (),
+    ) -> LayerOutputs:
+        """Runs the decoder stack over one ragged batch.
+
+        Args:
+            tokens: Ragged input token IDs.
+            input_row_offsets: Ragged row offsets.
+            vision: The image embeddings and the rows they replace, if any.
+            kv: The flattened cache inputs.
+            taps: Layer ids whose hidden state to capture for every row, in
+                increasing order. Id ``i`` below ``num_hidden_layers`` is
+                layer ``i``'s input: the running partial sum of its attn_res
+                block, before the layer mixes it. Id ``num_hidden_layers``
+                is the final-norm output the LM head reads.
+
+        Returns:
+            The blocks and partial sum the head mixes, and the captured
+            hidden states in ``taps`` order.
+
+        Raises:
+            ValueError: If ``taps`` is not increasing or names no layer.
+        """
+        num_layers = self.text_config.num_hidden_layers
+        if list(taps) != sorted(set(taps)) or not set(taps) <= set(
+            range(num_layers + 1)
+        ):
+            raise ValueError(
+                "Inkling 2 taps must be increasing layer ids up to"
+                f" {num_layers}; got {list(taps)}."
+            )
         text_config = self.text_config
         mesh = self.norm.weight.mesh
-        first_row_offsets = input_row_offsets
         tokens, input_row_offsets = (
             self._broadcast(t, mesh) for t in (tokens, input_row_offsets)
         )
@@ -229,7 +290,10 @@ class Inkling2(Module[..., DecoderOutputs]):
                 mesh,
             )
         blocks: list[Tensor] = []
+        tapped: list[Tensor] = []
         for layer_idx, layer in enumerate(self.layers):
+            if layer_idx in taps:
+                tapped.append(h)
             sites = [
                 self.conv_layout.row_for(layer_idx, site) for site in ConvSite
             ]
@@ -261,8 +325,10 @@ class Inkling2(Module[..., DecoderOutputs]):
                     device=CPU(),
                 ),
             )
-        return self._logits(
-            blocks, h, input_row_offsets, first_row_offsets, return_n_logits
+        if num_layers in taps:
+            tapped.append(self.final_hidden(blocks, h))
+        return LayerOutputs(
+            blocks=blocks, h=h, input_row_offsets=input_row_offsets, taps=tapped
         )
 
     @staticmethod
@@ -316,14 +382,21 @@ class Inkling2(Module[..., DecoderOutputs]):
             )
         return pools, rows
 
-    def _lm_head(self, blocks: list[Tensor], h: Tensor) -> Tensor:
-        """Mixes the blocks, then returns softcapped float32 logits."""
+    def final_hidden(self, blocks: list[Tensor], h: Tensor) -> Tensor:
+        """Returns the hidden state the LM head reads.
+
+        That is the blocks mixed with the output query, after the final norm.
+        """
         (mixed,) = attn_res_mix(
             [*blocks, h],
             self.attn_res.output_query,
             normalize_values=self.text_config.attn_res_normalize_values,
         )
-        logits = self.unembed(self.norm(mixed))
+        return self.norm(mixed)
+
+    def _lm_head(self, blocks: list[Tensor], h: Tensor) -> Tensor:
+        """Mixes the blocks, then returns softcapped float32 logits."""
+        logits = self.unembed(self.final_hidden(blocks, h))
         if logits.is_distributed:
             logits = F.allgather(logits, tensor_axis=-1).local_shards[0]
         cap = self.text_config.final_logit_softcapping

@@ -29,6 +29,7 @@ from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, KernelLibrary
+from max.nn import ep as nn_ep
 from max.nn.common_layers import quant_moe, quant_ops
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.quant_linear import QuantizedMLP
@@ -45,13 +46,10 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.nn.ep_config import NUM_GROUPS, EPConfig
+from max.nn.common_layers.stacked_quant_moe import StackedExpertParallelMoE
+from max.nn.ep.init import payload_buffers, payload_types
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import moe_create_indices
-from max.nn.legacy.comm.ep.ep_manager import (
-    EPBatchManager,
-    EPCommBuffers,
-    get_ep_local_sync_counters_size,
-)
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
@@ -341,56 +339,26 @@ def test_tensor_parallel_moe_fp8_weights(
 # --------------------------------------------------------------------------- #
 
 
-def _build_ep_batch_manager(
-    config: EPConfig, devices: list[Device]
-) -> tuple[EPBatchManager, EPCommBuffers]:
-    """Construct an EPBatchManager and placeholder comm buffers for it.
+def _placeholder_ep_buffers(
+    config: EPConfig, mesh: DeviceMesh
+) -> nn_ep.EPBuffers:
+    """Returns zero tensors for the EP inputs, read as buffers.
 
-    Bypasses :meth:`EPBatchManager.comm_buffers` so the EP forward path can be
-    traced under :func:`F.lazy` without wiring up real graph inputs. The
-    returned buffers are what the caller threads into
-    ``ExpertParallelMoE.forward``, which binds them onto the manager.
+    They let the EP forward trace under :func:`F.lazy` without wiring up
+    real graph inputs.
     """
-    n_devices = config.n_gpus_per_node
-    n_experts_for_counters = (
-        config.n_experts // n_devices
-        if config.use_allreduce
-        else config.n_experts
-    )
-    counter_size = get_ep_local_sync_counters_size(n_experts_for_counters)
-
-    atomic_counters = [
-        [
-            Tensor.zeros([counter_size], dtype=DType.int32, device=devices[i])
-            for i in range(n_devices)
+    devices = {
+        DeviceRef.CPU(): CPU(),
+        **{DeviceRef.GPU(i): d for i, d in enumerate(mesh.devices)},
+    }
+    payload = {
+        name: [
+            Tensor.zeros(t.shape, dtype=t.dtype, device=devices[t.device])
+            for t in types
         ]
-        for _ in range(NUM_GROUPS)
-    ]
-
-    def _make_ptrs() -> list[Tensor]:
-        return [
-            Tensor.zeros([n_devices], dtype=DType.uint64, device=CPU())
-            for _ in range(NUM_GROUPS)
-        ]
-
-    expert_load = None
-    if config.eplb_count_expert_load:
-        expert_load = {
-            i: Tensor.zeros(
-                [config.num_moe_layers, config.n_experts // n_devices],
-                dtype=DType.uint64,
-                device=devices[i],
-            )
-            for i in range(n_devices)
-        }
-    comm = EPCommBuffers(
-        atomic_counters=atomic_counters,
-        send_buf_ptrs=_make_ptrs(),
-        recv_buf_ptrs=_make_ptrs(),
-        recv_count_ptrs=_make_ptrs(),
-        eplb_expert_load=expert_load,
-    )
-    return EPBatchManager(config), comm
+        for name, types in payload_types(config).items()
+    }
+    return payload_buffers(payload, mesh)
 
 
 def _ep_config(dispatch_dtype: DType, num_devices: int, **kwargs) -> EPConfig:
@@ -416,9 +384,8 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
 
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(DType.bfloat16, num_devices), devices
-        )
+        config = _ep_config(DType.bfloat16, num_devices)
+        ep = _placeholder_ep_buffers(config, mesh)
 
         with default_dtype(DType.bfloat16):
             with default_device(mesh):
@@ -427,7 +394,7 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
                     num_experts=_NUM_EXPERTS,
                     num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                     moe_dim=_MOE_DIM,
-                    ep_batch_manager=ep_batch_manager,
+                    ep_config=config,
                 )
 
             gate_up = layer.gate_up_proj
@@ -456,7 +423,7 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
                 dtype=DType.bfloat16,
                 device=replicated,
             )
-            out = layer(x, comm_buffers)
+            out = layer(x, ep=ep)
 
         assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
         assert out.mapping.mesh == mesh
@@ -470,22 +437,20 @@ def _trace_ep_moe_ir(
         devices = [mock_accelerator(0), mock_accelerator(1)]
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(
-                DType.bfloat16,
-                len(devices),
-                eplb_count_expert_load=count_expert_load,
-                num_moe_layers=2,
-            ),
-            devices,
+        config = _ep_config(
+            DType.bfloat16,
+            len(devices),
+            eplb_count_expert_load=count_expert_load,
+            num_moe_layers=2,
         )
+        ep = _placeholder_ep_buffers(config, mesh)
         with default_dtype(DType.bfloat16), default_device(mesh):
             layer = ExpertParallelMoE(
                 hidden_dim=_HIDDEN_DIM,
                 num_experts=_NUM_EXPERTS,
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
             x = Tensor.zeros(
                 [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
@@ -495,7 +460,7 @@ def _trace_ep_moe_ir(
                 if pass_layer
                 else None
             )
-            layer(x, comm_buffers, layer_idx)
+            layer(x, layer_idx, ep=ep)
             return str(Graph.current._mlir_op)
 
 
@@ -550,16 +515,14 @@ def test_expert_parallel_moe_on_a_dp_tp_mesh(
             n_gpus_per_node=len(devices),
             n_nodes=1,
         )
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            config, devices
-        )
+        ep = _placeholder_ep_buffers(config, mesh)
         with default_dtype(DType.bfloat16), default_device(mesh):
             layer = ExpertParallelMoE(
                 hidden_dim=_HIDDEN_DIM,
                 num_experts=num_experts,
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
             assert len(layer.gate_up_proj) == len(devices)
             sequence_parallel = DeviceMapping(mesh, (Sharded(0), Sharded(0)))
@@ -568,7 +531,7 @@ def test_expert_parallel_moe_on_a_dp_tp_mesh(
                 dtype=DType.bfloat16,
                 device=sequence_parallel,
             )
-            out = layer(x, comm_buffers)
+            out = layer(x, ep=ep)
 
         assert out.mapping == sequence_parallel
         assert [int(shard.shape[0]) for shard in out.local_shards] == [2] * 8
@@ -589,10 +552,8 @@ def test_expert_parallel_moe_allreduce_shared_expert_on_side_stream(
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
 
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(DType.bfloat16, num_devices, use_allreduce=True),
-            devices,
-        )
+        config = _ep_config(DType.bfloat16, num_devices, use_allreduce=True)
+        ep = _placeholder_ep_buffers(config, mesh)
 
         with default_device(mesh), default_dtype(DType.bfloat16):
             layer = ExpertParallelMoE(
@@ -602,7 +563,7 @@ def test_expert_parallel_moe_allreduce_shared_expert_on_side_stream(
                 moe_dim=_MOE_DIM,
                 has_shared_experts=True,
                 shared_experts_dim=_MOE_DIM,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
 
             x = Tensor.zeros(
@@ -610,7 +571,7 @@ def test_expert_parallel_moe_allreduce_shared_expert_on_side_stream(
                 dtype=DType.bfloat16,
                 device=replicated,
             )
-            out = layer(x, comm_buffers)
+            out = layer(x, ep=ep)
             ir = str(Graph.current._mlir_op)
 
     assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
@@ -641,9 +602,8 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
 
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(DType.bfloat16, num_devices), devices
-        )
+        config = _ep_config(DType.bfloat16, num_devices)
+        ep = _placeholder_ep_buffers(config, mesh)
 
         with default_device(mesh), default_dtype(DType.bfloat16):
             layer = ExpertParallelMoE(
@@ -653,7 +613,7 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
                 moe_dim=_MOE_DIM,
                 has_shared_experts=True,
                 shared_experts_dim=_MOE_DIM,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
 
             x = Tensor.zeros(
@@ -661,7 +621,7 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
                 dtype=DType.bfloat16,
                 device=replicated,
             )
-            out = layer(x, comm_buffers)
+            out = layer(x, ep=ep)
             ir = str(Graph.current._mlir_op)
 
     assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
@@ -692,13 +652,10 @@ def test_expert_parallel_moe_fp8_weights(
         num_local_experts = _NUM_EXPERTS // num_devices
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
 
-        ep_batch_manager, _ = _build_ep_batch_manager(
-            _ep_config(
-                DType.float8_e4m3fn,
-                num_devices,
-                dispatch_quant_config=fp8_quant_config,
-            ),
-            devices,
+        config = _ep_config(
+            DType.float8_e4m3fn,
+            num_devices,
+            dispatch_quant_config=fp8_quant_config,
         )
 
         with default_device(mesh):
@@ -708,7 +665,7 @@ def test_expert_parallel_moe_fp8_weights(
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
                 quant_config=fp8_quant_config,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
 
         gate_up = layer.gate_up_proj
@@ -769,14 +726,12 @@ def test_expert_parallel_moe_runs_blockwise_mega_ffn(
         devices = [mock_accelerator(0), mock_accelerator(1)]
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(
-                DType.float8_e4m3fn,
-                len(devices),
-                dispatch_quant_config=fp8_quant_config,
-            ),
-            devices,
+        config = _ep_config(
+            DType.float8_e4m3fn,
+            len(devices),
+            dispatch_quant_config=fp8_quant_config,
         )
+        ep = _placeholder_ep_buffers(config, mesh)
         with default_device(mesh), default_dtype(DType.bfloat16):
             layer = ExpertParallelMoE(
                 hidden_dim=_HIDDEN_DIM,
@@ -784,7 +739,7 @@ def test_expert_parallel_moe_runs_blockwise_mega_ffn(
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
                 quant_config=fp8_quant_config,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
             layer(
                 Tensor.zeros(
@@ -792,7 +747,7 @@ def test_expert_parallel_moe_runs_blockwise_mega_ffn(
                     dtype=DType.bfloat16,
                     device=replicated,
                 ),
-                comm_buffers,
+                ep=ep,
             )
 
     assert len(calls) == len(devices)
@@ -872,14 +827,12 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
         devices = [mock_accelerator(0), mock_accelerator(1)]
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(
-                DType.float8_e4m3fn,
-                len(devices),
-                dispatch_quant_config=fp8_quant_config,
-            ),
-            devices,
+        config = _ep_config(
+            DType.float8_e4m3fn,
+            len(devices),
+            dispatch_quant_config=fp8_quant_config,
         )
+        ep = _placeholder_ep_buffers(config, mesh)
         with default_device(mesh), default_dtype(DType.bfloat16):
             layer = ExpertParallelMoE(
                 hidden_dim=_HIDDEN_DIM,
@@ -887,7 +840,7 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
                 quant_config=fp8_quant_config,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
             layer(
                 Tensor.zeros(
@@ -895,7 +848,7 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
                     dtype=DType.bfloat16,
                     device=replicated,
                 ),
-                comm_buffers,
+                ep=ep,
             )
             ir = str(Graph.current._mlir_op)
 
@@ -1010,13 +963,10 @@ def test_expert_parallel_moe_nvfp4_weights(
         num_local_experts = _NUM_EXPERTS // num_devices
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
 
-        ep_batch_manager, _ = _build_ep_batch_manager(
-            _ep_config(
-                DType.uint8,
-                num_devices,
-                dispatch_quant_config=nvfp4_quant_config,
-            ),
-            devices,
+        config = _ep_config(
+            DType.uint8,
+            num_devices,
+            dispatch_quant_config=nvfp4_quant_config,
         )
 
         with default_device(mesh):
@@ -1026,7 +976,7 @@ def test_expert_parallel_moe_nvfp4_weights(
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
                 quant_config=nvfp4_quant_config,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
 
         gate_up = layer.gate_up_proj
@@ -1078,13 +1028,10 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
         def _build(
             quant_config: QuantConfig, swiglu_limit: float = 0.0
         ) -> ExpertParallelMoE:
-            ep_batch_manager, _ = _build_ep_batch_manager(
-                _ep_config(
-                    DType.uint8,
-                    num_devices,
-                    dispatch_quant_config=quant_config,
-                ),
-                devices,
+            config = _ep_config(
+                DType.uint8,
+                num_devices,
+                dispatch_quant_config=quant_config,
             )
             with default_device(mesh):
                 return ExpertParallelMoE(
@@ -1093,7 +1040,7 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
                     num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                     moe_dim=_MOE_DIM,
                     quant_config=quant_config,
-                    ep_batch_manager=ep_batch_manager,
+                    ep_config=config,
                     swiglu_limit=swiglu_limit,
                 )
 
@@ -1137,14 +1084,12 @@ def _nvfp4_ep_forward_reductions(
         devices = [mock_accelerator(0), mock_accelerator(1)]
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(
-                DType.uint8,
-                len(devices),
-                dispatch_quant_config=nvfp4_quant_config,
-            ),
-            devices,
+        config = _ep_config(
+            DType.uint8,
+            len(devices),
+            dispatch_quant_config=nvfp4_quant_config,
         )
+        ep = _placeholder_ep_buffers(config, mesh)
         with default_dtype(DType.bfloat16), default_device(mesh):
             layer = ExpertParallelMoE(
                 hidden_dim=_HIDDEN_DIM,
@@ -1152,14 +1097,14 @@ def _nvfp4_ep_forward_reductions(
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
                 quant_config=nvfp4_quant_config,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
             stacks = layer.expert_stacks() if prebuilt_stacks else None
             before = str(Graph.current._mlir_op).count("mo.reduce.max")
             x = Tensor.zeros(
                 [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
             )
-            layer(x, comm_buffers, stacks=stacks)
+            layer(x, stacks=stacks, ep=ep)
             return str(Graph.current._mlir_op).count("mo.reduce.max") - before
 
 
@@ -1232,9 +1177,8 @@ def _glm_moe_layer(
     """Builds the GLM-5.x expert-parallel MoE layer for ``quant_config``."""
     devices = [mock_accelerator(0), mock_accelerator(1)]
     mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
-    ep_batch_manager, _ = _build_ep_batch_manager(
-        _ep_config(dispatch, len(devices), dispatch_quant_config=quant_config),
-        devices,
+    ep_config = _ep_config(
+        dispatch, len(devices), dispatch_quant_config=quant_config
     )
     config = SimpleNamespace(
         quant_config=quant_config,
@@ -1259,7 +1203,7 @@ def _glm_moe_layer(
             cast(DeepseekV3_2Config, config),
             ParallelismMode.TP_EP,
             0,
-            ep_batch_manager,
+            ep_config,
         )
     assert isinstance(layer, ExpertParallelMoE)
     return layer
@@ -1403,6 +1347,53 @@ def test_tensor_parallel_moe_rejects_split_scale_block(
             )
 
 
+def test_expert_parallel_moe_needs_the_ep_buffers(
+    mock_accelerator: MagicMock,
+) -> None:
+    """The layer refuses a forward without the exchange's buffers."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        with default_device(mesh), default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                ep_config=_ep_config(DType.bfloat16, len(devices)),
+            )
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM],
+            dtype=DType.bfloat16,
+            device=DeviceMapping(mesh, (Replicated(),)),
+        )
+        with pytest.raises(ValueError, match="needs the ep buffers"):
+            layer(x)
+
+
+def test_stacked_expert_parallel_moe_from_ep_config_refuses_fused_shared(
+    mock_accelerator: MagicMock,
+) -> None:
+    """The stacked layer checks the EPConfig it is built from."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        config = dataclasses.replace(
+            _ep_config(DType.bfloat16, len(devices)), fused_shared_expert=True
+        )
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        with (
+            default_device(mesh),
+            pytest.raises(ValueError, match="fused shared expert"),
+        ):
+            StackedExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                ep_config=config,
+            )
+
+
 def test_expert_parallel_moe_rejects_mxfp8(
     mock_accelerator: MagicMock, mxfp8_quant_config: QuantConfig
 ) -> None:
@@ -1410,9 +1401,7 @@ def test_expert_parallel_moe_rejects_mxfp8(
     with F.lazy():
         devices = [mock_accelerator(0), mock_accelerator(1)]
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
-        ep_batch_manager, _ = _build_ep_batch_manager(
-            _ep_config(DType.bfloat16, len(devices)), devices
-        )
+        config = _ep_config(DType.bfloat16, len(devices))
         with default_device(mesh), pytest.raises(ValueError, match="MXFP8"):
             ExpertParallelMoE(
                 hidden_dim=_HIDDEN_DIM,
@@ -1420,7 +1409,7 @@ def test_expert_parallel_moe_rejects_mxfp8(
                 num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
                 moe_dim=_MOE_DIM,
                 quant_config=mxfp8_quant_config,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
 
 
@@ -1473,9 +1462,8 @@ def _stage_expert_parallel_moe(mock_accelerator: MagicMock) -> str:
         num_devices = len(devices)
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
         replicated = DeviceMapping(mesh, (Replicated(),))
-        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
-            _ep_config(DType.bfloat16, num_devices), devices
-        )
+        config = _ep_config(DType.bfloat16, num_devices)
+        ep = _placeholder_ep_buffers(config, mesh)
         with default_device(mesh), default_dtype(DType.bfloat16):
             layer = ExpertParallelMoE(
                 hidden_dim=_HIDDEN_DIM,
@@ -1484,14 +1472,14 @@ def _stage_expert_parallel_moe(mock_accelerator: MagicMock) -> str:
                 moe_dim=_MOE_DIM,
                 has_shared_experts=True,
                 shared_experts_dim=_MOE_DIM,
-                ep_batch_manager=ep_batch_manager,
+                ep_config=config,
             )
             x = Tensor.zeros(
                 [_SEQ_LEN, _HIDDEN_DIM],
                 dtype=DType.bfloat16,
                 device=replicated,
             )
-            layer(x, comm_buffers)
+            layer(x, ep=ep)
             return _SEED.sub(
                 "#M.dense_array<seed> : tensor<ui64>",
                 str(Graph.current._mlir_op),

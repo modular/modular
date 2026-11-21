@@ -219,34 +219,19 @@ static std::string stringize(const T &value) {
   return os.str().str();
 }
 
-static SmallVector<Attribute> expandOperands(ArrayRef<Attribute> args) {
-  SmallVector<Attribute> operands;
-  operands.reserve(args.size());
-  for (auto value : args) {
-    auto packAttr = dyn_cast<KGEN::StructAttr>(value);
-    if (packAttr && packAttr.getType().getIsParamPack()) {
-      operands.append(packAttr.getValues().begin(), packAttr.getValues().end());
-    } else {
-      operands.push_back(value);
-    }
-  }
-  return operands;
-}
-
 //===----------------------------------------------------------------------===//
 // InterpMemcpyOp
 //===----------------------------------------------------------------------===//
 static ErrorTreeOrSuccess interpretMemcpy(Location loc,
-                                          ArrayRef<Attribute> operands,
+                                          ArrayRef<Attribute> args,
                                           InterpreterState &state) {
-  SmallVector<Attribute> values = expandOperands(operands[0]);
-  if (values.size() != 3) {
+  if (args.size() != 3) {
     return ErrorTree(
-        loc,
-        "interpreting llvm.memcpy takes pack of 3: dst addr, src addr, count");
+        loc, "interpreting llvm.memcpy takes 3 arguments: dst addr, src addr, "
+             "count");
   }
 
-  return POP::interpretMemcpy(values[0], values[1], values[2], loc, state);
+  return POP::interpretMemcpy(args[0], args[1], args[2], loc, state);
 }
 
 static ErrorTreeOrSuccess interpretPOPIntrinsics(StringAttr name, Location loc,
@@ -271,10 +256,13 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
   if (!name)
     return ErrorTree(getLoc(), "unknown intrinsic opcode");
 
+  SmallVector<Attribute> args =
+      getOperandsWithPackExpanded(operands, getExpandPackOperandIdxAttr());
+
   // Handle some special case used as pop intrinsics first.
   bool interpreted = false;
   ErrorTreeOrSuccess popInterpResult =
-      interpretPOPIntrinsics(name, getLoc(), operands, state, interpreted);
+      interpretPOPIntrinsics(name, getLoc(), args, state, interpreted);
   if (interpreted)
     return popInterpResult;
 
@@ -289,7 +277,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
   // Figure out the LLVM representation for all the operands.
   SmallVector<llvm::Value *> loweredOperands;
   SmallVector<llvm::Constant *> loweredOperandsCst;
-  for (auto v : expandOperands(operands)) {
+  for (auto v : args) {
     // Try to understand what this value is.
     auto typedOp = ::dyn_cast<TypedAttr>(v);
     if (!typedOp)
@@ -396,10 +384,13 @@ CallLLVMIntrinsicOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!name)
     return ErrorTree(getLoc(), "unknown intrinsic opcode");
 
+  SmallVector<Attribute> args =
+      getOperandsWithPackExpanded(operands, getExpandPackOperandIdxAttr());
+
   // Handle some special case used as pop intrinsics first.
   bool interpreted = false;
   ErrorTreeOrSuccess popInterpResult =
-      interpretPOPIntrinsics(name, getLoc(), operands, state, interpreted);
+      interpretPOPIntrinsics(name, getLoc(), args, state, interpreted);
   if (interpreted)
     return popInterpResult;
 
@@ -414,7 +405,7 @@ CallLLVMIntrinsicOp::parametric_interpret(ArrayRef<Attribute> operands,
   // Figure out the LLVM representation for all the operands.
   SmallVector<llvm::Value *> loweredOperands;
   SmallVector<llvm::Constant *> loweredOperandsCst;
-  for (auto v : expandOperands(operands)) {
+  for (auto v : args) {
     // Try to understand what this value is.
     auto typedOp = ::dyn_cast<TypedAttr>(v);
     if (!typedOp)
