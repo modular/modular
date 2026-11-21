@@ -425,3 +425,30 @@ def test_lfm3_smoke_uses_architecture_defaults(
         "--enable-overlap-scheduler",
         "--no-enable-overlap-scheduler",
     }.intersection(cmd)
+
+
+@pytest.mark.parametrize(
+    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
+)
+@pytest.mark.parametrize("model", ["moonshotai/Kimi-K3", "MOONSHOTAI/KIMI-K3"])
+def test_kimi_k3_vision_detection(model: str, framework: str | None) -> None:
+    assert smoke_test.is_vision_model(model, framework) is (
+        framework == "mach-ci"
+    )
+
+
+@pytest.mark.parametrize(
+    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
+)
+def test_kimi_k3_dspark_stays_text_only(framework: str | None) -> None:
+    assert not smoke_test.is_vision_model(
+        "moonshotai/Kimi-K3__dspark", framework
+    )
+    assert not smoke_test.is_vision_model(
+        "MOONSHOTAI/KIMI-K3__DSPARK", framework
+    )
+
+
+@pytest.mark.parametrize("model", ["other/Kimi-K3", "moonshotai/Kimi-K3-extra"])
+def test_kimi_k3_vision_detection_requires_exact_repo(model: str) -> None:
+    assert not smoke_test.is_vision_model(model, "mach-ci")

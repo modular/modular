@@ -196,6 +196,17 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "vision_batching_tests_cpu",
+    srcs = ["test_vision_batching.py"],
+    tags = ["manual"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/context",
+    ],
+)
+
+modular_py_test(
     name = "vision_processor_tests_cpu",
     srcs = ["test_vision_processor.py"],
     deps = [

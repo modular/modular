@@ -106,6 +106,7 @@ class KimiK3VLTokenizer(TextAndVisionTokenizer):
                 "Kimi K3 image chats render with the checkpoint's own encoder;"
                 " --chat-template is not supported"
             )
+        self._speculative_config = pipeline_config.speculative
         self.model_path = model_path
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
@@ -220,6 +221,12 @@ class KimiK3VLTokenizer(TextAndVisionTokenizer):
         self, request: TextGenerationRequest
     ) -> KimiK3TextAndVisionContext:
         """Builds token state and one image span per uploaded image."""
+        if (
+            self._speculative_config is not None
+            and self._speculative_config.is_dspark()
+            and (request.images or request.number_of_images)
+        ):
+            raise ValueError("Kimi K3 DSpark does not support image requests")
         if request.videos:
             raise ValueError("Kimi K3 supports still images only")
         if request.prompt is None and not request.messages:

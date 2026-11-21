@@ -71,6 +71,7 @@ from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor
 from max.tensor.sharding import (
     DeviceMapping,
@@ -582,6 +583,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
         ep: EPBuffers | None = None,
+        image_embeddings: Tensor | None = None,
+        image_token_indices: Tensor | None = None,
     ) -> ModuleV3Outputs:
         """Runs the decoder stack over the tokens.
 
@@ -596,6 +599,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                 its state here, since it has no padded form.
             ep: The routed experts' exchange buffers, under expert
                 parallelism.
+            image_embeddings: Optional BF16 image rows in decoder hidden width.
+            image_token_indices: Token positions replaced by the image rows.
 
         Returns the logits as before, plus ``hidden_states`` when this model
         was built with ``ReturnHiddenStates.SELECTED_LAYERS``: the tapped
@@ -605,6 +610,11 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         """
         tokens, input_row_offsets = self._place(tokens, input_row_offsets)
         hidden_states = self.embed_tokens(tokens)
+        if image_embeddings is not None:
+            assert image_token_indices is not None
+            hidden_states = F_merge_multimodal_embeddings(
+                hidden_states, image_embeddings, image_token_indices
+            )
 
         kv_collection = None
         state = None

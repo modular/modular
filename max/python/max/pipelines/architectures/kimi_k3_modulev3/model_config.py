@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 from typing import Any, ClassVar
 
 from max.driver import accelerator_api
@@ -54,7 +55,12 @@ from max.nn.kv_cache import (
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    GraphRole,
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+)
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -85,7 +91,7 @@ from .state_cache import (
     attn_cache,
     kda_state_regions,
 )
-from .vision_config import KimiK3VisionConfig
+from .vision_config import KimiK3VisionConfig, has_vision_tower
 
 __all__ = ["KimiK3Config"]
 
@@ -95,6 +101,9 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     """Registry configuration for Kimi K3's text tower. See the module docstring."""
 
     takes_batch_context_lengths: ClassVar[bool] = True
+    weight_prefixes: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {GraphRole.VISION: "vision_encoder."}
+    )
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -234,6 +243,32 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             return_hidden_states=outputs.return_hidden_states,
             target_layer_ids=list(outputs.target_layer_ids or ()),
         )
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """Returns the BF16 text-width row supplied by the vision tower."""
+        if not has_vision_tower(huggingface_config):
+            return None
+        return (
+            cls._get_text_config(huggingface_config).hidden_size,
+            DType.bfloat16,
+        )
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Bounds an image entry by the tower's spatial position limits."""
+        row = cls.get_vision_cache_row_spec(huggingface_config)
+        if row is None:
+            return 0
+        # The patch-area budget is applied before padding; it is not a hard
+        # bound on the number of merged rows.
+        max_patch_side = 512
+        merged_rows = max_patch_side**2 // 4
+        return merged_rows * row[0] * row[1].size_in_bytes
 
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the expert-parallel buffers for ``runtime``.
@@ -714,6 +749,24 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
         conv_state_dtype, recurrent_state_dtype = cls.declared_state_dtypes(
             pipeline_config, model_config.kv_cache
         )
+        speculative = pipeline_config.speculative
+        vision_config = (
+            None
+            if speculative is not None and speculative.is_dspark()
+            else KimiK3VisionConfig.initialize_from_config(
+                pipeline_config, huggingface_config
+            )
+        )
+        if (
+            vision_config is not None
+            and vision_config.text_hidden_size != model.hidden_size
+        ):
+            raise ValueError(
+                "Kimi K3 vision_config.text_hidden_size"
+                f" ({vision_config.text_hidden_size}) must equal the text"
+                f" tower's hidden_size ({model.hidden_size}): image rows"
+                " replace token embeddings."
+            )
 
         config_instance = cls(
             dtype=dtype,
@@ -733,9 +786,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             spec_num_draft_tokens=(
                 kimi_k3_spec_num_draft_tokens(pipeline_config)
             ),
-            vision_config=KimiK3VisionConfig.initialize_from_config(
-                pipeline_config, huggingface_config
-            ),
+            vision_config=vision_config,
         )
         config_instance = replace(
             config_instance,

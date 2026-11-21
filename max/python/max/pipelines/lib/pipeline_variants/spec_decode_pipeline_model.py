@@ -2746,6 +2746,11 @@ class _SpecDecodeVisionCachePipelineModel(_SpecDecodeVisionPipelineModel):
 
     model_config_cls: ClassVar[type[Any]] = _SpecDecodeVisionArchConfig
 
+    @property
+    def vision_encoding(self) -> SupportsVisionEncoding[Any] | None:
+        """Returns the encoder when this speculative deployment takes images."""
+        return self if self._batching._takes_images else None
+
     def pack_vision_inputs(
         self,
         selection: Sequence[tuple[Any, Sequence[ImageMetadata]]],

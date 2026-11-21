@@ -22,6 +22,9 @@ from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.architectures.hf_config_shims import KimiK3HFConfig
+from max.pipelines.architectures.kimi_k3_modulev3.model_config import (
+    KimiK3Config,
+)
 from max.pipelines.architectures.kimi_k3_modulev3.vision_config import (
     KimiK3VisionConfig,
     has_vision_tower,
@@ -61,6 +64,7 @@ def test_text_only_checkpoint_has_no_vision_config(
     huggingface_config = KimiK3HFConfig(text_config={}, **extra)
 
     assert not has_vision_tower(huggingface_config)
+    assert KimiK3Config.get_vision_cache_row_spec(huggingface_config) is None
     assert (
         KimiK3VisionConfig.initialize_from_config(
             _pipeline_config(), huggingface_config
@@ -81,6 +85,10 @@ def test_vision_checkpoint_reads_its_geometry() -> None:
     assert has_vision_tower(huggingface_config)
     assert config is not None
     assert config.dtype == DType.bfloat16
+    assert KimiK3Config.get_vision_cache_row_spec(huggingface_config) == (
+        7168,
+        config.dtype,
+    )
     assert config.devices == [DeviceRef.CPU()]
     assert config.patch_size == 14
     assert config.qkv_hidden_size // config.vt_num_attention_heads == 128

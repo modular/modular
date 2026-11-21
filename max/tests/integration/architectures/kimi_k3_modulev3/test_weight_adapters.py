@@ -610,3 +610,62 @@ def test_graph_expert_stacks_split_per_rank(tp_size: int) -> None:
                     np.take(want, range(d * width, (d + 1) * width), axis),
                     err_msg=f"{name}{suffix} on device {d}",
                 )
+
+
+@pytest.mark.parametrize(
+    ("source", "target"),
+    [
+        (
+            "vision_tower.patch_embed.proj.weight",
+            "vision_encoder.patch_embed.proj.weight",
+        ),
+        (
+            "vision_tower.encoder.final_layernorm.weight",
+            "vision_encoder.encoder.norm.weight",
+        ),
+        (
+            "vision_tower.encoder.blocks.0.wqkv.weight",
+            "vision_encoder.encoder.blocks.0.attn.wqkv.weight",
+        ),
+        (
+            "vision_tower.encoder.blocks.0.wo.weight",
+            "vision_encoder.encoder.blocks.0.attn.wo.weight",
+        ),
+        (
+            "vision_tower.encoder.blocks.0.mlp.fc0.weight",
+            "vision_encoder.encoder.blocks.0.mlp.up_proj.weight",
+        ),
+        (
+            "vision_tower.encoder.blocks.0.mlp.fc1.weight",
+            "vision_encoder.encoder.blocks.0.mlp.down_proj.weight",
+        ),
+        (
+            "mm_projector.proj.0.weight",
+            "vision_encoder.patch_merger.linear1.weight",
+        ),
+        (
+            "mm_projector.proj.2.weight",
+            "vision_encoder.patch_merger.linear2.weight",
+        ),
+        (
+            "mm_projector.post_norm.weight",
+            "vision_encoder.patch_merger.post_norm.weight",
+        ),
+        (
+            "language_model.model.layers.0.mlp.gate_proj.weight",
+            "layers.0.ffn.gate_proj.weight",
+        ),
+    ],
+)
+def test_vision_checkpoint_names_preserve_text_and_vision_mlp_paths(
+    source: str, target: str
+) -> None:
+    config = _text_config()
+    config.vision_config = SimpleNamespace(patch_size=14)
+    weight = _weight(np.zeros((1,), dtype=np.float32), source)
+    transformed = WeightTransform(kimi_k3_weight_rules(config))(
+        {source: weight}
+    )
+    assert list(transformed) == [target]
+    assert transformed[target].shape == weight.data().shape
+    assert transformed[target].dtype == weight.data().dtype

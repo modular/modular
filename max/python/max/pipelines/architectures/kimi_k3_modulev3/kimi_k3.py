@@ -51,6 +51,7 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
     """
 
     graph_name: ClassVar[str] = "KimiK3Model"
+    consumes_vision: ClassVar[bool] = True
 
     def __init__(self, config: KimiK3Config) -> None:
         super().__init__()
@@ -109,4 +110,12 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
                 else ()
             ),
             ep=inputs.ep,
+            image_embeddings=(
+                inputs.vision.embeddings if inputs.vision is not None else None
+            ),
+            image_token_indices=(
+                inputs.vision.scatter_indices
+                if inputs.vision is not None
+                else None
+            ),
         )

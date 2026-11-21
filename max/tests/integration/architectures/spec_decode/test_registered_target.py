@@ -47,10 +47,12 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _share_target_slots,
     _SpecDecodeModuleV3PipelineModel,
     _SpecDecodeModuleV3VisionCachePipelineModel,
+    _SpecDecodeVisionCachePipelineModel,
     _takes_images,
     spec_decode_architecture,
 )
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.vision_encoder_cache import vision_encoding
 from max.pipelines.modeling.types import InputModality, PipelineTask
 from max.pipelines.speculative import spec_adapters
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
@@ -489,3 +491,22 @@ def test_a_draft_shares_the_slot_a_registered_target_wraps() -> None:
     _share_target_slots(modules)
     assert draft.embed_tokens is target.model.language_model.embed_tokens
     assert modules.weights["draft.embed_tokens.weight"] is weight
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [
+        _SpecDecodeVisionCachePipelineModel,
+        _SpecDecodeModuleV3VisionCachePipelineModel,
+    ],
+)
+@pytest.mark.parametrize("takes_images", [False, True])
+def test_vision_cache_encoding_follows_the_finalized_pairing(
+    model_cls: type[_SpecDecodeVisionCachePipelineModel], takes_images: bool
+) -> None:
+    model = model_cls.__new__(model_cls)
+    batching = _BatchProcessor.__new__(_BatchProcessor)
+    batching._takes_images = takes_images
+    model._batch_processor = batching
+
+    assert vision_encoding(model) is (model if takes_images else None)

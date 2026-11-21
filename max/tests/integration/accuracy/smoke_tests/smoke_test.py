@@ -240,9 +240,11 @@ SERVERS: dict[
 
 
 # TODO Refactor this to a model list/matrix specifying type of model
-def is_vision_model(model: str) -> bool:
-    """Check if the model supports vision tasks."""
+def is_vision_model(model: str, framework: str | None = None) -> bool:
+    """Selects image coverage supported by the model's smoke route."""
     model = model.casefold()
+    if model.split("__", 1)[0] == "moonshotai/kimi-k3":
+        return framework == "mach-ci" and not model.endswith("__dspark")
     # gemma-4-12B is served text-only in MAX (gemma4_unified arch), and Mach
     # serves its pipeline-parallel variants (`__pp`, `__pp_mtp`) text-only.
     if any(
@@ -825,7 +827,9 @@ def smoke_test(
         # A variant selects how the server serves its base repo, which
         # requests name.
         served = model.split("__", 1)[0]
-        serving = SERVERS[framework](model, timeout, is_vision_model(model))
+        serving = SERVERS[framework](
+            model, timeout, is_vision_model(model, framework)
+        )
     else:
         cmd, server_env = get_server_cmd(
             framework,
@@ -842,7 +846,7 @@ def smoke_test(
     if override_tasks:
         tasks = list(override_tasks)
     # TODO(SERVSYS-1330): Run the vision task with Cascade once it accepts images.
-    elif is_vision_model(model) and not cascade:
+    elif is_vision_model(model, framework) and not cascade:
         tasks = [VISION_TASK, TEXT_TASK]
     else:
         tasks = [TEXT_TASK]
