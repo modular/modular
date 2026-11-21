@@ -1191,9 +1191,7 @@ void ParamInf::inferOriginParams() {
     // type is fully resolved, we can go ahead and instantiate it.
     if (auto paramType =
             sugarDynCast<LIT::StructType>(declaredParamTypes[idx])) {
-      if (paramType.getSymbol().getLeafReference().strref() == "Origin" &&
-          paramType.getParamValues().size() == 2 &&
-          isa<OriginType>(paramType.getParamValues()[1].getType())) {
+      if (ASTType(paramType).isOriginStruct()) {
         IREmitter emitter(getDeclScope(), EC_TypeParamValue);
 
         paramType = cast<LIT::StructType>(evaluator.getReboundType(paramType));

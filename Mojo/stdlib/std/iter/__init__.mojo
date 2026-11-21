@@ -725,10 +725,8 @@ def map[
         print(elem)
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
     return {
-        rebind_var[_MapIterator[Function].InnerIteratorType](iter(iterable)),
+        iter(iterable),
         function^,
     }
 
@@ -848,10 +846,8 @@ def filter[
         print(elem)
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
     return {
-        rebind_var[_FilterIterator[Function].InnerIteratorType](iter(iterable)),
+        iter(iterable),
         function^,
     }
 
