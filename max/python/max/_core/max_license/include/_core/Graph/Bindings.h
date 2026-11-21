@@ -68,6 +68,7 @@ void bindGraphModule(nanobind::module_);
 void bindProfilerModule(nanobind::module_);
 void bindNIXLModule(nanobind::module_);
 void bindSafetensorsModule(nanobind::module_);
+void bindGGUFModule(nanobind::module_);
 void bindXXHashModule(nanobind::module_);
 void bindXGrammarModule(nanobind::module_);
 void bindMetricsModule(nanobind::module_);

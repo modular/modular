@@ -21,7 +21,22 @@ import click
 import numpy as np
 import safetensors.torch as safe_torch
 import torch
-from gguf import GGMLQuantizationType, GGUFWriter
+from max._core.gguf import GGUFWriter
+
+# GGML tensor type ids, as recorded in a GGUF header.
+_GGML_F32 = 0
+_GGML_Q4_K = 12
+_GGML_I32 = 26
+_GGML_I64 = 27
+_GGML_F64 = 28
+_GGML_BF16 = 30
+
+_GGML_TYPE_OF_NUMPY = {
+    np.dtype(np.float32): _GGML_F32,
+    np.dtype(np.int32): _GGML_I32,
+    np.dtype(np.int64): _GGML_I64,
+    np.dtype(np.float64): _GGML_F64,
+}
 
 
 def test_data():  # noqa: ANN201
@@ -34,7 +49,8 @@ def test_data():  # noqa: ANN201
 
 
 def write_gguf(filename: Path) -> None:
-    gguf_writer = GGUFWriter(str(filename), "example")
+    writer = GGUFWriter()
+    writer.set_string("general.architecture", "example")
 
     data: dict[str, np.ndarray] = {
         "a": np.arange(10, dtype=np.int32).reshape(5, 2),
@@ -43,28 +59,29 @@ def write_gguf(filename: Path) -> None:
         "fancy/name": np.array([1, 2, 3], dtype=np.int64),
     }
     for key, tensor in data.items():
-        gguf_writer.add_tensor(key, tensor)
+        writer.add_tensor(
+            key,
+            _GGML_TYPE_OF_NUMPY[tensor.dtype],
+            list(tensor.shape),
+            tensor.tobytes(),
+        )
 
-    # Separately add Bfloat16 tensor.
-    gguf_writer.add_tensor(
-        "bf16",
-        torch.tensor([123, 45], dtype=torch.bfloat16)
-        .view(torch.float16)
-        .numpy(),
-        raw_dtype=GGMLQuantizationType.BF16,
-    )
+    # Separately add a bfloat16 tensor: GGUF stores its 16-bit patterns.
+    bf16 = (
+        np.array([123.0, 45.0], dtype=np.float32).view(np.uint32) >> 16
+    ).astype(np.uint16)
+    writer.add_tensor("bf16", _GGML_BF16, [2], bf16.tobytes())
 
-    # Add a quantized tensor (fake data).
-    gguf_writer.add_tensor(
+    # Add a Q4_K tensor of fake data: two blocks of 256 elements, 144 bytes
+    # each.
+    writer.add_tensor(
         "quantized",
-        np.arange(0, 288, dtype=np.uint8).reshape(2, 144),
-        raw_dtype=GGMLQuantizationType.Q4_K,
+        _GGML_Q4_K,
+        [2, 256],
+        np.arange(0, 288, dtype=np.uint8).tobytes(),
     )
 
-    gguf_writer.write_header_to_file()
-    gguf_writer.write_kv_data_to_file()
-    gguf_writer.write_tensors_to_file()
-    gguf_writer.close()
+    writer.write(filename)
 
 
 def write_safetensors(filename_prefix: Path) -> None:

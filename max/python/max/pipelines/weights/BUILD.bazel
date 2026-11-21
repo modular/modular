@@ -12,8 +12,6 @@ modular_py_library(
         ],
     ),
     ignore_extra_deps = [
-        # Optional dep of max.graph, used for loading gguf files
-        requirement("gguf"),
         # Used transitively via pydantic models and huggingface-hub internals
         requirement("numpy"),
         requirement("pydantic"),
