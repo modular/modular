@@ -95,35 +95,33 @@ struct Level(
     comptime critical = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
 
-    # TODO(https://github.com/modular/modular/issues/7657): Use
-    # `@deprecated(use=...)` once it can name a sibling `comptime` member.
-    @deprecated("Use `Level.notset` instead.")
+    @deprecated(use=notset)
     comptime NOTSET = Self.notset
-    """Deprecated: The former name of `notset`."""
+    """Deprecated."""
 
-    @deprecated("Use `Level.trace` instead.")
+    @deprecated(use=trace)
     comptime TRACE = Self.trace
-    """Deprecated: The former name of `trace`."""
+    """Deprecated."""
 
-    @deprecated("Use `Level.debug` instead.")
+    @deprecated(use=debug)
     comptime DEBUG = Self.debug
-    """Deprecated: The former name of `debug`."""
+    """Deprecated."""
 
-    @deprecated("Use `Level.info` instead.")
+    @deprecated(use=info)
     comptime INFO = Self.info
-    """Deprecated: The former name of `info`."""
+    """Deprecated."""
 
-    @deprecated("Use `Level.warning` instead.")
+    @deprecated(use=warning)
     comptime WARNING = Self.warning
-    """Deprecated: The former name of `warning`."""
+    """Deprecated."""
 
-    @deprecated("Use `Level.error` instead.")
+    @deprecated(use=error)
     comptime ERROR = Self.error
-    """Deprecated: The former name of `error`."""
+    """Deprecated."""
 
-    @deprecated("Use `Level.critical` instead.")
+    @deprecated(use=critical)
     comptime CRITICAL = Self.critical
-    """Deprecated: The former name of `critical`."""
+    """Deprecated."""
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:
