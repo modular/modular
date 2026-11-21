@@ -113,6 +113,12 @@ build --legacy_important_outputs=false
 build --slim_profile=false
 build --rewind_lost_inputs
 
+# Don't leave the client waiting on the build-event upload: the BES stream is
+# observability only, and the default (wait_for_build_complete) parks the client
+# until the upload drains. That costs ~0.15s on a no-op build and grows with the
+# number of actions; measured on a 48-core CPU box.
+build --bes_upload_mode=fully_async
+
 # Local disk cache, tools/bazel opts developers in
 build:disk-cache --disk_cache=~/.cache/bazel-disk-cache
 build:disk-cache --disk_cache_gc_max_size=100G
