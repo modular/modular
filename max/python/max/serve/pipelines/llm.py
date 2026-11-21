@@ -78,7 +78,10 @@ class TokenGeneratorOutput:
     decoded_tokens: str | None = None
     # Combined decoded text from all reasoning tokens in this chunk
     decoded_reasoning_tokens: str | None = None
-    # Number of tokens in this chunk (1 for single token, N for chunk)
+    # Number of tokens in this chunk (1 for single token, N for chunk).
+    # Also counts delimiters the reasoning parser stripped before any
+    # reasoning was generated (a skipped think's bare close), so that
+    # completion_tokens stays exact while reasoning_tokens reports 0.
     token_count: int = 1
     # TODO: (MODELS-1118) determine whether to include logprobs for reasoning tokens in the response delta
     token_log_probabilities: list[float] | None = None
@@ -274,6 +277,23 @@ async def _awaiting_admission(
         model_worker.note_awaiting_admission(-1)
 
 
+def _bill_stripped(stripped: int, reasoning_started: bool) -> tuple[int, int]:
+    """Splits parser-stripped delimiter tokens into usage buckets.
+
+    Returns ``(token_count, reasoning_token_count)`` increments. Delimiters
+    are reasoning tokens once the model has opened a think span. Before that
+    the only stripped token is the bare close a model emits when it chooses
+    not to think (adaptive thinking, or a template-prefilled ``<think>`` the
+    model closes at once). That reply has no reasoning text, so billing its
+    delimiter as a reasoning token reports reasoning_tokens=1 against an
+    empty reasoning_content; it is billed as a plain completion token
+    instead, which keeps completion_tokens equal to the generated count.
+    """
+    if reasoning_started:
+        return 0, stripped
+    return stripped, 0
+
+
 class TokenGeneratorPipeline(
     BasePipeline[
         TextAndVisionContext | TextContext,
@@ -368,6 +388,10 @@ class TokenGeneratorPipeline(
         # carried onto the next emitted chunk so token_ids and usage stay
         # complete.
         skipped_token_ids: list[int] = []
+        # Whether the model has generated any reasoning: a think-start
+        # delimiter or reasoning text. Decides which usage bucket stripped
+        # delimiters land in (see ``_bill_stripped``).
+        reasoning_started = False
         # Prefill often stamps hops on a delimiter-only first output that
         # this loop skips. Keep the last stamp until METRICS.ttft.
         ttft_join_hops: dict[str, float] | None = None
@@ -483,6 +507,7 @@ class TokenGeneratorPipeline(
                 num_generated_tokens, \
                 first_chunk_yielded, \
                 is_still_reasoning, \
+                reasoning_started, \
                 ttft_join_hops
             first_worker_recv_ms: float | None = None
             skipped_n = 0
@@ -539,6 +564,11 @@ class TokenGeneratorPipeline(
                                 )
                                 or None
                             )
+                            reasoning_started = (
+                                reasoning_started
+                                or is_still_reasoning
+                                or reasoning_tokens is not None
+                            )
 
                         if tokens is None and reasoning_tokens is None:
                             # If the status is not done and there were no
@@ -562,15 +592,21 @@ class TokenGeneratorPipeline(
                                 # extract_reasoning stripped down to nothing.
                                 # They were genuinely generated and consumed
                                 # the token budget, so they must still be
-                                # billed -- as reasoning tokens, since that's
-                                # what they are -- or a max_tokens=1 request
-                                # that stops on a bare think-start delimiter
-                                # reports completion_tokens=0 (CENG-932).
+                                # billed, or a max_tokens=1 request that stops
+                                # on a bare think-start delimiter reports
+                                # completion_tokens=0 (CENG-932).
+                                (
+                                    stripped_token_count,
+                                    stripped_reasoning_count,
+                                ) = _bill_stripped(
+                                    len(skipped_token_ids)
+                                    + len(response.tokens),
+                                    reasoning_started,
+                                )
                                 yield TokenGeneratorOutput(
                                     status=response.final_status,
-                                    token_count=0,
-                                    reasoning_token_count=len(skipped_token_ids)
-                                    + len(response.tokens),
+                                    token_count=stripped_token_count,
+                                    reasoning_token_count=stripped_reasoning_count,
                                     prompt_token_count=context.tokens.prompt_length,
                                     cached_token_count=response.num_cached_tokens
                                     if not first_chunk_yielded
@@ -700,11 +736,23 @@ class TokenGeneratorPipeline(
                             decode_elapsed_ms = decode_sw.elapsed_ms
                         itl.reset()
 
+                        # Delimiters stripped from this chunk and earlier
+                        # fully stripped chunks are billed here, by the
+                        # same rule as the terminal case above.
+                        stripped_token_count, stripped_reasoning_count = (
+                            _bill_stripped(
+                                len(skipped_token_ids)
+                                + len(response.tokens)
+                                - token_count
+                                - reasoning_token_count,
+                                reasoning_started,
+                            )
+                        )
                         yield TokenGeneratorOutput(
                             status=status,
                             decoded_tokens=decoded_tokens,
                             decoded_reasoning_tokens=decoded_reasoning_tokens,
-                            token_count=token_count,
+                            token_count=token_count + stripped_token_count,
                             token_log_probabilities=token_log_prob_values,
                             top_log_probabilities=top_token_log_prob_values,
                             sampled_tokens=sampled_token_values,
@@ -712,12 +760,8 @@ class TokenGeneratorPipeline(
                             cached_token_count=response.num_cached_tokens
                             if is_first_chunk
                             else None,
-                            # Delimiters stripped from this chunk and earlier
-                            # fully stripped chunks are billed here, by the
-                            # same rule as the terminal case above.
-                            reasoning_token_count=len(skipped_token_ids)
-                            + len(response.tokens)
-                            - token_count,
+                            reasoning_token_count=reasoning_token_count
+                            + stripped_reasoning_count,
                             stop_sequence=stop_sequence_match,
                             batch_id=batch_id,
                             token_ids=skipped_token_ids + list(response.tokens),

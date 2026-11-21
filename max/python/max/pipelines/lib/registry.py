@@ -266,7 +266,7 @@ class _ThinkingRegionNewContext:
             self._parser is not None
             and self._end_token_id is not None
             and has_constrained_decoding
-            and self._parser.will_reason_after_prompt(
+            and self._parser.may_reason_after_prompt(
                 context.tokens.prompt,
             )
         ):

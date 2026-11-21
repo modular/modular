@@ -205,6 +205,30 @@ class ReasoningParser(ABC):
         """
         return self.stream(prompt_token_ids).is_still_reasoning
 
+    def may_reason_after_prompt(
+        self,
+        prompt_token_ids: Sequence[int],
+    ) -> bool:
+        """Whether constrained decoding should wait for the reasoning end.
+
+        Called once at turn initiation when the request carries a grammar or
+        JSON schema. ``True`` suspends grammar enforcement until the
+        reasoning-end token, so the model can reason before its constrained
+        output; ``False`` enforces the grammar from the first token.
+
+        Unlike :meth:`will_reason_after_prompt`, which must be exact because
+        it routes tokens to reasoning or content, this may also be ``True``
+        when the model only might reason, provided it always closes with the
+        end token either way. The default is :meth:`will_reason_after_prompt`.
+
+        Args:
+            prompt_token_ids: The full prompt token id sequence.
+
+        Returns:
+            ``True`` if grammar enforcement should wait for the reasoning end.
+        """
+        return self.will_reason_after_prompt(prompt_token_ids)
+
     def reset(self) -> None:
         """Resets per-request state.
 

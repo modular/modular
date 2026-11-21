@@ -276,3 +276,80 @@ async def test_thinking_region_suspends_grammar_for_racing_first_requests() -> (
         assert context.grammar_state.grammar_enforced is False
         assert context.grammar_state._in_thinking_region is True
         context.set_thinking_region.assert_called_once_with(None, [7])
+
+
+# ---------------------------------------------------------------------------
+# _ThinkingRegionNewContext: may_reason_after_prompt decides the suspension
+# ---------------------------------------------------------------------------
+
+
+class _AdaptiveParser(ReasoningParser):
+    """Parser that won't seed reasoning but lets the model open it."""
+
+    may_reason: bool = True
+
+    def stream(
+        self,
+        delta_token_ids: Sequence[int],
+        is_currently_reasoning: bool = True,
+    ) -> ParsedReasoningDelta:
+        raise NotImplementedError
+
+    def will_reason_after_prompt(self, prompt_token_ids: Sequence[int]) -> bool:
+        return False
+
+    def may_reason_after_prompt(self, prompt_token_ids: Sequence[int]) -> bool:
+        return self.may_reason
+
+    @classmethod
+    async def from_tokenizer(cls, tokenizer: Any) -> "_AdaptiveParser":
+        return cls()
+
+    @classmethod
+    async def reasoning_end_token_id(cls, tokenizer: Any) -> int | None:
+        return 7
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("may_reason", [True, False])
+async def test_thinking_region_follows_may_reason_after_prompt(
+    may_reason: bool,
+) -> None:
+    """The grammar waits for the reasoning end whenever the model may reason.
+
+    Regression: adaptive thinking (nothing seeded) enforced the grammar from
+    token 0, so a constrained request could never open its reasoning span.
+    """
+    register("adaptive-region-test")(_AdaptiveParser)
+    _AdaptiveParser.may_reason = may_reason
+    context = _constrained_context()
+
+    async def original_new_context(request: Any) -> Mock:
+        return context
+
+    wrapper = _ThinkingRegionNewContext(
+        tokenizer=Mock(),
+        original_new_context=original_new_context,
+        reasoning_parser_name="adaptive-region-test",
+    )
+    await wrapper(0)
+
+    if may_reason:
+        assert context.grammar_state.grammar_enforced is False
+        assert context.grammar_state._in_thinking_region is True
+        context.set_thinking_region.assert_called_once_with(None, [7])
+    else:
+        assert context.grammar_state.grammar_enforced is True
+        context.set_thinking_region.assert_not_called()
+
+
+def test_may_reason_after_prompt_defaults_to_will_reason() -> None:
+    class _Parser(_AdaptiveParser):
+        def will_reason_after_prompt(
+            self, prompt_token_ids: Sequence[int]
+        ) -> bool:
+            return bool(prompt_token_ids)
+
+    parser = _Parser()
+    assert ReasoningParser.may_reason_after_prompt(parser, [1])
+    assert not ReasoningParser.may_reason_after_prompt(parser, [])
