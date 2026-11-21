@@ -33,3 +33,20 @@ modular_cc_binary(
         "@llvm-project//llvm:Support",
     ],
 )
+
+modular_cc_test(
+    name = "RuntimeBenchmark",
+    srcs = ["RuntimeBenchmark.cpp"],
+    dynamic_deps = [
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals.static",
+        "//AsyncRT:Support",
+        "//Support:Globals.static",
+        "@google_benchmark//:benchmark_main",
+    ],
+)
