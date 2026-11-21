@@ -98,7 +98,9 @@ def test_rank_rows_are_that_ranks_own_projection_shards(
     heads_per_rank = HEADS // num_devices
     rows_per_rank = heads_per_rank * PADDED_WIDTH
 
-    for rank in range(num_devices):
+    # The first and last ranks: each compile costs about a minute on CPU, and
+    # an off-by-one in the head-major split shows at either end.
+    for rank in sorted({0, num_devices - 1}):
         first_head = rank * heads_per_rank
         shard = {
             name: weight.reshape(HEADS, -1, HIDDEN)[

@@ -77,35 +77,12 @@ def _head_major(weights: Weights, heads: int) -> NDArray[np.float32]:
     return np.concatenate(parts, axis=1).reshape(heads * PADDED_WIDTH, HIDDEN)
 
 
-def test_projection_names_stay_native() -> None:
-    """The fused layer loads the checkpoint's four projection names."""
-    proj = _build(_random_weights(np.random.default_rng(0)), HEADS)
-    names = {name for name, _ in proj.parameters}
-    assert names == {
-        "wq_du.weight",
-        "wr_du.weight",
-        "gate_attn.weight",
-        "attn_sink_proj.weight",
-    }
-
-
 def test_fused_weight_is_head_major() -> None:
     weights = _random_weights(np.random.default_rng(0))
     proj = _build(weights, HEADS)
     np.testing.assert_array_equal(
         proj.fused_weight.to_numpy(), _head_major(weights, HEADS)
     )
-
-
-def test_inkling2_heads_pad_to_aligned_rows() -> None:
-    """Inkling 2's 273 rows per head pad to 280, so 12 heads per rank align."""
-    proj = _QuerySideProjection(
-        hidden=HIDDEN, num_heads=12, head_dim=128, d_rel=16
-    )
-    assert proj.width == 273
-    assert proj.padded_width == 280
-    # A rank's bf16 output row is 16-byte aligned, as the SM100 matmul needs.
-    assert proj.num_heads * proj.padded_width * 2 % 16 == 0
 
 
 def test_fused_projection_matches_per_projection() -> None:

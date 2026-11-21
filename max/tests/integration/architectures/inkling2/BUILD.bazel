@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -131,10 +131,26 @@ modular_py_test(
     ],
 )
 
+# The q-side projection's layout checks that compile no graph, for presubmit.
+# The numeric checks compile host graphs, minutes apiece on CI, so
+# test_query_side_projection and test_query_side_shards run in postsubmit.
+modular_py_test(
+    name = "test_query_side_layout",
+    srcs = ["test_query_side_layout.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
 modular_py_test(
     name = "test_query_side_projection",
     size = "enormous",
     srcs = ["test_query_side_projection.py"],
+    tags = ["postsubmit"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -148,6 +164,7 @@ modular_py_test(
     name = "test_query_side_shards",
     size = "enormous",
     srcs = ["test_query_side_shards.py"],
+    tags = ["postsubmit"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -169,6 +186,23 @@ modular_py_test(
     ],
 )
 
+# The NumPy reference and runner the two mix_norm GPU targets share.
+modular_py_library(
+    name = "mix_norm_check",
+    testonly = True,
+    srcs = ["_mix_norm_check.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+# Guards the fused inkling2_mix_norm op against its NumPy reference at two
+# shapes that reach every axis; test_mix_norm_gpu_sweep runs the rest.
 modular_py_test(
     name = "test_mix_norm_gpu",
     size = "enormous",
@@ -180,10 +214,28 @@ modular_py_test(
     tags = ["gpu"],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
-        "//max/python/max:tensor",
-        "//max/python/max/driver",
+        ":mix_norm_check",
         "//max/python/max/dtype",
-        "//max/python/max/pipelines/architectures/inkling2",
-        requirement("numpy"),
+    ],
+)
+
+# The full shape sweep of inkling2_mix_norm, postsubmit only: every shape
+# compiles the op on the GPU.
+modular_py_test(
+    name = "test_mix_norm_gpu_sweep",
+    size = "enormous",
+    srcs = ["test_mix_norm_gpu_sweep.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":mix_norm_check",
+        "//max/python/max/dtype",
     ],
 )
