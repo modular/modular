@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Layout checks for the Inkling 2 fused q-side projection that compile no graph.
 
-The numeric checks compile host graphs, minutes apiece on CI, so they run in
-postsubmit (test_query_side_projection, test_query_side_shards); these run in
-presubmit.
+The numeric checks live in test_query_side_projection and
+test_query_side_shards.
 """
 
 from __future__ import annotations

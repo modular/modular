@@ -131,9 +131,9 @@ modular_py_test(
     ],
 )
 
-# The q-side projection's layout checks that compile no graph, for presubmit.
-# The numeric checks compile host graphs, minutes apiece on CI, so
-# test_query_side_projection and test_query_side_shards run in postsubmit.
+# The q-side projection's layout checks that compile no graph. The numeric
+# checks (test_query_side_projection, test_query_side_shards) each build their
+# modules under one F.lazy() block, so each realizes one graph.
 modular_py_test(
     name = "test_query_side_layout",
     srcs = ["test_query_side_layout.py"],
@@ -150,7 +150,6 @@ modular_py_test(
     name = "test_query_side_projection",
     size = "enormous",
     srcs = ["test_query_side_projection.py"],
-    tags = ["postsubmit"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -164,7 +163,6 @@ modular_py_test(
     name = "test_query_side_shards",
     size = "enormous",
     srcs = ["test_query_side_shards.py"],
-    tags = ["postsubmit"],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",

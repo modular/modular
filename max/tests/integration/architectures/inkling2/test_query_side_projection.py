@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import numpy as np
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.pipelines.architectures.inkling2.layers.attention import (
@@ -27,12 +28,7 @@ HIDDEN = 16
 HEADS = 8
 HEAD_DIM = 4
 D_REL = 2
-WIDTH = 2 * HEAD_DIM + D_REL + 1
-# Each head's rows round up to a multiple of 8, zero-filled.
-PADDED_WIDTH = 16
 TOKENS = 3
-# The deployed degree: every rank's block has one shape, so it compiles once.
-TP_DEGREES = [4]
 
 Weights = dict[str, NDArray[np.float32]]
 
@@ -65,34 +61,20 @@ def _build(weights: Weights, num_heads: int) -> _QuerySideProjection:
     return proj
 
 
-def _head_major(weights: Weights, heads: int) -> NDArray[np.float32]:
-    """The expected head-major interleave of one set of projections."""
-    parts = [
-        weights["wq_du"].reshape(heads, HEAD_DIM, HIDDEN),
-        weights["wr_du"].reshape(heads, D_REL, HIDDEN),
-        weights["gate_attn"].reshape(heads, HEAD_DIM, HIDDEN),
-        weights["attn_sink_proj"].reshape(heads, 1, HIDDEN),
-        np.zeros((heads, PADDED_WIDTH - WIDTH, HIDDEN), np.float32),
-    ]
-    return np.concatenate(parts, axis=1).reshape(heads * PADDED_WIDTH, HIDDEN)
-
-
-def test_fused_weight_is_head_major() -> None:
-    weights = _random_weights(np.random.default_rng(0))
-    proj = _build(weights, HEADS)
-    np.testing.assert_array_equal(
-        proj.fused_weight.to_numpy(), _head_major(weights, HEADS)
-    )
-
-
 def test_fused_projection_matches_per_projection() -> None:
-    """One GEMM over the fused weight reproduces the four projections."""
+    """One GEMM over the fused weight reproduces the four projections.
+
+    The forward runs through the head-major, padded fused weight, so a wrong
+    row layout fails here too. The module is built and run under one
+    ``F.lazy()`` block so the whole check is a single graph: an eager compile
+    costs minutes on CI's CPU executors.
+    """
     rng = np.random.default_rng(1)
     weights = _random_weights(rng)
     x_np = rng.standard_normal((TOKENS, HIDDEN)).astype(np.float32)
-    proj = _build(weights, HEADS)
-
-    projected = proj(Tensor(x_np, device=CPU()))
+    with F.lazy():
+        proj = _build(weights, HEADS)
+        projected = proj(Tensor(x_np, device=CPU()))
     q, r, gate, sink = (out.to_numpy() for out in projected)
 
     np.testing.assert_allclose(
