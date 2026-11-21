@@ -16,6 +16,8 @@
 # `hlcf.for` tests its bound before the body and would drop that last store.
 
 # RUN: %mojo %s | FileCheck %s
+# `append_until` only miscompiled without debug info, so run both ways.
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 
 # The test is `eq`, which is what a `while True` counting to a bound emits.
@@ -94,6 +96,20 @@ def fill_both_sides(
         count -= 1
 
 
+# The append ahead of the test grows the list, so the copy of it at the end of
+# the body has to store through the buffer its own reallocation returned.
+@no_inline
+def append_until(last: Int) -> List[Int]:
+    var out = List[Int]()
+    var k = 1
+    while True:
+        out.append(k)
+        if k == last:
+            break
+        k += 1
+    return out^
+
+
 def written(buf: List[UInt8]) -> Int:
     var count = 0
     for b in buf:
@@ -156,3 +172,11 @@ def main():
     )
     # CHECK: both 5 4
     print("both", written(a), written(b))
+
+    var appended = append_until(100)
+    var misplaced = 0
+    for i in range(len(appended)):
+        if appended[i] != i + 1:
+            misplaced += 1
+    # CHECK: append 100 0
+    print("append", len(appended), misplaced)
