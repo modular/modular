@@ -671,7 +671,10 @@ _DRIVER_RUNTIME_LIBS = [
     ":Driver/LaunchTraceRegistry",
 ] + select({
     "//:hal_device_context_enabled": [],
-    "//conditions:default": [":Driver/DeviceContextImplCpp"],
+    "//conditions:default": [
+        ":Driver/DeviceContextImplCpp",
+        ":Driver/MemoryManager",
+    ],
 })
 
 # The single owner of the C++ driver runtime: the legacy DeviceContext
@@ -961,6 +964,26 @@ modular_cc_library(
     ],
 )
 
+# The device memory allocator. It includes no driver header, so it compiles the
+# same under --config=hal-device-context. A driver supplies the memory and
+# streams through AllocatorChunks and AllocatorContext.
+modular_cc_library(
+    name = "Driver/MemoryManager",
+    srcs = ["lib/Driver/MemoryManager/MemoryManager.cpp"],
+    hdrs = [
+        "lib/Driver/MemoryManager/AllocatorBacking.h",
+        "lib/Driver/MemoryManager/AllocatorContext.h",
+        "lib/Driver/MemoryManager/MemoryManager.h",
+    ],
+    visibility = ["//MLRT:__subpackages__"],
+    deps = [
+        "//Support:Base",
+        "//Support:Profiling",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 modular_cc_library(
     name = "Driver/DeviceContextImplCpp",
     srcs = [
@@ -968,12 +991,12 @@ modular_cc_library(
         "lib/Driver/DeviceContext/CUDA/CUDADeviceContext.cpp",
         "lib/Driver/DeviceContext/CUDA/CUDADeviceGraphBuilder.cpp",
         "lib/Driver/DeviceContext/CUDA/CUDADriver.cpp",
+        "lib/Driver/DeviceContext/DeviceAllocator.cpp",
         "lib/Driver/DeviceContext/DeviceContext.cpp",
         "lib/Driver/DeviceContext/DeviceGraphBuilder.cpp",
         "lib/Driver/DeviceContext/HIP/HIPDeviceContext.cpp",
         "lib/Driver/DeviceContext/HIP/HIPDeviceGraphBuilder.cpp",
         "lib/Driver/DeviceContext/HostMemoryInfo.cpp",
-        "lib/Driver/DeviceContext/MemoryManager.cpp",
         "lib/Driver/DeviceContext/Metal/MetalDeviceContext.cpp",
         "lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.cpp",
     ],
@@ -988,10 +1011,10 @@ modular_cc_library(
         "lib/Driver/DeviceContext/CUDA/CUDADeviceGraphBuilder.h",
         "lib/Driver/DeviceContext/CUDA/CUDADriver.h",
         "lib/Driver/DeviceContext/CUDA/CUDADriver.inc",
+        "lib/Driver/DeviceContext/DeviceAllocator.h",
         "lib/Driver/DeviceContext/HIP/HIPDeviceContext.h",
         "lib/Driver/DeviceContext/HIP/HIPDeviceGraphBuilder.h",
         "lib/Driver/DeviceContext/HostMemoryInfo.h",
-        "lib/Driver/DeviceContext/MemoryManager.h",
         "lib/Driver/DeviceContext/Metal/MetalDeviceContext.h",
         "lib/Driver/DeviceContext/PinnedCompletionFlag.h",
         "lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.h",
@@ -1034,6 +1057,7 @@ modular_cc_library(
         ":Driver/DeviceContextAPI",
         ":Driver/KernelLoadGate",
         ":Driver/LaunchTraceRegistry",
+        ":Driver/MemoryManager",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals.static",
         "//AsyncRT:Support",

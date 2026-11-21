@@ -32,6 +32,7 @@ from max.pipelines.speculative import proposers, spec_adapters
 # The pairings whose verify commits a prefill row riding a verify step,
 # as the engine registry's mixed-verify list holds them.
 PREFILL_ROW_PAIRS = {
+    ("BeamForCausalLM_ModuleV3", "dflash2"),
     ("Gemma4ForConditionalGeneration", "mtp"),
     ("Gemma4UnifiedForConditionalGeneration", "mtp"),
     ("Qwen3_5ForCausalLM", "mtp"),

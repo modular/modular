@@ -19,8 +19,9 @@ from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
@@ -52,7 +53,7 @@ class MuseSparkTransformerBlock(
         rope: RotaryEmbedding,
         kv_params: KVCacheParams,
         layer_idx_in_cache: int,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
         hidden = config.hidden_size
@@ -70,8 +71,8 @@ class MuseSparkTransformerBlock(
         )
         quant_config = expert_quant_config(config, layer_idx)
         self.mlp: MuseSparkMoE | MuseSparkEPMoE
-        if ep_batch_manager is not None:
-            self.mlp = MuseSparkEPMoE(config, quant_config, ep_batch_manager)
+        if ep_config is not None:
+            self.mlp = MuseSparkEPMoE(config, quant_config, ep_config)
         else:
             self.mlp = MuseSparkMoE(config, quant_config)
         self.input_layernorm = CenteredRMSNorm(hidden, config.rms_norm_eps)
@@ -90,12 +91,15 @@ class MuseSparkTransformerBlock(
             hidden, temperature
         )
 
-    def _moe(self, x: Tensor) -> Tensor | MuseSparkMoEBranch:
+    def _moe(
+        self, x: Tensor, ep: EPBuffers | None
+    ) -> Tensor | MuseSparkMoEBranch:
         # Each device routes its own rows; the residual stream stays whole.
         if x.mesh.num_devices == 1:
             return self.mlp(x)
         if isinstance(self.mlp, MuseSparkEPMoE):
-            return self.mlp.branch(x)
+            assert ep is not None, "an expert-parallel layer needs ep"
+            return self.mlp.branch(x, ep)
         rows = DeviceMapping(x.mesh, (Sharded(0),))
         # The devices' row shards sum to t again.
         return F.rebind(self.mlp(x.to(rows)).to(x.mapping), x.shape)
@@ -105,8 +109,13 @@ class MuseSparkTransformerBlock(
         x: Tensor | MuseSparkResidualBoundary,
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
+        ep: EPBuffers | None = None,
     ) -> Tensor | MuseSparkResidualBoundary:
-        """Runs the block's attention, then its MLP."""
+        """Runs the block's attention, then its MLP.
+
+        ``ep`` holds the exchange's buffers, which an expert-parallel MLP
+        needs.
+        """
         if isinstance(x, MuseSparkResidualBoundary):
             x, attn_in = x.join_and_norm(self.input_layernorm)
         else:
@@ -124,7 +133,7 @@ class MuseSparkTransformerBlock(
         ).join_and_norm(self.pre_feedforward_layernorm)
         out = MuseSparkResidualBoundary(
             h,
-            self._moe(mlp_in),
+            self._moe(mlp_in, ep),
             self.post_feedforward_layernorm,
             self.post_feedforward_residual_gate,
         )

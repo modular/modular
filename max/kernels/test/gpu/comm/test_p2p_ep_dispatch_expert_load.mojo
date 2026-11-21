@@ -257,6 +257,7 @@ def test_expert_load[
         expected[j] = tally_start
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_step(
         dev_idx: Int,
     ) raises {

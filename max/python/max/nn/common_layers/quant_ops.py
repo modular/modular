@@ -34,6 +34,7 @@ from max.nn._graph_ops import (
 )
 from max.nn._graph_ops.ep import uses_mx_ep_token_format
 from max.nn.activation import GatedActivation
+from max.nn.ep import Grouped
 from max.nn.ep_config import EPConfig
 from max.nn.kernels import (
     block_scales_interleave,
@@ -145,8 +146,9 @@ class EPDispatchPayload:
         """Parse the per-device dispatch tuples into named per-column fields.
 
         Args:
-            dispatch_results: Per-device dispatch output tuples (the return of
-                :meth:`~max.nn.legacy.comm.ep.EPBatchManager.ep_dispatch`).
+            dispatch_results: Per-device dispatch output tuples: the
+                kernel's results before the route, then the grouped matmul
+                bounds, as :meth:`from_grouped` builds them.
             quant_config: Routed-expert quant config selecting the format.
             ep_config: EP batch-manager config; its ``dispatch_dtype`` decides
                 whether a ``scales`` column is present (a separate axis from the
@@ -204,6 +206,45 @@ class EPDispatchPayload:
                 usage_stats=usage_stats,
                 scales=columns[1] if fp8_dispatch else None,
             )
+
+    @classmethod
+    def from_grouped(
+        cls,
+        grouped: Grouped,
+        quant_config: QuantConfig | None,
+        ep_config: EPConfig,
+    ) -> EPDispatchPayload:
+        """Splits a :mod:`max.nn.ep` dispatch's results into per-device fields.
+
+        Each device's tuple holds the kernel's results in the kernel's order,
+        then the grouped matmul bounds, and :meth:`from_dispatch` parses it.
+        So every format keeps the columns that :meth:`from_dispatch` keeps.
+
+        Args:
+            grouped: The tokens that a :func:`~max.nn.ep.dispatch` received.
+            quant_config: Routed-expert quant config selecting the format.
+            ep_config: The expert-parallel configuration of the dispatch.
+        """
+        fields = (
+            grouped.tokens,
+            grouped.scales,
+            grouped.row_scales,
+            grouped.expert_start,
+            grouped.scales_offset,
+            grouped.expert_ids,
+            grouped.bounds,
+        )
+        n_devices = len(grouped.tokens.local_shards)
+        # One dispatch launch builds one bounds tensor that every device
+        # reads; a launch per device builds one per device.
+        columns = [
+            list(field.local_shards) * (n_devices // len(field.local_shards))
+            for field in fields
+            if field is not None
+        ]
+        return cls.from_dispatch(
+            list(zip(*columns, strict=True)), quant_config, ep_config
+        )
 
     def per_device_tokens(
         self,
@@ -1568,9 +1609,10 @@ def grouped_matmul_silu(
         or (isinstance(down, NVFP4Tensor) and accum_dtype is not None)
         else None
     )
+    out_dtype = gate_up_out.dtype
     if accum_dtype is not None:
         gate_up_out = gate_up_out.cast(accum_dtype)
-    return grouped_silu(
+    silu_out = grouped_silu(
         gate_up_out,
         expert_start_indices,
         requant_weight,
@@ -1579,6 +1621,13 @@ def grouped_matmul_silu(
         activation=activation,
         swiglu_limit=swiglu_limit,
     )
+    # An unquantized down weight takes the SwiGLU back in the activation
+    # dtype, as DeepSeek-V3.2 does (``.type_as(x)``). The grouped matmul has
+    # no tensor-core path for float32 rows against bf16 weights.
+    if accum_dtype is not None and isinstance(down, Tensor):
+        assert isinstance(silu_out, Tensor)
+        silu_out = silu_out.cast(out_dtype)
+    return silu_out
 
 
 def _quantize_activation_fp8(

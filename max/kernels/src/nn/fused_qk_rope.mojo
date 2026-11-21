@@ -416,6 +416,7 @@ def fused_qk_rope_ragged[
     # parameter-closure overload until cache captures in unified closures are
     # supported.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def rope_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 3, "Invalid rank passed to rope kernel"
 

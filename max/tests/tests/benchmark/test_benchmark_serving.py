@@ -37,9 +37,9 @@ from max.benchmark.benchmark_shared.datasets.types import (
 from max.benchmark.benchmark_shared.iteration import (
     resolve_skip_counts,
     retain_result,
-    seed_for_concurrency,
 )
 from max.benchmark.benchmark_shared.metrics import BenchmarkResult
+from tests.benchmark.benchmark_fakes import make_sampled_request
 
 
 @patch("max.profiler.gpu.BackgroundRecorder")
@@ -165,17 +165,6 @@ def test_resolve_skip_counts() -> None:
     assert rsc(request_rate=2.0, ignore_first_turn_stats=True) == (0, 0)
 
 
-def test_seed_for_concurrency_is_deterministic() -> None:
-    """Same (seed, max_concurrency) always derives the same sub-seed."""
-    assert seed_for_concurrency(24301, 4) == seed_for_concurrency(24301, 4)
-
-
-def test_seed_for_concurrency_differs_across_concurrency_levels() -> None:
-    """Different concurrency levels get distinct sub-seeds from one base seed."""
-    seeds = {seed_for_concurrency(24301, mc) for mc in [1, 4, 6, 8, 16]}
-    assert len(seeds) == 5
-
-
 @pytest.mark.parametrize(
     ("passed", "always_save_result", "kept"),
     [
@@ -236,13 +225,7 @@ def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def _one_request_sample() -> tuple[SampledRequest, RequestSamples]:
-    request = SampledRequest(
-        prompt_formatted="hi",
-        prompt_len=1,
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    request = make_sampled_request()
     return request, RequestSamples(requests=[request], shared_contexts=[])
 
 
@@ -427,3 +410,57 @@ def test_run_benchmark_sweep_yields_labeled_failure_without_result() -> None:
     assert run.labels is not None
     assert run.labels.tokenizer_id == "myorg/session-tokenizer"
     assert run.labels.model_id == "myorg/model"
+
+
+def test_run_benchmark_sweep_samples_every_level_from_the_base_seed() -> None:
+    """Every concurrency level samples the same workload."""
+    args = parse_args(
+        [
+            "--model",
+            "myorg/model",
+            "--tokenizer",
+            "myorg/tokenizer",
+            "--max-concurrency",
+            "4,8",
+            "--seed",
+            "42",
+        ]
+    )
+    args.flush_prefix_cache = False
+    session = BenchmarkSession(
+        benchmark_task="text-generation",
+        endpoint="/v1/completions",
+        api_url="http://localhost:8000/v1/completions",
+        base_url="http://localhost:8000",
+        model_id="myorg/model",
+        tokenizer_id="myorg/tokenizer",
+        tokenizer=None,
+        samples=RequestSamples(requests=[]),
+        lora_manager=None,
+        trace_path=None,
+        orig_skip_first=None,
+        orig_skip_last=None,
+    )
+
+    async def passing_benchmark(
+        *args: object, **kwargs: object
+    ) -> tuple[BenchmarkResult, bool]:
+        return BenchmarkResult(task_type="text", max_concurrency=4), True
+
+    with (
+        patch(
+            "max.benchmark.benchmark_serving.benchmark",
+            side_effect=passing_benchmark,
+        ),
+        patch(
+            "max.benchmark.benchmark_serving._sample_for_seed",
+            return_value=RequestSamples(requests=[]),
+        ) as sample,
+    ):
+        end_condition = EndCondition(
+            num_prompts=1, num_prompts_multiplier=None, max_duration_s=None
+        )
+        runs = list(_run_benchmark_sweep(args, session, end_condition))
+
+    assert [run.max_concurrency for run in runs] == [4, 8]
+    assert [call.args[-1] for call in sample.call_args_list] == [42, 42]

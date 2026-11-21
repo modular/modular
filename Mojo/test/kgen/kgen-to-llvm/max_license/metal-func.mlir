@@ -10,36 +10,36 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
 
   // CHECK-MLIR-LABEL: @test0{{.*}}"metal.kernel", "true"
   kgen.func export @test0() {
-    %struct = kgen.param.constant: struct<()> = <{  }>
     // CHECK-MLIR: llvm.call @air.thread_position_in_threadgroup.x() : () -> i32
-    %3 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.thread_position_in_threadgroup.x", (%struct) : (!kgen.struct<()>) -> !kgen.scalar<ui32>
+    %3 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.thread_position_in_threadgroup.x", () : () -> !kgen.scalar<ui32>
     hlcf.return
   }
 
   // CHECK-MLIR-LABEL: @test1{{.*}}"metal.kernel", "true"
   kgen.func export @test1() {
-    %struct = kgen.param.constant: struct<()> = <{  }>
     // CHECK-MLIR: llvm.call @air.thread_position_in_threadgroup.x() : () -> i32
-    %3 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.thread_position_in_threadgroup.x", (%struct) : (!kgen.struct<()>) -> !kgen.scalar<ui32>
+    %3 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.thread_position_in_threadgroup.x", () : () -> !kgen.scalar<ui32>
     hlcf.return
   }
 
   // CHECK-MLIR-LABEL: @test_barrier{{.*}}"metal.kernel", "true"
   kgen.func export @test_barrier() {
-    %struct = kgen.param.constant: struct<(scalar<si32>, scalar<si32>)> = <{ 2, 1 }>
-    // CHECK-MLIR: %[[PLACEHOLDER:.*]] = llvm.mlir.constant(1 : i32) : i32
-    // CHECK-MLIR: %[[BARRIER_TYPE:.*]] = llvm.mlir.constant(2 : i32) : i32
+    %type = kgen.param.constant: scalar<si32> = <2>
+    %placeholder = kgen.param.constant: scalar<si32> = <1>
+    // CHECK-MLIR-DAG: %[[PLACEHOLDER:.*]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-MLIR-DAG: %[[BARRIER_TYPE:.*]] = llvm.mlir.constant(2 : i32) : i32
     // CHECK-MLIR: llvm.call @air.wg.barrier(%[[BARRIER_TYPE]], %[[PLACEHOLDER]]) : (i32, i32) -> ()
-    pop.call_llvm_intrinsic side_effecting<1> "llvm.air.wg.barrier", (%struct) : (!kgen.struct<(scalar<si32>, scalar<si32>)>) -> ()
+    pop.call_llvm_intrinsic side_effecting<1> "llvm.air.wg.barrier", (%type, %placeholder) : (!kgen.scalar<si32>, !kgen.scalar<si32>) -> ()
     hlcf.return
   }
 
   kgen.func export @test_simdgroup_barrier() {
-    %struct = kgen.param.constant: struct<(scalar<si32>, scalar<si32>)> = <{ 0, 4 }>
-    // CHECK-MLIR: %[[PLACEHOLDER:.*]] = llvm.mlir.constant(4 : i32) : i32
-    // CHECK-MLIR: %[[BARRIER_TYPE:.*]] = llvm.mlir.constant(0 : i32) : i32
+    %type = kgen.param.constant: scalar<si32> = <0>
+    %placeholder = kgen.param.constant: scalar<si32> = <4>
+    // CHECK-MLIR-DAG: %[[PLACEHOLDER:.*]] = llvm.mlir.constant(4 : i32) : i32
+    // CHECK-MLIR-DAG: %[[BARRIER_TYPE:.*]] = llvm.mlir.constant(0 : i32) : i32
     // CHECK-MLIR: llvm.call @air.simdgroup.barrier(%[[BARRIER_TYPE]], %[[PLACEHOLDER]]) : (i32, i32) -> ()
-    pop.call_llvm_intrinsic side_effecting<1> "llvm.air.simdgroup.barrier", (%struct) : (!kgen.struct<(scalar<si32>, scalar<si32>)>) -> ()
+    pop.call_llvm_intrinsic side_effecting<1> "llvm.air.simdgroup.barrier", (%type, %placeholder) : (!kgen.scalar<si32>, !kgen.scalar<si32>) -> ()
     hlcf.return
   }
 

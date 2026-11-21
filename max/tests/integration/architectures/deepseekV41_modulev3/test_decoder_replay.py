@@ -286,6 +286,68 @@ def test_default_export_declares_no_replay_input() -> None:
     ]
 
 
+def test_artifact_export_declares_replay_on_each_replicas_device() -> None:
+    """No replay input lives on the host: a captured step bakes none."""
+    on = V41Config.from_hf({"text_config": vars(_text(decoder_replay=True))})
+    devices = [DeviceRef.GPU(r) for r in range(4)]
+    for degree in (1, 4):
+        declared = {
+            name: kind
+            for name, kind in extra_inputs(
+                on, devices[:degree], degree, artifact=True
+            )
+            if name.startswith("replay.")
+        }
+        assert list(declared) == [
+            "replay.kept_skip",
+            *(f"replay.row_indices.{r}" for r in range(degree)),
+            *(f"replay.kept_offsets.{r}" for r in range(degree)),
+            *(f"replay.longest_rows.{r}" for r in range(degree)),
+        ]
+        for name, kind in declared.items():
+            replica = int(name.rpartition(".")[2]) if name[-1].isdigit() else 0
+            assert kind.device == devices[replica], name
+
+
+def test_artifact_replay_cuts_like_the_bare_plan() -> None:
+    """The replica's device inputs and longest extent reach the bare cut."""
+    contexts = [_context(1024, 4096), _context(4096, 3)]
+    plan = build_replay_plan(
+        contexts, window_size=WINDOW, min_tokens=MIN_TOKENS
+    )
+    assert plan is not None
+    module = _module()
+    module.config = replace(module.config, raw_checkpoint_weights=True)
+    with default_device(CPU()):
+        b = _batch([4096, 3], [1024, 4096])
+        (longest,) = plan.kept_longest([0, len(plan.kept_skip)])
+        extras = {
+            "replay.kept_skip": _t(plan.kept_skip, DType.int32),
+            "replay.row_indices.0": _t(plan.kept_indices, DType.int32),
+            "replay.kept_offsets.0": _t(plan.kept_offsets, DType.uint32),
+            "replay.longest_rows.0": _t(
+                np.zeros(int(longest), np.uint8), DType.uint8
+            ),
+        }
+        replay = module._replay_rows(
+            b.rows, b.swa_begin, b.kv["swa"].cache_lengths, extras, None
+        )
+        got = module._cut_to_replay(replace(b, replay=replay))
+        want = _cut(b, plan)
+    np.testing.assert_array_equal(
+        got.kv["swa"].max_prompt_length.to_numpy(),
+        want.kv["swa"].max_prompt_length.to_numpy(),
+    )
+    for name in ("row_offsets", "positions", "swa_begin"):
+        np.testing.assert_array_equal(
+            getattr(got, name).to_numpy(), getattr(want, name).to_numpy()
+        )
+    np.testing.assert_array_equal(
+        got.kv["swa"].cache_lengths.to_numpy(),
+        want.kv["swa"].cache_lengths.to_numpy(),
+    )
+
+
 def test_replay_rejects_configs_that_need_every_row() -> None:
     config = replace(
         _config(_text()), engram_layer_ids=[], dspark_target_layer_ids=[]
@@ -419,3 +481,52 @@ def test_host_inputs_are_static_tables_or_capture_keyed_replay() -> None:
             "replay.rank_longest",
             *(["replay.host_kept_offsets"] if degree > 1 else []),
         }
+
+
+def test_artifact_stages_each_replicas_share_on_its_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Indices from the replica's first row, bounds from 0, longest as extent."""
+    contexts = [_context(0, 6), _context(4, 1), _context(0, 3)]
+    offsets = np.array([0, 6, 7, 10])
+    text = _text(
+        decoder_replay=True, engram_layer_ids=[], engram_num_embeddings=[]
+    )
+    processor = object.__new__(DeepseekV41BatchProcessor)
+    processor._v41 = V41Config.from_hf({"text_config": vars(text)})
+    processor._engram_static = {}
+    processor._verifies = False
+    processor._dp_degree = 2
+    monkeypatch.setattr(
+        processor,
+        "runtime",
+        SimpleNamespace(devices=[CPU(), CPU()]),
+        raising=False,
+    )
+    extras = dict(
+        zip(
+            extra_input_names(processor._v41, 2, artifact=True),
+            processor._extras(
+                contexts,
+                offsets,
+                data_parallel_splits=np.array([0, 2, 3]),
+                artifact=True,
+            ),
+            strict=True,
+        )
+    )
+    want = {
+        "replay.row_indices.0": np.arange(7),
+        "replay.row_indices.1": np.arange(3),
+        "replay.kept_offsets.0": [0, 6, 7],
+        "replay.kept_offsets.1": [0, 3],
+    }
+    for name, values in want.items():
+        np.testing.assert_array_equal(extras[name].to_numpy(), values)
+    assert [extras[f"replay.longest_rows.{r}"].shape[0] for r in range(2)] == [
+        6,
+        3,
+    ]
+    assert not any(
+        name.startswith("replay.") and "rank" in name for name in extras
+    )

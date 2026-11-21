@@ -26,6 +26,8 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.ep import EPBuffers
+from max.nn.ep import init as ep_init
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.pipelines.speculative.block_driver import (
@@ -82,12 +84,14 @@ def _verify_and_tap(
     input_row_offsets: Tensor,
     image_embeddings: Tensor,
     image_token_indices: Tensor,
+    ep: EPBuffers | None,
 ) -> tuple[Tensor, Tensor]:
     """Returns each request's last logits and every row's taps.
 
     The logits are the last ``return_n_logits`` rows' of each request; the
     taps are the outputs of ``target_layer_ids``, concatenated along the
-    hidden axis.
+    hidden axis. ``ep`` holds the exchange's buffers under expert
+    parallelism.
     """
     tokens = replicate(tokens, model.mesh)
     input_row_offsets = replicate(input_row_offsets, model.mesh)
@@ -104,6 +108,7 @@ def _verify_and_tap(
             h,
             kv_by_type[model._layer_kv_key[idx]],
             input_row_offsets=input_row_offsets,
+            ep=ep,
         )
         if idx in target_layer_ids:
             if isinstance(h, MuseSparkResidualBoundary):
@@ -139,9 +144,11 @@ class MuseSparkBlockTarget:
     ) -> Verified[list[TensorValue]]:
         """Runs the target over ``batch``'s merged rows: logits and taps."""
         assert isinstance(batch, BlockBatch)
-        if self.target.ep_batch_manager is not None:
-            assert batch.ep_inputs is not None
-            self.target.bind_ep_buffers(batch.ep_inputs)
+        ep = ep_init.flat_buffers(
+            self.target.ep_config,
+            [Tensor.from_graph_value(v) for v in batch.ep_inputs or ()],
+            self.mesh,
+        )
         logits, taps = _verify_and_tap(
             self.target,
             self.target_layer_ids,
@@ -154,6 +161,7 @@ class MuseSparkBlockTarget:
             Tensor.from_graph_value(batch.merged_offsets),
             _from_shards(batch.vision_embeddings, self.mesh),
             _from_shards(batch.vision_scatter_indices, self.mesh),
+            ep,
         )
         return Verified(logits=_shards(logits)[0], hidden=_shards(taps))
 
@@ -266,8 +274,8 @@ def verify(
 def ep_input_tree(target: Any) -> object | None:
     """Returns the group that names the EP buffers past the graph's tail."""
     assert isinstance(target, MuseSparkDecoder)
-    manager = target.model.ep_batch_manager
-    return None if manager is None else manager.input_tree()
+    config = target.model.ep_config
+    return None if config is None else ep_init.payload_types(config)
 
 
 def block_proposer(

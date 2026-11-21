@@ -86,7 +86,7 @@ const char *checkVal(T *result, V errVal, ErrorOr<T> errOr) {
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceContext_strfree(const char *ptr) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_strfree", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_strfree", M_PROFILE_COLOR_GRAY);
   free(const_cast<char *>(ptr));
 }
 
@@ -97,13 +97,13 @@ AsyncRT_DeviceContext_create(DeviceContext **result, const char *kind, int id) {
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceContext_retain(DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_retain", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_retain", M_PROFILE_COLOR_GRAY);
   // Increment the low-level reference count.
   DeviceContextRef::lowLevelAddRef(ctx);
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceContext_release(DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_release", M_PROFILE_COLOR_GRAY);
   // Give the event handlers opportunity to run, which can decrement the
   // reference count.
   [[maybe_unused]] ErrorOrSuccess ignored = ctx->pollPendingEvents();
@@ -113,19 +113,20 @@ MODULAR_EXPORT void AsyncRT_DeviceContext_release(DeviceContext *ctx) {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_deviceName(DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_deviceName", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_deviceName",
+                       M_PROFILE_COLOR_GRAY);
   return raiseError(ctx->device().name().c_str());
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result,
                                                     DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_deviceApi", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_deviceApi", M_PROFILE_COLOR_GRAY);
   *result = ctx->device().api();
 }
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_archName(llvm::StringRef *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_archName", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_archName", M_PROFILE_COLOR_GRAY);
   ErrorOr<const char *> archName = ctx->device().getArchName();
   if (archName.isError()) {
     *result = "";
@@ -138,7 +139,8 @@ AsyncRT_DeviceContext_archName(llvm::StringRef *result, DeviceContext *ctx) {
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContextScope_create(const DeviceContextScope **result,
                                   DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContextScope_create", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContextScope_create",
+                       M_PROFILE_COLOR_GRAY);
   DeviceContextScope *scope = new DeviceContextScope(*ctx);
   const char *errMsg = checkSuccess(scope->err());
   if (errMsg == nullptr) {
@@ -149,21 +151,23 @@ AsyncRT_DeviceContextScope_create(const DeviceContextScope **result,
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_setAsCurrent(DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_setAsCurrent", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_setAsCurrent",
+                       M_PROFILE_COLOR_GRAY);
   ErrorOrSuccess err = ctx->setAsCurrent();
   return checkSuccess(std::move(err));
 }
 
 MODULAR_EXPORT void
 AsyncRT_DeviceContextScope_release(const DeviceContextScope *scope) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContextScope_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContextScope_release",
+                       M_PROFILE_COLOR_GRAY);
   delete scope;
 }
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_cuda_current_context(CUcontext *result) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_cuda_current_context",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_cuda_current_context",
+                       M_PROFILE_COLOR_GRAY);
   ErrorOr<const CUDADriver &> errDriver = CUDADriver::get();
   if (errDriver.isError()) {
     return raiseError(errDriver.getError());
@@ -237,13 +241,13 @@ AsyncRT_DeviceBuffer_createSubBuffer(DeviceBuffer **result, void **devicePtr,
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceBuffer_retain(DeviceBuffer *buffer) {
-  M_PROFILE_SPAN("AsyncRT_DeviceBuffer_retain", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceBuffer_retain", M_PROFILE_COLOR_GRAY);
   // Increment the low-level reference count.
   DeviceBufferRef::lowLevelAddRef(buffer);
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceBuffer_release(DeviceBuffer *buffer) {
-  M_PROFILE_SPAN("AsyncRT_DeviceBuffer_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceBuffer_release", M_PROFILE_COLOR_GRAY);
   // Decrement the low-level reference count.
   DeviceBufferRef::lowLevelDropRef(buffer);
 }
@@ -254,8 +258,8 @@ MODULAR_EXPORT void AsyncRT_DeviceBuffer_release(DeviceBuffer *buffer) {
 // 1) for a Mojo `AnyAsyncValueRef` to adopt net-zero.
 MODULAR_EXPORT AsyncRT::AsyncValue *
 AsyncRT_AsyncValue_createFromDeviceBuffer(DeviceBuffer *handle) {
-  M_PROFILE_SPAN("AsyncRT_AsyncValue_createFromDeviceBuffer",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_AsyncValue_createFromDeviceBuffer",
+                       M_PROFILE_COLOR_GRAY);
   CPUDevice &cpuDevice = *CPUDevice::getCurrentCPUDeviceOrNull();
   // TAKE the reference net-zero (no addRef): `take_handle` is `deinit self`, so
   // adopting via `takeRCRef` transfers the single live reference without an
@@ -271,31 +275,32 @@ AsyncRT_AsyncValue_createFromDeviceBuffer(DeviceBuffer *handle) {
 
 MODULAR_EXPORT const DeviceContext *
 AsyncRT_DeviceBuffer_context(DeviceBuffer *buffer) {
-  M_PROFILE_SPAN("AsyncRT_DeviceBuffer_context", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceBuffer_context", M_PROFILE_COLOR_GRAY);
   return &buffer->context();
 }
 
 // TODO: Remove the V1 compatibility.
 MODULAR_EXPORT void AsyncRT_DeviceBuffer_release_ptr(DeviceBuffer *buffer) {
-  M_PROFILE_SPAN("AsyncRT_DeviceBuffer_release_ptr", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceBuffer_release_ptr",
+                       M_PROFILE_COLOR_GRAY);
   buffer->releasePtr();
 }
 
 MODULAR_EXPORT int64_t AsyncRT_DeviceBuffer_bytesize(DeviceBuffer *buffer) {
-  M_PROFILE_SPAN("AsyncRT_DeviceBuffer_bytesize", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceBuffer_bytesize", M_PROFILE_COLOR_GRAY);
   return buffer->byteSize();
 }
 
 MODULAR_EXPORT const char *AsyncRT_DeviceBuffer_hostPtr(void **result,
                                                         DeviceBuffer *buffer) {
-  M_PROFILE_SPAN("AsyncRT_DeviceBuffer_hostPtr", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceBuffer_hostPtr", M_PROFILE_COLOR_GRAY);
   return checkVal(result, static_cast<void *>(nullptr),
                   buffer->context().getHostAccessiblePointer(buffer->ptr()));
 }
 
 MODULAR_EXPORT const char *AsyncRT_DeviceContext_stream(DeviceStream **result,
                                                         DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_stream", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_stream", M_PROFILE_COLOR_GRAY);
   return checkRef(result, ctx->stream());
 }
 
@@ -309,12 +314,14 @@ AsyncRT_DeviceContext_createStream(DeviceStream **stream, int priority,
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_selectStream(DeviceContext **result, DeviceContext *ctx,
                                    unsigned int streamId) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_selectStream", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_selectStream",
+                       M_PROFILE_COLOR_GRAY);
   return checkRef(result, ctx->selectStream(streamId));
 }
 
 MODULAR_EXPORT int AsyncRT_DeviceContext_numStreams(DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_numStreams", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_numStreams",
+                       M_PROFILE_COLOR_GRAY);
   return ctx->numStreams();
 }
 
@@ -340,13 +347,13 @@ AsyncRT_DeviceStream_synchronize(DeviceStream *stream) {
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceStream_retain(DeviceStream *stream) {
-  M_PROFILE_SPAN("AsyncRT_DeviceStream_retain", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceStream_retain", M_PROFILE_COLOR_GRAY);
   // Increment the low-level reference count.
   DeviceStreamRef::lowLevelAddRef(stream);
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceStream_release(DeviceStream *stream) {
-  M_PROFILE_SPAN("AsyncRT_DeviceStream_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceStream_release", M_PROFILE_COLOR_GRAY);
   // Decrement the low-level reference count.
   DeviceStreamRef::lowLevelDropRef(stream);
 }
@@ -403,8 +410,8 @@ MODULAR_EXPORT uint64_t AsyncRT_CompletionFlag_load(CompletionFlag *flag) {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_isGraphCapturing(bool *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_isGraphCapturing",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_isGraphCapturing",
+                       M_PROFILE_COLOR_GRAY);
   *result = ctx->isGraphCapturing();
   return nullptr;
 }
@@ -419,13 +426,13 @@ MODULAR_EXPORT const char *AsyncRT_DeviceEvent_synchronize(DeviceEvent *event) {
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceEvent_retain(DeviceEvent *event) {
-  M_PROFILE_SPAN("AsyncRT_DeviceEvent_retain", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceEvent_retain", M_PROFILE_COLOR_GRAY);
   // Increment the low-level reference count.
   DeviceEventRef::lowLevelAddRef(event);
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceEvent_release(DeviceEvent *event) {
-  M_PROFILE_SPAN("AsyncRT_DeviceEvent_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceEvent_release", M_PROFILE_COLOR_GRAY);
   // Decrement the low-level reference count.
   DeviceEventRef::lowLevelDropRef(event);
 }
@@ -545,13 +552,13 @@ MODULAR_EXPORT const char *AsyncRT_DeviceContext_loadFunctionWithDebugName(
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceFunction_retain(DeviceFunction *func) {
-  M_PROFILE_SPAN("AsyncRT_DeviceFunction_retain", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceFunction_retain", M_PROFILE_COLOR_GRAY);
   // Increment the low-level reference count.
   DeviceFunctionRef::lowLevelAddRef(func);
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceFunction_release(DeviceFunction *func) {
-  M_PROFILE_SPAN("AsyncRT_DeviceFunction_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceFunction_release", M_PROFILE_COLOR_GRAY);
   // Decrement the low-level reference count.
   DeviceFunctionRef::lowLevelDropRef(func);
 }
@@ -684,14 +691,15 @@ AsyncRT_DeviceContext_setMetalPrintEnabled(DeviceContext *ctx, bool enabled) {
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceTimer_release(DeviceTimer *timer) {
-  M_PROFILE_SPAN("AsyncRT_DeviceTimer_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceTimer_release", M_PROFILE_COLOR_GRAY);
   // Decrement the low-level reference count.
   DeviceTimerRef::lowLevelDropRef(timer);
 }
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_getApiVersion(int *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_getApiVersion", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_getApiVersion",
+                       M_PROFILE_COLOR_GRAY);
   return checkVal(result, 0, ctx->device().getApiVersion());
 }
 
@@ -711,19 +719,20 @@ AsyncRT_DeviceContext_getAttribute(int *result, DeviceContext *ctx, int attr) {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_isCompatible(DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_isCompatible", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_isCompatible",
+                       M_PROFILE_COLOR_GRAY);
   return checkSuccess(ctx->device().isCompatible());
 }
 
 MODULAR_EXPORT int64_t AsyncRT_DeviceContext_id(DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_id", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_id", M_PROFILE_COLOR_GRAY);
   return ctx->device().id();
 }
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_computeCapability(int32_t *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_computeCapability",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_computeCapability",
+                       M_PROFILE_COLOR_GRAY);
   int compute;
   const char *errMsg = checkVal(&compute, 0, ctx->device().computeCapability());
   *result = compute;
@@ -781,21 +790,22 @@ MODULAR_EXPORT const char *AsyncRT_DeviceContext_enableAllPeerAccess() {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_allPeerAccessEnabled(bool *result) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_allPeerAccessEnabled",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_allPeerAccessEnabled",
+                       M_PROFILE_COLOR_GRAY);
   return checkVal(result, false, Device::allPeerAccessEnabled());
 }
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_supportsMulticast(bool *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_supportsMulticast",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_supportsMulticast",
+                       M_PROFILE_COLOR_GRAY);
   return checkVal(result, false, ctx->device().supportsMulticast());
 }
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_isHostUnified(bool *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_isHostUnified", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_isHostUnified",
+                       M_PROFILE_COLOR_GRAY);
   return checkVal(result, false, ctx->device().isHostUnified());
 }
 
@@ -847,7 +857,8 @@ MODULAR_EXPORT const char *AsyncRT_DeviceMulticastBuffer_multicastBufferFor(
 //
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_cuda_context(CUcontext *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_cuda_context", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_cuda_context",
+                       M_PROFILE_COLOR_GRAY);
   const CUDADeviceContext *verifiedCtx = CUDADeviceContext::verified_cast(ctx);
   if (verifiedCtx == nullptr) {
     return raiseError("Not a CUDAContext");
@@ -858,7 +869,8 @@ AsyncRT_DeviceContext_cuda_context(CUcontext *result, DeviceContext *ctx) {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceStream_cuda_stream(CUstream *result, DeviceStream *stream) {
-  M_PROFILE_SPAN("AsyncRT_DeviceStream_cuda_stream", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceStream_cuda_stream",
+                       M_PROFILE_COLOR_GRAY);
   const CUDADeviceStream *verifiedStream =
       CUDADeviceStream::verified_cast(stream);
   if (verifiedStream == nullptr) {
@@ -870,7 +882,8 @@ AsyncRT_DeviceStream_cuda_stream(CUstream *result, DeviceStream *stream) {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceFunction_cuda_module(CUmodule *result, DeviceFunction *func) {
-  M_PROFILE_SPAN("AsyncRT_DeviceFunction_cuda_module", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceFunction_cuda_module",
+                       M_PROFILE_COLOR_GRAY);
   // Check if the device context is CUDA
   if (func->context().device().api() != Device::cudaAPI) {
     return raiseError("Not a CUDA DeviceFunction");
@@ -937,7 +950,8 @@ MODULAR_EXPORT const char *AsyncRT_cuda_tensorMapEncodeIm2col(
 //
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_hip_device(hipDevice_t *result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_hip_device", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_hip_device",
+                       M_PROFILE_COLOR_GRAY);
   const HIPDeviceContext *verifiedCtx = HIPDeviceContext::verified_cast(ctx);
   if (verifiedCtx == nullptr) {
     return raiseError("Not a HIPContext");
@@ -948,7 +962,7 @@ AsyncRT_DeviceContext_hip_device(hipDevice_t *result, DeviceContext *ctx) {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceStream_hip_stream(hipStream_t *result, DeviceStream *stream) {
-  M_PROFILE_SPAN("AsyncRT_DeviceStream_hip_stream", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceStream_hip_stream", M_PROFILE_COLOR_GRAY);
   const HIPDeviceStream *verifiedStream =
       HIPDeviceStream::verified_cast(stream);
   if (verifiedStream == nullptr) {
@@ -960,7 +974,8 @@ AsyncRT_DeviceStream_hip_stream(hipStream_t *result, DeviceStream *stream) {
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceFunction_hip_module(hipModule_t *result, DeviceFunction *func) {
-  M_PROFILE_SPAN("AsyncRT_DeviceFunction_hip_module", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceFunction_hip_module",
+                       M_PROFILE_COLOR_GRAY);
   // Check if the device context is HIP
   if (func->context().device().api() != Device::hipAPI) {
     return raiseError("Not a HIP DeviceFunction");
@@ -980,7 +995,8 @@ class Device;
 
 MODULAR_EXPORT const char *
 AsyncRT_DeviceContext_metal_device(MTL::Device **result, DeviceContext *ctx) {
-  M_PROFILE_SPAN("AsyncRT_DeviceContext_metal_device", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceContext_metal_device",
+                       M_PROFILE_COLOR_GRAY);
 #if MODULAR_MACOS
   const MetalDeviceContext *verifiedCtx =
       MetalDeviceContext::verified_cast(ctx);
@@ -1018,13 +1034,15 @@ AsyncRT_DeviceContext_createGraphMemoryPool(DeviceContext *ctx) {
 
 MODULAR_EXPORT void
 AsyncRT_DeviceGraphMemoryPool_retain(DeviceGraphMemoryPool *pool) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraphMemoryPool_retain", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraphMemoryPool_retain",
+                       M_PROFILE_COLOR_GRAY);
   DeviceGraphMemoryPoolRef::lowLevelAddRef(pool);
 }
 
 MODULAR_EXPORT void
 AsyncRT_DeviceGraphMemoryPool_release(DeviceGraphMemoryPool *pool) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraphMemoryPool_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraphMemoryPool_release",
+                       M_PROFILE_COLOR_GRAY);
   DeviceGraphMemoryPoolRef::lowLevelDropRef(pool);
 }
 
@@ -1056,8 +1074,8 @@ AsyncRT_DeviceContext_createGraphBuilderWithPool(DeviceGraphBuilder **result,
 // via AsyncRT_DeviceContext_release).
 MODULAR_EXPORT const char *AsyncRT_DeviceGraphBuilder_recordingContext(
     DeviceContext **result, DeviceGraphBuilder *builder, int32_t seedNodeId) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraphBuilder_recordingContext",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraphBuilder_recordingContext",
+                       M_PROFILE_COLOR_GRAY);
   return checkRef(result,
                   builder->recordingContext(DeviceGraphNode{seedNodeId}));
 }
@@ -1221,7 +1239,8 @@ AsyncRT_DeviceGraphBuilder_addOutput(DeviceGraphBuilder *builder,
 // Returns the number of outputs registered on the device graph. Cannot fail.
 MODULAR_EXPORT int64_t
 AsyncRT_DeviceGraphBuilder_numOutputs(DeviceGraphBuilder *builder) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraphBuilder_numOutputs", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraphBuilder_numOutputs",
+                       M_PROFILE_COLOR_GRAY);
   return static_cast<int64_t>(builder->numOutputs());
 }
 
@@ -1249,7 +1268,8 @@ AsyncRT_DeviceGraphBuilder_addInPlaceInput(DeviceGraphBuilder *builder) {
 // fail.
 MODULAR_EXPORT int64_t
 AsyncRT_DeviceGraphBuilder_numInputs(DeviceGraphBuilder *builder) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraphBuilder_numInputs", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraphBuilder_numInputs",
+                       M_PROFILE_COLOR_GRAY);
   return static_cast<int64_t>(builder->numInputs());
 }
 
@@ -1271,8 +1291,8 @@ MODULAR_EXPORT void AsyncRT_DeviceGraphBuilder_addStableAssignment(
 // after a successful add and treat -1 as a logic error.
 MODULAR_EXPORT int32_t
 AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone(DeviceGraphBuilder *builder) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone",
-                 M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone",
+                       M_PROFILE_COLOR_GRAY);
   std::optional<DeviceGraphNode> node = builder->lastNode();
   return node ? node->id : -1;
 }
@@ -1286,12 +1306,12 @@ AsyncRT_DeviceGraphBuilder_instantiate(DeviceGraph **result,
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceGraph_retain(DeviceGraph *graph) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraph_retain", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraph_retain", M_PROFILE_COLOR_GRAY);
   DeviceGraphRef::lowLevelAddRef(graph);
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceGraph_release(DeviceGraph *graph) {
-  M_PROFILE_SPAN("AsyncRT_DeviceGraph_release", M_PROFILE_COLOR_GRAY);
+  M_PROFILE_TRACY_ZONE("AsyncRT_DeviceGraph_release", M_PROFILE_COLOR_GRAY);
   DeviceGraphRef::lowLevelDropRef(graph);
 }
 

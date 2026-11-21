@@ -23,7 +23,9 @@
 #include "Support/SymbolExport.h"
 
 namespace M {
+namespace MLRT {
 class MEFType;
+} // namespace MLRT
 
 /// Framework-independent quantization info for a single tensor.
 class MODULAR_CXX_EXPORT QuantSpec {
@@ -117,7 +119,7 @@ public:
   }
 
   /// Helper method to decode a MEFType into a TensorSpec, if possible.
-  static ErrorOr<QuantTensorSpec> get(MEFType type);
+  static ErrorOr<QuantTensorSpec> get(MLRT::MEFType type);
 
   std::string getAsString() const;
   void print(raw_ostream &os) const;

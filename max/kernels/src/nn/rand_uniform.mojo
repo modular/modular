@@ -61,6 +61,7 @@ def random_uniform[
     var delta = Float32(upper_bound - lower_bound)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert width <= 4
 

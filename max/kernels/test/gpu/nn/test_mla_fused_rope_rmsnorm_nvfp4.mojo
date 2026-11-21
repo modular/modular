@@ -342,6 +342,7 @@ def run_case[num_q_heads: Int](ctx: DeviceContext) raises:
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kv_input_fn[
         width: Int
     ](coords: Coord[Int, Int]) {var kv_tt} -> SIMD[DType.bfloat16, width]:

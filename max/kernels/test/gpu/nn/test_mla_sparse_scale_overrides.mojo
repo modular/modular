@@ -60,6 +60,7 @@ def run_case[
     var output = ctx.enqueue_create_buffer[.bfloat16](TOKENS * HEADS * V_DEPTH)
     var out = TileTensor(output, row_major(TOKENS, Idx[HEADS], Idx[V_DEPTH]))
 
+    @__allow_legacy_any_origin_fields
     def launch(launch_ctx: DeviceContext) raises {imm}:
         mla_sparse_attention[
             num_heads=HEADS,

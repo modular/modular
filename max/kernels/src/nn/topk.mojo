@@ -420,6 +420,7 @@ def _top_k_cpu[
     var shape = input.layout.shape_coord()
     var axis_dim = Int(input.dim(axis))
 
+    @__allow_legacy_any_origin_fields
     def process_rows(start_row: Int, end_row: Int) {imm}:
         # Allocate the index list without initializing its elements.
         var idxs = List[Int64](unsafe_uninit_length=axis_dim)

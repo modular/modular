@@ -326,6 +326,7 @@ def main() raises:
     ]
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_dispatch_async(
         d: Int, rnd: Int, rows: Int
     ) raises {mut r_tok, mut r_topk, mut d_send, mut counters, imm}:
@@ -359,6 +360,7 @@ def main() raises:
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_dispatch_wait(
         d: Int,
     ) raises {
@@ -400,6 +402,7 @@ def main() raises:
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_combine(
         d: Int, rnd: Int, rows: Int
     ) raises {mut r_w, mut r_out, mut counters, mut d_out, mut src_info, imm}:

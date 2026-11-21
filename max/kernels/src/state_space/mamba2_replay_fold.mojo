@@ -391,6 +391,7 @@ def mamba2_replay_fold_launch[
     var width = Int(conv_pool.dim[2]()) + 1
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch[DSTATE: Int, CONV_WIDTH: Int]() raises {imm}:
         # The token-serial scan's tile, which the fold reproduces exactly.
         comptime WIDE = DSTATE == 128 and ctx.target.is_nvidia_gpu()

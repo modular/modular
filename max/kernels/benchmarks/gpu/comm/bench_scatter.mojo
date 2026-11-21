@@ -171,6 +171,7 @@ def bench_scatter[
         list_of_ctx[gpu_idx].synchronize()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut tt_in_bufs, imm}:

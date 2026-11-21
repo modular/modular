@@ -798,6 +798,52 @@ build_test(
     targets = ["gpu/nn/bench_fp8_index_prefill.mojo.run"],
 )
 
+# EPLB expert-load counting cost: NVFP4 dispatch_wait and fused dispatch timed
+# without and with the tally sink, at MiniMax-M3 shapes, one target per EP
+# size so it can be timed on remote B200. The glob above still builds the
+# all-formats binary from the same source.
+[
+    mojo_test(
+        name = "gpu/comm/bench_ep_dispatch.mojo.run_expert_load_ep%d" % n_ranks,
+        size = "enormous",
+        srcs = ["gpu/comm/bench_ep_dispatch.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "expert_load=1",
+            "-D",
+            "n_ranks=%d" % n_ranks,
+        ],
+        data = ["@nvshmem_prebuilt//:host"],
+        enable_assertions = False,
+        env = {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+        exec_properties = {
+            # Ten prefill slots of an n_experts x 2048-token receive buffer.
+            "test.resources:gpu-memory": "24",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = select({
+            "//:b200_gpu": ["//:has_multi_gpu"],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:comm",
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:max_mojo",
+            "//max:shmem",
+            "@mojo//:std",
+        ],
+    )
+    for n_ranks in [
+        2,
+        4,
+        8,
+    ]
+]
+
 # SM100 attention over a split 192/128 KV cache against the cache padded to
 # 256, at MiMo-V2.6-Flash decode, verify and prefill shapes. Out of the
 # `gpu/**` glob for the same reason as the benchmark above. The 256k-key,

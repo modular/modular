@@ -21,10 +21,10 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SessionMessage,
 )
 from max.benchmark.benchmark_shared.warmup import (
+    _nested_size_biased_pick,
     _WarmupSamplingReport,
     log_warmup_sampling_report,
     pick_warmup_population,
-    systematic_probability_proportional_to_size,
 )
 
 # ---------------------------------------------------------------------------
@@ -170,8 +170,8 @@ def test_pick_warmup_length_biased_basic() -> None:
 
 
 def test_pick_warmup_length_biased_matches_size_biased_target() -> None:
-    """Systematic PPS gives E[realized_mean] = target_mean exactly when no
-    items cap. Average across many draws should be within ~1% of target."""
+    """With no items capping, the average realized_mean across many draws is
+    close to target_mean."""
     main = 32
     M = 32
     factor = 8
@@ -194,9 +194,9 @@ def test_pick_warmup_length_biased_matches_size_biased_target() -> None:
         target_mean = report.target_mean
     assert target_mean is not None
     avg_realized = float(np.mean(realized_means))
-    # 30 draws of K=32 averages out to ~960 picks of T; the analytical bias
-    # is 0 (no caps) and per-draw stddev averages out fast.
-    assert abs(avg_realized - target_mean) / target_mean < 0.02
+    # 30 draws of K=32 average out to ~960 picks of T, so the per-draw
+    # stddev averages out and what is left is the pick's small bias.
+    assert abs(avg_realized - target_mean) / target_mean < 0.03
 
 
 def test_pick_warmup_sufficient_dataset_no_shrink() -> None:
@@ -284,8 +284,8 @@ def test_pick_warmup_severe_underproduction_floors_warmup() -> None:
 
 def test_pick_warmup_realized_mean_stdev_brackets_observed_spread() -> None:
     """The reported per-draw stdev should upper-bound the actual spread of
-    realized_mean across seeds (with-replacement bound; systematic PPS
-    variance is at most this)."""
+    realized_mean across seeds (with-replacement bound; picks without
+    replacement vary less)."""
     main = 32
     M = 32
     factor = 8
@@ -366,61 +366,74 @@ def test_log_warmup_sampling_report_no_warning_when_target_met(
 
 
 # ---------------------------------------------------------------------------
-# systematic_probability_proportional_to_size
+# _nested_size_biased_pick
 # ---------------------------------------------------------------------------
 
 
-def test_systematic_pps_no_duplicates() -> None:
-    rng = np.random.default_rng(0)
-    weights = rng.integers(1, 50, size=100).astype(np.float64)
-    for _ in range(200):
-        idx = systematic_probability_proportional_to_size(weights, 20, rng)
+def _streams(n: int, seed: int) -> list[np.random.Generator]:
+    return [np.random.default_rng([seed, i]) for i in range(n)]
+
+
+def test_nested_pick_no_duplicates() -> None:
+    weights = np.random.default_rng(0).integers(1, 50, size=160)
+    for seed in range(50):
+        idx = _nested_size_biased_pick(
+            weights.astype(np.float64), 20, _streams(160, seed)
+        )
         assert len(idx) == 20
-        assert len(set(idx.tolist())) == 20
+        assert len(set(idx)) == 20
 
 
-def test_systematic_pps_inclusion_probability_matches_weight() -> None:
-    """Empirical P(item i picked) ≈ K * w_i / W when no item caps."""
-    rng = np.random.default_rng(1)
-    weights = np.array([1, 2, 3, 5, 8, 13, 21], dtype=np.float64)
-    K = 3
-    # K * max(w) / W = 3 * 21 / 53 = 1.19 > 1 → cap. Lower K to avoid cap
-    # for the matching-probability check.
-    K = 2
-    cap_thresh = weights.sum() / K
-    assert (weights < cap_thresh).all()
-    n_trials = 8000
-    counts = np.zeros(len(weights), dtype=np.int64)
-    for _ in range(n_trials):
-        idx = systematic_probability_proportional_to_size(weights, K, rng)
-        counts[idx] += 1
-    expected = K * weights / weights.sum()
-    actual = counts / n_trials
-    assert np.allclose(actual, expected, atol=0.03)
-
-
-def test_systematic_pps_iterated_cap_pre_includes() -> None:
-    """An item with weight >= W/K is always included."""
-    rng = np.random.default_rng(2)
-    weights = np.array([1, 1, 1, 1, 100], dtype=np.float64)
-    K = 2
-    # weights[4] = 100 >> W/K = 104/2 = 52.
-    for _ in range(100):
-        idx = systematic_probability_proportional_to_size(weights, K, rng)
-        assert 4 in idx.tolist()
-
-
-def test_systematic_pps_mean_matches_size_biased() -> None:
-    """E[mean of picks] = sum(T^2) / sum(T) when no item caps."""
-    rng = np.random.default_rng(3)
-    T = rng.integers(1, 50, size=200).astype(np.float64)
-    K = 8
-    cap_thresh = T.sum() / K
-    assert (T < cap_thresh).all()
+def test_nested_pick_mean_matches_size_biased() -> None:
+    """E[mean of picks] is close to sum(T^2) / sum(T) when no item caps."""
+    T = np.random.default_rng(3).integers(1, 50, size=8 * 16)
+    T = T.astype(np.float64)
     sb_mean = float((T * T).sum() / T.sum())
-    realized = []
-    for _ in range(200):
-        idx = systematic_probability_proportional_to_size(T, K, rng)
-        realized.append(float(T[idx].mean()))
-    avg = float(np.mean(realized))
-    assert abs(avg - sb_mean) / sb_mean < 0.02
+    realized = [
+        float(T[_nested_size_biased_pick(T, 16, _streams(len(T), seed))].mean())
+        for seed in range(300)
+    ]
+    assert abs(float(np.mean(realized)) - sb_mean) / sb_mean < 0.03
+
+
+def test_nested_pick_keeps_smaller_picks() -> None:
+    """The picks for k are the first picks for any larger k."""
+    factor = 8
+    T = np.random.default_rng(4).integers(1, 50, size=factor * 32)
+    T = T.astype(np.float64)
+    larger = _nested_size_biased_pick(T, 32, _streams(len(T), 7))
+    for k in (1, 5, 16, 31):
+        n = factor * k
+        assert _nested_size_biased_pick(T[:n], k, _streams(n, 7)) == larger[:k]
+
+
+def test_pick_warmup_keeps_main_pool_and_smaller_picks() -> None:
+    """A larger warmup count keeps the main pool and every smaller pick.
+
+    The picks keep their start turns too, so the workload a sweep sends
+    differs across concurrency levels only by the sessions added.
+    """
+    main = 40
+    factor = 8
+    turns = np.random.default_rng(5).integers(1, 60, size=main + factor * 24)
+    pool = _fixed_pool([int(t) for t in turns])
+
+    def pick(
+        warmup_count: int,
+    ) -> tuple[list[tuple[int | None, int]], list[ChatSession]]:
+        sessions, _ = pick_warmup_population(
+            pool[: main + factor * warmup_count],
+            warmup_count,
+            warmup_multiturn=True,
+            warmup_oversample_factor=factor,
+            main_pool_target=main,
+            rng=np.random.default_rng(42),
+        )
+        picks = [(s.id, s.prefix_turns) for s in sessions[:warmup_count]]
+        return picks, sessions[warmup_count:]
+
+    larger_picks, larger_main = pick(24)
+    for warmup_count in (4, 16):
+        picks, main_sessions = pick(warmup_count)
+        assert picks == larger_picks[:warmup_count]
+        assert main_sessions == larger_main

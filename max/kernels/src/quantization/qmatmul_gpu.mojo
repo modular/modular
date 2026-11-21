@@ -943,6 +943,7 @@ def multistage_qgemm_kernel[
     var c_rows_left = M - block_idx[1] * BM - Int(warp_y) * WM
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def apply_epilogue() {imm}:
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures

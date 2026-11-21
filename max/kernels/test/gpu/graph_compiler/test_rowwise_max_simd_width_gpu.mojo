@@ -51,6 +51,7 @@ def widest_load[
         var sums = sums_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
         var widest = widest_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
 
+        @__allow_legacy_any_origin_fields
         def body[
             params: rowwise.ContextParams
         ](row_coords: Coord, mut ctx: rowwise.Context[params]) {

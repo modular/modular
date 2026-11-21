@@ -38,6 +38,7 @@ def widest_call[
         var counts = counts_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
         var widest = widest_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
 
+        @__allow_legacy_any_origin_fields
         def body[
             width: Int, alignment: Int = 1
         ](idx: Coord) {var counts, var widest}:

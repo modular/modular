@@ -14,9 +14,10 @@
 
 `CpAsync` wraps `cp.async`: each thread copies 4, 8 or 16 bytes from global
 to shared memory, and completes in batches: issues join the open
-`cp.async` group, `cp.async.commit_group` closes it, and
-`cp.async.wait_group` waits until at most a given number of groups are
-outstanding.
+`cp.async` group. Closing a group with `cp.async.commit_group` and waiting
+with `cp.async.wait_group` are the building block's, through
+`layout.building_blocks.commit_batch` and `wait_batches`; this module
+issues neither.
 
 The bulk copy, `cp.async.bulk`, is B200-specific and lives in
 `layout.atoms.b200.cp_async`.
@@ -29,54 +30,30 @@ from layout.atoms.cp_async import CpAsync, CpAsyncGroups
 """
 
 from layout import ImmTileTensor, MutTileTensor
-from layout.atoms import BatchCompletion, TransferAtom, vector_map
+from layout.atoms import (
+    BatchCompletion,
+    CompletionFamily,
+    TransferAtom,
+    vector_map,
+)
 from layout.tensor_engine import DefaultEngine, TensorEngine
 from layout.layout import TensorLayout
 
-from max.gpu.memory import (
-    async_copy,
-    async_copy_commit_group,
-    async_copy_wait_all,
-    async_copy_wait_group,
-)
+from max.gpu.memory import async_copy
 
 from std.sys import size_of
 
 
 struct CpAsyncGroups(BatchCompletion):
-    """`cp.async` groups: issues join the open group, `commit` closes it
-    with `cp.async.commit_group`, and `wait` is `cp.async.wait_group`."""
+    """The completion of `cp.async`: issues join the open group, which
+    `cp.async.commit_group` closes and `cp.async.wait_group` waits on."""
 
     comptime Result = NoneType
     """Nothing: a `cp.async` returns no handle."""
+    comptime family = CompletionFamily.async_copy_group
+    """Every `CpAsync`, whatever its width."""
     comptime max_pending = Int.MAX
     """Any number of committed groups can stay outstanding."""
-
-    @staticmethod
-    @always_inline
-    def open():
-        """Does nothing: a group is always open, and issues join it."""
-        pass
-
-    @staticmethod
-    @always_inline
-    def commit():
-        """Closes the open group with `cp.async.commit_group`."""
-        async_copy_commit_group()
-
-    @staticmethod
-    @always_inline
-    def wait[pending: Int = 0]():
-        """Waits with `cp.async.wait_group` until at most `pending`
-        committed groups are outstanding.
-
-        Parameters:
-            pending: The groups that may stay outstanding.
-        """
-        comptime if pending == 0:
-            async_copy_wait_all()
-        else:
-            async_copy_wait_group(Int32(pending))
 
 
 @fieldwise_init

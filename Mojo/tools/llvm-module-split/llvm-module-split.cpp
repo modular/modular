@@ -13,15 +13,28 @@
 
 #include "Config/Version.h"
 #include "Mojo/Compiler/LLVMIRUtils.h"
+#include "Mojo/Compiler/ObjectCompiler.h"
+#include "Mojo/Compiler/Target/TargetBackend.h"
 #include "Mojo/ExecutionEngine/ExecutionEngine.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CLOptions.h"
+#include "Mojo/ToolCommon/InitAllDialects.h"
+#include "Mojo/TransformUtils/SlicingUtils.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/MDialect/MDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Target/LLVMIR/Export.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
@@ -56,7 +69,8 @@ private:
   llvm::cl::OptionCategory cat{"Common command line options"};
 
   M::cl::MOpt<std::string, true> inputFilenameOpt{
-      llvm::cl::Positional, llvm::cl::desc("<input file>"),
+      llvm::cl::Positional,
+      llvm::cl::desc("<input file: .mlir in the LLVM dialect, else LLVM IR>"),
       llvm::cl::location(inputFilename), llvm::cl::cat(cat)};
 
   M::cl::MOpt<std::string, true> outputPrefixOpt{
@@ -101,6 +115,78 @@ static std::unique_ptr<Module> readModule(LLVMContext &Context,
   return m;
 }
 
+using SliceOutputFn =
+    llvm::function_ref<void(llvm::unique_function<LLVMModuleAndContext()>,
+                            std::optional<int64_t>, unsigned)>;
+
+/// Splits a module in the LLVM dialect as `ObjectCompiler` does before
+/// translation, then translates each slice to LLVM IR.
+static LogicalResult splitLLVMDialect(StringRef inputFilename,
+                                      bool outlineSharedSubtrees,
+                                      SliceOutputFn output) {
+  DialectRegistry registry;
+  registry.insert<MDialect>();
+  registerKGENToLLVMTranslation(registry);
+  MLIRContext context(registry);
+  llvm::SourceMgr sourceMgr;
+  SourceMgrDiagnosticHandler diagHandler(sourceMgr, &context);
+  OwningOpRef<ModuleOp> module =
+      parseSourceFile<ModuleOp>(inputFilename, sourceMgr, &context);
+  if (!module || failed(mlir::verify(*module)))
+    return mlir::failure();
+
+  // A target that is not registered has no shared memory.
+  const TargetBackend *backend = nullptr;
+  if (auto triple = (*module)->getAttrOfType<StringAttr>(
+          mlir::LLVM::LLVMDialect::getTargetTripleAttrName())) {
+    M::ErrorOr<const TargetBackend *> backendOr =
+        TargetBackendRegistry::get().lookup(llvm::Triple(triple.getValue()));
+    if (!backendOr.isError())
+      backend = *backendOr;
+  }
+  llvm::LLVMContext probeCtx;
+  auto isSliceLocalGlobal = [&](mlir::LLVM::GlobalOp global) {
+    return backend && isSharedMemoryGlobal(*backend, global, probeCtx);
+  };
+
+  LLVMDialectModuleSplitter splitter(std::move(module));
+  unsigned outlineThreads =
+      outlineSharedSubtrees
+          ? llvm::hardware_concurrency().compute_thread_count()
+          : 0;
+  if (failed(splitter.plan(isSliceLocalGlobal, outlineThreads)))
+    return mlir::failure();
+
+  size_t numSlices = splitter.getNumSlices();
+  unsigned numSymbols = 0;
+  for (size_t idx = 0; idx != numSlices; ++idx) {
+    OwningOpRef<ModuleOp> slice = splitter.takeSlice(idx);
+    LLVMModuleAndContext sliceModule;
+    ErrorOrSuccess err = sliceModule.create(
+        [&](LLVMContext &ctx) -> M::ErrorOr<std::unique_ptr<Module>> {
+          std::unique_ptr<Module> llvmModule =
+              translateModuleToLLVMIR(*slice, ctx);
+          if (!llvmModule)
+            return M::Error("could not translate slice to LLVM IR");
+          if (numSlices > 1)
+            llvmModule->removeModuleInlineAsm();
+          return llvmModule;
+        });
+    if (err) {
+      llvm::errs() << err.getError() << "\n";
+      return mlir::failure();
+    }
+    std::optional<int64_t> moduleIdx;
+    if (numSlices > 1)
+      moduleIdx = idx;
+    output([sliceModule = std::move(
+                sliceModule)]() mutable { return std::move(sliceModule); },
+           moduleIdx, numSymbols);
+    numSymbols += splitter.getNumSymbols(idx);
+  }
+  return mlir::success();
+}
+
 int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv, true);
 
@@ -122,19 +208,11 @@ int main(int argc, char **argv) {
   // Enable command line options for various MLIR internals.
   llvm::cl::ParseCommandLineOptions(argc, argv);
   TraceProfiler tracer(clOptions.timeTrace, clOptions.timeTraceGranularity);
-
-  LLVMModuleAndContext module;
-  ErrorOrSuccess err = module.create(
-      [&](LLVMContext &ctx) -> M::ErrorOr<std::unique_ptr<Module>> {
-        if (std::unique_ptr<Module> module =
-                readModule(ctx, clOptions.inputFilename))
-          return module;
-        return M::Error("could not load LLVM file");
-      });
-  if (err) {
-    llvm::errs() << err.getError() << "\n";
-    return -1;
-  }
+  bool llvmDialect =
+      llvm::sys::path::extension(clOptions.inputFilename) == ".mlir";
+  if (llvmDialect && clOptions.perFunctionSplit)
+    return clOptions.options.reportError(
+        "--per-func does not apply to an .mlir input");
 
   std::unique_ptr<llvm::ToolOutputFile> output = nullptr;
   if (clOptions.outputPrefix == "-") {
@@ -178,6 +256,28 @@ int main(int argc, char **argv) {
           llvm::outs() << "Write llvm module to " << outPath << "\n";
         }
       };
+
+  if (llvmDialect) {
+    if (failed(splitLLVMDialect(clOptions.inputFilename,
+                                clOptions.outlineSharedSubtrees, outputLambda)))
+      return -1;
+    if (output)
+      output->keep();
+    return 0;
+  }
+
+  LLVMModuleAndContext module;
+  ErrorOrSuccess err = module.create(
+      [&](LLVMContext &ctx) -> M::ErrorOr<std::unique_ptr<Module>> {
+        if (std::unique_ptr<Module> module =
+                readModule(ctx, clOptions.inputFilename))
+          return module;
+        return M::Error("could not load LLVM file");
+      });
+  if (err) {
+    llvm::errs() << err.getError() << "\n";
+    return -1;
+  }
 
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
   if (clOptions.perFunctionSplit)

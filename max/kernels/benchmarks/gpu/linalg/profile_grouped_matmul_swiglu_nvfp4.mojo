@@ -471,6 +471,7 @@ def main() raises:
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def kernel_launch(
             ctx: DeviceContext[], iteration: Int
         ) raises {

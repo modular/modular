@@ -96,7 +96,7 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
         self._reads_context_length = config.mla_latent_cache
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
-        """Runs the tower; it reads the exchange off the tail of its inputs."""
+        """Runs the tower over the batch."""
         assert inputs.batch_context_lengths is not None
         return self.model(
             inputs.tokens,
@@ -108,5 +108,5 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
                 if self._reads_context_length
                 else ()
             ),
-            *(tree.leaves(inputs.ep) if inputs.ep is not None else ()),
+            ep=inputs.ep,
         )

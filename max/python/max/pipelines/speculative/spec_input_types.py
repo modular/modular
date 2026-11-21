@@ -692,6 +692,11 @@ def spec_decode_input_tree(
         if trailing is None:
             named["trailing"] = tuple(inputs.trailing)
         else:
+            collisions = set(named).intersection(trailing)
+            if collisions:
+                raise ValueError(
+                    f"trailing input groups overwrite canonical groups: {sorted(collisions)}"
+                )
             named.update(_laid_out(trailing, inputs.trailing))
     return named
 

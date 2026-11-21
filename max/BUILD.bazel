@@ -31,6 +31,13 @@ package_group(
 
 max_aliases()
 
+# `builtin_kernels` is a namespace whose modules each precompile on their own,
+# so the label stands for all of them rather than for one package.
+alias(
+    name = "builtin_kernels",
+    actual = "//max/kernels/src/graph_compiler/builtin_kernels",
+)
+
 alias(
     name = "max",
     actual = "//max/python/max/_entrypoints:pipelines",

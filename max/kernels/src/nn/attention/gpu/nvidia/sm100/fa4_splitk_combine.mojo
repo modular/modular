@@ -365,6 +365,7 @@ def _fa4_splitk_combine_kernel[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def fold(p: Int, scale: Scalar[_ACC]) {mut datas, mut result, imm}:
             var is_valid = SIMD[.bool, vec_size](fill=scale != Scalar[_ACC](0))
             comptime for i in range(elems_per_thread):
@@ -496,6 +497,7 @@ def fa4_splitk_combine[
     comptime sm_count = ctx.default_device_info.sm_count
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def enqueue[P_STATIC: Int]() raises {imm}:
         comptime kernel = _fa4_splitk_combine_kernel[
             output_type, ov_depth, intermediate_type, P_STATIC=P_STATIC

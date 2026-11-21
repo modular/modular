@@ -124,7 +124,7 @@ struct InitState {
   InitState(ModelOp model);
 
   /// Returns the current final 'init' chain result.
-  TypedValue<MEF::ChainType> getFinalChain();
+  TypedValue<MLRT::MEF::ChainType> getFinalChain();
 
   /// Update the final 'init' chain result.
   void updateFinalChain(Value newChain);
@@ -155,7 +155,7 @@ struct ExecuteState {
   /// Returns 'root' chain, ie the first argument to the 'execute' block.
   /// If any non-root chain is ready then the root chain is guaranteed to be
   /// ready, and can thus be ignored.
-  TypedValue<MEF::ChainType> getRootChain() const;
+  TypedValue<MLRT::MEF::ChainType> getRootChain() const;
 
   /// Returns MGP context argument to the 'execute' block.
   TypedValue<ContextType> getContext() const;

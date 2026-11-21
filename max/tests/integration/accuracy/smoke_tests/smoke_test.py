@@ -224,6 +224,9 @@ VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
     "poolside/Laguna-S-2.1-NVFP4__modulev3": (
         "poolside/Laguna-S-2.1-DFlash-NVFP4",
     ),
+    "reflection/Beam-1.0-501B-A23B-NVFP4__dflash2": (
+        "reflection/Beam-1.0-501B-A23B-DFlash2",
+    ),
 }
 
 

@@ -40,6 +40,9 @@ from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.ep import EPBuffers
+from max.nn.ep import init as ep_init
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import row_invariant_matmul
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
@@ -47,7 +50,6 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
@@ -181,7 +183,7 @@ class MistralLarge4TextModel(
             Tensor,
             Tensor | None,
             Tensor | None,
-            EPCommBuffers | None,
+            EPBuffers | None,
             Tensor | None,
             Tensor | None,
         ],
@@ -194,7 +196,7 @@ class MistralLarge4TextModel(
         self,
         config: MistralLarge4Config,
         kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         """Builds the embedding, the decoder stack, the norms and the head.
 
@@ -202,12 +204,12 @@ class MistralLarge4TextModel(
             config: The resolved config, whose per-layer lists drive the stack.
             kv_params: The cache tree the graph's inputs are flattened from,
                 which decides whether decode takes the verify's kernels.
-            ep_batch_manager: The expert-parallel runtime, when EP is on.
+            ep_config: The expert-parallel configuration, when EP is on.
 
         Raises:
             ValueError: If a layer has no slot in its MLA cache leaf.
         """
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
         self.config = config
         yarn = config.yarn
         assert yarn is not None
@@ -293,7 +295,7 @@ class MistralLarge4TextModel(
                     buffer_size=config.max_batch_context_length,
                     rope_interleaved=config.rope_interleave,
                     index_norm_eps=config.index_norm_eps,
-                    ep_batch_manager=ep_batch_manager,
+                    ep_config=ep_config,
                     row_invariant_decode=self.row_invariant_decode,
                 )
             )
@@ -325,7 +327,7 @@ class MistralLarge4TextModel(
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         image_embeddings: Tensor | None = None,
         image_token_indices: Tensor | None = None,
     ) -> tuple[Tensor, ...]:
@@ -339,7 +341,7 @@ class MistralLarge4TextModel(
             indexer_kv_collection,
             input_row_offsets,
             batch_context_length,
-            comm_buffers,
+            ep,
             image_embeddings,
             image_token_indices,
         )
@@ -366,7 +368,7 @@ class MistralLarge4TextModel(
         indexer_kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Runs the target over the merged verify rows and returns its taps.
 
@@ -383,7 +385,7 @@ class MistralLarge4TextModel(
             indexer_kv_collection: The indexer's key cache.
             return_n_logits: How many trailing rows of each request score.
             input_row_offsets: ``[batch + 1]`` merged ragged offsets.
-            comm_buffers: The EP collective buffers, when EP is on.
+            ep: The exchange's buffers, when EP is on.
 
         Returns:
             The ``[rows, vocab]`` float32 variable logits, their row offsets,
@@ -412,7 +414,7 @@ class MistralLarge4TextModel(
             indexer_kv_collection,
             input_row_offsets,
             None,
-            comm_buffers,
+            ep,
         )
         logits, offsets = self._variable_logits(
             h, input_row_offsets, return_n_logits
@@ -453,7 +455,7 @@ class MistralLarge4TextModel(
         indexer_kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
         batch_context_length: Tensor | None,
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         image_embeddings: Tensor | None = None,
         image_token_indices: Tensor | None = None,
     ) -> tuple[Tensor, dict[int, Tensor]]:
@@ -470,7 +472,7 @@ class MistralLarge4TextModel(
             batch_context_length: The host page-aligned context length the
                 dense prefill plan stages, or ``None`` for a graph that has no
                 slot for it.
-            comm_buffers: The EP collective buffers, when EP is on.
+            ep: The exchange's buffers, when EP is on.
             image_embeddings: The vision rows this step scatters into the
                 prompt, ``[rows, hidden]``, or ``None`` for a graph whose
                 ABI carries no vision inputs.
@@ -584,7 +586,7 @@ class MistralLarge4TextModel(
                 topk_indices,
                 not owns_indexer,
                 shared_kv,
-                comm_buffers,
+                ep,
                 mla_prefill_metadata=mla_prefill_metadata,
                 ssmax_log_positions=ssmax_log_positions,
             )
@@ -727,22 +729,22 @@ class MistralLarge4(Module[..., ModuleV3Outputs]):
         self,
         config: MistralLarge4Config,
         kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         """Wraps the language model.
 
         Args:
             config: The resolved config.
             kv_params: The cache tree the graph's inputs are flattened from.
-            ep_batch_manager: The expert-parallel runtime, when EP is on.
+            ep_config: The expert-parallel configuration, when EP is on.
         """
         super().__init__()
         self.language_model = MistralLarge4TextModel(
-            config, kv_params, ep_batch_manager
+            config, kv_params, ep_config
         )
         self.config = config
         self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
 
     def forward(
         self,
@@ -798,12 +800,8 @@ class MistralLarge4(Module[..., ModuleV3Outputs]):
         nope_kv_collection = (
             collection(NOPE_MLA_GROUP) if NOPE_MLA_GROUP in kv_tree else None
         )
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            # Any variadic graph values left after the KV cache are the EP
-            # communication buffers. Wrap them as one forward argument so they
-            # thread through each MoE block's subgraph boundary.
-            comm_buffers = self.ep_batch_manager.comm_buffers(list(kv_inputs))
+        # Any variadic graph values left after the KV cache are the EP inputs.
+        ep = ep_init.flat_buffers(self.ep_config, kv_inputs, mesh)
         outputs = self.language_model(
             tokens,
             collection(ROPE_MLA_GROUP),
@@ -814,7 +812,7 @@ class MistralLarge4(Module[..., ModuleV3Outputs]):
             batch_context_lengths_tensor,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            ep,
             image_embeddings,
             image_token_indices,
         )
@@ -828,7 +826,7 @@ class MistralLarge4(Module[..., ModuleV3Outputs]):
         kv_by_group: Mapping[
             str, Sequence[KVCacheInputsPerDevice[Tensor, Tensor]]
         ],
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Runs the speculative verify over the merged rows.
 
@@ -845,7 +843,7 @@ class MistralLarge4(Module[..., ModuleV3Outputs]):
             input_row_offsets: ``[batch + 1]`` merged ragged offsets.
             kv_by_group: Each cache leaf the target reads, keyed by its name in
                 the tree, one entry per device.
-            comm_buffers: The EP collective buffers, when EP is on.
+            ep: The exchange's buffers, when EP is on.
 
         Returns:
             The ``[rows, vocab]`` float32 variable logits, their row offsets,
@@ -890,5 +888,5 @@ class MistralLarge4(Module[..., ModuleV3Outputs]):
             collection(INDEXER_GROUP),
             return_n_logits,
             input_row_offsets,
-            comm_buffers,
+            ep,
         )

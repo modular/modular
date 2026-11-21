@@ -60,9 +60,8 @@ def test_semantic_inputs_preserve_the_positional_abi(
         *((splits, host) if data_parallel else ()),
         kv0,
         kv1,
-        *((ep,) if with_ep else ()),
     )
-    decoder._forward.assert_called_once_with(*expected)
+    decoder._forward.assert_called_once_with(*expected, ep=inputs.ep)
 
 
 def test_registration_uses_the_shared_decoder_batch_processor() -> None:

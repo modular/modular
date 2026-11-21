@@ -345,6 +345,7 @@ struct AppleM5Fp4MatMul[
         # the one block scale the run shares (`COLS_PER_THREAD <= 16`). Shared by
         # the interior path and the bounded path's in-bounds run.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _decode_run(
             n_abs: Int,
             k0: Int,
@@ -379,6 +380,7 @@ struct AppleM5Fp4MatMul[
         # and a clean zero elsewhere. `k_valid` is the in-bounds K width of this
         # strip (used only on the bounded path).
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _stage_dequant[
             bounded: Bool
         ](k0: Int32, k_valid: Int32, buf: Int) {imm}:
@@ -462,6 +464,7 @@ struct AppleM5Fp4MatMul[
         # scattered 1-byte DRAM load. The caller barriers after this before the
         # decode reads it. Only emitted when `coalesce_scales`.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _stage_scales(k0: Int32, buf: Int) {imm}:
             comptime NSCALE = BN * NBLK
             var t = Int(tid)
@@ -479,6 +482,7 @@ struct AppleM5Fp4MatMul[
                 )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _mma_from_smem[
             bounded: Bool
         ](buf: Int, k_strip_local: Int32, valid_rows: Int32) {mut accum, imm}:
@@ -570,6 +574,7 @@ struct AppleM5Fp4MatMul[
             var tile_col_base = Int(col_base)
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _write4(
                 lrow: Int,
                 lcol: Int,

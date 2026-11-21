@@ -65,6 +65,14 @@ bool isHopperAndAbove(TargetInfoAttr target) {
   return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_103", "sm_120"});
 }
 
+/// Returns whether `target` converts fp8 with a native `cvt`. sm_120 reaches
+/// these types through software instead, so a cast lowered here on that
+/// architecture carries semantics the caller did not ask for. This is the same
+/// window the stdlib's `_nvptx_native_float8_cast` reports.
+bool hasNativeFloat8Cvt(TargetInfoAttr target) {
+  return isHopperAndAbove(target) && !isNVPTX(target, {"sm_120"});
+}
+
 LLVM::InlineAsmOp createInlineAsm(POPLoweringBuilder &builder, Location loc,
                                   StringRef asmStr, StringRef asmConstraints,
                                   Type resultType,
@@ -113,8 +121,9 @@ public:
   LogicalResult lower(POP::CastOp op, Value input,
                       POPLoweringBuilder &builder) const {
     TargetInfoAttr target = converter.getTarget();
-    // These conversions rely on NVPTX instructions available on Hopper+.
-    if (!target || !isHopperAndAbove(target))
+    // These conversions rely on NVPTX instructions available from Hopper up
+    // to, but not including, sm_120.
+    if (!target || !hasNativeFloat8Cvt(target))
       return failure();
 
     KGENDType fromDType = *op.getInput().getType().getResolvedDType();
@@ -159,7 +168,7 @@ private:
   convertF32ToF8OnNVPTX(POPLoweringBuilder &rewriter, POP::CastOp op,
                         Value value, APFloat::Semantics fromFloatSemantics,
                         APFloat::Semantics toFloatSemantics) const {
-    assert(isHopperAndAbove(converter.getTarget()) &&
+    assert(hasNativeFloat8Cvt(converter.getTarget()) &&
            "lowering of f32 to f8 is only supported on NVIDIA Hopper "
            "architectures or above");
     Location loc = op.getLoc();
@@ -210,7 +219,7 @@ private:
                                     POP::CastOp op, Value value,
                                     APFloat::Semantics fromFloatSemantics,
                                     APFloat::Semantics toFloatSemantics) const {
-    assert(isHopperAndAbove(converter.getTarget()) &&
+    assert(hasNativeFloat8Cvt(converter.getTarget()) &&
            "lowering of f8 to f16 or f32 is only supported on NVIDIA Hopper "
            "architectures or above");
     Location loc = op.getLoc();
@@ -384,7 +393,9 @@ public:
   }
 
   void addPostLowerToLLVMPasses(mlir::OpPassManager &pm) const override {
-    pm.addPass(mlir::createConvertNVVMToLLVMPass());
+    // The pass rewrites NVVM ops in place and touches no symbol, so it runs
+    // in parallel on every isolated top-level op, including globals.
+    pm.nestAny().addPass(mlir::createConvertNVVMToLLVMPass());
   }
 
   void markExportedKernel(mlir::Operation *func) const override {
@@ -417,8 +428,13 @@ public:
       TargetInfoAttr target,
       llvm::function_ref<void(KGENDType from, KGENDType to)> addConversion)
       const override {
-    // The fp8 conversions rely on NVPTX instructions available on Hopper+.
-    if (!isHopperAndAbove(target))
+    // The fp8 conversions rely on NVPTX instructions available from Hopper
+    // (sm_90) up to, but not including, sm_120, which reaches these types
+    // through software instead. The same window is what the stdlib's
+    // `_nvptx_native_float8_cast` reports, and a conversion declared here that
+    // the stdlib does not expect lowers to an instruction with other
+    // semantics.
+    if (!hasNativeFloat8Cvt(target))
       return;
     addConversion(KGENDType::f8e5m2, KGENDType::f16);
     addConversion(KGENDType::f8e4m3fn, KGENDType::f16);

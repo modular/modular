@@ -262,7 +262,7 @@ def struct_checks[T: AnyType]() raises -> String:
         )
         var c_type = _cfield_of[T, i]().c_type
         match c_type:
-            case .default:
+            case .default():
                 out += _implied_type_check[types[i]](name, field)
             case _:
                 out += String(
@@ -284,14 +284,14 @@ def _c_type_decl(c_type: CType) raises -> String:
         array type.
 
     Raises:
-        If `c_type` is `.default`, which spells no type.
+        If `c_type` is `.default()`, which spells no type.
     """
     match c_type:
         case .type(name):
             return String(t"{name} *ptr")
         case .array(name, count):
             return String(t"{name} (*ptr)[{count}]")
-        case .default:
+        case .default():
             raise Error("CType.default spells no C type")
 
 

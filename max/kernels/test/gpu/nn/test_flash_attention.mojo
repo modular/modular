@@ -539,6 +539,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext[], seq_len: Int) raises:
     var sinks_device = immut_tile_tensor_1d(sinks_dev.unsafe_ptr(), num_heads)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch(ctx: DeviceContext[]) raises {imm}:
         flash_attention[sink=True](
             out_device,

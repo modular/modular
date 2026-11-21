@@ -38,6 +38,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from max import functional as F
+from max import tree
 from max.driver import (
     Accelerator,
     set_virtual_device_api,
@@ -47,9 +48,9 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.ep.init import payload_types
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -215,7 +216,7 @@ def _dp_ep_compile_inputs(
     config: V41Config,
     kv_params: MultiKVCacheParams,
     device_refs: list[DeviceRef],
-    ep_manager: EPBatchManager,
+    ep_config: EPConfig,
     dp: int,
 ) -> list[TensorType | BufferType]:
     """The forward's input types in DP ABI order, before signal buffers.
@@ -235,7 +236,7 @@ def _dp_ep_compile_inputs(
     inputs.extend(
         t for _, t in extra_inputs(config, device_refs, data_parallel_degree=dp)
     )
-    inputs.extend(ep_manager.input_types())
+    inputs.extend(tree.leaves(payload_types(ep_config)))
     return inputs
 
 
@@ -267,7 +268,7 @@ def _build_dp4_ep4(
         (_DP,),
         ("dp",),
     )
-    ep_manager = EPBatchManager(_ep_config(config, _DP))
+    ep_config = _ep_config(config, _DP)
     with F.lazy(), default_device(mesh):
         module = DeepseekV41(
             config,
@@ -276,9 +277,9 @@ def _build_dp4_ep4(
             text_config=text,
             token_map=np.arange(text.vocab_size, dtype=np.int32),
             data_parallel_degree=_DP,
-            ep_batch_manager=ep_manager,
+            ep_config=ep_config,
         )
-    inputs = _dp_ep_compile_inputs(interface, kv, device_refs, ep_manager, _DP)
+    inputs = _dp_ep_compile_inputs(interface, kv, device_refs, ep_config, _DP)
     return module, interface, inputs
 
 

@@ -14,13 +14,18 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
+import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
     build_spec_decode_input_types,
+    declared_spec_decode_inputs,
     decode_spec_decode_input_values,
+    spec_decode_input_tree,
 )
 
 CPU = DeviceRef.CPU()
@@ -97,4 +102,43 @@ def test_distributed_fused_spec_signature_declares_hisparse_once() -> None:
             hisparse_input_types=sparse,
         )
         assert len(named.hisparse) == 17
+        graph.output()
+
+
+@pytest.mark.parametrize("group", ["tokens", "kv", "spec", "return_n_logits"])
+def test_trailing_groups_cannot_replace_canonical_inputs(group: str) -> None:
+    spec = SpecDecodeInputTypeSpec(devices=[CPU], distributed=False)
+    trailing_type = TensorType(DType.int32, [1], device=CPU)
+    declared = declared_spec_decode_inputs(
+        spec, kv_params=_kv_params(), trailing_input_types=[trailing_type]
+    )
+    with pytest.raises(ValueError, match="overwrite canonical groups"):
+        spec_decode_input_tree(spec, declared, trailing={group: trailing_type})
+
+
+def test_named_trailing_inputs_preserve_same_shaped_value_order() -> None:
+    spec = SpecDecodeInputTypeSpec(devices=[CPU], distributed=False)
+    value_type = TensorType(DType.int32, [1], device=CPU)
+    trailing_types = [value_type, value_type]
+    kv = _kv_params()
+    types = build_spec_decode_input_types(
+        spec, kv_params=kv, trailing_input_types=trailing_types
+    )
+    with Graph("ordered_trailing", input_types=types) as graph:
+        declared = decode_spec_decode_input_values(
+            graph.inputs,
+            spec,
+            kv_params=kv,
+            trailing_input_types=trailing_types,
+        )
+        first, second = declared.trailing
+        groups = OrderedDict(
+            model_context=OrderedDict(z_first=value_type, a_second=value_type)
+        )
+        named = spec_decode_input_tree(spec, declared, trailing=groups)
+        context = named["model_context"]
+        assert isinstance(context, OrderedDict)
+        assert tuple(context) == ("z_first", "a_second")
+        assert context["z_first"] is first
+        assert context["a_second"] is second
         graph.output()

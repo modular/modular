@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
 
   DialectRegistry registry;
   MO::loadDialects(registry);
-  registry.insert<mlir::func::FuncDialect, MEF::MEFDialect>();
+  registry.insert<mlir::func::FuncDialect, MLRT::MEF::MEFDialect>();
 
   MO::registerPasses();
   mlir::registerDefaultTimingManagerCLOptions();

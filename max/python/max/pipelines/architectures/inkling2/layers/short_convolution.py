@@ -77,17 +77,24 @@ def _convolve(
     input_row_offsets: Tensor,
     positions: Tensor,
 ) -> Tensor:
-    """Returns ``(x + conv(x)) / sqrt(K + 1)`` on one device."""
+    """Returns ``(x + conv(x)) / sqrt(K + 1)`` on one device.
+
+    The kernel convolves in float32 and divides before it rounds to ``x``'s
+    dtype, so the bfloat16 input and taps go in as they are: widening them
+    first would be exact and cost a launch each.
+    """
     taps = conv.weight.reshape([-1, conv.kernel_size])
-    y = ring_conv(
-        x.cast(DType.float32),
-        taps.cast(DType.float32),
-        site,
+    return _short_conv_ring(
+        x,
+        taps.cast(x.dtype),
+        site.ring,
         input_row_offsets,
         positions,
+        site.rows,
+        site.layer_row,
         commit=True,
+        out_divisor=(conv.kernel_size + 1) ** 0.5,
     )
-    return (y / (conv.kernel_size + 1) ** 0.5).cast(x.dtype)
 
 
 class ShortConvolution(Module[..., Tensor]):

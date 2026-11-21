@@ -999,7 +999,10 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "weight_adapters": arch.checkpoint_adapters(huggingface_config),
+            "weight_adapters": arch.checkpoint_adapters(
+                huggingface_config,
+                artifact_export=pipeline_config.artifact_export,
+            ),
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
         }

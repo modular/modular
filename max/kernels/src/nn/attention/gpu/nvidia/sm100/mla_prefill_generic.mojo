@@ -1012,6 +1012,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_rope_smem_ptr(
                 idx: UInt32,
             ) {imm} -> SharedMemPointer[Scalar[KRopeType.dtype]]:
@@ -1028,6 +1029,7 @@ __extension SM100MLA:
                 ]().unsafe_offset(idx * UInt32(rope_stage_elems))
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_v_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
@@ -1043,6 +1045,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_fused[
                 partial: Bool,
                 with_q: Bool = False,
@@ -1522,6 +1525,7 @@ __extension SM100MLA:
             comptime produce_k_split_mbar_type = type_of(k0_mbar)
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_split[
                 partial: Bool,
                 with_q: Bool = False,
@@ -2120,6 +2124,7 @@ __extension SM100MLA:
             # byte-identical. Captures pipeline_v/consumer_s0/pipeline_o0/
             # s0_tmem/o0_tmem from this scope (mirrors `_advance_kv`).
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _pv_into_o0(
                 mut s_phase: UInt32, mut c_scale: UInt32, e: Int32
             ) {mut pipeline_o0, mut pipeline_v, imm}:

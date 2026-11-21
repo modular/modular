@@ -739,6 +739,12 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       assert(calleeSig.hasMemoryOnlyResult() ||
              (calleeSig.isThrows() &&
               pogAttr.getPassingKind() == PassingKind::Implicit));
+      // Overload resolution can already have made the result temporary. It is
+      // new, so it cannot alias an argument.
+      if (convention == ArgConvention::ByRefResult && operands.resultSlot) {
+        argumentValues.push_back({operands.resultSlot, callExpr});
+        continue;
+      }
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
 

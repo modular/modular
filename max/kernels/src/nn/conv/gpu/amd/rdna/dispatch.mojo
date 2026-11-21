@@ -458,6 +458,7 @@ def dispatch_rdna_conv2d[
             var resid_beta = beta
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _gemm_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,
@@ -509,6 +510,7 @@ def dispatch_rdna_conv2d[
             # The kernel stores the result, so the closure doesn't capture
             # `output`.
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _residual_compute[
                 _dtype: DType,
                 _width: SIMDLength,

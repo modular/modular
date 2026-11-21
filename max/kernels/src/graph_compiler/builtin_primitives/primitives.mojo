@@ -49,15 +49,6 @@ from max.gpu.host import (
 )
 from max.gpu.host import _DeviceContextPtr
 
-# A target can add `DeviceContext` methods as `__extension`s, which only an
-# import of a name brings in, and `mogg_launch_declarative` calls them.
-# TODO(DRIV-491): These are the legacy context's extensions, which don't apply
-# when `DeviceContext` is the HAL context. Once targets launch through the HAL
-# context, import their extensions through `max.gpu.host`, or drop this import
-# if HAL launches need none.
-from max.gpu.host._legacy.device_context import (
-    LegacyDeviceContext as _DeviceContextExtensions,
-)
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import OwnedPointer, MaybeUninit, alloc
 from std.builtin.device_passable import DevicePassable
@@ -99,6 +90,7 @@ from extensibility import (
 from std.utils import Index, IndexList, StaticTuple
 
 from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
+from max._plugin import CurrentMaxPlugin
 
 from .buffer_plan import BufferPlanState
 
@@ -2405,6 +2397,8 @@ def _foreach[
     comptime assert (
         simd_width & (simd_width - 1) == 0
     ), "simd_width must be a power of two"
+    # TODO(GEX-4610): `_graph_blob_foreach` copies this width selection; share
+    # it.
     comptime if MaxSimdWidth.is_static_value:
         comptime limit = MaxSimdWidth.static_value
         comptime width = simd_width if limit == 0 else min(
@@ -2431,6 +2425,74 @@ def _foreach[
                         _trace_description=_trace_name,
                     ](lambda_, shape, ctx)
                     return
+
+
+@register_internal("mogg.graph_blob.foreach")
+@always_inline
+def _graph_blob_foreach[
+    MaxSimdWidth: CoordLike = ComptimeInt[0],
+    //,
+    dtypes: StaticTuple[DType, _],
+](
+    shape: Coord,
+    func: Some[def[width: Int, alignment: Int = 1](Coord) -> None],
+    max_simd_width: MaxSimdWidth = MaxSimdWidth(),
+):
+    """Calls `func` on every index of `shape`, as a generated elementwise
+    kernel in a graph blob does.
+
+    Every thread of the launch calls it and runs its own share of the indices
+    through the target's MAX plugin; a thread with no share returns at once.
+    It doesn't wait for the other threads, so a call that reads what `func`
+    writes runs after a barrier.
+
+    The full SIMD width is that of `dtypes` on the target the kernel compiles
+    for, and must divide `max_simd_width`, as for `_foreach`. A static limit
+    caps the width at compile time to its largest power-of-two divisor. A
+    run-time one picks the widest of the full width, half of it, and so on
+    down to 1, that divides it.
+
+    Parameters:
+        MaxSimdWidth: The type of `max_simd_width`, static (`Idx[n]`) or
+            dynamic (`Scalar[DType.int]`).
+        dtypes: Every dtype the body touches.
+
+    Args:
+        shape: The indices to run `func` on.
+        func: The body, called with the index of the first element it covers,
+            at `width` elements of one row.
+        max_simd_width: A number every width must divide; 0, the default,
+            allows any width.
+    """
+    comptime unsupported = "graph blobs are not supported on this target"
+    comptime if not CurrentMaxPlugin._handles_graph_blobs:
+        comptime assert not CompilationTarget().is_gpu(), unsupported
+        abort(unsupported)
+
+    comptime simd_width = get_simd_width_for_dtypes[
+        dtypes, CompilationTarget()
+    ]()
+    # `min(simd_width, limit & -limit)` divides the limit only when both are
+    # powers of two.
+    comptime assert (
+        simd_width & (simd_width - 1) == 0
+    ), "simd_width must be a power of two"
+    var extents = rebind[IndexList[shape.rank]](coord_to_index_list(shape))
+    # TODO(GEX-4610): A copy of `_foreach`'s width selection; share it.
+    comptime if MaxSimdWidth.is_static_value:
+        comptime limit = MaxSimdWidth.static_value
+        comptime width = simd_width if limit == 0 else min(
+            simd_width, limit & -limit
+        )
+        CurrentMaxPlugin.elementwise_device_fn[width](func, extents)
+    else:
+        var limit = Int(max_simd_width.value())
+        comptime steps = Int(bit_width(Scalar[DType.int](simd_width)))
+        comptime for step in range(steps):
+            comptime width = simd_width >> step
+            if width == 1 or limit % width == 0:
+                CurrentMaxPlugin.elementwise_device_fn[width](func, extents)
+                return
 
 
 @inline(.always)
@@ -3216,7 +3278,7 @@ def foreach_fusion_tile[
     var grid_m = shape[0] // TM
     var grid_n = shape[1] // TN
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         adapter,
         grid_dim=(grid_n, grid_m),
         block_dim=(TM * TN),

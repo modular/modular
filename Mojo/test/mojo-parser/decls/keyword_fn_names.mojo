@@ -257,6 +257,10 @@ def __match():
 def __enum():
     pass
 
+# expected-error @+1 {{'__union' cannot be used as a function name in this context}}
+def __union():
+    pass
+
 
 # Nested free functions are rejected too.
 def outer():

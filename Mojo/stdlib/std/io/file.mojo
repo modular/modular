@@ -36,10 +36,11 @@ from std.os import PathLike as stdPathLike, abort, makedirs
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call
-from std.sys import CompilationTarget, size_of
+from std.sys import size_of
 from std.sys._libc_errno import get_errno
 from std.utils._nicheable import _FieldNicheable
 
+from ._syscall import cap_io_length
 from .file_descriptor import FileDescriptor, RawFileDescriptor
 from std.sys.info import platform_map
 
@@ -83,10 +84,8 @@ def _platform_read[
     dtype: DType
 ](fd: RawFileDescriptor, buffer: MutSpan[Scalar[dtype], _]) -> c_ssize_t:
     """Reads up to `len(buffer) * size_of[dtype]()` bytes from `fd` into
-    `buffer` with a single `read` call.
-
-    macOS fails a `read` of more than `c_int.MAX` bytes with `EINVAL` instead
-    of reading fewer, so on macOS this asks for at most `c_int.MAX` bytes.
+    `buffer` with a single `read` call, asking for no more than
+    `cap_io_length()` allows.
 
     Parameters:
         dtype: The element type of the buffer.
@@ -99,21 +98,18 @@ def _platform_read[
         The number of bytes read, 0 at end of file, or -1 on error with
         `errno` set.
     """
-    var count = len(buffer) * size_of[dtype]()
-    comptime if CompilationTarget.is_macos():
-        count = min(count, Int(c_int.MAX))
     return external_call["read", c_ssize_t](
-        fd._value, buffer.unsafe_ptr(), count
+        fd._value,
+        buffer.unsafe_ptr(),
+        cap_io_length(len(buffer) * size_of[dtype]()),
     )
 
 
 def _platform_write(
     fd: RawFileDescriptor, bytes: ImmSpan[Byte, _, address_space=_]
 ) -> c_ssize_t:
-    """Writes up to `len(bytes)` bytes to `fd` with a single `write` call.
-
-    macOS fails a `write` of more than `c_int.MAX` bytes with `EINVAL` instead
-    of writing fewer, so on macOS this writes at most `c_int.MAX` bytes.
+    """Writes up to `len(bytes)` bytes to `fd` with a single `write` call,
+    writing no more than `cap_io_length()` allows.
 
     Args:
         fd: The file descriptor to write to.
@@ -122,11 +118,8 @@ def _platform_write(
     Returns:
         The number of bytes written, or -1 on error with `errno` set.
     """
-    var count = len(bytes)
-    comptime if CompilationTarget.is_macos():
-        count = min(count, Int(c_int.MAX))
     return external_call["write", c_ssize_t](
-        fd._value, bytes.unsafe_ptr(), count
+        fd._value, bytes.unsafe_ptr(), cap_io_length(len(bytes))
     )
 
 

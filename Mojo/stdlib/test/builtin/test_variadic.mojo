@@ -673,6 +673,7 @@ def test_dynamic_variadic_pack() raises:
         List[Int],
     ]()
 
+    @__allow_legacy_any_origin_fields
     def make_elem_ptr[
         idx: Int
     ]() {imm} -> Pointer[Args[idx], MutUnsafeAnyOrigin]:

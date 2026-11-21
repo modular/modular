@@ -21,7 +21,6 @@ images to outgoing requests, and --dry-run workload stats reporting them.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
@@ -44,7 +43,6 @@ from max.benchmark.benchmark_shared.multi_turn import chat_session_driver
 from max.benchmark.benchmark_shared.request import (
     OpenAIChatCompletionsRequestDriver,
     RequestCounter,
-    RequestFuncInput,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     print_workload_stats,
@@ -54,6 +52,8 @@ from tests.benchmark.benchmark_fakes import (
     CapturingDriver,
     FakeTokenizer,
     fake_loader,
+    make_request_input,
+    mock_chat_stream,
 )
 
 
@@ -135,42 +135,22 @@ async def test_serialized_payload_carries_the_image(
     drops images during serialization, which is the failure this whole
     feature is exposed to.
     """
-    mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
     image: OpenAIImage = {
         "type": "image_url",
         "image_url": {"url": "data:image/jpeg;base64,AAA"},
     }
-    request_input = RequestFuncInput(
-        model="test-model",
-        session_id=None,
-        sampling=SamplingConfig(),
+    request_input = make_request_input(
+        "http://localhost:8000/v1/chat/completions",
         prompt=[
             ChatMessage(role="system", content=[TextContentBlock(text="sys")]),
             ChatMessage(role="user", content=[TextContentBlock(text="hi")]),
         ],
-        images=[image],
-        api_url="http://localhost:8000/v1/chat/completions",
-        prompt_len=10,
         max_tokens=16,
-        ignore_eos=False,
+        images=[image],
     )
-
-    session_class = mocker.patch(
-        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
+    client = mock_chat_stream(
+        mocker, [b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n']
     )
-    client = session_class.return_value.__aenter__.return_value
-
-    async def body() -> AsyncIterator[bytes]:
-        yield b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
-        yield b"data: [DONE]\n\n"
-
-    response = mocker.AsyncMock()
-    response.status = 200
-    response.content = body()
-    post_ctx = mocker.AsyncMock()
-    post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
-    post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
-    client.post = mocker.Mock(return_value=post_ctx)
 
     await OpenAIChatCompletionsRequestDriver().request(request_input)
 

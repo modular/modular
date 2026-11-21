@@ -116,12 +116,14 @@ def _rms_norm_full[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[
         width: Int
     ](coords: Coord) {var src_view} -> SIMD[in_dtype, width]:
         return src_view.load[width=width](coords)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) {var dst_view} -> None:
@@ -278,6 +280,7 @@ def _run_case[
             # `normed`. `sum_out` must be the gathered stream on both branches
             # (op contract).
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def two_launch() raises {imm}:
                 _allgather_full[in_dtype, ngpus, num_cols](
                     in_shards, sum_full, config, rank_sigs, list_of_ctx[i], i
@@ -695,6 +698,7 @@ def _run_prod_oracle_case[
             # Two-launch fallback writes the residual into `sum_full` (the op
             # contract), then norms it into `normed`.
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def two_launch() raises {imm}:
                 _allgather_full[
                     in_dtype, ngpus, num_cols, group_size=group_size
@@ -1290,6 +1294,7 @@ def _run_asymmetric_fuse_gate_case[
         # The op's own fallback. Windowed by each device's OWN group height,
         # which is what the symmetric `_allgather_full` cannot express.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def two_launch() raises {imm}:
             var world_out_views = Array[FullType, ngpus * group_size](
                 uninitialized=True
@@ -1326,6 +1331,7 @@ def _run_asymmetric_fuse_gate_case[
         # The `{var}` copies are mandatory: captured by reference, these reach
         # the device as host-stack pointers and the stores land out of bounds.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def mx_epilogue[
             width: Int
         ](row: Int, col: Int, val: SIMD[in_dtype, width]) {

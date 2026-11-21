@@ -922,6 +922,12 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
   %6 = pop.inline_asm "bar $0", "=r,r", (%arg3) : (!kgen.scalar<dt>) -> i8
   // CHECK: [[RET:%.*]]:2 = pop.inline_asm "bar $0", "=r,=r,r", (%arg0) : (!kgen.scalar<si32>) -> (i8, i8)
   %7:2 = pop.inline_asm "bar $0", "=r,=r,r", (%arg0) : (!kgen.scalar<si32>) -> (i8, i8)
+  %pack = kgen.struct.create(%arg0, %arg1) : !kgen.struct<(scalar<si32>, scalar<index>)>
+  // CHECK: pop.inline_asm side_effecting "baz", "r,r", (%{{.*}}) :
+  // CHECK-SAME: -> () <expandPackOperandIdx = 0>
+  pop.inline_asm side_effecting<1> "baz", "r,r", (%pack) :
+    (!kgen.struct<(scalar<si32>, scalar<index>)>) -> ()
+    <expandPackOperandIdx = 0>
   hlcf.return
 }
 

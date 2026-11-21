@@ -22,6 +22,7 @@
 /bazel/public-patches/llvm-revert-lldb-elf-section-name-string.patch @modular/sdlc
 /bazel/public-patches/llvm-lldb-macosx-objcxx-headers.patch @modular/sdlc
 /bazel/public-patches/llvm-softpromote-scalar-to-vector.patch @modular/sdlc
+/bazel/public-patches/llvm-optional-targets.patch @modular/hwenablement
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch @modular/sdlc

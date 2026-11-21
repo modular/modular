@@ -22,6 +22,7 @@
 #include "llvm/ADT/StringExtras.h"
 
 using namespace M;
+using namespace M::MLRT;
 using namespace Detail;
 
 /// Reads M::Model instances from compiledModelBuffer.

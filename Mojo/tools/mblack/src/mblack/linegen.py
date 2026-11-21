@@ -384,8 +384,11 @@ class LineGenerator(Visitor[Line]):
         ):
             # Visit child statement's children directly to avoid the
             # initial line break that visit_if_stmt/for_stmt add.
-            for child in internal_stmt.children:
-                yield from self.visit(child)
+            if self._has_conditional_clauses(internal_stmt):
+                yield from self._visit_conditional_stmt_children(internal_stmt)
+            else:
+                for child in internal_stmt.children:
+                    yield from self.visit(child)
         else:
             # Simple case (alias_stmt_body, comptime_assert_stmt_body):
             # visit normally, then consume the trailing NEWLINE.
@@ -409,6 +412,100 @@ class LineGenerator(Visitor[Line]):
         internal_stmt = next(children)
         for child in internal_stmt.children:
             yield from self.visit(child)
+
+    def _has_conditional_clauses(self, node: Node) -> bool:
+        """Return whether `node` has semicolon-separated conditional clauses."""
+        return any(
+            isinstance(child, Leaf) and child.type == token.SEMI
+            for child in node.children
+        )
+
+    def _append_clause_semicolon(self, leaf: Leaf) -> None:
+        # The header stays on one line here. `conditional_clause_split` breaks
+        # it at these semicolons only if it is too long.
+        leaf.prefix = ""
+        self.current_line.append(leaf, preformatted=True)
+
+    def _visit_conditional_clauses(self, node: Node) -> Iterator[Line]:
+        """Emit the clauses after the first semicolon of a conditional."""
+        for child in node.children:
+            if isinstance(child, Leaf) and child.type == token.SEMI:
+                self._append_clause_semicolon(child)
+                continue
+
+            # The grammar needs these tokens to parse a header that continues
+            # on the next lines. The formatter chooses its own line breaks.
+            if isinstance(child, Leaf) and child.type in (
+                token.NEWLINE,
+                token.INDENT,
+            ):
+                continue
+
+            yield from self.visit(child)
+
+    def _visit_conditional_clause_tail(self, node: Node) -> Iterator[Line]:
+        """Emit the portion of a conditional after its first semicolon."""
+        conditions, *rest = node.children
+        # A single inline clause is not wrapped in `inline_if_conditions`, so
+        # `conditions` can be a plain expression, even a lone leaf.
+        if conditions.type in (
+            syms.inline_if_conditions,
+            syms.multiline_if_conditions,
+        ):
+            yield from self._visit_conditional_clauses(cast(Node, conditions))
+        else:
+            yield from self.visit(conditions)
+        if conditions.type == syms.multiline_if_conditions:
+            # This DEDENT closes the INDENT of the continued clauses.
+            assert rest[-1].type == token.DEDENT
+            rest.pop()
+
+        for child in rest:
+            yield from self.visit(child)
+
+    def _visit_conditional_stmt_children(self, node: Node) -> Iterator[Line]:
+        """Emit a conditional statement containing multiple clauses."""
+        after_semicolon = False
+        for child in node.children:
+            if isinstance(child, Leaf) and child.type == token.SEMI:
+                self._append_clause_semicolon(child)
+                after_semicolon = True
+                continue
+
+            if after_semicolon and isinstance(child, Node):
+                yield from self._visit_conditional_clause_tail(child)
+                after_semicolon = False
+                continue
+
+            yield from self.visit(child)
+
+    def visit_if_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit an if statement."""
+        if not self._has_conditional_clauses(node):
+            yield from self.visit_stmt(
+                node, keywords={"if", "else", "elif"}, parens={"if", "elif"}
+            )
+            return
+
+        normalize_invisible_parens(
+            node, parens_after={"if", "elif"}, preview=self.mode.preview
+        )
+        yield from self.line()
+        yield from self._visit_conditional_stmt_children(node)
+
+    def visit_guard_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit a guard statement."""
+        if not self._has_conditional_clauses(node):
+            yield from self.visit_stmt(
+                node, keywords={"__guard"}, parens={"__guard"}
+            )
+            return
+
+        normalize_invisible_parens(
+            node, parens_after={"__guard"}, preview=self.mode.preview
+        )
+        yield from self.line()
+        yield from self._visit_conditional_stmt_children(node)
 
     def visit_decorators(self, node: Node) -> Iterator[Line]:
         """Visit decorators."""
@@ -676,14 +773,8 @@ class LineGenerator(Visitor[Line]):
             v, keywords=set(), parens={"assert", ","}
         )
         # comptime_stmt is handled by the visit_comptime_stmt method below.
-        self.visit_if_stmt = partial(
-            v, keywords={"if", "else", "elif"}, parens={"if", "elif"}
-        )
         self.visit_while_stmt = partial(
             v, keywords={"while", "else"}, parens={"while"}
-        )
-        self.visit_guard_stmt = partial(
-            v, keywords={"__guard"}, parens={"__guard"}
         )
         self.visit_for_stmt = partial(
             v, keywords={"for", "else"}, parens={"for", "in"}
@@ -777,6 +868,8 @@ def transform_line(
             transformers = [string_merge, string_paren_strip]
         else:
             transformers = []
+    elif any(leaf.type == token.SEMI for leaf in line.leaves[:-1]):
+        transformers = [conditional_clause_split]
     elif line.is_def:
         transformers = [left_hand_split]
     else:
@@ -862,6 +955,30 @@ def transform_line(
 
     else:
         yield line
+
+
+def conditional_clause_split(
+    line: Line, _features: Collection[Feature] = ()
+) -> Iterator[Line]:
+    """Split a conditional header into one line per clause.
+
+    Each clause after the first gets a two-space continuation indent, which
+    the language uses to tell clauses apart from the four-space body.
+    """
+    current_line = Line(mode=line.mode, depth=line.depth)
+    for leaf in line.leaves:
+        if not current_line.leaves:
+            leaf.prefix = ""
+        current_line.append(leaf, preformatted=True, track_bracket=True)
+        for comment_after in line.comments_after(leaf):
+            current_line.append(comment_after, preformatted=True)
+        if leaf.type == token.SEMI:
+            yield current_line
+            current_line = Line(
+                mode=line.mode, depth=line.depth, indent_offset=2
+            )
+    if current_line.leaves:
+        yield current_line
 
 
 class _BracketSplitComponent(Enum):
@@ -1119,7 +1236,11 @@ def bracket_split_build_line(
     such has its first leaf's prefix normalized and a trailing comma added when
     expected.
     """
-    result = Line(mode=original.mode, depth=original.depth)
+    result = Line(
+        mode=original.mode,
+        depth=original.depth,
+        indent_offset=original.indent_offset,
+    )
     if component is _BracketSplitComponent.body:
         result.inside_brackets = True
         result.depth += 1
@@ -1228,7 +1349,10 @@ def delimiter_split(
             )
 
     current_line = Line(
-        mode=line.mode, depth=line.depth, inside_brackets=line.inside_brackets
+        mode=line.mode,
+        depth=line.depth,
+        indent_offset=line.indent_offset,
+        inside_brackets=line.inside_brackets,
     )
     lowest_depth = sys.maxsize
     trailing_comma_safe = True
@@ -1244,6 +1368,7 @@ def delimiter_split(
             current_line = Line(
                 mode=line.mode,
                 depth=line.depth,
+                indent_offset=line.indent_offset,
                 inside_brackets=line.inside_brackets,
             )
             current_line.append(leaf)
@@ -1274,6 +1399,7 @@ def delimiter_split(
             current_line = Line(
                 mode=line.mode,
                 depth=line.depth,
+                indent_offset=line.indent_offset,
                 inside_brackets=line.inside_brackets,
             )
     if current_line:
@@ -1297,7 +1423,10 @@ def standalone_comment_split(
         raise CannotSplit("Line does not have any standalone comments")
 
     current_line = Line(
-        mode=line.mode, depth=line.depth, inside_brackets=line.inside_brackets
+        mode=line.mode,
+        depth=line.depth,
+        indent_offset=line.indent_offset,
+        inside_brackets=line.inside_brackets,
     )
 
     def append_to_line(leaf: Leaf) -> Iterator[Line]:

@@ -82,3 +82,19 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
   kgen.func export @bad_vscale_arity()  <fnAttrs = {llvm.vscale_range = #pop.array<1, 2, 3> : !pop.array<3, i32>}> { hlcf.return }
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+  // expected-error@+2 {{invalid 'llvm.denormal_fp_math' value 'flush'; expected an output mode and an optional input mode, such as "preserve-sign,preserve-sign"}}
+  // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
+  kgen.func export @bad_denormal_mode()  <fnAttrs = {llvm.denormal_fp_math = "flush"}> { hlcf.return }
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+  // expected-error@+2 {{'llvm.denormal_fp_math_f32' expects a string value}}
+  // expected-error@+1 {{failed to legalize operation 'kgen.func'}}
+  kgen.func export @bad_denormal_type()  <fnAttrs = {llvm.denormal_fp_math_f32 = 1 : i32}> { hlcf.return }
+}

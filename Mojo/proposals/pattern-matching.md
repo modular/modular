@@ -692,22 +692,139 @@ However, repeating `if` within a single condition is visually awkward. In
 statement, and the syntax gives the trailing boolean condition a special
 position that cannot naturally be followed by another pattern match.
 
-If we want more expressive capability to reduce nested `if`s, we should consider
-a Swift-style comma-separated condition list instead. This allows each clause to
-be either a boolean condition or a conditional pattern match:
+If we want more expressive capability to reduce nested `if` statements, a
+condition-list syntax can allow each clause to be either a Boolean condition or
+a conditional pattern match. Bindings introduced by a `case` clause would be
+available to the clauses that follow it. The next section proposes this syntax.
+
+## Multiple clauses in `if` and `guard`
+
+Nested conditional pattern bindings can obscure the successful path when one
+condition depends on names introduced by another:
 
 ```mojo
-if case .Some(x) = get_first(), x != 42, case .Some(y) = get_second(x):
-    use(x, y)
+if case .Some(request) = next_request():
+    if request.is_valid():
+        process(request)
 ```
 
-This form flows lexically from left to right and naturally supports sequences
-such as pattern match, boolean condition, and another pattern match. Bindings
-introduced by a `case` clause would be available to the clauses that follow it.
+It can also be awkward to write `else` blocks with combined conditions:
+
+```mojo
+if case .Some(request) = next_request():
+    if request.is_valid():
+        process(request)
+    else:
+        dont_process()
+else:
+    dont_process()
+```
+
+Swift and C++ provide syntax that expresses this as a single conditional,
+reducing indentation, making the success path more apparent, and allowing the
+`else` blocks to be combined. Mojo should have a similar solution.
+
+### Proposal
+
+Allow `if` and `guard` to contain multiple clauses separated by semicolons:
+
+```mojo
+if is_enabled();
+  case .Some(request) = next_request();
+  request.is_valid():
+    process(request)
+else:
+    dont_process()
+```
+
+Clauses evaluate from left to right and short-circuit on the first failure. A
+successful `case` clause makes its bindings available to later clauses and to
+the body. Indent a continued clause by two spaces. This distinguishes clauses
+from the four-space statement body and works uniformly for `if`, `comptime if`,
+and `guard` without aligning continuation clauses to the initial condition:
+
+```mojo
+if case .Some(request) = next_request();
+  request.is_valid():
+    process(request)
+```
+
+`guard` uses the same clause syntax. Its `else` suite executes when any clause
+fails, and successful bindings remain available after the statement:
+
+```mojo
+guard is_enabled();
+  case .Some(user) = current_user();
+  user.can_access() else:
+    return
+
+serve(user)
+```
+
+This avoids nested `if case` statements while preserving the left-to-right
+evaluation and binding scopes made explicit by the individual clauses.
+
+For a condition that contains only Boolean expressions, it is better style to
+prefer `and`:
+
+```mojo
+if foo() and bar():
+    use_result()
+```
+
+Use semicolon-separated clauses when a pattern binding is involved or when the
+ordered clause structure itself improves readability:
+
+```mojo
+if foo(); case .Some(value) = bar():
+    use(value)
+```
+
+### Alternative considered: comma-separated clauses
+
+Swift uses commas for condition lists, so the following spelling has useful
+prior art:
+
+```mojo
+if is_enabled(),
+  case .Some(user) = current_user(),
+  user.can_access():
+    serve(user)
+```
+
+However, Mojo differs from Swift: tuple patterns require parentheses in Swift,
+but not in Mojo or Python. Commas would require readers to distinguish whether
+`if a, b:` tests `a` and `b` or relates to a tuple expression. The compiler
+could resolve the ambiguity, but the visual trade-off is poor. Mojo already
+uses semicolons to separate multiple statements on one line, and they clearly
+communicate that a header contains an ordered sequence of independent clauses.
+
+### Alternative considered: `and`-separated clauses
+
+The `and` keyword is appropriate for combining Boolean expressions, but pattern
+matches are not Boolean expressions and an `if` can contain multiple pattern
+clauses without a boolean condition at all:
+
+```mojo
+if case .Some(a) = some_optional();
+  case .Some(b) = other_optional():
+    use(a, b)
+```
+
+Furthermore, `and` also has the same ambiguity as comma when a `case` clause
+comes first:
+
+```mojo
+if case .Some(user) = current_user() and user.can_access():
+    serve(user)
+```
+
+It is unclear whether the right-hand side is part of the matched subject or a
+second clause. The use of semicolon eliminates these problems.
 
 ## Implementation status
 
-The core proposal is fully implemented and expected to work correctly. The
-following parts of this proposal are not yet implemented:
+The core pattern matching proposal is fully implemented and expected to work
+correctly. The following parts of this proposal are not yet implemented:
 
 - **Mapping patterns** — for example `case {"name": name, "age": age}:`.

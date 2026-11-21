@@ -776,11 +776,24 @@ public:
   LogicalResult resolveBody(Lexer &lexer) override;
   LogicalResult resolveSyntheticBody() override;
 
+  /// The namespace components, outermost first, that this package is bound
+  /// under while it is parsed as a source package that gets precompiled
+  /// under `--namespace`. Empty otherwise: a loaded precompiled package
+  /// carries its namespace as parent decls instead.
+  ArrayRef<std::string> getNamespaceComponents() const {
+    return namespaceComponents;
+  }
+  void setNamespaceComponents(ArrayRef<StringRef> components) {
+    namespaceComponents.assign(components.begin(), components.end());
+  }
+
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
 
   LogicalResult resolvePackage();
+
+  std::vector<std::string> namespaceComponents;
 
   PackageASTDecl(SharedState &shared, PackageOp packageOp, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
@@ -857,6 +870,20 @@ public:
   /// only by this function's IR signature.
   void createIRSignatureDecls(DeclResolver &resolver);
 
+  void setAllowLegacyAnyOriginCaptures() {
+    allowLegacyAnyOriginCaptures = true;
+  }
+
+  /// Returns true if `@__allow_legacy_any_origin_fields` is on this function
+  /// or on a function that encloses it.
+  bool allowsLegacyAnyOriginCaptures() const {
+    for (const ASTDecl *cur = this; cur; cur = cur->getParentDecl())
+      if (auto *def = dyn_cast<DefASTDecl>(cur))
+        if (def->allowLegacyAnyOriginCaptures)
+          return true;
+    return false;
+  }
+
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
@@ -867,6 +894,7 @@ private:
              ssize_t indentation);
 
   FnOp operation;
+  bool allowLegacyAnyOriginCaptures = false;
 };
 
 /// The AST representation of an anonymous function type.

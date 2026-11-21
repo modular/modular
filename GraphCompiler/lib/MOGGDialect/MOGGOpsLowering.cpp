@@ -172,7 +172,7 @@ LogicalResult CompiledLoadOp::lower(MGP::MOGraphLoweringState &loweringState) {
       // Module loads must be ordered by creation, so depend only on runtime
       // creation.
       /*inChain=*/
-      cast<TypedValue<MEF::ChainType>>(
+      cast<TypedValue<MLRT::MEF::ChainType>>(
           loweringState.getInitChain()
               .getDefiningOp()
               ->getOperand(0)
@@ -182,7 +182,7 @@ LogicalResult CompiledLoadOp::lower(MGP::MOGraphLoweringState &loweringState) {
       /*functionSymbols=*/getSymbols(),
       /*constantSymbols=*/{});
   SmallVector<Value> values = {outChain, loweringState.getInitChain()};
-  auto combined = GRT::ChainCreateOp::create(builder, getLoc(), values);
+  auto combined = MLRT::GRT::ChainCreateOp::create(builder, getLoc(), values);
   loweringState.setInitChain(combined);
   return success();
 }
@@ -266,7 +266,7 @@ RoutineOp::lowerToAsync(MGP::MOGraphLoweringState &loweringState) {
   auto inputs = getInputs();
   unsigned inputIdx = 0;
   for (Value buffer : st.getLoweredOperands()) {
-    if (isa<MEF::ChainType>(buffer.getType()))
+    if (isa<MLRT::MEF::ChainType>(buffer.getType()))
       continue;
     operands.push_back(buffer);
     bool isMutable = inputIdx < inputs.size() &&
@@ -341,7 +341,7 @@ RoutineOp::lowerToAsync(MGP::MOGraphLoweringState &loweringState) {
   // leaves as a region result rather than an output buffer.
   ArrayRef<KGEN::ParamDeclAttr> decls = getOutputParamDecls();
   Type dimType = MOSH::ShapeAttr::getDimType(ctx);
-  SmallVector<Type> regionResultTypes{MEF::ChainType::get(ctx)};
+  SmallVector<Type> regionResultTypes{MLRT::MEF::ChainType::get(ctx)};
   regionResultTypes.append(decls.size(), dimType);
 
   Value opaqueKernelResult;

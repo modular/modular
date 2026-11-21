@@ -189,6 +189,7 @@ def matmul_kernel[
     var K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def update_tile[
         full_tile: Bool
     ](offset: Int, end: Int, tile_size: Int) {

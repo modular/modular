@@ -29,7 +29,7 @@ def MEFDialect : Dialect {
     the GraphRT "MEF" executor.
   }];
 
-  let cppNamespace = "::M::MEF";
+  let cppNamespace = "::M::MLRT::MEF";
 
   let useDefaultTypePrinterParser = 1;
 }

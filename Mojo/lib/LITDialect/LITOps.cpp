@@ -521,7 +521,8 @@ LogicalResult BindParamsOp::verify() {
   DenseBoolArrayAttr discharged =
       toDenseBoolArrayAttr(getContext(), getDischarged());
   if (failed(BindParamsAttr::verify([&] { return emitOpError(); },
-                                    generatorAttr, getParams(), discharged)))
+                                    generatorAttr, getParams(), discharged,
+                                    getResult().getType())))
     return failure();
 
   Type expectedResult = inferResultType(generator, getParams(), discharged);
@@ -644,7 +645,7 @@ TypedAttr FnOp::getFuncLiteralGenerator(
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       unboundGen.getContext(), dischargedBodyConstraints);
   return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
-                             discharged, &evalContext);
+                             discharged, /*resultType=*/{}, &evalContext);
 }
 
 bool FnOp::isSynthetic() { return getSynthetic(); }
@@ -1272,7 +1273,8 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
 
   // TODO: maybe worth a cache here?
   return BindParamsAttr::get(typeExpr.getContext(), typeExpr, paramValues,
-                             /*discharged=*/nullptr, evalCtx);
+                             /*discharged=*/nullptr, /*resultType=*/{},
+                             evalCtx);
 }
 
 LIT::StructType
@@ -1351,6 +1353,8 @@ static DebugInfo::DIFileAttr getTopLevelScope(Operation *op) {
 LogicalResult StructDeclOp::verify() {
   if (getFields().getNumArguments())
     return emitOpError("expected declaration body to have no arguments");
+  if (isEnum() && isUnion())
+    return emitOpError("expected at most one of 'isEnum' and 'isUnion'");
   return verifyTopLevelLocScope(*this);
 }
 
@@ -1401,7 +1405,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
         /*minAlignment=*/{}, /*convention=*/{},
         /*registerPassableConstraint=*/{}, /*annotations=*/{},
-        /*isEnum=*/{});
+        /*isEnum=*/{}, /*isUnion=*/{});
   result.regions[0]->push_back(new Block());
 }
 
@@ -1410,8 +1414,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
 //===----------------------------------------------------------------------===//
 
 LogicalResult EnumCaseOp::verify() {
-  if (!cast<StructDeclOp>((*this)->getParentOp()).isEnum())
-    return emitOpError("expected to be in the body of an enum");
+  if (!cast<StructDeclOp>((*this)->getParentOp()).isEnumOrUnion())
+    return emitOpError("expected to be in the body of an enum or union");
   if (getName().empty())
     return emitOpError("expected a non-empty case name");
   return success();

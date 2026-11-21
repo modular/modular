@@ -47,9 +47,13 @@ from max.nn.common_layers.quant_tensor import (
     QuantAwareTensor,
 )
 from max.nn.ep_config import EPConfig
-from max.nn.kernels.quant import stack_blockwise_mega_ffn_b
+from max.nn.kernels.quant import (
+    _nvfp4_grouped_matmul_rule,
+    stack_blockwise_mega_ffn_b,
+)
 from max.nn.quant_config import QuantConfig, QuantFormat
 from max.tensor import Tensor, default_dtype
+from max.tensor.sharding import Replicated, TensorLayout
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128
@@ -1086,6 +1090,44 @@ def test_nvfp4_swiglu_kernel_per_output_dtype(
     assert quantizes == (1 if fused else 2)
 
 
+@pytest.mark.parametrize("accum_dtype", [None, DType.float32])
+def test_bf16_experts_take_bf16_down_rows(
+    mock_accelerator: MagicMock, accum_dtype: DType | None
+) -> None:
+    """Unquantized experts hand the down matmul bf16 rows.
+
+    A float32 gate/up accumulation, which DeepSeek-V3.2's non-EP MoEs and so
+    GLM-5.3's bf16 NextN layer take, casts the SwiGLU back before the down
+    projection.
+    """
+    device = mock_accelerator()
+    with F.lazy():
+        out = quant_ops.grouped_matmul_silu(
+            Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM), dtype=DType.bfloat16, device=device
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS, 2 * _MOE_DIM, _HIDDEN_DIM),
+                dtype=DType.bfloat16,
+                device=device,
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM),
+                dtype=DType.bfloat16,
+                device=device,
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+            ),
+            Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+            Tensor.zeros((2,), dtype=DType.uint32, device=device),
+            None,
+            accum_dtype=accum_dtype,
+        )
+    assert isinstance(out, Tensor)
+    assert out.dtype == DType.bfloat16
+
+
 # --------------------------------------------------------------------------- #
 # MXFP8
 # --------------------------------------------------------------------------- #
@@ -1347,3 +1389,39 @@ def test_interleave_grouped_scales_passes_interleaved_scales_through() -> None:
         )
 
         assert quant_ops.interleave_grouped_scales(scales) is scales
+
+
+@pytest.mark.parametrize("with_estimate", [False, True])
+@pytest.mark.parametrize("with_row_scales", [False, True])
+def test_grouped_matmul_sharding_keeps_optional_row_scales_replicated(
+    with_estimate: bool,
+    with_row_scales: bool,
+) -> None:
+    device = CPU()
+    inputs = (
+        TensorLayout(DType.uint8, [8, 128], device),
+        TensorLayout(DType.uint8, [4, 128, 128], device),
+        TensorLayout(DType.float8_e4m3fn, [5, 4, 32, 4, 4], device),
+        TensorLayout(DType.float8_e4m3fn, [4, 4, 16], device),
+        TensorLayout(DType.uint32, [5], device),
+        TensorLayout(DType.uint32, [4], device),
+        TensorLayout(DType.int32, [4], device),
+        TensorLayout(DType.float32, [4], device),
+        TensorLayout(DType.uint32, [2], device),
+    )
+    estimate = (
+        TensorLayout(DType.uint32, [1], device) if with_estimate else None
+    )
+    row_scales = (
+        TensorLayout(DType.bfloat16, [8], device) if with_row_scales else None
+    )
+    assignments = _nvfp4_grouped_matmul_rule(
+        *inputs, estimated_total_m=estimate, a_row_scales=row_scales
+    )
+    for assignment in assignments:
+        assert len(assignment.needed_inputs) == 9 + int(with_estimate) + int(
+            with_row_scales
+        )
+        assert all(
+            isinstance(p, Replicated) for p in assignment.needed_inputs[4:]
+        )

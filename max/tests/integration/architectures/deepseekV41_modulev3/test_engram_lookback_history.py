@@ -30,18 +30,29 @@ import pytest
 from abi_contract import hf_config
 from max.driver import CPU, Buffer
 from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.nn.kv_cache import RecurrentStateParams
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     EngramLookbackBatchState,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.batch_processor import (
     DeepseekV41BatchProcessor,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.history import (
+    _mask,
+    _read,
+    _record,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
+    build_kv_params,
     extra_input_names,
+    kv_input_names,
 )
 from max.pipelines.context import TextContext
 from max.pipelines.context.tokens import TokenBuffer
+from max.pipelines.lib import KVCacheConfig
 
 
 def _text(**overrides: object) -> SimpleNamespace:
@@ -122,8 +133,7 @@ def test_default_export_declares_no_lookback_history() -> None:
             "engram_lookback_history",
         )
     )
-    # The history triple replaces the window, where the window sat; the
-    # dead companion keeps its place after it.
+    # A bare MEF keeps the registry contract's history buffer input.
     at = names_on.index("engram_lookback_dead")
     assert names_on[at - 3 : at] == [
         "engram_lookback_ids",
@@ -133,6 +143,16 @@ def test_default_export_declares_no_lookback_history() -> None:
     window_at = names_off.index("engram_lookback")
     assert names_on[: at - 3] == names_off[:window_at]
     assert names_on[at + 1 :] == names_off[window_at + 2 :]
+    # An artifact's history travels with its recurrent KV leaf instead.
+    artifact = V41Config.from_hf(
+        {"text_config": vars(_text(engram_lookback_history=True))},
+        artifact_export=True,
+    )
+    names_artifact = extra_input_names(artifact)
+    assert "engram_lookback_history" not in names_artifact
+    # (An artifact also turns on the decoder replay, whose inputs trail.)
+    bare_names = [n for n in names_on if n != "engram_lookback_history"]
+    assert names_artifact[: len(bare_names)] == bare_names
 
 
 def test_batch_processor_stages_the_history_only_when_exported(
@@ -141,8 +161,8 @@ def test_batch_processor_stages_the_history_only_when_exported(
     """Both exports run through the same processor: the history exists iff on.
 
     Flag on, the host window arrives as int64 ids, every row's source is
-    fresh (-1) until a previous batch carries it, and the history buffer
-    is allocated once and reused.
+    fresh (-1) until a previous batch carries it, and a bare MEF's history
+    buffer is allocated once and reused.
     """
     contexts = [_context(6, 1), _context(13, 2)]
     offsets = np.array([0, 1, 3])
@@ -157,10 +177,11 @@ def test_batch_processor_stages_the_history_only_when_exported(
         extras["engram_lookback_source"].to_numpy(), [-1, -1]
     )
     history = extras["engram_lookback_history"]
-    assert history.dtype == DType.int64
+    assert history is processor._lookback.history
     assert history.shape == (8, 3)
-    again = _extras(processor, contexts, offsets)
-    assert again["engram_lookback_history"] is history, "allocated once"
+    assert _extras(processor, contexts, offsets)["engram_lookback_history"] is (
+        history
+    )
 
     # The default export stages the int32 host window as before.
     processor = _processor(monkeypatch, engram_lookback_history=False)
@@ -200,3 +221,171 @@ def test_batch_processor_sources_the_rows_the_previous_batch_recorded(
     np.testing.assert_array_equal(
         extras["engram_lookback_source"].to_numpy(), [-1]
     )
+
+
+@pytest.mark.parametrize("replicas", [1, 4, 8])
+def test_history_is_request_scratch_in_the_cache_tree(replicas: int) -> None:
+    bare = V41Config.from_hf(
+        {"text_config": vars(_text(engram_lookback_history=True))}
+    )
+    devices = [DeviceRef.GPU(i) for i in range(replicas)]
+    # A bare MEF keeps the registry contract's six KV groups.
+    assert "lookback_history" not in (
+        build_kv_params(
+            bare,
+            KVCacheConfig(kv_cache_page_size=128),
+            devices,
+            data_parallel_degree=replicas,
+        ).children
+    )
+    config = V41Config.from_hf(
+        {"text_config": vars(_text(engram_lookback_history=True))},
+        artifact_export=True,
+    )
+    params = build_kv_params(
+        config,
+        KVCacheConfig(kv_cache_page_size=128),
+        devices,
+        data_parallel_degree=replicas,
+    )
+    history = params.children["lookback_history"]
+    assert isinstance(history, RecurrentStateParams)
+    assert len(history.regions) == 1
+    assert history.regions[0].scratch
+    assert history.regions[0].row_shape == (3,)
+    assert history.regions[0].dtype == DType.int64
+    assert len(kv_input_names(params)) == len(params.flattened_kv_inputs())
+
+
+@pytest.mark.parametrize("draft_width", [0, 5])
+def test_history_graph_uses_request_rows_and_accepted_prefix(
+    draft_width: int,
+) -> None:
+    device = DeviceRef.CPU()
+    types: list[BufferType | TensorType] = [
+        BufferType(DType.int64, [16, 3], device=device),
+        TensorType(DType.uint32, [1, 3], device),
+        TensorType(DType.int64, [3, 3], device),
+        TensorType(DType.int64, [3], device),
+        TensorType(DType.int64, [9], device),
+        TensorType(DType.uint32, [4], device),
+        TensorType(DType.int64, [3, draft_width], device),
+        TensorType(DType.int64, [3], device),
+    ]
+    with Graph("arena_lookback", input_types=types) as graph:
+        pool, row_ids, host, source, tokens, offsets, drafts, accepted = (
+            graph.inputs
+        )
+        lookback = _read(
+            pool.buffer, row_ids.tensor, host.tensor, source.tensor
+        )
+        _record(
+            pool.buffer,
+            row_ids.tensor,
+            lookback,
+            tokens.tensor,
+            offsets.tensor,
+            drafts.tensor,
+            accepted.tensor,
+        )
+        graph.output(lookback)
+    assert lookback.dtype == DType.int64
+    assert list(lookback.shape) == [3, 3]
+
+
+def test_history_commits_mixed_accepted_prefixes_by_request() -> None:
+    """The gather/accept/scatter composition must preserve request history.
+
+    Individual op checks cannot catch committing a rejected draft or writing
+    a batch index instead of a live request row; either corrupts overlap.
+    This tiny CPU graph exercises that composition before merge.
+    """
+    device = DeviceRef.CPU()
+    types: list[BufferType | TensorType] = [
+        BufferType(DType.int64, [8, 3], device=device),
+        TensorType(DType.uint32, [1, 3], device),
+        TensorType(DType.int64, [3, 3], device),
+        TensorType(DType.int64, [3], device),
+        TensorType(DType.int64, [6], device),
+        TensorType(DType.uint32, [4], device),
+        TensorType(DType.int64, [3, 5], device),
+        TensorType(DType.int64, [3], device),
+    ]
+    with Graph("accepted_request_history", input_types=types) as graph:
+        pool, ids, host, source, tokens, offsets, drafts, accepted = (
+            graph.inputs
+        )
+        lookback = _read(pool.buffer, ids.tensor, host.tensor, source.tensor)
+        _record(
+            pool.buffer,
+            ids.tensor,
+            lookback,
+            tokens.tensor,
+            offsets.tensor,
+            drafts.tensor,
+            accepted.tensor,
+        )
+        dead = ops.constant(
+            np.array([[1, 0, 1], [0, 1, 0], [1, 1, 0]], np.uint8),
+            DType.uint8,
+            device,
+        )
+        mask = _mask(source.tensor, lookback, dead, 10)
+        graph.output(lookback, ops.buffer_load(pool.buffer), mask)
+    model = InferenceSession(devices=[CPU()]).load(graph)
+    expected = np.full((8, 3), -987654, np.int64)
+    expected[1] = [10, 9, 8]
+    expected[6] = [60, 59, 58]
+    expected[4] = [400, 399, 398]
+    pool_buffer = Buffer.from_numpy(expected.copy())
+    offsets_array = np.array([0, 1, 3, 6], np.uint32)
+    for row_ids, sources, base in [
+        ([4, 1, 6], [-1, 0, 0], 40),
+        ([6, 4, 1], [0, 0, 0], 70),
+        ([7, 6, 1], [-1, 0, 0], 700),
+    ]:
+        host_array = np.array(
+            [[base, base - 1, base - 2], [900, 899, 898], [800, 799, 798]],
+            np.int64,
+        )
+        token_array = np.array([base + 1, 11, 12, 61, 62, 63], np.int64)
+        draft_array = np.array(
+            [
+                [base + 2, base + 3, base + 4, base + 5, base + 6],
+                [13, 14, 15, 16, 17],
+                [64, 65, 66, 67, 68],
+            ],
+            np.int64,
+        )
+        counts = np.array([0, 1, 5], np.int64)
+        before = np.stack(
+            [
+                host_array[i] if sources[i] < 0 else expected[row]
+                for i, row in enumerate(row_ids)
+            ]
+        )
+        for i, row in enumerate(row_ids):
+            sequence = [
+                *before[i, ::-1],
+                *token_array[offsets_array[i] : offsets_array[i + 1]],
+                *draft_array[i, : counts[i]],
+            ]
+            expected[row] = sequence[-3:][::-1]
+        result = model.execute(
+            pool_buffer,
+            Buffer.from_numpy(np.array([row_ids], np.uint32)),
+            Buffer.from_numpy(host_array),
+            Buffer.from_numpy(np.array(sources, np.int64)),
+            Buffer.from_numpy(token_array),
+            Buffer.from_numpy(offsets_array),
+            Buffer.from_numpy(draft_array),
+            Buffer.from_numpy(counts),
+        )
+        np.testing.assert_array_equal(result[0].to_numpy(), before)
+        np.testing.assert_array_equal(result[1].to_numpy(), expected)
+        expected_mask = np.where(
+            np.array(sources)[:, None] >= 0,
+            before == 10,
+            np.array([[1, 0, 1], [0, 1, 0], [1, 1, 0]], np.uint8),
+        )
+        np.testing.assert_array_equal(result[2].to_numpy(), expected_mask)

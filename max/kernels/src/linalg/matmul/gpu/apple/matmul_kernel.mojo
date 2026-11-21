@@ -959,6 +959,7 @@ struct AppleM5MatMul[
         # arithmetic. The epilogue contract matches AMD's: it receives
         # `SIMD[c_type, width]` at absolute (row, col).
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _apply_epilogue[
             bounded: Bool
         ](tile_row_base: Int, tile_col_base: Int) {imm}:
@@ -1083,6 +1084,7 @@ struct AppleM5MatMul[
         # is only entered when `c_type == fp32` (use_epilogue_path is False),
         # so the rebind is a no-op at runtime.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _fast_path_store[
             bounded: Bool
         ](valid_rows: Int = 0, valid_cols: Int = 0) {imm}:
@@ -1147,6 +1149,7 @@ struct AppleM5MatMul[
         else:
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _full_strip(
                 k_strip: Int32,
             ) {mut loader, mut mma_op, mut accum, imm}:
@@ -1951,6 +1954,7 @@ struct AppleM5MatMul[
         else:
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _full_strip(gstrip: Int32) {mut accum, imm}:
                 var a_sub = a_slab.tile[SG_M, BK](0, Int(gstrip))
                 var b_sub = b_slab.tile[BK, SG_N](Int(gstrip), 0)

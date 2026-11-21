@@ -1361,6 +1361,7 @@ def _gemv_split_k_impl[
     # SM100 block-scaled matmul uses around its PDL wait. Both capture the
     # K-tile index immutably; `tile_w` and `acc` are mutated in place.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _load_weight_frags(k_tile: Int) {mut tile_w, imm}:
         """Phase 1: load this K-tile's weight fragments into `tile_w`.
 
@@ -1386,6 +1387,7 @@ def _gemv_split_k_impl[
                 tile_w.store((i, Idx[0]), b_vec)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _consume_weight_frags(k_tile: Int) {mut acc, imm}:
         """Phase 2: load this K-tile's activation rows and dot them against
         the weight fragments `_load_weight_frags` staged in `tile_w`.
@@ -2197,6 +2199,7 @@ def router_gate_mixed_gemv[
     if m == 0 or n == 0:
         return
 
+    @__allow_legacy_any_origin_fields
     def _launch[
         tile_m: Int,
         tile_n: Int,
@@ -2489,6 +2492,7 @@ def mixed_gemv_store_epilogue[
         static_N <= 65535
     ), "mixed GEMV N exceeds the grid.y block limit"
 
+    @__allow_legacy_any_origin_fields
     def _launch[tile_m: Int, tile_n: Int, unroll_factor: Int]() raises {imm}:
         comptime kernel = gemv_split_k_epilogue_fn[
             DType.float32,

@@ -18,7 +18,7 @@ The settings a pipeline's graphs were exported for.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
 from max.driver import DeviceSpec
@@ -40,24 +40,31 @@ AcceptanceMode: TypeAlias = Literal["greedy", "stochastic"]
 DraftProposal: TypeAlias = Literal["argmax", "sampled"]
 """How a speculative draft proposes its tokens."""
 
-CaptureCacheBound: TypeAlias = Literal["live", "context", "bucketed"]
-"""The host cache bound a captured decode bakes in: the batch's own (no
-capture pin), the context limit, or the batch's power-of-two bucket."""
+Proposer: TypeAlias = Literal["block", "sequential"]
+"""How a speculative draft proposes: a block of tokens in one forward, or
+one token per forward."""
 
+HostInputMode: TypeAlias = Literal["shape", "staged", "pinned"]
+"""How a replayed device graph gets a host input it reads every step.
 
-@dataclass(frozen=True)
-class EngineCaptureConfig:
-    """How an engine may capture the decode graph.
+A replay runs no host code, so a host input keeps the value it had at
+capture unless the graph reads it through a stable buffer:
 
-    Args:
-        mla_decode: Whether the MLA decode is qualified for capture: its
-            launch shape follows only what a capture key holds.
-        cache_bound: The host cache bound a captured decode bakes in, for a
-            graph whose kernels size launches from it.
-    """
+- ``shape``: the value follows from the captured shape (rows, query width
+  and aligned cache length), as MAX's KV manager stages its host scalars from
+  the aligned batch characteristics, so every replay of a key reads what
+  capture recorded.
+- ``staged``: the graph copies it to the device from one page-locked buffer
+  the serving engine rewrites before every launch and replay.
+- ``pinned``: the serving engine stages one value for every step while
+  capture is on, a bound that holds for every row, as MAX's overlap pipeline
+  pins the fused sampler's batch bounds at capture.
+"""
 
-    mla_decode: bool = False
-    cache_bound: CaptureCacheBound = "live"
+CaptureCacheBound: TypeAlias = Literal["aligned", "bucketed"]
+"""The host cache bound a captured step bakes in: its cache length aligned
+up to a probed one, or the power-of-two bucket of the bound and its query
+rows, which the capture key carries."""
 
 
 @dataclass(frozen=True)
@@ -79,18 +86,170 @@ class EngineSamplingConfig:
 
 
 @dataclass(frozen=True)
+class EngineParallelConfig:
+    """How the graphs split their work across the devices.
+
+    The devices are listed replica-major: replica ``r`` runs on devices
+    ``r * tp`` to ``(r + 1) * tp - 1``. Expert, decode-context and
+    prefill-context parallelism are carved from the same devices as MAX's
+    configuration defines them; nothing here is inferred.
+
+    Args:
+        dp: The data-parallel attention replicas.
+        tp: The devices each replica's attention splits its heads across.
+        ep: The devices the experts are split across, or 1 without expert
+            parallelism.
+        dcp: The ranks of each replica that split a request's KV cache by
+            token position (decode context parallelism), or 1.
+        pcp: The ranks of each replica that split a prefill step's query
+            rows, prefill context parallelism: 1 without it, or the decode
+            context degree, since PCP splits rows over the decode context
+            ranks.
+        dcp_interleave: The consecutive token positions a decode context
+            rank owns before the next rank's turn; 1 without it.
+
+    Raises:
+        ArtifactError: If the degrees don't fit together.
+    """
+
+    dp: int
+    tp: int
+    ep: int
+    dcp: int
+    pcp: int
+    dcp_interleave: int
+
+    def __post_init__(self) -> None:
+        if min(self.dp, self.tp, self.ep, self.dcp, self.pcp) < 1:
+            raise ArtifactError(
+                f"every parallel degree must be positive: {self}"
+            )
+        if self.tp % self.dcp:
+            raise ArtifactError(
+                f"the decode context degree {self.dcp} must divide the"
+                f" tensor-parallel degree {self.tp}"
+            )
+        if self.pcp not in (1, self.dcp):
+            raise ArtifactError(
+                f"the prefill context degree {self.pcp} must be 1 or the"
+                f" decode context degree {self.dcp}"
+            )
+        if self.dcp_interleave < 1 or (
+            self.dcp == 1 and self.dcp_interleave != 1
+        ):
+            raise ArtifactError(
+                f"dcp_interleave {self.dcp_interleave} needs a decode context"
+                " degree above 1"
+            )
+        if self.num_devices % self.ep:
+            raise ArtifactError(
+                f"the expert-parallel degree {self.ep} must divide the"
+                f" {self.num_devices} devices"
+            )
+
+    @property
+    def num_devices(self) -> int:
+        """The devices across every replica: ``dp * tp``."""
+        return self.dp * self.tp
+
+
+@dataclass(frozen=True)
+class CapturedHostInput:
+    """How a replayed device graph gets one host input it reads every step.
+
+    Args:
+        mode: How a replay gets the input.
+        value: The value a ``pinned`` input holds for every step; ``None``
+            for any other mode.
+
+    Raises:
+        ArtifactError: If a ``pinned`` input has no value, or another mode
+            has one.
+    """
+
+    mode: HostInputMode
+    value: int | float | None = None
+
+    def __post_init__(self) -> None:
+        if (self.mode == "pinned") != (self.value is not None):
+            needs = "needs a" if self.mode == "pinned" else "takes no"
+            raise ArtifactError(f"a {self.mode} host input {needs} value")
+
+
+@dataclass(frozen=True)
+class EngineCaptureConfig:
+    """The device-graph capture the graphs support.
+
+    Args:
+        max_batch_size: The most rows per replica a captured decode step
+            holds. Every size from 1 to it is captured at every verify
+            width. 0 records no capture shapes, and an engine serving the
+            artifact runs every step eagerly; which steps it can capture it
+            reads off the graphs' inputs, not from this record.
+        prefill_max_tokens: The most tokens per replica a captured prefill
+            step holds, or 0 for no prefill capture. The engine derives the
+            token grid and row buckets from it.
+        host_inputs: How a replay gets each host input the serving graphs
+            read every step, keyed ``<group kind>.<field>``. A serving engine
+            refuses to capture a graph that reads a host input listed here
+            under no mode.
+        cache_bound: The host cache bound a replayed step keeps, for graphs
+            whose kernels size their launches from it. ``aligned``: the
+            step's cache length aligned up to a probed one, as MAX Serve's
+            capture runner stages it. ``bucketed``: the next power of two
+            over the bound plus the step's query rows, at least 256, less
+            those rows and capped at the context limit, with the bucket in
+            the capture key, so a replay keeps the launch arm eager takes
+            at the bound.
+    """
+
+    max_batch_size: int
+    prefill_max_tokens: int
+    host_inputs: Mapping[str, CapturedHostInput] = field(default_factory=dict)
+    cache_bound: CaptureCacheBound = "aligned"
+
+    def __post_init__(self) -> None:
+        if self.max_batch_size < 0 or self.prefill_max_tokens < 0:
+            raise ArtifactError(f"capture limits must not be negative: {self}")
+        if self.prefill_max_tokens and not self.max_batch_size:
+            raise ArtifactError(
+                "prefill capture needs an architecture that captures its"
+                " steps, but max_batch_size is 0"
+            )
+        for name in self.host_inputs:
+            kind, _, leaf = name.partition(".")
+            if not kind or not leaf or "." in leaf:
+                raise ArtifactError(
+                    f"capture.host_inputs key {name!r} is not"
+                    " <group kind>.<field>"
+                )
+
+
+@dataclass(frozen=True)
 class EngineSpeculativeConfig:
     """The speculative-decoding settings a fused graph was built with.
 
     Args:
-        speculative_method: The speculative-decoding method, such as ``mtp``.
+        speculative_method: The speculative-decoding method, such as ``mtp``,
+            for logs only: what a serving engine needs of the method is in
+            the other fields.
         num_speculative_tokens: The number of tokens drafted per step.
         draft_proposal: How the draft proposes tokens: ``argmax``, or
             ``sampled``, which adds the draft's probabilities to the graph.
-        acceptance_mode: How the graph accepts drafts, or ``None`` for an
-            artifact exported before MAX recorded it.
+        acceptance_mode: How the graph accepts drafts.
         reasoning_parser: The reasoning parser, if any. With one, a block
             draft's graph takes whether each request is still thinking.
+        draft_query_len: The query rows one draft forward reads per request:
+            1 for a sequential proposer, the drafted tokens for a block one.
+        proposer: Whether the draft proposes a block of tokens in one
+            forward or one token per forward.
+        verify_widths: Every number of drafts a decode step may verify,
+            ascending, from the pipeline's width policy, with the mixed
+            step's width when it verifies any. 0 is among them when a step
+            can skip its drafter.
+        mixed_verify_width: The most drafts a mixed prefill and verify
+            step verifies per decode row: 0 when mixed steps verify none.
+            ``None`` when the graph takes no prefill rows on a verify step.
         verify_takes_prefill_rows: Whether the verify commits a prefill row
             that rides a verify step.
         verify_commits_long_rows: Whether the verify commits a row longer
@@ -102,11 +261,47 @@ class EngineSpeculativeConfig:
     speculative_method: str
     num_speculative_tokens: int
     draft_proposal: DraftProposal
-    acceptance_mode: AcceptanceMode | None
+    acceptance_mode: AcceptanceMode
     reasoning_parser: str | None
+    draft_query_len: int
+    proposer: Proposer
+    verify_widths: tuple[int, ...]
+    mixed_verify_width: int | None
     verify_takes_prefill_rows: bool = False
     verify_commits_long_rows: bool = False
     successor_replay: bool = False
+
+    def __post_init__(self) -> None:
+        widths = self.verify_widths
+        if not widths or list(widths) != sorted(set(widths)) or widths[0] < 0:
+            raise ArtifactError(
+                "verify_widths must be distinct widths, ascending, with one"
+                f" above 0, got {list(widths)}"
+            )
+        if widths[-1] < 1:
+            raise ArtifactError(
+                f"verify_widths must hold a width above 0, got {list(widths)}"
+            )
+        mixed = self.mixed_verify_width
+        if mixed is not None and not 0 <= mixed <= self.num_speculative_tokens:
+            raise ArtifactError(
+                f"mixed_verify_width {mixed} must be within 0 and the"
+                f" {self.num_speculative_tokens} drafted tokens"
+            )
+        if mixed is not None and not self.verify_takes_prefill_rows:
+            raise ArtifactError(
+                "mixed_verify_width needs a graph that takes prefill rows on"
+                " a verify step"
+            )
+        if widths[-1] > self.num_speculative_tokens:
+            raise ArtifactError(
+                f"verify width {widths[-1]} exceeds the"
+                f" {self.num_speculative_tokens} drafted tokens"
+            )
+        if self.draft_query_len < 1:
+            raise ArtifactError(
+                f"draft_query_len must be positive, got {self.draft_query_len}"
+            )
 
 
 @dataclass(frozen=True)
@@ -164,53 +359,119 @@ class EngineConfig:
             replica.
         max_length: The most tokens one request holds, prompt and generated
             tokens together.
-        max_batch_input_tokens: The most input tokens one step processes, per
-            data-parallel replica.
+        max_batch_input_tokens: The compiled input-token capacity of one
+            step, per data-parallel replica.
+        prefill_token_budget: The prefill tokens the scheduler gives one
+            step, per replica, excluding draft rows, or ``None`` to derive
+            it from ``max_batch_input_tokens``.
         max_batch_total_tokens: The most context tokens one batch holds, or
             ``None`` for no limit.
-        devices: The devices the graphs run on, in the order they use them.
-        data_parallel_degree: How many replicas of the model the devices
-            hold.
-        ep_size: The number of devices the experts are split across, or 1
-            without expert parallelism.
+        devices: The devices the graphs run on, replica-major.
+        parallel: How the graphs split their work across the devices.
+        capture: The device-graph capture the graphs support.
         sampling: The sampling graphs' optional inputs.
         speculative: The speculative-decoding settings, or ``None`` for a
             pipeline that doesn't decode speculatively.
-        capture: How an engine may capture the decode graph.
-        device_graph_capture: Whether the architecture supports device graph
-            capture of its decode steps: the graph makes no host call inside
-            a step, its expert-parallel arm included.
+        prefix_caching: Whether the architecture serves prefix caching:
+            ``False`` where MAX Serve turns it off for the architecture, and
+            an engine then serves without it.
         prefill_context_parallel: When a prefill step takes the PCP path,
-            or ``None`` for graphs without one.
+            or ``None`` for graphs without one. Recorded exactly when
+            ``parallel.pcp`` is above 1.
+
+    Raises:
+        ArtifactError: If the devices are not ``dp * tp``, the capture
+            exceeds the batch size, the prefill budget or prefill capture
+            exceeds what a step can take, or the PCP record and
+            ``parallel.pcp`` disagree.
     """
 
     max_batch_size: int
     max_length: int
     max_batch_input_tokens: int
+    prefill_token_budget: int | None
     max_batch_total_tokens: int | None
     devices: tuple[DeviceSpec, ...]
-    data_parallel_degree: int
-    ep_size: int
+    parallel: EngineParallelConfig
+    capture: EngineCaptureConfig
     sampling: EngineSamplingConfig
     speculative: EngineSpeculativeConfig | None
-    capture: EngineCaptureConfig = EngineCaptureConfig()
-    device_graph_capture: bool = False
+    prefix_caching: bool
     prefill_context_parallel: EnginePrefillContextParallel | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.devices) != self.parallel.num_devices:
+            raise ArtifactError(
+                f"{len(self.devices)} devices for dp {self.parallel.dp} x tp"
+                f" {self.parallel.tp}"
+            )
+        budget = self.prefill_token_budget
+        if budget is not None and not 0 < budget <= self.max_batch_input_tokens:
+            raise ArtifactError(
+                f"prefill token budget {budget} must be positive and no"
+                " larger than the compiled input capacity"
+                f" {self.max_batch_input_tokens}"
+            )
+        if self.capture.max_batch_size > self.max_batch_size:
+            raise ArtifactError(
+                f"capture of {self.capture.max_batch_size} rows exceeds the"
+                f" batch size {self.max_batch_size}"
+            )
+        if self.capture.prefill_max_tokens > self.prefill_tokens:
+            raise ArtifactError(
+                f"prefill capture of {self.capture.prefill_max_tokens} tokens"
+                f" exceeds the prefill token budget {self.prefill_tokens}"
+            )
+        if (self.prefill_context_parallel is not None) != (
+            self.parallel.pcp > 1
+        ):
+            raise ArtifactError(
+                "a prefill_context_parallel record comes with parallel pcp"
+                f" above 1 and only with it: pcp {self.parallel.pcp}, record"
+                f" {self.prefill_context_parallel}"
+            )
+
+    @property
+    def prefill_tokens(self) -> int:
+        """The prefill tokens one step takes per replica.
+
+        The prefill token budget, or the compiled input capacity without one.
+        """
+        if self.prefill_token_budget is None:
+            return self.max_batch_input_tokens
+        return self.prefill_token_budget
 
     def __serialize__(self) -> Mapping[str, ArtifactType]:
         """Returns the settings as a JSON object."""
         speculative = self.speculative
+        parallel = self.parallel
         return {
             "max_batch_size": self.max_batch_size,
             "max_length": self.max_length,
             "max_batch_input_tokens": self.max_batch_input_tokens,
+            "prefill_token_budget": self.prefill_token_budget,
             "max_batch_total_tokens": self.max_batch_total_tokens,
             "devices": [
                 {"type": device.device_type, "id": device.id}
                 for device in self.devices
             ],
-            "data_parallel_degree": self.data_parallel_degree,
-            "ep_size": self.ep_size,
+            "parallel": {
+                "dp": parallel.dp,
+                "tp": parallel.tp,
+                "ep": parallel.ep,
+                "dcp": parallel.dcp,
+                "pcp": parallel.pcp,
+                "dcp_interleave": parallel.dcp_interleave,
+            },
+            "capture": {
+                "max_batch_size": self.capture.max_batch_size,
+                "prefill_max_tokens": self.capture.prefill_max_tokens,
+                "host_inputs": {
+                    name: {"mode": how.mode, "value": how.value}
+                    for name, how in sorted(self.capture.host_inputs.items())
+                },
+                "cache_bound": self.capture.cache_bound,
+            },
             "sampling": {
                 "needs_bitmask_constraints": (
                     self.sampling.needs_bitmask_constraints
@@ -226,6 +487,10 @@ class EngineConfig:
                 "draft_proposal": speculative.draft_proposal,
                 "acceptance_mode": speculative.acceptance_mode,
                 "reasoning_parser": speculative.reasoning_parser,
+                "draft_query_len": speculative.draft_query_len,
+                "proposer": speculative.proposer,
+                "verify_widths": list(speculative.verify_widths),
+                "mixed_verify_width": speculative.mixed_verify_width,
                 "verify_takes_prefill_rows": (
                     speculative.verify_takes_prefill_rows
                 ),
@@ -234,11 +499,6 @@ class EngineConfig:
                 ),
                 "successor_replay": speculative.successor_replay,
             },
-            "capture": {
-                "mla_decode": self.capture.mla_decode,
-                "cache_bound": self.capture.cache_bound,
-            },
-            "device_graph_capture": self.device_graph_capture,
             "prefill_context_parallel": None
             if (pcp := self.prefill_context_parallel) is None
             else {
@@ -246,6 +506,7 @@ class EngineConfig:
                 "min_rows_per_request": pcp.min_rows_per_request,
                 "max_batch_context": pcp.max_batch_context,
             },
+            "prefix_caching": self.prefix_caching,
         }
 
     @classmethod
@@ -263,36 +524,25 @@ class EngineConfig:
             max_batch_input_tokens=decode_field(
                 value, "max_batch_input_tokens", _int
             ),
+            prefill_token_budget=decode_field(
+                value, "prefill_token_budget", decode_optional(_int)
+            ),
             max_batch_total_tokens=decode_field(
                 value, "max_batch_total_tokens", decode_optional(_int)
             ),
             devices=decode_field(value, "devices", _devices),
-            data_parallel_degree=decode_field(
-                value, "data_parallel_degree", _int
-            ),
-            ep_size=decode_field(value, "ep_size", _int),
+            parallel=decode_field(value, "parallel", _parallel),
+            capture=decode_field(value, "capture", _capture),
             sampling=decode_field(value, "sampling", _sampling),
             speculative=decode_field(
                 value, "speculative", decode_optional(_speculative)
             ),
-            # An artifact written before the field existed captures nothing
-            # the engine would not.
-            capture=decode_field(value, "capture", _capture)
-            if "capture" in value
-            else EngineCaptureConfig(),
-            # An artifact written before the field existed reads as one
-            # whose decode MAX does not capture.
-            device_graph_capture=expect(
-                value.get("device_graph_capture", False), bool
-            ),
-            # An artifact exported before the field reads as without PCP.
             prefill_context_parallel=decode_field(
                 value,
                 "prefill_context_parallel",
                 decode_optional(_prefill_context_parallel),
-            )
-            if "prefill_context_parallel" in value
-            else None,
+            ),
+            prefix_caching=decode_field(value, "prefix_caching", _bool),
         )
 
 
@@ -302,6 +552,10 @@ def _int(value: ArtifactType) -> int:
 
 def _str(value: ArtifactType) -> str:
     return expect(value, str)
+
+
+def _bool(value: ArtifactType) -> bool:
+    return expect(value, bool)
 
 
 def _devices(value: ArtifactType) -> tuple[DeviceSpec, ...]:
@@ -322,14 +576,60 @@ def _device(value: ArtifactType) -> DeviceSpec:
             raise ValueError(f"unknown device type {other!r}")
 
 
+def _parallel(value: ArtifactType) -> EngineParallelConfig:
+    obj = decode_object(value, EngineParallelConfig)
+    return EngineParallelConfig(
+        dp=_int(obj["dp"]),
+        tp=_int(obj["tp"]),
+        ep=_int(obj["ep"]),
+        dcp=_int(obj["dcp"]),
+        pcp=_int(obj["pcp"]),
+        dcp_interleave=_int(obj["dcp_interleave"]),
+    )
+
+
+def _capture(value: ArtifactType) -> EngineCaptureConfig:
+    obj = decode_object(value, EngineCaptureConfig)
+    return EngineCaptureConfig(
+        max_batch_size=_int(obj["max_batch_size"]),
+        prefill_max_tokens=_int(obj["prefill_max_tokens"]),
+        host_inputs={
+            name: _host_input(how)
+            for name, how in expect(obj["host_inputs"], dict).items()
+        },
+        cache_bound=_cache_bound(obj["cache_bound"]),
+    )
+
+
+def _cache_bound(value: ArtifactType) -> CaptureCacheBound:
+    match expect(value, str):
+        case "aligned":
+            return "aligned"
+        case "bucketed":
+            return "bucketed"
+        case other:
+            raise ValueError(f"unknown capture cache bound {other!r}")
+
+
+def _host_input(value: ArtifactType) -> CapturedHostInput:
+    obj = decode_object(value, CapturedHostInput)
+    mode = expect(obj["mode"], str)
+    if mode not in ("shape", "staged", "pinned"):
+        raise ValueError(f"unknown host input mode {mode!r}")
+    pinned = obj["value"]
+    if pinned is not None and (
+        isinstance(pinned, bool) or not isinstance(pinned, int | float)
+    ):
+        raise ValueError(f"host input value {pinned!r} is not a number")
+    return CapturedHostInput(mode=mode, value=pinned)  # type: ignore[arg-type]
+
+
 def _sampling(value: ArtifactType) -> EngineSamplingConfig:
     obj = decode_object(value, EngineSamplingConfig)
     return EngineSamplingConfig(
-        needs_bitmask_constraints=expect(
-            obj["needs_bitmask_constraints"], bool
-        ),
-        enable_variable_logits=expect(obj["enable_variable_logits"], bool),
-        enable_penalties=expect(obj["enable_penalties"], bool),
+        needs_bitmask_constraints=_bool(obj["needs_bitmask_constraints"]),
+        enable_variable_logits=_bool(obj["enable_variable_logits"]),
+        enable_penalties=_bool(obj["enable_penalties"]),
     )
 
 
@@ -353,45 +653,33 @@ def _draft_proposal(value: ArtifactType) -> DraftProposal:
             raise ValueError(f"unknown draft proposal {other!r}")
 
 
-def _cache_bound(value: ArtifactType) -> CaptureCacheBound:
+def _proposer(value: ArtifactType) -> Proposer:
     match expect(value, str):
-        case "live":
-            return "live"
-        case "context":
-            return "context"
-        case "bucketed":
-            return "bucketed"
+        case "block":
+            return "block"
+        case "sequential":
+            return "sequential"
         case other:
-            raise ValueError(f"unknown capture cache bound {other!r}")
-
-
-def _capture(value: ArtifactType) -> EngineCaptureConfig:
-    obj = decode_object(value, EngineCaptureConfig)
-    return EngineCaptureConfig(
-        mla_decode=expect(obj["mla_decode"], bool),
-        cache_bound=_cache_bound(obj["cache_bound"]),
-    )
+            raise ValueError(f"unknown proposer {other!r}")
 
 
 def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:
     obj = decode_object(value, EngineSpeculativeConfig)
     return EngineSpeculativeConfig(
-        speculative_method=expect(obj["speculative_method"], str),
-        num_speculative_tokens=expect(obj["num_speculative_tokens"], int),
+        speculative_method=_str(obj["speculative_method"]),
+        num_speculative_tokens=_int(obj["num_speculative_tokens"]),
         draft_proposal=_draft_proposal(obj["draft_proposal"]),
-        acceptance_mode=decode_optional(_acceptance_mode)(
-            obj.get("acceptance_mode")
-        ),
+        acceptance_mode=_acceptance_mode(obj["acceptance_mode"]),
         reasoning_parser=decode_optional(_str)(obj["reasoning_parser"]),
-        # An artifact written before these fields existed reads each as
-        # false.
-        verify_takes_prefill_rows=expect(
-            obj.get("verify_takes_prefill_rows", False), bool
+        draft_query_len=_int(obj["draft_query_len"]),
+        proposer=_proposer(obj["proposer"]),
+        verify_widths=tuple(
+            _int(width) for width in expect(obj["verify_widths"], list)
         ),
-        verify_commits_long_rows=expect(
-            obj.get("verify_commits_long_rows", False), bool
-        ),
-        successor_replay=expect(obj.get("successor_replay", False), bool),
+        mixed_verify_width=decode_optional(_int)(obj["mixed_verify_width"]),
+        verify_takes_prefill_rows=_bool(obj["verify_takes_prefill_rows"]),
+        verify_commits_long_rows=_bool(obj["verify_commits_long_rows"]),
+        successor_replay=_bool(obj["successor_replay"]),
     )
 
 

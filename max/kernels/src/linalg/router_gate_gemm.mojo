@@ -147,6 +147,7 @@ def router_gate_tf32_gemm[
         cta_group=cta_group,
     )
 
+    @__allow_legacy_any_origin_fields
     def sum_pairs[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var c}:

@@ -4438,6 +4438,56 @@ class TestDistributedBroadcastHandler:
             np.testing.assert_allclose(shard.to_numpy(), data, rtol=1e-5)
 
 
+class TestDistributedAllToAllHandler:
+    """Tests for the DistributedAllToAllOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float8_e4m3fn])
+    def test_all_to_all_swaps_the_split_axis(self, dtype: DType) -> None:
+        """Rows sharded over two GPUs come back sharded by columns, for a
+        dtype NumPy holds and for one it does not."""
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+        input_types: list[GType[Any]] = [
+            TensorType(dtype, [2, 4], gpu0),
+            TensorType(dtype, [2, 4], gpu1),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("all_to_all_test", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            results = graph_ops.all_to_all(
+                [t0.tensor, t1.tensor],
+                [b0.buffer, b1.buffer],
+                split_axis=1,
+                concat_axis=0,
+            )
+            graph.output(*results)
+
+        # Values as their bits: the exchange must move them unchanged.
+        bits = DType.uint32 if dtype == DType.float32 else DType.uint8
+        data = np.arange(16, dtype=bits.to_numpy()).reshape(4, 4)
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_numpy(data[:2].copy()).view(dtype).to(dev0),
+            Buffer.from_numpy(data[2:].copy()).view(dtype).to(dev1),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        assert _interpreter.can_execute(graph)
+        outputs = _interpreter.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        for out, expected in zip(
+            outputs, (data[:, :2], data[:, 2:]), strict=True
+        ):
+            assert isinstance(out, Buffer)
+            np.testing.assert_array_equal(
+                out.to(CPU()).view(bits).to_numpy(), expected
+            )
+
+
 class TestDistributedReducescatterSumHandler:
     """Tests for the DistributedReducescatterSumOp interpreter handler."""
 

@@ -40,6 +40,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS_KWARGS_FN_PTR < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S20 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S21 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S22 < %t.mlir
 # COM: Verify generated storage-struct structure. The closure's signature lives
 # COM: in the bindings of the one parametric closure trait, not in a
 # COM: per-signature trait, and no bridging wrapper is emitted.
@@ -457,7 +458,7 @@ def kwargs_fn_ptr_top(var **kwargs: Int) -> Int:
     return 1
 
 
-def kwargs_fn_ptr_takeClosure(f: Some[def(var ** kwargs: Int) -> Int]) -> Int:
+def kwargs_fn_ptr_takeClosure(f: Some[def(var **kwargs: Int) -> Int]) -> Int:
     return f(a=1)
 
 
@@ -537,7 +538,7 @@ def mixed_kwargs_fn_ptr_top(x: Int, *, named: Int, var **kwargs: Int) -> Int:
 
 
 def mixed_kwargs_fn_ptr_takeClosure(
-    f: Some[def(x: Int, *, named: Int, var ** kwargs: Int) -> Int]
+    f: Some[def(x: Int, *, named: Int, var **kwargs: Int) -> Int]
 ) -> Int:
     return f(1, named=2, a=3)
 
@@ -559,7 +560,7 @@ def star_args_kwargs_fn_ptr_top(*args: Int, var **kwargs: Int) -> Int:
 
 
 def star_args_kwargs_fn_ptr_takeClosure(
-    f: Some[def(* args: Int, var ** kwargs: Int) -> Int]
+    f: Some[def(*args: Int, var **kwargs: Int) -> Int]
 ) -> Int:
     return f(1, 2, a=3)
 
@@ -609,3 +610,19 @@ def s21_dependent_default(x: Int) -> Int:
         return x + a + b
 
     return f[1]()
+
+
+# COM: The closure trait's `__call__` witness forwards to the closure body. With
+# COM: a `ref` result, the forwarding call returns the reference, not a
+# COM: register value, and the witness must return that reference.
+
+
+# S22-LABEL: lit.fn @"__call__$trait({{.*}}closure$s22_ref_result{{.*}}::get::__storage
+# S22-SAME: refresult -> !lit.ref<!lit.struct<#List
+def s22_ref_result():
+    var x: List[Int] = [1]
+
+    def get() {mut x} -> ref[x] List[Int]:
+        # S22: %[[REF:.+]] = lit.call tail @{{.*}}::@"get()`"
+        # S22-NEXT: lit.return %[[REF]] : !lit.ref<!lit.struct<#List
+        return x

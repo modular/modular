@@ -471,6 +471,27 @@ This version is still a work in progress.
   attributes, such as the ones `pdl_launch_attributes()` returns for
   programmatic dependent launch.
 
+- Renamed the closure overloads of `DeviceContext.compile_function()` and
+  `DeviceContext.enqueue_function()` to `compile_closure()` and
+  `enqueue_closure()`. Kernels that capture state from their enclosing scope
+  now use the `*_closure()` methods, and `compile_function()` and
+  `enqueue_function()` take only kernels that are plain functions. The old
+  closure overloads are removed, so a call that passes a closure to
+  `enqueue_function()` no longer compiles:
+
+  ```mojo
+  var scale: Float32 = 2.0
+
+  def scale_kernel() {var scale}:
+      ...
+
+  # Before:
+  ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
+
+  # After:
+  ctx.enqueue_closure(scale_kernel, grid_dim=1, block_dim=256)
+  ```
+
 - A bare `DeviceContext` is now an unbound parameterized type, not a concrete
   type.
 

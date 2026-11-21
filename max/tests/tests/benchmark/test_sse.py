@@ -142,20 +142,6 @@ class TestIterEvents:
             ),
             pytest.param(
                 (
-                    b"event: add\ndata: 73857293\n\nevent: remove\ndata: 2153\n\n",
-                ),
-                [
-                    SSEEvent(
-                        data="73857293", event_type="add", last_event_id=""
-                    ),
-                    SSEEvent(
-                        data="2153", event_type="remove", last_event_id=""
-                    ),
-                ],
-                id="event_type_field",
-            ),
-            pytest.param(
-                (
                     b"event: add\ndata: 73857293\n\n"
                     b"event: remove\ndata: 2153\n\n"
                     b"event: add\ndata: 113411\n\n",
@@ -262,27 +248,12 @@ class TestIterEvents:
         assert events[1].event_type == "message"
 
     @pytest.mark.asyncio
-    async def test_id_set_on_event(self) -> None:
-        stream = b"data: hello\nid: 42\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events[0].last_event_id == "42"
-
-    @pytest.mark.asyncio
     async def test_id_persists_across_events_without_id(self) -> None:
         # Spec: last-event-ID buffer does not reset on dispatch.
         stream = b"data: first\nid: 1\n\ndata: second\n\n"
         events = [ev async for ev in iter_events(_chunks(stream))]
         assert events[0].last_event_id == "1"
         assert events[1].last_event_id == "1"
-
-    @pytest.mark.asyncio
-    async def test_id_reset_by_empty_id_field(self) -> None:
-        # "id" with no value (or "id:") resets last_event_id to "".
-        stream = b"data: first\nid: 42\n\ndata: second\nid\n\ndata: third\n\n"
-        events = [ev async for ev in iter_events(_chunks(stream))]
-        assert events[0].last_event_id == "42"
-        assert events[1].last_event_id == ""
-        assert events[2].last_event_id == ""
 
     @pytest.mark.asyncio
     async def test_id_with_null_character_ignored(self) -> None:

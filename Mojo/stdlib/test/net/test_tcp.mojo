@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.ffi import c_int
 from std.io import IOError
 from std.net import IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6
 from std.net.tcp import TCPListener, TCPSocket, TCPStream
@@ -23,6 +24,8 @@ from std.testing import (
     assert_raises,
     assert_true,
 )
+from test_utils.mmap import ZeroedMmap
+from std.time import sleep
 
 
 def or_raise[
@@ -132,6 +135,16 @@ def test_listen_keeps_socket_options() raises:
     assert_true(socket^.listen().get_option[ReuseAddress]())
 
 
+def test_listen_backlog_out_of_range_raises() raises:
+    var error: Optional[IOError] = None
+    try:
+        _ = TCPSocket.v4().listen(backlog=Int(c_int.MAX) + 1)
+    except e:
+        error = e^
+    var e = or_raise(error^, "the listen succeeded")
+    assert_equal(e.kind(), .invalid_input)
+
+
 def test_bind_address_in_use_raises() raises:
     var listener = TCPListener(bind=loopback_addr())
     var addr = listener.local_addr()
@@ -222,6 +235,30 @@ def test_write_then_read() raises:
     assert_equal(read_string(client, 4), "pong")
 
 
+def test_read_over_int_max() raises:
+    var listener = TCPListener(bind=loopback_addr())
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    client.write_all("ping".as_bytes())
+    # More bytes than macOS will read in a single call.
+    var mapping = ZeroedMmap[mut=True](Int(c_int.MAX) + 1)
+    var buffer = mapping.as_bytes()
+    var n = 0
+    while n < 4:
+        n += server.read(buffer[n:])
+    assert_equal(String(from_utf8_lossy=buffer[:n]), "ping")
+
+
+def test_read_into_empty_buffer_returns_zero() raises:
+    var listener = TCPListener(bind=loopback_addr())
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    var buffer = List[Byte]()
+    # Nothing has been sent, so the read can't return 0 for end of stream.
+    assert_equal(client.read(buffer), 0)
+    _ = server^
+
+
 def test_read_after_peer_closes_returns_zero() raises:
     var listener = TCPListener(bind=loopback_addr())
     var client = TCPStream(connect=listener.local_addr())
@@ -249,6 +286,25 @@ def test_read_after_peer_resets_raises() raises:
         error = e^
     var e = or_raise(error^, "the read after the reset succeeded")
     assert_equal(e.kind(), .connection_reset)
+
+
+def test_write_after_peer_closes_raises() raises:
+    var listener = TCPListener(bind=loopback_addr())
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    server^.close()
+    # The peer answers the first write with a reset, so a later write raises
+    # once the reset arrives.
+    var error: Optional[IOError] = None
+    for _ in range(100):
+        try:
+            client.write_all("ping".as_bytes())
+        except e:
+            error = e^
+            break
+        sleep(0.01)
+    var e = or_raise(error^, "every write after the close succeeded")
+    assert_true(e.kind() == .broken_pipe or e.kind() == .connection_reset)
 
 
 def test_destroying_a_stream_closes_it() raises:

@@ -868,8 +868,7 @@ static LogicalResult lowerAttributesAndTypes(
                                   ParamsBindingArrayAttr::get(
                                       generator.getContext(),
                                       params.getBoundMask(), boundValues),
-                                  /*discharged=*/{},
-                                  /*evaluationContext=*/nullptr),
+                                  /*discharged=*/{}),
               WalkResult::skip());
         });
 
@@ -1636,7 +1635,7 @@ static void populateTypeDomainRules(StructDecls &decls,
             bindParams.getContext(), cast<TypedAttr>(*generatorOr),
             ParamsBindingArrayAttr::get(bindParams.getContext(),
                                         params.getBoundMask(), loweredParams),
-            bindParams.getDischarged(), evalCtxPtr);
+            bindParams.getDischarged(), /*resultType=*/{}, evalCtxPtr);
         return evaluated;
       });
 
@@ -1676,8 +1675,7 @@ static void populateTypeDomainRules(StructDecls &decls,
                               ? StructDomain::Layout
                               : type.getDomain();
     return KGEN::StructType::get(type.getContext(), *variadicOr,
-                                 *isMemoryOnlyOr, *minAlignmentOr,
-                                 type.getIsParamPack(), domain);
+                                 *isMemoryOnlyOr, *minAlignmentOr, domain);
   });
 
   // NOTE: Downcast becomes an no-op after lower-lit. However, we should
@@ -1741,10 +1739,7 @@ static void populateTypeDomainRules(StructDecls &decls,
       return failure();
     auto mapped =
         ParamOperatorAttr::get(POC::VariadicPtrMap, *variadicOr, *addrSpaceOr);
-    return KGEN::StructType::getLayoutDomain(ref.getContext(), mapped,
-                                             /*isMemoryOnly=*/{},
-                                             /*minAlignment=*/{},
-                                             /*isParamPack=*/true);
+    return KGEN::StructType::getLayoutDomain(ref.getContext(), mapped);
   });
 
   // !lit.ref -> !kgen.pointer
@@ -1932,7 +1927,7 @@ static void populateValueDomainRules(StructDecls &decls,
       return type;
     return KGEN::StructType::getValueDomain(
         type.getContext(), type.getElementTypesVariadic(),
-        type.getIsMemoryOnly(), type.getMinAlignment(), type.getIsParamPack());
+        type.getIsMemoryOnly(), type.getMinAlignment());
   });
 
   // A struct reference becomes a generator reference over the same parameter
@@ -2265,14 +2260,10 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
     // This catches cases where parametric types have resolved identically.
     bool isIdentity = adaptor.getContainer().getType() == resultType;
 
-    auto isNonPackStruct =
-        isa<KGEN::StructType>(containerElemType) &&
-        !cast<KGEN::StructType>(containerElemType).getIsParamPack();
-
     // Detection method 2: Container already flattened to a concrete scalar.
     // This catches cases where the struct was flattened before this point.
     bool isFlattenedNonStruct =
-        !isNonPackStruct && !isa<KGEN::ParamType>(containerElemType);
+        !isa<KGEN::StructType, KGEN::ParamType>(containerElemType);
 
     if (isIdentity || isFlattenedNonStruct)
       return adaptor.getContainer();

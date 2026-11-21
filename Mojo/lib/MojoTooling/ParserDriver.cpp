@@ -22,6 +22,7 @@
 #include "Mojo/MojoParser/DocString.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/Lexer.h"
+#include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
@@ -154,7 +155,8 @@ static ASTDecl *buildModuleDecl(const std::filesystem::path &filepath,
 
 /// Create an ASTDecl for the given package.
 static ASTDecl *buildPackageDecl(const std::filesystem::path &filepath,
-                                 SharedState &sharedState) {
+                                 SharedState &sharedState,
+                                 ArrayRef<std::string> outputNamespace) {
   // If the file is a binary package, just import it.
   if (Filesystem::isMojoBinaryPackagePath(filepath)) {
     return &sharedState.createBinaryPackage(filepath.string(),
@@ -171,13 +173,25 @@ static ASTDecl *buildPackageDecl(const std::filesystem::path &filepath,
     return buildNestedModuleDecl(filepath, sharedState);
 
   // Otherwise, create a new package.
-  return &sharedState.createPackage(filepath.string(),
-                                    getNameForSourcePackage(filepath));
+  std::string name = getNameForSourcePackage(filepath);
+  PackageASTDecl &package = sharedState.createPackage(filepath.string(), name);
+  if (!outputNamespace.empty()) {
+    SmallVector<StringRef> importPath(outputNamespace.begin(),
+                                      outputNamespace.end());
+    importPath.push_back(name);
+    ModuleLoader &loader = sharedState.getModuleLoader();
+    // A failure to bind is reported, which fails the parse.
+    (void)loader.bindPrecompiledPackage(*loader.lookupState(&package),
+                                        importPath);
+  }
+  return &package;
 }
 
 /// Create an ASTDecl for the given module or package.
-static ASTDecl *buildModuleOrPackageDecl(const std::filesystem::path &path,
-                                         SharedState &sharedState) {
+static ASTDecl *
+buildModuleOrPackageDecl(const std::filesystem::path &path,
+                         SharedState &sharedState,
+                         ArrayRef<std::string> outputNamespace = {}) {
   // Handle the case of a file.
   if (path.extension() == ".mojo") {
     SourceMgr &sourceMgr = sharedState.getSourceMgr();
@@ -188,7 +202,7 @@ static ASTDecl *buildModuleOrPackageDecl(const std::filesystem::path &path,
     return buildModuleDecl(path, sourceMgr.getMemoryBuffer(fileId),
                            sharedState);
   }
-  return buildPackageDecl(path, sharedState);
+  return buildPackageDecl(path, sharedState, outputNamespace);
 }
 
 ASTDecl *MojoParserContext::parseFile(unsigned fileId,
@@ -314,8 +328,10 @@ ASTDecl *MojoParserContext::parsePackage(const std::filesystem::path &path) {
 }
 
 ASTDecl *
-MojoParserContext::parseFileOrPackage(const std::filesystem::path &path) {
-  ASTDecl *moduleDecl = buildModuleOrPackageDecl(path, impl->sharedState);
+MojoParserContext::parseFileOrPackage(const std::filesystem::path &path,
+                                      ArrayRef<std::string> outputNamespace) {
+  ASTDecl *moduleDecl =
+      buildModuleOrPackageDecl(path, impl->sharedState, outputNamespace);
   if (!moduleDecl)
     return nullptr;
   impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);

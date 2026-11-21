@@ -15,18 +15,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import Value
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.muse_glimmer.layers.rms_norm import (
     Gemma4RMSNorm,
@@ -82,7 +80,7 @@ class MuseSparkTextModel(MuseTextModelBase):
         self,
         config: MuseSparkConfig,
         mesh: DeviceMesh,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
         text_config = config.text_config
@@ -123,11 +121,10 @@ class MuseSparkTextModel(MuseTextModelBase):
         self.vocab_size = text_config.vocab_size
         self.unpadded_vocab_size = text_config.unpadded_vocab_size
 
-        self.ep_batch_manager = ep_batch_manager
-        self.bf16_ep_batch_manager = (
-            EPBatchManager(bf16_dispatch(ep_batch_manager.config))
-            if ep_batch_manager is not None
-            else None
+        self.ep_config = ep_config
+        """The NVFP4 layers' exchange, which the BF16 layers share."""
+        bf16_ep_config = (
+            bf16_dispatch(ep_config) if ep_config is not None else None
         )
 
         kv_params_by_type: dict[str, KVCacheParams] = {}
@@ -149,10 +146,10 @@ class MuseSparkTextModel(MuseTextModelBase):
                     ),
                     kv_params=kv_params_by_type[layer_type],
                     layer_idx_in_cache=layer_type_counts[layer_type],
-                    ep_batch_manager=(
-                        ep_batch_manager
+                    ep_config=(
+                        ep_config
                         if expert_quant_config(text_config, i) is not None
-                        else self.bf16_ep_batch_manager
+                        else bf16_ep_config
                     ),
                 )
             )
@@ -163,13 +160,6 @@ class MuseSparkTextModel(MuseTextModelBase):
         self._layer_kv_key = list(text_config.layer_types)
         self.return_logits = text_config.return_logits
 
-    def bind_ep_buffers(self, inputs: Iterable[Tensor | Value[Any]]) -> None:
-        """Binds the EP exchange's buffers, which both expert formats share."""
-        assert self.ep_batch_manager is not None
-        assert self.bf16_ep_batch_manager is not None
-        comm = self.ep_batch_manager.comm_buffers(inputs)
-        self.bf16_ep_batch_manager.bind_comm_buffers(comm)
-
     def forward(
         self,
         tokens: Tensor,
@@ -178,8 +168,13 @@ class MuseSparkTextModel(MuseTextModelBase):
         input_row_offsets: Tensor,
         image_embeddings: Tensor,
         image_token_indices: Tensor,
+        **layer_kwargs: object,
     ) -> tuple[Tensor, ...]:
-        """Runs the language model on mesh-replicated inputs."""
+        """Runs the language model on mesh-replicated inputs.
+
+        ``layer_kwargs`` go to every decoder layer: under expert
+        parallelism, ``ep`` holds the exchange's buffers.
+        """
         # Glimmer's own .to(mesh) is then a no-op on the replicated inputs.
         return super().forward(
             replicate(tokens, self.mesh),
@@ -188,6 +183,7 @@ class MuseSparkTextModel(MuseTextModelBase):
             replicate(input_row_offsets, self.mesh),
             replicate(image_embeddings, self.mesh),
             replicate(image_token_indices, self.mesh),
+            **layer_kwargs,
         )
 
     def _compute_logits(self, h: Tensor) -> Tensor:
@@ -223,7 +219,8 @@ class MuseSparkTextModel(MuseTextModelBase):
 class MuseSpark(MuseModelBase):
     """Top-level wrapper: unflattens the two-leaf KV tree, delegates.
 
-    Under expert parallelism the EP exchange's buffers follow the KV inputs.
+    Under expert parallelism the decoder layers take the exchange's buffers
+    as the keyword ``ep``.
     """
 
     language_model: MuseSparkTextModel
@@ -232,37 +229,10 @@ class MuseSpark(MuseModelBase):
         self,
         config: MuseSparkConfig,
         mesh: DeviceMesh,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
-        self.language_model = MuseSparkTextModel(config, mesh, ep_batch_manager)
+        self.language_model = MuseSparkTextModel(config, mesh, ep_config)
         self.kv_params = config.kv_params
         self.mesh = mesh
-        self.ep_batch_manager = ep_batch_manager
-
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        image_embeddings: Tensor,
-        image_token_indices: Tensor,
-        *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
-        """Runs the model, binding the trailing EP inputs first."""
-        n_ep = (
-            len(self.ep_batch_manager.input_types())
-            if self.ep_batch_manager is not None
-            else 0
-        )
-        kv_args = variadic_args[: len(variadic_args) - n_ep]
-        if self.ep_batch_manager is not None:
-            self.language_model.bind_ep_buffers(variadic_args[len(kv_args) :])
-        return super().forward(
-            tokens,
-            return_n_logits,
-            input_row_offsets,
-            image_embeddings,
-            image_token_indices,
-            *kv_args,
-        )
+        self.ep_config = ep_config

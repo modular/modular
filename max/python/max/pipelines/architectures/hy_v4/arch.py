@@ -38,7 +38,6 @@ hy_v4_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     # The DSA indexer picks its scorer and top-k arms from the host cache
     # bound, so a capture keys and pins the bound's power-of-two bucket.
-    mla_decode_capture=True,
     capture_cache_bound="bucketed",
     # The indexer kernels size their own launches.
     unread_dispatch_caches=("indexer",),

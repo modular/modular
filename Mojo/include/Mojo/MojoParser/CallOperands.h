@@ -138,6 +138,12 @@ public:
   /// destination etc.
   ExprDest dest;
 
+  /// A temporary for the result when the callee's result address space or
+  /// origin is parametric and `dest` has no memory to infer them from.
+  /// Inference reads the parameters from it, and the call initializes it. The
+  /// result then goes to `dest` as an owned value.
+  MLValue resultSlot;
+
   /// The values passed in.  The keyword field will be null for positional
   /// arguments and present for keyword operands.
   OperandValueList values;

@@ -28,8 +28,9 @@ from max.nn.common_layers.quant_moe import (
     ExpertStacks,
     QuantizedMoE,
 )
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
 )
@@ -97,7 +98,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
         config: The Beam config.
         layer_idx: The layer's index in the model.
         kv_params: The cache leaf this layer addresses.
-        ep_batch_manager: The expert-parallel runtime, which makes a sparse
+        ep_config: The expert-parallel configuration, which makes a sparse
             layer's experts expert-parallel.
     """
 
@@ -106,7 +107,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
         config: BeamConfig,
         layer_idx: int,
         kv_params: KVCacheParams,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
         eps = config.rms_norm_eps
@@ -126,15 +127,15 @@ class BeamTransformerBlock(Module[..., Tensor]):
             and layer_idx in quant_config.mlp_quantized_layers
         )
         self.expert_parallel = (
-            ep_batch_manager is not None
+            ep_config is not None
             and config.mlp_layer_types[layer_idx] == "sparse"
         )
         self.mlp: Module[..., Tensor]
         if config.mlp_layer_types[layer_idx] == "sparse":
             moe_cls: Callable[..., QuantizedMoE]
-            if ep_batch_manager is not None:
+            if ep_config is not None:
                 moe_cls = functools.partial(
-                    ExpertParallelMoE, ep_batch_manager=ep_batch_manager
+                    ExpertParallelMoE, ep_config=ep_config
                 )
             elif mlp_quantized:
                 moe_cls = QuantizedMoE
@@ -180,7 +181,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
         scales: Tensor,
         attn_mix: Tensor,
         ffn_mix: Tensor,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
     ) -> Tensor:
         """Runs the decoder block.
 
@@ -196,7 +197,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
             attn_mix: The first two of them, as their own tensor: the
                 attention join's collective reads it.
             ffn_mix: The last two, for the MLP join's collective.
-            comm_buffers: The EP buffers, for an expert-parallel MoE.
+            ep: The exchange's buffers, for an expert-parallel MoE.
 
         Returns:
             The block's output hidden states.
@@ -210,6 +211,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
         )
         if self.expert_parallel:
             assert isinstance(self.mlp, ExpertParallelMoE)
+            assert ep is not None
             # Built outside the cond, so init stacks the experts once for
             # both branches.
             stacks = self.mlp.expert_stacks()
@@ -221,11 +223,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
                         x, attn_out, attn_mix, ffn_mix, stacks
                     )
                 ],
-                lambda: [
-                    self._exchanged_rows(
-                        x, attn_out, scales, stacks, comm_buffers
-                    )
-                ],
+                lambda: [self._exchanged_rows(x, attn_out, scales, stacks, ep)],
                 [w for _, w in self.parameters],
             )
             return F.rebind(h, x.shape)
@@ -292,7 +290,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
         attn_out: Tensor,
         scales: Tensor,
         stacks: ExpertStacks,
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers,
     ) -> Tensor:
         """The sparse block for a prefill-sized step.
 
@@ -307,7 +305,7 @@ class BeamTransformerBlock(Module[..., Tensor]):
             scales[0:2],
         )
         mlp_out = self.mlp(
-            self.pre_feedforward_layernorm(h), comm_buffers, stacks=stacks
+            self.pre_feedforward_layernorm(h), stacks=stacks, ep=ep
         )
         h = _scaled_add(
             self.post_feedforward_layernorm(mlp_out),

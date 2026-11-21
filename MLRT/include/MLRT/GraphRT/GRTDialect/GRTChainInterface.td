@@ -24,7 +24,7 @@ def GRT_ChainCreateOpInterface : OpInterface<"GRTChainCreateOpInterface"> {
   let description = [{
     Operation that creates a new chain.
   }];
-  let cppNamespace = "::M::GRT";
+  let cppNamespace = "::M::MLRT::GRT";
   let methods = [
     InterfaceMethod<
       "Get the resulting chain",
@@ -43,7 +43,7 @@ def GRT_GatedOnChainOpInterface : OpInterface<"GRTGatedOnChainOpInterface"> {
     is being depended on. Ops implementing this interface must have the same
     type input chains as output chains.
   }];
-  let cppNamespace = "::M::GRT";
+  let cppNamespace = "::M::MLRT::GRT";
   let methods = [
     InterfaceMethod<
       "Set the inputs that this chain depends on",

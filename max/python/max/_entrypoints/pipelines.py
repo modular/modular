@@ -1132,8 +1132,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     pipeline_encode(pipeline_args, prompt=prompt, num_warmups=num_warmups)
 
 
-@main.command(name="warm-cache", cls=WithLazyPipelineOptions)
-@click.option(
+_virtual_target_option = click.option(
     "--target",
     type=str,
     default=None,
@@ -1143,6 +1142,10 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
         "compilation without requiring physical hardware."
     ),
 )
+
+
+@main.command(name="warm-cache", cls=WithLazyPipelineOptions)
+@_virtual_target_option
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
     from max.engine import CompilationStopped
@@ -1183,6 +1186,7 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
 
 
 @main.command(name="export", cls=WithLazyPipelineOptions)
+@_virtual_target_option
 @click.option(
     "--output",
     type=click.Path(path_type=Path),
@@ -1202,6 +1206,26 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     ),
 )
 @click.option(
+    "--prefill-token-budget",
+    type=click.IntRange(min=1),
+    default=None,
+    help=(
+        "Prefill tokens the serving engine's scheduler gives one step, per"
+        " data-parallel replica, excluding draft rows. Defaults to the"
+        " compiled input capacity, which it doesn't change."
+    ),
+)
+@click.option(
+    "--prefill-graph-max-tokens",
+    type=click.IntRange(min=0),
+    default=0,
+    help=(
+        "The most tokens per replica a serving engine captures a prefill"
+        " step's device graph for, capped at the prefill token budget. 0"
+        " (the default) captures no prefill step."
+    ),
+)
+@click.option(
     "--target",
     type=str,
     default=None,
@@ -1214,6 +1238,8 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
 def cli_export(
     output: Path,
     format_spec: Path | None,
+    prefill_token_budget: int | None,
+    prefill_graph_max_tokens: int,
     target: str | None,
     **config_kwargs: Any,
 ) -> None:
@@ -1223,11 +1249,23 @@ def cli_export(
     the pipeline the same way, so the artifact holds the graphs a served
     pipeline compiles, keyed by role, and the overlap helper graphs a serving
     engine may load. For an architecture with weight rules, it also holds the
-    rules its checkpoint loads through.
+    rules its checkpoint loads through. With ``--target``, it compiles for
+    that target on virtual devices, so no GPU is needed.
     """
     from max._artifact import ArtifactError
     from max._artifact.export import export_pipeline
     from max.pipelines import PipelineArgs, PipelineConfig
+
+    if target:
+        # The device options already switched to virtual devices for it.
+        logging.info("Exporting for target %s on virtual devices", target)
+        # Virtual devices have no memory to size the batch from, and the
+        # artifact records the batch size and captures every size up to it.
+        if config_kwargs.get("max_batch_size") is None:
+            raise click.UsageError(
+                "--target compiles on virtual devices, which cannot size the"
+                " batch; pass --max-batch-size"
+            )
 
     refusal = (
         "--eager runs the decoder without compiling it, so max export has "
@@ -1238,7 +1276,13 @@ def cli_export(
     _refuse_eager(pipeline_args.runtime.eager, refusal)
     pipeline_config = PipelineConfig.from_args(pipeline_args)
     try:
-        dest = export_pipeline(pipeline_config, output, format_spec)
+        dest = export_pipeline(
+            pipeline_config,
+            output,
+            format_spec,
+            prefill_token_budget=prefill_token_budget,
+            prefill_capture_tokens=prefill_graph_max_tokens,
+        )
     except ArtifactError as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Exported pipeline artifact to {dest}")

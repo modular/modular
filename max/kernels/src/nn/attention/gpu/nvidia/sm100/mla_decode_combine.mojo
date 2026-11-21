@@ -221,6 +221,7 @@ struct CombineParams[
 @__name(
     t"sm100_mla_decode_combine_{output_type}_{accum_type}_{num_splits}_{ragged}",
 )
+@__allow_legacy_any_origin_fields
 def mla_combine_kernel[
     output_type: DType,
     accum_type: DType,

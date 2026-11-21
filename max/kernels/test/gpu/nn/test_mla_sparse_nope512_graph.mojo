@@ -370,6 +370,7 @@ def _run_arm[
         comptime assert type_of(kv_in_tt).flat_rank == 2
         return kv_in_tt.load[width=width](coords)
 
+    @__allow_legacy_any_origin_fields
     def launch() raises {imm}:
         mla_prefill_decode_graph_bf16[
             mask_str="causal",

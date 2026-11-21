@@ -311,7 +311,7 @@ def test_expert_parallel_moe_rejects_an_activation(
             num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
             moe_dim=_MOE_DIM,
             activation=GatedActivation("gelu_tanh"),
-            ep_batch_manager=MagicMock(),
+            ep_config=MagicMock(),
         ).to(device)
 
 

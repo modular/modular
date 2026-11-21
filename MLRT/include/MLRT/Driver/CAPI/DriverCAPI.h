@@ -91,7 +91,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 2
-#define M_DRIVER_CAPI_VERSION_MINOR 0
+#define M_DRIVER_CAPI_VERSION_MINOR 1
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -415,6 +415,13 @@ M_DRIVER_API M_DriverStatus M_DriverDeviceAllocatorRequestSizes(
 /// a device without a memory manager.
 M_DRIVER_API M_DriverStatus
 M_DriverDeviceResetAllocatorPeaks(const M_DriverDevice *device);
+
+/// Writes the largest single contiguous allocation the device supports to
+/// `*out_max`, in bytes. A null `device` or `out_max` is
+/// `M_DRIVER_INVALID_ARGUMENT`; a device with no lower limit reports its
+/// total memory.
+M_DRIVER_API M_DriverStatus M_DriverDeviceMaxSingleAllocationSize(
+    const M_DriverDevice *device, uint64_t *out_max);
 
 /// A device property `M_DriverDeviceGetAttribute` reports. A consumer built
 /// against a newer header may pass a value this library does not know, which

@@ -106,6 +106,154 @@ def f(pair):
     assert_mojo_format(source, expected)
 
 
+def test_mojo_formats_multiple_if_clauses():
+    source = """\
+def f(enabled, user):
+    if enabled;case .Some(value)=user;value.can_access():
+        serve(value)
+    elif enabled;case .Some(value)=fallback:
+        serve(value)
+"""
+    expected = """\
+def f(enabled, user):
+    if enabled; case .Some(value) = user; value.can_access():
+        serve(value)
+    elif enabled; case .Some(value) = fallback:
+        serve(value)
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_joins_multiple_if_clauses_that_fit():
+    source = """\
+def f(lhs, rhs):
+    if case .Some(value) = lhs;
+      value == rhs:
+        return
+"""
+    expected = """\
+def f(lhs, rhs):
+    if case .Some(value) = lhs; value == rhs:
+        return
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_splits_long_multiple_if_clauses():
+    source = """\
+def f(user):
+    if is_feature_enabled(); case .Some(request) = next_request(); request.is_valid_for(user):
+        process(request)
+    else:
+        dont_process()
+"""
+    expected = """\
+def f(user):
+    if is_feature_enabled();
+      case .Some(request) = next_request();
+      request.is_valid_for(user):
+        process(request)
+    else:
+        dont_process()
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_keeps_continuation_indent_in_split_clause():
+    source = """\
+def f(a):
+    if a; case .Some(value) = compute_something_long(argument_one, argument_two, argument_three):
+        pass
+"""
+    expected = """\
+def f(a):
+    if a;
+      case .Some(value) = compute_something_long(
+          argument_one, argument_two, argument_three
+      ):
+        pass
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_splits_long_first_if_clause():
+    # The single clause after the semicolon is a lone name, which the parser
+    # does not wrap in a clause-list node.
+    source = """\
+def f():
+    if a_very_long_condition_name_number_one(argument_one, argument_two, argument_three); b:
+        pass
+    x = 1
+"""
+    expected = """\
+def f():
+    if a_very_long_condition_name_number_one(
+        argument_one, argument_two, argument_three
+    );
+      b:
+        pass
+    x = 1
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_multiple_guard_clauses():
+    source = """\
+def f(enabled, user):
+    __guard enabled;case .Some(value)=user else:
+        return
+    __guard enabled;
+      ready else:
+        return
+    serve(value)
+"""
+    expected = """\
+def f(enabled, user):
+    __guard enabled; case .Some(value) = user else:
+        return
+    __guard enabled; ready else:
+        return
+    serve(value)
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_splits_long_multiple_guard_clauses():
+    source = """\
+def f():
+    __guard is_feature_enabled(); case .Some(request) = next_request(); request.ok() else:
+        return
+"""
+    expected = """\
+def f():
+    __guard is_feature_enabled();
+      case .Some(request) = next_request();
+      request.ok() else:
+        return
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_multiple_comptime_if_clauses():
+    source = """\
+def f[T: AnyType, enabled: Bool]():
+    comptime if enabled;case ==Int=T:
+        pass
+    comptime if enabled_with_a_long_name; case == Int = T; long_condition_name[T]():
+        pass
+"""
+    expected = """\
+def f[T: AnyType, enabled: Bool]():
+    comptime if enabled; case == Int = T:
+        pass
+    comptime if enabled_with_a_long_name;
+      case == Int = T;
+      long_condition_name[T]():
+        pass
+"""
+    assert_mojo_format(source, expected)
+
+
 def test_mojo_formats_while_case():
     source = """\
 def f(pair):

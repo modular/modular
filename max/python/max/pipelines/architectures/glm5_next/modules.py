@@ -19,7 +19,6 @@ from typing import ClassVar
 from max import tree
 from max.dtype import DType
 from max.nn import Module
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor, default_dtype
 
@@ -39,28 +38,22 @@ class Glm5NextDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
 
     def __init__(self, config: Glm5NextConfig) -> None:
         super().__init__()
-        ep = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
         dtype = (
             DType.bfloat16 if config.quant_config is not None else config.dtype
         )
         with default_dtype(dtype):
-            self.model = Glm5Next(config, config.kv_params, ep)
+            self.model = Glm5Next(config, config.kv_params, config.ep_config)
         self.model.name_transparent = True
 
     def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
         """Runs the decoder with its KV state and optional expert exchange."""
         assert inputs.batch_context_lengths is not None
-        ep = () if inputs.ep is None else tuple(tree.leaves(inputs.ep))
         return self.model(
             inputs.tokens,
             inputs.return_n_logits,
             inputs.input_row_offsets,
             inputs.batch_context_lengths[0],
             *tree.leaves(inputs.kv),
-            *ep,
             vision=inputs.vision,
+            ep=inputs.ep,
         )

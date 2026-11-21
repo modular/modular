@@ -33,7 +33,7 @@ from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.nn.legacy.comm.ep import EPCommBuffers
+from max.nn.ep import init as ep_init
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.speculative._tensor_compat import (
@@ -53,7 +53,10 @@ from max.pipelines.speculative.driver import (
     TensorAdapter,
     gather_variable_rows,
 )
-from max.pipelines.speculative.spec_adapters import HISPARSE_INPUTS
+from max.pipelines.speculative.spec_adapters import (
+    HISPARSE_INPUTS,
+    STAGE_BOUNDARY,
+)
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import Verified
 from max.tensor import Tensor
@@ -179,11 +182,10 @@ class Glm5_1Target:
         assert mesh is not None
         kv_mapping = _kv_mapping(mesh, batch.data_parallel_degree)
 
-        comm_buffers = None
-        ep_batch_manager = self.target.ep_batch_manager
-        if ep_batch_manager is not None:
-            assert batch.ep_inputs is not None
-            comm_buffers = ep_batch_manager.comm_buffers(batch.ep_inputs)
+        assert self.target.ep_config is None or batch.ep_inputs is not None
+        ep = ep_init.flat_buffers(
+            self.target.ep_config, batch.ep_inputs or (), mesh
+        )
 
         data_parallel_splits: Tensor | None = None
         merged_offsets_i64: Tensor | None = None
@@ -218,8 +220,11 @@ class Glm5_1Target:
             _context_lengths(batch),
             data_parallel_splits,
             merged_offsets_i64,
-            comm_buffers,
+            ep,
             hisparse,
+            # A later pipeline stage starts from the previous stage's hidden
+            # states over the merged window instead of embedding its tokens.
+            boundary=batch.extra.get(STAGE_BOUNDARY),
         )
         # Under data parallelism each device's shard is its replica's rows,
         # the layout the proposer's step 0 reads.
@@ -421,12 +426,10 @@ class Glm5_1MTPProposer(TensorAdapter):
             # Host-substitute the D2H buffer_length copy, as the target does.
             mla_prefill_metadata.buffer_lengths = _context_lengths(batch)
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.draft.ep_batch_manager is not None:
-            assert batch.ep_inputs is not None
-            comm_buffers = self.draft.ep_batch_manager.comm_buffers(
-                batch.ep_inputs
-            )
+        assert self.draft.ep_config is None or batch.ep_inputs is not None
+        ep = ep_init.flat_buffers(
+            self.draft.ep_config, batch.ep_inputs or (), self.mesh
+        )
 
         def draft(
             pcp: PrefillContextParallelStep | None = None,
@@ -439,7 +442,7 @@ class Glm5_1MTPProposer(TensorAdapter):
                 offsets,
                 freqs_cis,
                 mla_prefill_metadata,
-                comm_buffers,
+                ep,
                 Tensor.from_shard_values(reuse, rows)
                 if reuse is not None
                 else None,
@@ -499,7 +502,7 @@ def verify(
         )
     assert isinstance(target, Glm5_1Decoder)
     config = target.config
-    if len(config.devices) > 1 and target.ep_batch_manager is None:
+    if len(config.devices) > 1 and target.ep_config is None:
         raise ValueError(
             "MTP with a ModuleV3 GLM-5.x target on several devices requires"
             " expert parallelism over all of them."
@@ -510,9 +513,9 @@ def verify(
 def ep_input_tree(target: Any) -> object | None:
     """Returns the group that names the target's EP inputs, if EP is on."""
     assert isinstance(target, Glm5_1Decoder)
-    if target.ep_batch_manager is None:
+    if target.ep_config is None:
         return None
-    return target.ep_batch_manager.input_tree()
+    return ep_init.payload_types(target.ep_config)
 
 
 def hisparse_input_types(
@@ -565,4 +568,7 @@ ADAPTER = TargetAdapter(
     verify_takes_prefill_rows=_takes_prefill_rows,
     # The NextN head reads each position's successor token.
     successor_replay=True,
+    # The NextN layer reads the final hidden states, the embedding and head
+    # the last stage builds, and its own caches.
+    speculates_on_last_stage=True,
 )

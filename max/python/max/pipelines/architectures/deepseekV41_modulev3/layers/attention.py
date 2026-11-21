@@ -65,6 +65,7 @@ from ...deepseekV41.layers.csa2 import (
 from ..layer_resolver import LayerInfo
 from ..model_config import position_capacity
 from .mxfp8_linear import (
+    ConcatenatedMXFP8Linear,
     MXFP8Linear,
     Mxfp8Rows,
     block_diagonal_woa_supported,
@@ -96,11 +97,27 @@ __all__ = [
 # split, host-flag driven inside ``attention.csa2``).
 _DECODE_MAX_QUERY_TOKENS = 8
 
+
 # The V2 CSA2 graph ops, bridged into the experimental-tensor world: the
 # ``F.functional`` machinery converts each tensor argument to the graph
 # value its parameter's hint names (``BufferValue`` for the cache blocks)
 # and each KV record through ``to_graph_values``.
-_prefill_rows_bound_op = F.functional(prefill_rows_bound)
+def _use_prefill(
+    tokens: TensorValue,
+    batch: TensorValue,
+    longest: TensorValue,
+    cached: TensorValue,
+    ratio: int | None,
+) -> TensorValue:
+    named = prefill_rows_bound(tokens, batch, longest, cached, ratio)
+    return ops.logical_and(
+        longest
+        > ops.constant(_DECODE_MAX_QUERY_TOKENS, DType.int64, DeviceRef.CPU()),
+        named <= ops.constant(PREFILL_ROWS, DType.int64, DeviceRef.CPU()),
+    )
+
+
+_use_prefill_op = F.functional(_use_prefill)
 
 
 def _placed_leaf_slots(
@@ -487,7 +504,13 @@ class Attention(Module[..., Tensor]):
         # them into one projection (``[wq_a; wkv]`` along N): one GEMM, not
         # two. The latent side stays whole under TP, so the stack is the
         # parts' own rows in order.
-        self.wqa_wkv = MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
+        self.wqa_wkv = (
+            ConcatenatedMXFP8Linear(
+                config.hidden_size, ("wq_a", config.q_lora_rank), ("wkv", d)
+            )
+            if config.raw_checkpoint_weights
+            else MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
+        )
         self.q_norm = RMSNorm(config.q_lora_rank, eps=config.rms_norm_eps)
         self.wq_b = MXFP8Linear(config.q_lora_rank, h * d)
         # The fused q/kv norm launch takes one epsilon, so both norms read
@@ -603,7 +626,6 @@ class Attention(Module[..., Tensor]):
         batch: int | Dim,
     ) -> Tensor:
         """Prefill needs a long prompt and bounded rows; one graph reads this flag at runtime."""
-        host = DeviceRef.CPU()
         tokens = F.reshape(F.shape_to_tensor([total]), [])
         batch_t = F.reshape(F.shape_to_tensor([batch]), [])
         longest = F.cast(F.reshape(swa.max_prompt_length, []), DType.int64)
@@ -618,16 +640,12 @@ class Attention(Module[..., Tensor]):
             if comp is None or self.compress_ratio == 0
             else self.compress_ratio
         )
-        named = _prefill_rows_bound_op(
+        return _use_prefill_op(
             tokens,
             batch_t,
             longest,
             cached,
             ratio,
-        )
-        return F.logical_and(
-            longest > F.constant(_DECODE_MAX_QUERY_TOKENS, DType.int64, host),
-            named <= F.constant(PREFILL_ROWS, DType.int64, host),
         )
 
     def _index_list(

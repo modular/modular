@@ -20,7 +20,7 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Value.h"
 
-namespace M::GRT {
+namespace M::MLRT::GRT {
 
 /// Indicates whether a control flow op is 'loop' like or 'condition' like.
 enum ControlFlowFlavor { kLoopLike, kBranchLike };
@@ -28,7 +28,7 @@ enum ControlFlowFlavor { kLoopLike, kBranchLike };
 // Verifies correctness of op implementing GRTControlFlowInterface.
 LogicalResult verifyControlFlowInterfaceOp(Operation *op);
 
-} // namespace M::GRT
+} // namespace M::MLRT::GRT
 
 #include "MLRT/GraphRT/GRTDialect/GRTControlFlowInterface.h.inc"
 

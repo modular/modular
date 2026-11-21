@@ -284,16 +284,16 @@ LogicalResult Decorators::handleMessageDecorator(
       return success();
     }
 
-    // If the decorated decl is a method, look for a sibling member in the
-    // same struct/trait/extension. For non-methods (top-level functions,
-    // structs, aliases), use the standard lookup with searchParentScopes=true.
-    auto *defDecl = dyn_cast<DefASTDecl>(&decl);
-    ASTDecl *methodParent =
-        defDecl ? defDecl->tryGetMethodParentDecl() : nullptr;
-    ASTDecl *scope = methodParent ? methodParent : decl.getParentDecl();
+    // A member of a struct, trait, or extension, such as a method or a
+    // `comptime` member, names a sibling member: the fix-it rewrites only the
+    // member name at the use site. Unqualified lookup skips type bodies, so
+    // members look in the type itself. Other decls use unqualified lookup.
+    ASTDecl *memberParent =
+        dyn_cast_if_present<TypeScopeASTDecl>(decl.getParentDecl());
+    ASTDecl *scope = memberParent ? memberParent : decl.getParentDecl();
     LookupResult lookup = shared.lookupAndResolveDecl(
         target->spelling, target->getLoc(), *scope,
-        /*searchParentScopes=*/methodParent == nullptr);
+        /*searchParentScopes=*/memberParent == nullptr);
 
     if (lookup.isErroneous())
       return success();
@@ -977,6 +977,9 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
   } else if (spelling == "__allow_legacy_custom_self_type") {
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.allowCustomSelfType = true; });
+  } else if (spelling == "__allow_legacy_any_origin_fields") {
+    applyArgumentless(spelling, callNode,
+                      [&]() { decl.setAllowLegacyAnyOriginCaptures(); });
   } else if (spelling == "implicit") {
     applyImplicitDecorator(decorator->getLoc(), callNode);
   } else if (spelling == "extern") {
@@ -2401,7 +2404,7 @@ LogicalResult DefASTDecl::resolveSyntheticBody() {
     return gen.populateDefaultedTraitFunction(*this);
 
   if (fn.getSpecialFunctionKind() == SpecialFunctionKind::kNormal &&
-      gen.structDeclOp.isEnum())
+      gen.structDeclOp.isUnion())
     return gen.populateEnumCaseConstructor(*this);
 
   switch (fn.getSpecialFunctionKind()) {
@@ -2494,13 +2497,13 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
     }
   }
 
-  // An enum method whose body is only `...` is rejected. In a trait, `...`
-  // marks a requirement and `pass` a default implementation; a struct method
-  // still accepts `...` as `pass`, which is to be deprecated (MOCO-5076), so
-  // enums reject it from the start.
+  // An enum or union method whose body is only `...` is rejected. In a trait,
+  // `...` marks a requirement and `pass` a default implementation; a struct
+  // method still accepts `...` as `pass`, which is to be deprecated
+  // (MOCO-5076), so enums and unions reject it from the start.
   StructASTDecl *structDecl =
       getStructOrTargetStruct(*getParentDecl(), resolver);
-  if (structDecl && structDecl->getOp().isEnum()) {
+  if (structDecl && structDecl->getOp().isEnumOrUnion()) {
     LexerCursor bodyCursor = lexer.getCursor();
     ParserBase p(shared, lexer);
     StringRef docString;
@@ -2511,7 +2514,8 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
       }
       if (isMatchingEndCursor(lexer.getCursor())) {
         shared.emitError(ellipsisLoc,
-                         "enum methods must have a body; '...' is reserved");
+                         getEnumOrUnionNoun(structDecl->getOp()) +
+                             " methods must have a body; '...' is reserved");
         return failure();
       }
     }
@@ -3780,8 +3784,9 @@ emitExplicitDestroyDeprecation(SharedState &shared, const CallNode *call,
 }
 
 /// structdef ::=
-///   [decorators] ("struct" | "__enum") identifier [param_signature]
-///                ["(" conformance_list ")"] ("where" expression)* ":" suite
+///   [decorators] ("struct" | "__enum" | "__union") identifier
+///                [param_signature] ["(" conformance_list ")"]
+///                ("where" expression)* ":" suite
 ///
 LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   auto &resolver = shared.getDeclResolver();
@@ -3803,8 +3808,10 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   SmallVector<ParsedConformanceEntry> parsedConformances;
   SmallVector<ParsedTraitConstraint> parsedConstraints;
 
-  if (p.parseToken(structOp.isEnum() ? Token::kw___enum : Token::kw_struct,
-                   "internal error: checked by stmt parser") ||
+  Token::Kind keyword = structOp.isUnion()  ? Token::kw___union
+                        : structOp.isEnum() ? Token::kw___enum
+                                            : Token::kw_struct;
+  if (p.parseToken(keyword, "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
       parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
@@ -3820,6 +3827,8 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
           p, sigDecl.getIndentation()) ||
       p.parseToken(Token::colon, structOp.isEnum()
                                      ? "expected ':' in enum definition"
+                                 : structOp.isUnion()
+                                     ? "expected ':' in union definition"
                                      : "expected ':' in struct definition") ||
       isErroneous())
     return failure();
@@ -3861,6 +3870,36 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   if (movableDecl)
     compilerInjectedTraits.insert(
         TraitSymbolAttr::get(movableDecl->getSymbolRef()));
+  SmallVector<TraitSymbolAttr> enumValueTraits;
+  if (structOp.isEnum()) {
+    // The traits the enum opts out of with `not` or makes conditional with
+    // `where`.
+    DenseSet<TraitSymbolAttr> conditionalTraits;
+    for (const ParsedTraitConstraint &constraint : parsedConstraints)
+      if (constraint.isExplicit &&
+          !isTriviallyTrueConstraint(constraint.constraint))
+        conditionalTraits.insert(constraint.traitSymbol);
+    // An enum conforms to each of these traits unless it opts out of the trait
+    // or a trait it refines, or makes one of them conditional. So
+    // `not Deinitable` drops only TrivialRegisterPassable, and `not Copyable`
+    // also drops ImplicitlyCopyable.
+    for (StringRef name :
+         {"Copyable", "ImplicitlyCopyable", "RegisterPassable", "Equatable",
+          "Hashable", "TrivialRegisterPassable"}) {
+      TraitType trait = shared.lookupBuiltinTraitType(name, getLoc());
+      if (!trait)
+        return failure();
+      if (llvm::any_of(trait.getSymbols(), [&](TraitSymbolAttr symbol) {
+            return conditionalTraits.contains(symbol);
+          }))
+        continue;
+      for (TraitSymbolAttr symbol : trait.getSymbols()) {
+        if (!llvm::is_contained(enumValueTraits, symbol))
+          enumValueTraits.push_back(symbol);
+        compilerInjectedTraits.insert(symbol);
+      }
+    }
+  }
   // Build the final constraint map from the parsed constraints.
   DenseMap<TraitSymbolAttr, ConstraintAttr> traitConstraints;
   if (failed(buildTraitConstraintsMap(parsedConstraints, explicitTraits,
@@ -3894,15 +3933,19 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
         TraitSymbolAttr::get(implicitDelDecl->getSymbolRef()));
   if (movableDecl)
     traitConformed.push_back(TraitSymbolAttr::get(movableDecl->getSymbolRef()));
+  llvm::append_range(traitConformed, enumValueTraits);
 
   // An enum conforms to `__Enum`, which refines `EnumLike` with defaults that
-  // read `__enum_storage`; body resolution adds that field.
-  if (structOp.isEnum()) {
-    ASTDecl *supportDecl = lookupEnumSupportDecl(shared, "__Enum", getLoc());
+  // read `__enum_storage`; body resolution adds that field. A union conforms to
+  // `__Union`, whose defaults read `__union_storage`.
+  if (structOp.isEnumOrUnion()) {
+    StringRef supportTrait = structOp.isEnum() ? "__Enum" : "__Union";
+    ASTDecl *supportDecl =
+        lookupEnumSupportDecl(shared, supportTrait, getLoc());
     auto *traitDecl = dyn_cast_if_present<TraitASTDecl>(supportDecl);
     if (supportDecl && !traitDecl)
-      shared.emitError(getLoc())
-          << "internal error: '__Enum' in 'std.builtin._enum' must be a trait";
+      shared.emitError(getLoc()) << "internal error: '" << supportTrait
+                                 << "' in 'std.builtin._enum' must be a trait";
     if (!traitDecl) {
       setErroneous();
       return failure();
@@ -4158,9 +4201,12 @@ static FnOp findFieldwiseInit(StructASTDecl &structDecl) {
 /// indicates whether it is an error to already have a fieldwise init.
 void StructDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
                                                      bool isImplicit) {
-  // An enum's only field is its hidden storage.
-  if (structOp.isEnum()) {
-    emitError(decoratorLoc, "'@fieldwise_init' cannot be applied to an enum");
+  // An enum's or union's only field is its hidden storage.
+  if (structOp.isEnumOrUnion()) {
+    emitError(decoratorLoc,
+              structOp.isUnion()
+                  ? "'@fieldwise_init' cannot be applied to a union"
+                  : "'@fieldwise_init' cannot be applied to an enum");
     return;
   }
 
@@ -4240,10 +4286,13 @@ processRegisterPassableDecorator(StructASTDecl &structDecl,
                                  TypeConvention structPassability) {
   StructDeclOp structOp = structDecl.getOp();
   SharedState &shared = structDecl.getShared();
-  // An enum's storage is at most conditionally `RegisterPassable`, so a trivial
-  // enum's cases check each payload type against `TrivialRegisterPassable`
-  // instead.
-  if (structOp.isEnum() &&
+  // A union has one field, its `__UnionStorage`. That struct conforms to
+  // RegisterPassable when every payload type does, but it cannot conform to
+  // TrivialRegisterPassable, because that conformance cannot be conditional.
+  // So for a TrivialRegisterPassable union, the check below asks only that the
+  // field is RegisterPassable. `EnumCaseASTDecl::resolveSignature` checks each
+  // payload type against TrivialRegisterPassable instead.
+  if (structOp.isUnion() &&
       structPassability == TypeConvention::RegisterPassableTrivial)
     structPassability = TypeConvention::RegisterPassable;
   bool isTrivial = structPassability == TypeConvention::RegisterPassableTrivial;
@@ -4327,10 +4376,10 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
   if (ParserBase(shared, lexer).parseSuite(*this))
     return failure();
 
-  // An enum's cases are unlisted, so collect them from the decls the body
-  // created.
+  // An enum's or union's cases are unlisted, so collect them from the decls
+  // the body created.
   SmallVector<EnumCaseASTDecl *> caseDecls;
-  if (structOp.isEnum())
+  if (structOp.isEnumOrUnion())
     for (ASTDecl *decl :
          ArrayRef(resolver.parsedDeclList).drop_front(firstBodyDecl))
       if (decl->getParentDecl() == this)
@@ -4358,9 +4407,10 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
   bool hasBadMember = false;
   SmallVector<StructFieldASTDecl *> structFields;
 
-  // Resolve an enum's cases first: synthesis adds `__enum_storage`, the
-  // enum's only field, so the loop below finds it as it finds a struct's
-  // declared fields and collects it into `structFields`.
+  // Resolve an enum's or union's cases first: synthesis adds the only field,
+  // `__enum_storage` for an enum or `__union_storage` for a union, so the loop
+  // below finds it as it finds a struct's declared fields and collects it into
+  // `structFields`.
   llvm::SmallDenseMap<StringAttr, EnumCaseASTDecl *, 8> firstCaseByName;
   for (EnumCaseASTDecl *caseDecl : caseDecls) {
     auto [previous, inserted] =
@@ -4369,7 +4419,8 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
             inserted ? nullptr : previous->second)))
       hasBadMember = true;
   }
-  if (structOp.isEnum() && failed(StructEmitter(*this).synthesizeEnumMembers()))
+  if (structOp.isEnumOrUnion() &&
+      failed(StructEmitter(*this).synthesizeEnumMembers()))
     hasBadMember = true;
 
   // Synthesize the special members before resolving any field: a field type
@@ -4450,10 +4501,11 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
                                      structOp.getConvention());
 
   // With a bad member, body resolution ends here: for a struct with body
-  // decorators, which assume a valid body; for an enum, whose synthesis was
-  // skipped or failed. The declaration is marked erroneous, so its uses report
-  // nothing further.
-  if (hasBadMember && (structOp.isEnum() || !getBodyDecorators().empty())) {
+  // decorators, which assume a valid body; for an enum or union, whose
+  // synthesis was skipped or failed. The declaration is marked erroneous, so
+  // its uses report nothing further.
+  if (hasBadMember &&
+      (structOp.isEnumOrUnion() || !getBodyDecorators().empty())) {
     setErroneous();
     return failure();
   }
@@ -4697,18 +4749,15 @@ LogicalResult StructFieldASTDecl::resolveBody(Lexer &) {
     return success();
 
   ASTType fieldType = op.getType();
-  for (TypedAttr origin :
-       shared.cachedOriginFinder.findOriginsIn(getCanonicalType(fieldType))) {
-    if (sugarIsa<AnyOriginAttr>(OriginType::stripMutCastAndRebind(origin))) {
-      auto diag = shared.emitError(getLoc())
-                  << "struct fields cannot expose AnyOrigin in their type; "
-                  << op.getNameAttr().getValue() << " has type " << fieldType;
-      diag.attachNote(*this)
-          << "consider parameterizing enclosing struct with an Origin";
-      diag.attachNote(op.getLoc()) << "alternatively, use UntrackedOrigin if "
-                                      "lifetime is managed explicitly";
-      return failure();
-    }
+  if (typeHasAnyOrigin(shared, fieldType)) {
+    auto diag = shared.emitError(getLoc())
+                << "struct fields cannot expose AnyOrigin in their type; "
+                << op.getNameAttr().getValue() << " has type " << fieldType;
+    diag.attachNote(*this)
+        << "consider parameterizing enclosing struct with an Origin";
+    diag.attachNote(op.getLoc()) << "alternatively, use UntrackedOrigin if "
+                                    "lifetime is managed explicitly";
+    return failure();
   }
   return success();
 }
@@ -4717,11 +4766,14 @@ LogicalResult StructFieldASTDecl::resolveBody(Lexer &) {
 // EnumCaseDecl implementation
 //===----------------------------------------------------------------------===//
 
-/// enum_case ::= "case" identifier ["(" expression ("," expression)* [","] ")"]
+/// union_case ::= "case" identifier
+///                "(" [expression ("," expression)* [","]] ")"
+/// enum_case ::= "case" identifier
 ///
 /// Every other spelling after `case` is reserved and rejected.
 LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
   EnumCaseOp caseOp = getOp();
+  StructDeclOp enumOp = getEnumDecl().getOp();
   ParserBase p(shared, lexer);
   size_t stmtIndent = getIndentation();
 
@@ -4734,27 +4786,49 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
     return failure();
   };
   auto rejectCase = [&](SMLoc loc) {
-    p.emitError(loc) << "enum case must have the form 'case name' or "
-                        "'case name(T, ...)'";
+    p.emitError(loc) << getMalformedCaseMessage(enumOp);
     return removeCase();
   };
 
+  SMLoc nameLoc;
   if (p.parseToken(Token::kw_case, "internal error: checked by stmt parser") ||
-      p.parseIdentifier("internal error: checked by stmt parser"))
+      p.parseIdentifier("internal error: checked by stmt parser", &nameLoc))
     return removeCase();
+
+  auto isAtEndOfCase = [&] {
+    return p.getToken().isAny(Token::semi, Token::eof) ||
+           !p.isTokenInCurrentStatement(stmtIndent);
+  };
+
+  if (enumOp.isEnum() && p.getToken().is(Token::l_paren)) {
+    p.emitError(p.getToken().getLoc())
+        << "enum case '" << caseOp.getName()
+        << "' must not have a payload; declare '"
+        << enumOp.getDeclName().getValue() << "' with '__union'";
+    return removeCase();
+  }
+  // A union case is a constructor, so it is declared with the parentheses of
+  // its argument list even when that is empty.
+  if (enumOp.isUnion() && p.getToken().isNot(Token::l_paren)) {
+    if (!isAtEndOfCase())
+      return rejectCase(p.getToken().getLoc());
+    p.emitError(nameLoc) << "union case '" << caseOp.getName()
+                         << "' must have parentheses; add '()' for a case "
+                            "without a payload"
+                         << FixIt::insertAfterToken(nameLoc, "()",
+                                                    shared.diags);
+    return removeCase();
+  }
 
   SmallVector<ExprNode *, 2> payload;
   if (p.consumeIf(Token::l_paren)) {
-    if (p.getToken().is(Token::r_paren))
-      return rejectCase(p.getToken().getLoc());
-
     auto parsePayloadType = [&]() -> ParseResult {
       ExprNode *typeExpr = nullptr;
       if (p.parseExpression(typeExpr))
         return failure();
       if (p.getToken().isAny(Token::colon, Token::equal)) {
         p.emitError(typeExpr->getLoc())
-            << "labeled payloads in enum cases are not supported; use "
+            << "labeled payloads in union cases are not supported; use "
                "positional types, e.g. 'case C(T, U)'"
             << typeExpr->getRange();
         return failure();
@@ -4762,22 +4836,22 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
       payload.push_back(typeExpr);
       return success();
     };
-    if (p.parseCommaSeparatedList(parsePayloadType, {Token::r_paren}))
+    if (p.getToken().isNot(Token::r_paren) &&
+        p.parseCommaSeparatedList(parsePayloadType, {Token::r_paren}))
       return removeCase();
     if (!p.consumeIf(Token::r_paren))
       return rejectCase(p.getTokenLocOrEndOfPreviousLineIfOnNewLine());
   }
 
   // Reject extraneous tokens after the case.
-  if (p.getToken().isNot(Token::semi, Token::eof) &&
-      p.isTokenInCurrentStatement(stmtIndent))
+  if (!isAtEndOfCase())
     return rejectCase(p.getToken().getLoc());
 
   StructASTDecl &enumDecl = getEnumDecl();
 
-  // Struct synthesis later generates the following members for every enum, and
-  // `__copy_ctor_is_trivial` for a `Copyable` one, but only when no member of
-  // that name exists yet. A case's member is generated first, so a case of
+  // Struct synthesis generates the following members for every enum and union,
+  // and `__copy_ctor_is_trivial` for a `Copyable` one, but only when no member
+  // of that name exists yet. A case's member is generated first, so a case of
   // that name would silently stand in for the generated member; reject it.
   StringRef caseName = caseOp.getName();
   SmallVector<StringRef, 5> structMemberNames = {
@@ -4803,16 +4877,22 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
     return failure();
   }
 
-  // A trivial enum is copied bit for bit and never destroyed, so it requires
-  // `TrivialRegisterPassable` of each payload type in place of the
-  // conformances below.
+  if (enumOp.isEnum()) {
+    caseOp.setPayloadTypesAttr(ArrayAttr::get(getContext(), {}));
+    return success();
+  }
+
+  // A trivial union is copied bit for bit and never destroyed, so each payload
+  // type must be TrivialRegisterPassable instead of meeting the requirements
+  // below.
   bool isTrivial = enumDecl.getOp().isRegisterPassableTrivial();
 
-  // A conformance the enum declares that copies, moves or destroys it requires
-  // the same of every payload type, as for a struct's fields. A hand-written
-  // copy constructor, move constructor or `__deinit__` lifts the requirement
-  // for its conformance. `RegisterPassable` is about the representation,
-  // hence, when declared, requires the payloads to conform to it as well.
+  // A payload type must conform to each of Deinitable, Movable, Copyable and
+  // ImplicitlyCopyable that the union conforms to, as a struct's field must. A
+  // hand-written deinitializer, move constructor or copy constructor removes
+  // the requirement for the traits it implements. A RegisterPassable union is
+  // passed in registers, payload included, so each payload type must be
+  // RegisterPassable too.
   SmallVector<std::pair<StringRef, TypedAttr>, 5> payloadRequirements;
   if (!isTrivial) {
     SmallVector<StringRef, 5> traitsRequiredOfPayloads;
@@ -4875,11 +4955,12 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
       return failure();
     if (sugarIsa<TraitType>(type)) {
       shared.emitError(typeExpr->getLoc())
-          << "enum case payloads do not support trait types; " << type
+          << getEnumOrUnionNoun(enumOp)
+          << " case payloads do not support trait types; " << type
           << " is a trait, use a concrete type or compile-time generic";
       return failure();
     }
-    // The enum occurring as a payload implies an infinite type/layout.
+    // A union cannot contain itself by value.
     if (type.getDecl(shared) == &enumDecl) {
       shared.emitError(typeExpr->getLoc())
           << "case '" << caseName << "' has recursive payload type " << type
@@ -4907,10 +4988,10 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
         return failure();
       }
     }
-    // The case's constructor moves the payload into the enum, so a payload
-    // type must be `Movable` even in an enum that is not. It is asked as that
-    // constructor's `__enum_init` call binds its `*Ts: Movable` pack, which
-    // infers a nonmaterializable argument as its target.
+    // The case's constructor moves the payload into the union, so a payload
+    // type must be Movable even in a union that is not. The constructor passes
+    // the payload to `__enum_init`, whose `*Ts: Movable` pack takes a
+    // nonmaterializable argument as its target type, so check the target type.
     ASTType eltType = type;
     if (ASTType target = type.getNonmaterializableTarget(shared))
       eltType = target;
@@ -5221,9 +5302,9 @@ LogicalResult AliasASTDecl::resolveSyntheticSignature() {
     return success();
   }
 
-  // The `comptime` member of an enum case without a payload is synthesized
-  // (`synthesizeEnumMembers`), hence resolves here, but it is not a trait's
-  // default: its value is the case's constructor call.
+  // The comptime member of an enum case is synthesized (synthesizeEnumMembers),
+  // hence resolves here, but it is not a trait's default: its value is the
+  // case's `__enum_init` call.
   if (!inheritedAliasOp.isDefaultedAssociatedAlias() &&
       structDecl.getOp().isEnum())
     return StructEmitter(structDecl).resolveEnumCaseAlias(*this);

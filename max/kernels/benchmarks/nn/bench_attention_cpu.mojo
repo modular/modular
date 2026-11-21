@@ -106,6 +106,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     ).reshape(Coord(q_shape))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_k_fn[
         simd_width: Int
     ](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
@@ -113,6 +114,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         return k.load[width=simd_width, alignment=align_of[dtype]()](idx)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_v_fn[
         simd_width: Int
     ](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
@@ -120,6 +122,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         return v.load[width=simd_width, alignment=align_of[dtype]()](idx)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def mask_fn[simd_width: Int](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
         comptime assert idx.rank == 3
         return mask.load[width=simd_width, alignment=align_of[dtype]()](idx)

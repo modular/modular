@@ -548,6 +548,7 @@ def run_release_case[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var act_t, var flags} -> SIMD[dtype, width]:
@@ -611,6 +612,7 @@ def run_release_argmax_case[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var act_t, var flags} -> SIMD[adt, width]:

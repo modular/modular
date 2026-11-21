@@ -38,6 +38,11 @@ Routing comes in two modes, because they measure different things:
 Every run prints the imbalance it actually generated, because a speedup
 figure from this benchmark means nothing without it.
 
+`-D expert_load=1` measures the cost of EPLB expert-load counting instead:
+NVFP4 only, with `dispatch_wait` and the fused kernel timed without and with
+an `ExpertLoadTally` sink, alternated over `EP_LOAD_ROUNDS` rounds (default
+3) so clock drift on a shared box lands on both arms.
+
 Correctness is not checked here; `test_p2p_ep_dispatch.mojo` owns that.
 """
 
@@ -75,6 +80,8 @@ comptime SLOTS_PREFILL = get_defined_int["slots_prefill", 10]()
 comptime HIDDEN = get_defined_int["hidden_size", 6144]()
 comptime TOP_K = get_defined_int["top_k", 4]()
 comptime N_EXPERTS = get_defined_int["n_experts", 128]()
+comptime N_RANKS = get_defined_int["n_ranks", 8]()
+comptime EXPERT_LOAD = get_defined_int["expert_load", 0]() != 0
 
 from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
@@ -102,6 +109,7 @@ from shmem.ep import (
 from shmem.ep_comm import (
     BF16TokenFormat,
     EPLocalSyncCounters,
+    ExpertLoadTally,
     MXTokenFormat,
     NVBlockScaledTokenFormat,
     TokenFormat,
@@ -585,6 +593,7 @@ struct MXDispatchTest[
 def bench_dispatch_common[
     DispatchTestType: DispatchTestT,
     bench_e2e: Bool = False,
+    count_expert_load: Bool = False,
 ](list_of_ctx: List[DeviceContext[]]) raises:
     comptime input_type = DType.bfloat16
     comptime hidden_size = DispatchTestType.hidden_size
@@ -614,13 +623,14 @@ def bench_dispatch_common[
     comptime num_bytes = msg_bytes * top_k * n_tokens_per_rank
 
     var dispatch_test = DispatchTestType(list_of_ctx)
+    comptime arm = " expert_load" if count_expert_load else ""
 
     print(
         t"Running ep_dispatch bench:"
         t" {token_fmt_type.get_type_name()} hidden_size: {hidden_size} top_k:"
         t" {top_k} n_experts: {n_experts} n_ranks: {n_ranks} n_tokens_per_rank:"
         t" {n_tokens_per_rank} msg_bytes: {msg_bytes} send_bytes_per_rank:"
-        t" {num_bytes}"
+        t" {num_bytes} expert_load: {count_expert_load}"
     )
 
     # fmt: off
@@ -636,6 +646,8 @@ def bench_dispatch_common[
     var device_row_offsets_bufs_list = List[DeviceBuffer[.uint32]](capacity=n_ranks)
     var device_expert_ids_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var device_src_token_info_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
+    var tally_bufs_list = List[DeviceBuffer[.uint64]](capacity=n_ranks)
+    var layer_idx_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
 
 
     for i in range(n_ranks):
@@ -656,6 +668,12 @@ def bench_dispatch_common[
         device_row_offsets_bufs_list.append(ctx.enqueue_create_buffer[.uint32](n_slots * (n_local_experts + 1)))
         device_expert_ids_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * n_local_experts))
         device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * max_recv_num_tokens * 2))
+        # One layer of running totals; like the served graph, the sink reads
+        # the layer index from device memory on every add.
+        tally_bufs_list.append(ctx.enqueue_create_buffer[.uint64](n_local_experts))
+        ctx.enqueue_memset(tally_bufs_list[i], UInt64(0))
+        layer_idx_bufs_list.append(ctx.enqueue_create_buffer[.int32](1))
+        ctx.enqueue_memset(layer_idx_bufs_list[i], Int32(0))
     # fmt: on
 
     var topk_ids_layout = row_major(n_tokens_per_rank, Idx[top_k])
@@ -747,6 +765,13 @@ def bench_dispatch_common[
     @inline(.always)
     def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises {mut device_src_token_info_bufs_list, imm}:
         return type_of(result)(ptr=device_src_token_info_bufs_list[dev_idx].unsafe_ptr().unsafe_offset(slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(), layout=src_token_info_layout)
+
+    @inline(.always)
+    def get_expert_load(dev_idx: Int, out result: ExpertLoadTally) {imm}:
+        return ExpertLoadTally(
+            MutPointer[UInt64, MutUntrackedOrigin](unsafe_from_address=Int(tally_bufs_list[dev_idx].unsafe_ptr())),
+            ImmPointer[Int32, ImmUntrackedOrigin](unsafe_from_address=Int(layer_idx_bufs_list[dev_idx].unsafe_ptr())),
+        )
     # fmt: on
 
     @inline(.always)
@@ -775,21 +800,39 @@ def bench_dispatch_common[
         var format_handler = dispatch_test.get_token_handler(
             dev_idx, slot_idx, ctx
         )
-        ep_dispatch_wait_kernel_api[
-            n_experts,
-            n_tokens_per_rank,
-            n_ranks,
-            1,
-        ](
-            format_handler,
-            get_row_offsets_tensor(dev_idx, slot_idx),
-            get_expert_ids_tensor(dev_idx, slot_idx),
-            get_src_token_info_tensor(dev_idx, slot_idx),
-            get_recv_ptrs_tensor(slot_idx),
-            get_recv_count_ptrs_tensor(slot_idx),
-            get_atomic_counters_tensor(dev_idx, slot_idx),
-            ctx,
-        )
+        comptime if count_expert_load:
+            ep_dispatch_wait_kernel_api[
+                n_experts,
+                n_tokens_per_rank,
+                n_ranks,
+                1,
+            ](
+                format_handler,
+                get_row_offsets_tensor(dev_idx, slot_idx),
+                get_expert_ids_tensor(dev_idx, slot_idx),
+                get_src_token_info_tensor(dev_idx, slot_idx),
+                get_recv_ptrs_tensor(slot_idx),
+                get_recv_count_ptrs_tensor(slot_idx),
+                get_atomic_counters_tensor(dev_idx, slot_idx),
+                ctx,
+                expert_load=get_expert_load(dev_idx),
+            )
+        else:
+            ep_dispatch_wait_kernel_api[
+                n_experts,
+                n_tokens_per_rank,
+                n_ranks,
+                1,
+            ](
+                format_handler,
+                get_row_offsets_tensor(dev_idx, slot_idx),
+                get_expert_ids_tensor(dev_idx, slot_idx),
+                get_src_token_info_tensor(dev_idx, slot_idx),
+                get_recv_ptrs_tensor(slot_idx),
+                get_recv_count_ptrs_tensor(slot_idx),
+                get_atomic_counters_tensor(dev_idx, slot_idx),
+                ctx,
+            )
 
     @inline(.always)
     def run_e2e(dev_idx: Int, slot_idx: Int) raises {imm}:
@@ -802,26 +845,49 @@ def bench_dispatch_common[
         var format_handler = dispatch_test.get_token_handler(
             dev_idx, slot_idx, ctx
         )
-        ep_fused_dispatch_kernel_api[
-            n_experts,
-            n_tokens_per_rank,
-            n_ranks,
-            1,
-            False,
-            use_shmem=False,
-        ](
-            format_handler,
-            get_row_offsets_tensor(dev_idx, slot_idx),
-            get_expert_ids_tensor(dev_idx, slot_idx),
-            get_src_token_info_tensor(dev_idx, slot_idx),
-            get_atomic_counters_tensor(dev_idx, slot_idx),
-            get_input_tokens_tensor(dev_idx, slot_idx),
-            get_topk_ids_tensor(dev_idx, slot_idx),
-            get_send_ptrs_tensor(slot_idx),
-            get_recv_ptrs_tensor(slot_idx),
-            get_recv_count_ptrs_tensor(slot_idx),
-            ctx,
-        )
+        comptime if count_expert_load:
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                n_tokens_per_rank,
+                n_ranks,
+                1,
+                False,
+                use_shmem=False,
+            ](
+                format_handler,
+                get_row_offsets_tensor(dev_idx, slot_idx),
+                get_expert_ids_tensor(dev_idx, slot_idx),
+                get_src_token_info_tensor(dev_idx, slot_idx),
+                get_atomic_counters_tensor(dev_idx, slot_idx),
+                get_input_tokens_tensor(dev_idx, slot_idx),
+                get_topk_ids_tensor(dev_idx, slot_idx),
+                get_send_ptrs_tensor(slot_idx),
+                get_recv_ptrs_tensor(slot_idx),
+                get_recv_count_ptrs_tensor(slot_idx),
+                ctx,
+                expert_load=get_expert_load(dev_idx),
+            )
+        else:
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                n_tokens_per_rank,
+                n_ranks,
+                1,
+                False,
+                use_shmem=False,
+            ](
+                format_handler,
+                get_row_offsets_tensor(dev_idx, slot_idx),
+                get_expert_ids_tensor(dev_idx, slot_idx),
+                get_src_token_info_tensor(dev_idx, slot_idx),
+                get_atomic_counters_tensor(dev_idx, slot_idx),
+                get_input_tokens_tensor(dev_idx, slot_idx),
+                get_topk_ids_tensor(dev_idx, slot_idx),
+                get_send_ptrs_tensor(slot_idx),
+                get_recv_ptrs_tensor(slot_idx),
+                get_recv_count_ptrs_tensor(slot_idx),
+                ctx,
+            )
 
     @inline(.always)
     def clean_up(dev_idx: Int) raises {imm}:
@@ -864,7 +930,7 @@ def bench_dispatch_common[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench dispatch"),
+            BenchId("bench dispatch" + arm),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
         )
@@ -906,7 +972,7 @@ def bench_dispatch_common[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench dispatch_wait"),
+            BenchId("bench dispatch_wait" + arm),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
         )
@@ -960,7 +1026,7 @@ def bench_dispatch_common[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench e2e_split"),
+            BenchId("bench e2e_split" + arm),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots - 1,
         )
@@ -1003,7 +1069,7 @@ def bench_dispatch_common[
         var b = Bench(bench_config^)
         b.bench_function(
             bench_iter,
-            BenchId("bench e2e_fused"),
+            BenchId("bench e2e_fused" + arm),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots - 1,
         )
@@ -1036,6 +1102,7 @@ def bench_dispatch_nvfp4[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
+    count_expert_load: Bool = False,
 ](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
         fp4_dtype=DType.uint8,
@@ -1048,7 +1115,9 @@ def bench_dispatch_nvfp4[
         _n_tokens_per_rank=n_tokens_per_rank,
     ]
     bench_dispatch_common[
-        DispatchTestType=dispatch_test_type, bench_e2e=bench_e2e
+        DispatchTestType=dispatch_test_type,
+        bench_e2e=bench_e2e,
+        count_expert_load=count_expert_load,
     ](list_of_ctx)
 
 
@@ -1175,8 +1244,37 @@ def bench_all_formats[
         ](list_of_ctx)
 
 
+def bench_expert_load[
+    n_ranks: Int, n_tokens_per_rank: Int, n_slots: Int
+](list_of_ctx: List[DeviceContext[]]) raises:
+    """Times NVFP4 dispatch without and with expert-load counting, alternated.
+    """
+    var raw = getenv("EP_LOAD_ROUNDS")
+    var rounds = 3 if raw.byte_length() == 0 else Int(raw)
+    for rnd in range(rounds):
+        print(
+            "\n===== expert_load round",
+            rnd,
+            ": tokens_per_rank=",
+            n_tokens_per_rank,
+            " n_ranks=",
+            n_ranks,
+            " =====",
+        )
+        comptime for count in range(2):
+            bench_dispatch_nvfp4[
+                hidden_size=HIDDEN,
+                top_k=TOP_K,
+                n_experts=N_EXPERTS,
+                n_ranks=n_ranks,
+                n_slots=n_slots,
+                n_tokens_per_rank=n_tokens_per_rank,
+                count_expert_load=(count == 1),
+            ](list_of_ctx)
+
+
 def main() raises:
-    comptime n_ranks = 8
+    comptime n_ranks = N_RANKS
 
     if enable_p2p():
         print("Enabled P2P Mem Access on all GPUs.")
@@ -1188,8 +1286,14 @@ def main() raises:
         or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
-    if DeviceContext.number_of_devices() != n_ranks:
-        print("This benchmark requires exactly 8 GPUs; skipping.")
+    if DeviceContext.number_of_devices() < n_ranks:
+        print(
+            "This benchmark needs",
+            n_ranks,
+            "GPUs but found",
+            DeviceContext.number_of_devices(),
+            "; skipping.",
+        )
         return
 
     var ctx = List[DeviceContext[]]()
@@ -1198,6 +1302,22 @@ def main() raises:
 
     # Decode first: it is the cheap one, and running it before the prefill
     # allocations keeps peak device memory down.
+    comptime if EXPERT_LOAD:
+        comptime assert (
+            default_accelerator().is_nvidia_gpu()
+        ), "expert_load=1 times the NVFP4 path"
+        bench_expert_load[
+            n_ranks=n_ranks,
+            n_tokens_per_rank=N_TOK_DECODE,
+            n_slots=SLOTS_DECODE,
+        ](ctx)
+        bench_expert_load[
+            n_ranks=n_ranks,
+            n_tokens_per_rank=N_TOK_PREFILL,
+            n_slots=SLOTS_PREFILL,
+        ](ctx)
+        return
+
     bench_all_formats[
         n_ranks=n_ranks,
         n_tokens_per_rank=N_TOK_DECODE,

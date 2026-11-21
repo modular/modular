@@ -641,6 +641,7 @@ def mha_sm100_dispatch[
     var batch_size: UInt32 = UInt32(batch_size_arg)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def with_fa4_config[
         NumPartitionsType: OptionallyStaticInt,
         PartitionType: MHAPartitionScheme,

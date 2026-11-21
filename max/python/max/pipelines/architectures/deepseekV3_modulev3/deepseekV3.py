@@ -35,8 +35,8 @@ from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.quant_moe import (
     QuantizedMoE,
 )
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.ep import EPBuffers
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.norm import RMSNorm
 from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList
@@ -88,7 +88,7 @@ class DeepseekV3TextModel(
             Tensor,
             Tensor | None,
             Tensor | None,
-            EPCommBuffers | None,
+            EPBuffers | None,
         ],
         ModuleV3Outputs,
     ]
@@ -99,14 +99,8 @@ class DeepseekV3TextModel(
     (using a noaux_tc sigmoid router), and DeepSeek YaRN rotary embeddings.
     """
 
-    def __init__(
-        self,
-        config: DeepseekV3Config,
-        ep_batch_manager: EPBatchManager | None = None,
-    ) -> None:
+    def __init__(self, config: DeepseekV3Config) -> None:
         assert config.rope_scaling is not None
-        self.ep_batch_manager = ep_batch_manager
-
         scaling_params = DeepseekYarnRopeScalingParams(
             scaling_factor=config.rope_scaling["factor"],
             original_max_position_embeddings=config.rope_scaling[
@@ -153,7 +147,6 @@ class DeepseekV3TextModel(
                     config=config,
                     layer_idx=i,
                     attention_scale=scale,
-                    ep_batch_manager=ep_batch_manager,
                 )
             )
 
@@ -173,7 +166,7 @@ class DeepseekV3TextModel(
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
     ) -> ModuleV3Outputs:
         """Runs the embedding and decoder stack over the tokens."""
         if self.mesh is not None:
@@ -232,7 +225,7 @@ class DeepseekV3TextModel(
                 input_row_offsets,
                 freqs_cis,
                 mla_prefill_metadata,
-                comm_buffers,
+                ep,
             )
 
         last_token_h = gather_last_tokens(h, input_row_offsets)
@@ -243,98 +236,6 @@ class DeepseekV3TextModel(
             last_logits = last_logits.to(self.mesh.devices[0])
         last_logits = F.cast(last_logits, DType.float32)
         return ModuleV3Outputs(next_token_logits=last_logits)
-
-
-class DeepseekV3(Module[..., ModuleV3Outputs]):
-    """Top-level DeepseekV3 wrapper that unflattens variadic KV cache args."""
-
-    def __init__(
-        self,
-        config: DeepseekV3Config,
-        kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
-    ) -> None:
-        super().__init__()
-        self.language_model = DeepseekV3TextModel(config, ep_batch_manager)
-        self.config = config
-        self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
-
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args: Tensor,
-    ) -> ModuleV3Outputs:
-        """Runs the model over its graph inputs."""
-        mesh = self.config.mesh
-        assert mesh is not None
-
-        # Reconstruct inputs from variadic arguments.
-
-        data_parallel_splits: Tensor | None = None
-        input_row_offsets_i64: Tensor | None = None
-        dp_degree = self.config.data_parallel_degree
-        batch_context_lengths = variadic_args[:dp_degree]
-        variadic_args = variadic_args[dp_degree:]
-        if dp_degree > 1:
-            assert dp_degree == mesh.num_devices
-
-            cpu_mesh = DeviceMesh(
-                tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
-            )
-            batch_context_lengths_tensor = cache_tensor(
-                batch_context_lengths,
-                DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
-            )
-
-            data_parallel_splits, input_row_offsets_i64, *rest = variadic_args
-            variadic_args = tuple(rest)
-        else:
-            batch_context_lengths_tensor = batch_context_lengths[0]
-
-        kv_inputs = iter(kv_input_values(variadic_args))
-        kv_collections = tree.leaves(
-            self.kv_params.unflatten_kv_inputs(kv_inputs),
-            leaf=KVCacheInputsPerDevice,
-        )
-
-        # Combine the per-device upstream KV collections into a single
-        # mesh-distributed PagedCacheValues (one shard per device). Replicas
-        # serve different requests, so their caches vary; tensor-parallel
-        # devices all store the same latent cache.
-        if mesh is not None:
-            kv_collection = PagedCacheValues.from_upstream(
-                kv_collections,
-                DeviceMapping(
-                    mesh,
-                    tuple(
-                        Unknown() if name == DP else Replicated()
-                        for name in mesh.axis_names
-                    ),
-                ),
-            )
-        else:
-            raise ValueError("Mesh must be define")
-
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            # Any variadic graph values left after the KV cache are the EP
-            # communication buffers. Wrap them as an explicit forward argument
-            # so they thread through each MoE block's subgraph boundary.
-            ep_buffers = list(kv_inputs)
-            comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
-        return self.language_model(
-            tokens,
-            kv_collection,
-            return_n_logits,
-            input_row_offsets,
-            batch_context_lengths_tensor,
-            data_parallel_splits,
-            input_row_offsets_i64,
-            comm_buffers,
-        )
 
 
 class DeepseekV3Decoder(Module[[DecoderInputs], DecoderOutputs]):
@@ -354,19 +255,12 @@ class DeepseekV3Decoder(Module[[DecoderInputs], DecoderOutputs]):
             raise ValueError(
                 "DeepSeek-V3 needs a mesh: apply the runtime first"
             )
-        self.ep_batch_manager = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
         # Quantized checkpoints keep norms, biases and embeddings in bf16.
         dtype = (
             DType.bfloat16 if config.quant_config is not None else config.dtype
         )
         with default_dtype(dtype):
-            self.language_model = DeepseekV3TextModel(
-                config, self.ep_batch_manager
-            )
+            self.language_model = DeepseekV3TextModel(config)
         self.config = config
         self.kv_params = config.kv_params
 
@@ -414,12 +308,6 @@ class DeepseekV3Decoder(Module[[DecoderInputs], DecoderOutputs]):
             ),
         )
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            assert inputs.ep is not None
-            comm_buffers = self.ep_batch_manager.comm_buffers(
-                [x._graph_value for x in tree.leaves(inputs.ep)]
-            )
         return self.language_model(
             inputs.tokens,
             kv_collection,
@@ -428,5 +316,5 @@ class DeepseekV3Decoder(Module[[DecoderInputs], DecoderOutputs]):
             batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            inputs.ep,
         )

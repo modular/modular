@@ -41,10 +41,12 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.ep.init import payload_types
+from max.nn.ep_config import EPConfig
 from max.pipelines.architectures.dspark_mistral_large4_modulev3.arch import (
     dspark_mistral_large4_modulev3_draft_arch,
 )
@@ -64,21 +66,24 @@ AIR = Buffer.zeros(shape=[1], dtype=DType.uint8)
 """A stand-in for one of the mesh's signal buffers."""
 
 
-def _ep_manager() -> EPBatchManager:
+def _ep_config() -> EPConfig:
     """The collectives of the TP8/EP8/DP1 arm: 128 experts, four per token."""
-    return EPBatchManager(
-        EPConfig(
-            dispatch_dtype=DType.bfloat16,
-            combine_dtype=DType.bfloat16,
-            hidden_size=6144,
-            top_k=4,
-            n_experts=128,
-            max_tokens_per_rank=1024,
-            n_gpus_per_node=RANKS,
-            n_nodes=1,
-            use_allreduce=True,
-        )
+    return EPConfig(
+        dispatch_dtype=DType.bfloat16,
+        combine_dtype=DType.bfloat16,
+        hidden_size=6144,
+        top_k=4,
+        n_experts=128,
+        max_tokens_per_rank=1024,
+        n_gpus_per_node=RANKS,
+        n_nodes=1,
+        use_allreduce=True,
     )
+
+
+def _ep_input_types() -> list[Any]:
+    """The expert-parallel inputs the arm's graph declares."""
+    return tree.leaves(payload_types(_ep_config()))
 
 
 def _target_config() -> Any:
@@ -89,7 +94,7 @@ def _target_config() -> Any:
     module it cannot reach.
     """
     return SimpleNamespace(
-        ep_config=_ep_manager().config,
+        ep_config=_ep_config(),
         hidden_size=6144,
         quant_config=None,
     )
@@ -97,11 +102,10 @@ def _target_config() -> Any:
 
 def _config(*, ep_tail: bool, arity: int | None = None) -> SpecDecodeArchConfig:
     """A pairing's arch config, as the pipeline builds it."""
-    manager = _ep_manager()
     # What the graph recorded where it declared the tail, or nothing for a
     # graph that declares none.
     recorded = (
-        len(manager.input_types()) if ep_tail and arity is None else arity or 0
+        len(_ep_input_types()) if ep_tail and arity is None else arity or 0
     )
     return SpecDecodeArchConfig(
         target=_target_config(),
@@ -131,11 +135,10 @@ def _batch(ep_inputs: tuple[Buffer, ...]) -> Any:
     )
 
 
-def _tail(manager: EPBatchManager) -> tuple[Buffer, ...]:
+def _tail() -> tuple[Buffer, ...]:
     """One staged buffer per collective the graph declares."""
     return tuple(
-        Buffer.zeros(shape=[1], dtype=DType.int32)
-        for _ in manager.input_types()
+        Buffer.zeros(shape=[1], dtype=DType.int32) for _ in _ep_input_types()
     )
 
 
@@ -171,14 +174,13 @@ def test_an_ep_tail_batch_takes_the_runtimes_signal_buffers() -> None:
     trace appends the mesh's own; reading the field off the target's inputs
     raised ``AttributeError`` on the first batch of such a pairing.
     """
-    manager = _ep_manager()
     config = _config(ep_tail=True)
-    batch = _batch(_tail(manager))
+    batch = _batch(_tail())
     processor = _processor(config, _batching(batch))
     inputs = processor._target_inputs([], None, 1)
     assert inputs.signal_buffers == [AIR]
     assert not hasattr(batch, "signal_buffers")
-    assert len(inputs.ep_inputs) == len(manager.input_types())
+    assert len(inputs.ep_inputs) == len(_ep_input_types())
 
 
 def test_the_tail_width_is_the_one_the_graph_recorded() -> None:
@@ -189,13 +191,12 @@ def test_the_tail_width_is_the_one_the_graph_recorded() -> None:
     with an ``AssertionError`` (and, in a served boot, on the first batch).
     This config carries a config in that slot deliberately.
     """
-    manager = _ep_manager()
     config = _config(ep_tail=True)
     assert isinstance(config.target, SimpleNamespace)
-    processor = _processor(config, _batching(_batch(_tail(manager))))
+    processor = _processor(config, _batching(_batch(_tail())))
     inputs = processor._target_inputs([], None, 1)
     assert config.input_spec is not None
-    assert config.input_spec.ep_tail_arity == len(manager.input_types())
+    assert config.input_spec.ep_tail_arity == len(_ep_input_types())
     assert len(inputs.ep_inputs) == config.input_spec.ep_tail_arity
 
 
@@ -212,8 +213,7 @@ def test_a_batch_that_stages_a_different_tail_width_is_refused() -> None:
     with pytest.raises(ValueError, match="expert-parallel buffers"):
         processor._target_inputs([], None, 1)
     # One buffer too many is the same failure.
-    manager = _ep_manager()
-    over = _tail(manager) + (Buffer.zeros(shape=[1], dtype=DType.int32),)
+    over = _tail() + (Buffer.zeros(shape=[1], dtype=DType.int32),)
     processor = _processor(_config(ep_tail=True), _batching(_batch(over)))
     with pytest.raises(ValueError, match="expert-parallel buffers"):
         processor._target_inputs([], None, 1)
@@ -238,7 +238,7 @@ def test_the_tail_width_a_non_ep_spec_records_is_zero() -> None:
         [DeviceRef.CPU()],
         ARCH,
         # A target whose build bound no EP initializer declares no tail...
-        SimpleNamespace(ep_batch_manager=None),
+        SimpleNamespace(ep_config=None),
         distributed=False,
         include_signal_buffers=True,
         trace_owns_signal_buffers=True,
@@ -252,9 +252,9 @@ def test_the_tail_width_a_non_ep_spec_records_is_zero() -> None:
     assert spec.ep_tail_arity == 0
 
 
-def test_the_manager_declares_the_slots_this_file_stages() -> None:
-    """The 22 slots are the manager's own: two counter groups and three tables."""
-    entries = _ep_manager().input_types()
+def test_the_ep_config_declares_the_slots_this_file_stages() -> None:
+    """The 22 slots are the EP config's own: two counter groups, three tables."""
+    entries = _ep_input_types()
     assert len(entries) == 2 * RANKS + 3 * 2
     dtypes = [str(entry.dtype) for entry in entries]
     assert dtypes.count("DType.int32") == 2 * RANKS

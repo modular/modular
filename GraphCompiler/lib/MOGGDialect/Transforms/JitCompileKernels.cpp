@@ -51,18 +51,8 @@ namespace M::MOGG {
 namespace {
 
 /// Returns the context that the JIT's Mojo compiles read their defines from.
-///
-/// Kernels that the JIT compiles must select the same DeviceContext backend as
-/// the runtime they run on. Ahead-of-time Mojo compiles get `-D
-/// HAL_DEVICE_CONTEXT` from the Mojo toolchain, but the JIT does not see build
-/// flags, so a HAL build defines it here.
 KGEN::CompilationContext *getJitCompilationContext(mlir::MLIRContext *ctx) {
-  auto &compileCtx =
-      loadContext(ctx)->emplaceIfMissing<KGEN::CompilationContext>();
-#if MODULAR_HAL_DEVICE_CONTEXT
-  compileCtx.mojoDefines.try_emplace("HAL_DEVICE_CONTEXT", true);
-#endif
-  return &compileCtx;
+  return &loadContext(ctx)->emplaceIfMissing<KGEN::CompilationContext>();
 }
 
 struct JitCompileKernels

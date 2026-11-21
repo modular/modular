@@ -340,6 +340,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def run_func(ctx: DeviceContext[]) raises {imm}:
             gemv_tma(
                 c_device,

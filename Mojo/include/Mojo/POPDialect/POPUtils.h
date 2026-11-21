@@ -56,6 +56,24 @@ FoldValue foldSIMDDiv(FoldValues operands, TargetInfoAttr target = {});
 /// Fold a SIMD floordiv operation.
 FoldValue foldSIMDFloorDiv(FoldValues operands, TargetInfoAttr target = {});
 
+/// Returns the argument list of a `pop.external_call`, `pop.inline_asm` or
+/// `pop.call_llvm_intrinsic`: `operands`, with the operand at
+/// `expandPackOperandIdx`, if it is set, replaced by the elements of that
+/// struct. Only one level is expanded, so a struct element stays one argument.
+SmallVector<Attribute>
+getOperandsWithPackExpanded(ArrayRef<Attribute> operands,
+                            IntegerAttr expandPackOperandIdx);
+/// Returns the argument list of a call-like op as the overload above does, and
+/// extracts the elements with `kgen.struct.extract` ops.
+SmallVector<Value>
+getOperandsWithPackExpanded(OpBuilder &builder, Location loc,
+                            ValueRange operands,
+                            IntegerAttr expandPackOperandIdx);
+/// Verifies that `expandPackOperandIdx`, if it is set, refers to an operand of
+/// `!kgen.struct` type.
+LogicalResult verifyPackOperand(Operation *op,
+                                IntegerAttr expandPackOperandIdx);
+
 /// Interpret a memcpy operation.
 ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src, Attribute len,
                                    Location loc, InterpreterState &state);

@@ -354,6 +354,13 @@ def signal_buffer_index(target_arch: str) -> int | None:
     return _adapter(target_arch).signal_buffer_index
 
 
+def takes_vision_inputs(
+    target_arch: str, method: str, target_config: Any
+) -> bool:
+    """Returns whether this deployment takes cached vision inputs."""
+    return _adapter(target_arch, method).takes_vision_inputs(target_config)
+
+
 def trailing_input_types(
     target_arch: str, method: str, target_config: Any
 ) -> Sequence[TensorType | BufferType]:

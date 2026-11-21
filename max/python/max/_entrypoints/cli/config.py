@@ -319,6 +319,8 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
                 # Quantize sets this when writing a checkpoint, before
                 # the KV cache is built.
                 "export_only",
+                # max export sets this for the pipeline it builds.
+                "artifact_export",
             }
         )
     elif cls is PipelineRuntimeConfig:

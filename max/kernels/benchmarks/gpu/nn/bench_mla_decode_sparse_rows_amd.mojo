@@ -256,6 +256,7 @@ def _bench(
     var blocks_base = k_cache.blocks_raw_ptr()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def gather_step(c: DeviceContext[], s: Int) raises {imm}:
         c.enqueue_function[
             _amd_sparse_mla_gather_kv_rows_and_lengths[
@@ -295,6 +296,7 @@ def _bench(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def rows_step(c: DeviceContext[], s: Int, num_partitions: Int) raises {imm}:
         var k_rows = SparseRowsMHAOperand[
             row_width=K_CACHE_DIM, predicated=True
@@ -322,6 +324,7 @@ def _bench(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def inplace_step(
         c: DeviceContext[], s: Int, num_partitions: Int
     ) raises {imm}:

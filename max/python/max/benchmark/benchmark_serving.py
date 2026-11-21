@@ -90,7 +90,6 @@ from max.benchmark.benchmark_shared.iteration import (
     resolve_seed,
     resolve_skip_counts,
     retain_result,
-    seed_for_concurrency,
 )
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
@@ -1166,11 +1165,13 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     # Auto-select the correct endpoint for pixel generation based on the
     # backend. Each pixel-gen backend requires a specific endpoint (e.g.,
     # sglang needs /v1/images/generations, vllm needs
-    # /v1/chat/completions). We auto-select when the current endpoint
-    # doesn't match this backend's expected pixel-gen endpoint.
+    # /v1/chat/completions). We auto-select when the current endpoint does not match this
+    # backend's expected pixel-gen endpoint.
     if benchmark_task in PIXEL_GENERATION_TASKS:
         try:
-            expected = get_pixel_gen_endpoint(args.backend, benchmark_task)
+            expected = get_pixel_gen_endpoint(
+                args.backend, benchmark_task, args.video_request_schema
+            )
         except ValueError:
             raise ValueError(
                 f"Backend {args.backend!r} does not have a default"
@@ -1416,9 +1417,8 @@ def _emit_engine_state(
         logger.info("Wrote engine state to %s", args.engine_state_json)
     if into_stats:
         assert args.workload_stats_json is not None
-        # Recomputed from the samples this run sent: the sweep draws a new
-        # sample for each concurrency level, so the file written before the
-        # run describes another draw of the same workload.
+        # Recomputed from the samples this run sent: the sweep samples again
+        # for each concurrency level, and num_prompts can change with it.
         stats = _compute_session_stats(args, session).model_copy(
             update={"engine_state": state}
         )
@@ -1440,7 +1440,6 @@ def _run_dry_run_sweep(
     if not args.print_workload_stats:
         print_workload_stats(session.samples, stats)
     if isinstance(session.samples, ChatSamples) and args.warmup_multiturn:
-        rng = np.random.default_rng(args.seed or 0)
         for mc in concurrency_range:
             warmup_count = (
                 args.max_concurrent_conversations
@@ -1457,7 +1456,7 @@ def _run_dry_run_sweep(
                 warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
-                rng=rng,
+                rng=np.random.default_rng(args.seed),
                 delay_biased=args.warmup_delay_biased,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
@@ -1508,16 +1507,15 @@ def _run_benchmark_sweep(
         # from args.
         args.num_prompts = num_prompts
 
-        # Each concurrency level draws its own sample, derived from the base
-        # seed, so levels are reproducible individually without replaying
-        # the exact same requests at every level.
-        mc_seed = seed_for_concurrency(args.seed, mc)
+        # Every level samples from the base seed, so a sweep compares the
+        # server across loads on one workload. num_prompts can change with
+        # the level, so sample again rather than reuse the session's draw.
         session.samples = _sample_for_seed(
             args,
             session.benchmark_task,
             session.tokenizer,
             session.endpoint == "/v1/chat/completions",
-            mc_seed,
+            args.seed,
         )
 
         for rr in args.request_rate:
@@ -1533,7 +1531,7 @@ def _run_benchmark_sweep(
                         base_url=args.base_url,
                     )
 
-                logger.info("mc=%s seed=%d", mc, mc_seed)
+                logger.info("mc=%s seed=%d", mc, args.seed)
 
                 result, ok = asyncio.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)

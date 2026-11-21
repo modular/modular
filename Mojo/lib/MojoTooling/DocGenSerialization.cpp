@@ -97,10 +97,16 @@ static std::string extractBaseTypeName(StringRef fullTypeStr) {
 
 static std::string extractModulePathFromDecl(ASTDecl *decl) {
   SmallVector<StringRef> components;
-  for (ASTDecl *current = decl; current; current = current->getParentDecl())
+  for (ASTDecl *current = decl; current; current = current->getParentDecl()) {
     if (isa<FileModuleASTDecl, PackageASTDecl>(current))
       if (auto name = current->getName())
         components.push_back(*name);
+    // A source package bound under a namespace sits at the top level, so its
+    // namespace is not among its parents. A precompiled dependency's is.
+    if (auto *package = dyn_cast<PackageASTDecl>(current))
+      llvm::append_range(components,
+                         llvm::reverse(package->getNamespaceComponents()));
+  }
   std::reverse(components.begin(), components.end());
   return llvm::join(components, ".");
 }

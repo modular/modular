@@ -257,6 +257,7 @@ def broadcast_pull_1stage_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"broadcast_pull_2stage_{dtype}")
+@__allow_legacy_any_origin_fields
 def broadcast_pull_2stage_kernel[
     dtype: DType,
     OutputLayout: TensorLayout,

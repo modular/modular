@@ -435,6 +435,7 @@ def smallm_streaming_matmul[
     if m < 1 or m > 128:
         raise Error("smallm_streaming_matmul serves 1 <= m <= 128")
 
+    @__allow_legacy_any_origin_fields
     def _launch[
         m_tiles: Int, a_in_regs: Bool, col_tiles: Int = 1
     ]() raises {imm}:

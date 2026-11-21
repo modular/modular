@@ -27,6 +27,8 @@ concurrency: # Only allow a single build/test run at a time for a PR.
 
 jobs:
   lint:
+    # The Merged-status backfill reopens landed PRs as modularbot; skip them.
+    if: github.event.action != 'reopened' || github.actor != 'modularbot'
     runs-on: "ubuntu-latest"
     timeout-minutes: 30
 

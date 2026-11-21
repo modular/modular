@@ -1063,7 +1063,7 @@ def kpool_append_ragged_paged[
         if c % pooled_dim == 0:
             k_cache.store_scale(b, 0, pos, 0, scale.cast[cache_t.scale_dtype]())
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=num_blocks,
         block_dim=head_dim,

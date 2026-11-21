@@ -84,7 +84,7 @@ def MAP_IterOpaqueOp : MAP_Op<"iter.opaque", [
       %epi = map.iter.epilogue (%val : bf16, %idx : !map.index<2>) capturing {%cap = %out : !mo.tensor<[M, N], bf16>} {
         map.store %cap[%idx] = %val : !mo.tensor<[M, N], bf16>
       } : !mo.tensor<[M, N], bf16>
-      map.call.opaque @builtin_kernels.linalg.Matmul[transpose_b = false]
+      map.call.opaque @builtin_kernels.linalg_ops.Matmul[transpose_b = false]
         inputs (%A, %B) outputs (%epi) : (...) -> (...)
     }
     ```
@@ -275,7 +275,7 @@ def MAP_CallOpaqueOp : MAP_Op<"call.opaque", [
   let summary = "Invoke an opaque Mojo kernel by symbol.";
   let description = [{
     Calls the kernel declared under `callee` (a `mogg.kernel.decl` symbol, e.g.
-    `@builtin_kernels.linalg.Matmul`) with the given `inputs` and `outputs`. The
+    `@builtin_kernels.linalg_ops.Matmul`) with the given `inputs` and `outputs`. The
     kernel parameters (e.g. `packed_b`, `transpose_b`) are carried in brackets
     immediately after the callee symbol, e.g.
     `@...Matmul[packed_b = false, transpose_b = false]`.

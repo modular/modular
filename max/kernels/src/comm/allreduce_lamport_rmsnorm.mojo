@@ -105,6 +105,7 @@ def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
 @__name(
     t"allreduce_lamport_rmsnorm_{dtype}_{ngpus}_{BLOCK_SIZE}x{CLUSTER_SIZE}_{has_residual}_{multiply_before_cast}_{post_norm_residual}"
 )
+@__allow_legacy_any_origin_fields
 def _allreduce_lamport_rmsnorm_kernel[
     ResidualLayoutType: TensorLayout,
     residual_origin: Origin,
@@ -563,6 +564,7 @@ def _lamport_allreduce_rmsnorm_launch[
     if rows == 0:
         return
 
+    @__allow_legacy_any_origin_fields
     def launch[block_size: Int, cluster_size: Int]() raises {imm}:
         comptime kernel = _allreduce_lamport_rmsnorm_kernel[
             ResidualLayoutType=residual.T.LayoutType,

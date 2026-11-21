@@ -20,4 +20,13 @@ kgen.func @variadic_too_many_fixed_args(%a: !kgen.simd<1, ui32>) {
   hlcf.return
 }
 
+// LowerArgConventions expands the pack operand. It must not reach this pass.
+kgen.func @unexpanded_pack_operand(%a: !kgen.struct<(scalar<si32>)>) {
+  // expected-error @below {{'pop.external_call' op pack operand must be expanded by lower-arg-conventions}}
+  // expected-error @below {{failed to legalize}}
+  pop.external_call @baz(%a)
+    : (!kgen.struct<(scalar<si32>)>) -> () <expandPackOperandIdx = 0>
+  hlcf.return
+}
+
 }

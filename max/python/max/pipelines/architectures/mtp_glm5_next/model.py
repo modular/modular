@@ -158,8 +158,7 @@ def configure_mtp_draft(
         ep_use_allreduce=settings.ep_use_allreduce,
     )
     if runtime.ep_size > 1:
-        ep = config.expert_parallel_config(runtime)
-        context.start_ep(ep)
+        ep = context.start_ep(config.expert_parallel_config(runtime))
         runtime = replace(runtime, ep=ep)
     return config.apply_runtime(runtime)
 

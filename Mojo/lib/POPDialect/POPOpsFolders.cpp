@@ -2907,18 +2907,8 @@ interpretLibraryCall(ExternalCallOp op, void *entry,
 /// operations.
 ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
-  // external_call can take things through a !kgen.struct.  Expand that out
-  // before we try to interpret it.
-  SmallVector<Attribute> expandedOperands;
-  expandedOperands.reserve(operands.size());
-  for (auto attr : operands) {
-    auto pack = dyn_cast<StructAttr>(attr);
-    if (pack && pack.getType().getIsParamPack()) {
-      expandedOperands.append(pack.getValues().begin(), pack.getValues().end());
-    } else {
-      expandedOperands.push_back(attr);
-    }
-  }
+  SmallVector<Attribute> expandedOperands =
+      getOperandsWithPackExpanded(operands, getExpandPackOperandIdxAttr());
 
   StringRef callee = getCallee();
   if (callee == "malloc")
@@ -2945,18 +2935,8 @@ ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ExternalCallOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  // external_call can take things through a !kgen.struct.  Expand that out
-  // before we try to interpret it.
-  SmallVector<Attribute> expandedOperands;
-  expandedOperands.reserve(operands.size());
-  for (auto attr : operands) {
-    auto pack = dyn_cast<StructAttr>(attr);
-    if (pack && pack.getType().getIsParamPack()) {
-      expandedOperands.append(pack.getValues().begin(), pack.getValues().end());
-    } else {
-      expandedOperands.push_back(attr);
-    }
-  }
+  SmallVector<Attribute> expandedOperands =
+      getOperandsWithPackExpanded(operands, getExpandPackOperandIdxAttr());
 
   StringRef callee = cast<StringAttr>(state.getReboundAttribute(getFunc()));
 

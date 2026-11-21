@@ -19,6 +19,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .model import DFlash2BeamDraftArchConfig
 from .model_config import ARCHITECTURE, dflash2_beam_draft_width
+from .weight_rules import dflash2_beam_weight_rules
 
 __all__ = ["dflash2_beam_modulev3_draft_arch"]
 
@@ -34,6 +35,8 @@ dflash2_beam_modulev3_draft_arch = SupportedArchitecture(
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    weight_rules=dflash2_beam_weight_rules,
+    use_weight_rules=True,
     # Sharded over the target's devices, which every leaf of the KV tree
     # must name.
     multi_gpu_supported=True,

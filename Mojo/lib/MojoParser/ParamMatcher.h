@@ -26,6 +26,8 @@
 #include "Mojo/MojoParser/Constraints.h"
 #include "Support/ADT/SmartVariant.h"
 
+#include <variant>
+
 namespace M::KGEN::LIT {
 
 class ExprNode;
@@ -64,6 +66,67 @@ struct MatchFailure {
     size_t paramIdx;
   };
 
+  /// This failure happens when two function types do not match. `actual` is
+  /// the function being converted and `expected` is the type it converts to.
+  struct FnTypeMismatch {
+    /// The actual function has more compile-time parameters than the expected
+    /// type can bind.
+    struct TooManyParams {
+      size_t actualCount, expectedCount;
+    };
+    /// A compile-time parameter of one function has no counterpart in the
+    /// other.
+    struct UnmatchedParam {
+      StringRef name;
+      /// True if the parameter belongs to the expected type.
+      bool isExpectedParam;
+    };
+    /// A reference result is expected, but the function returns a value.
+    struct RefResultRequired {};
+    /// A value result is expected, but the referenced result cannot be
+    /// copied.
+    struct RefResultNotCopyable {
+      ASTType resultType;
+    };
+    struct EffectsDiffer {
+      FnEffects actual, expected;
+    };
+    /// Only one of the two functions takes `**kwargs`.
+    struct KwargsDiffer {
+      bool actualHasKwargs;
+    };
+    struct ArgConventionsIncompatible {
+      size_t argIdx;
+      /// Empty if the actual argument has no name.
+      StringRef argName;
+      ArgConvention actual, expected;
+    };
+    struct ArgCountsDiffer {
+      size_t actualCount, expectedCount;
+      /// True if the expected type takes a variadic pack, so `expectedCount`
+      /// is a lower bound.
+      bool expectedIsMinimum;
+    };
+    struct KwOnlyArgNamesDiffer {
+      StringRef actualName, expectedName;
+    };
+    struct VariadicElementTypeMismatch {
+      size_t argIdx;
+      /// Empty if the actual argument has no name.
+      StringRef argName;
+      ASTType argType, elementType;
+    };
+
+    template <typename Detail>
+    FnTypeMismatch(Detail detail) : detail(detail) {}
+
+    std::variant<TooManyParams, UnmatchedParam, RefResultRequired,
+                 RefResultNotCopyable, EffectsDiffer, KwargsDiffer,
+                 ArgConventionsIncompatible, ArgCountsDiffer,
+                 KwOnlyArgNamesDiffer, VariadicElementTypeMismatch>
+        detail;
+  };
+
   /// This failure hasn't been categorized yet.
   /// FIXME: Remove this.
   struct Unclassified {};
@@ -89,7 +152,7 @@ struct MatchFailure {
 
 private:
   SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified,
-               UnboundButInferrable>
+               UnboundButInferrable, FnTypeMismatch>
       info;
 };
 

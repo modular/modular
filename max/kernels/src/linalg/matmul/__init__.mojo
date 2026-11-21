@@ -235,6 +235,11 @@ def _matmul_impl[
     comptime assert a.flat_rank == 2, "a must have a non-nested layout"
     comptime assert b.flat_rank == 2, "b must have a non-nested layout"
 
+    comptime trace_desc = (
+        String(t"({_trace_description})") if _trace_description else ""
+    )
+    comptime trace_name = get_static_string["matmul", trace_desc]()
+
     comptime if not ctx.T.target.is_cpu():
         # GPU path: call _matmul_gpu directly with tracing. CPU-only params
         # (b_packed, saturated_vnni) are intentionally not forwarded here.
@@ -262,10 +267,7 @@ def _matmul_impl[
         __guard case .Some(gpu_ctx) = ctx else:
             abort("expected DeviceContext for GPU target")
         with Trace[TraceLevel.OP, target=ctx.T.target.device_kind_label()](
-            get_static_string[
-                "matmul",
-                _trace_description if _trace_description else "",
-            ](),
+            trace_name,
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=OptionalReg(Int(gpu_ctx.device().id)),
         ):
@@ -313,10 +315,7 @@ def _matmul_impl[
             # fmt: on
 
         with Trace[TraceLevel.OP, target=ctx.T.target.device_kind_label()](
-            get_static_string[
-                "matmul",
-                _trace_description if _trace_description else "",
-            ](),
+            trace_name,
             Trace[TraceLevel.OP]._get_detail_str(cpu_description_fn),
             task_id=get_safe_task_id(ctx),
         ):

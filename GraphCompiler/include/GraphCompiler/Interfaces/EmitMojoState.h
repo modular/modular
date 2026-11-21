@@ -248,7 +248,7 @@ public:
         params.push_back(kParameterKind.equal(
             kStructDeviceGraphInputKind.get(kInputKindHost)));
       return kStructOwnedTensor[params];
-    } else if (isa<MEF::ChainType>(mlirType)) {
+    } else if (isa<MLRT::MEF::ChainType>(mlirType)) {
       return kComptimeOpaquePointer;
     } else if (isa<MGP::DeviceContextType, ContextType>(mlirType)) {
       return kStructDeviceContext;

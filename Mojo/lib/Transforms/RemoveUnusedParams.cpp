@@ -31,6 +31,7 @@
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/POPDialect/POPTypes.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/Matchers.h"
@@ -435,40 +436,50 @@ void RemoveUnusedParams::runOnOperation() {
 
   DenseSet<GeneratorOp> seenCallees;
 
-  // Build call graph.
-  for (auto [idx, generator] : llvm::enumerate(mod.getOps<GeneratorOp>())) {
-    seenCallees.clear();
-    SmallVector<GeneratorOp> callees;
-
-    numCallersFromFunc[generator] = 0;
-
-    // Gen needs explicit capture to make structured bindings capture legal.
-    generator.walk([&, gen = generator](CallOp call) {
+  // Find the calls of each generator in parallel. The loop below builds the
+  // call graph from them on one thread, in module order.
+  SmallVector<GeneratorOp, 0> generators(mod.getOps<GeneratorOp>());
+  using GeneratorCall = std::pair<CallOp, GeneratorOp>;
+  auto generatorCalls = parallelMap(ctx, generators, [&](GeneratorOp gen) {
+    SmallVector<GeneratorCall, 0> calls;
+    gen.walk([&](CallOp call) {
       // We can also call external generators and other things so it's not safe
       // to assume it's a generator op.
       auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
           cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
       if (!calledFunc || calledFunc.isExternal())
         return;
+      calls.push_back({call, calledFunc});
+    });
+    return calls;
+  });
 
+  // Build call graph.
+  for (auto [idx, generator] : llvm::enumerate(generators)) {
+    seenCallees.clear();
+    SmallVector<GeneratorOp> callees;
+
+    numCallersFromFunc[generator] = 0;
+
+    for (auto [call, calledFunc] : generatorCalls[idx]) {
       // Track the caller of this generator, but only one entry per call.
       if (!seenCallees.contains(calledFunc)) {
         callees.push_back(calledFunc);
         seenCallees.insert(calledFunc);
-        ++numCallersFromFunc[gen];
+        ++numCallersFromFunc[generator];
       }
 
       // Track recursive functions separately.
-      if (calledFunc == gen) {
-        recursiveFuncs.insert(gen);
+      if (calledFunc == generator) {
+        recursiveFuncs.insert(generator);
       } else {
         // Get or allocate.
         CallSites &entry = funcUsers[calledFunc];
         // Then insert without iteration invalidation in case of allocate.
-        entry.callers.insert(gen);
+        entry.callers.insert(generator);
         entry.calls.push_back(call);
       }
-    });
+    }
 
     toSchedule.addToSchedule(generator, idx);
 

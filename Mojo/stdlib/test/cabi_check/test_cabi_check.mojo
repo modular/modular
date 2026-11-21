@@ -209,7 +209,7 @@ def test_c_type_decl() raises:
     assert_equal(_c_type_decl("void *"), "void * *ptr")
     assert_equal(_c_type_decl(.array("__u64", 2)), "__u64 (*ptr)[2]")
     with assert_raises(contains="spells no C type"):
-        _ = _c_type_decl(.default)
+        _ = _c_type_decl(.default())
 
 
 def test_c_scalar_name() raises:

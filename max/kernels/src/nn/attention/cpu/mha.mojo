@@ -741,6 +741,7 @@ struct _FlashAttention[
 
         var num_threads = min(work_count, parallelism_level(ctx))
 
+        @__allow_legacy_any_origin_fields
         def task_func(
             task_id: Int,
         ) {

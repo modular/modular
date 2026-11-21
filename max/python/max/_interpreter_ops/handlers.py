@@ -2792,6 +2792,71 @@ def _handle_distributed_reducescatter_sum(
     return output_buffers
 
 
+@register_op_handler(mo.DistributedAllToAllOp)
+def _handle_distributed_all_to_all(
+    op: mo.DistributedAllToAllOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.all_to_all by exchanging one chunk per peer.
+
+    Operands (flat): N input tensors, N signal buffers, 1 input chain.
+    Results: N output tensors, 1 output chain.
+
+    Each input splits into ``group_size`` equal chunks along ``split_axis``.
+    Output ``d`` concatenates, along ``concat_axis`` and in source rank
+    order, chunk ``r`` of every input in its group, where ``r`` is ``d``'s
+    rank within the group.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.
+
+    Args:
+        op: The all-to-all operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N output buffers followed by None for the chain.
+    """
+    num_inputs = len(op.inputs)
+    bufs: list[Buffer] = []
+    for i in range(num_inputs):
+        b = inputs[i]
+        assert isinstance(b, Buffer), f"all_to_all input {i} is not a Buffer"
+        bufs.append(b)
+
+    # The exchange only moves values, so it moves their bits: an unsigned
+    # integer view of the same width holds any dtype, FP8 included.
+    bits = {1: DType.uint8, 2: DType.uint16, 4: DType.uint32, 8: DType.uint64}[
+        bufs[0].dtype.size_in_bytes
+    ]
+    group_size = op.group_size
+    chunks = [
+        np.split(
+            buf.to(CPU()).view(bits).to_numpy(), group_size, axis=op.split_axis
+        )
+        for buf in bufs
+    ]
+
+    output_buffers: list[Buffer | None] = []
+    for idx, result in enumerate(list(op.results)[:-1]):
+        group_start = idx - idx % group_size
+        received = [
+            chunks[source][idx - group_start]
+            for source in range(group_start, group_start + group_size)
+        ]
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(
+            Buffer.from_numpy(np.concatenate(received, axis=op.concat_axis))
+            .view(bufs[idx].dtype)
+            .to(device)
+        )
+
+    # Trailing None for the output chain.
+    output_buffers.append(None)
+    return output_buffers
+
+
 # User custom operations (MXF-353)
 
 

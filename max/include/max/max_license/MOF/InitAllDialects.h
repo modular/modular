@@ -26,7 +26,7 @@
 namespace M::MOF {
 
 inline void registerAllDialects(DialectRegistry &registry) {
-  registry.insert<MDialect, GRT::GRTDialect, MEF::MEFDialect,
+  registry.insert<MDialect, MLRT::GRT::GRTDialect, MLRT::MEF::MEFDialect,
                   mlir::func::FuncDialect, M::MGP::MGPDialect>();
   M::MO::loadDialects(registry);
 }

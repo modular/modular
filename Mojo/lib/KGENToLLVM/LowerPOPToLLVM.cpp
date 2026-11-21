@@ -572,41 +572,18 @@ static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
   llvm_unreachable("unknown atomic ordering");
 }
 
-/// Expand one level of structs so kgen.pack elements are passed as individual
-/// values instead of as a kgen.struct.
-///
-/// Takes both the converted LLVM values and the original KGEN types to
-/// correctly map logical field indices to LLVM field indices (which may
-/// differ due to alignment padding fields).
-static SmallVector<Value> expandOperands(OpBuilder &rewriter, Location loc,
-                                         ValueRange args, TypeRange origTypes,
-                                         const POPToLLVMTypeConverter &tc) {
+/// Returns the lowered operands of a call-like op, without the conversion
+/// casts that would prevent folds. The pack operand must be expanded already.
+static FailureOr<SmallVector<Value>>
+getCallLikeOperands(Operation *op, ValueRange args, IntegerAttr packIdx) {
+  if (packIdx) {
+    return op->emitOpError(
+        "pack operand must be expanded by lower-arg-conventions");
+  }
   SmallVector<Value> operands;
   operands.reserve(args.size());
-  for (auto [value, origType] : llvm::zip(args, origTypes)) {
-    // Squash pointless conversion casts that will get in the way of folds.
-    value = squashPointlessCasts(value);
-
-    // Check if the original type is a KGEN struct type.
-    if (auto kgenStructTy = dyn_cast<StructType>(origType)) {
-      // Get the element types - should be resolved at this point.
-      if (auto elemTypes = kgenStructTy.getElementTypes()) {
-        // Iterate over KGEN logical field indices and extract using remapped
-        // LLVM indices to account for any padding fields.
-        for (size_t i = 0, e = elemTypes->size(); i != e; ++i) {
-          int64_t llvmIdx = tc.getRemappedFieldIndex(kgenStructTy, i);
-          auto elt =
-              rewriter.createOrFold<LLVM::ExtractValueOp>(loc, value, llvmIdx);
-          operands.push_back(elt);
-        }
-      } else {
-        // Parametric struct - just push the value as-is.
-        operands.push_back(value);
-      }
-    } else {
-      operands.push_back(value);
-    }
-  }
+  for (Value value : args)
+    operands.push_back(squashPointlessCasts(value));
   return operands;
 }
 
@@ -1711,10 +1688,12 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPInlineAsm(InlineAsmOp op) {
     if (!types.back())
       return failure();
   }
+  FailureOr<SmallVector<Value>> operands = getCallLikeOperands(
+      op, adaptor.getOperands(), op.getExpandPackOperandIdxAttr());
+  if (failed(operands))
+    return failure();
   auto asmOp = LLVM::InlineAsmOp::create(
-      *builder, op.getLoc(), types.empty() ? Type() : types.front(),
-      expandOperands(*builder, op.getLoc(), adaptor.getOperands(),
-                     op.getOperands().getTypes(), *typeConverter),
+      *builder, op.getLoc(), types.empty() ? Type() : types.front(), *operands,
       cast<StringAttr>(adaptor.getAssembly()),
       cast<StringAttr>(adaptor.getConstraints()),
       cast<BoolAttr>(adaptor.getHasSideEffects()).getValue(),
@@ -1935,8 +1914,11 @@ LowerPOPToLLVMPass::lowerPOPCallLLVMIntrinsic(CallLLVMIntrinsicOp op) {
   if (failed(typeConverter->convertTypes(op.getResultTypes(), types)))
     return failure();
   StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
-  auto operands = expandOperands(*builder, op.getLoc(), adaptor.getOperands(),
-                                 op.getOperands().getTypes(), *typeConverter);
+  FailureOr<SmallVector<Value>> loweredOperands = getCallLikeOperands(
+      op, adaptor.getOperands(), op.getExpandPackOperandIdxAttr());
+  if (failed(loweredOperands))
+    return failure();
+  SmallVector<Value> &operands = *loweredOperands;
 
   auto getAlignment = [&](Value alignment,
                           StringRef name) -> FailureOr<IntegerAttr> {

@@ -426,6 +426,7 @@ def dspark_draft_sample_gpu[
                 _DRAFT_CLUSTER_MAX,
             )
 
+        @__allow_legacy_any_origin_fields
         def launch_cluster[cluster_size: Int]() raises {imm}:
             comptime kernel = DSparkDraftSampleClusterKernel[
                 dtype,

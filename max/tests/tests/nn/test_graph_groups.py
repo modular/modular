@@ -40,6 +40,7 @@ from max.nn.legacy.graph_groups import (
     SparseIndices,
     SpecDecode,
     SpecDecodeOutputs,
+    StaticBuffers,
     TokenBitmask,
     TPSignals,
     VisionEmbeddings,
@@ -72,6 +73,7 @@ def _examples() -> list[GraphGroup[Any, Any]]:
         MRoPEPositions(position_ids=t),
         BatchContext(length=(t,)),
         DecoderGraphScratch(buffers=(buf, buf)),
+        StaticBuffers(table_weight=buf, table_scale=buf),
         EPPayload(atomic_counters=(t,), send_buf_ptrs=(buf,)),
         EPLBProfile(expert_counts=(buf,)),
         logits,
@@ -115,6 +117,20 @@ def test_every_group_has_a_kind_and_round_trips(index: int) -> None:
     rebuilt = tree.unflatten(treedef, leaves)
     assert type(rebuilt) is type(group)
     assert list(tree.flatten(rebuilt)[1].leaf_paths) == list(treedef.leaf_paths)
+
+
+def test_static_buffers_keep_named_descriptors_through_export() -> None:
+    weight = TensorType(DType.uint8, [8, 256], device=DeviceRef.CPU())
+    scale = TensorType(DType.uint8, [8, 8], device=DeviceRef.CPU())
+    group = StaticBuffers(table_weight=weight, table_scale=scale)
+    leaves, treedef = tree.flatten(group)
+    exported = treedef_to_json(treedef)
+    rebuilt = tree.unflatten(treedef_from_json(exported), leaves)
+    assert isinstance(rebuilt, StaticBuffers)
+    assert tree.kind_of(type(rebuilt)) == "static_buffers"
+    assert list(rebuilt) == ["table_weight", "table_scale"]
+    assert rebuilt["table_weight"] is weight
+    assert rebuilt["table_scale"] is scale
 
 
 def test_a_group_needs_a_kind() -> None:

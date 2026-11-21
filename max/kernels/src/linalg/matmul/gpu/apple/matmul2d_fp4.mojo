@@ -599,6 +599,7 @@ struct Matmul2dFp4[
 
     @__name(t"apple_matmul2d_fp4_run_{Self.c_type}")
     @staticmethod
+    @__allow_legacy_any_origin_fields
     def run[
         c_layout: TensorLayout,
         a_layout: TensorLayout,
@@ -882,6 +883,7 @@ struct Matmul2dFp4[
         var is_m_edge = tg_m_end > M
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _kloop[bounded: Bool]() {mut accs, imm}:
             var k0 = 0
             while k0 < K:
