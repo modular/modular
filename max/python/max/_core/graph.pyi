@@ -18,6 +18,7 @@
 import os
 import pathlib
 from collections.abc import Sequence
+from typing import overload
 
 import max._core
 import max._core.dialects.builtin
@@ -26,6 +27,7 @@ import max._core.dialects.mo
 import max._core.driver
 import max._core.dtype
 import max._mlir.ir
+import numpy
 
 class KernelRegistrationError(ValueError):
     """
@@ -35,10 +37,53 @@ class KernelRegistrationError(ValueError):
 def load_modular_dialects(arg: max._mlir.ir.DialectRegistry, /) -> None:
     """Registers all Modular MLIR dialects into the given registry."""
 
+@overload
 def array_attr(
     arg0: max._core.driver.Buffer, arg1: max._core.dialects.mo.TensorType, /
 ) -> max._core.dialects.m.ArrayElementsAttr:
     """Creates an array attribute from a buffer and tensor type."""
+
+@overload
+def array_attr(
+    value: bool | float | numpy.number,
+    type: max._core.dialects.mo.TensorType,
+    /,
+) -> max._core.dialects.m.ArrayElementsAttr:
+    """
+    Creates an array attribute from a Python number.
+
+    Converts the number to the element dtype of ``type`` exactly as ``Buffer.__setitem__`` does.
+
+    Args:
+        value: The number to embed.
+        type: A rank-0 tensor type whose element dtype is at least a byte wide.
+
+    Returns:
+        The dense array attribute holding ``value``.
+
+    Raises:
+        ValueError: If an integer ``value`` is out of range for the dtype, or ``type`` isn't rank 0.
+    """
+
+@overload
+def array_attr(
+    value: Sequence[object], type: max._core.dialects.mo.TensorType, /
+) -> max._core.dialects.m.ArrayElementsAttr:
+    """
+    Creates an array attribute from a nested sequence of Python numbers.
+
+    Walks ``value`` in row-major order and converts each number to the element dtype of ``type`` exactly as ``Buffer.__setitem__`` does.
+
+    Args:
+        value: A nested sequence of numbers whose shape matches the static dimensions of ``type``.
+        type: A tensor type with static dimensions and an element dtype that is at least a byte wide.
+
+    Returns:
+        The dense array attribute holding ``value``.
+
+    Raises:
+        ValueError: If ``value`` doesn't match the shape of ``type``, or an integer in it is out of range for the dtype.
+    """
 
 def _buffer_from_constant_attr(
     attr: max._core.dialects.builtin.ElementsAttr,

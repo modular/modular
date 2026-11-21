@@ -38,6 +38,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "nanobind/nanobind.h"
@@ -125,6 +126,89 @@ M::ArrayElementsAttr array_attr(M::Driver::Python::Buffer &buffer,
 
   return M::ArrayElementsAttr::get({bytesArray.data(), bytesArray.size()},
                                    shapedType);
+}
+
+// Raises ValueError unless a Python integer literal fits `dtype`, so that an
+// out-of-range value fails loudly instead of wrapping when it is narrowed.
+// Float dtypes are not checked.
+void checkLiteralInRange(M::DType dtype, nb::object &value) {
+  if (!dtype.isBool() && !dtype.isInt())
+    return;
+  unsigned bits = dtype.isBool() ? 1 : dtype.getIntegerWidthInBits();
+  bool isSigned = dtype.isSInt();
+
+  // Truncates floats toward zero, and raises for NaN and inf, like `int(v)`.
+  nb::int_ asInt(value);
+  int64_t s;
+  uint64_t u;
+  bool fits;
+  if (nb::try_cast<int64_t>(asInt, s, /*convert=*/false))
+    fits =
+        isSigned ? llvm::isIntN(bits, s) : (s >= 0 && llvm::isUIntN(bits, s));
+  else if (nb::try_cast<uint64_t>(asInt, u, /*convert=*/false))
+    // Only a uint64 can hold a value above INT64_MAX.
+    fits = !isSigned && bits == 64;
+  else
+    fits = false;
+
+  if (!fits)
+    throw nb::value_error(
+        ("Unsafe cast: Refusing to implicitly promote external array with "
+         "value " +
+         nb::cast<std::string>(nb::str(value)) + " out of range for DType " +
+         nb::cast<std::string>(nb::str(nb::cast(dtype))) + ".")
+            .c_str());
+}
+
+// Writes the elements of the nested sequence `value`, whose shape must be
+// `dims`, to `data` in row-major order starting at element `pos`.
+void fillFromLiteral(uint8_t *data, size_t &pos, M::DType dtype,
+                     llvm::ArrayRef<int64_t> dims, nb::handle value) {
+  if (dims.empty()) {
+    nb::object element = nb::borrow(value);
+    checkLiteralInRange(dtype, element);
+    M::Driver::Python::Buffer::storeItem(data, pos++, dtype, element);
+    return;
+  }
+
+  if (!nb::isinstance<nb::sequence>(value))
+    throw nb::value_error("Array literal is not a sequence at a dimension "
+                          "the tensor type expects to have elements.");
+  size_t size = nb::len(value);
+  if (size != static_cast<size_t>(dims.front()))
+    throw nb::value_error(
+        ("Array literal has " + std::to_string(size) +
+         " elements along a dimension the tensor type sizes at " +
+         std::to_string(dims.front()) + ".")
+            .c_str());
+
+  for (nb::handle item : value)
+    fillFromLiteral(data, pos, dtype, dims.drop_front(), item);
+}
+
+M::ArrayElementsAttr array_attr_from_literal(nb::handle value,
+                                             M::MO::TensorType &type) {
+  M::ErrorOr<M::DType> dtype = M::MO::fromMLIRType(type.getElementType());
+  if (dtype.isError())
+    throw std::runtime_error("Invalid type");
+  if (dtype->getWidthInBits() < 8)
+    throw nb::type_error("array_attr does not support sub-byte dtypes");
+
+  llvm::SmallVector<int64_t> dims = type.getIntDims();
+  int64_t numElements = 1;
+  for (int64_t dim : dims) {
+    if (dim < 0)
+      throw nb::value_error("array_attr requires a tensor type with static "
+                            "dimensions.");
+    numElements *= dim;
+  }
+
+  llvm::SmallVector<uint8_t, 64> bytes(dtype->getSizeInBytes(numElements), 0);
+  size_t pos = 0;
+  fillFromLiteral(bytes.data(), pos, *dtype, dims, value);
+
+  auto shapedType = mlir::RankedTensorType::get(dims, type.getElementType());
+  return M::ArrayElementsAttr::get({bytes.data(), bytes.size()}, shapedType);
 }
 
 char *frame_traceback(void *frame_ptr) {
@@ -286,6 +370,55 @@ void M::Graph::Python::bindGraphModule(nb::module_ m) {
   /// MLIRContext.
   m.def("array_attr", &array_attr,
         "Creates an array attribute from a buffer and tensor type.");
+
+  // The literal and array overloads come after the Buffer one, and the scalar
+  // overload declines sequences, so that nanobind routes each argument to the
+  // one overload meant for it.
+  m.def(
+      "array_attr",
+      [](nb::object value, M::MO::TensorType &type) {
+        if (!PyNumber_Check(value.ptr()) || nb::isinstance<nb::sequence>(value))
+          throw nb::next_overload();
+        return array_attr_from_literal(value, type);
+      },
+      nb::arg("value"), nb::arg("type"),
+      nb::sig("def array_attr(value: bool | int | float | numpy.number, type: "
+              "max._core.dialects.mo.TensorType, /) -> "
+              "max._core.dialects.m.ArrayElementsAttr"),
+      "Creates an array attribute from a Python number.\n\n"
+      "Converts the number to the element dtype of ``type`` exactly as "
+      "``Buffer.__setitem__`` does.\n\n"
+      "Args:\n"
+      "    value: The number to embed.\n"
+      "    type: A rank-0 tensor type whose element dtype is at least a byte "
+      "wide.\n\n"
+      "Returns:\n"
+      "    The dense array attribute holding ``value``.\n\n"
+      "Raises:\n"
+      "    ValueError: If an integer ``value`` is out of range for the "
+      "dtype, or ``type`` isn't rank 0.");
+  m.def(
+      "array_attr",
+      [](nb::sequence value, M::MO::TensorType &type) {
+        return array_attr_from_literal(value, type);
+      },
+      nb::arg("value"), nb::arg("type"),
+      nb::sig("def array_attr(value: Sequence[object], type: "
+              "max._core.dialects.mo.TensorType, /) -> "
+              "max._core.dialects.m.ArrayElementsAttr"),
+      "Creates an array attribute from a nested sequence of Python numbers.\n\n"
+      "Walks ``value`` in row-major order and converts each number to the "
+      "element dtype of ``type`` exactly as ``Buffer.__setitem__`` does.\n\n"
+      "Args:\n"
+      "    value: A nested sequence of numbers whose shape matches the static "
+      "dimensions of ``type``.\n"
+      "    type: A tensor type with static dimensions and an element dtype "
+      "that is at least a byte wide.\n\n"
+      "Returns:\n"
+      "    The dense array attribute holding ``value``.\n\n"
+      "Raises:\n"
+      "    ValueError: If ``value`` doesn't match the shape of ``type``, or an "
+      "integer in it is out of range for the dtype.");
 
   /// Creates a Buffer from an MLIR constant attribute (inverse of array_attr).
   /// Copies data and handles splatting.
