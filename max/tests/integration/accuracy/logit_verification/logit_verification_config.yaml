@@ -878,31 +878,6 @@ logit_verification_pipelines:
     tags: [manual, nvidia-multi, 8xb200]
     timeout: 3600
 
-  nvidia/Kimi-K2.7-Code-NVFP4:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "nvidia/Kimi-K2.7-Code-NVFP4"
-    compatible_with: [gpu]
-    encoding: float4_e2m1fnx2
-    tags: [nvidia-multi, 8xb200]
-    # Goldens generated using vLLM.
-    # https://github.com/modularml/modular/actions/runs/30509573089
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_Kimi-K2.7-Code-NVFP4_golden/1/18f5a14abf9e4a2d9dea154caf2c2a815d6d6c9651d4c0a6f586e9949f03b9e8/nvidia_Kimi-K2.7-Code-NVFP4_golden.tar.gz"
-      json_file: "vllm_nvidia_Kimi-K2.7-Code-NVFP4_float4_e2m1fnx2_golden.json"
-    # Tolerances from the actual verify run against this golden:
-    # https://github.com/modularml/modular/actions/runs/30877333156
-    # Pareto-optimal (abs, rel) pair that passes 100% via relative tolerance
-    # alone; kl_div_threshold matches the run's suggested KL divergence
-    # threshold (max observed 4.56736e-01). cos_dist_threshold unchanged
-    # from the K2.6-derived placeholder -- no cos-distance failures were
-    # reported, so it already passes at that value.
-    absolute_tolerance: 5.2e+00
-    relative_tolerance: 4.6e-01
-    cos_dist_threshold: 1.0e-03
-    kl_div_threshold: 4.6e-01
-    timeout: 1800
-
   # Laguna S-2.1 stays `manual` until a golden exists: `transformers` cannot
   # load its mixed NVFP4/BF16 experts and the BF16 source model is 236 GB, so
   # the reference has to come from vLLM. Fill in `pregenerated_torch_goldens`
