@@ -338,6 +338,19 @@ modular_cc_test(
     ],
 )
 
+# The VMM granule the arena uses when `memory_manager_vmm_page_mb` is unset:
+# pure arithmetic over a budget and a granularity, so no device and no gpu tag.
+modular_cc_test(
+    name = "VmmPageSizeTest",
+    size = "small",
+    srcs = [
+        "VmmPageSizeTest.cpp",
+    ],
+    deps = [
+        "//MLRT:Driver/MemoryManager",
+    ],
+)
+
 # The VA condition needs an arena reserved at exactly the physical budget
 # (va_factor 1), so it gets its own target: with the default oversized
 # reservation there is always a large free run at the frontier and the VA gate

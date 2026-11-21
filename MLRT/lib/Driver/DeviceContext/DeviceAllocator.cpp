@@ -354,8 +354,9 @@ createDeviceMemoryManager(Device &device, Device::MemInfo memInfo,
   // arena backed by remappable physical granules, so a large contiguous
   // allocation can be assembled from physically-scattered free memory
   // (ensureRegionBacked / reclaimMappedGranules). Granule (page) size is
-  // rounded up from `memory_manager_vmm_page_mb` (default 256 MiB) to the
-  // device VMM granularity, and all VMM sizes are rounded to it.
+  // `memory_manager_vmm_page_mb` when that is set, else derived from the arena
+  // so it spans a few thousand granules, and rounded up to the device VMM
+  // granularity; all VMM sizes are rounded to it.
   // Check vmmSupported() first so we skip the config lookup on backends that
   // cannot use VMM at all.
   bool vmmEnabled = device.vmmSupported() &&
@@ -391,9 +392,13 @@ createDeviceMemoryManager(Device &device, Device::MemInfo memInfo,
     ErrorOr<size_t> granularity = device.vmmGranularity();
     assert(!granularity.isError() &&
            "vmmSupported() implies vmmGranularity() succeeds");
-    size_t pageMb = static_cast<size_t>(std::max<int64_t>(
-        1, DeviceContext::configAsInt("memory_manager_vmm_page_mb", 256)));
-    vmmPageSize = llvm::alignTo(pageMb * 1024 * KB, *granularity);
+    int64_t configuredPageMb =
+        DeviceContext::configAsInt("memory_manager_vmm_page_mb", 0);
+    vmmPageSize =
+        configuredPageMb > 0
+            ? llvm::alignTo(static_cast<size_t>(configuredPageMb) * 1024 * KB,
+                            *granularity)
+            : deriveVmmPageSize(maxCacheSize, *granularity);
     // Round the budget to whole granules.
     maxCacheSize = llvm::alignTo(maxCacheSize, vmmPageSize);
     // Single-arena VMM: the whole budget is one lazily-backed VA arena, so
@@ -437,6 +442,9 @@ createDeviceMemoryManager(Device &device, Device::MemInfo memInfo,
           ? AllocatorBacking(std::make_unique<DeviceAllocatorVmm>(device))
           : AllocatorBacking(std::make_unique<DeviceAllocatorChunks>(device)));
 
+  if (vmmEnabled)
+    result->logIfEnabled("vmm: granule " + humanMemorySize(vmmPageSize) +
+                         " over arena " + humanMemorySize(maxCacheSize));
   result->logIfEnabled("initial memInfo(free: " + humanMemorySize(freeMemory) +
                        ", total: " + humanMemorySize(memInfo.total) + ")");
   return result;

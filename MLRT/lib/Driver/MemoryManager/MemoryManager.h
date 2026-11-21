@@ -245,6 +245,26 @@ MODULAR_CXX_EXPORT std::string describeVmmOom(const VmmOomSnapshot &snapshot,
 // Full multi-field dump of the snapshot for the verbose log. Pure.
 MODULAR_CXX_EXPORT std::string dumpVmmOom(const VmmOomSnapshot &snapshot);
 
+// A VMM arena is address space cut into granules, and a request is placed in
+// whole granules, so a granule that takes a large share of the arena leaves
+// memory the ledger counts as free that no request can use. Keeping the arena a
+// few thousand granules wide bounds that waste at one granule per request; the
+// floor keeps a granule at least at what a device maps in one piece, and the
+// ceiling bounds how much one mapping holds.
+inline constexpr size_t kVmmGranuleTarget = 4096;
+inline constexpr size_t kVmmPageMinBytes = size_t(2) * 1024 * 1024;
+inline constexpr size_t kVmmPageMaxBytes = size_t(64) * 1024 * 1024;
+
+// The VMM granule to use when `memory_manager_vmm_page_mb` is unset, rounded up
+// to the device's granularity. Pure.
+inline size_t deriveVmmPageSize(size_t budget, size_t granularity) {
+  if (granularity == 0)
+    return kVmmPageMinBytes;
+  const size_t page = std::clamp(budget / kVmmGranuleTarget, kVmmPageMinBytes,
+                                 kVmmPageMaxBytes);
+  return llvm::alignTo(page, granularity);
+}
+
 // Everything a MemoryManager is built from. The factories fill every field from
 // the device and the config, so the manager never reads the config itself.
 struct MemoryManagerOptions {
