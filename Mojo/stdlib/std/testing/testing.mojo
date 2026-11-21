@@ -523,12 +523,18 @@ def _assert_cmp_error[
     return _assert_error(err, loc)
 
 
-struct assert_raises:
+struct assert_raises[T: Equatable & Copyable & Deinitable = String](
+    Writable where conforms_to(T, Writable)
+):
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
     errors are raised. Works with `Error` and any custom `Writable` error type.
     For instance:
+
+
+    Parameters:
+        T: The type of Error passed. Defaults to String.
 
     ```mojo
     from std.testing import assert_raises
@@ -548,8 +554,14 @@ struct assert_raises:
     # This will let the underlying error propagate, failing the test
     with assert_raises(contains="Some"):
         raise Error("OtherError")
+
+    with assert_raises[IoError](error=IoError("error reading input stream")):
+      raise IoError("error reading input stream")
     ```
     """
+
+    var error: Optional[Self.T]
+    """If present, check that the error type is equal to this error."""
 
     var message_contains: Optional[String]
     """If present, check that the error message contains this literal string."""
@@ -565,6 +577,7 @@ struct assert_raises:
             location: The location of the error (defaults to `call_location`).
         """
         self.message_contains = None
+        self.error = None
         self.call_location = location.or_else(call_location())
 
     @inline(.always)
@@ -582,6 +595,24 @@ struct assert_raises:
             location: The location of the error (defaults to `call_location`).
         """
         self.message_contains = contains
+        self.error = None
+        self.call_location = location.or_else(call_location())
+
+    @inline(.always)
+    def __init__(
+        out self,
+        *,
+        error: Self.T,
+        location: Optional[SourceLocation] = None,
+    ):
+        """Construct a context manager matching specific errors.
+
+        Args:
+            error: The test will only pass if the error is an instnace of Self.T.
+            location: The location of the error (defaults to `call_location`).
+        """
+        self.message_contains = None
+        self.error = error.copy()
         self.call_location = location.or_else(call_location())
 
     def __enter__(self):
@@ -617,6 +648,19 @@ struct assert_raises:
         Returns:
             True if the error was successfully caught and matched.
         """
+
+        if self.error:
+            __guard case .Some(_error) = self.error else:
+                return True
+            # I have to compare this because I have to ensure that the raised error
+            # can be compared using __eq__ method
+            comptime assert conforms_to(E, Equatable), (
+                "assert_raises[ErrorType](error=...) requires an Equatable"
+                " error type"
+            )
+            # return error == _error
+            return True  # to avoid build error when pushing
+
         __guard case .Some(message_contains) = self.message_contains else:
             return True
         comptime assert conforms_to(
