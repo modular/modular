@@ -29,17 +29,35 @@ constexpr llvm::StringLiteral kStructElemLayoutError =
 constexpr llvm::StringLiteral kStructTargetAlignError =
     "failed to get alignment for struct target element type";
 
-/// Returns the offset after aligning to the type's alignment and advancing by
-/// its size. Returns an error containing `errorMessage` if the size or
-/// alignment cannot be determined (e.g. for unresolved parametric types).
-ErrorOr<int64_t> advanceOffset(int64_t offset, DataLayoutInterface dl,
-                               TargetInfoAttr target,
-                               llvm::StringLiteral errorMessage) {
-  std::optional<int64_t> align = dl.getTypeAlign(target);
-  std::optional<int64_t> size = dl.getTypeSize(target);
-  if (!align || !size)
-    return Error(errorMessage);
-  return llvm::alignTo(offset, *align) + *size;
+ErrorOr<int64_t> getStructFieldOffset(StructType type, unsigned index,
+                                      InterpreterState &state) {
+  if (std::optional<ArrayRef<int64_t>> offsets =
+          getInterpreterStructElementOffsets(type, state)) {
+    if (index >= offsets->size())
+      return Error("struct field index out of bounds");
+    return (*offsets)[index];
+  }
+
+  // A later field can have an unknown layout while an earlier field still has
+  // an address. Fall back to laying out only the prefix needed for that field.
+  std::optional<SmallVector<Type>> elements = type.getElementTypes();
+  if (!elements || index >= elements->size())
+    return Error("struct field index out of bounds");
+  TargetInfoAttr target = state.getTarget();
+  int64_t offset = 0;
+  for (Type element : ArrayRef<Type>(*elements).take_front(index)) {
+    std::optional<int64_t> align =
+        DataLayoutInterface::getTypeABIAlign(target, element);
+    std::optional<int64_t> size = getStructFieldSize(target, element);
+    if (!align || !size)
+      return Error(kStructElemLayoutError);
+    offset = llvm::alignTo(offset, *align) + *size;
+  }
+  std::optional<int64_t> align =
+      DataLayoutInterface::getTypeABIAlign(target, (*elements)[index]);
+  if (!align)
+    return Error(kStructTargetAlignError);
+  return llvm::alignTo(offset, *align);
 }
 } // namespace
 
@@ -1059,45 +1077,22 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
   if (!ptr || !idxAttr)
     return ErrorTree(getLoc(), "non-constant inputs");
 
-  int64_t offset = 0;
-  // Move the address over the elements before the one we are reading.
   unsigned index = idxAttr.getInt();
-  SmallVector<Type> elementTypes;
-  if (!llvm::isa<StructType>(getContainer().getType().getElementType())) {
-    // Might be a single element struct which got flattened during lower-lit :(
-    if (index != 0)
-      return ErrorTree(getLoc(), "struct field index out of bounds");
-
-    elementTypes.push_back(getContainer().getType().getElementType());
-  } else {
-    StructType structType = getContainer().getType().getElementAs<StructType>();
-    std::optional<size_t> numElements = structType.getNumElements();
-    if (!numElements || index >= *numElements)
-      return ErrorTree(getLoc(), "struct field index out of bounds");
-
-    std::optional<SmallVector<Type>> eltTypesOr = structType.getElementTypes();
-    if (!eltTypesOr)
-      return ErrorTree(getLoc(), "struct element types not resolved");
-    elementTypes = std::move(*eltTypesOr);
+  Type elementType = getContainer().getType().getElementType();
+  if (StructType structType = dyn_cast<StructType>(elementType)) {
+    ErrorOr<int64_t> offset = getStructFieldOffset(structType, index, state);
+    if (offset.isError())
+      return ErrorTree(getLoc(), offset.takeError());
+    return state.mapResults(
+        PointerAttr::get(ptr.getAddr() + offset.takeValue(), getType()));
   }
 
-  for (unsigned i = 0; i != index; ++i) {
-    ErrorOr<int64_t> next =
-        advanceOffset(offset, cast<DataLayoutInterface>(elementTypes[i]),
-                      state.getTarget(), kStructElemLayoutError);
-    if (next.isError())
-      return ErrorTree(getLoc(), next.takeError());
-    offset = next.takeValue();
-  }
-
-  // Align the address to the target element.
-  Type targetType = elementTypes[index];
-  std::optional<int64_t> targetAlign =
-      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
-  if (!targetAlign)
+  // Lowering can flatten a single-element struct to its field type.
+  if (index != 0)
+    return ErrorTree(getLoc(), "struct field index out of bounds");
+  if (!DataLayoutInterface::getTypeABIAlign(state.getTarget(), elementType))
     return ErrorTree(getLoc(), kStructTargetAlignError);
-  offset = llvm::alignTo(offset, *targetAlign);
-  return state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
+  return state.mapResults(PointerAttr::get(ptr.getAddr(), getType()));
 }
 
 ErrorTreeOrSuccess
@@ -1109,38 +1104,14 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!ptr || !idxAttr)
     return ErrorTree(getLoc(), "non-constant inputs");
 
-  int64_t offset = 0;
-  auto structType =
+  StructType structType =
       cast<KGEN::PointerType>(cast<TypedAttr>(operands[0]).getType())
           .getElementAs<StructType>();
-
-  // Move the address over the elements before the one we are reading.
-  unsigned index = idxAttr.getInt();
-  auto numElements = structType.getNumElements();
-  if (!numElements || index >= *numElements)
-    return ErrorTree(getLoc(), "struct field index out of bounds");
-
-  auto elementTypes = structType.getElementTypes();
-  if (!elementTypes)
-    return ErrorTree(getLoc(), "struct element types not resolved");
-
-  for (unsigned i = 0; i != index; ++i) {
-    ErrorOr<int64_t> next =
-        advanceOffset(offset, cast<DataLayoutInterface>((*elementTypes)[i]),
-                      state.getTarget(), kStructElemLayoutError);
-    if (next.isError())
-      return ErrorTree(getLoc(), next.takeError());
-    offset = next.takeValue();
-  }
-
-  // Align the address to the target element.
-  Type targetType = (*elementTypes)[index];
-  std::optional<int64_t> targetAlign =
-      cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget());
-  if (!targetAlign)
-    return ErrorTree(getLoc(), kStructTargetAlignError);
-  offset = llvm::alignTo(offset, *targetAlign);
-  return state.mapResults(PointerAttr::get(ptr.getAddr() + offset,
+  ErrorOr<int64_t> offset =
+      getStructFieldOffset(structType, idxAttr.getInt(), state);
+  if (offset.isError())
+    return ErrorTree(getLoc(), offset.takeError());
+  return state.mapResults(PointerAttr::get(ptr.getAddr() + offset.takeValue(),
                                            state.getReboundType(getType())));
 }
 

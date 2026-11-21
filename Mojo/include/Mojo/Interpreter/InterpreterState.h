@@ -19,6 +19,7 @@
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Operation.h"
+#include <memory>
 
 namespace M {
 
@@ -265,6 +266,11 @@ public:
   ErrorOr<Attribute> readAttributeFromPointer(Attribute pointer,
                                               Type elementType);
 
+  /// Return the cached field offsets for a struct on this interpreter's target.
+  /// The returned offsets are valid for the lifetime of this interpreter.
+  std::optional<ArrayRef<int64_t>> getStructElementOffsets(
+      Type type, function_ref<std::optional<SmallVector<int64_t>>()> compute);
+
   /// Exchange memory references for interpreter memory references upon entering
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
@@ -355,6 +361,11 @@ private:
 
   /// The interpreter target configuration.
   TargetInfoAttr target;
+
+  // These immutable offsets stay valid after reset.
+  // Store offsets separately so recursive struct reads/writes can grow the map
+  // without invalidating a view into an enclosing struct's offsets.
+  DenseMap<Type, std::unique_ptr<SmallVector<int64_t>>> structElementOffsets;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Model
