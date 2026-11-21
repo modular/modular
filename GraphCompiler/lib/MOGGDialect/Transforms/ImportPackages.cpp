@@ -40,13 +40,13 @@
 #include "mlir/IR/Threading.h"
 #include "mlir/Parser/Parser.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/SourceMgr.h"
 #include <optional>
-#include <sstream>
 
 using namespace M;
 using namespace MOGG;
@@ -189,6 +189,7 @@ static mlir::StringAttr
 getFullyResolvedMojoName(KGEN::LIT::ASTDeclInterface op) {
   mlir::MLIRContext *ctx = op->getContext();
   llvm::SmallVector<std::string> names;
+  names.reserve(8);
   do {
     // A package's `__init__` is addressed by the package's own name, so it
     // contributes no component: `builtin_kernels.monoids.ReduceSum`, not
@@ -200,13 +201,15 @@ getFullyResolvedMojoName(KGEN::LIT::ASTDeclInterface op) {
   } while (
       (op = mlir::dyn_cast<KGEN::LIT::ASTDeclInterface>(op->getParentOp())));
 
-  std::stringstream ss;
-  ss << names.back();
+  llvm::SmallString<64> name;
+  name.append(names.back());
   names.pop_back();
-  for (auto name : llvm::reverse(names))
-    ss << "." << name;
+  for (const std::string &component : llvm::reverse(names)) {
+    name.push_back('.');
+    name.append(component);
+  }
 
-  return mlir::StringAttr::get(ctx, ss.str());
+  return mlir::StringAttr::get(ctx, name);
 }
 
 static mlir::StringAttr
@@ -941,12 +944,25 @@ struct ImportPackagesPass
       return StringRef(lhs.mojoName) < StringRef(rhs.mojoName);
     });
 
-    llvm::sort(primitives, [](const ScannedPrimitiveFunction &lhs,
-                              const ScannedPrimitiveFunction &rhs) {
-      auto lhsName = getFullyResolvedMojoName(lhs.func);
-      auto rhsName = getFullyResolvedMojoName(rhs.func);
-      return StringRef(lhsName) < StringRef(rhsName);
-    });
+    // Resolve each primitive's fully-qualified Mojo name once: building it in
+    // the comparator rebuilt a stringstream on every comparison.
+    SmallVector<std::pair<mlir::StringAttr, unsigned>> primitiveNames;
+    primitiveNames.reserve(primitives.size());
+    for (unsigned index = 0; index < primitives.size(); ++index)
+      primitiveNames.emplace_back(
+          getFullyResolvedMojoName(primitives[index].func), index);
+    llvm::sort(primitiveNames,
+               [](const std::pair<mlir::StringAttr, unsigned> &lhs,
+                  const std::pair<mlir::StringAttr, unsigned> &rhs) {
+                 return StringRef(lhs.first) < StringRef(rhs.first);
+               });
+    // Reorder `primitives` to match, so `primitiveNames[i]` stays the
+    // precomputed name of `primitives[i]`.
+    SmallVector<ScannedPrimitiveFunction> sortedPrimitives;
+    sortedPrimitives.reserve(primitives.size());
+    for (const auto &[name, index] : primitiveNames)
+      sortedPrimitives.push_back(primitives[index]);
+    primitives = std::move(sortedPrimitives);
 
     buildOpaqueTypeMapping(pkg, opaqueTypeMapping);
 
@@ -1243,14 +1259,15 @@ struct ImportPackagesPass
           /*sym_visibility=*/nullptr, sf.registration, *sfFunctionAttr));
     }
 
-    for (auto &prim : primitives) {
+    for (unsigned index = 0; index < primitives.size(); ++index) {
+      ScannedPrimitiveFunction &prim = primitives[index];
       llvm::StringRef registration = prim.registration.strref();
       if (!seenPrimitives.insert(registration).second)
         continue;
 
       // sym_name is the fully-qualified Mojo source name, as for KernelDeclOp,
       // so each primitive's Mojo function needs a unique one.
-      mlir::StringAttr symName = getFullyResolvedMojoName(prim.func);
+      mlir::StringAttr symName = primitiveNames[index].first;
       // Primitives are identified by registration string, so skip the
       // slot-name mapping (it fails for wrapper tensor structs like
       // ManagedTensorSlice). They accept any arguments, so skip the trait
