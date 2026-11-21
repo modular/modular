@@ -174,18 +174,66 @@ _EXTRA_CONSTRAINTS = {
     "test_topk_split_amd.mojo": ["//:mi355_gpu"],
     "test_cudnn_bindings.mojo": ["//:nvidia_gpu"],
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
+    "test_conv_gpu_residual_fallback.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
     # + chiplet/L2 swizzle; not compilable on other AMD parts.
+    "test_amd_4wave_conv_admission.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_dtypes.mojo": ["//:mi355_gpu"],
+    "test_amd_conv_filter_transpose.mojo": ["//:mi355_gpu"],
+    "test_amd_conv_rscf_direct.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_residual.mojo": ["//:mi355_gpu"],
+    # The wave-specialized conv2d kernels read DMA-to-LDS and the 16x16x32
+    # bf16 MFMA, both gfx950.
+    "test_amd_conv2d_ring.mojo": ["//:mi355_gpu"],
+    "test_amd_conv2d_ring_dispatch.mojo": ["//:mi355_gpu"],
     "test_attention_fp8_tail_stress_amd.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
     # `mhc_pre` projects on the gfx950-only bf16 16x16x32 MFMA.
     "test_mhc_pre.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_narrow_out.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_fp32_small_c.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_column.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_patch.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f96.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f96_epilogue.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_k1x5.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_k1x5_epilogue.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f192.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv2d_sm100_f192_epilogue.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -197,7 +245,27 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_conv3d_qslice_sm100_graph_replay.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv3d_sm100_col_umma.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv3d_sm100_tap_umma.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_conv3d_sm100_route.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
+    "test_conv_dgrad_fp32.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
     # Apple M5+ (cc>=5) FA2-prefill: the kernel uses the 16x16 simdgroup MMA
@@ -735,8 +803,11 @@ _GPU_MEMORY = {
     "attention/test_mha_sm100_ws_bm32.mojo": "3",
     "probe_block_scan_metal.mojo": "4",
     "test_amd_4wave_conv3d.mojo": "2",
+    "test_amd_4wave_conv_admission.mojo": "2",
     "test_amd_4wave_conv_miopen.mojo": "2",
     "test_amd_4wave_conv_residual.mojo": "2",
+    "test_amd_conv2d_ring.mojo": "2",
+    "test_amd_conv2d_ring_dispatch.mojo": "2",
     "test_amd_4wave_conv_rt_hw.mojo": "2",
     "test_apple_fa_prefill.mojo": "4",
     "test_apple_fa_softmax_unit.mojo": "4",

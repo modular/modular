@@ -43,9 +43,10 @@ onto their substrate:
 """
 
 from layout.tma_async import SharedMemBarrier
-from std.atomic import Atomic
+from std.atomic import Atomic, Ordering, fence
 from max.gpu import lane_id
-from std.sys._assembly import inlined_assembly
+from max.gpu.sync import s_waitcnt
+from std.sys import llvm_intrinsic
 
 comptime MbarPtr = MutPointer[
     SharedMemBarrier, MutUntrackedOrigin, address_space=.SHARED
@@ -336,13 +337,69 @@ comptime AmdCounterPtr = MutPointer[
 ]
 
 
+struct AmdCounterOptions(ImplicitlyCopyable, Movable):
+    """How `AmdCounterBackend` orders its signals and waits.
+
+    The defaults leave the data-before-signal fence to the caller and spin on
+    system-scope sequentially consistent counters.
+    """
+
+    var ordered: Bool
+    """The backend signals a slot itself, as one wave's memory work completes:
+    it first drains the wave's `s_waitcnt` counters, then adds with
+    workgroup-scope release (or, when only LDS threads' writes or reads
+    are being published, a wavefront fence and a relaxed add), and its waits
+    are workgroup-scope acquire loads. This is what a kernel whose waves hand
+    LDS slots to each other needs, with no barrier."""
+    var filled_by_dma: Bool
+    """With `ordered`: the producer's slot is filled by `buffer_load ... lds`,
+    so `arrive_full` also waits for the wave's `vmcnt`."""
+    var spin_sleep: Int
+    """The `s_sleep` argument between polls, 64 cycles a unit, so a waiting
+    wave leaves the LDS and the issue slots to the working ones."""
+    var spin_cap: Int
+    """Polls after which a wait traps, so a broken handoff fails instead of
+    hanging; 0 never traps."""
+
+    def __init__(
+        out self,
+        *,
+        ordered: Bool = False,
+        filled_by_dma: Bool = False,
+        spin_sleep: Int = 0,
+        spin_cap: Int = 0,
+    ):
+        self.ordered = ordered
+        self.filled_by_dma = filled_by_dma
+        self.spin_sleep = spin_sleep
+        self.spin_cap = spin_cap
+
+
+comptime _WorkgroupCounter = Atomic[Int64, scope="workgroup"]
+
+
 @always_inline
-def _amd_wait_for_counter(counter: AmdCounterPtr, threshold: Int64):
+def _amd_wait_for_counter[
+    options: AmdCounterOptions
+](counter: AmdCounterPtr, threshold: Int64):
     """Spin-wait until counter reaches threshold."""
-    while Atomic.load(counter) < threshold:
-        inlined_assembly[
-            "s_sleep 0", NoneType, constraints="", has_side_effect=True
-        ]()
+    var polls = 0
+    while True:
+        comptime if options.ordered:
+            if _WorkgroupCounter.load[ordering=Ordering.acquire](counter) >= (
+                threshold
+            ):
+                return
+        else:
+            if Atomic.load(counter) >= threshold:
+                return
+        llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](
+            Int32(options.spin_sleep)
+        )
+        comptime if options.spin_cap > 0:
+            polls += 1
+            if polls > options.spin_cap:
+                llvm_intrinsic["llvm.trap", NoneType]()
 
 
 @always_inline
@@ -358,9 +415,35 @@ def _amd_increment_if_warp_leader(counter: AmdCounterPtr):
         _ = Atomic.fetch_add(counter, Int64(1))
 
 
+@always_inline
+def _amd_signal_ordered[waits_for_loads: Bool](counter: AmdCounterPtr):
+    """Adds the wave to `counter` once its memory work is done.
+
+    Parameters:
+        waits_for_loads: The slot was filled by a DMA from device memory, so
+            `vmcnt` drains too and the add releases. Otherwise only LDS
+            operations are published, which a wave's LDS queue runs in order:
+            `lgkmcnt` drains and a wavefront fence orders a relaxed add.
+    """
+    comptime if waits_for_loads:
+        s_waitcnt[vmcnt=0, lgkmcnt=0]()
+        if lane_id() == 0:
+            _ = _WorkgroupCounter.fetch_add[ordering=Ordering.release](
+                counter, Int64(1)
+            )
+    else:
+        s_waitcnt[lgkmcnt=0]()
+        fence[Ordering.release, scope="wavefront"]()
+        if lane_id() == 0:
+            _ = _WorkgroupCounter.fetch_add[ordering=Ordering.relaxed](
+                counter, Int64(1)
+            )
+
+
 struct AmdCounterBackend[
     producer_arrivals: Int32,
     consumer_arrivals: Int32,
+    options: AmdCounterOptions = AmdCounterOptions(),
 ](PipelineBackend):
     """`PipelineBackend` using shared-memory atomic counters.
 
@@ -376,8 +459,11 @@ struct AmdCounterBackend[
     counts are comptime-known anyway (producer warps per slot / consumer warps
     per slot).
 
-    NOTE: the data-before-signal `s_waitcnt lgkmcnt(0)` fence is the CALLER's
-    responsibility — it cannot live here.
+    By default the data-before-signal `s_waitcnt lgkmcnt(0)` fence is the
+    CALLER's responsibility. With `options.ordered` the backend does it: each
+    `arrive_*` first drains the wave's own outstanding memory operations, which
+    is the one place that knows which counters to drain (see
+    `AmdCounterOptions`).
     """
 
     comptime BarrierStorage = AmdCounterPtr.T
@@ -390,6 +476,9 @@ struct AmdCounterBackend[
 
     @always_inline
     def __init__[num_stages: Int](out self, ptr: AmdCounterPtr):
+        comptime assert (
+            not Self.options.filled_by_dma or Self.options.ordered
+        ), "filled_by_dma only takes effect on an ordered ring"
         self.full = ptr
         self.empty = ptr.unsafe_offset(num_stages)
 
@@ -431,7 +520,7 @@ struct AmdCounterBackend[
         ticks: Optional[UInt32] = None
     ](self, stage: UInt32, phase: UInt32):
         # `ticks` are ignored on AMD.
-        _amd_wait_for_counter(
+        _amd_wait_for_counter[Self.options](
             self.full.unsafe_offset(Int(stage)),
             Int64(phase + 1) * Int64(Self.producer_arrivals),
         )
@@ -440,7 +529,7 @@ struct AmdCounterBackend[
     def wait_empty[
         ticks: Optional[UInt32] = None
     ](self, stage: UInt32, phase: UInt32):
-        _amd_wait_for_counter(
+        _amd_wait_for_counter[Self.options](
             self.empty.unsafe_offset(Int(stage)),
             Int64(phase - 1) * Int64(Self.consumer_arrivals),
         )
@@ -461,11 +550,19 @@ struct AmdCounterBackend[
 
     @always_inline
     def arrive_full(self, stage: UInt32):
-        _amd_increment_if_warp_leader(self.full.unsafe_offset(Int(stage)))
+        comptime if Self.options.ordered:
+            _amd_signal_ordered[Self.options.filled_by_dma](
+                self.full.unsafe_offset(Int(stage))
+            )
+        else:
+            _amd_increment_if_warp_leader(self.full.unsafe_offset(Int(stage)))
 
     @always_inline
     def arrive_empty(self, stage: UInt32):
-        _amd_increment_if_warp_leader(self.empty.unsafe_offset(Int(stage)))
+        comptime if Self.options.ordered:
+            _amd_signal_ordered[False](self.empty.unsafe_offset(Int(stage)))
+        else:
+            _amd_increment_if_warp_leader(self.empty.unsafe_offset(Int(stage)))
 
     @always_inline
     def full_handle(self, stage: UInt32) -> Self.Handle:

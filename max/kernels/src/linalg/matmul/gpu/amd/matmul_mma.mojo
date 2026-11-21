@@ -24,6 +24,8 @@ Data-movement primitives (TileLoaderLDS, _load_from_lds, load_lds_fragment)
 live in structured_kernels.amd_tile_io.
 """
 
+from std.sys import size_of
+
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu import lane_id, WARP_SIZE
 from layout import TensorLayout, TileTensor
@@ -32,6 +34,7 @@ from layout.tensor_core import num_matrix_reg
 from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from structured_kernels.amd_tile_io import SMemTile, load_lds_fragment
+from structured_kernels.amd_tile_io_conv import load_rscf_b_fragments
 
 
 # ===----------------------------------------------------------------------=== #
@@ -186,6 +189,41 @@ struct QuadrantMmaOp[
         comptime reg_cols = Self.num_k_mmas * Self._mma_frag_width
         var reg_quad = self._b_reg.tile[Self.quad_n, reg_cols](which, 0)
         load_lds_fragment[Self.MMA_K, Self.swizzle](smem_tile, reg_quad)
+
+    @inline(.always)
+    def load_b_quadrant_rscf[
+        which: Int, tile_n: Int
+    ](
+        self,
+        smem: Pointer[Scalar[Self.in_type], address_space=.SHARED, ...],
+        pair0: Int,
+    ):
+        """Load B quadrant `which` from a K-major `[BK][tile_n]` LDS sub-tile.
+
+        The transposing counterpart of `load_b_quadrant` for a filter that was
+        DMA'd as stored (RSCF, `N` contiguous) rather than repacked to FRSC.
+        Fills the same register fragments, so `mma_quadrant` is unchanged.
+
+        Parameters:
+            which: Quadrant index selecting which half of the B register
+                tile to fill.
+            tile_n: Row length of the LDS sub-tile in elements.
+
+        Args:
+            smem: Start of the LDS sub-tile for this quadrant.
+            pair0: Index of the first 32-byte (16 element) column pair this
+                warp reads.
+        """
+        comptime assert (
+            Self.MMA_N == 16
+            and Self.MMA_K == 32
+            and size_of[Self.in_type]() == 2
+        ), "RSCF B fragments are built for 16x16x32 16-bit MFMA"
+        comptime reg_cols = Self.num_k_mmas * Self._mma_frag_width
+        var reg_quad = self._b_reg.tile[Self.quad_n, reg_cols](which, 0)
+        load_rscf_b_fragments[tile_n, Self.num_k_mmas, Self.quad_n](
+            smem, reg_quad, pair0
+        )
 
     @inline(.always)
     def mma_quadrant[which_a: Int, which_b: Int](self):

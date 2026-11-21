@@ -204,9 +204,7 @@ def test_conv[
             mismatches += 1
     if mismatches > 0:
         print(t"  FAIL: {mismatches} / {M_total * C_out} differ")
-        raise Error(
-            String(a_type) + " amd_4wave_conv != structured_4wave_matmul"
-        )
+        raise Error(t"{a_type} amd_4wave_conv != structured_4wave_matmul")
     print("  PASS:", M_total * C_out, "elements byte-identical")
 
 
@@ -289,6 +287,22 @@ def main() raises:
             pad_h=1,
             pad_w=1,
             label="3x3-Cin64-perlane",
+        ](ctx)
+
+        # Exercise the C96/F96 3x3 arithmetic shape for every test dtype.
+        test_conv[
+            IN_DTYPE,
+            OUT_DTYPE,
+            N_batch=1,
+            H=16,
+            W=16,
+            C_in=96,
+            C_out=96,
+            R=3,
+            S=3,
+            pad_h=1,
+            pad_w=1,
+            label="3x3-Cin96-Cout96",
         ](ctx)
 
         # ----- 3×3 dilation=2 pad=2 (dilation > 1) -----

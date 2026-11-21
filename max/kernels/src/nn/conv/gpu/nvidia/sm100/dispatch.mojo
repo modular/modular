@@ -121,13 +121,15 @@ def test_alignment_sm100_conv2d[
     """Checks whether the input and output channel counts meet SM100 conv2d alignment requirements.
 
     Returns True when the input activation row is 64-byte aligned and the
-    output row is 4-byte aligned, otherwise False.
+    output row is 16-byte aligned, otherwise False. The output row is the
+    global stride of the output (and residual) TMA descriptor, which
+    `cuTensorMapEncodeTiled` rejects unless it is a multiple of 16 bytes.
 
     Parameters:
         input_type: Element type of the input activation tensor, used to
             compute the per-row byte width for the 64-byte alignment check.
         output_type: Element type of the output tensor, used to compute the
-            per-row byte width for the 4-byte alignment check.
+            per-row byte width for the 16-byte alignment check.
 
     Args:
         in_channels: Number of input channels per activation row.
@@ -138,7 +140,7 @@ def test_alignment_sm100_conv2d[
     """
     return (in_channels * size_of[input_type]()) % 64 == 0 and (
         out_channels * size_of[output_type]()
-    ) % 4 == 0
+    ) % 16 == 0
 
 
 def dispatch_sm100_conv2d[
@@ -213,6 +215,13 @@ def dispatch_sm100_conv2d[
 
     comptime if input_type == .bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
+        from .conv2d_column_fprop import conv2d_column_dispatch
+        from .conv2d_f192_fprop import conv2d_f192_dispatch
+        from .conv2d_f96_fprop import (
+            conv2d_f96_fprop,
+            conv2d_f96_supported,
+        )
+        from .conv2d_k1x5_fprop import conv2d_k1x5_dispatch
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 
         # Extract dimensions
@@ -234,10 +243,70 @@ def dispatch_sm100_conv2d[
             fh = Int(filter.dim[0]())
             fw = Int(filter.dim[1]())
 
+        # The 1x5 Conv1D and the 192 -> 192 channel 3x3 shapes read or pack the
+        # caller's filter layout themselves, so they are tried before the
+        # shared transpose below. Each fuses the residual, the storing
+        # epilogue and the compute epilogue itself.
+        comptime if input_type == output_type and input_type == filter_type:
+            if conv2d_k1x5_dispatch[
+                filter_is_fcrs,
+                has_residual=has_residual,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
+                input,
+                filter,
+                output,
+                symmetric_padding[0],
+                symmetric_padding[1],
+                ctx,
+                source_ptr,
+                beta,
+                epilogue_fn,
+                compute_fn,
+            ):
+                return
+            if conv2d_f192_dispatch[
+                filter_is_fcrs,
+                has_residual=has_residual,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
+                input,
+                filter,
+                output,
+                symmetric_padding[0],
+                symmetric_padding[1],
+                ctx,
+                source_ptr,
+                beta,
+                epilogue_fn,
+                compute_fn,
+            ):
+                return
+            if conv2d_column_dispatch[
+                filter_is_fcrs,
+                has_residual=has_residual,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+                nhwc_coords=False,
+            ](
+                input,
+                filter,
+                output,
+                symmetric_padding[0],
+                symmetric_padding[1],
+                ctx,
+                source_ptr,
+                beta,
+                epilogue_fn,
+                compute_fn,
+            ):
+                return
+
         # Transpose filter to KRSC layout
         var filter_size = filter.num_elements()
         var filter_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
-        var filter_krsc_ptr = filter_buf.unsafe_ptr()
 
         comptime transpose_block = 256
         var grid = ceildiv(filter_size, transpose_block)
@@ -255,7 +324,7 @@ def dispatch_sm100_conv2d[
             ]
             ctx.enqueue_function[transpose_kernel](
                 filter.as_imm(),
-                filter_krsc_ptr,
+                filter_buf.unsafe_ptr(),
                 Int32(F),
                 Int32(C),
                 Int32(R),
@@ -279,7 +348,7 @@ def dispatch_sm100_conv2d[
             ]
             ctx.enqueue_function[transpose_kernel](
                 filter.as_imm(),
-                filter_krsc_ptr,
+                filter_buf.unsafe_ptr(),
                 Int32(R),
                 Int32(S),
                 Int32(C),
@@ -305,11 +374,39 @@ def dispatch_sm100_conv2d[
         )
 
         var act_tt = input.reshape(row_major(batch, in_h, in_w, in_c))
+        # Built from the buffer, not its address, so the scratch stays alive
+        # until the convolution that reads it is enqueued.
         var filter_tt = TileTensor(
-            filter_krsc_ptr,
+            filter_buf,
             row_major(out_c, fh, fw, in_c),
         )
         var out_tt = output.reshape(row_major(batch, out_h, out_w, out_c))
+
+        # The 192 -> 96 channel 3x3 family has its own kernel, which fuses the
+        # residual, the storing epilogue and the compute epilogue itself.
+        comptime if input_type == output_type and input_type == filter_type:
+            if conv2d_f96_supported[input_type](problem, ctx):
+                conv2d_f96_fprop[
+                    input_type,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                    has_residual=has_residual,
+                ](
+                    out_tt,
+                    act_tt,
+                    filter_tt,
+                    problem,
+                    ctx,
+                    rebind[
+                        OptionalReg[
+                            MutPointer[Scalar[input_type], MutAnyOrigin]
+                        ]
+                    ](source_ptr),
+                    beta,
+                    epilogue_fn,
+                    compute_fn,
+                )
+                return
 
         # Pick activation/filter swizzle based on C_in alignment. SWIZZLE_128B
         # requires the inner C-row to be 128B-aligned; SWIZZLE_64B relaxes that

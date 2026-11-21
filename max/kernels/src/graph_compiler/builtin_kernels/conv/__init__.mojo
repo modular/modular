@@ -60,6 +60,7 @@ from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
 from std.logger import Logger
+from std.sys import size_of
 
 comptime logger = Logger()
 
@@ -743,6 +744,9 @@ struct ConvGPU:
     `conv_gpu` write the output directly. The pair is grandfathered on the
     graph compiler's allow list; new kernels declare one `execute` with a
     `StoreAccess` output.
+
+    On NVIDIA, `conv_gpu` runs a dedicated kernel when one serves the
+    convolution and falls back to cuDNN otherwise.
     """
 
     @staticmethod
@@ -776,7 +780,10 @@ struct ConvGPU:
         def output_fn[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
         ](coords: Coord, val: SIMD[_dtype, _width]) {var out_view}:
-            out_view.store[width=Int(_width), element_alignment=_alignment](
+            out_view.store[
+                width=Int(_width),
+                element_alignment=max(1, _alignment // size_of[_dtype]()),
+            ](
                 coords,
                 rebind[SIMD[type_of(out_view).dtype, Int(_width)]](val),
             )
@@ -924,7 +931,10 @@ struct Conv2dResidualAdd:
                 ]()
                 result = val + bias_vec.cast[_dtype]()
 
-            out_view.store[width=Int(_width), element_alignment=_alignment](
+            out_view.store[
+                width=Int(_width),
+                element_alignment=max(1, _alignment // size_of[_dtype]()),
+            ](
                 coords,
                 rebind[SIMD[type_of(out_view).dtype, Int(_width)]](result),
             )
@@ -1145,9 +1155,10 @@ struct ConvTransposeCPU:
         def output_fn[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
         ](coords: Coord, val: SIMD[_dtype, _width]) {var output}:
-            output.store[width=Int(_width), element_alignment=_alignment](
-                coords, rebind[SIMD[dtype, Int(_width)]](val)
-            )
+            output.store[
+                width=Int(_width),
+                element_alignment=max(1, _alignment // size_of[_dtype]()),
+            ](coords, rebind[SIMD[dtype, Int(_width)]](val))
 
         var scratch_buf = ctx.enqueue_create_buffer[dtype](
             Int(output.shape().product())
@@ -1249,6 +1260,9 @@ struct ConvTransposeGPU:
     form has cuDNN write the output directly. The pair is grandfathered on the
     graph compiler's allow list; new kernels declare one `execute` with a
     `StoreAccess` output.
+
+    On NVIDIA, `conv_transposed_gpu` runs the dedicated `conv_dgrad_fp32`
+    kernel where it serves the geometry and falls back to cuDNN otherwise.
     """
 
     @staticmethod
@@ -1285,7 +1299,10 @@ struct ConvTransposeGPU:
         def output_fn[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
         ](coords: Coord, val: SIMD[_dtype, _width]) {var out_view}:
-            out_view.store[width=Int(_width), element_alignment=_alignment](
+            out_view.store[
+                width=Int(_width),
+                element_alignment=max(1, _alignment // size_of[_dtype]()),
+            ](
                 coords,
                 rebind[SIMD[type_of(out_view).dtype, Int(_width)]](val),
             )
