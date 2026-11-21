@@ -738,3 +738,57 @@ def test_inferred_member_runtime_arg(level: Int):
     # CHECK: %[[C:[0-9]+]] = lit.ref.immut %[[TMP]]
     # CHECK: lit.call @call_emission::@"paint(call_emission::Color)"{{.*}}(%[[C]])
     paint(.gray(level))
+
+
+# CHECK-LABEL: lit.fn @"test_inferred_member_ifelse_arg
+def test_inferred_member_ifelse_arg(flag: Bool, level: Int):
+    # Both branches get `paint`'s parameter type; the condition is emitted once.
+    # CHECK: lit.call {{.*}}__mlir_bool__{{.*}}(%flag)
+    # CHECK-NOT: __mlir_bool__
+    # CHECK: hlcf.if
+    # CHECK: lit.call @call_emission::@Color::@"gray({{.*}}"{{.*}}(%level,
+    # CHECK: } else {
+    # CHECK: lit.call @call_emission::@Color::@"gray({{.*}}"
+    # CHECK: lit.call @call_emission::@"paint(call_emission::Color)"
+    paint(.gray(level) if flag else .gray(0))
+
+
+@fieldwise_init
+struct ColorBox:
+    var color: Color
+
+    def get(ref self) -> ref[self.color] Color:
+        return self.color
+
+
+# CHECK-LABEL: lit.fn @"test_inferred_member_assign_through_ref
+def test_inferred_member_assign_through_ref(mut box: ColorBox, level: Int):
+    # `.gray` gets its type from the `ref` result and writes straight into it.
+    # CHECK: %[[REF:[0-9]+]] = lit.call {{.*}}@ColorBox::@"get{{.*}}(%box)
+    # CHECK-NEXT: lit.call {{.*}}@Color::@"gray({{.*}}"{{.*}}(%level, %[[REF]])
+    box.get() = .gray(level)
+
+
+def overloaded_fn(x: Int) -> Int:
+    return x
+
+
+def overloaded_fn(x: String) -> String:
+    return x
+
+
+@fieldwise_init
+struct FnBox:
+    var f: def(Int) thin -> Int
+
+    def get(ref self) -> ref[self.f] def(Int) thin -> Int:
+        return self.f
+
+
+# CHECK-LABEL: lit.fn @"test_overloaded_fn_assign_through_ref
+def test_overloaded_fn_assign_through_ref(mut box: FnBox):
+    # The `ref` result type picks the overload, as in `box.f = overloaded_fn`.
+    # CHECK: %[[REF:[0-9]+]] = lit.call {{.*}}@FnBox::@"get{{.*}}(%box)
+    # CHECK-NEXT: %[[FN:[0-9]+]] = kgen.create_func_ptr{{.*}}@call_emission::@"overloaded_fn(::SIMD[DType.int, 1])"
+    # CHECK-NEXT: lit.ref.store %[[FN]], %[[REF]]
+    box.get() = overloaded_fn

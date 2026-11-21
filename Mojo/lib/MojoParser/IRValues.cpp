@@ -744,7 +744,7 @@ static const ExprNode *resolveInferredBaseAttrRef(const ExprNode *expr,
   // Note: the type checker has a fixed grammar of nodes that can be converted
   // into an InferredBaseAttrRefUValue.  This does not (and should not) cover
   // all theoretical nodes, basically just those that form attribute references
-  // and static method calls.
+  // and static method calls, or a conditional that chooses between them.
   switch (expr->kind) {
   case ExprNode::kInferredAttributeRef: {
     auto &inferred = *cast<InferredAttributeRefNode>(expr);
@@ -790,6 +790,16 @@ static const ExprNode *resolveInferredBaseAttrRef(const ExprNode *expr,
     return shared.stmtAllocator.create<ParenNode>(paren.lparenLoc, newSub,
                                                   paren.rparenLoc);
   }
+  case ExprNode::kIfElse: {
+    // Resolve both branches (e.g. `.red if c else .blue`); keep the condition.
+    auto &ifElse = *cast<IfElseOpNode>(expr);
+    auto *newTrue = const_cast<ExprNode *>(
+        resolveInferredBaseAttrRef(ifElse.trueExpr, expectedType, shared));
+    auto *newFalse = const_cast<ExprNode *>(
+        resolveInferredBaseAttrRef(ifElse.falseExpr, expectedType, shared));
+    return shared.stmtAllocator.create<IfElseOpNode>(
+        newTrue, ifElse.ifLoc, ifElse.condExpr, ifElse.elseLoc, newFalse);
+  }
   default:
     llvm_unreachable("unexpected expression in resolveInferredBaseAttrRef");
   }
@@ -799,6 +809,13 @@ CValue InferredBaseAttrRefUValue::emitAsCValue(IREmitter &emitter,
                                                ExprDest &dest) {
   // If we have the inferred contextual type, resolve this expression.
   ASTType expectedType = dest.getExpectedTypeIfSpecified();
+  // An un-emitted assignment target, like `b.get()` in `b.get() = .blue()`,
+  // may supply the type.  A failed emit reports an error and clears `dest`.
+  if (!expectedType && dest.getLValueExprNode()) {
+    expectedType = dest.resolveImpliedType(expr->getLoc(), Type(), emitter);
+    if (!expectedType && !dest.isSpecified())
+      return {};
+  }
   if (!expectedType) {
     emitter.emitError(expr->getLoc(), "cannot resolve inferred member "
                                       "without a contextual type");
