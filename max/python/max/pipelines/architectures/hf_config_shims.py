@@ -1515,3 +1515,50 @@ register_config_generator(
     "derive_hf_config",
     params_keys=frozenset({"nope", "dsa", "kv_sharing", "ssmax_scaling"}),
 )
+
+
+# The `inkling2` type is registered above from transformers' own class when the
+# release ships one and from the shim otherwise, so the looped checkpoint
+# subclasses whichever is in force: a run whose transformers predates the family
+# would otherwise skip this registration silently. `AutoConfig.register` will
+# not bind one class to a second name, hence a subclass rather than a second
+# registration of the same class.
+try:
+    from transformers import Inkling2Config as _Inkling2Base
+except ImportError:
+    _Inkling2Base = _Inkling2HFConfig
+
+
+class Inkling2LoopHFConfig(_Inkling2Base):
+    """The looped Inkling 2 checkpoint: the same fields plus `loop_config`."""
+
+    model_type = "inkling2_loop"
+
+    @classmethod
+    def from_dict(
+        cls, config_dict: dict[str, Any], **kwargs: Any
+    ) -> "Inkling2LoopHFConfig":
+        """Nests both blocks, whichever base class is in force.
+
+        The shim above nests them in ``__init__``. A transformers release that
+        ships ``Inkling2Config`` does not, so the very same checkpoint arrives
+        with ``text_config`` a plain mapping there. The looped readers take
+        attributes off that block, so this class always leaves here with
+        configs, aliases applied.
+        """
+        config = super().from_dict(config_dict, **kwargs)
+        for name, aliases in (
+            ("text_config", _Inkling2HFConfig.text_aliases),
+            ("vision_config", _Inkling2HFConfig.vision_aliases),
+        ):
+            block = getattr(config, name, None)
+            if isinstance(block, Mapping):
+                setattr(
+                    config,
+                    name,
+                    PretrainedConfig(**_with_aliases(block, aliases)),
+                )
+        return config
+
+
+AutoConfig.register("inkling2_loop", Inkling2LoopHFConfig, exist_ok=True)

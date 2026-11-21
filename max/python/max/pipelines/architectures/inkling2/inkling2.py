@@ -49,6 +49,7 @@ from max.tensor.sharding import (
 
 from .layers.attn_res import AttnResQueries, attn_res_mix
 from .layers.decoder_layer import Inkling2DecoderLayer
+from .layers.loop import loop_bank_messages, scaled_loop_queries
 from .layers.norm import Inkling2RMSNorm
 from .layers.placement import as_replicated
 from .layers.short_convolution import LayerConvState, SiteState
@@ -142,34 +143,63 @@ class Inkling2(Module[..., DecoderOutputs]):
         self.attn_res = AttnResQueries(
             hidden_size=text_config.hidden_size,
             num_layers=text_config.num_hidden_layers,
-            is_local=self.conv_layout.is_local,
+            is_local=tuple(
+                text_config.is_local_attention(layer_idx)
+                for layer_idx in range(text_config.num_hidden_layers)
+            ),
         )
+        loop = text_config.loop_config
+        if loop is not None:
+            # One query row pair per core layer: the bank reads them on every
+            # pass, and the passes differ only in what the bank holds.
+            self.middle_cycle_cross_pass_queries = Tensor.zeros(
+                [2 * len(loop.core_layer_ids), text_config.hidden_size],
+                dtype=DType.float32,
+            )
+            self.middle_cycle_cross_pass_kv_queries = Tensor.zeros(
+                [2 * len(loop.core_layer_ids), text_config.hidden_size],
+                dtype=DType.float32,
+            )
 
         layers = []
+        for layer_idx in range(text_config.num_hidden_layers):
+            layers.append(
+                Inkling2DecoderLayer(
+                    text_config=text_config,
+                    layer_idx=layer_idx,
+                    kv_params=kv_params[
+                        LOCAL_ATTENTION
+                        if text_config.is_local_attention(layer_idx)
+                        else GLOBAL_ATTENTION
+                    ],
+                    num_devices=self.num_devices,
+                    device=config.devices[0],
+                    expert_format=config.expert_formats[layer_idx],
+                    use_subgraphs=config.use_subgraphs,
+                    loop_rank=(
+                        loop.gate_rank
+                        if loop is not None and loop.is_core_layer(layer_idx)
+                        else None
+                    ),
+                )
+            )
+        self.layers = ModuleList(layers)
+
+        # A looped core layer visits its KV and conv rows once per pass, so it
+        # is the visit list, not the layer list, that the caches index.
+        self.visit_layer_ids = text_config.visit_layer_ids()
         self.layer_kv_keys: list[str] = []
         self.layer_cache_indices: list[int] = []
         layers_in_cache = {GLOBAL_ATTENTION: 0, LOCAL_ATTENTION: 0}
-        for layer_idx in range(text_config.num_hidden_layers):
+        for layer_idx in self.visit_layer_ids:
             kv_key = (
                 LOCAL_ATTENTION
                 if text_config.is_local_attention(layer_idx)
                 else GLOBAL_ATTENTION
             )
-            layers.append(
-                Inkling2DecoderLayer(
-                    text_config=text_config,
-                    layer_idx=layer_idx,
-                    kv_params=kv_params[kv_key],
-                    num_devices=self.num_devices,
-                    device=config.devices[0],
-                    expert_format=config.expert_formats[layer_idx],
-                    use_subgraphs=config.use_subgraphs,
-                )
-            )
             self.layer_kv_keys.append(kv_key)
             self.layer_cache_indices.append(layers_in_cache[kv_key])
             layers_in_cache[kv_key] += 1
-        self.layers = ModuleList(layers)
 
         self.norm = Inkling2RMSNorm(
             text_config.hidden_size, eps=text_config.rms_norm_eps
@@ -310,13 +340,43 @@ class Inkling2(Module[..., DecoderOutputs]):
                 ),
                 mesh,
             )
+        loop = text_config.loop_config
+        core = () if loop is None else loop.core_layer_ids
+        core_set = set(core)
+        queries = (
+            None
+            if loop is None
+            else scaled_loop_queries(
+                self.middle_cycle_cross_pass_queries,
+                self.middle_cycle_cross_pass_kv_queries,
+                text_config.hidden_size,
+            )
+        )
+        entry: tuple[Tensor, list[Tensor]] | None = None
+        entry_blocks = 0
+        bank: list[Tensor] | None = None
+        seen_taps: set[int] = set()
         blocks: list[Tensor] = []
         tapped: list[Tensor] = []
-        for layer_idx, layer in enumerate(self.layers):
-            if layer_idx in taps:
+        for visit_idx, layer_idx in enumerate(self.visit_layer_ids):
+            if core and layer_idx == core[0]:
+                # Every pass restarts from the prelude's own state: the only
+                # thing a pass inherits is the bank.
+                entry = (h, list(blocks)) if entry is None else entry
+                entry_blocks = len(entry[1])
+                h, blocks = entry[0], list(entry[1])
+            messages: list[Tensor] | None = None
+            if bank is not None and layer_idx in core_set:
+                assert queries is not None
+                messages = loop_bank_messages(
+                    bank, queries[layer_idx - core[0]]
+                )
+            if layer_idx in taps and layer_idx not in seen_taps:
                 tapped.append(h)
+                seen_taps.add(layer_idx)
+            layer = self.layers[layer_idx]
             sites = [
-                self.conv_layout.row_for(layer_idx, site) for site in ConvSite
+                self.conv_layout.row_for(visit_idx, site) for site in ConvSite
             ]
             conv = LayerConvState(
                 *(
@@ -335,17 +395,23 @@ class Inkling2(Module[..., DecoderOutputs]):
                 if layer_idx > 0
                 else None,
                 self.attn_res.mlp_queries[layer_idx],
-                kv_collections[self.layer_kv_keys[layer_idx]],
+                kv_collections[self.layer_kv_keys[visit_idx]],
                 input_row_offsets,
                 positions,
                 tau,
                 conv,
                 F.constant(
-                    self.layer_cache_indices[layer_idx],
+                    self.layer_cache_indices[visit_idx],
                     DType.uint32,
                     device=CPU(),
                 ),
+                messages,
             )
+            if core and layer_idx == core[-1]:
+                # The bank holds the blocks the core closed after its own first
+                # layer, then the partial: the first core layer re-closes the
+                # prelude's sum, which the bank does not carry twice.
+                bank = [*blocks[entry_blocks + 1 :], h]
         if num_layers in taps:
             tapped.append(self.final_hidden(blocks, h))
         return LayerOutputs(

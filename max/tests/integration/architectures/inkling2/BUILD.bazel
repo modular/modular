@@ -28,6 +28,22 @@ modular_py_test(
     ],
 )
 
+# Guards architectures/inkling2/model_config.py's loop config: the visit order
+# a looped core puts the decoder in, the per-visit counts both caches are
+# sized from, the loops it refuses, the weights-vs-config guard, and the fact
+# that an unlooped checkpoint keeps Small's walk. Pure config arithmetic, no
+# graph.
+modular_py_test(
+    name = "test_loop_config",
+    size = "small",
+    srcs = ["test_loop_config.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
 # Guards architectures/inkling2/dspark.py against the checkpoint it loads:
 # Module.compile drops a weight no parameter matches, so the drafter's
 # parameters and mtp.safetensors' header must agree both ways.

@@ -59,9 +59,9 @@ class ConvStateLayout:
 
     layers: tuple[tuple[int, int, int, int], ...]
     is_local: tuple[bool, ...]
-    """Which layers are sliding-window, in :attr:`layers` order. A layer's K
-    and V widths follow this, so it also splits the pool into uniformly shaped
-    leaves."""
+    """Which layer visits are sliding-window, in :attr:`layers` order. A
+    visit's K and V widths follow this, so it also splits the pool into
+    uniformly shaped leaves."""
 
     @property
     def kinds(self) -> tuple[bool, ...]:
@@ -71,7 +71,7 @@ class ConvStateLayout:
         )
 
     def layers_of_kind(self, is_local: bool) -> tuple[int, ...]:
-        """Layer indices of one kind, in order."""
+        """Visit indices of one kind, in order."""
         return tuple(
             idx for idx, local in enumerate(self.is_local) if local == is_local
         )
@@ -96,14 +96,14 @@ class ConvStateLayout:
             for first in (self.layers_of_kind(is_local)[0],)
         )
 
-    def row_for(self, layer_idx: int, site: ConvSite) -> tuple[int, int]:
-        """Returns the leaf a layer's site lives in, and its row within it.
+    def row_for(self, visit_idx: int, site: ConvSite) -> tuple[int, int]:
+        """Returns the leaf a visit's site lives in, and its row within it.
 
         The leaf is a position among :meth:`regions`, which is how a device's
         ``leaves`` tuple is addressed.
         """
-        is_local = self.is_local[layer_idx]
-        ordinal = self.layers_of_kind(is_local).index(layer_idx)
+        is_local = self.is_local[visit_idx]
+        ordinal = self.layers_of_kind(is_local).index(visit_idx)
         leaf = self.kinds.index(is_local) * len(ConvSite) + int(site)
         return leaf, ordinal
 
@@ -123,8 +123,8 @@ class ConvStateLayout:
         the accepted history does not occupy.
         """
         is_local = tuple(
-            text_config.is_local_attention(i)
-            for i in range(text_config.num_hidden_layers)
+            text_config.is_local_attention(layer_idx)
+            for layer_idx in text_config.visit_layer_ids()
         )
         # The residual sites are not channel-sharded: each rank convolves a
         # full-width partial sum and the ranks are summed afterwards.

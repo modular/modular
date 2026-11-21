@@ -64,7 +64,11 @@ class AttnResQueries(Module[[], None]):
 
 
 def attn_res_mix(
-    sources: Sequence[Tensor], queries: Tensor, *, normalize_values: bool
+    sources: Sequence[Tensor],
+    queries: Tensor,
+    *,
+    normalize_values: bool,
+    queries_are_scaled: bool = False,
 ) -> list[Tensor]:
     """Mixes the sources once for each query row, in float32.
 
@@ -76,6 +80,9 @@ def attn_res_mix(
             ``[tokens, hidden]``.
         queries: ``[hidden]`` or ``[num_queries, hidden]`` float32.
         normalize_values: Whether the mixture averages the normalized sources.
+        queries_are_scaled: Whether ``queries`` already carry
+            ``hidden ** -0.5``. The looped checkpoints scale their message
+            queries once, upstream, so this mix must not scale them again.
 
     Returns:
         One float32 ``[tokens, hidden]`` mixture per query row.
@@ -87,7 +94,9 @@ def attn_res_mix(
     values = normed if normalize_values else stack
     mixes = []
     for row in range(int(queries.shape[0])):
-        scores = (normed * queries[row]).sum(axis=-1) * hidden**-0.5
+        scores = (normed * queries[row]).sum(axis=-1)
+        if not queries_are_scaled:
+            scores = scores * hidden**-0.5
         probs = F.softmax(scores, axis=1)
         mixes.append((probs * values).sum(axis=1).squeeze(1))
     return mixes

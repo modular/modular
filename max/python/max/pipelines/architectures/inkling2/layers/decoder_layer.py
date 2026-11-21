@@ -27,6 +27,7 @@ from max.tensor import Tensor
 from ..model_config import ExpertFormat, Inkling2TextConfig
 from .attention import Inkling2Attention
 from .attn_res import attn_res_mix, attn_res_mix_norm, can_fuse_mix_norm
+from .loop import Inkling2MessageControllers
 from .moe import Inkling2MoE
 from .norm import Inkling2RMSNorm
 from .placement import as_partial, reduce_partial
@@ -125,6 +126,7 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         device: DeviceRef,
         expert_format: ExpertFormat,
         use_subgraphs: bool,
+        loop_rank: int | None = None,
     ) -> None:
         self.is_local = text_config.is_local_attention(layer_idx)
         self.is_block_boundary = text_config.is_block_boundary(layer_idx)
@@ -144,6 +146,12 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         )
         hidden = text_config.hidden_size
         eps = text_config.rms_norm_eps
+        # Only a loop core layer reads a bank, so only it carries controllers.
+        self.controllers = (
+            None
+            if loop_rank is None
+            else Inkling2MessageControllers(hidden, loop_rank)
+        )
         if self.is_local:
             self.attn_norm = Inkling2RMSNorm(hidden, eps=eps)
         else:
@@ -174,13 +182,25 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         )
 
     def _attention_inputs(
-        self, h: Tensor, blocks: Sequence[Tensor], attn_query: Tensor | None
+        self,
+        h: Tensor,
+        blocks: Sequence[Tensor],
+        attn_query: Tensor | None,
+        messages: Sequence[Tensor] | None,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Returns the normalized q, k and v inputs of the attention."""
+        """Returns the normalized q, k and v inputs of the attention.
+
+        A looped pass mixes the bank's messages into the streams before the
+        norms, which is why the fused mixture-and-norm op is unavailable then.
+        """
         if attn_query is None:
             # Layer 0 reads the embeddings, with no mixture.
             mixes = [h] * (1 if self.is_local else 3)
-        elif _FUSED_MIX_NORM and can_fuse_mix_norm(blocks, h):
+        elif (
+            messages is None
+            and _FUSED_MIX_NORM
+            and can_fuse_mix_norm(blocks, h)
+        ):
             norms = (
                 [self.attn_norm]
                 if self.is_local
@@ -207,6 +227,30 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
                 attn_query,
                 normalize_values=self.normalize_values,
             )
+        if messages is not None:
+            assert self.controllers is not None
+            streams = [mixes[0]] * 3 if self.is_local else mixes
+            # Rows 0..2 are attn, k and v; row 3 belongs to the MLP input.
+            mixed = [
+                controller(stream, message)
+                for controller, stream, message in zip(
+                    (
+                        self.controllers.attn,
+                        self.controllers.k,
+                        self.controllers.v,
+                    ),
+                    streams,
+                    messages[:3],
+                    strict=True,
+                )
+            ]
+            norms = (
+                [self.attn_norm] * 3
+                if self.is_local
+                else [self.q_input_norm, self.k_input_norm, self.v_input_norm]
+            )
+            xs = [norm(x) for norm, x in zip(norms, mixed, strict=True)]
+            return xs[0], xs[1], xs[2]
         if self.is_local:
             x = self.attn_norm(mixes[0])
             return x, x, x
@@ -228,6 +272,7 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         tau: Tensor,
         conv: LayerConvState,
         cache_layer_idx: Tensor,
+        loop_messages: Sequence[Tensor] | None = None,
     ) -> tuple[Tensor, list[Tensor]]:
         """Runs the layer over one ragged batch.
 
@@ -242,13 +287,17 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             tau: ``[tokens]`` float32 log-scaling factor.
             conv: This layer's conv rings.
             cache_layer_idx: The layer's index within its cache group.
+            loop_messages: The bank's four messages on a looped pass, or
+                ``None`` on the first pass and on every unlooped layer.
 
         Returns:
             The new partial sum and the stored blocks. A block boundary adds
             this layer's input to the blocks and restarts the partial sum at
             the attention output.
         """
-        x_q, x_k, x_v = self._attention_inputs(h, blocks, attn_query)
+        x_q, x_k, x_v = self._attention_inputs(
+            h, blocks, attn_query, loop_messages
+        )
         attend = (
             self.attn_site
             if self.attn_subgraph is None
@@ -268,7 +317,13 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         )
         if self.is_block_boundary:
             blocks = [*blocks, h]
-        if _FUSED_MIX_NORM and can_fuse_mix_norm(blocks, residual):
+        # The fused mix reads the mixture without the loop bank's controller,
+        # so a looped pass takes the unfused path that applies it.
+        if (
+            _FUSED_MIX_NORM
+            and loop_messages is None
+            and can_fuse_mix_norm(blocks, residual)
+        ):
             mlp_input = attn_res_mix_norm(
                 blocks,
                 residual,
@@ -284,6 +339,9 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
                 mlp_query,
                 normalize_values=self.normalize_values,
             )
+            if loop_messages is not None:
+                assert self.controllers is not None
+                mixed = self.controllers.mlp(mixed, loop_messages[3])
             mlp_input = self.mlp_norm(mixed)
         mlp = (
             self.mlp

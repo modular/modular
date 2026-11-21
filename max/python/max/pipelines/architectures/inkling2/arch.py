@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from max.graph.weights import WeightsFormat
@@ -101,6 +102,18 @@ inkling2_arch = SupportedArchitecture(
     checkpoint_drafts={"dspark": "Inkling2DSparkDraftModel_ModuleV3"},
     # The serving engine boots the fused graph by this name.
     spec_decode_graph_names={"dspark": "UnifiedDSparkInkling2ModuleV3"},
+)
+
+inkling2_loop_arch = replace(
+    inkling2_arch,
+    name="Inkling2LoopForConditionalGeneration_ModuleV3",
+    example_repo_ids=["thinkingmachines/Inkling-2-Mini"],
+    # The drafter taps the unlooped decoder's block outputs, and nothing has
+    # validated those taps against the loop's 48-visit walk. Naming no draft
+    # makes a speculative request fail to resolve instead of serving a drafter
+    # fed by the wrong activations.
+    checkpoint_drafts={},
+    spec_decode_graph_names={},
 )
 
 inkling2_dspark_draft_arch = make_inkling2_dspark_draft_arch(inkling2_arch)
