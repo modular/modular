@@ -71,8 +71,6 @@ MODELS: Mapping[str, set[str]] = {
     "allenai/olmOCR-2-7B-1025-FP8": _1xB200 | _1xMI355,
     "amd/MiniMax-M3-MXFP4": NIGHTLY | _4xMI355,
     "ByteDance-Seed/academic-ds-9B": DISABLE,  # TODO(SERVOPT-1120)
-    "deepseek-ai/DeepSeek-V2-Lite-Chat": DISABLE,  # TODO(SERVOPT-1120)
-    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": VARIANT | _1xB200 | _1xMI355,
     "deepseek-ai/DeepSeek-V3.1-Terminus": _8xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__modulev3": NIGHTLY | VARIANT | _2xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": NIGHTLY | VARIANT | _2xB200,

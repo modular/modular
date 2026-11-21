@@ -1951,14 +1951,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
-    "deepseek-ai/DeepSeek-V2-Lite-Chat": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-V2-Lite-Chat",
-        config_params={"max_length": 516, "trust_remote_code": True},
-        device_encoding_map={"gpu": ["bfloat16"]},
-        prompts=[prompt[:1500] for prompt in test_data.DEFAULT_PROMPTS],
-        # upstream modeling_deepsek.py uses a deprecated transformers function
-        use_cache=False,
-    ),
     "kathywu95/deepseek-v3-small-random": GenericOracle(
         model_path="kathywu95/deepseek-v3-small-random",
         config_params={

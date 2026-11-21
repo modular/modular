@@ -95,7 +95,6 @@ def _metrics_url(framework: str) -> str:
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
     "RecursiveSI/flint": "max/pipelines/architectures/flint/recipes/flint_bf16_1x_b200.yaml",
-    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V4-Flash-0731__modulev3": "max/pipelines/architectures/deepseekV4_modulev3/recipes/flash_0731_fp8_tp2_b200.yaml",
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": "max/pipelines/architectures/deepseekV4/recipes/flash_0731_fp8_tp2_b200.yaml",
