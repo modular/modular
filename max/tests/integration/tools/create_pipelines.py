@@ -107,7 +107,6 @@ class TorchModelAndDataProcessor:
         transformers.PreTrainedTokenizer
         | transformers.PreTrainedTokenizerFast
         | transformers.MllamaProcessor
-        | transformers.PixtralProcessor
         | InternVLProcessor
     )
 
@@ -655,60 +654,6 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             use_cache=self.use_cache,
             generate_logprobs=generate_logprobs,
         )
-
-
-class PixtralPipelineOracle(PipelineOracle):
-    def __init__(self) -> None:
-        super().__init__()
-        self.model_path = "mistral-experimental/pixtral-12b"
-        self.max_length = 8192
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for Pixtral model."""
-        return test_data.PIXTRAL_REQUESTS
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
-        config = pipelines.PipelineArgs(
-            device_specs=device_specs,
-            quantization_encoding=encoding,
-            model_path=self.model_path,
-            max_length=self.max_length,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        processor = transformers.AutoProcessor.from_pretrained(self.model_path)
-        config = transformers.AutoConfig.from_pretrained(self.model_path)
-        model = transformers.LlavaForConditionalGeneration.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
 class _KimiK2_5BaseOracle(PipelineOracle):
@@ -1753,7 +1698,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "HuggingFaceM4/Idefics3-8B-Llama3": Idefics3PipelineOracle(
         "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
-    "mistral-experimental/pixtral-12b": PixtralPipelineOracle(),
     "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
         model_path="Qwen/Qwen2.5-7B-Instruct",
         config_params={"max_length": 512},

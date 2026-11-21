@@ -264,7 +264,6 @@ def is_vision_model(model: str, framework: str | None = None) -> bool:
             "muse-glimmer",
             "muse-spark",
             "olmocr",
-            "pixtral",
             "qwen2.5-vl",
             "qwen3-vl",
             "qwen3.5",

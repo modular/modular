@@ -272,18 +272,6 @@ MULTIMODAL_PROMPT = (
 
 MULTIMODAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/multimodal_image.jpg"
 
-PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
-PIXTRAL_MESSAGES = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Describe the images."},
-            {"type": "image"},
-        ],
-    }
-]
-PIXTRAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/pixtral_image.jpg"
-
 INTERNVL_INSTRUCT_PROMPT = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|image|> Describe the image; where are these people and what are they doing?<|im_end|>\n<|im_start|>assistant\n"
 INTERNVL_INSTRUCT_MESSAGES = [
     {
@@ -331,14 +319,6 @@ DEFAULT_MULTIMODAL = [
     MockTextGenerationRequest.with_images(
         prompt=MULTIMODAL_PROMPT,
         images=[MULTIMODAL_IMAGE],
-    )
-]
-
-PIXTRAL_REQUESTS = [
-    MockTextGenerationRequest.with_images(
-        prompt=PIXTRAL_PROMPT,
-        images=[PIXTRAL_IMAGE],
-        messages=PIXTRAL_MESSAGES,
     )
 ]
 

@@ -422,19 +422,6 @@ logit_verification_pipelines:
     kl_div_threshold: 1.6e-02
     timeout: 1200
 
-  mistral-experimental/pixtral-12b-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "mistral-experimental/pixtral-12b"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: []
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz"
-      json_file: "torch_pixtral_bfloat16_golden.json"
-    cos_dist_threshold: 7.2e-3
-    kl_div_threshold: 2.5e-2
-
   Qwen/Qwen2.5-7B-Instruct-bfloat16:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
