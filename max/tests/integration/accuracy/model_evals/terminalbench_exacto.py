@@ -23,9 +23,17 @@ writes and produces, in ``--out-dir``:
 - ``trajectories.jsonl``: one row per kept trial, with the columns
   ``accuracy_verdict``'s agentic comparison reads, so two arms compare with
   ``--agentic-candidate-file`` and ``--agentic-baseline-file``.
+- ``results.jsonl``: one row per scored trial with the keys
+  ``internal/upload_results.py`` reads, so the run uploads to S3 and BigQuery
+  like DeepSWE's. Left out, so the run does not upload, for a ``--task``
+  subset or a run whose tasks cannot be indexed (see :func:`uploadable`).
+- ``attempts.jsonl``: the same row for every attempt, invalid ones included,
+  with the reason each was not scored. S3 keeps it beside the upload.
 
-Only valid trials are written. The runner re-runs invalid ones until each
-task has ``k``, so an invalid trial is a harness retry, not a model error.
+Only valid trials are scored, at most ``k`` per task. The runner re-runs
+invalid ones until each task has ``k``, so an invalid trial is a harness
+retry, not a model error, and must not count as a fail where an errored row
+would.
 
 Stdlib-only, like ``terminalbench_score``: CI runs it with a bare python3.
 """
@@ -70,6 +78,132 @@ def trajectory_rows(trials: Sequence[Trial]) -> list[dict[str, object]]:
             }
         )
     return rows
+
+
+def _invalid_reason(t: Trial) -> str:
+    if t.reward is None:
+        return t.exception or "no verifier reward"
+    if not t.reached_model:
+        return t.exception or "never reached the model"
+    return t.exception or "last model step did not finish"
+
+
+def task_indexes(
+    meta: Mapping[str, object], dataset_tasks: Sequence[str] | None = None
+) -> dict[str, int]:
+    """Returns each task's place among the dataset's tasks, sorted by name.
+
+    The runner records every task in the dataset, so full and subset runs
+    agree. A run from before that records only the tasks it planned and
+    excluded. A list missing a task, or naming one that is not a task, would
+    shift every later index, so such a run is indexed only from
+    ``dataset_tasks``, and only when it ran the full set and those tasks are
+    exactly the ones it planned and excluded, which for a full run is the
+    whole dataset. Otherwise it gets no indexes and so no upload rows (see
+    :func:`main`).
+
+    Args:
+        meta: The runner's ``meta.json``.
+        dataset_tasks: The dataset's task names at the revision the run used,
+            for a run whose ``meta.json`` does not record them.
+    """
+    recorded = meta.get("dataset_tasks")
+    if isinstance(recorded, list):
+        tasks = {str(task) for task in recorded}
+    elif dataset_tasks and not meta.get("task_subset"):
+        planned = meta.get("planned_tasks")
+        excluded = meta.get("excluded_tasks") or []
+        if not isinstance(planned, list) or not isinstance(excluded, list):
+            return {}
+        tasks = set(dataset_tasks)
+        if tasks != {str(task) for task in (*planned, *excluded)}:
+            return {}
+    else:
+        return {}
+    return {task: i for i, task in enumerate(sorted(tasks))}
+
+
+def uploadable(
+    meta: Mapping[str, object], dataset_tasks: Sequence[str] | None = None
+) -> bool:
+    """Returns whether the run's rows can go to BigQuery.
+
+    A ``--task`` subset run is a smoke check, not a measurement, and the
+    ``runs`` table cannot tell two subsets of one size apart, so their scores
+    would merge. A run whose tasks cannot be indexed would be scored per
+    trial rather than per task.
+    """
+    return not meta.get("task_subset") and bool(
+        task_indexes(meta, dataset_tasks)
+    )
+
+
+def _row(t: Trial, prompt_index: int | None, repeat: int) -> dict[str, object]:
+    return {
+        "prompt_index": prompt_index,
+        "repeat_index": repeat,
+        "task_name": t.task,
+        "trial_name": t.trial,
+        "timestamp": t.started or None,
+        "passed": t.valid and t.reward == 1,
+        "reward": t.reward,
+        "error": None if t.valid else _invalid_reason(t),
+        "agent_error": (t.exception or None) if t.valid else None,
+        "completion_tokens": t.gen,
+        "prompt_tokens": t.in_total,
+        "cached_tokens": t.in_total - t.in_uncached,
+        "agent_turns": t.turns,
+        "max_turn_completion_tokens": t.max_step_gen,
+        "length_capped_turns": t.capped_steps,
+        "tool_calls": t.tool_calls,
+        "tool_errors": t.tool_errors,
+        "loops": t.loops,
+    }
+
+
+def _rows(
+    trials: Sequence[Trial],
+    meta: Mapping[str, object],
+    dataset_tasks: Sequence[str] | None,
+    scored_only: bool,
+) -> list[dict[str, object]]:
+    index = task_indexes(meta, dataset_tasks)
+    rows: list[dict[str, object]] = []
+    seen: dict[str, int] = {}
+    for t in sorted(trials, key=lambda t: (t.started, t.trial)):
+        if scored_only and not t.valid:
+            continue
+        repeat = seen.get(t.task, 0)
+        seen[t.task] = repeat + 1
+        rows.append(_row(t, index.get(t.task), repeat))
+    return rows
+
+
+def upload_rows(
+    trials: Sequence[Trial],
+    meta: Mapping[str, object],
+    dataset_tasks: Sequence[str] | None = None,
+) -> list[dict[str, object]]:
+    """Returns one ``results.jsonl`` row per scored trial for the uploader.
+
+    These are the trials the scorer counts: valid ones, at most ``k`` per
+    task. ``prompt_index`` comes from :func:`task_indexes`; ``repeat_index``
+    numbers a task's scored trials in the order they started.
+    """
+    return _rows(trials, meta, dataset_tasks, scored_only=True)
+
+
+def attempt_rows(
+    trials: Sequence[Trial],
+    meta: Mapping[str, object],
+    dataset_tasks: Sequence[str] | None = None,
+) -> list[dict[str, object]]:
+    """Returns the :func:`upload_rows` row for every attempt, invalid ones too.
+
+    ``repeat_index`` numbers all of a task's attempts here, and an invalid
+    attempt's ``error`` says why it was not scored.
+    """
+    return _rows(trials, meta, dataset_tasks, scored_only=False)
 
 
 def missing_tasks(
@@ -171,7 +305,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="The runner's --out-dir, holding results.jsonl and meta.json.",
     )
     parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument(
+        "--dataset-tasks-dir",
+        type=Path,
+        help="The dataset's tasks directory, at the revision the run used, for"
+        " a run whose meta.json does not list the dataset's tasks. Its task"
+        " names index the upload rows.",
+    )
     args = parser.parse_args(argv)
+    # Both directories hold a results.jsonl: the runner's trials and the
+    # uploader's rows.
+    if args.out_dir.resolve() == args.run_dir.resolve():
+        parser.error("--out-dir must differ from --run-dir")
+    dataset_tasks = None
+    if args.dataset_tasks_dir is not None:
+        dataset_tasks = sorted(
+            p.parent.name for p in args.dataset_tasks_dir.glob("*/task.toml")
+        )
+        if not dataset_tasks:
+            parser.error(f"{args.dataset_tasks_dir} holds no tasks")
 
     trials = read_jsonl(args.run_dir / "results.jsonl")
     meta = json.loads((args.run_dir / "meta.json").read_text())
@@ -185,6 +337,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     with (args.out_dir / "trajectories.jsonl").open("w") as f:
         for row in trajectory_rows(trials):
+            f.write(json.dumps(row) + "\n")
+    # The metrics weigh tasks equally by grouping rows on their task index,
+    # so rows without one would be scored per trial. The uploader skips a
+    # run that has no results.jsonl.
+    if uploadable(meta, dataset_tasks):
+        with (args.out_dir / "results.jsonl").open("w") as f:
+            for row in upload_rows(trials, meta, dataset_tasks):
+                f.write(json.dumps(row) + "\n")
+    else:
+        # An earlier conversion into this directory may have left rows that
+        # the uploader would take for this run's.
+        (args.out_dir / "results.jsonl").unlink(missing_ok=True)
+        print(
+            "results.jsonl not written, so this run does not upload: it is a"
+            " --task subset, or its tasks cannot be indexed (meta.json lists"
+            " no dataset tasks, and --dataset-tasks-dir was not given or does"
+            " not match the tasks it planned and excluded)."
+        )
+    with (args.out_dir / "attempts.jsonl").open("w") as f:
+        for row in attempt_rows(trials, meta, dataset_tasks):
             f.write(json.dumps(row) + "\n")
 
     accuracy, stderr = score["accuracy"], score["stderr"]
