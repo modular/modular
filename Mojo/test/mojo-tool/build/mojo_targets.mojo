@@ -26,9 +26,11 @@
 # RUN: mojo build --target-triple riscv64-unknown-none-elf --target-cpu=generic-rv64 --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV64
 # RUN: mojo build --target-triple riscv32-unknown-none-elf --target-cpu=sifive-e31 --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_CPU
 # RUN: mojo build --target-triple riscv32-unknown-none-elf --march=rv32i_zba_zbb --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_MARCH
+# RUN: mojo build --target-triple riscv32-unknown-none-elf --march=rv32i --mcpu=sifive-e31 --emit=llvm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_MARCH_MCPU
 # Assembly checks the target machine used for code emission.
 # RUN: mojo build --target-triple riscv32-unknown-none-elf --march=rv32imc --emit=asm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_MARCH_ASM
 # RUN: mojo build --target-triple riscv32-unknown-none-elf --mcpu=sifive-e31 --emit=asm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_MCPU_ASM
+# RUN: mojo build --target-triple riscv32-unknown-none-elf --march=rv32i --mcpu=sifive-e31 --emit=asm -o - %s 2>&1 | FileCheck %s --implicit-check-not=ignoring --check-prefix=CHECK_RV32_MARCH_MCPU_ASM
 
 # CHECK_MACOS: target triple = "arm64-apple-macosx11.0"
 # CHECK_MACOS: "target-cpu"="apple-m1"
@@ -58,8 +60,22 @@
 
 # CHECK_RV32_MARCH: "target-features"="+32bit,+i,+zba,+zbb"
 
+# `--march` names the whole ISA, so `--mcpu` adds the CPU but none of its
+# extensions.
+# CHECK_RV32_MARCH_MCPU: "target-cpu"="sifive-e31"
+# CHECK_RV32_MARCH_MCPU: "target-features"="+32bit,+i,-a,-c,-m,-zaamo,-zalrsc,-zca,-zicsr,-zifencei,-zmmul"
+
 # CHECK_RV32_MARCH_ASM: .attribute 5, "rv32i2p1_m2p0_c2p0_zmmul1p0_zca1p0"
 # CHECK_RV32_MCPU_ASM: .attribute 5, "rv32i2p1_m2p0_a2p1_c2p0_zicsr2p0_zifencei2p0_zmmul1p0_zaamo1p0_zalrsc1p0_zca1p0"
+
+# Without M, the multiply in `product` is a libcall instead of a `mul`.
+# CHECK_RV32_MARCH_MCPU_ASM: .attribute 5, "rv32i2p1"
+# CHECK_RV32_MARCH_MCPU_ASM: __mulsi3
+
+
+@export
+def product(a: Int32, b: Int32) abi("C") -> Int32:
+    return a * b
 
 
 def main():

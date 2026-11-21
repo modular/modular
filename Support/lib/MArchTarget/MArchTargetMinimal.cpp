@@ -98,12 +98,8 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
   // derives its extensions from `-march`, so a `-mcpu`-only invocation reports
   // just the base ISA. Resolve the CPU's default march instead, which also
   // pulls in the extensions it implies (`M` implies `Zmmul`, `D` implies `F`).
-  // TODO(#6918): `-march` should win over `-mcpu` as in the clang driver. The
-  // CPU defaults are unioned in twice -- here, and again by
-  // `getTargetInfoFor`'s delta merge -- and un-unioning them means teaching
-  // that shared merge to treat an explicit ISA string as complete. Until then,
-  // `--march=rv32i --mtune=sifive-e31` yields exactly the requested ISA.
-  if (llvm::Triple(opts->Triple).isRISCV()) {
+  // An `-march` ISA string in `FeaturesAsWritten` already names them all.
+  if (llvm::Triple(opts->Triple).isRISCV() && opts->FeaturesAsWritten.empty()) {
     SmallVector<std::string> cpuFeats;
     llvm::RISCV::getFeaturesForCPU(cpu, cpuFeats, /*NeedPlus=*/true);
     llvm::append_range(opts->Features, cpuFeats);
@@ -343,6 +339,19 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef targetTriple,
   if (featuresOr)
     return featuresOr.takeError();
 
+  // With `-march`, a RISC-V `-mcpu` brings none of its CPU model's extensions,
+  // as in the clang driver. Disable them, or `getTargetInfoFor` merges them
+  // back in.
+  std::vector<std::string> disabled;
+  if (triple.isRISCV() && !march.empty() && !mcpu.empty()) {
+    SmallVector<std::string> cpuFeats;
+    llvm::RISCV::getFeaturesForCPU(mcpu, cpuFeats, /*NeedPlus=*/false);
+    for (std::string &f : cpuFeats)
+      if (!llvm::is_contained(*featuresOr, f))
+        disabled.push_back(std::move(f));
+    llvm::sort(disabled);
+  }
+
   return TargetInfo(std::move(triple), std::move(opts->CPU),
-                    std::move(*featuresOr));
+                    std::move(*featuresOr), std::move(disabled));
 }

@@ -114,7 +114,7 @@ TEST(ArchTarget, AArch64MarchAlone) {
   }
 }
 
-// FIXME(#6918): the CPU's default extensions are added after the -march
+// FIXME(#7594): the CPU's default extensions are added after the -march
 // expansion, so "+nosve" does not remove SVE from a CPU that has it.
 TEST(ArchTarget, AArch64MarchNegativeModifierDoesNotOverrideCpuDefaults) {
   llvm::InitializeAllTargets();
@@ -284,6 +284,28 @@ TEST(ArchTarget, RISCVExpandsExtensions) {
   ASSERT_FALSE(rv64.isError()) << rv64.getError();
   EXPECT_TRUE(rv64->hasFeature("i"));
   EXPECT_FALSE(rv64->hasFeature("m"));
+}
+
+// With both -march and -mcpu, -march names the whole ISA, as in the clang
+// driver: rv32i on sifive-e31 keeps the CPU but none of its extensions.
+TEST(ArchTarget, RISCVMarchExcludesMcpuExtensions) {
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
+  ctx.loadDialect<MDialect>();
+
+  auto target = M::getMArchFeatures(&ctx, "riscv32-unknown-none-elf", "rv32i",
+                                    "sifive-e31", "", "", llvm::Reloc::Static);
+  ASSERT_FALSE(target.isError()) << target.getError();
+  EXPECT_EQ(target->getArch(), "sifive-e31");
+  EXPECT_TRUE(target->hasFeature("i"));
+  // Zmmul alone still allows `mul`, so the implied extensions must go too.
+  for (StringRef ext :
+       {"m", "a", "c", "zmmul", "zaamo", "zalrsc", "zca", "zicsr", "zifencei"})
+    EXPECT_FALSE(target->hasFeature(ext)) << ext;
 }
 
 // stdlib_plugin is a string field on TargetInfoAttr, defaulting to
