@@ -25,6 +25,7 @@
 #include "Support/MArchTarget/Host.h"
 #endif
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/iterator.h"
@@ -175,16 +176,6 @@ void ProfilingDetail::CompletedEntry::mergeEndIntoBegin(
   dur = endEvent.end - start;
 }
 
-void ProfilingDetail::CompletedEntry::mergeBeginIntoEnd(
-    const CompletedEntry &beginEntry) {
-  assert(flavor == kEnd);
-  assert(id == beginEntry.id);
-  parentId = beginEntry.parentId;
-  dur = beginEntry.dur;
-  name = beginEntry.name;
-  detail = beginEntry.detail;
-}
-
 void ProfilingDetail::CompletedEntry::prependParents(
     ArrayRef<const CompletedEntry *> parents) {
   for (auto &parent : parents) {
@@ -221,31 +212,43 @@ void ProfilingDetail::CompletedEntry::print(llvm::json::OStream &os,
   });
 }
 
-void ProfilingDetail::CompletedEntry::print(llvm::raw_pwrite_stream &os,
-                                            TimePointType startTime) const {
+/// Prints one row of the compact text trace.
+static void printTextRow(llvm::raw_pwrite_stream &os,
+                         ProfilingDetail::TimePointType startTime, uint64_t tid,
+                         ProfilingDetail::TimePointType start, StringRef kind,
+                         ProfilingDetail::DurationType dur, StringRef name,
+                         StringRef detail, const uint64_t *value = nullptr) {
   os << llvm::format("%6d  %10ld  ", tid,
                      duration_cast<microseconds>(start - startTime).count());
-  switch (flavor) {
-  case kBegin:
-    os << "BEG  ";
-    break;
-  case kEnd:
-    os << "END  ";
-    break;
-  case kSample:
-    os << "SAM  ";
-    break;
-  case kDebug:
-    os << "DBG  ";
-    break;
-  }
+  os << kind;
   os << llvm::format("%10ld  ", duration_cast<microseconds>(dur).count());
   os << name;
-  if (flavor == kSample)
-    os << value;
+  if (value)
+    os << *value;
   if (!detail.empty())
     os << "/" << detail;
   os << "\n";
+}
+
+void ProfilingDetail::CompletedEntry::print(llvm::raw_pwrite_stream &os,
+                                            TimePointType startTime) const {
+  const char *kind = "";
+  switch (flavor) {
+  case kBegin:
+    kind = "BEG  ";
+    break;
+  case kEnd:
+    kind = "END  ";
+    break;
+  case kSample:
+    kind = "SAM  ";
+    break;
+  case kDebug:
+    kind = "DBG  ";
+    break;
+  }
+  printTextRow(os, startTime, tid, start, kind, dur, name, detail,
+               flavor == kSample ? &value : nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -370,20 +373,20 @@ ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
 
   // Collect the EndEvents, and cross-reference them to the BeginEvents.
   for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
-    profiler.endEvents.enumerate([&profiler, &beginEntryMap,
-                                  &endEntryMap](const EndEvent &event) {
-      auto itr = beginEntryMap.find(event.id);
-      if (itr == beginEntryMap.end()) {
-        llvm::dbgs() << "PROFILING: WARNING: EndEvent " << event.id
-                     << " has no matching BeginEvent\n";
-        return;
-      }
-      itr->second.mergeEndIntoBegin(profiler.tid, event);
-      auto itr2 =
-          endEntryMap.insert({event.id, CompletedEntry(profiler.tid, event)})
-              .first;
-      itr2->second.mergeBeginIntoEnd(itr->second);
-    });
+    profiler.endEvents.enumerate(
+        [&profiler, &beginEntryMap, &endEntryMap](const EndEvent &event) {
+          auto itr = beginEntryMap.find(event.id);
+          if (itr == beginEntryMap.end()) {
+            llvm::dbgs() << "PROFILING: WARNING: EndEvent " << event.id
+                         << " has no matching BeginEvent\n";
+            return;
+          }
+          itr->second.mergeEndIntoBegin(profiler.tid, event);
+          // The end entry only records the timestamp of the end event; its
+          // name, detail and duration are read from the matching begin entry,
+          // so no strings are copied per span.
+          endEntryMap.insert({event.id, CompletedEntry(profiler.tid, event)});
+        });
   }
 
   // Gather all the completed entries so far.
@@ -530,8 +533,27 @@ void ProfilingDetail::GlobalProfilerContext::writeTextTrace(
   os << "Thread   Start(us)  B/E     Dur(us)  Name/Detail\n";
   os << "------  ----------  ---  ----------  "
         "------------------------------\n";
+  // End entries don't carry the span's name, detail or duration; those live in
+  // the matching begin entry.
+  llvm::DenseMap<ProfilerEventId, const CompletedEntry *> beginEntries;
   for (const auto &entry : entries)
-    entry.print(os, startTime);
+    if (entry.flavor == CompletedEntry::kBegin)
+      beginEntries[entry.id] = &entry;
+  for (const auto &entry : entries) {
+    if (entry.flavor != CompletedEntry::kEnd) {
+      entry.print(os, startTime);
+      continue;
+    }
+    auto itr = beginEntries.find(entry.id);
+    if (itr == beginEntries.end()) {
+      printTextRow(os, startTime, entry.tid, entry.start, "END  ",
+                   DurationType(0), "", "");
+      continue;
+    }
+    const CompletedEntry &begin = *itr->second;
+    printTextRow(os, startTime, entry.tid, entry.start, "END  ", begin.dur,
+                 begin.name, begin.detail);
+  }
   os.flush();
 }
 

@@ -585,9 +585,6 @@ struct CompletedEntry {
   /// Update this begin entry with details from end event.
   void mergeEndIntoBegin(uint64_t endTid, const EndEvent &endEvent);
 
-  /// Update this end entry with details from begin entry.
-  void mergeBeginIntoEnd(const CompletedEntry &beginEntry);
-
   /// Update this entry to include the name and details from all of parents.
   void prependParents(ArrayRef<const CompletedEntry *> parents);
 
