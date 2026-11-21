@@ -349,4 +349,23 @@ TEST(PlanSplitPerFunctionTest, GivesRecursiveUserOfMutableGlobalItsOwnSlice) {
   EXPECT_EQ(planSplitPerFunction(symbols).slices, (Slices{{0, 1}, {2}}));
 }
 
+TEST(PlanSplitPerFunctionTest, GivesUnreachedCycleItsOwnSlice) {
+  // 0 is a private constant that 1 uses. 1 and 2 call each other, and 3 and 4
+  // are leaves that 1 calls. Nothing outside the cycle uses 1 or 2, so no
+  // user's slice holds them.
+  std::vector<SplitSymbol> symbols = {
+      makeMutableGlobal(), makeFunction({0, 2, 3, 4}), makeFunction({1}),
+      makeFunction({}), makeFunction({})};
+  EXPECT_EQ(planSplitPerFunction(symbols).slices,
+            (Slices{{0, 1, 2}, {3}, {4}}));
+}
+
+TEST(PlanSplitPerFunctionTest, KeepsReachedCycleInItsUsersSlice) {
+  // 0 is a private constant that 1 uses. 1 and 2 call each other, and 3 calls
+  // 1. The cycle must not root a slice of its own; 3's slice holds it.
+  std::vector<SplitSymbol> symbols = {makeMutableGlobal(), makeFunction({0, 2}),
+                                      makeFunction({1}), makeFunction({1})};
+  EXPECT_EQ(planSplitPerFunction(symbols).slices, (Slices{{0, 1, 2, 3}}));
+}
+
 } // namespace

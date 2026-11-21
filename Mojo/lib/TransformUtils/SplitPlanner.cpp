@@ -37,6 +37,69 @@ collectUsers(ArrayRef<SplitSymbol> symbols) {
   return users;
 }
 
+/// The strongly connected component of each symbol, and the number of
+/// components, using Tarjan's algorithm over the dependency edges.
+static std::vector<unsigned> collectComponents(ArrayRef<SplitSymbol> symbols,
+                                               unsigned &numComponents) {
+  constexpr unsigned kUnvisited = ~0u;
+  unsigned numSymbols = symbols.size();
+  std::vector<unsigned> index(numSymbols, kUnvisited);
+  std::vector<unsigned> lowlink(numSymbols, kUnvisited);
+  std::vector<unsigned> component(numSymbols, kUnvisited);
+  llvm::BitVector onStack(numSymbols);
+  SmallVector<unsigned> componentStack;
+  struct Frame {
+    unsigned symbol;
+    unsigned nextDependency;
+  };
+  SmallVector<Frame> frames;
+  unsigned nextIndex = 0;
+  numComponents = 0;
+
+  for (unsigned root = 0; root != numSymbols; ++root) {
+    if (index[root] != kUnvisited)
+      continue;
+    index[root] = lowlink[root] = nextIndex++;
+    componentStack.push_back(root);
+    onStack.set(root);
+    frames.push_back({root, 0});
+    while (!frames.empty()) {
+      unsigned symbol = frames.back().symbol;
+      ArrayRef<unsigned> dependencies = symbols[symbol].dependencies;
+      if (frames.back().nextDependency < dependencies.size()) {
+        unsigned dependency = dependencies[frames.back().nextDependency++];
+        if (index[dependency] == kUnvisited) {
+          index[dependency] = lowlink[dependency] = nextIndex++;
+          componentStack.push_back(dependency);
+          onStack.set(dependency);
+          frames.push_back({dependency, 0});
+        } else if (onStack.test(dependency)) {
+          lowlink[symbol] = std::min(lowlink[symbol], index[dependency]);
+        }
+        continue;
+      }
+
+      // `symbol` is finished, so its component is complete when it is the
+      // root of that component.
+      if (lowlink[symbol] == index[symbol]) {
+        while (true) {
+          unsigned member = componentStack.pop_back_val();
+          onStack.reset(member);
+          component[member] = numComponents;
+          if (member == symbol)
+            break;
+        }
+        ++numComponents;
+      }
+      frames.pop_back();
+      if (!frames.empty())
+        lowlink[frames.back().symbol] =
+            std::min(lowlink[frames.back().symbol], lowlink[symbol]);
+    }
+  }
+  return component;
+}
+
 /// The symbols reachable from `root`. The walk stops at the symbols in
 /// `stopAt` other than `root`, which keeps one outlined subtree out of
 /// another.
@@ -400,12 +463,30 @@ SplitPlan M::planSplitPerFunction(ArrayRef<SplitSymbol> symbols) {
     return symbols[idx].isFunction && (canBeSplit.test(idx) || !hasOtherUsers);
   };
 
+  // A component that no symbol outside it reaches has no user whose slice
+  // could hold its members. That is already covered for a lone function, but
+  // a cycle of functions that cannot be split would otherwise be left out of
+  // every slice. Let one of its members root a slice, as a function with no
+  // users does.
+  unsigned numComponents = 0;
+  std::vector<unsigned> component = collectComponents(symbols, numComponents);
+  llvm::BitVector reachedFromOutside(numComponents);
+  for (unsigned idx = 0; idx != numSymbols; ++idx)
+    for (unsigned user : users[idx])
+      if (component[user] != component[idx])
+        reachedFromOutside.set(component[idx]);
+  auto rootsUnreachedComponent = [&](unsigned idx) {
+    return symbols[idx].isFunction && !canBeSplit.test(idx) &&
+           !reachedFromOutside.test(component[idx]);
+  };
+
   SplitPlan plan;
   llvm::BitVector inSlice(numSymbols);
   for (unsigned root = 0; root != numSymbols; ++root) {
     const SplitSymbol &symbol = symbols[root];
     if (!symbol.isAnchor || inSlice.test(root) ||
-        (symbol.isFunction && !hasOwnSlice(root)))
+        (symbol.isFunction && !hasOwnSlice(root) &&
+         !rootsUnreachedComponent(root)))
       continue;
     std::vector<unsigned> &slice = plan.slices.emplace_back();
     for (unsigned dep : deps[root].set_bits()) {
