@@ -15,7 +15,8 @@
 import re
 
 import pytest
-from conftest import tensor_types
+from conftest import dtypes, tensor_types
+from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -115,6 +116,37 @@ def test_allreduce_wrong_shape() -> None:
                 allreduce_outputs[1],
                 allreduce_outputs[2],
                 allreduce_outputs[3],
+            )
+
+
+@given(
+    dtype_pair=st.tuples(dtypes, dtypes).filter(lambda pair: pair[0] != pair[1])
+)
+def test_allreduce_wrong_dtype(dtype_pair: tuple[DType, DType]) -> None:
+    """Test wrong dtype error for allreduce."""
+    devices = [DeviceRef.GPU(id=0), DeviceRef.GPU(id=1)]
+    signals = Signals(devices)
+
+    with Graph(
+        "allreduce",
+        input_types=[
+            *(
+                TensorType(dtype=dtype, shape=[6, 5], device=device)
+                for dtype, device in zip(dtype_pair, devices, strict=True)
+            ),
+            *signals.input_types(),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"allreduce.sum operation must have the same dtype across all"
+                r" input tensors."
+            ),
+        ):
+            ops.allreduce.sum(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
             )
 
 

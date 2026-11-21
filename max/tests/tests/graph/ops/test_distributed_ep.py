@@ -138,6 +138,48 @@ def test_dispatch_bf16_basic() -> None:
 # -----------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "short_arg", ["topk_ids", "atomic_counters", "output_types_per_device"]
+)
+def test_dispatch_bf16_per_device_count_mismatch(short_arg: str) -> None:
+    """Every per-device argument must have one entry per input tensor."""
+    input_types: list[Type[Any]] = [
+        *_per_device_types(DType.bfloat16, [NUM_TOKENS, HIDDEN_SIZE]),
+        *_per_device_types(DType.int32, [NUM_TOKENS, TOP_K]),
+        *_host_ptr_types(),
+        *_buffer_types(),
+    ]
+    n = NUM_DEVICES
+    with Graph(
+        "bf16_dispatch_count_mismatch", input_types=input_types
+    ) as graph:
+        per_device: dict[str, list[Any]] = {
+            "topk_ids": [graph.inputs[n + i].tensor for i in range(n)],
+            "atomic_counters": [
+                graph.inputs[2 * n + 3 + i].buffer for i in range(n)
+            ],
+            "output_types_per_device": [[] for _ in range(n)],
+        }
+        per_device[short_arg] = per_device[short_arg][:1]
+        send_ptrs, recv_ptrs, recv_count_ptrs = (
+            graph.inputs[2 * n + i].tensor for i in range(3)
+        )
+
+        with pytest.raises(
+            ValueError, match=rf"{short_arg} count \(1\) must match"
+        ):
+            ops.distributed_ep.dispatch_bf16(
+                [graph.inputs[i].tensor for i in range(n)],
+                per_device["topk_ids"],
+                send_ptrs,
+                recv_ptrs,
+                recv_count_ptrs,
+                per_device["atomic_counters"],
+                per_device["output_types_per_device"],
+                **_common_kwargs(),
+            )
+
+
 def test_dispatch_fp8_basic() -> None:
     """FP8 dispatch produces 5 output groups per device."""
     input_types: list[Type[Any]] = [

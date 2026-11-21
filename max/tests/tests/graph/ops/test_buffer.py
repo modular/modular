@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from conftest import buffer_types, shapes, tensor_types
+from conftest import buffer_types, mismatched_devices, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
@@ -211,6 +211,23 @@ def test_store_static_shape_mismatch() -> None:
     ) as graph:
         tensor, buffer = graph.inputs[0].tensor, graph.inputs[1].buffer
         with pytest.raises(ValueError, match="expected source to have shape"):
+            ops.buffer_store(buffer, tensor)
+
+
+@given(tensor_type=tensor_type, devices=mismatched_devices())
+def test_store_mismatched_devices(
+    tensor_type: TensorType, devices: tuple[DeviceRef, DeviceRef]
+) -> None:
+    tensor_device, buffer_device = devices
+    with Graph(
+        "buffer_store",
+        input_types=[
+            TensorType(tensor_type.dtype, tensor_type.shape, tensor_device),
+            BufferType(tensor_type.dtype, tensor_type.shape, buffer_device),
+        ],
+    ) as graph:
+        tensor, buffer = graph.inputs[0].tensor, graph.inputs[1].buffer
+        with pytest.raises(ValueError, match="same device"):
             ops.buffer_store(buffer, tensor)
 
 

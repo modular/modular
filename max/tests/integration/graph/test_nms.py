@@ -151,3 +151,24 @@ def test_nms_stays_on_device(
     assert rows.ndim == 2 and rows.shape[1] == 3
     assert rows.dtype == np.int64
     np.testing.assert_array_equal(rows, expected)
+
+
+@pytest.mark.parametrize("gpu_arg", [2, 3, 4])
+@pytest.mark.parametrize("device_id", [0, 1])
+def test_nms_thresholds_must_be_on_host(gpu_arg: int, device_id: int) -> None:
+    """Each scalar threshold (arguments 2-4) must live on the host."""
+    gpu = DeviceRef.GPU(device_id)
+    cpu = DeviceRef.CPU()
+    with Graph(
+        "nms_threshold_not_on_host",
+        input_types=[
+            TensorType(DType.float32, [1, 4, 4], gpu),
+            TensorType(DType.float32, [1, 1, 4], gpu),
+        ],
+    ) as graph:
+        boxes, scores = graph.inputs[0].tensor, graph.inputs[1].tensor
+        max_output = ops.constant(2, DType.int64, gpu if gpu_arg == 2 else cpu)
+        iou = ops.constant(0.5, DType.float32, gpu if gpu_arg == 3 else cpu)
+        score = ops.constant(0.0, DType.float32, gpu if gpu_arg == 4 else cpu)
+        with pytest.raises(ValueError, match="host device"):
+            ops.non_maximum_suppression(boxes, scores, max_output, iou, score)

@@ -71,6 +71,11 @@ def sum(
             f"the number of input tensors. Got: {group_size=} and "
             f"{num_devices=}"
         )
+    if any(input.dtype != inputs[0].dtype for input in inputs[1:]):
+        raise ValueError(
+            "allreduce.sum operation must have the same dtype across all"
+            f" input tensors. Got: {inputs=}"
+        )
     for group_start in range(0, num_devices, group_size):
         group_inputs = inputs[group_start : group_start + group_size]
         if not all(

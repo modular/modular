@@ -258,6 +258,8 @@ def conv3d(
             " height, width, in_channels / num_groups, out_channels)"
         )
 
+    assert_same_device(x=x, filter=filter)
+
     conv_output = Graph.current._add_op_generated(
         rmo.ConvOp,
         input=x,

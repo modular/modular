@@ -752,6 +752,34 @@ def _elementwise_unary(op_type: type[Operation], name: str):  # noqa: ANN202
     return elementwise_op
 
 
+def _elementwise_unary_of(  # noqa: ANN202
+    op_type: type[Operation],
+    name: str,
+    accepts: Callable[[DType], bool],
+    kind: str,
+):
+    """Like `_elementwise_unary`, for an op whose input dtype is restricted."""
+
+    def elementwise_op(x: TensorValueLike) -> TensorValue:
+        x = dtype_promotion._restrict_to_strong_dtypes(x)
+        if not accepts(x.dtype):
+            raise ValueError(f"{name} requires {kind} input, but got {x.dtype}")
+        return Graph.current._add_op_generated(
+            op_type,
+            result=x.type,
+            input=x,
+        )[0].tensor
+
+    elementwise_op.__name__ = name
+    return elementwise_op
+
+
+def _elementwise_unary_float(op_type: type[Operation], name: str):  # noqa: ANN202
+    return _elementwise_unary_of(
+        op_type, name, DType.is_float, "a floating-point"
+    )
+
+
 def _elementwise_unary_predicate(
     op_type: type[Operation], name: str
 ) -> Callable[[TensorValueLike], TensorValue]:
@@ -1209,7 +1237,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-cos = _elementwise_unary(mo.CosOp, "cos")
+cos = _elementwise_unary_float(mo.CosOp, "cos")
 cos.__doc__ = """Computes the cosine of a tensor element-wise.
 
 .. code-block:: python
@@ -1244,7 +1272,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-ceil = _elementwise_unary(mo.CeilOp, "ceil")
+ceil = _elementwise_unary_float(mo.CeilOp, "ceil")
 ceil.__doc__ = """Computes the ceiling of a tensor element-wise.
 
 .. code-block:: python
@@ -1278,7 +1306,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-floor = _elementwise_unary(mo.FloorOp, "floor")
+floor = _elementwise_unary_float(mo.FloorOp, "floor")
 floor.__doc__ = """Computes the floor of a tensor element-wise.
 
 .. code-block:: python
@@ -1312,7 +1340,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-round = _elementwise_unary(mo.RoundOp, "round")
+round = _elementwise_unary_float(mo.RoundOp, "round")
 round.__doc__ = """Rounds a tensor to the nearest integer element-wise.
 
 Values exactly halfway between two integers round to the nearest even integer
@@ -1350,7 +1378,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-rsqrt = _elementwise_unary(mo.RsqrtOp, "rsqrt")
+rsqrt = _elementwise_unary_float(mo.RsqrtOp, "rsqrt")
 rsqrt.__doc__ = """Computes the reciprocal square root of a tensor element-wise.
 
 .. code-block:: python
@@ -1384,7 +1412,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-sqrt = _elementwise_unary(mo.SqrtOp, "sqrt")
+sqrt = _elementwise_unary_float(mo.SqrtOp, "sqrt")
 sqrt.__doc__ = """Computes the square root of a tensor element-wise.
 
 .. code-block:: python
@@ -1419,7 +1447,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-sin = _elementwise_unary(mo.SinOp, "sin")
+sin = _elementwise_unary_float(mo.SinOp, "sin")
 sin.__doc__ = """Computes the sine of a tensor element-wise.
 
 .. code-block:: python
@@ -1454,7 +1482,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-tanh = _elementwise_unary(mo.TanhOp, "tanh")
+tanh = _elementwise_unary_float(mo.TanhOp, "tanh")
 tanh.__doc__ = """Computes the hyperbolic tangent of a tensor element-wise.
 
 This applies ``tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))``, which maps
@@ -1499,7 +1527,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-atanh = _elementwise_unary(mo.AtanhOp, "atanh")
+atanh = _elementwise_unary_float(mo.AtanhOp, "atanh")
 atanh.__doc__ = """Computes the inverse hyperbolic tangent of a tensor element-wise.
 
 .. code-block:: python
@@ -1534,7 +1562,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-trunc = _elementwise_unary(mo.TruncOp, "trunc")
+trunc = _elementwise_unary_float(mo.TruncOp, "trunc")
 trunc.__doc__ = """Truncates a tensor toward zero element-wise.
 
 .. code-block:: python
@@ -1643,7 +1671,9 @@ Raises:
     Error: If the input doesn't represent a tensor.
 """
 
-logical_not = _elementwise_unary(mo.NotOp, "logical_not")
+logical_not = _elementwise_unary_of(
+    mo.NotOp, "logical_not", lambda dtype: dtype == DType.bool, "a bool"
+)
 logical_not.__doc__ = """Computes the element-wise logical NOT of a boolean tensor.
 
 .. code-block:: python
