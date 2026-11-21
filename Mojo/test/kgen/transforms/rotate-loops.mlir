@@ -544,6 +544,54 @@ kgen.func @pure_consumer_before_test(%p: !kgen.pointer<index>, %n: index) {
 
 // -----
 
+// A pure op that stays ahead of the test reads one mover and feeds another, as
+// an append's offset reads the buffer pointer its reallocation returns. Its
+// copy at the end of the body reads that copy's load, not the carried value.
+// CHECK-LABEL: kgen.func @pure_op_between_movers(%arg0: !kgen.pointer<index>, %arg1: index) {
+// CHECK-NEXT:   %idx0 = index.constant 0
+// CHECK-NEXT:   %idx1 = index.constant 1
+// CHECK-NEXT:   %0 = pop.load    %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:   %1 = index.add %0, %idx1
+// CHECK-NEXT:   pop.store   %1, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:   hlcf.loop (%arg2 = %arg1 : index, %arg3 = %0 : index) {
+// CHECK-NEXT:     %2 = index.cmp eq(%arg2, %idx0)
+// CHECK-NEXT:     %3 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:     hlcf.if %3 {
+// CHECK-NEXT:       hlcf.break
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
+// CHECK-NEXT:     %4 = index.sub %arg2, %idx1
+// CHECK-NEXT:     %5 = pop.load    %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     %6 = index.add %5, %idx1
+// CHECK-NEXT:     pop.store   %6, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     hlcf.continue %4, %5 : index, index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.return
+// CHECK-NEXT: }
+kgen.func @pure_op_between_movers(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %n : index) {
+    %0 = pop.load %p : !kgen.pointer<index>
+    %1 = index.add %0, %idx1
+    pop.store %1, %p : !kgen.pointer<index>
+    %2 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %3 = index.sub %arg0, %idx1
+    hlcf.continue %3 : index
+  }
+  hlcf.return
+}
+
+// -----
+
 // The walk for the loop's exit descends into nested loops, so it has to tell
 // whose jump it found: these belong to the inner loop, and the outer one
 // rotates.
