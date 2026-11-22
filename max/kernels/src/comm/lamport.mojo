@@ -36,9 +36,12 @@ See the internal Lamport allreduce design doc, section
 "Design > 1. Shared sentinel primitive", for the protocol context.
 """
 
+from std.atomic import Atomic, Ordering
 from std.memory import bitcast
 from std.sys import bit_width_of, size_of
 from std.builtin.dtype import _unsigned_integral_type_of
+
+from .device_query import get_sm_version
 
 
 comptime LAMPORT_SENTINEL_U32 = UInt32(0x80000000)
@@ -254,3 +257,71 @@ struct LamportGeneration:
             `(flag + 1) % NUM_GENERATIONS`.
         """
         return (flag + 1) % Self.NUM_GENERATIONS
+
+
+@always_inline
+def lamport_arrive_is_relaxed[ngpus: Int, sm_version: StaticString]() -> Bool:
+    """Returns whether `lamport_arrive` uses the relaxed device scope add.
+
+    The gate marks the one configuration that was measured, 4 GPUs on
+    `sm_100a`. It is not a safety limit: the relaxed add is correct for any
+    world size, and the other configurations keep the old add only because
+    nothing measured them.
+
+    Parameters:
+        ngpus: Number of GPUs in the collective.
+        sm_version: The SM version of the compile target, such as `"sm_100a"`.
+
+    Returns:
+        True only for 4 GPUs on `sm_100a`.
+    """
+    return ngpus == 4 and sm_version == "sm_100a"
+
+
+@always_inline
+def lamport_arrive[
+    ngpus: Int, sm_version: StaticString = get_sm_version()
+](counter: MutPointer[Scalar[DType.uint32], _]) -> Scalar[DType.uint32]:
+    """Counts one block's arrival at the end of a Lamport call.
+
+    The last block to arrive advances the generation, so the caller compares
+    the returned count with the grid size. Every Lamport kernel ends with this.
+
+    With 4 GPUs on `sm_100a` the add is relaxed and device scoped. The default
+    add is sequentially consistent at system scope, and its fence waits for the
+    block's pushes into the peers' buffers to be acknowledged over NVLink.
+    Clock stamps put the add at 2.5 us of a 1-row call and 3.7 us of a 64-row
+    call of 3,072 bf16. A whole call is 2.4 to 7.8 us shorter without it, from
+    1 row up to the 1 MiB limit. A weaker add loses nothing here:
+
+    - The data edge between ranks is the volatile push and poll, not this add.
+    - Each block read the generation before its own arrival, and consumed it
+      before the block barrier, so those loads have completed when the last
+      block writes the new value.
+    - The next call starts in stream order after this kernel ends.
+    - The sentinel clear targets this GPU's own buffer, and the end of the
+      kernel makes it visible before a peer can start the call that reuses
+      that generation.
+
+    Other configurations keep the default add, see `lamport_arrive_is_relaxed`.
+
+    The 4-GPU component is
+    `Kernels/test/gpu/Moka/test/allreduce/lamport_allreduce_plan.mojo`, which
+    runs this same add.
+
+    Parameters:
+        ngpus: Number of GPUs in the collective.
+        sm_version: The SM version of the compile target.
+
+    Args:
+        counter: The arrival counter, `Lamport.STATE_ARRIVAL` of this rank.
+
+    Returns:
+        The count before this arrival.
+    """
+    comptime if lamport_arrive_is_relaxed[ngpus, sm_version]():
+        return Atomic[Scalar[DType.uint32], scope="device"].fetch_add[
+            ordering=Ordering.relaxed
+        ](counter, UInt32(1))
+    else:
+        return Atomic.fetch_add(counter, UInt32(1))

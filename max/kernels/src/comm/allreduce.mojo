@@ -105,7 +105,7 @@ For the naive allreduce (no P2P) per-device flow and staging details, see the
 `_allreduce_naive_single` docstring in this file.
 """
 
-from std.atomic import Atomic, Ordering, fence
+from std.atomic import fence
 from std.collections import Array
 from std.math.uutils import ualign_down
 from std.math import ceildiv, clamp
@@ -170,6 +170,7 @@ from .lamport import (
     Lamport,
     LamportGeneration,
     has_neg_zero,
+    lamport_arrive,
     remove_neg_zero,
     set_neg_zero,
 )
@@ -1407,7 +1408,11 @@ def _allreduce_lamport_kernel[
        writer wrote (`prev_num_packs`, 16-byte packs), priming it for reuse (a
        short tail loop covers any leftover when the previous call was larger);
     7. advance this rank's generation counter exactly once (grid-barrier
-       epilogue), recording this call's pack count for the next call's clear.
+       epilogue, counted by `lamport_arrive`), recording this call's pack count
+       for the next call's clear.
+
+    The 4-GPU Moka component of this kernel is
+    `Kernels/test/gpu/Moka/test/allreduce/lamport_allreduce_plan.mojo`.
 
     The generation counter (`flag`) and clear extent (`prev_num_packs`) are
     read from and advanced in this rank's device-resident `Signal.lamport_state`
@@ -1616,8 +1621,8 @@ def _allreduce_lamport_kernel[
         # intra-GPU block-arrival counter.
         barrier()
         if thread_idx.x == 0:
-            var arrived = Atomic.fetch_add(
-                state.unsafe_offset(Lamport.STATE_ARRIVAL), UInt32(1)
+            var arrived = lamport_arrive[ngpus](
+                state.unsafe_offset(Lamport.STATE_ARRIVAL)
             )
             if Int(arrived) == grid_dim.x - 1:
                 state.unsafe_store[volatile=True](

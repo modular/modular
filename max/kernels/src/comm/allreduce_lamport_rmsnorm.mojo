@@ -40,7 +40,6 @@ sentinel-initialized once (`lamport_init`) before the first call.
 from std.math import align_down, rsqrt
 from std.sys import align_of, size_of
 
-from std.atomic import Atomic
 from std.collections import Array
 from std.collections.optional import OptionalReg
 
@@ -84,6 +83,7 @@ from .lamport import (
     Lamport,
     LamportGeneration,
     has_neg_zero,
+    lamport_arrive,
     remove_neg_zero,
     set_neg_zero,
 )
@@ -410,8 +410,8 @@ def _allreduce_lamport_rmsnorm_kernel[
     # intra-GPU block-arrival counter (device-side state -> CUDA-graph-safe).
     barrier()
     if tid == 0:
-        var arrived = Atomic.fetch_add(
-            state.unsafe_offset(Lamport.STATE_ARRIVAL), UInt32(1)
+        var arrived = lamport_arrive[ngpus](
+            state.unsafe_offset(Lamport.STATE_ARRIVAL)
         )
         if Int(arrived) == grid_dim.x - 1:
             state.unsafe_offset(Lamport.STATE_FLAG).unsafe_store[volatile=True](
