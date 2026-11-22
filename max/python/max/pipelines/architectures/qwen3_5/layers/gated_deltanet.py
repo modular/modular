@@ -54,7 +54,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 
 import numpy as np
-from max.driver import accelerator_api, accelerator_architecture_name
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -72,6 +72,7 @@ from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_verify_fwd,
     gated_delta_recurrence_fwd,
     gated_delta_recurrence_verify_ring_fwd,
+    has_blackwell_tcgen05,
     kda_chunk,
     kda_chunk_is_registered,
     kda_chunk_rows,
@@ -85,20 +86,6 @@ from max.nn.legacy.stacked_linear import StackedLinear
 from max.nn.quant_config import QuantConfig
 
 from ..state_cache import GatedDeltaRingAccess
-
-_CHUNK_MIN_COMPUTE_CAPABILITY = 100
-"""Lowest NVIDIA compute capability (``sm_100`` -> 100) the fused chunk kernel supports."""
-
-
-def _nvidia_compute_capability() -> int:
-    """Returns the current accelerator's compute capability, for example, 86 for ``sm_86``.
-
-    Returns 0 when the architecture name is not of the form ``sm_<digits>[a-z]``
-    (non-NVIDIA or no accelerator), which keeps callers on the portable path.
-    """
-    name = accelerator_architecture_name()
-    digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
-    return int(digits) if name.startswith("sm_") and digits.isdigit() else 0
 
 
 def _projection(stack: StackedLinear, name: str) -> Linear:
@@ -726,15 +713,13 @@ class GatedDeltaNet(Module, Shardable):
         # thing.
         # The chunk op's kernels are written for NVIDIA GPUs: on any other
         # accelerator even the scan fallback fails to instantiate, so the
-        # decision has to happen here rather than inside the launcher. The
-        # fused prefill kernel also issues tcgen05 MMAs and 1D TMA copies, so
-        # it only instantiates on SM100+; older NVIDIA GPUs (e.g. A10G, sm_86)
-        # take the sequential recurrence for prefill, as do builds without the
-        # closed-source kernel packages, where kda_chunk isn't registered.
-        # TODO(KERN-3635): drop this gate once kda_chunk compiles below SM100.
+        # decision has to happen here rather than inside the launcher. Its
+        # speed is in the tcgen05 scan and chain bodies, so a part without
+        # tcgen05 keeps the sequential recurrence. A build without the
+        # closed-source kernel packages doesn't register the op either.
         chunk_servable = (
             accelerator_api() == "cuda"
-            and _nvidia_compute_capability() >= _CHUNK_MIN_COMPUTE_CAPABILITY
+            and has_blackwell_tcgen05()
             and kda_chunk_supports_head_dims(
                 self.key_head_dim, self.value_head_dim
             )

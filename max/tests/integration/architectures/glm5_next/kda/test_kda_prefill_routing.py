@@ -66,6 +66,7 @@ def _patch_accelerator(
     monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
 ) -> None:
     monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: api)
+    monkeypatch.setattr(kimi_delta, "accelerator_count", lambda: 1)
     monkeypatch.setattr(
         kimi_delta, "accelerator_architecture_name", lambda: architecture
     )
@@ -254,7 +255,13 @@ def test_gfx950_chunk_is_not_computebound(
 
 @pytest.mark.parametrize(
     ("api", "architecture"),
-    [("hip", "gfx942"), ("cuda", "sm_90a"), ("cuda", "sm_86")],
+    [
+        ("hip", "gfx942"),
+        ("cuda", "sm_90a"),
+        ("cuda", "sm_86"),
+        # Above SM100 numerically and without tcgen05.
+        ("cuda", "sm_121a"),
+    ],
 )
 def test_unsupported_accelerator_stays_sequential(
     monkeypatch: pytest.MonkeyPatch, api: str, architecture: str

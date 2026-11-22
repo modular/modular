@@ -22,7 +22,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal, cast
 
-from max.driver import accelerator_api, accelerator_architecture_name
+from max.driver import (
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -38,6 +42,7 @@ from max.nn._graph_ops import _check_dtype, _check_rank, _check_same_dtype
 __all__ = [
     "KDA_GATE_LOWER_BOUND",
     "STATE_LAYOUT",
+    "TCGEN05_ARCHITECTURES",
     "KdaBetaMode",
     "KdaGateMode",
     "KdaInputMode",
@@ -45,6 +50,7 @@ __all__ = [
     "amd_kda_chunk_eligible",
     "amd_kda_chunk_workspace_bytes",
     "amd_kda_long_row_scratch_bytes",
+    "has_blackwell_tcgen05",
     "kda_chunk",
     "kda_chunk_conv",
     "kda_chunk_max_segments",
@@ -145,7 +151,8 @@ def kda_chunk_rows_servable(key_head_dim: int, value_head_dim: int) -> bool:
 
     Row select needs the sm100 fused or bt16 path, whose kernels only
     instantiate at a head width the fused arm accepts; a geometry outside
-    that keeps the non-skip serial ring.
+    that keeps the non-skip serial ring. The accelerator question belongs to
+    the caller: this one stays pure so a host with no device can ask it.
 
     Args:
         key_head_dim: Per-head key width.
@@ -221,8 +228,28 @@ def _check_amd_chunk_contract(
 KDA_GATE_LOWER_BOUND = -5.0
 """Hard-coded lower bound for ``gate_mode="safe"``."""
 
-_CHUNK_MIN_COMPUTE_CAPABILITY = 100
-"""Lowest NVIDIA compute capability (``sm_100`` -> 100) ``kda_chunk`` builds for."""
+TCGEN05_ARCHITECTURES = frozenset(
+    ("sm_100", "sm_100a", "sm_101", "sm_101a", "sm_103", "sm_103a")
+)
+"""Accelerators with Blackwell tcgen05, as the stdlib's
+``Accelerator._has_blackwell_tcgen05`` names them."""
+
+
+def has_blackwell_tcgen05() -> bool:
+    """Returns whether the accelerator can issue tcgen05 instructions.
+
+    A capability floor cannot stand in for these: GB10 reports ``sm_121a``
+    and cannot issue them. Answers ``False`` on a host with no accelerator,
+    where the architecture query itself would raise.
+
+    Returns:
+        True when the accelerator is one the stdlib admits for tcgen05.
+    """
+    return (
+        accelerator_count() > 0
+        and accelerator_architecture_name() in TCGEN05_ARCHITECTURES
+    )
+
 
 _AMD_CHUNK_LEN = 32
 """Tokens per chunk of the AMD ``kda_chunk`` recurrence."""
@@ -258,11 +285,16 @@ def kda_chunk_servable(
 ) -> bool:
     """Returns whether prefill can take ``kda_chunk``, not ``kda_decode``.
 
-    The op's NVIDIA kernels only instantiate on SM100+, and its AMD kernels
-    only on gfx950, where they also take only the ``"safe"`` gate and a
+    The op's NVIDIA kernels only instantiate on parts with tcgen05; the AMD
+    ones only on gfx950, where they also take only the ``"safe"`` gate and a
     float32 pool. The AMD kernels take bf16 q/k/v and a bf16 or fp32 output,
     so callers cast at the op boundary there. Builds without the closed-source kernels lack
     the op. Anything outside that keeps the sequential recurrence for prefill.
+
+    Parts without tcgen05 keep the recurrence even though the op compiles
+    there: its speed is in the tcgen05 scan and chain bodies, and the
+    portable body measured slower on GB10 (2.2-2.4 ms/token prefill against
+    1.7-2.0).
 
     Call this while a graph is being built: it reads that graph's kernel
     library.
@@ -281,13 +313,10 @@ def kda_chunk_servable(
             amd_kda_chunk_eligible(head_dim, gate_mode, pool_dtype)
             and kda_chunk_is_registered()
         )
-    # TODO(KERN-3635): widen once kda_chunk compiles below SM100.
-    name = accelerator_architecture_name()
-    digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
+    # TODO(kda-chunk-gate): widen once the portable body beats the recurrence.
     return (
         api == "cuda"
-        and digits.isdigit()
-        and int(digits) >= _CHUNK_MIN_COMPUTE_CAPABILITY
+        and has_blackwell_tcgen05()
         and kda_chunk_supports_head_dims(head_dim, head_dim)
         and kda_chunk_is_registered()
     )
