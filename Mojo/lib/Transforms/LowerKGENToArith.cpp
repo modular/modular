@@ -327,6 +327,69 @@ using ConvertPOPMin =
                            arith::MinUIOp, mlir::index::MinSOp,
                            mlir::index::MinUOp>;
 
+// Scalar pop.{shl,shr,simd.and,simd.or,simd.xor} → arith / index
+template <typename OpTy, typename ArithOp, typename IndexOp>
+struct ConvertPOPScalarBitwise : public DirectOpConversionPattern<OpTy> {
+  using DirectOpConversionPattern<OpTy>::DirectOpConversionPattern;
+  using OpAdaptor = typename OpTy::Adaptor;
+
+  LogicalResult matchAndRewrite(OpTy op, OpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
+    if (!isScalarForm(op))
+      return mlir::failure();
+    Type resultType = this->getTypeConverter()->convertType(op.getType());
+    if (!resultType || !resultType.isIntOrIndex())
+      return mlir::failure();
+    if (isa<IndexType>(resultType))
+      rewriter.replaceOpWithNewOp<IndexOp>(op, adaptor.getLhs(),
+                                           adaptor.getRhs());
+    else
+      rewriter.replaceOpWithNewOp<ArithOp>(op, adaptor.getLhs(),
+                                           adaptor.getRhs());
+    return mlir::success();
+  }
+};
+using ConvertPOPShl =
+    ConvertPOPScalarBitwise<POP::ShlOp, arith::ShLIOp, mlir::index::ShlOp>;
+using ConvertPOPSIMDAnd =
+    ConvertPOPScalarBitwise<POP::SIMDAndOp, arith::AndIOp, mlir::index::AndOp>;
+using ConvertPOPSIMDOr =
+    ConvertPOPScalarBitwise<POP::SIMDOrOp, arith::OrIOp, mlir::index::OrOp>;
+using ConvertPOPSIMDXOr =
+    ConvertPOPScalarBitwise<POP::SIMDXOrOp, arith::XOrIOp, mlir::index::XOrOp>;
+
+// `pop.shr` is arithmetic for a signed dtype and logical for an unsigned one,
+// and the builtin types are signless, so the dtype picks the op.
+struct ConvertPOPShr : public DirectOpConversionPattern<POP::ShrOp> {
+  using DirectOpConversionPattern::DirectOpConversionPattern;
+
+  LogicalResult matchAndRewrite(POP::ShrOp op, OpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
+    if (!isScalarForm(op))
+      return mlir::failure();
+    Type resultType = getTypeConverter()->convertType(op.getType());
+    if (!resultType || !resultType.isIntOrIndex())
+      return mlir::failure();
+    std::optional<KGENDType> dtype = op.getType().getResolvedDType();
+    if (!dtype)
+      return mlir::failure();
+    bool isSigned = dtype->isSInt();
+    Value lhs = adaptor.getLhs();
+    Value rhs = adaptor.getRhs();
+    if (isa<IndexType>(resultType)) {
+      if (isSigned)
+        rewriter.replaceOpWithNewOp<mlir::index::ShrSOp>(op, lhs, rhs);
+      else
+        rewriter.replaceOpWithNewOp<mlir::index::ShrUOp>(op, lhs, rhs);
+    } else if (isSigned) {
+      rewriter.replaceOpWithNewOp<arith::ShRSIOp>(op, lhs, rhs);
+    } else {
+      rewriter.replaceOpWithNewOp<arith::ShRUIOp>(op, lhs, rhs);
+    }
+    return mlir::success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // pop.cmp → arith.cmpi / arith.cmpf (scalar only)
 //===----------------------------------------------------------------------===//
@@ -471,7 +534,8 @@ struct LowerKGENToArithPass
         return isa<IntegerAttr, FloatAttr, SIMDAttr>(constOp.getValue());
       return isa<POP::AddOp, POP::SubOp, POP::MulOp, POP::FloorDivOp,
                  POP::CmpOp, POP::MaxOp, POP::MinOp, POP::SelectOp,
-                 POP::SIMDSelectOp, POP::CastFromBuiltinOp,
+                 POP::SIMDSelectOp, POP::ShlOp, POP::ShrOp, POP::SIMDAndOp,
+                 POP::SIMDOrOp, POP::SIMDXOrOp, POP::CastFromBuiltinOp,
                  POP::CastToBuiltinOp>(op);
     };
 
@@ -486,10 +550,10 @@ struct LowerKGENToArithPass
 
 void M::KGEN::populateKGENToArithConversionPatterns(
     const TypeConverter &converter, RewritePatternSet &patterns) {
-  patterns
-      .add<ConvertKGENParamConstant, ConvertPOPAdd, ConvertPOPSub,
-           ConvertPOPMul, ConvertPOPFloorDiv, ConvertPOPSelect,
-           ConvertPOPSIMDSelect, ConvertPOPMax, ConvertPOPMin, ConvertPOPCmp,
-           ConvertPOPCastFromBuiltin, ConvertPOPCastToBuiltin>(
-          converter, patterns.getContext());
+  patterns.add<ConvertKGENParamConstant, ConvertPOPAdd, ConvertPOPSub,
+               ConvertPOPMul, ConvertPOPFloorDiv, ConvertPOPSelect,
+               ConvertPOPSIMDSelect, ConvertPOPMax, ConvertPOPMin,
+               ConvertPOPCmp, ConvertPOPShl, ConvertPOPShr, ConvertPOPSIMDAnd,
+               ConvertPOPSIMDOr, ConvertPOPSIMDXOr, ConvertPOPCastFromBuiltin,
+               ConvertPOPCastToBuiltin>(converter, patterns.getContext());
 }
