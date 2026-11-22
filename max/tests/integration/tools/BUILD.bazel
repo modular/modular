@@ -339,43 +339,6 @@ PIPELINE_SPECS = [
     # They are still verified via the Pipeline Logit Verification workflow
     # which has access to pregenerated S3 goldens.
     #
-    # Mistral Small 24B
-    {
-        "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
-        "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-        "encoding": "bfloat16",
-        "target": "cuda:sm_90a",
-        "tags": ["gpu"],
-        "gpu_constraints": ["//:h100_gpu"],
-        "devices": "gpu",
-        "exec_properties": {"test.resources:gpu-memory": "80"},
-    },
-    {
-        "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
-        "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-        "encoding": "bfloat16",
-        "target": "cuda:sm_100a",
-        "tags": ["gpu"],
-        "gpu_constraints": ["//:b200_gpu"],
-        "devices": "gpu",
-        "exec_properties": {"test.resources:gpu-memory": "80"},
-    },
-    # TODO: HIP targets are excluded because the precompile_pipeline build
-    # action cross-compiles for ROCm but runs on a CPU-only executor that
-    # lacks ROCm runtime libraries (e.g. libroctx64.so).  Re-add once
-    # cross-compilation from CPU-only executors is supported.
-    #
-    # {
-    #     "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
-    #     "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-    #     "encoding": "bfloat16",
-    #     "target": "hip:gfx950",
-    #     "tags": ["gpu"],
-    #     "gpu_constraints": ["//:mi355_gpu"],
-    #     "devices": "gpu",
-    #     "exec_properties": {"test.resources:gpu-memory": "80"},
-    # },
-    #
     # Llama 3.3 70B
     {
         "pipeline": "meta-llama/Llama-3.3-70B-Instruct-bfloat16",

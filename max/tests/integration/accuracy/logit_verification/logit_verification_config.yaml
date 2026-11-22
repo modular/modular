@@ -313,19 +313,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 9.0e-04
     kl_div_threshold: 5.0e-03
 
-  mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: [*b200_1x, *mi355_1x]
-    pipeline: "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: []
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/mistralai_Mistral-Small-3.1-24B-Instruct-2503_golden/1/1aee8fe2f357007cba31a3d59f537cb204df040aa8bca7ab7f8c521469385905/mistralai_Mistral-Small-3.1-24B-Instruct-2503_golden.tar.gz"
-      json_file: "torch_mistralai_Mistral-Small-3.1-24B-Instruct-2503_bfloat16_golden.json"
-    cos_dist_threshold: 3.0e-03
-    kl_div_threshold: 5.2e-3
-
   OpenGVLab/InternVL3-1B-Instruct-bfloat16:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []

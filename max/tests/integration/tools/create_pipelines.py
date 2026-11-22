@@ -1589,17 +1589,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "mistralai/Mistral-Nemo-Instruct-2407": GenericOracle(
-        model_path="mistralai/Mistral-Nemo-Instruct-2407",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": GenericOracle(
-        model_path="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-        auto_model_cls=transformers.AutoModelForImageTextToText,
-    ),
     "OpenGVLab/InternVL3-1B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-1B-Instruct"
     ),

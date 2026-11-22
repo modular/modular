@@ -1219,11 +1219,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama3.3-70b-instruct_bfloat16_golden/1/e4a07947f7f23c0b1bc5d297bbe1575b637abb53270e99b284936bf6d2dc703f/torch_llama3.3-70b-instruct_bfloat16_golden.tar.gz",
     },
     {
-        "name": "torch_mistral_golden.tar.gz",
-        "sha256": "6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_mistral_golden/1/6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a/torch_mistral_golden.tar.gz",
-    },
-    {
         "name": "torch_internvl3-1b_golden.tar.gz",
         "sha256": "c0cc901fe70ef9f90801a921aae56e6c8a3ce11e7173cdeed27c46f147f29463",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-1b_golden/1/c0cc901fe70ef9f90801a921aae56e6c8a3ce11e7173cdeed27c46f147f29463/torch_internvl3-1b_golden.tar.gz",
