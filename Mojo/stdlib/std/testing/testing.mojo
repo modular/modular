@@ -638,11 +638,17 @@ struct assert_raises[T: Deinitable = String](not Movable):
         Args:
             error: The error raised.
 
+        Raises:
+            Error:
+                1. If `contains` is set and the error message doesn't
+                  include the expected string, or if `contains` is set
+                  but the error type is not `Writable`.
+                2. If `error` is set and the caught error type does
+                  not match the expected error, or if the error message
+                  does not equal.
+
         Returns:
             True if the error was successfully caught and matched.
-
-        Raises:
-          An error.
         """
 
         comptime assert conforms_to(
@@ -651,14 +657,15 @@ struct assert_raises[T: Deinitable = String](not Movable):
 
         # `assert_raises[error-type](error=error-instance())
         if self.error:
-          comptime assert conforms_to(
-              Self.T, Equatable & Writable
-          ), "assert_raises[ErrorType](error=...) requires an Equatable and Writable Error type"
+            comptime assert conforms_to(Self.T, Equatable & Writable), (
+                "assert_raises[ErrorType](error=...) requires an Equatable and"
+                " Writable Error type"
+            )
 
-          # this checks the error types and the content of the error
-          comptime error_types_match = CaughtError == Self.T
-          var error_values_match = String(self.error.value()) in String(error)
-          return error_types_match and error_values_match
+            # this checks the error types and the content of the error
+            comptime error_types_match = CaughtError == Self.T
+            var error_values_match = String(self.error.value()) in String(error)
+            return error_types_match and error_values_match
 
         # if not error type is provided, then first lets check if a message was passed
         # if not, like in `assert_raises():` case, we just return True.
