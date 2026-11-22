@@ -110,6 +110,20 @@ _EXTRA_CONSTRAINTS = {
     # Tiled blockwise-scaled FP8 dense matmul — CDNA4 16x16x128 FP8 MFMA,
     # MI355X-specific.
     "test_blockwise_fp8_matmul_amd.mojo": ["//:mi355_gpu"],
+    # Tiled blockwise-scaled FP8 dense matmul on NVIDIA parts without tcgen05:
+    # GB10 (sm_121a) today, RTX 50-series (sm_120) by the same gate. B200 runs
+    # the SM100 kernel and this test asserts the no-tcgen05 gate is open, so it
+    # is not compatible there.
+    "test_blockwise_fp8_matmul_nvidia.mojo": select({
+        "//:gb10_gpu": ["//:gb10_gpu"],
+        "//:rtx5090_gpu": ["//:rtx5090_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_blockwise_fp8_matmul_nvidia_bench.mojo": select({
+        "//:gb10_gpu": ["//:gb10_gpu"],
+        "//:rtx5090_gpu": ["//:rtx5090_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_batched_matmul_dynamic_scaled_fp8_amd_tiled.mojo": ["//:mi355_gpu"],
     "test_batched_matmul_dynamic_scaled_fp8_amd_tiled_mla_layout.mojo": ["//:mi355_gpu"],
     "test_blockwise_fp8_matmul_amd_bench.mojo": ["//:mi355_gpu"],
@@ -418,6 +432,8 @@ _GPU_MEMORY = {
     "test_mxfp6_matmul_amd.mojo": "2",
     "test_block_scaled_mma_amd_pack_k.mojo": "1",
     "test_blockwise_fp8_1d2d_structured.mojo": "1.5",
+    "test_blockwise_fp8_matmul_nvidia.mojo": "2",
+    "test_blockwise_fp8_matmul_nvidia_bench.mojo": "2",
     "test_blockwise_fp8_grouped_matmul_amd.mojo": "2",
     "test_blockwise_fp8_grouped_matmul_amd_bench.mojo": "4",
     "test_bulk_mma_pair_cta_sm100.mojo": "1.5",
@@ -866,6 +882,7 @@ mojo_test(
             ["manual"] if src in [
                 "test_ping_pong_shapes.mojo",  # TODO: KERN-2631 Flaky on AMD, re-enable
                 "test_blockwise_fp8_matmul_amd_bench.mojo",  # perf bench, local-only
+                "test_blockwise_fp8_matmul_nvidia_bench.mojo",  # perf bench, local-only
                 "test_blockwise_fp8_grouped_matmul_amd_bench.mojo",  # perf bench, local-only
             ] else []
         ),

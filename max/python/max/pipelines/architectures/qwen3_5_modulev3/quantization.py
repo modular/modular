@@ -20,10 +20,16 @@ and Gated-DeltaNet projections are per-tensor FP8. One ``QuantConfig`` cannot
 describe both, and reading the FP8 payload as packed FP4 produces plausible
 tensors and garbage output without raising.
 
-The representation here is two ``QuantConfig`` objects plus the module sets
-they apply to, rather than a per-module field on ``QuantConfig`` itself:
-``Linear`` already accepts a per-instance config, so per-module granularity
-needs no change to a type two dozen other architectures share.
+Hugging Face's fine-grained FP8 format exports it as ``quant_method:
+"fp8"``: the MLP, full-attention and Gated-DeltaNet projections each carry
+one ``float8_e4m3fn`` weight with an inverse scale per 128x128 block in
+``weight_scale_inv``, against dynamically quantized activations. That layout
+is a single ``QuantConfig`` for both module sets.
+
+The representation here is a ``QuantConfig`` per module set rather than a
+per-module field on ``QuantConfig`` itself: ``Linear`` already accepts a
+per-instance config, so per-module granularity needs no change to a type two
+dozen other architectures share.
 
 Everything this module cannot account for raises. A checkpoint that does not
 match the shape described above is a checkpoint MAX has not been taught to
@@ -54,8 +60,9 @@ from max.pipelines.weights.quant import read_modelopt_quantized_layers
 # Anything else misreads every scale, so it is checked rather than assumed.
 NVFP4_GROUP_SIZE = NVFP4_BLOCK_SIZE
 
-# Suffixes that make up one quantizable unit. Quantization is all-or-nothing
-# within a unit: modelopt quantizes a whole MLP or a whole attention block.
+# The projections that make up one quantizable unit. Quantization is
+# all-or-nothing within a unit: one config covers a whole MLP or a whole
+# attention block.
 _MLP_PROJECTIONS = frozenset({"gate_proj", "up_proj", "down_proj"})
 _FULL_ATTN_PROJECTIONS = frozenset({"q_proj", "k_proj", "v_proj", "o_proj"})
 _LINEAR_ATTN_PROJECTIONS = frozenset({"in_proj_qkv", "in_proj_z", "out_proj"})
@@ -64,33 +71,146 @@ _LAYER_MODULE = re.compile(
     r"^layers\.(\d+)\.(mlp|self_attn|linear_attn)\.(\w+)$"
 )
 
+_LAYER_SCALE = re.compile(
+    r"^layers\.(\d+)\.(mlp|self_attn|linear_attn)\.(\w+)\.weight_scale_inv$"
+)
+
+
+def _blockwise_fp8_scheme(
+    hf_quant_config: Mapping[str, Any],
+    state_dict: Mapping[str, WeightData],
+    num_hidden_layers: int,
+) -> Qwen3_5QuantScheme:
+    """Reads a ``quant_method: "fp8"`` checkpoint with 128-wide weight blocks.
+
+    This is the Hugging Face fine-grained FP8 declaration (the layout
+    ``transformers``' ``FineGrainedFP8Config`` reads, with ``weight_scale_inv``
+    beside each weight) the Qwen3.8-27B-FP8 checkpoint ships: every linear projection in a quantized block carries a
+    ``float8_e4m3fn`` weight and one scale per 128x128 block, against
+    dynamically quantized activations. The layer sets come from which modules
+    actually ship a scale, not from what the config claims, because a block
+    is quantized all-or-nothing in the kernels either way.
+
+    Args:
+        hf_quant_config: The checkpoint's resolved quantization config.
+        state_dict: The adapted checkpoint weights, keyed by MAX module path.
+        num_hidden_layers: The decoder's layer count.
+
+    Returns:
+        The scheme, with one config serving both the MLP and attention sets.
+
+    Raises:
+        ValueError: If the config describes a block geometry this path does
+            not implement, or if the checkpoint quantizes part of a layer.
+    """
+    scheme_name = hf_quant_config.get("activation_scheme")
+    if scheme_name != "dynamic":
+        raise ValueError(
+            "Qwen3.5's block-wise FP8 path quantizes activations at run time "
+            f"and needs activation_scheme='dynamic', but this checkpoint "
+            f"declares {scheme_name!r}."
+        )
+    block = list(hf_quant_config.get("weight_block_size") or ())
+    if block != [128, 128]:
+        raise ValueError(
+            "Qwen3.5's block-wise FP8 path is wired for weight_block_size "
+            f"[128, 128], but this checkpoint declares {block}."
+        )
+
+    scales: dict[tuple[int, str], set[str]] = {}
+    for name in state_dict:
+        match = _LAYER_SCALE.match(name)
+        if match is None:
+            continue
+        layer_idx, subtree = int(match.group(1)), match.group(2)
+        if layer_idx >= num_hidden_layers:
+            raise ValueError(
+                f"the checkpoint ships a scale for layer {layer_idx}, but the "
+                f"config declares {num_hidden_layers} layers."
+            )
+        scales.setdefault((layer_idx, subtree), set()).add(match.group(3))
+
+    # A unit is quantized whole or not at all: the arch's projections take one
+    # config per layer, so a block with some projections quantized has no
+    # representation.
+    units = (
+        ("mlp", _MLP_PROJECTIONS),
+        ("self_attn", _FULL_ATTN_PROJECTIONS),
+        ("linear_attn", _LINEAR_ATTN_PROJECTIONS),
+    )
+    for layer_idx in range(num_hidden_layers):
+        for kind, expected in units:
+            _check_unit_is_uniform(
+                kind, layer_idx, scales.get((layer_idx, kind), set()), expected
+            )
+
+    mlp_layers = {layer for (layer, kind) in scales if kind == "mlp"}
+    attn_layers = {
+        layer
+        for (layer, kind) in scales
+        if kind in ("self_attn", "linear_attn")
+    }
+
+    every_layer = frozenset(range(num_hidden_layers))
+    for kind, found in (("MLP", mlp_layers), ("attention", attn_layers)):
+        if frozenset(found) != every_layer:
+            raise ValueError(
+                f"Qwen3.5 has block-wise FP8 scales for {len(found)} of "
+                f"{num_hidden_layers} layers' {kind} projections. MAX "
+                "quantizes a block all-or-nothing, so a partially quantized "
+                "checkpoint cannot be served as one graph."
+            )
+
+    compute_dtype = _compute_dtype(state_dict)
+    config = QuantConfig.blockscaled_fp8(
+        mlp_quantized_layers=every_layer,
+        attn_quantized_layers=every_layer,
+        scale_dtype=DType.float32,
+        embedding_output_dtype=compute_dtype,
+    )
+    # The kernels take float32 block scales beside the fp32 activation
+    # scales. The checkpoint's are bf16, and the pipeline casts them to the
+    # declared float32 on the host when it binds the weights
+    # (`_cast_to_parameter_dtypes`), so the graph only ever sees float32.
+    config.can_use_fused_mlp = can_use_fused_mlp(state_dict)
+    return Qwen3_5QuantScheme(
+        mlp=config,
+        attn=config,
+        mlp_layers=every_layer,
+        attn_layers=every_layer,
+        quantize_lm_head=False,
+        compute_dtype=compute_dtype,
+    )
+
 
 @dataclass(frozen=True)
 class Qwen3_5QuantScheme:
     """Which Qwen3.5 modules are quantized, and how."""
 
     mlp: QuantConfig | None
-    """NVFP4 config for the MLP projections and ``lm_head``."""
+    """Config for the MLP projections, and ``lm_head`` when
+    :attr:`quantize_lm_head`."""
 
     attn: QuantConfig | None
-    """Per-tensor static FP8 config for the attention and GDN projections."""
+    """Config for the attention and GDN projections."""
 
     mlp_layers: frozenset[int]
-    """Layer indices whose ``gate_proj``/``up_proj``/``down_proj`` are NVFP4."""
+    """Layer indices whose ``gate_proj``/``up_proj``/``down_proj`` are
+    quantized."""
 
     attn_layers: frozenset[int]
-    """Layer indices whose attention or GDN projections are FP8."""
+    """Layer indices whose attention or GDN projections are quantized."""
 
     quantize_lm_head: bool
-    """Whether ``lm_head`` is NVFP4."""
+    """Whether ``lm_head`` is quantized."""
 
     compute_dtype: DType
     """Dtype of everything unquantized: activations, norms, embeddings, the
     GDN conv and its ``in_proj_a``/``in_proj_b``, and the state pools.
 
     Distinct from ``Qwen3_5Config.dtype``, which is the *storage* dtype of the
-    quantized bases (``uint8`` for packed NVFP4) and is wrong for all of the
-    above."""
+    quantized bases (``uint8`` for packed NVFP4, ``float8_e4m3fn`` for FP8)
+    and is wrong for all of the above."""
 
     def mlp_config(self, layer_idx: int) -> QuantConfig | None:
         """Returns the config for layer ``layer_idx``'s MLP projections."""
@@ -106,9 +226,8 @@ def storage_dtype(
 ) -> DType:
     """Returns the on-disk dtype of a module's weight under ``quant_config``.
 
-    NVFP4 arrives as ``uint8`` with two 4-bit codes per byte; per-tensor FP8
-    arrives as ``float8_e4m3fn``; an unquantized module keeps the compute
-    dtype.
+    NVFP4 arrives as ``uint8`` with two 4-bit codes per byte; FP8 arrives as
+    ``float8_e4m3fn``; an unquantized module keeps the compute dtype.
     """
     if quant_config is None:
         return compute_dtype
@@ -135,9 +254,8 @@ def _check_unit_is_uniform(
     if found and found != expected:
         raise ValueError(
             f"layers.{layer_idx}.{kind} is partially quantized: "
-            f"{sorted(found)} are listed in quantized_layers but "
-            f"{sorted(expected - found)} are not. MAX quantizes a "
-            f"{kind} block all-or-nothing."
+            f"{sorted(found)} carry scales, expected {sorted(expected)}. "
+            f"MAX quantizes a {kind} block all-or-nothing."
         )
 
 
@@ -164,6 +282,11 @@ def parse_quant_scheme(
     """
     if not hf_quant_config:
         return None
+
+    if hf_quant_config.get("quant_method") == "fp8":
+        return _blockwise_fp8_scheme(
+            hf_quant_config, state_dict, num_hidden_layers
+        )
 
     quantized_layers = read_modelopt_quantized_layers(
         hf_quant_config,
@@ -267,7 +390,12 @@ def parse_quant_scheme(
     )
 
 
-_SCALE_SUFFIXES = (".weight_scale", ".input_scale", ".weight_scale_2")
+_SCALE_SUFFIXES = (
+    ".weight_scale",
+    ".input_scale",
+    ".weight_scale_2",
+    ".weight_scale_inv",
+)
 
 
 def can_use_fused_mlp(state_dict: Mapping[str, WeightData]) -> bool:

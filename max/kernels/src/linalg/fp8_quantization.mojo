@@ -55,6 +55,10 @@ from .matmul import matmul
 from .matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
     blockwise_scaled_fp8_matmul_amd,
 )
+from .matmul.gpu.blockwise_scaled_fp8_matmul_nvidia import (
+    _nvidia_blockwise_tiled_ok,
+    blockwise_scaled_fp8_matmul_nvidia,
+)
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
@@ -2829,6 +2833,19 @@ def blockwise_scaled_fp8_with_epilogue[
                 ](c, a, b, a_scales, b_scales, ctx)
 
     else:
+        # NVIDIA parts without tcgen05 (sm_12x: GB10 today) get the tiled,
+        # bandwidth-first blockwise-FP8 dense matmul. Structurally portable to
+        # sm_80/sm_90; the gate keeps those on the naive kernel until measured.
+        comptime nvidia_blockwise_tiled_ok = _nvidia_blockwise_tiled_ok[
+            c_type=c_type,
+            a_type=a_type,
+            b_type=b_type,
+            a_scales_type=a_scales_type,
+            b_scales_type=b_scales_type,
+            transpose_b=transpose_b,
+            scales_granularity_mnk=scales_granularity_mnk,
+            device_info=ctx.default_device_info,
+        ]()
         # AMD gfx950: tiled MFMA blockwise-FP8 dense matmul for the GLM E4M3 +
         # fp32-per-[128,128]-block case; everything else falls back to naive.
         comptime amd_blockwise_tiled_ok = not has_epilogue_fn and _amd_blockwise_tiled_ok[
@@ -2844,6 +2861,14 @@ def blockwise_scaled_fp8_with_epilogue[
             c_static_n=type_of(c).static_shape[1],
         ]()
 
+        comptime if nvidia_blockwise_tiled_ok:
+            blockwise_scaled_fp8_matmul_nvidia[
+                transpose_b=transpose_b,
+                scales_granularity_mnk=scales_granularity_mnk,
+                has_epilogue_fn=has_epilogue_fn,
+                EpilogueFnType=EpilogueFnType,
+            ](c, a, b, a_scales, b_scales, ctx, epilogue_fn)
+            return
         comptime if amd_blockwise_tiled_ok:
             blockwise_scaled_fp8_matmul_amd[
                 transpose_b=transpose_b,

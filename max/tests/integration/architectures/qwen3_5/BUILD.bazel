@@ -39,6 +39,21 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_quantization_block_fp8",
+    srcs = ["test_quantization_block_fp8.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/qwen3_5_modulev3",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_mtp",
     srcs = ["test_mtp.py"],
     # Builds the draft head but never runs it. Constructing it reaches
