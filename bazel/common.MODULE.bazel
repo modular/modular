@@ -1174,11 +1174,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
     },
     {
-        "name": "torch_mpnet_golden.tar.gz",
-        "sha256": "d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_mpnet_golden/1/d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97/torch_mpnet_golden.tar.gz",
-    },
-    {
         "name": "torch_gpt-oss_golden.tar.gz",
         "sha256": "808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",

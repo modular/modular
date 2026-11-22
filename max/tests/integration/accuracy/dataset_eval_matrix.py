@@ -25,8 +25,7 @@ import click
 from pipeline_matrix import PipelineEntry, entries_to_matrix, filter_entries
 
 CONFIGS_DIR = Path("max/tests/integration/accuracy/dataset_eval_configs")
-# Switch to llama once llama is fixed in dataset eval.
-SMOKE_TEST_PIPELINE = "sentence-transformers/all-mpnet-base-v2"
+SMOKE_TEST_PIPELINE = "google/gemma-4-26B-A4B-it"
 
 
 PIPELINES: list[PipelineEntry] = [
@@ -46,13 +45,6 @@ PIPELINES: list[PipelineEntry] = [
     ),
     PipelineEntry(
         pipeline="modularai/Llama-3.1-8B-Instruct-GGUF",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="sentence-transformers/all-mpnet-base-v2",
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",

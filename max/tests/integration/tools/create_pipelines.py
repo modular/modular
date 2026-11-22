@@ -1732,18 +1732,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float8_e4m3fn"],
         },
     ),
-    "sentence-transformers/all-mpnet-base-v2": GenericOracle(
-        model_path="sentence-transformers/all-mpnet-base-v2",
-        # Maximum length accepted by MPNet tokenizer is 512.
-        config_params={"max_length": 512, "pool_embeddings": False},
-        prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
-        auto_model_cls=transformers.AutoModel,
-        task=PipelineTask.EMBEDDINGS_GENERATION,
-        device_encoding_map={
-            "cpu": ["float32"],
-            "gpu": ["float32"],
-        },
-    ),
     "Qwen/Qwen3-Embedding-0.6B": GenericOracle(
         model_path="Qwen/Qwen3-Embedding-0.6B",
         config_params={"max_length": 8192, "pool_embeddings": True},

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Test precompile-all-pipelines orchestrator compiles mpnet on CPU."""
+"""Test precompile-all-pipelines orchestrator compiles SmolLM on CPU."""
 
 from precompile_all_pipelines import (
     collect_precompile_jobs,
@@ -19,15 +19,15 @@ from precompile_all_pipelines import (
 from tag_filters import TagFilter
 
 
-def test_precompile_mpnet() -> None:
+def test_precompile_smollm() -> None:
     jobs = collect_precompile_jobs(
         devices="cpu",
         target=None,
         tag_filter=TagFilter(),
-        name_filter="mpnet",
+        name_filter="smollm",
     )
     assert len(jobs) >= 1, (
-        "No jobs selected -- mpnet may have been removed from "
+        "No jobs selected -- smollm may have been removed from "
         "LOGIT_VERIFICATION_CONFIG or lost DeviceKind.CPU compatibility"
     )
 

@@ -275,7 +275,7 @@ modular_py_test(
     srcs = ["test_precompile_all_pipelines_cpu.py"],
     ignore_extra_deps = [
         # Imported via string lookup
-        "//max/python/max/pipelines/architectures/mpnet",
+        "//max/python/max/pipelines/architectures/llama3",
     ],
     imports = ["."],
     tags = [
@@ -288,7 +288,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/pipelines/architectures/mpnet",
+        "//max/python/max/pipelines/architectures/llama3",
         "//max/tests/integration/tools:precompile_all_pipelines",
         "//max/tests/integration/tools:tag_filters",
     ],

@@ -97,22 +97,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 3.3e-6
     kl_div_threshold: 1.9e-05
 
-  sentence-transformers/all-mpnet-base-v2-float32:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "sentence-transformers/all-mpnet-base-v2"
-    compatible_with: [cpu, gpu]
-    encoding: float32
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_mpnet_golden/1/d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97/torch_mpnet_golden.tar.gz"
-      json_file: "torch_mpnet_float32_golden.json"
-    # On CPU, mpnet passes with all values set to `1e-4`
-    # GPU specifically requires these higher tolerances (30x worse).
-    absolute_tolerance: 2.6e-3
-    relative_tolerance: 1.8e-1
-    cos_dist_threshold: 2.6e-5
-    kl_div_threshold: 5.0e-07
-
   # The checkpoint mcloudDeployConfig.yaml's smollm jobs deploy, on CPU
   # because their manifests request no accelerator. No
   # pregenerated_torch_goldens: at 135M a torch reference is cheaper to
