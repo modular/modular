@@ -31,11 +31,14 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import math
 
 from max import functional as F
 from max import tree
 from max.dtype import DType
+from max.graph import StaticDim
 from max.nn import Module
+from max.nn._graph_ops import _is_sm10x_gpu
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_linear import QuantizedLinear
@@ -340,18 +343,27 @@ def _scales_mapping(mapping: DeviceMapping) -> DeviceMapping:
 def act_quant(
     x: Tensor, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[Tensor, Tensor]:
-    """Quantizes the activation's last axis and returns its scales."""
+    """Quantizes the activation's last axis and returns its scales.
+
+    The scales are powers of two. On SM100 the quantize writes them as
+    float32, the dtype their reader multiplies in, so no cast launch
+    follows it. Elsewhere they come back as ``float8_e8m0fnu``.
+    """
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
 
+    pow2_scales = (
+        not any(device.is_host for device in x.mesh.devices) and _is_sm10x_gpu()
+    )
     x_q, x_scales = quantize_dynamic_scaled_float8(
         x,
         quant_config.input_scale,
         quant_config.weight_scale,
-        scales_type=DType.float8_e8m0fnu,
+        scales_type=DType.float32 if pow2_scales else DType.float8_e8m0fnu,
         group_size_or_per_token=block_size,
         out_type=DType.float8_e4m3fn,
+        pow2_scales=pow2_scales,
     )
     # Both outputs take the input's placements; the scales have a different
     # shape than the quantized tensor, which a placements-only mapping allows.
@@ -363,9 +375,26 @@ def act_quant(
 
     # Scales layout from ``quantize_dynamic_scaled_float8`` is
     # ``[head_dim // block_size, M_padded]``; ``M`` is padded for TMA (16-byte
-    # alignment of the scale row length). Slice to ``num_rows``, then fold
+    # alignment of the scale row length). Cut to ``num_rows``, then fold
     # multiple K-block scale rows into one per token when ``head_dim > block_size``.
-    x_scales = x_scales[:, :num_rows]
+    # A slice of the padding is copied in a launch of its own. Float32 scales
+    # pad the row to a multiple of 4
+    # (``_dynamic_scaled_float8_quant_out_types``): when the static row dims
+    # make ``M`` a multiple of 4 already, ``M_padded`` is ``M``, and a rebind
+    # keeps the scales a view.
+    row_dims = x_dims[1:]
+    if (
+        pow2_scales
+        and all(isinstance(d, StaticDim) for d in row_dims)
+        and math.prod(int(d) for d in row_dims) % 4 == 0
+    ):
+        x_scales = F.rebind(
+            x_scales,
+            [x_scales.shape[0], num_rows],
+            "float32 indexer scales carry no padding",
+        )
+    else:
+        x_scales = x_scales[:, :num_rows]
     num_k_groups = int(head_dim) // block_size
     if num_k_groups > 1:
         x_scales = F.max(x_scales, axis=0)
