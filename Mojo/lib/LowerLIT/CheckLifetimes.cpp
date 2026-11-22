@@ -70,12 +70,12 @@ struct RaiseSetEntry {
   // A linked list to the previous entry.
   RaiseSetEntry<ElementType> *prev;
 
-  ElementType *getMatchingRaiseSet(StringAttr label, unsigned handlerIndex) {
+  ElementType *getMatchingRaiseSet(StringAttr label, size_t handlerIndex) {
     auto matchingSet = this;
     while (matchingSet && matchingSet->label != label)
       matchingSet = matchingSet->prev;
-    if (!matchingSet || handlerIndex >= matchingSet->raiseSets.size())
-      return nullptr;
+    assert(matchingSet && handlerIndex < matchingSet->raiseSets.size() &&
+           "invalid handler index");
     return matchingSet->raiseSets[handlerIndex];
   }
 };

@@ -996,7 +996,7 @@ def LIT_TryOp : LITOp<"try",
 
   let extraClassDeclaration = [{
     /// Returns the except region selected by `handlerIndex`.
-    Region &getExceptRegion(unsigned handlerIndex = 0) {
+    Region &getExceptRegion(size_t handlerIndex = 0) {
       return getExceptRegions()[handlerIndex];
     }
 

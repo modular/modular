@@ -2096,7 +2096,7 @@ MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
 }
 
 /// Records where a typed error leaves a source-level try body.
-void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
+void RaiseContext::recordRaiseSite(MLValue errorSlot, LIT::RaiseOp terminator,
                                    Operation *sourceOperation,
                                    SMLoc sourceLoc) {
   if (isEagerlyEmitted())
@@ -2109,9 +2109,9 @@ void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
 void RaiseContext::selectHandler(ArrayRef<RaiseSite> sites,
                                  size_t handlerIndex) {
   for (const RaiseSite &site : sites) {
-    auto raise = cast<LIT::RaiseOp>(site.terminator);
-    raise.setHandlerIndexAttr(IntegerAttr::get(
-        IntegerType::get(raise.getContext(), 64), handlerIndex));
+    LIT::RaiseOp terminator = site.terminator;
+    terminator.setHandlerIndexAttr(IntegerAttr::get(
+        IntegerType::get(terminator.getContext(), 64), handlerIndex));
   }
 }
 
@@ -2275,7 +2275,8 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
       continue;
 
     OpBuilder savedBuilder = *emitter.builder;
-    emitter.builder->setInsertionPoint(site.terminator);
+    LIT::RaiseOp terminator = site.terminator;
+    emitter.builder->setInsertionPoint(terminator.getOperation());
     ExprDest destination(primaryErrorSlot, EC_RaiseValue);
     SyntheticNode source(site.sourceLoc);
     (void)emitter.emitResult(MRValue(site.errorSlot), &source, destination);
@@ -2296,6 +2297,7 @@ std::pair<MLValue, bool> RaiseContext::finalizeErrorSlotsForHandler(
     IREmitter &emitter, ASTType requiredErrorType, size_t handlerIndex) {
   assert(!isEagerlyEmitted() && requiredErrorType);
 
+  // Return true if the error value can be converted to the required type.
   auto isConvertible = [&](MLValue errorSlot) {
     SyntheticNode source(
         emitter.shared.diags.convertLocToSMLoc(opForRaise->getLoc()));
@@ -2304,12 +2306,16 @@ std::pair<MLValue, bool> RaiseContext::finalizeErrorSlotsForHandler(
         emitter.shared.noAssumptions);
   };
 
+  // Decide which of the raise sites will go to this handler, splitting them
+  // into two sets based on whether their type implicit converts.
   SmallVector<RaiseSite, 4> matchedSites;
   SmallVector<RaiseSite, 4> pendingSites;
   for (const RaiseSite &site : raiseSites)
     (isConvertible(site.errorSlot) ? matchedSites : pendingSites)
         .push_back(site);
 
+  // If one of the error slots (a vardecl) is exactly this type then we reuse
+  // it, otherwise we create a new one to convert into.
   MLValue handlerSlot;
   auto exactSlot = llvm::find_if(errorSlots, [&](MLValue errorSlot) {
     return requiredErrorType.isEqualCanon(errorSlot.getRValueType());
@@ -2320,9 +2326,12 @@ std::pair<MLValue, bool> RaiseContext::finalizeErrorSlotsForHandler(
     handlerSlot =
         getOrCreateErrorSlot(emitter, requiredErrorType, opForRaise->getLoc());
 
+  // Process all of the sites that can be converted to the required type,
+  // routing them and converting their slot if needed.
   for (const RaiseSite &site : matchedSites) {
     OpBuilder savedBuilder = *emitter.builder;
-    emitter.builder->setInsertionPoint(site.terminator);
+    LIT::RaiseOp terminator = site.terminator;
+    emitter.builder->setInsertionPoint(terminator.getOperation());
     if (site.errorSlot != handlerSlot) {
       ExprDest destination(handlerSlot, EC_RaiseValue);
       SyntheticNode source(site.sourceLoc);
@@ -2335,7 +2344,11 @@ std::pair<MLValue, bool> RaiseContext::finalizeErrorSlotsForHandler(
   if (!matchedSites.empty())
     verifyExceptTypeLifetimeValidity(emitter, handlerSlot);
 
+  // Now that we've processed some of the raise sites, remove them from the
+  // list we need to still process.
   raiseSites = std::move(pendingSites);
+  // Keep only slots used by pending sites so later handlers find a common type
+  // only for errors that can reach them.
   llvm::erase_if(errorSlots, [&](MLValue errorSlot) {
     return llvm::none_of(raiseSites, [&](const RaiseSite &site) {
       return site.errorSlot == errorSlot;
@@ -2345,7 +2358,7 @@ std::pair<MLValue, bool> RaiseContext::finalizeErrorSlotsForHandler(
 }
 
 /// Routes every error still pending after typed handlers to the catch-all.
-void RaiseContext::selectHandlerForPendingRaises(size_t handlerIndex) {
+void RaiseContext::selectCatchAllHandler(size_t handlerIndex) {
   selectHandler(raiseSites, handlerIndex);
   raiseSites.clear();
   errorSlots.clear();

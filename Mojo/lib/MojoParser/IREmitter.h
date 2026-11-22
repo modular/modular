@@ -71,7 +71,7 @@ struct RaiseContext {
                             const ExprNode *sourceExpr);
 
   /// Records an error propagation terminator for deferred try type unification.
-  void recordRaiseSite(MLValue errorSlot, Operation *terminator,
+  void recordRaiseSite(MLValue errorSlot, LIT::RaiseOp terminator,
                        Operation *sourceOperation, SMLoc sourceLoc);
 
   /// Converts deferred errors to a common slot, optionally constrained to
@@ -86,8 +86,8 @@ struct RaiseContext {
   finalizeErrorSlotsForHandler(IREmitter &emitter, ASTType requiredErrorType,
                                size_t handlerIndex);
 
-  /// Routes all pending raises to `handlerIndex`.
-  void selectHandlerForPendingRaises(size_t handlerIndex);
+  /// Routes all pending raises to the catch-all handler.
+  void selectCatchAllHandler(size_t handlerIndex);
 
   /// Returns the distinct error types that no handler has consumed.
   SmallVector<ASTType> getPendingErrorTypes() const;
@@ -112,7 +112,7 @@ private:
 
   struct RaiseSite {
     MLValue errorSlot;
-    Operation *terminator;
+    LIT::RaiseOp terminator;
     Operation *sourceOperation;
     SMLoc sourceLoc;
   };

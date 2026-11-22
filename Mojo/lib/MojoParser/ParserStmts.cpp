@@ -3782,192 +3782,94 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   if (parseToken(Token::colon, "expected ':' after 'try'"))
     return failure();
 
-  // If we see a 'try' block in a context that cannot raise, we need to check if
-  // the user explicitly provided an 'except' region, otherwise this is a
-  // try-finally block where the try block cannot raise.
-  bool inExceptRegion = getRaiseContext();
-  unsigned numExceptRegions = 1;
+  // The initial scan records each handler location and header cursor, then
+  // skips its suite. The final list routes raises in source order so that
+  // `raise FirstError()` selects the first handler accepting `FirstError`.
+  struct ExceptClause {
+    SMLoc loc;
+    LexerCursor headerCursor;
+  };
+  SmallVector<ExceptClause, 2> exceptClauses;
+
+  // Record each handler before parsing the try body so lit.try has the right
+  // number of regions. Their headers and bodies are parsed after the try body
+  // has been emitted.
+  LexerCursor afterHandlers;
   {
     Lexer subLexer(shared.diags, lexer.getCursor());
     ParserBase subParser(shared, subLexer);
+    // Skip over the body of the try suite.
     size_t tryIndent = tryToken.getIndentation().value_or(curIndent);
     subParser.skipUntilIndentation(tryIndent);
-    auto consumeExceptAtTryIndent = [&] {
-      return subParser.getToken().getIndentation() == tryIndent &&
-             subParser.consumeIf(Token::kw_except);
-    };
-    if (consumeExceptAtTryIndent()) {
-      inExceptRegion = true;
-      do {
-        subParser.skipUntilIndentation(tryIndent);
-        if (!consumeExceptAtTryIndent())
-          break;
-        ++numExceptRegions;
-      } while (true);
+    // Parse each 'except' region.
+    SMLoc exceptLoc;
+    while (subParser.getToken().getIndentation() == tryIndent &&
+           subParser.consumeIf(Token::kw_except, &exceptLoc)) {
+      ExceptClause clause;
+      clause.loc = exceptLoc;
+      clause.headerCursor = subParser.getLexer().getCursor();
+      exceptClauses.push_back(clause);
+      subParser.skipUntilIndentation(tryIndent);
     }
+    afterHandlers = subParser.getLexer().getCursor();
   }
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
 
-  // Raised calls create their error slot lazily.
+  // Create the lit.try operation.  It requires at least one except region, even
+  // for try-finally.
+  size_t numExceptRegions = exceptClauses.empty() ? 1 : exceptClauses.size();
   auto tryOp = TryOp::create(builder, loc, TypeRange{}, StringAttr{},
                              /*suppressWarnings=*/false, numExceptRegions);
 
-  // Parse the try suite.
+  // Parse the body of the try suite. This will record information about all the
+  // raising operations into tryContext.
   RaiseContext tryContext(tryOp);
   builder.createBlock(&tryOp.getTryRegion());
   {
-    llvm::SaveAndRestore contextSaver(
-        curRaiseContext, inExceptRegion ? &tryContext : curRaiseContext);
+    // We generally install a new RaiseContext for the try body, routing errors
+    // through it before they are handled or propagated.
+    //
+    // However, a try-finally without an outer error destination cannot accept
+    // raising operations: its synthetic except region is unreachable. As such,
+    // we can't install a new RaiseContext for this 'try': doing so would cause
+    // us to fail to diagnose invalid raises in the try/finally.
+    RaiseContext *newRaiseContext = nullptr;
+    if (getRaiseContext() || !exceptClauses.empty())
+      newRaiseContext = &tryContext;
+    llvm::SaveAndRestore contextSaver(curRaiseContext, newRaiseContext);
     if (parseLocalScopeSuite(curIndent))
       return failure();
   }
   TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
-  bool hasFinally = false;
-  if (consumeIf(Token::kw_except)) {
-    struct ExceptClause {
-      SMLoc loc;
-      ASTType requiredErrorType;
-      ExprNode *errorBinding = nullptr;
-      LexerCursor suiteCursor;
-      VarDeclOp errorDecl;
-      bool isReachable = false;
-    };
-    SmallVector<ExceptClause, 2> clauses;
-
-    // Parse every header before emitting a handler. This determines which
-    // handler receives each raised type before the handler bodies are parsed.
-    do {
-      ExceptClause clause{getToken().getLoc(),    {}, nullptr,
-                          getLexer().getCursor(), {}, false};
-      if (consumeIf(Token::kw___as)) {
-        if (parseTargetListExpr(clause.errorBinding, curIndent))
-          return failure();
-      } else if (getToken().isNot(Token::colon)) {
-        ExprNode *headerExpr = nullptr;
-        if (parseTargetListExpr(headerExpr, curIndent))
-          return failure();
-
-        if (consumeIf(Token::kw___as)) {
-          clause.requiredErrorType =
-              getEmitter().emitExprType(headerExpr, TypeStrictness::kConcrete);
-          if (!clause.requiredErrorType ||
-              parseTargetListExpr(clause.errorBinding, curIndent))
-            return failure();
-        } else if (auto *declRef =
-                       dyn_cast<DeclRefNode>(headerExpr->getWithoutParens())) {
-          auto lookup = shared.lookupAndResolveDecl(
-              declRef->spelling, declRef->getLoc(), *curDeclScope,
-              /*searchParentScopes=*/true);
-          if (lookup.isSuccess() && lookup.getIfSuccess().size() == 1)
-            if (auto *structDecl =
-                    dyn_cast<StructASTDecl>(lookup.getIfSuccess().front()))
-              clause.requiredErrorType =
-                  structDecl->getOp().bindReference(nullptr);
-          if (!clause.requiredErrorType)
-            clause.errorBinding = headerExpr;
-        } else {
-          clause.errorBinding = headerExpr;
-        }
-      }
-
-      if (parseToken(Token::colon, "expected ':' after 'except'"))
-        return failure();
-      clause.suiteCursor = getLexer().getCursor();
-      clauses.push_back(clause);
-      skipUntilIndentation(curIndent);
-    } while (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
-             consumeIf(Token::kw_except));
-    LexerCursor afterHandlers = getLexer().getCursor();
-
-    assert(tryOp.getExceptRegions().size() == clauses.size() &&
-           "try handler pre-scan disagrees with parser");
-
-    // Partition statically known raised types in source order. Each raise
-    // branches directly to its selected LIT except region.
-    for (auto [index, clause] : llvm::enumerate(clauses)) {
-      auto emitter = getEmitter();
-      MLValue errorSlot;
-      if (clause.requiredErrorType) {
-        std::tie(errorSlot, clause.isReachable) =
-            tryContext.finalizeErrorSlotsForHandler(
-                emitter, clause.requiredErrorType, index);
-      } else {
-        clause.isReachable = !tryContext.getPendingErrorTypes().empty();
-        errorSlot = tryContext.finalizeErrorSlots(
-            emitter, /*requiredErrorType=*/{}, /*isSlotRequired=*/true);
-        tryContext.selectHandlerForPendingRaises(index);
-      }
-      clause.errorDecl = cast<VarDeclOp>(errorSlot.getDefiningOp());
-      if (clause.errorBinding)
-        clause.errorDecl->setLoc(
-            translateLocation(clause.errorBinding->getLoc()));
-      if (!clause.isReachable &&
-          (clause.requiredErrorType || clauses.size() > 1))
-        emitWarning(clause.loc, "unreachable 'except' clause");
-    }
-
-    SmallVector<ASTType> unhandledTypes = tryContext.getPendingErrorTypes();
-    if (!unhandledTypes.empty()) {
-      std::string types;
-      llvm::raw_string_ostream os(types);
-      llvm::interleaveComma(unhandledTypes, os,
-                            [&](ASTType type) { os << type; });
-      emitError(smLoc) << "unhandled error types in try body: " << os.str();
-    }
-
-    auto parseHandler = [&](ExceptClause &clause) -> ParseResult {
-      clause.suiteCursor.restore(getLexer());
-      DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-      llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-      pushChildScope(scopeGuard, keepDecl);
-
-      if (clause.errorBinding) {
-        if (StringAttr errorName = decodeTarget(clause.errorBinding, shared)) {
-          clause.errorDecl.setName(errorName);
-          clause.errorDecl.setKind(VarDeclKind::Var);
-          auto &decl = cast<VarASTDecl>(getDeclResolver().addFullyResolvedDecl(
-              clause.errorDecl.getOperation(), clause.errorDecl.getNameAttr(),
-              clause.errorBinding->getLoc(), curDeclScope));
-          getEmitter().shared.notifyListenerOnVariableDecl(
-              decl, clause.errorBinding->getLoc());
-        }
-      }
-
-      llvm::SaveAndRestore errorSaver(caughtErrorVarDecl, clause.errorDecl);
-      return parseSuite(curIndent);
-    };
-
-    for (auto [index, clause] : llvm::enumerate(clauses)) {
-      builder.createBlock(&tryOp.getExceptRegion(index));
-      if (parseHandler(clause))
-        return failure();
-      TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
-    }
-    afterHandlers.restore(getLexer());
-
-    // Parse the else suite if present. Otherwise, leave it as empty.
-    builder.createBlock(&tryOp.getElseRegion());
-    if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
-        consumeIf(Token::kw_else)) {
-      if (parseToken(Token::colon, "expected ':' after 'else'") ||
-          parseLocalScopeSuite(curIndent))
+  // This lambda handles construction of the finally region, sharing logic
+  // between try/finally and try/except/finally.
+  auto emitFinally = [&](bool hasFinally) -> ParseResult {
+    builder.createBlock(&tryOp.getFinallyRegion());
+    if (hasFinally) {
+      if (handleRaisingFinallyRegion(tryOp, smLoc, [&] {
+            if (parseToken(Token::colon, "expected ':' after 'finally'") ||
+                parseLocalScopeSuite(curIndent))
+              return failure();
+            return mlir::success();
+          }))
         return failure();
     }
-    TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
+    TryYieldOp::create(builder, loc);
+    return success();
+  };
 
-    hasFinally =
-        isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
-        consumeIf(Token::kw_finally);
-  } else {
+  // If there are no except regions, this must be a try-finally block.
+  if (exceptClauses.empty()) {
     SMLoc finallyLoc;
-    hasFinally = consumeIf(Token::kw_finally, &finallyLoc);
-    if (!hasFinally)
+    if (!consumeIf(Token::kw_finally, &finallyLoc))
       return emitTokenError("expected 'except' or 'finally' block");
-    // In a raising context, the default 'except' block just forwards the error.
-    if (inExceptRegion) {
+    // In a raising context, the default except block forwards the error.  If
+    // the try/finally is in a non-throwing context, we will not have anything
+    // that raises in the body.
+    if (getRaiseContext()) {
       auto emitter = getEmitter();
       MLValue errorSlot = tryContext.finalizeErrorSlots(
           emitter, /*requiredErrorType=*/{}, /*isSlotRequired=*/true);
@@ -3987,23 +3889,133 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       UnreachableOp::create(builder, loc);
     }
 
-    // Stub the 'else' region.
+    // Stub the else region.
     builder.createBlock(&tryOp.getElseRegion());
     TryYieldOp::create(builder, loc);
+    return emitFinally(/*hasFinally=*/true);
   }
-  builder.createBlock(&tryOp.getFinallyRegion());
-  if (hasFinally) {
-    if (handleRaisingFinallyRegion(tryOp, smLoc, [&] {
-          if (parseToken(Token::colon, "expected ':' after 'finally'") ||
-              parseLocalScopeSuite(curIndent))
-            return failure();
-          return mlir::success();
-        }))
+
+  // We have a try/except with at least one except region and possibly a finally
+  // and else block. Process each except clause, partition statically known
+  // raised types in source order. Each raise branches directly to its selected
+  // lit.try except region.
+  for (auto [index, clause] : llvm::enumerate(exceptClauses)) {
+    clause.headerCursor.restore(getLexer());
+
+    // Accept `except:`, `except __as binding:`, `except identifier:`, and
+    // `except type __as binding:`.
+    ExprNode *errorValueBinding = nullptr;
+    ASTType requiredErrorType; // Null for a catch-all handler.
+    if (consumeIf(Token::kw___as)) {
+      if (parseTargetListExpr(errorValueBinding, curIndent))
+        return failure();
+    } else if (getToken().isNot(Token::colon)) {
+      ExprNode *typeOrBinding = nullptr;
+      if (parseTargetListExpr(typeOrBinding, curIndent))
+        return failure();
+
+      // An explicit 'except a as b' binding makes 'a' unambiguously a type.
+      if (consumeIf(Token::kw___as)) {
+        if (parseTargetListExpr(errorValueBinding, curIndent))
+          return failure();
+        requiredErrorType =
+            getEmitter().emitExprType(typeOrBinding, TypeStrictness::kConcrete);
+        if (!requiredErrorType)
+          return failure();
+      } else if (auto *declRef =
+                     dyn_cast<DeclRefNode>(typeOrBinding->getWithoutParens())) {
+        // Treat a bare name as a type only when it resolves unambiguously to a
+        // struct declaration. Otherwise preserve the legacy binding spelling.
+        // TODO: deprecate and remove "except e:" support.
+        auto lookup = shared.lookupAndResolveDecl(
+            declRef->spelling, declRef->getLoc(), *curDeclScope,
+            /*searchParentScopes=*/true);
+        if (lookup.isSuccess() && lookup.getIfSuccess().size() == 1)
+          if (auto *structDecl =
+                  dyn_cast<StructASTDecl>(lookup.getIfSuccess().front()))
+            requiredErrorType = structDecl->getOp().bindReference(nullptr);
+        if (!requiredErrorType)
+          errorValueBinding = typeOrBinding;
+      } else {
+        // A non-name can only be a legacy binding without an explicit `__as`.
+        errorValueBinding = typeOrBinding;
+      }
+    }
+    if (parseToken(Token::colon, "expected ':' after 'except'"))
+      return failure();
+
+    // Find or create the error slot for this clause - it will either be of the
+    // declared type, or it will be of the union of all raised types in the body
+    // that aren't handled yet.  tryContext will reroute the raises in the try
+    // body to this except handler.
+    auto emitter = getEmitter();
+    MLValue errorSlot;
+    bool isReachable;
+    if (requiredErrorType) {
+      std::tie(errorSlot, isReachable) =
+          tryContext.finalizeErrorSlotsForHandler(emitter, requiredErrorType,
+                                                  index);
+    } else {
+      isReachable = !tryContext.getPendingErrorTypes().empty();
+      errorSlot = tryContext.finalizeErrorSlots(
+          emitter, /*requiredErrorType=*/{}, /*isSlotRequired=*/true);
+      tryContext.selectCatchAllHandler(index);
+    }
+    VarDeclOp errorDecl = cast<VarDeclOp>(errorSlot.getDefiningOp());
+    if (errorValueBinding)
+      errorDecl->setLoc(translateLocation(errorValueBinding->getLoc()));
+    if (!isReachable && (requiredErrorType || exceptClauses.size() > 1))
+      emitWarning(clause.loc, "unreachable 'except' clause");
+
+    // Now that we have the error slot set up, we can parse the except body.
+    builder.createBlock(&tryOp.getExceptRegion(index));
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+    if (errorValueBinding) {
+      if (StringAttr errorName = decodeTarget(errorValueBinding, shared)) {
+        errorDecl.setName(errorName);
+        errorDecl.setKind(VarDeclKind::Var);
+        auto &decl = cast<VarASTDecl>(getDeclResolver().addFullyResolvedDecl(
+            errorDecl.getOperation(), errorDecl.getNameAttr(),
+            errorValueBinding->getLoc(), curDeclScope));
+        getEmitter().shared.notifyListenerOnVariableDecl(
+            decl, errorValueBinding->getLoc());
+      }
+    }
+
+    // When parsing the except body, remember that this is the current
+    // errorDecl. This allows "raise;" to reraise it.
+    llvm::SaveAndRestore errorSaver(caughtErrorVarDecl, errorDecl);
+    if (parseSuite(curIndent))
+      return failure();
+    TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
+  }
+  afterHandlers.restore(getLexer());
+
+  // Diagnose uncaught error types.
+  SmallVector<ASTType> unhandledTypes = tryContext.getPendingErrorTypes();
+  if (!unhandledTypes.empty()) {
+    auto diag = emitError(smLoc) << "unhandled error types in try body: "
+                                 << unhandledTypes.front();
+    for (ASTType type : llvm::drop_begin(unhandledTypes))
+      diag << ", " << type;
+  }
+
+  // Parse the else suite if present. Otherwise, leave it as empty.
+  builder.createBlock(&tryOp.getElseRegion());
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
+    if (parseToken(Token::colon, "expected ':' after 'else'") ||
+        parseLocalScopeSuite(curIndent))
       return failure();
   }
-  TryYieldOp::create(builder, loc);
+  TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
-  return success();
+  bool hasFinally =
+      isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_finally);
+  return emitFinally(hasFinally);
 }
 
 /// with_stmt ::=

@@ -130,9 +130,10 @@ def unreachable_typed_handlers():
 
 
 def unhandled_typed_error():
-    # expected-error @+1 {{unhandled error types in try body: raise_and_try_errors::SecondError}}
+    # expected-error @+1 {{unhandled error types in try body: 'SecondError', 'Error'}}
     try:
         raise_first()
         raise_second()
+        raise Error()
     except FirstError:
         pass
