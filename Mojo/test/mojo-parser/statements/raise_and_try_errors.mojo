@@ -86,3 +86,53 @@ def origin_scope_example():
         raise Pointer(to=holder.str)
     except e4:
         _ = e4[]  # isn't valid.
+
+
+struct FirstError(ErrorConversionTrait):
+    def __init__(out self):
+        pass
+
+
+struct SecondError(ErrorConversionTrait):
+    def __init__(out self):
+        pass
+
+
+def raise_first() raises FirstError:
+    raise FirstError()
+
+
+def raise_second() raises SecondError:
+    raise SecondError()
+
+
+def unreachable_typed_handlers():
+    try:
+        raise_first()
+    except Error:
+        pass
+    except FirstError:  # expected-warning {{unreachable 'except' clause}}
+        pass
+
+    try:
+        raise_first()
+    except SecondError:  # expected-warning {{unreachable 'except' clause}}
+        pass
+    except:
+        pass
+
+    try:
+        raise_first()
+    except:
+        pass
+    except FirstError:  # expected-warning {{unreachable 'except' clause}}
+        pass
+
+
+def unhandled_typed_error():
+    # expected-error @+1 {{unhandled error types in try body: raise_and_try_errors::SecondError}}
+    try:
+        raise_first()
+        raise_second()
+    except FirstError:
+        pass

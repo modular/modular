@@ -26,6 +26,27 @@ This version is still a work in progress.
   uses `Error`. It emits a compile-time error when the raised types cannot be
   unified.
 
+- Experimental support for multiple typed `except` clauses lets `try` blocks
+  handle errors where recovery differs:
+
+  ```mojo
+  try:
+      read_input()
+      parse_input()
+  except IOError __as error:
+      recover_io(error)
+  except ParseError __as error:
+      report_parse_error(error)
+  except __as error:
+      report_other_error(error)
+  ```
+
+  Mojo selects the first handler whose type accepts the raised error. A final
+  untyped handler catches remaining errors. When an untyped handler catches
+  different error types, Mojo selects a common type when one exists; otherwise,
+  it uses `Error`. Mojo reports a compile-time error for unhandled error types
+  and warns about unreachable `except` clauses.
+
 - `with` statements now no longer copy when passed a reference to a context
   manager like in `with foo: pass`.
 

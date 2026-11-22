@@ -70,8 +70,7 @@ struct RaiseContext {
   MLValue coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
                             const ExprNode *sourceExpr);
 
-  /// Records an error propagation terminator for deferred try type unification,
-  /// initially routing it to the sole handler supported by the parser.
+  /// Records an error propagation terminator for deferred try type unification.
   void recordRaiseSite(MLValue errorSlot, Operation *terminator,
                        Operation *sourceOperation, SMLoc sourceLoc);
 
@@ -80,6 +79,18 @@ struct RaiseContext {
   /// no error was raised and no type was specified.
   MLValue finalizeErrorSlots(IREmitter &emitter, ASTType requiredErrorType = {},
                              bool isSlotRequired = false);
+
+  /// Routes errors convertible to `requiredErrorType` to `handlerIndex`.
+  /// Returns the handler's error slot and whether any raise can reach it.
+  std::pair<MLValue, bool>
+  finalizeErrorSlotsForHandler(IREmitter &emitter, ASTType requiredErrorType,
+                               size_t handlerIndex);
+
+  /// Routes all pending raises to `handlerIndex`.
+  void selectHandlerForPendingRaises(size_t handlerIndex);
+
+  /// Returns the distinct error types that no handler has consumed.
+  SmallVector<ASTType> getPendingErrorTypes() const;
 
   /// Returns whether this context writes directly to a fixed error slot or
   /// collects all the raised temporaries and processes them at finalization
@@ -105,6 +116,9 @@ private:
     Operation *sourceOperation;
     SMLoc sourceLoc;
   };
+
+  /// Routes `sites` to `handlerIndex`.
+  void selectHandler(ArrayRef<RaiseSite> sites, size_t handlerIndex);
 
   Operation *opForRaise;
   SmallVector<MLValue, 2> errorSlots;

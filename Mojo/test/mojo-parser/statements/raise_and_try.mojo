@@ -341,6 +341,39 @@ def raise_second_error() raises SecondError:
     raise SecondError()
 
 
+# CHECK-LABEL: lit.fn @"multiple_typed_handlers
+def multiple_typed_handlers(first: Bool):
+    try:
+        if first:
+            # CHECK: lit.raise handler 0
+            raise_first_error()
+        else:
+            # CHECK: lit.raise handler 1
+            raise_second_error()
+    except FirstError __as error:
+        # CHECK: } except {
+        # CHECK: lit.ownership.use %error : !lit.ref<!FirstError
+        _ = error
+    except SecondError __as error:
+        # CHECK: } except {
+        # CHECK: lit.ownership.use %error_0 : !lit.ref<!SecondError
+        _ = error
+
+
+# CHECK-LABEL: lit.fn @"typed_handler_with_catch_all
+def typed_handler_with_catch_all(first: Bool):
+    try:
+        if first:
+            raise_first_error()
+        else:
+            raise_int()
+    except FirstError:
+        pass
+    except __as error:
+        # CHECK: lit.ownership.use %error : {{.*}}Int
+        _ = error
+
+
 # CHECK-LABEL: lit.fn @"fallback_to_error_try
 def fallback_to_error_try():
     # CHECK: %__try_error__ = lit.var.decl "__try_error__" synth : !lit.ref<!FirstError

@@ -2095,18 +2095,24 @@ MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
   return errorSlot;
 }
 
-/// Records where a typed error leaves a source-level try body, initially
-/// routing it to the sole handler supported by the parser.
+/// Records where a typed error leaves a source-level try body.
 void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
                                    Operation *sourceOperation,
                                    SMLoc sourceLoc) {
   if (isEagerlyEmitted())
     return;
   assert(errorSlot && terminator && "raise site must be fully specified");
-  cast<LIT::RaiseOp>(terminator)
-      .setHandlerIndexAttr(
-          IntegerAttr::get(IntegerType::get(terminator->getContext(), 64), 0));
   raiseSites.push_back({errorSlot, terminator, sourceOperation, sourceLoc});
+}
+
+/// Stores `handlerIndex` on each raise site routed to that handler.
+void RaiseContext::selectHandler(ArrayRef<RaiseSite> sites,
+                                 size_t handlerIndex) {
+  for (const RaiseSite &site : sites) {
+    auto raise = cast<LIT::RaiseOp>(site.terminator);
+    raise.setHandlerIndexAttr(IntegerAttr::get(
+        IntegerType::get(raise.getContext(), 64), handlerIndex));
+  }
 }
 
 /// The declaration `origin` is ultimately rooted at, null when it is rooted at
@@ -2281,6 +2287,81 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
   assert(primaryIter != errorSlots.end() && "unknown primary error slot");
   std::swap(errorSlots.front(), *primaryIter);
   return primaryErrorSlot;
+}
+
+/// Routes errors convertible to `requiredErrorType` to one handler. The
+/// handler owns its slot, so remove the selected sites before resolving later
+/// handlers or a catch-all.
+std::pair<MLValue, bool> RaiseContext::finalizeErrorSlotsForHandler(
+    IREmitter &emitter, ASTType requiredErrorType, size_t handlerIndex) {
+  assert(!isEagerlyEmitted() && requiredErrorType);
+
+  auto isConvertible = [&](MLValue errorSlot) {
+    SyntheticNode source(
+        emitter.shared.diags.convertLocToSMLoc(opForRaise->getLoc()));
+    return IREmitter::canImplicitlyConvertToType(
+        {CValue(errorSlot), &source}, requiredErrorType, emitter.getDeclScope(),
+        emitter.shared.noAssumptions);
+  };
+
+  SmallVector<RaiseSite, 4> matchedSites;
+  SmallVector<RaiseSite, 4> pendingSites;
+  for (const RaiseSite &site : raiseSites)
+    (isConvertible(site.errorSlot) ? matchedSites : pendingSites)
+        .push_back(site);
+
+  MLValue handlerSlot;
+  auto exactSlot = llvm::find_if(errorSlots, [&](MLValue errorSlot) {
+    return requiredErrorType.isEqualCanon(errorSlot.getRValueType());
+  });
+  if (exactSlot != errorSlots.end())
+    handlerSlot = *exactSlot;
+  else
+    handlerSlot =
+        getOrCreateErrorSlot(emitter, requiredErrorType, opForRaise->getLoc());
+
+  for (const RaiseSite &site : matchedSites) {
+    OpBuilder savedBuilder = *emitter.builder;
+    emitter.builder->setInsertionPoint(site.terminator);
+    if (site.errorSlot != handlerSlot) {
+      ExprDest destination(handlerSlot, EC_RaiseValue);
+      SyntheticNode source(site.sourceLoc);
+      (void)emitter.emitResult(MRValue(site.errorSlot), &source, destination);
+    }
+    emitter.builder = savedBuilder;
+  }
+  selectHandler(matchedSites, handlerIndex);
+
+  if (!matchedSites.empty())
+    verifyExceptTypeLifetimeValidity(emitter, handlerSlot);
+
+  raiseSites = std::move(pendingSites);
+  llvm::erase_if(errorSlots, [&](MLValue errorSlot) {
+    return llvm::none_of(raiseSites, [&](const RaiseSite &site) {
+      return site.errorSlot == errorSlot;
+    });
+  });
+  return {handlerSlot, !matchedSites.empty()};
+}
+
+/// Routes every error still pending after typed handlers to the catch-all.
+void RaiseContext::selectHandlerForPendingRaises(size_t handlerIndex) {
+  selectHandler(raiseSites, handlerIndex);
+  raiseSites.clear();
+  errorSlots.clear();
+}
+
+/// Returns the distinct types that have not been routed to a handler.
+SmallVector<ASTType> RaiseContext::getPendingErrorTypes() const {
+  SmallVector<ASTType> result;
+  for (const RaiseSite &site : raiseSites) {
+    ASTType errorType = site.errorSlot.getRValueType();
+    if (llvm::none_of(result, [&](ASTType existing) {
+          return existing.isEqualCanon(errorType);
+        }))
+      result.push_back(errorType);
+  }
+  return result;
 }
 
 /// Check that the declarations `origin` is rooted at outlive `block`, emitting

@@ -48,6 +48,16 @@ struct NonMovablePayload(Deinitable, not Movable):
         return self.value
 
 
+struct FirstError(Writable):
+    def __init__(out self):
+        pass
+
+
+struct SecondError(Writable):
+    def __init__(out self):
+        pass
+
+
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
@@ -106,6 +116,19 @@ def describe_guard_clauses(enabled: Bool, opt: Optional[Int]) -> String:
     __guard enabled; case .Some(value) = opt; value > 0 else:
         return "unavailable"
     return String("positive:", value)
+
+
+def handle_multiple_errors(first: Bool) -> String:
+    try:
+        if first:
+            raise FirstError()
+        raise SecondError()
+    except FirstError __as error:
+        _ = error
+        return "first"
+    except Error __as error:
+        _ = error
+        return "second"
 
 
 def make_linear_payload_pair() -> Tuple[LinearPayload, LinearPayload]:
@@ -467,6 +490,16 @@ def test_conditional_clauses():
     print(classify_comptime_guard_clauses[String, True]())
 
 
+def test_multiple_except():
+    # CHECK-LABEL: == test_multiple_except
+    print("== test_multiple_except")
+
+    # CHECK: first
+    print(handle_multiple_errors(True))
+    # CHECK: second
+    print(handle_multiple_errors(False))
+
+
 def test_literals_guards_or():
     # CHECK-LABEL: == test_literals_guards_or
     print("== test_literals_guards_or")
@@ -711,6 +744,7 @@ def main():
     test_optional()
     test_guard()
     test_conditional_clauses()
+    test_multiple_except()
     test_literals_guards_or()
     test_tuples_and_structs()
     test_lists()

@@ -548,7 +548,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                     Pointer(to=res[i]).unsafe_deinit_pointee()
 
             std.memory.forget_deinit(res^)
-            raise StopIteration
+            raise
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var res_lower = Int.MAX
