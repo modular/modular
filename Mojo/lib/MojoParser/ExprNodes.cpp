@@ -4916,7 +4916,50 @@ AnyValue ChainedCmpOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 }
 
 AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
-  return emitter.getDeclResolver().resolveAnonymousClosure(this, emitter, dest);
+  // Type-check the signature in its own scope. The closure's param and arg
+  // decls are rebuilt from the result when the closure is resolved.
+  auto &signatureDecl = emitter.getDeclResolver().createFunctionTypeDecl(
+      getLoc(), emitter.declScope);
+  signatureDecl.setExplicitParamScope();
+
+  ParsedParamList parsedParamList;
+  parsedParamList.params = llvm::to_vector(parsedParams);
+  std::optional<TypeCheckedParamList> paramListOrError =
+      TypeCheckedParamList::create(parsedParamList, signatureDecl);
+  if (!paramListOrError)
+    return {};
+  TypeCheckedParamList &paramList = *paramListOrError;
+
+  ParsedArgumentList argList;
+  argList.parsedArgs = llvm::to_vector(parsedArgs);
+  argList.resultArg = resultArg;
+  argList.effects = effects;
+  argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
+  argList.isParsingClosure = true;
+
+  TypeCheckedFnSignature tcSignature(paramList, argList, /*originExpr=*/nullptr,
+                                     /*fnDecl=*/nullptr, StringAttr());
+  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
+  if (!signature)
+    return {};
+  for (const ParsedArgument &arg : tcSignature.argList.parsedArgs)
+    if (arg.isErroneous)
+      return {};
+  signatureDecl.setSignature(signature, paramList.paramASTDecls,
+                             tcSignature.argASTDecls);
+  signature = signature.replaceImplicitOriginsWithIndexes(
+      tcSignature.implicitOriginDecls);
+
+  LambdaUValue lambda = LambdaUValue::create(
+      getLoc(), signature, parsedParams, parsedArgs, body, captures,
+      hasExplicitCaptureList, captureAllByConvention);
+
+  // TODO: The partial signature is fully resolved for now, use it as the
+  // contextual type, will be replaced to a actual contextual type later.
+  auto ctxSig = lambda.getPartialSignature();
+  return emitter.emitResult(emitter.getDeclResolver().resolveAnonymousClosure(
+                                lambda, ctxSig, emitter),
+                            this, dest);
 }
 
 AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {

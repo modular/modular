@@ -2378,14 +2378,9 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   BlockArgument bbArg =
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
-  CValue argIRValue;
-  if (arg.kgenConvention == ArgConvention::ImmReg)
-    argIRValue = SRValue(bbArg);
-  else // Everything else is passed in memory.
-    argIRValue = CValue::getMValueForRef(bbArg);
-
   auto &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
-      argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
+      getFunctionArgumentValue(bbArg, arg.kgenConvention), arg.name, arg.loc,
+      &typeEmitter.declScope);
   decl.setArgOrParamNumber(static_cast<ssize_t>(idx),
                            /*isParameter=*/false);
   tcSignature.argASTDecls.push_back(&decl);

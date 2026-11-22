@@ -105,6 +105,10 @@ CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
                                        const ExprNode *expr,
                                        FnTypeGeneratorType sig, ExprDest &dest);
 
+/// Return the value through which a function body refers to its argument
+/// `bbArg`, passed with `convention`.
+CValue getFunctionArgumentValue(Value bbArg, ArgConvention convention);
+
 /// Helper to delete code in a region and mark it as unreachable when it's
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);

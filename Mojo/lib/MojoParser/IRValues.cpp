@@ -134,6 +134,11 @@ raw_ostream &LIT::operator<<(raw_ostream &os, PValue value) {
 raw_ostream &LIT::operator<<(raw_ostream &os, OverloadSetUValue value) {
   return printStorage(os, value);
 }
+raw_ostream &LIT::operator<<(raw_ostream &os, LambdaUValue value) {
+  if (!value)
+    return os << "<<NULL>>";
+  return os << "LambdaUValue";
+}
 raw_ostream &LIT::operator<<(raw_ostream &os, InitializerUValue value) {
   return printStorage(os, value);
 }
@@ -463,6 +468,80 @@ OverloadSetUValue::operator=(const OverloadSetUValue &existing) {
 
 OverloadSetUValue OverloadSetUValue::create(OverloadSet &&set) {
   return OverloadSetUValue(takeRCRef(new OverloadSetWrapper{std::move(set)}));
+}
+
+//===----------------------------------------------------------------------===//
+// LambdaUValue
+//===----------------------------------------------------------------------===//
+
+/// Reference-counted storage that keeps LambdaUValue copyable.
+struct LambdaUValue::LambdaWrapper
+    : public NonAtomicallyReferenceCounted<LambdaWrapper> {
+  SMLoc loc;
+
+  ArrayRef<ParsedArgument> args;
+  ArrayRef<ParsedArgument> params;
+
+  const ExprNode *bodyExpr = nullptr;
+
+  ArrayRef<Capture> captures;
+  bool hasExplicitCaptureList = false; // whether a `{...}` was written at all
+  std::optional<CaptureConvention> captureAllByConvention;
+
+  FnTypeGeneratorType partialSig;
+};
+
+LambdaUValue::LambdaUValue() = default;
+LambdaUValue::LambdaUValue(const LambdaUValue &existing)
+    : storage(existing.storage.copy()) {}
+LambdaUValue::LambdaUValue(RCRef<LambdaWrapper> storage)
+    : storage(std::move(storage)) {}
+LambdaUValue::~LambdaUValue() = default;
+
+LambdaUValue &LambdaUValue::operator=(const LambdaUValue &existing) {
+  storage = existing.storage.copy();
+  return *this;
+}
+
+LambdaUValue
+LambdaUValue::create(SMLoc loc, FnTypeGeneratorType partialSignature,
+                     ArrayRef<ParsedArgument> params,
+                     ArrayRef<ParsedArgument> args, const ExprNode *bodyExpr,
+                     ArrayRef<Capture> captures, bool hasExplicitCaptureList,
+                     std::optional<CaptureConvention> captureAllByConvention) {
+  assert(params.size() <= partialSignature.getInputParamTypes().size() &&
+         args.size() <= partialSignature.getArguments().size() &&
+         "more user parameters or arguments than the signature has");
+  auto *wrapper = new LambdaWrapper();
+  wrapper->loc = loc;
+  wrapper->args = args;
+  wrapper->params = params;
+  wrapper->bodyExpr = bodyExpr;
+  wrapper->captures = captures;
+  wrapper->hasExplicitCaptureList = hasExplicitCaptureList;
+  wrapper->captureAllByConvention = captureAllByConvention;
+  wrapper->partialSig = partialSignature;
+  return LambdaUValue(takeRCRef(wrapper));
+}
+
+SMLoc LambdaUValue::getLoc() const { return storage->loc; }
+FnTypeGeneratorType LambdaUValue::getPartialSignature() const {
+  return storage->partialSig;
+}
+ArrayRef<ParsedArgument> LambdaUValue::getParams() const {
+  return storage->params;
+}
+ArrayRef<ParsedArgument> LambdaUValue::getArgs() const { return storage->args; }
+const ExprNode *LambdaUValue::getBodyExpr() const { return storage->bodyExpr; }
+ArrayRef<LambdaUValue::Capture> LambdaUValue::getCaptures() const {
+  return storage->captures;
+}
+bool LambdaUValue::hasExplicitCaptureList() const {
+  return storage->hasExplicitCaptureList;
+}
+std::optional<CaptureConvention>
+LambdaUValue::getCaptureAllByConvention() const {
+  return storage->captureAllByConvention;
 }
 
 //===----------------------------------------------------------------------===//

@@ -64,6 +64,7 @@
 
 namespace M::KGEN::LIT {
 class BaseDLValue;
+struct ParsedArgument;
 class ExprNode;
 class IREmitter;
 class OverloadSet;
@@ -72,6 +73,8 @@ class ExprDest;
 class StructFieldOp;
 class CallOperands;
 class AnyValue;
+class FnTypeGeneratorType;
+enum class CaptureConvention : uint8_t;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -433,6 +436,49 @@ private:
   RCRef<OverloadSetWrapper> storage;
 };
 raw_ostream &operator<<(raw_ostream &os, OverloadSetUValue value);
+
+/// Instances of LambdaUValue represent a `lambda` expression whose closure
+/// type is not resolved yet.
+class LambdaUValue {
+public:
+  using Capture = std::tuple<StringRef, CaptureConvention, SMLoc>;
+
+  LambdaUValue(); // Used by dyn_cast.
+  LambdaUValue(const LambdaUValue &existing);
+  LambdaUValue &operator=(const LambdaUValue &existing);
+  ~LambdaUValue();
+
+  bool isNull() const { return !storage; }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
+
+  /// `partialSignature` refers to its own parameters and implicit origins by
+  /// index. `params` and `args` are the ones the user wrote, in order; the
+  /// signature can also have parameters and arguments that type checking
+  /// synthesized.
+  static LambdaUValue
+  create(SMLoc loc, FnTypeGeneratorType partialSignature,
+         ArrayRef<ParsedArgument> params, ArrayRef<ParsedArgument> args,
+         const ExprNode *bodyExpr, ArrayRef<Capture> captures,
+         bool hasExplicitCaptureList,
+         std::optional<CaptureConvention> captureAllByConvention);
+
+  SMLoc getLoc() const;
+  FnTypeGeneratorType getPartialSignature() const;
+  ArrayRef<ParsedArgument> getParams() const;
+  ArrayRef<ParsedArgument> getArgs() const;
+  const ExprNode *getBodyExpr() const;
+  ArrayRef<Capture> getCaptures() const;
+  bool hasExplicitCaptureList() const;
+  std::optional<CaptureConvention> getCaptureAllByConvention() const;
+
+private:
+  struct LambdaWrapper;
+  LambdaUValue(RCRef<LambdaWrapper> storage);
+
+  RCRef<LambdaWrapper> storage;
+};
+raw_ostream &operator<<(raw_ostream &os, LambdaUValue value);
 
 /// Instances of InitializerUValue represent the operand list for a constructor
 /// call before knowing what the type being constructed is.  It is similar to

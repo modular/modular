@@ -1758,44 +1758,36 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
 }
 
 /// Finalizes a fully type-checked function/closure signature onto `funcOp`:
-/// builds the generator signature, and writes the params / function-type /
-/// generator / mangled-symbol attributes. Returns the (implicit-origin-indexed)
-/// generator signature, or null on failure.
-static FnTypeGeneratorType
-finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, DefASTDecl &decl,
-                     TypeCheckedFnSignature &tcSignature,
-                     TypeCheckedParamList &paramList, StringAttr baseName) {
+/// writes the params / function-type / generator / mangled-symbol attributes.
+/// `signature` refers to its implicit origins by index, and `functionType`
+/// refers to them by name through `implicitOriginDecls`.
+static void finalizeResolvedFnOp(SharedState &shared, FnOp funcOp,
+                                 DefASTDecl &decl,
+                                 FnTypeGeneratorType signature,
+                                 FunctionType functionType,
+                                 ArrayRef<ParamDeclAttr> paramDecls,
+                                 ArrayRef<ParamDeclAttr> implicitOriginDecls,
+                                 StringAttr resultName, StringAttr baseName) {
   OpBuilder builder = OpBuilder::atBlockEnd(funcOp.getBody());
   NamedAttrList attrs = funcOp->getAttrDictionary();
-
-  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
-  if (!signature)
-    return {};
+  assert(signature && "signature must be built");
 
   /// configure FnOp
 
   // The implicitOriginDecls don't affect the signature, but they do get
   // prepended onto the paramDecls list.
   ParamDeclArrayAttr paramsArrayAttr;
-  if (tcSignature.implicitOriginDecls.empty()) {
-    paramsArrayAttr =
-        builder.getAttr<ParamDeclArrayAttr>(paramList.paramDeclAttrs);
+  if (implicitOriginDecls.empty()) {
+    paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(paramDecls);
   } else {
     SmallVector<ParamDeclAttr> mergedParams;
-    llvm::append_range(mergedParams, paramList.paramDeclAttrs);
-    llvm::append_range(mergedParams, tcSignature.implicitOriginDecls);
+    llvm::append_range(mergedParams, paramDecls);
+    llvm::append_range(mergedParams, implicitOriginDecls);
     paramsArrayAttr = builder.getAttr<ParamDeclArrayAttr>(mergedParams);
   }
 
   attrs.set(funcOp.getParamsAttrName(), paramsArrayAttr);
-  attrs.set(funcOp.getFunctionTypeAttrName(),
-            TypeAttr::get(tcSignature.getFunctionType()));
-
-  // Now that the FunctionType is set to the pretty type that includes implicit
-  // origins, we strip off the named origin decl references and replace them
-  // with indices.
-  signature = signature.replaceImplicitOriginsWithIndexes(
-      tcSignature.implicitOriginDecls);
+  attrs.set(funcOp.getFunctionTypeAttrName(), TypeAttr::get(functionType));
   attrs.set(funcOp.getFuncTypeGeneratorAttrName(), TypeAttr::get(signature));
 
   // Computing the full signature is costly and it is requested for every
@@ -1813,7 +1805,7 @@ finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, DefASTDecl &decl,
   attrs.set(funcOp.getSourceNameAttrName(), baseName);
 
   // Set the result name binding if specified.
-  if (StringAttr resultName = tcSignature.argList.resultArg.name)
+  if (resultName)
     attrs.set(funcOp.getNamedResultAttrName(), resultName);
 
   // Remove the temporary "sym_namex" attribute set up in
@@ -1822,7 +1814,6 @@ finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, DefASTDecl &decl,
 
   // Bulk update the attributes.
   funcOp->setAttrs(attrs.getDictionary(funcOp.getContext()));
-  return signature;
 }
 
 /// Resolve a parsed `lambda` expr into an anonymous closure. The capture list
@@ -1833,11 +1824,17 @@ finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, DefASTDecl &decl,
 ///
 /// lambda    ::=  "lambda" [param_signature] ["(" [argument_list] ")"]
 ///                [effects] [capture_list] ["->" expression] ":" expression
-AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
-                                               IREmitter &emitter,
-                                               ExprDest &dest) {
+AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
+                                               FnTypeGeneratorType ctxSig,
+                                               IREmitter &emitter) {
+  assert(lambda.getParams().size() <= ctxSig.getInputParamTypes().size() &&
+         lambda.getArgs().size() <= ctxSig.getArguments().size() &&
+         "signature must have the lambda's parameters and arguments");
   // Build the synthetic anonymous `def` the lambda desugars to.
-  SMLoc loc = node->getLoc();
+  SMLoc lambdaLoc = lambda.getLoc();
+  ArrayRef<LambdaUValue::Capture> captures = lambda.getCaptures();
+  std::optional<CaptureConvention> captureAllByConvention =
+      lambda.getCaptureAllByConvention();
   ASTDecl &parentScope = emitter.declScope;
 
   // A null `emitter.builder` is exactly a parameter context.
@@ -1846,9 +1843,9 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   if (insideParamContext) {
     // A compile-time lambda value cannot capture runtime vars.
     // (Implicit captures are dealt with after body analysis.)
-    if (!node->captures.empty() || node->captureAllByConvention) {
+    if (!captures.empty() || captureAllByConvention) {
       emitter.emitErrorForDynamicValueInParameter(
-          node, "cannot use a capturing lambda");
+          lambdaLoc, "cannot use a capturing lambda");
       return {};
     }
     // Anchor the synthetic def at the nearest enclosing declaration with an
@@ -1860,14 +1857,14 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     }
     if (!anchor) {
       emitter.emitErrorForDynamicValueInParameter(
-          node, "cannot use a lambda expression");
+          lambdaLoc, "cannot use a lambda expression");
       return {};
     }
     paramBuilder.setInsertionPoint(anchor);
   }
   OpBuilder &builder = insideParamContext ? paramBuilder : *emitter.builder;
   MLIRContext *ctx = builder.getContext();
-  Location mlirLoc = shared.translateLocation(loc);
+  Location mlirLoc = shared.translateLocation(lambdaLoc);
 
   // 1. Provisional FnOp with a placeholder `() -> Error` signature, so
   //    signature type-checking has an IR anchor.
@@ -1905,70 +1902,126 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   //    backticks) means user source cannot even spell the symbol it emits, so
   //    user code can neither reference the closure nor collide with it.
   auto &decl = cast<DefASTDecl>(addFullyResolvedDecl(
-      funcOp.getOperation(), StringAttr(), loc, &parentScope));
+      funcOp.getOperation(), StringAttr(), lambdaLoc, &parentScope));
   ASTDecl &sigDecl = addFullyResolvedDecl(funcOp.getOperation(), StringAttr(),
-                                          loc, &parentScope);
+                                          lambdaLoc, &parentScope);
 
   // 3. Set up captures before type-checking: emit copies/casts for named
   //    captures, and record the default-all convention so free variables in
   //    the body are captured rather than seen as unknown declarations.
-  for (auto [name, capture, location] : node->captures) {
+  for (auto [name, capture, location] : captures) {
     IREmitter capEmitter(*decl.getParentDecl(), OpBuilder(funcOp),
                          emitter.getRaiseContext());
     if (!ClosureEmitter::addCaptureValue(decl, location, name, capture,
                                          capEmitter, &sigDecl))
       return {};
   }
-  if (node->captureAllByConvention)
-    shared.setDefaultCaptureForScope(decl, *node->captureAllByConvention);
-  else if (!node->hasExplicitCaptureList)
+  if (captureAllByConvention)
+    shared.setDefaultCaptureForScope(decl, *captureAllByConvention);
+  else if (!lambda.hasExplicitCaptureList()) // FIXME: we should not allow this.
     // An omitted capture list defaults to capturing free variables by `imm`;
     // a body that captures nothing then yields a thin closure (empty storage).
     shared.setDefaultCaptureForScope(decl, CaptureConvention::kConventionRead);
 
-  // 4. Reconstitute and type-check the signature. This also adds the param/arg
-  //    decls and the FnOp's block arguments.
-  ParsedParamList parsedParamList;
-  parsedParamList.params = llvm::to_vector(node->parsedParams);
-  std::optional<TypeCheckedParamList> paramListOrError =
-      TypeCheckedParamList::create(parsedParamList, sigDecl);
-  if (!paramListOrError)
-    return {};
-  TypeCheckedParamList &paramList = *paramListOrError;
+  // 4. Rebuild the name based function type
+  //
+  // TODO: Do we really need this? this is probably going to be rebuilt in
+  // ClosureEmitter anyway?
+  SmallVector<ParamDeclAttr> paramDeclAttrs;
+  SmallVector<ASTDecl *> paramDecls;
+  ParamRefRemapper paramRemapper;
+  const ParsedArgument *nextUserParam = lambda.getParams().begin();
+  for (auto [idx, type, pog] : llvm::enumerate(
+           ctxSig.getInputParamTypes(), ctxSig.getParamListAttrs().getPogs())) {
+    const ParsedArgument *userParam =
+        isHiddenGeneratorParam(pog.getPassingKind(), pog.getName())
+            ? nullptr
+            : nextUserParam++;
 
-  ParsedArgumentList argList;
-  argList.parsedArgs = llvm::to_vector(node->parsedArgs);
-  argList.resultArg = node->resultArg;
-  argList.effects = node->effects;
-  argList.thrownTypeExpr = const_cast<ExprNode *>(node->thrownTypeExpr);
-  argList.isParsingClosure = true;
+    StringAttr name = userParam
+                          ? sigDecl.mangleUserDefinedParamName(userParam->name)
+                          : pog.getName();
+    auto paramDeclAttr = ParamDeclAttr::get(name, paramRemapper.replace(type));
+    paramDeclAttrs.push_back(paramDeclAttr);
+    paramRemapper.appendParamDecl(paramDeclAttr);
+    if (!userParam)
+      continue;
+    auto &paramDecl =
+        addFullyResolvedDecl(PValue(ParamDeclRefAttr::get(paramDeclAttr)),
+                             userParam->name, userParam->loc, &sigDecl);
+    paramDecl.setArgOrParamNumber(static_cast<ssize_t>(idx),
+                                  /*isParameter=*/true);
+    paramDecls.push_back(&paramDecl);
+  }
+  assert(nextUserParam == lambda.getParams().end() &&
+         "every user parameter is in the signature");
 
-  TypeCheckedFnSignature tcSignature(paramList, argList, /*originExpr=*/nullptr,
-                                     &decl, baseName);
+  // Each implicit origin is the origin of the reference type of the argument
+  // it was made for.
+  SmallVector<ParamDeclAttr> implicitOriginDecls(
+      ctxSig.getNumImplicitOriginDecls());
+  for (Type type : ctxSig.getArguments()) {
+    auto refType = dyn_cast<RefType>(type);
+    auto originRef = refType
+                         ? dyn_cast<ImplicitOriginRefAttr>(refType.getOrigin())
+                         : nullptr;
+    if (!originRef || originRef.getDepth() != 0)
+      continue;
+    unsigned originIdx = originRef.getIndex();
+    // each implicit origin should be unique
+    assert(!implicitOriginDecls[originIdx]);
+    implicitOriginDecls[originIdx] = ParamDeclAttr::get(
+        sigDecl.mangleParamName("#origin" + Twine(originIdx)),
+        originRef.getType());
+  }
+  // Must find all the implicit decl
+  assert(llvm::all_of(implicitOriginDecls, [](ParamDeclAttr originDecl) {
+    return static_cast<bool>(originDecl);
+  }));
+
+  FunctionType namedFunctionType = replaceIndexRefsWithNamedRefs(
+      ctxSig.getBody().getValues(), paramDeclAttrs, implicitOriginDecls);
+  StringAttr resultName;
+  SmallVector<ASTDecl *> argDecls;
+  for (auto [idx, type, convention] : llvm::enumerate(
+           namedFunctionType.getInputs(), ctxSig.getArgConventions())) {
+
+    const ParsedArgument *parsedArg = nullptr;
+    if (idx < lambda.getArgs().size())
+      parsedArg = &lambda.getArgs()[idx];
+
+    BlockArgument bbArg = funcOp.getBody()->addArgument(
+        type,
+        shared.diags.translateLocation(parsedArg ? parsedArg->loc : lambdaLoc));
+    // Register user provided name
+    if (!parsedArg)
+      continue;
+
+    if (convention == ArgConvention::ByRefResult)
+      resultName = parsedArg->name;
+
+    auto &argDecl =
+        addFullyResolvedDecl(getFunctionArgumentValue(bbArg, convention),
+                             parsedArg->name, parsedArg->loc, &sigDecl);
+    argDecl.setArgOrParamNumber(static_cast<ssize_t>(idx),
+                                /*isParameter=*/false);
+    argDecls.push_back(&argDecl);
+  }
 
   // Move the param/arg decls from the signature scope into the closure decl so
   // the body resolves them as locals.
   decl.takeDecls(sigDecl);
-  decl.setParamDecls(paramList.paramASTDecls);
-  decl.setArgDecls(tcSignature.argASTDecls);
+  decl.setParamDecls(paramDecls);
+  decl.setArgDecls(argDecls);
 
-  // 5. Build the generator signature and write the signature attributes onto
-  //    the FnOp (shared with resolveSignature via finalizeResolvedFnOp), then
-  //    register the symbol.
-  FnTypeGeneratorType signature = finalizeResolvedFnOp(
-      shared, funcOp, decl, tcSignature, paramList, baseName);
-  if (!signature)
-    return {};
-  for (ParsedArgument &arg : tcSignature.argList.parsedArgs)
-    if (arg.isErroneous)
-      return {};
+  // 5. Write the signature attributes onto the FnOp (shared with
+  //    resolveSignature via finalizeResolvedFnOp), then register the symbol.
+  finalizeResolvedFnOp(shared, funcOp, decl, ctxSig, namedFunctionType,
+                       paramDeclAttrs, implicitOriginDecls, resultName,
+                       baseName);
   (void)finalizeFuncSignature(funcOp, decl);
 
   shared.setLocationDebugScope(funcOp);
-  for (auto [parsedArg, bbArg] : llvm::zip(tcSignature.argList.parsedArgs,
-                                           funcOp.getBody()->getArguments()))
-    bbArg.setLoc(shared.diags.translateLocation(parsedArg.loc));
-
   // 6. Synthesize the `return EXPR` body. Push the closure's debug scope so the
   //    body's ops carry the closure subprogram (not the enclosing function's),
   //    then pop before the closure instance is materialized in the enclosing
@@ -1979,7 +2032,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (shared.diBuilder) {
       diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
-      endFn->setLoc(shared.translateLocation(loc));
+      endFn->setLoc(shared.translateLocation(lambdaLoc));
     }
     endFn.setUnresolved(false);
 
@@ -1987,25 +2040,25 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     IREmitter bodyEmitter(decl, OpBuilder(&body.front()), &raiseContext);
     ASTType userResultType = funcOp.getUserResultType();
     ExprDest resultDest(userResultType, EC_ReturnValue);
-    if (signature.hasMemoryOnlyResult())
+    if (ctxSig.hasMemoryOnlyResult())
       resultDest =
           ExprDest(MLValue(funcOp.getArguments().back()), EC_ReturnValue);
-    AnyValue resultValue = bodyEmitter.emitExpr(node->body, resultDest);
+    const ExprNode *bodyExpr = lambda.getBodyExpr();
+    AnyValue resultValue = bodyEmitter.emitExpr(bodyExpr, resultDest);
     if (!resultValue) {
       resultDest.resetForError(bodyEmitter);
       return {};
     }
     Value resultVal;
-    if (!signature.hasMemoryOnlyResult()) {
-      resultVal =
-          bodyEmitter.emitSRValue({resultValue, node->body}, EC_ReturnValue,
-                                  funcOp.getMLIRResultType());
+    if (!ctxSig.hasMemoryOnlyResult()) {
+      resultVal = bodyEmitter.emitSRValue(
+          {resultValue, bodyExpr}, EC_ReturnValue, funcOp.getMLIRResultType());
       if (!resultVal)
         return {};
     }
     // Scope the return location to the closure subprogram (the scope guard is
     // active here), matching the body ops emitted above.
-    Location returnLoc = shared.translateLocation(loc);
+    Location returnLoc = shared.translateLocation(lambdaLoc);
     if (shared.diBuilder)
       returnLoc = shared.diBuilder->createScopedLoc(returnLoc);
     bodyEmitter.emitNormalReturn(returnLoc, resultVal, /*emitEndFunc=*/false);
@@ -2019,17 +2072,17 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   if (insideParamContext && !bodyCaptures.values.empty()) {
     // Same diagnostic as the explicit-capture reject above.
     emitter.emitErrorForDynamicValueInParameter(
-        node, "cannot use a capturing lambda");
+        lambdaLoc, "cannot use a capturing lambda");
     return {};
   }
 
   // Fold a thin lambda to the promoted function's literal -- the value a named
   // `def` yields -- so it decays and rebinds like one. The singleton test is
   // the one a reference to a named `def` applies to itself, so the two agree.
-  bool isThin = bodyCaptures.values.empty() && node->captures.empty() &&
-                !node->captureAllByConvention;
+  bool isThin = bodyCaptures.values.empty() && captures.empty() &&
+                !captureAllByConvention;
   if (insideParamContext ||
-      (isThin && llvm::all_of(signature.getInputParamTypes(), [&](Type type) {
+      (isThin && llvm::all_of(ctxSig.getInputParamTypes(), [&](Type type) {
          return ASTType(type).isSingleton(shared);
        }))) {
     resolveAllWithin(decl);
@@ -2041,24 +2094,18 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     // `promoteClosure` replaces the source binding with a bound func-literal
     // generator when enclosing parameters were baked in.
     if (promoted.valueDecl) {
-      CValue boundLiteral = promoted.valueDecl->getIfIRValue();
-      return emitter.emitResult(AnyValue(boundLiteral), node, dest);
+      return AnyValue(promoted.valueDecl->getIfIRValue());
     }
     // With no parameters baked in, no such value is left, so build the promoted
     // function's own func-literal here -- the value a `def` reference yields.
-    PValue literal(
-        funcOp.getFuncLiteralGenerator(shared.getEvaluationContext()));
-    return emitter.emitResult(AnyValue(literal), node, dest);
+    return AnyValue(
+        PValue(funcOp.getFuncLiteralGenerator(shared.getEvaluationContext())));
   }
 
-  MLValue instance = emitClosureInstance(bodyCaptures.values, decl, shared,
-                                         bodyCaptures.paramRefs);
-  if (!instance)
-    return {};
-
-  // 8. Emit the closure value into the expression destination (handles
-  //    conversion to the expected closure-trait type at the use site).
-  return emitter.emitResult(AnyValue(instance), node, dest);
+  // 8. The caller emits the closure value into the expression destination,
+  //    which converts it to the expected closure-trait type at the use site.
+  return AnyValue(emitClosureInstance(bodyCaptures.values, decl, shared,
+                                      bodyCaptures.paramRefs));
 }
 
 /// funcdef   ::=  [decorators] "def" identifier [param_signature]
@@ -2298,10 +2345,17 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
   // Handle argument effects, build the ASTDecls for the arguments, and write
   // the finalized signature attributes onto the FnOp (shared with the lambda
   // desugaring via finalizeResolvedFnOp).
-  FnTypeGeneratorType signature = finalizeResolvedFnOp(
-      shared, funcOp, *this, tcSignature, paramList, baseName);
+  // The FunctionType keeps the named implicit origins; the signature refers to
+  // them by index.
+  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return failure();
+  signature = signature.replaceImplicitOriginsWithIndexes(
+      tcSignature.implicitOriginDecls);
+  finalizeResolvedFnOp(shared, funcOp, *this, signature,
+                       tcSignature.getFunctionType(), paramList.paramDeclAttrs,
+                       tcSignature.implicitOriginDecls,
+                       fnSignature.resultArg.name, baseName);
 
   // Check for API author error: stable function should return stable types.
   checkStableFunctionReturnType(*this, ASTType(signature.getUserResultType()),

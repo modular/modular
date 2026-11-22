@@ -50,7 +50,6 @@ class StructFieldOp;
 class TraitDeclOp;
 class ExtensionDeclOp;
 struct ParsedArgument;
-struct LambdaNode;
 class IREmitter;
 class ExprDest;
 class BaseDLValue;
@@ -272,9 +271,14 @@ public:
   std::optional<std::string> findUniqueStdlibImportFor(StringRef name);
 
   /// Build the closure value for a `lambda` expression at emit time, by
-  /// resolving the synthetic anonymous `def` it desugars to. Null on error.
-  AnyValue resolveAnonymousClosure(const LambdaNode *node, IREmitter &emitter,
-                                   ExprDest &dest);
+  /// resolving the synthetic anonymous `def` it desugars to. `signature` is
+  /// the contextual signature for `lambda`'s partial signature
+  ///
+  /// This will be the LambdaUValue::emitIR eventually, with signature being
+  /// optional.
+  AnyValue resolveAnonymousClosure(LambdaUValue lambda,
+                                   FnTypeGeneratorType signature,
+                                   IREmitter &emitter);
 
   /// DeclResolution is an inherently recursive process - this return the
   /// current declaration that is being worked on.

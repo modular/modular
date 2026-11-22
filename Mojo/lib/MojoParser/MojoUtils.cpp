@@ -136,6 +136,15 @@ CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,
                                   std::move(dest), {{SRValue(call), expr}}));
 }
 
+CValue LIT::getFunctionArgumentValue(Value bbArg, ArgConvention convention) {
+  if (convention == ArgConvention::ByRefResult)
+    return MLValue(bbArg);
+  if (convention == ArgConvention::ImmReg)
+    return SRValue(bbArg);
+  // Everything else is passed in memory.
+  return CValue::getMValueForRef(bbArg);
+}
+
 void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
   // Erase bottom up to avoid deleting an op while something uses its results.
   for (Operation &op :
