@@ -9,10 +9,12 @@ package(default_visibility = ["//MLRT:__subpackages__"])
 modular_cc_library(
     name = "DriverPlugin",
     srcs = [
+        "lib/DriverPlugin/DriverCreate.cpp",
         "lib/DriverPlugin/DriverPlugin.cpp",
         "lib/DriverPlugin/setup_driver_functions.inc",
     ],
     hdrs = [
+        "include/Target/DriverCreate.h",
         "include/Target/DriverPlugin.h",
     ],
     includes = ["include"],
@@ -342,6 +344,22 @@ modular_cc_test(
     },
     visibility = ["//visibility:private"],
     deps = [":DriverPlugin"],
+)
+
+modular_cc_test(
+    name = "DriverCreateTest",
+    size = "small",
+    srcs = ["test/DriverCreateTest.cpp"],
+    data = [":LegacyStubPlugin.so"],
+    env = {
+        "LEGACY_STUB_PLUGIN": "$(rootpath :LegacyStubPlugin.so)",
+    },
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPlugin",
+        "//SDK:HAL",
+        "//Support:Base",
+    ],
 )
 
 modular_cc_library(

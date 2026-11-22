@@ -50,8 +50,15 @@ M_driver_status_t M_driver_status_message(M_driver_driver_t,
   return M_DRIVER_STATUS_SUCCESS;
 }
 
-M_driver_status_t M_driver_create(M_driver_version *,
+// LEGACY_STUB_VERSION_MINOR makes the stub implement another minor version, so
+// the loader's version check can be tested.
+M_driver_status_t M_driver_create(M_driver_version *version,
                                   M_driver_driver_t *driver) {
+  const char *minor = std::getenv("LEGACY_STUB_VERSION_MINOR");
+  *version = {M_DRIVER_INTERFACE_VERSION_MAJOR,
+              minor ? static_cast<uint32_t>(std::strtoul(minor, nullptr, 10))
+                    : M_DRIVER_INTERFACE_VERSION_MINOR,
+              M_DRIVER_INTERFACE_VERSION_PATCH};
   *driver = nullptr;
   if (driverLive)
     return M_DRIVER_STATUS_BAD_DRIVER;

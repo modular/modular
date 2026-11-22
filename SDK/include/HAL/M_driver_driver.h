@@ -24,17 +24,32 @@ extern "C" {
 /**
  * Perform initialization activities prior to using other functions in this API.
  *
- * @param version (inout) The version of the driver interface implemented by
- * both sides. Before entry, Modular fills in the version it was built with.
- * On exit, the plugin MUST overwrite it with the version it implements.
+ * @param[in,out] version On entry, the version of the driver interface that
+ * Modular was built with. Before it returns, whatever the status, the plugin
+ * MUST overwrite it with the version it implements. `M_driver_version`
+ * describes how Modular decides whether the two versions are compatible.
  * @param[out] driver The driver object, which may store any persistent state.
+ * Modular sets `*driver` to NULL before the call.
  *
- * @return M_DRIVER_STATUS_SUCCESS if the driver was created successfully.
- *         M_DRIVER_STATUS_INCOMPATIBLE_VERSION if the version is incompatible.
- * @note In the case where the Modular's major version is the same as the
- *       plugin's and Modular's minor version is greater than the plugin's,
- *       the call must succeed and the plugin must return
- *       M_DRIVER_STATUS_SUCCESS. Modular will then decide if/how to proceed.
+ * @return M_DRIVER_STATUS_SUCCESS if the driver was created and is usable. A
+ *         driver without devices is usable: the plugin returns
+ *         M_DRIVER_STATUS_SUCCESS and `M_driver_device_count()` reports 0.
+ *         M_DRIVER_STATUS_INCOMPATIBLE_VERSION if the plugin does not implement
+ *         Modular's major version. When only the minor versions differ, the
+ *         plugin must not return this status; Modular compares the versions.
+ *         Any other status if the plugin cannot create a usable driver. This
+ *         includes M_DRIVER_STATUS_NO_DEVICES, which a plugin returns when it
+ *         cannot operate without a device.
+ *
+ * When it does not return M_DRIVER_STATUS_SUCCESS, the plugin either leaves
+ * `*driver` NULL or writes a handle that exists only to describe the failure.
+ * Modular may pass that handle and the returned status to
+ * `M_driver_status_message()`, then destroys the handle with
+ * `M_driver_destroy()`, and calls no other function with it. Without a handle,
+ * Modular reports the status code alone.
+ *
+ * When the call succeeds but Modular rejects the version the plugin wrote,
+ * Modular destroys the driver with `M_driver_destroy()`.
  */
 M_DRIVER_API_EXPORT
 M_driver_status_t M_driver_create(M_driver_version *version,

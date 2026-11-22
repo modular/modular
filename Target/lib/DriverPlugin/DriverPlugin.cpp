@@ -18,6 +18,7 @@
 #include "Target/DriverPlugin.h"
 
 #include "MLRT/Driver/DeviceContext/DriverPluginSpec.h"
+#include "Target/DriverCreate.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Process.h"
@@ -121,12 +122,14 @@ void DriverImpl::reset_() {
   do {                                                                         \
     M_driver_status_t status = obj->api(__VA_ARGS__);                          \
     if (status != M_DRIVER_STATUS_SUCCESS) {                                   \
-      char message[1024];                                                      \
-      (void)obj->status_message(driverHandle_, status, message,                \
-                                sizeof(message));                              \
+      char message[1024] = {};                                                 \
+      if (obj->status_message(driverHandle_, status, message,                  \
+                              sizeof(message)) != M_DRIVER_STATUS_SUCCESS)     \
+        message[0] = '\0';                                                     \
       return Error(std::string("Failed ") + activity +                         \
                    ": Driver plugin failed " + std::string(#api) + "() on " +  \
-                   obj->soPath_);                                              \
+                   obj->soPath_ + " (status " + std::to_string(status) + ")" + \
+                   (message[0] ? std::string(": ") + message : ""));           \
     }                                                                          \
   } while (false);
 
@@ -191,40 +194,13 @@ ErrorOr<int64_t> Driver::Create(std::string const &soPath) {
 #include "setup_driver_functions.inc"
 #undef SETUP_FUNC
 
-  // Create the driver. Tolerate M_DRIVER_STATUS_NO_DEVICES - the plugin
-  // is still valid for compilation device creation even without hardware.
-  {
-    M_driver_version version = {.major = M_DRIVER_INTERFACE_VERSION_MAJOR,
-                                .minor = M_DRIVER_INTERFACE_VERSION_MINOR,
-                                .patch = M_DRIVER_INTERFACE_VERSION_PATCH};
-    M_driver_status_t status = impl->create(&version, &impl->driverHandle_);
-    if (status != M_DRIVER_STATUS_SUCCESS &&
-        status != M_DRIVER_STATUS_NO_DEVICES) {
-      // On init failure a plugin may hand back a degraded driver handle whose
-      // sole purpose is to carry the error message; recover it here.
-      char message[1024] = {0};
-      M_driver_status_t msgStatus = impl->status_message(
-          impl->driverHandle_, status, message, sizeof(message));
-      std::string detail =
-          msgStatus == M_DRIVER_STATUS_SUCCESS ? message : "no message";
-      // Destroy the degraded handle (reset_ only clears the pointer) before
-      // tearing down, so we do not leak it.
-      if (impl->destroy && impl->driverHandle_)
-        impl->destroy(impl->driverHandle_);
-      impl->reset_();
-      return Error(std::string("Failed initialization: Driver plugin failed "
-                               "create() on ") +
-                   soPath + ": " + detail);
-    }
-    if (version.major != M_DRIVER_INTERFACE_VERSION_MAJOR ||
-        version.minor != M_DRIVER_INTERFACE_VERSION_MINOR) {
-      impl->destroy(impl->driverHandle_);
-      impl->reset_();
-      return Error(std::string("Failed initialization: Driver plugin returned "
-                               "incompatible version: ") +
-                   soPath);
-    }
+  ErrorOr<M_driver_driver_t> driverOr =
+      createDriver(soPath, impl->create, impl->destroy, impl->status_message);
+  if (driverOr.isError()) {
+    impl->reset_();
+    return Error(std::string("Failed initialization: ") + driverOr.getError());
   }
+  impl->driverHandle_ = driverOr.get();
 
   // Query the plugin's API name via property("api").
   const char *apiName = nullptr;

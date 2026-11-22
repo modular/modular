@@ -82,6 +82,10 @@ TEST_F(DriverPluginTest, DriverPropertyVersion) {
   EXPECT_EQ(M_DRIVER_STATUS_INCOMPATIBLE_VERSION,
             this->create(&version, &noDriver));
   EXPECT_EQ(noDriver, nullptr);
+  // The plugin reports its own version even when it refuses the host's.
+  EXPECT_EQ(M_DRIVER_INTERFACE_VERSION_MAJOR, version.major);
+  EXPECT_EQ(M_DRIVER_INTERFACE_VERSION_MINOR, version.minor);
+  EXPECT_EQ(M_DRIVER_INTERFACE_VERSION_PATCH, version.patch);
 }
 
 TEST_F(DriverPluginTest, DriverPropertyAPI) {
