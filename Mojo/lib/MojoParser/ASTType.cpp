@@ -22,6 +22,7 @@
 
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
+#include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/ExprNode.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -769,7 +770,8 @@ bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
 
 TriBool ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
                                           SpecialFunctionKind kind,
-                                          SharedState &shared) const {
+                                          SharedState &shared,
+                                          ASTDecl &scope) const {
   // MLIR types and types conforming to AnyTrivialRegType are assumed to be
   // trivial for all purposes
   if (isTrivialRegisterType(loc, shared))
@@ -799,46 +801,41 @@ TriBool ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
 
   // If it doesn't conform to the corresponding trait. Only return `no`
   // (provably non-trivial) when we can definitively prove non-conformance.
+  TypedAttr assumptions = scope.getScopeAssumptions();
   auto [conformanceResult, traitDecl] =
-      conformsToBuiltinTrait(traitName, loc, shared, shared.noAssumptions);
+      conformsToBuiltinTrait(traitName, loc, shared, assumptions);
   if (conformanceResult.isFalse())
     return TriBool::no();
 
-  if (!typeDecl->getParentDecl())
-    return TriBool::unknown();
+  MLIRContext *ctx = shared.getContext();
 
-  auto witnessName = StringAttr::get(shared.getContext(), isTrivialHook);
+  auto witnessName = StringAttr::get(ctx, isTrivialHook);
   auto traitSymbol = TraitSymbolAttr::get(traitDecl->getSymbolRef());
 
-  ASTType boolType =
-      shared.lookupBuiltinType("Bool", *typeDecl->getParentDecl(), loc);
+  ASTType boolType = shared.lookupBuiltinType("Bool", scope, loc);
   TypedAttr fieldIsTrivial =
       shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
           PValue(*this), traitSymbol, witnessName, boolType);
 
-  auto structAttr = dyn_cast_if_present<LITStructAttr>(fieldIsTrivial);
-  if (!structAttr)
+  // A member that does not fold, as for a type parameter, can still be true
+  // in this scope because of a `where` clause.
+  if (!fieldIsTrivial)
     return TriBool::unknown();
+  TypedAttr isTrivialValue = LIT::StructExtractAttr::get(
+      fieldIsTrivial, StringAttr::get(ctx, "_mlir_value"),
+      SIMDAttr::getScalarBool(ctx, true).getType());
 
-  assert(structAttr.getType() == boolType);
-  auto structVals = structAttr.getValues();
-  if (structVals.size() != 1)
-    return TriBool::unknown();
-
-  if (auto &[name, boolVal] = structVals.front(); name == "_mlir_value") {
-    if (auto boolAttr = dyn_cast<SIMDAttr>(boolVal))
-      return boolAttr.getAsBool() ? TriBool::yes() : TriBool::no();
-  }
-
-  return TriBool::unknown();
+  TypedAttr proposition = getCanonicalAttr(deShortCircuitCond(isTrivialValue));
+  return isPropositionImplied(proposition, assumptions);
 }
 
 bool ASTType::isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                                     SharedState &shared,
                                                     ASTDecl &scope) const {
   return isImplicitlyCopyable(loc, shared, scope) &&
-         isSpecialFunctionTrivial(loc, SpecialFunctionKind::kCopyCtor,
-                                  shared) == TriBool::yes();
+         isSpecialFunctionTrivial(loc, SpecialFunctionKind::kCopyCtor, shared,
+                                  scope)
+             .isTrue();
 }
 
 /// Return true if this type is a register-passable type that can be passed

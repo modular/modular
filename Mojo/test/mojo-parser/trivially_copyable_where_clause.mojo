@@ -24,11 +24,9 @@ def take[T: ImplicitlyCopyable](value: T):
 def copy_out[
     T: ImplicitlyCopyable, AS: AddressSpace
 ](ref[AS] x: T) -> T where downcast[T, Copyable].__copy_ctor_is_trivial:
-  # FIXME: MOCO-5480
-  # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
+    # FIXME: MOCO-5481
+    # expected-error @+1 {{cannot load non-register passable type into SSA register (compiler bug, please report!)}}
     take(x)
-  # FIXME: MOCO-5480
-  # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     return x
 
 
@@ -37,8 +35,6 @@ def copy_in[
 ](ref[o, AS] dst: T, src: T) where downcast[
     T, Copyable
 ].__copy_ctor_is_trivial:
-  # FIXME: MOCO-5480
-  # expected-error @+1 {{value of type 'T' cannot be copied or moved into a non-default address space}}
     dst = src
 
 
@@ -47,8 +43,6 @@ def copy_out_conjunction[
 ](ref[AS] x: T) -> T where conforms_to(T, Copyable) and downcast[
     T, Copyable
 ].__copy_ctor_is_trivial:
-  # FIXME: MOCO-5480
-  # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     return x
 
 
@@ -56,6 +50,31 @@ def copy_out_trivial_register_passable[
     T: ImplicitlyCopyable, AS: AddressSpace
 ](ref[AS] x: T) -> T where conforms_to(T, TrivialRegisterPassable):
     return x
+
+
+comptime Field = ImplicitlyCopyable & Deinitable
+
+
+struct Pair[A: Field, B: Field](ImplicitlyCopyable):
+    var a: Self.A
+    var b: Self.B
+
+
+# The copy constructor of `Pair` is trivial when the copy constructors of both
+# fields are trivial.
+def copy_out_pair[
+    A: Field, B: Field, AS: AddressSpace
+](ref[AS] x: Pair[A, B]) -> Pair[A, B] where downcast[
+    A, Copyable
+].__copy_ctor_is_trivial and downcast[B, Copyable].__copy_ctor_is_trivial:
+    return x
+
+
+def copy_out_pair_unproven[
+    A: Field, B: Field, AS: AddressSpace
+](ref[AS] x: Pair[A, B]) where downcast[A, Copyable].__copy_ctor_is_trivial:
+    # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
+    take(x)
 
 
 def copy_out_unproven[T: ImplicitlyCopyable, AS: AddressSpace](ref[AS] x: T):
@@ -77,5 +96,6 @@ def copy_out_disjunction[
 ](ref[AS] x: T) where conforms_to(T, TrivialRegisterPassable) or downcast[
     T, Copyable
 ].__copy_ctor_is_trivial:
+    # FIXME: MOCO-5482.
     # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     take(x)

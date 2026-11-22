@@ -125,9 +125,10 @@ public:
   /// Return the 'kind' of triviality this type possesses for the given
   /// trait: 'Deinitable', 'Copyable', or 'Movable'. Returns `yes` when
   /// provably trivial, `no` when provably non-trivial, and `unknown` when it
-  /// can't be proven (e.g. an unfolded member).
+  /// can't be proven (e.g. an unfolded member). When the member does not fold,
+  /// the assumptions of `scope` can prove it true.
   TriBool isSpecialFunctionTrivial(llvm::SMLoc loc, SpecialFunctionKind kind,
-                                   SharedState &shared) const;
+                                   SharedState &shared, ASTDecl &scope) const;
 
   /// Return true if this type is provably implicitly 'trivially' copyable, as
   /// defined by its '__copy_ctor_is_trivial' member and whether or not it
