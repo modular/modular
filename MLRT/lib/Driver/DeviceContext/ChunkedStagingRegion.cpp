@@ -253,7 +253,7 @@ MovePagesVerdict movePagesVerdict(const MovePagesResult &result) {
 //
 // HIP-only: the failure mode this guards against is specific to
 // `hipHostMalloc`'s silent fallback to userptr memory when
-// `HSA_USERPTR_FOR_PAGED_MEM` is unset. CUDA's `cuMemAllocHost` (what
+// `HSA_USERPTR_FOR_PAGED_MEM` is unset. CUDA's `CUDADevice::hostAlloc` (what
 // `chunkAlloc(isHost=true)` calls on that backend) genuinely page-locks the
 // allocation with no equivalent opt-in or fallback, so it is pinned -- and
 // therefore compaction-immune -- by construction; there is nothing to

@@ -96,6 +96,10 @@ public:
   ErrorOrSuccess chunkAlloc(void **ptr, size_t byteSize, bool isHost) override;
   ErrorOrSuccess chunkFree(void *ptr, bool isHost) override;
 
+  // Free with cuMemFreeHost.
+  ErrorOrSuccess hostAlloc(void **ptr, size_t byteSize) const;
+  bool useWriteCombinedHostAlloc() const;
+
   // CUDA Virtual Memory Management (VMM) for the defragmenting allocator.
   // Probes the VMM allocation-granularity query once and caches whether it
   // succeeds, so this reflects whether VMM is actually usable (not just that
@@ -189,6 +193,9 @@ private:
   // vmmSupported()).
   mutable std::once_flag vmmSupportedOnce_;
   mutable bool vmmSupportedCached_ = false;
+
+  mutable std::once_flag writeCombinedHostAllocOnce_;
+  mutable bool writeCombinedHostAllocCached_ = false;
   // Device context to be shared across all `CUDADeviceContext` objects. We
   // initialize this with the primary device context for the device to be able
   // to share resources with libraries using the CUDA Runtime API.

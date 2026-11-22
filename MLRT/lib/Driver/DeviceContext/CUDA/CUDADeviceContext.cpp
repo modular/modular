@@ -636,12 +636,45 @@ int CUDADevice::deviceCount() const {
   return *errOrCount;
 }
 
+// cuMemAllocHost's 4 KiB pages make GPU random access slow on GB10.
+// Write-combined memory avoids that and stays CPU-cached there, but is
+// CPU-uncached elsewhere, including Jetson Orin, which lacks host page tables.
+bool CUDADevice::useWriteCombinedHostAlloc() const {
+  std::call_once(writeCombinedHostAllocOnce_, [&]() {
+    auto hasAttribute = [&](CUdevice_attribute attr) {
+      int value = 0;
+      return driver_.cuDeviceGetAttribute(&value, attr, cudaDevice_) ==
+                 CUDADriver::SUCCESS &&
+             value != 0;
+    };
+    bool isIntegrated = hasAttribute(CUdevice_attribute::INTEGRATED);
+    bool readsHostPageTables = hasAttribute(
+        CUdevice_attribute::PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES);
+    writeCombinedHostAllocCached_ = isIntegrated && readsHostPageTables;
+  });
+  return writeCombinedHostAllocCached_;
+}
+
+ErrorOrSuccess CUDADevice::hostAlloc(void **ptr, size_t byteSize) const {
+  if (useWriteCombinedHostAlloc()) {
+    constexpr unsigned int kPortable = 0x1;
+    constexpr unsigned int kDeviceMap = 0x2;
+    constexpr unsigned int kWriteCombined = 0x4;
+    // PORTABLE and DEVICEMAP match cuMemAllocHost's semantics.
+    CUDA_CHECK_ERR(driver_.cuMemHostAlloc(
+        ptr, byteSize, kPortable | kDeviceMap | kWriteCombined));
+  } else {
+    CUDA_CHECK_ERR(driver_.cuMemAllocHost_v2(ptr, byteSize));
+  }
+  return success();
+}
+
 ErrorOrSuccess CUDADevice::chunkAlloc(void **ptr, size_t byteSize,
                                       bool isHost) {
   assert(byteSize != 0);
   CUDA_WITH_DEV_ERR(*this);
   if (isHost) {
-    CUDA_CHECK_ERR(driver_.cuMemAllocHost_v2(ptr, byteSize));
+    RETURN_IF_ERROR(hostAlloc(ptr, byteSize));
   } else {
     CUDA_CHECK_ERR(driver_.cuMemAlloc_v2(ptr, byteSize));
   }
@@ -1840,9 +1873,9 @@ ErrorOrSuccess CUDADeviceContext::memAlloc(void **ptr, size_t byteSize,
     break;
   }
   case Device::AllocMode::HOST: {
-    // We must poll here since cuMemAllocHost_v2 is synchronous.
+    // We must poll here since host allocation is synchronous.
     POLL_PENDING_EVENTS(*this);
-    CUDA_CHECK_ERR(driver_.cuMemAllocHost_v2(ptr, byteSize));
+    RETURN_IF_ERROR(CUDADevice::cast(device()).hostAlloc(ptr, byteSize));
     break;
   }
   case Device::AllocMode::SYNC: {

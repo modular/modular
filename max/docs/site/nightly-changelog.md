@@ -556,6 +556,9 @@ This version is still a work in progress.
   `trace_arg(name, tensor.shape_coord(), tensor.dtype)` from
   `max.runtime.tracing` instead.
 
+- On DGX Spark, GPU kernels doing random reads or atomics on large host
+  buffers run up to 150x faster.
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,
