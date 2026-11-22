@@ -138,9 +138,12 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
   // ARM64 AAPCS: A struct that is not a homogeneous aggregate goes in GPRs
   // (integer registers), whatever the types of its fields.
 
-  // RULE 2: 1-8 byte non-HFA structs → coerce to iN
+  // RULE 2: 1-8 byte non-HFA structs → coerce to iN, or to i64 on Darwin
+  // A struct argument takes a whole 8-byte slot (AAPCS64 B.5). Linux gives any
+  // iN a full slot on the stack, but Darwin gives an iN only its own size, so
+  // iN would be too small there.
   if (size <= 8) {
-    return CabiUtils::classifySmallIntegerStruct(size, ctx);
+    return CabiUtils::classifySmallIntegerStruct(isDarwin ? 8 : size, ctx);
   }
 
   // RULE 3: 9-16 byte non-HFA structs → two-register passing
