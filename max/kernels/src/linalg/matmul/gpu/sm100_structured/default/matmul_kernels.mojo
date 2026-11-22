@@ -2312,6 +2312,14 @@ struct BlackwellMatmulSM100Kernel[
 
         comptime if not Self.config.use_tma_epilogue_load:
             if WarpRole.is_epilogue():
+                # A closure can read what the predecessor grid writes, such as
+                # a residual. These warps skip the load warp's wait, and the
+                # barriers after that wait do not keep their read-only loads
+                # below it (see `wait_on_dependent_grids`).
+                comptime if Self.pdl_level > PDLLevel.OFF and (
+                    has_epilogue_fn or has_compute_fn
+                ):
+                    wait_on_dependent_grids()
                 Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
 
                 var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())

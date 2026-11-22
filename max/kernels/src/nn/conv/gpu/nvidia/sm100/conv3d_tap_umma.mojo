@@ -524,6 +524,14 @@ struct Conv3dDepthUmma[
     ):
         """Moves each accumulator TMEM -> registers -> smem -> TMA store, or
         applies the fused epilogue to the registers."""
+        # A closure or the residual can read what the predecessor grid
+        # writes. These warps skip the load warps' wait, and the barriers
+        # after that wait do not keep their read-only loads below it (see
+        # `wait_on_dependent_grids`).
+        # No PDL level gates the wait: it returns at once in a launch
+        # without PDL.
+        comptime if Self.fused:
+            wait_on_dependent_grids()
         Self.MmaEpiSync.wait()
         var tmem = tmem_slot[]
         var desc = Pointer(to=out_desc).unsafe_bitcast[NoneType]()
@@ -1181,6 +1189,14 @@ struct Conv3dWindowUmma[
         `h * WT + w`, so one rank-4 TMA box stores them; the descriptor clips
         the ragged edge tiles.
         """
+        # A closure or the residual can read what the predecessor grid
+        # writes. These warps skip the load warps' wait, and the barriers
+        # after that wait do not keep their read-only loads below it (see
+        # `wait_on_dependent_grids`).
+        # No PDL level gates the wait: it returns at once in a launch
+        # without PDL.
+        comptime if Self.fused:
+            wait_on_dependent_grids()
         Self.MmaEpiSync.wait()
         var tmem = tmem_slot[]
         var desc = Pointer(to=out_desc).unsafe_bitcast[NoneType]()

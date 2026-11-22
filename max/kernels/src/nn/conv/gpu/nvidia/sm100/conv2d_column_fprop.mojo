@@ -377,6 +377,18 @@ struct Conv2dColumnFprop[
         fence_mbarrier_init()
         barrier()
 
+        # A closure or the residual can read what the predecessor grid
+        # writes. The epilogue warps skip the load warps' wait, and the
+        # barriers after that wait do not keep their read-only loads below it
+        # (see `wait_on_dependent_grids`). One wait for every warp before the
+        # dispatch measured cheaper than a call at the top of `_epilogue`.
+        # No PDL level gates the wait: it returns at once in a launch
+        # without PDL.
+        comptime if (
+            Self.has_epilogue_fn or Self.has_compute_fn or Self.has_residual
+        ):
+            wait_on_dependent_grids()
+
         if warp < 4:
             Self._epilogue(
                 out_desc,

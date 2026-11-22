@@ -5500,6 +5500,14 @@ def _gemm_mma_cpasync_kernel_impl[
         loader.issue_mainloop(k_iters)
 
     else:
+        # A closure can read what the predecessor grid writes, such as a
+        # residual. These warps skip the loaders' wait, and the barriers after
+        # that wait do not keep their read-only loads below it (see
+        # `wait_on_dependent_grids`).
+        comptime if pdl_level > PDLLevel.OFF and (
+            has_epilogue_fn or has_compute_fn
+        ):
+            wait_on_dependent_grids()
         var computer = _MmaCpAsyncMmaComputer[
             c_type,
             a_type,

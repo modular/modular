@@ -307,6 +307,13 @@ _B200_SMOKE_TESTS = [
     "test_tma_im2col_unit.mojo",
 ]
 
+# Contract guards: they pass without the epilogue wait on the current `ptxas`
+# and fail when the load warps' waits are removed, so they run after merge.
+_PDL_CONTRACT_GUARD_TESTS = [
+    "test_block_scaled_matmul_epilogue_pdl_race.mojo",
+    "test_gemm_mma_cpasync_epilogue_pdl_race.mojo",
+]
+
 _B200_TESTS = [
     "test_matmul_sm100_swiglu_pdl.mojo",
     "test_bulk_mma_pair_cta_sm100.mojo",
@@ -390,6 +397,9 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_bf16_bias.mojo",
     "test_matmul_sm100_2sm_bf16_bias.mojo",
     "test_matmul_sm100_fused_bias_residual_dispatch.mojo",
+    "test_matmul_sm100_epilogue_pdl_race.mojo",
+    "test_gemm_mma_cpasync_epilogue_pdl_race.mojo",
+    "test_block_scaled_matmul_epilogue_pdl_race.mojo",
     "test_matmul_compute_fn_sm100.mojo",
     "test_matmul_epilogue_fn_sm100.mojo",
     "test_matmul_epilogue_fn_sm100_dispatch.mojo",
@@ -560,6 +570,8 @@ _GPU_MEMORY = {
                 # TODO(KERN-3603): Flaky on B200.
                 "test_matmul_sm100_blockwise_fp8.mojo",
             ] else []
+        ) + (
+            ["postsubmit"] if src in _PDL_CONTRACT_GUARD_TESTS else []
         ),
         target_compatible_with = [
             "//:has_gpu",

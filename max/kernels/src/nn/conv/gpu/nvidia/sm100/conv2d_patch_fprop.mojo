@@ -568,6 +568,14 @@ struct Conv2dPatchFprop[
                     clean_stage = 0
                     clean_phase ^= 1
 
+        # A closure or the residual can read what the predecessor grid
+        # writes. These warps skip the load warps' wait, and the barriers
+        # after that wait do not keep their read-only loads below it (see
+        # `wait_on_dependent_grids`).
+        # No PDL level gates the wait: it returns at once in a launch
+        # without PDL.
+        comptime if Self.has_epilogue_fn or Self.has_compute_fn or Self.has_residual:
+            wait_on_dependent_grids()
         Self.MmaEpiSync.wait()
         var tmem = tmem_slot[]
         bars.unsafe_offset(Self.ACC_FULL)[].wait(0)

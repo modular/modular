@@ -1636,6 +1636,14 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             tcgen05_dealloc[Int32(config.cta_group)](tmem_addr, max_tmem_cols)
 
     if WarpRole.is_epilogue():
+        # A closure can read what the predecessor grid writes, such as a
+        # residual. These warps skip the load warp's wait, and the barriers
+        # after that wait do not keep their read-only loads below it (see
+        # `wait_on_dependent_grids`).
+        comptime if pdl_level > PDLLevel.OFF and (
+            has_epilogue_fn or has_compute_fn
+        ):
+            wait_on_dependent_grids()
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
         var tmem_addr = ptr_tmem_addr[0]
         var tile_writer = TileWriterType(Pointer(to=c_tma_op))

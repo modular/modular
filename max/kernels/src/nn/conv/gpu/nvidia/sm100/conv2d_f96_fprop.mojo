@@ -751,6 +751,14 @@ struct Conv2dFpropF96[
         instead owns one output pixel of the tile and applies the epilogue to
         its 96 channels in registers (`apply_conv_epilogue`).
         """
+        # A closure or the residual can read what the predecessor grid
+        # writes. These warps skip the load warps' wait, and the barriers
+        # after that wait do not keep their read-only loads below it (see
+        # `wait_on_dependent_grids`).
+        # No PDL level gates the wait: it returns at once in a launch
+        # without PDL.
+        comptime if Self.has_epilogue_fn or Self.has_compute_fn or Self.has_residual:
+            wait_on_dependent_grids()
         Self.MmaEpiSync.wait()
         var tmem = tmem_slot[]
         var wide_desc = Pointer(to=out_wide_tma.descriptor).unsafe_bitcast[
