@@ -13,7 +13,8 @@
 //
 // The host side of `M_driver_create`: version negotiation and the failed-create
 // contract, as `SDK/include/HAL/M_driver_driver.h` specifies them. Every C++
-// loader of a HAL plugin creates its driver through `createDriver`.
+// loader of a HAL plugin creates its driver through `createDriver`. The Mojo
+// HAL implements the same rules in `hal/plugins/__init__.mojo`.
 //
 //===----------------------------------------------------------------------===//
 

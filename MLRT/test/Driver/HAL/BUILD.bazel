@@ -73,6 +73,21 @@ mojo_test(
     ],
 )
 
+# Version negotiation and a failed create against the mock.
+mojo_test(
+    name = "test_hal_plugin_load.mojo.test",
+    srcs = ["test_hal_plugin_load.mojo"],
+    data = [":MockPlugin.so"],
+    env = {
+        "MOCK_PLUGIN": "$(rootpath :MockPlugin.so)",
+    },
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 # ---------------------------------------------------------------------------
 # GPU-dependent smoke test (existing).
 # ---------------------------------------------------------------------------

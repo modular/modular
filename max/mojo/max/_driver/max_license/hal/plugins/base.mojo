@@ -28,8 +28,8 @@ struct RawPluginBase[required: Bool = True](RawPluginComponent):
     var create: HALFunction[
         "M_driver_create",
         def(
-            version: ImmPointer[DriverVersion, _],
-            driver: OutParam[DriverHandle, _],
+            version: MutPointer[DriverVersion, _],
+            driver: OutParam[OptionalReg[DriverHandle], _],
         ) thin abi("C") -> PluginResultCode,
         required=Self.required,
     ]

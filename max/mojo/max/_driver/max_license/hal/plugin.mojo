@@ -61,6 +61,7 @@ struct RawDriver(Movable):
         """Load a plugin from a spec string of the form 'name@/path/to/lib.so'.
 
         If no '@' is present, the entire string is used as both name and path.
+        A failure keeps the status the plugin or the loader reported.
         """
         var name: String
         var so_path: String
@@ -72,21 +73,16 @@ struct RawDriver(Movable):
             name = plugin_spec
             so_path = plugin_spec
 
-        var raw: RawPlugin
-        var driver_handle: DriverHandle
+        var lib: OwnedDLHandle
         try:
-            var lib = OwnedDLHandle(so_path, RTLD.NOW)
-            raw = RawPlugin(lib^, so_path)
-            raw.name = name
-            raw.so_path = so_path
-
-            driver_handle = raw._create_init_driver()
+            lib = OwnedDLHandle(so_path, RTLD.NOW)
         except e:
             raise HALError(
                 STATUS_UNKNOWN_ERROR,
-                message=String(t"failed to load plugin '{so_path}': {e}"),
+                message=String(t"failed to open plugin '{so_path}': {e}"),
             )
-
+        var raw = RawPlugin(lib^, name=name, so_path=so_path)
+        var driver_handle = raw._create_init_driver()
         return RawDriver(raw^, driver_handle)
 
     def __deinit__(deinit self):
@@ -1073,30 +1069,4 @@ struct RawDriver(Movable):
 
     def get_status_message(self, status: Int64) raises HALError -> HALError:
         """Retrieve the human-readable message associated with a status code."""
-        var buf = List[Int8](length=1024, fill=0)
-        var ret = self._raw.base.status_message.get()(
-            self._driver_handle,
-            status,
-            MutPointer(to=buf.unsafe_ptr()[]),
-            Int64(len(buf)),
-        )
-
-        if ret == STATUS_SUCCESS:
-            try:
-                return HALError(
-                    status,
-                    message=CStringSpan(
-                        unsafe_from_ptr=Pointer(to=buf[0]).unsafe_bitcast[
-                            c_char
-                        ]()
-                    ),
-                )
-            except:
-                return HALError(
-                    status, message="(failed to decode status message)"
-                )
-        else:
-            return HALError(
-                status,
-                message="(problem retrieving status message)",
-            )
+        return self._raw.status_message(self._driver_handle, status)
