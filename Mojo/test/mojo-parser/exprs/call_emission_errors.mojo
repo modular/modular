@@ -164,6 +164,15 @@ def mutateInt(mut a: Int):
     pass
 
 
+struct MemExampleMoveOnly(Movable):
+    def __init__(out self):
+        pass
+
+
+def mutateMoveOnly(mut a: MemExampleMoveOnly):
+    pass
+
+
 def initialize_in_addrspace(
     memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
@@ -185,9 +194,16 @@ def mutate_in_addrspace(
         address_space=AddressSpace(1)],
     regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
+    moveptr: Pointer[
+        MemExampleMoveOnly,
+        AnyOrigin[mut=True],
+        address_space=AddressSpace(1)],
 ):
     # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     mutateMem(memptr[])
+    # expected-error @+2 {{value of type 'MemExampleMoveOnly' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    # expected-note @+1 {{consider transferring the value with '^'}}
+    mutateMoveOnly(moveptr[])
     # ok
     mutateMemTC(memtcptr[])
     # ok

@@ -1225,8 +1225,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     } else {
       loadVal = emitter.emitRValue({lv, argValAndExpr.expr}, tmpValueDest);
     }
-    if (!loadVal)
+    if (!loadVal) {
+      tmpValueDest.resetForError(emitter);
       return {};
+    }
 
     // One interesting case to watch for are types like Dict.  These types have
     // both a getter and a setter, but the getter will return a mutable
