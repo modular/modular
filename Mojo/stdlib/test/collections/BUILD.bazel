@@ -74,6 +74,9 @@ _EXPECT_CRASH = [
 # reports to file:line, so use the lighter level under asan for this file only.
 _ASAN_LINE_TABLES_ONLY = ["test_list.mojo"]
 
+# full debug info hides the -O3 miscompile these tests catch (#7732)
+_NO_DEBUG_INFO = ["test_list_append_regrow.mojo"]
+
 # Crash tests that time out in external CI after the crash handler prints its
 # trace. Temporary, until crash-test slowness is fixed.
 _SKIP_EXTERNAL_CI = [
@@ -89,7 +92,7 @@ _SKIP_EXTERNAL_CI = [
         copts = ["--debug-level"] + (select({
             "//:asan": ["line-tables"],
             "//conditions:default": ["full"],
-        }) if src in _ASAN_LINE_TABLES_ONLY else ["full"]),
+        }) if src in _ASAN_LINE_TABLES_ONLY else (["none"] if src in _NO_DEBUG_INFO else ["full"])),
         data = [src],  # NOTE: some tests attempt to read their source files
         tags = ["skip-external-ci"] if src in _SKIP_EXTERNAL_CI else [],
         deps = [
