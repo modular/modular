@@ -86,12 +86,12 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
       // CHECK-NEXT: }
       // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep %arg0[[[#FRAME10 - 3]]]
       // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
-      // CHECK-NEXT: lit.try.raise "try0" [[V12]] : index
+      // CHECK-NEXT: lit.try.raise "try0" handler 0 [[V12]] : index
       %result2 = kgen.call @foo(%arg2) : (index) -> index
       co.suspend (%hdl) {
         co.suspend.end
       }
-      lit.try.raise "try0" %result2 : index
+      lit.try.raise "try0" handler 0 %result2 : index
     } else {
       hlcf.yield
     }

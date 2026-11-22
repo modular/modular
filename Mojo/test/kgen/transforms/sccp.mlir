@@ -910,7 +910,7 @@ kgen.func @raise_in_for_inside_try_does_not_leave(%end: index) -> index {
     lit.try "t0" {
       hlcf.for [%idx0 to %end step %idx1 slt add] (%i = %idx0 : index) {
         kgen.call @may_raise(%i) : (index) -> ()
-        lit.try.raise "t0"
+        lit.try.raise "t0" handler 0
       }
       hlcf.break %idx2 : index
     }
@@ -933,9 +933,9 @@ kgen.func @raise_in_for_inside_try_does_not_leave(%end: index) -> index {
 kgen.func @raise_targets_enclosing_try() -> index {
   %idx0 = index.constant 0
   lit.try "t0" {
-    lit.try.raise "t0"
+    lit.try.raise "t0" handler 0
   } except () {
-    lit.try.raise "t0"
+    lit.try.raise "t0" handler 0
   } else () {
     lit.try.yield
   }

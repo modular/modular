@@ -16,6 +16,20 @@ lit.fn @struct_attr() {
 
 // -----
 
+lit.fn @invalid_try_handler() {
+  lit.try "try0" {
+    // expected-error @below {{'lit.try.raise' op handler index is out of range}}
+    lit.try.raise "try0" handler 1
+  } except {
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
+  hlcf.return
+}
+
+// -----
+
 // expected-note @below {{see struct declaration here}}
 lit.struct.decl @TwoFields {
   lit.struct.field a : index

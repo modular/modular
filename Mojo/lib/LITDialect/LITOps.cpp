@@ -2104,9 +2104,58 @@ TraitSymbolAttr TraitDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
 // TryOp
 //===----------------------------------------------------------------------===//
 
+/// Parses one or more except regions, the else region, and an optional finally
+/// region. An unreachable block represents the absent semantic-only finally
+/// region after semantic control-flow lowering.
+static ParseResult
+parseTryHandlers(OpAsmParser &parser,
+                 SmallVectorImpl<std::unique_ptr<Region>> &exceptRegions,
+                 Region &elseRegion, Region &finallyRegion) {
+  if (failed(parser.parseKeyword("except")))
+    return failure();
+  do {
+    auto &region = *exceptRegions.emplace_back(std::make_unique<Region>());
+    if (failed(parseRegionWithArgs(parser, region)))
+      return failure();
+  } while (succeeded(parser.parseOptionalKeyword("except")));
+
+  if (failed(parser.parseKeyword("else")) ||
+      failed(parseRegionWithArgs(parser, elseRegion)))
+    return failure();
+
+  if (succeeded(parser.parseOptionalKeyword("finally"))) {
+    if (failed(parser.parseRegion(finallyRegion)))
+      return failure();
+  } else {
+    Block &block = finallyRegion.emplaceBlock();
+    OpBuilder builder(parser.getContext());
+    builder.setInsertionPointToEnd(&block);
+    HLCF::UnreachableOp::create(builder, UnknownLoc::get(parser.getContext()));
+  }
+  return success();
+}
+
+/// Prints handler regions in source order instead of their ODS storage order.
+static void printTryHandlers(OpAsmPrinter &printer, Operation *op,
+                             MutableArrayRef<Region> exceptRegions,
+                             Region &elseRegion, Region &finallyRegion) {
+  assert(!exceptRegions.empty() && "try requires at least one except region");
+  for (Region &region : exceptRegions) {
+    printer << " except ";
+    printRegionWithArgs(printer, op, region);
+  }
+  printer << " else ";
+  printRegionWithArgs(printer, op, elseRegion);
+  if (!isa<HLCF::UnreachableOp>(finallyRegion.front().front())) {
+    printer << " finally ";
+    printer.printRegion(finallyRegion);
+  }
+}
+
 void TryOp::getEntryTargets(ArrayRef<Attribute> operands,
                             SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  targets.emplace_back(0, getTryRegion().getArguments());
+  targets.emplace_back(getTryRegion().getRegionNumber(),
+                       getTryRegion().getArguments());
 }
 
 ValueRange TryOp::getEntryArguments(std::optional<unsigned> target) {
@@ -2126,10 +2175,26 @@ TryOp::parametric_interpret(ArrayRef<Attribute> operands,
   return interpret(operands, state);
 }
 
+/// Returns whether the semantic-only finally region is present. An empty block
+/// is present but still under construction.
+bool TryOp::hasFinally() {
+  Block &finally = getFinallyRegion().front();
+  return finally.empty() || !isa<HLCF::UnreachableOp>(finally.front());
+}
+
+/// Returns true if the finally block is absent or contains only a yield.
 bool TryOp::hasTrivialFinally() {
+  if (!hasFinally())
+    return true;
   Block &finally = getFinallyRegion().front();
   return llvm::hasSingleElement(finally) &&
          isa<TryYieldOp>(finally.getTerminator());
+}
+
+LogicalResult TryOp::verify() {
+  if (getExceptRegions().empty())
+    return emitOpError("requires at least one except region");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2146,23 +2211,28 @@ void TryYieldOp::getBranchTargets(
   if (!isa<TryOp>(region->getParentOp()))
     region = region->getParentRegion();
 
-  switch (region->getRegionNumber()) {
-  case TryOp::kTRY:
+  auto tryOp = cast<TryOp>(region->getParentOp());
+  if (region == &tryOp.getTryRegion()) {
     // Yield from the 'try' region branches to the 'else' region.
-    targets.emplace_back(TryOp::kELSE, getOperands());
-    break;
-  case TryOp::kEXCEPT:
-  case TryOp::kELSE:
+    targets.emplace_back(tryOp.getElseRegion().getRegionNumber(),
+                         getOperands());
+    return;
+  }
+  auto containsRegion = [&](MutableArrayRef<Region> regions) {
+    return llvm::any_of(
+        regions, [&](Region &candidate) { return &candidate == region; });
+  };
+  if (region == &tryOp.getElseRegion() ||
+      containsRegion(tryOp.getExceptRegions())) {
     // Yield from either the 'except' or 'else' regions branches back to the
     // parent operation.
     targets.emplace_back(std::nullopt, getOperands());
-    break;
-  case TryOp::kFINALLY:
-    // The finally region is a no-op according to HLCF.
-    break;
-  default:
-    llvm_unreachable("unknown lit.try region");
+    return;
   }
+  if (region == &tryOp.getFinallyRegion())
+    // The finally region is a no-op according to HLCF.
+    return;
+  llvm_unreachable("unknown lit.try region");
 }
 
 ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
@@ -2170,19 +2240,22 @@ ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
   // There should always be a parent TryOp.
   auto tryOp = cast<TryOp>((*this)->getParentOp());
 
-  switch ((*this)->getParentRegion()->getRegionNumber()) {
-  case TryOp::kTRY:
+  Region *region = (*this)->getParentRegion();
+  auto containsRegion = [&](MutableArrayRef<Region> regions) {
+    return llvm::any_of(
+        regions, [&](Region &candidate) { return &candidate == region; });
+  };
+  if (region == &tryOp.getTryRegion())
     // Yield from the 'try' region branches to the 'else' region.
     return state.transferControlFlowTo(tryOp.getElseRegion(), operands);
-  case TryOp::kELSE:
+  if (region == &tryOp.getElseRegion() ||
+      containsRegion(tryOp.getExceptRegions()))
     // Yield from either the 'except' or 'else' regions branches back to the
     // parent region which continues after the try.
     return state.transferControlFlowTo(tryOp, operands);
-  case TryOp::kFINALLY:
+  if (region == &tryOp.getFinallyRegion())
     llvm_unreachable("Should be processed by LowerSemanticCF");
-  default:
-    llvm_unreachable("unknown lit.try region");
-  }
+  llvm_unreachable("unknown lit.try region");
 }
 
 ErrorTreeOrSuccess
@@ -2195,13 +2268,21 @@ TryYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
 // TryRaiseOp
 //===----------------------------------------------------------------------===//
 
-/// Return true if the operation is a loop and has a matching label.
+/// Return true if the operation is a try with the requested label.
 static bool isMatchingTry(Operation *op, StringAttr label) {
   if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
     assert(tryOp.getLabelAttr() && "LowerSemanticCF ensures labels on lit.try");
     return tryOp.getLabelAttr() == label;
   }
   return false;
+}
+
+/// Returns the try operation selected by this raise's label.
+static TryOp getMatchingTry(TryRaiseOp raiseOp) {
+  auto tryOp = raiseOp->getParentOfType<TryOp>();
+  while (tryOp && !isMatchingTry(tryOp, raiseOp.getLabelAttr()))
+    tryOp = tryOp->getParentOfType<TryOp>();
+  return tryOp;
 }
 
 bool TryRaiseOp::isParentNode(Operation *op) {
@@ -2211,27 +2292,42 @@ bool TryRaiseOp::isParentNode(Operation *op) {
 void TryRaiseOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  targets.emplace_back(1, getOperands());
+  TryOp tryOp = getMatchingTry(*this);
+  if (!tryOp)
+    return;
+  int64_t handlerIndex = getHandlerIndexAttr().getInt();
+  if (handlerIndex < 0 ||
+      static_cast<size_t>(handlerIndex) >= tryOp.getExceptRegions().size())
+    return;
+  targets.emplace_back(tryOp.getExceptRegion(handlerIndex).getRegionNumber(),
+                       getOperands());
 }
 
 ErrorTreeOrSuccess TryRaiseOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
   // There should always be a parent TryOp.
-  auto tryOp = (*this)->getParentOfType<TryOp>();
-  while (tryOp) {
-    if (isMatchingTry(tryOp, getLabelAttr()))
-      break;
-    tryOp = tryOp->getParentOfType<TryOp>();
-  }
+  TryOp tryOp = getMatchingTry(*this);
   assert(tryOp && "LowerSemanticCF ensures this before elaboration");
 
-  return state.transferControlFlowTo(tryOp.getExceptRegion(), operands);
+  return state.transferControlFlowTo(
+      tryOp.getExceptRegion(getHandlerIndexAttr().getInt()), operands);
 }
 
 ErrorTreeOrSuccess
 TryRaiseOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
   return interpret(operands, state);
+}
+
+LogicalResult TryRaiseOp::verify() {
+  TryOp tryOp = getMatchingTry(*this);
+  if (!tryOp)
+    return emitOpError("does not reference an enclosing try");
+  int64_t handlerIndex = getHandlerIndexAttr().getInt();
+  if (handlerIndex < 0 ||
+      static_cast<size_t>(handlerIndex) >= tryOp.getExceptRegions().size())
+    return emitOpError("handler index is out of range");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

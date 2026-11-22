@@ -873,7 +873,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 /// `<ops>` ride the break path (relocated after the loop); a leading op using
 /// a loop-internal value can't be hoisted, so soft-error and bail.
 static void tryEraseTrivialLitTry(LIT::TryOp tryOp, IRRewriter &rewriter) {
-  if (!tryOp.getFinallyRegions().empty())
+  if (tryOp.hasFinally() || tryOp.getExceptRegions().size() != 1)
     return;
 
   Block &tryBlock = tryOp.getTryRegion().front();

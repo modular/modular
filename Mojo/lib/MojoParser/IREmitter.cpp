@@ -2095,13 +2095,17 @@ MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
   return errorSlot;
 }
 
-/// Records where a typed error leaves a source-level try body.
+/// Records where a typed error leaves a source-level try body, initially
+/// routing it to the sole handler supported by the parser.
 void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
                                    Operation *sourceOperation,
                                    SMLoc sourceLoc) {
   if (isEagerlyEmitted())
     return;
   assert(errorSlot && terminator && "raise site must be fully specified");
+  cast<LIT::RaiseOp>(terminator)
+      .setHandlerIndexAttr(
+          IntegerAttr::get(IntegerType::get(terminator->getContext(), 64), 0));
   raiseSites.push_back({errorSlot, terminator, sourceOperation, sourceLoc});
 }
 

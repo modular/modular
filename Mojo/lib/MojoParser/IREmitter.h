@@ -70,7 +70,8 @@ struct RaiseContext {
   MLValue coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
                             const ExprNode *sourceExpr);
 
-  /// Records an error propagation terminator for deferred try type unification.
+  /// Records an error propagation terminator for deferred try type unification,
+  /// initially routing it to the sole handler supported by the parser.
   void recordRaiseSite(MLValue errorSlot, Operation *terminator,
                        Operation *sourceOperation, SMLoc sourceLoc);
 

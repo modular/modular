@@ -230,6 +230,38 @@ lit.fn @raise_raise() throws {
   lit.end_fn
 }
 
+// CHECK-LABEL: lit.fn @multiple_except_regions
+lit.fn @multiple_except_regions(%cond: !kgen.scalar<bool>) {
+  // CHECK: lit.try "try0"
+  lit.try {
+    hlcf.if %cond {
+      // CHECK: lit.try.raise "try0" handler 0
+      lit.raise handler 0
+      hlcf.yield
+    } else {
+      // CHECK: lit.try.raise "try0" handler 1
+      lit.raise handler 1
+      hlcf.yield
+    }
+    lit.try.yield
+  // CHECK: except
+  } except {
+    "handler.zero"() : () -> ()
+    lit.try.yield
+  // CHECK: except
+  } except {
+    "handler.one"() : () -> ()
+    lit.try.yield
+  // CHECK: else
+  } else {
+    lit.try.yield
+  } finally {
+    lit.try.yield
+  }
+  lit.return
+  lit.end_fn
+}
+
 // CHECK-LABEL: lit.fn @throwing_func
 lit.fn @throwing_func[mut elt, mut lt](
     %0[*""]: !lit.ref<@Error, mut elt> byref_error,
@@ -275,7 +307,7 @@ lit.fn @throwing_calls(
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
     // CHECK-NEXT: hlcf.if [[IS_ERR]]
     // CHECK-NEXT:   mark_consumed %result
-    // CHECK-NEXT:   lit.try.raise "try0"
+    // CHECK-NEXT:   lit.try.raise "try0" handler 0
     // CHECK-NEXT: } else {
     // CHECK-NEXT:   mark_consumed %error
     // CHECK-NEXT:   yield

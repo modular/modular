@@ -65,17 +65,18 @@ template <typename ElementType>
 struct RaiseSetEntry {
   StringAttr label;
   /// When analyzing the body of a try, this set element indicates what a
-  /// 'raise' should produce based on its surrounding 'try's except block's
-  /// expectation with the matching label.
-  ElementType *raiseSet;
+  /// 'raise' should produce based on its selected except block's expectation.
+  ArrayRef<ElementType *> raiseSets;
   // A linked list to the previous entry.
   RaiseSetEntry<ElementType> *prev;
 
-  RaiseSetEntry<ElementType> *getMatchingRaiseSet(StringAttr label) {
+  ElementType *getMatchingRaiseSet(StringAttr label, unsigned handlerIndex) {
     auto matchingSet = this;
     while (matchingSet && matchingSet->label != label)
       matchingSet = matchingSet->prev;
-    return matchingSet;
+    if (!matchingSet || handlerIndex >= matchingSet->raiseSets.size())
+      return nullptr;
+    return matchingSet->raiseSets[handlerIndex];
   }
 };
 
@@ -2296,8 +2297,10 @@ private:
   if (RaiseSetEntry<TrackedAndInteriorLiveness> *curr = raiseEntryInfo) {
     os << "  raise: {";
     while (curr) {
-      os << curr->label << " : ";
-      curr->raiseSet->print(valueSet, os) << "\n";
+      for (auto [index, raiseSet] : llvm::enumerate(curr->raiseSets)) {
+        os << curr->label << "[" << index << "] : ";
+        raiseSet->print(valueSet, os) << "\n";
+      }
       curr = curr->prev;
     }
     os << " }\n";
@@ -3272,13 +3275,14 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
       entry->completeSet->mergeWith(liveness, valueSet.domInfo);
     }
   } else {
-    StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
-    RaiseSetEntry<TrackedAndInteriorLiveness> *matchingSet =
-        raiseEntryInfo->getMatchingRaiseSet(label);
+    auto raiseOp = cast<LIT::TryRaiseOp>(op);
+    TrackedAndInteriorLiveness *matchingSet =
+        raiseEntryInfo->getMatchingRaiseSet(
+            raiseOp.getLabelAttr(), raiseOp.getHandlerIndexAttr().getInt());
     //  lower-semantic-cf should guarantee there is a matching set.
     assert(matchingSet && "No matching 'try'?");
-    // Only merges the set with the matching label.
-    matchingSet->raiseSet->mergeWith(liveness, valueSet.domInfo);
+    // Only merge into the selected handler of the matching try.
+    matchingSet->mergeWith(liveness, valueSet.domInfo);
   }
 
   // Indicate that all values are live after the terminator so an 'if' will get
@@ -3439,23 +3443,38 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   bodySets.breakSet = breakSet;
   bodySets.matchEntryInfo = matchEntryInfo;
 
-  // We capture all the common values live-out of raise's as being the live-in
-  // to the except block.
-  auto exceptSet =
-      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
-  // Attach a new entry to the try scope, such that the inner try op only merge
-  // the exceptSet with the matching label.
+  // Capture the common values live at raises targeting each except block.
+  SmallVector<TrackedAndInteriorLiveness> exceptSets;
+  SmallVector<TrackedAndInteriorLiveness *> exceptSetPointers;
+  exceptSets.reserve(tryOp.getExceptRegions().size());
+  exceptSetPointers.reserve(tryOp.getExceptRegions().size());
+  for ([[maybe_unused]] Region &region : tryOp.getExceptRegions())
+    exceptSets.push_back(
+        TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness));
+  for (TrackedAndInteriorLiveness &exceptSet : exceptSets)
+    exceptSetPointers.push_back(&exceptSet);
+
+  // Attach a new entry to the try scope so each raise merges only into the
+  // handler selected by its label and index.
   RaiseSetEntry<TrackedAndInteriorLiveness> exceptInfo = {
       tryOp.getLabelAttr(),
-      &exceptSet,
+      exceptSetPointers,
       raiseEntryInfo,
   };
   bodySets.raiseEntryInfo = &exceptInfo;
   bodySets.scanBlock(tryOp.getTryRegion().front());
 
-  // The live-ins to the except block are the exceptSet.
-  liveness = std::move(exceptSet);
-  scanBlock(tryOp.getExceptRegion().front());
+  // Analyze each handler from the liveness reaching only that handler, then
+  // intersect all handler fallthrough paths.
+  auto exceptLiveOut =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+  for (auto [exceptRegion, exceptSet] :
+       llvm::zip(tryOp.getExceptRegions(), exceptSets)) {
+    liveness = std::move(exceptSet);
+    scanBlock(exceptRegion.front());
+    exceptLiveOut.mergeWith(liveness, valueSet.domInfo);
+  }
+  liveness = std::move(exceptLiveOut);
 
   // The live-out set of the bodySet is the live-in to the else block, but
   // exceptions raised in it go out of the try.
@@ -4652,8 +4671,10 @@ private:
   RaiseSetEntry<BitVector> *curr = raiseEntryInfo;
   os << " raise: {";
   while (curr) {
-    os << curr->label << " : ";
-    valueSet.printBV(*curr->raiseSet, os) << "\n";
+    for (auto [index, raiseSet] : llvm::enumerate(curr->raiseSets)) {
+      os << curr->label << "[" << index << "] : ";
+      valueSet.printBV(*raiseSet, os) << "\n";
+    }
     curr = curr->prev;
   }
   os << " }";
@@ -4978,11 +4999,12 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 
   // A raise will use the consume set that was seen on entry to the enclosing
   // except block.
-  StringAttr raiseLabel = cast<LIT::TryRaiseOp>(op).getLabelAttr();
-  auto matchingSet = raiseEntryInfo->getMatchingRaiseSet(raiseLabel);
+  auto raiseOp = cast<LIT::TryRaiseOp>(op);
+  BitVector *matchingSet = raiseEntryInfo->getMatchingRaiseSet(
+      raiseOp.getLabelAttr(), raiseOp.getHandlerIndexAttr().getInt());
   //  lower-semantic-cf should guarantee there is a matching set.
   assert(matchingSet && "No matching 'try'?");
-  consumedValues = *matchingSet->raiseSet;
+  consumedValues = *matchingSet;
 }
 
 /// 'if' operations propagate the consume sets into each branch, and use the
@@ -5359,25 +5381,31 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
 }
 
 void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
-  // The except block is processed with a copy of the consumed value set
-  // from the bottom of the try.  After processing it, we know what the
-  // consumed values are for the exception block.
-  auto exceptSets = DestructorInsertion::copy(*this);
-  exceptSets.raiseEntryInfo = raiseEntryInfo;
-
-  Region &exceptRegion = tryOp.getExceptRegion();
-  exceptSets.scanBlock(exceptRegion.front());
+  // Process each except block with the consumed set from after the try. The
+  // resulting entry sets describe what each corresponding raise path must
+  // consume.
+  SmallVector<DestructorInsertion> exceptSets;
+  exceptSets.reserve(tryOp.getExceptRegions().size());
+  for (Region &exceptRegion : tryOp.getExceptRegions()) {
+    auto handlerSets = DestructorInsertion::copy(*this);
+    handlerSets.raiseEntryInfo = raiseEntryInfo;
+    handlerSets.scanBlock(exceptRegion.front());
+    exceptSets.push_back(std::move(handlerSets));
+  }
+  SmallVector<BitVector *> exceptSetPointers;
+  exceptSetPointers.reserve(exceptSets.size());
+  for (DestructorInsertion &handlerSets : exceptSets)
+    exceptSetPointers.push_back(&handlerSets.consumedValues);
 
   // The normal flow finishes with the else block, process it to see what
   // the input consumedValues set to the else block is.
   scanBlock(tryOp.getElseRegion().front());
 
-  // Ok, finally we process the try body.  Any 'raise's within the try body
-  // use the consumed values set on entry to the except block.
-  // Attach current raise set info to the list as we get one scope deeper.
+  // Finally, process the try body. Each raise uses the consumed set on entry
+  // to its selected except block.
   RaiseSetEntry<BitVector> curInfo = {
       tryOp.getLabelAttr(),
-      &exceptSets.consumedValues,
+      exceptSetPointers,
       raiseEntryInfo,
   };
   llvm::SaveAndRestore x(raiseEntryInfo, &curInfo);
