@@ -310,12 +310,13 @@ def make_request_input(
     model: str = "test-model",
     prompt: str | list[ChatMessage] = "Test prompt",
     prompt_len: int = 10,
-    max_tokens: int = 100,
+    max_tokens: int | None = 100,
     images: list[OpenAIImage] | None = None,
     ignore_eos: bool = False,
     response_format: ResponseFormat | None = None,
     tools: list[dict[str, object]] | None = None,
     prompt_carries_image: bool = False,
+    is_cache_warmup: bool = False,
 ) -> RequestFuncInput:
     """Returns a text request with default sampling."""
     return RequestFuncInput(
@@ -331,6 +332,7 @@ def make_request_input(
         response_format=response_format,
         tools=tools,
         prompt_carries_image=prompt_carries_image,
+        is_cache_warmup=is_cache_warmup,
     )
 
 

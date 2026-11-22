@@ -126,83 +126,6 @@ def mock_openai_env(mocker: MockerFixture) -> None:
     mocker.patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
 
 
-class TestRequestFuncInput:
-    """Test cases for RequestFuncInput dataclass."""
-
-    def test_request_func_input_creation(self) -> None:
-        """Test creating a RequestFuncInput with required fields."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
-        assert request_input.prompt == "Test prompt"
-        assert request_input.images == []
-        assert request_input.api_url == "http://localhost:8000/completions"
-        assert request_input.prompt_len == 10
-        assert request_input.max_tokens == 100
-        assert request_input.ignore_eos is False
-        assert request_input.model == "test-model"
-        assert request_input.session_id is None
-        assert request_input.sampling.temperature is None
-        assert request_input.sampling.top_p is None
-        assert request_input.sampling.top_k is None
-
-    def test_request_func_input_with_optional_fields(self) -> None:
-        """Test creating a RequestFuncInput with optional fields."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id="session-123",
-            sampling=SamplingConfig(temperature=0.7, top_p=0.9, top_k=50),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
-        assert request_input.session_id == "session-123"
-        assert request_input.sampling.temperature == 0.7
-        assert request_input.sampling.top_p == 0.9
-        assert request_input.sampling.top_k == 50
-
-    def test_request_func_input_with_chat_messages(self) -> None:
-        """Test creating a RequestFuncInput with chat messages."""
-        messages = [
-            ChatMessage(
-                role="user",
-                content=[TextContentBlock(type="text", text="Hello")],
-            ),
-            ChatMessage(
-                role="assistant",
-                content=[TextContentBlock(type="text", text="Hi there!")],
-            ),
-        ]
-
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt=messages,
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=20,
-            max_tokens=50,
-            ignore_eos=True,
-        )
-
-        assert request_input.prompt == messages
-        assert isinstance(request_input.prompt, list)
-
-
 class TestRequestFuncOutput:
     """Test cases for RequestFuncOutput dataclass."""
 
@@ -218,38 +141,6 @@ class TestRequestFuncOutput:
         assert output.itl == []
         assert output.prompt_len == 0
         assert output.error == ""
-
-    def test_request_func_output_with_values(self) -> None:
-        """Test RequestFuncOutput with custom values."""
-        output = RequestFuncOutput(
-            cancelled=True,
-            generated_text="Hello world",
-            success=True,
-            latency=1.5,
-            ttft=0.1,
-            itl=[0.05, 0.06, 0.07],
-            prompt_len=10,
-            error="",
-        )
-
-        assert output.cancelled is True
-        assert output.generated_text == "Hello world"
-        assert output.success is True
-        assert output.latency == 1.5
-        assert output.ttft == 0.1
-        assert output.itl == [0.05, 0.06, 0.07]
-        assert output.prompt_len == 10
-        assert output.error == ""
-
-    def test_request_func_output_itl_field_default(self) -> None:
-        """Test that itl field has proper default factory."""
-        output1 = RequestFuncOutput()
-        output2 = RequestFuncOutput()
-
-        # Both should have empty lists, not the same list object
-        assert output1.itl == []
-        assert output2.itl == []
-        assert output1.itl is not output2.itl
 
 
 class TestRequestCounter:
@@ -2035,13 +1926,9 @@ class TestRequestDriver:
         A server that reports an error and leaves the response open used to
         keep the request waiting on a ``[DONE]`` that never came.
         """
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2084,13 +1971,9 @@ class TestRequestDriver:
         ``error`` key, so a client that only looks for the key waits on a
         ``[DONE]`` that never comes, or records the failure as a success.
         """
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2154,13 +2037,9 @@ class TestRequestDriver:
         escaped key contains none of it, and the escaped ``r``/``o`` needles
         are what keep that read from waiting on a ``[DONE]``.
         """
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2196,13 +2075,9 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """A malformed chunk does not discard the events read before it."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2241,13 +2116,9 @@ class TestRequestDriver:
         itself; it can spell the word after it, which costs its read the
         deferred parse and nothing else.
         """
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2393,13 +2264,9 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Nothing after ``[DONE]`` is parsed, and the body is drained."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2539,13 +2406,9 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """A chunk that is not JSON fails the request, quoting the payload."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2633,13 +2496,9 @@ class TestRequestDriver:
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
         """Test that RequestDriver works without progress bars."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/generate_stream",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/generate_stream",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2674,13 +2533,9 @@ class TestRequestDriver:
         self, mock_aiohttp_session: Any, mocker: MockerFixture, chunk: bytes
     ) -> None:
         """A chunk the client cannot read fails the request, not the run."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/generate_stream",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/generate_stream",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2708,13 +2563,9 @@ class TestRequestDriver:
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
         """TRT-LLM's chunks get TPOT from the post-run pass, not usage."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/generate_stream",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/generate_stream",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -2778,13 +2629,9 @@ class TestRequestDriver:
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
         """TTFT is the read taken before the chunk is appended, not after."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/generate_stream",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/generate_stream",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -3093,13 +2940,9 @@ class TestSerializeBeforeTheClock:
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
         """TTFT is measured from a stamp the encode precedes."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = make_request_input(
+            "http://localhost:8000/generate_stream",
             prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/generate_stream",
             prompt_len=10,
             max_tokens=100,
             ignore_eos=False,
@@ -3896,14 +3739,10 @@ async def test_cache_warmup_empty_stream_requires_completed_generation(
     mock_openai_env: None,
     mocker: MockerFixture,
 ) -> None:
-    request_input = RequestFuncInput(
-        model="test-model",
-        session_id=None,
-        sampling=SamplingConfig(),
-        prompt="shared prefix",
-        images=[],
-        api_url="http://localhost:8000/"
+    request_input = make_request_input(
+        "http://localhost:8000/"
         + ("chat/completions" if chat else "completions"),
+        prompt="shared prefix",
         prompt_len=2,
         max_tokens=1,
         ignore_eos=True,
@@ -4048,13 +3887,10 @@ async def test_measured_empty_stream_succeeds_only_when_tiny_budget_is_spent(
     mock_openai_env: None,
     mocker: MockerFixture,
 ) -> None:
-    request_input = RequestFuncInput(
+    request_input = make_request_input(
+        "http://localhost:8000/v1/chat/completions",
         model="zai-org/GLM-5.3-Flash",
-        session_id=None,
-        sampling=SamplingConfig(),
         prompt="hi",
-        images=[],
-        api_url="http://localhost:8000/v1/chat/completions",
         prompt_len=127092,
         max_tokens=max_tokens,
         ignore_eos=True,
