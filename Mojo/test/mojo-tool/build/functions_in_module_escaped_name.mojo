@@ -20,7 +20,7 @@
 # RUN: %t | FileCheck %s
 
 # CHECK: takes_tile_tensor{{.*}}~Qquoted~Q
-# CHECK: PASS {{.*}} test_one
+# CHECK: pass {{.*}} test_one
 
 from std.reflection import reflect_fn
 from std.testing import TestSuite

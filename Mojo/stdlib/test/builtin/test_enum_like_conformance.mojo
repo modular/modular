@@ -53,11 +53,11 @@ def _fast_math_rank(flag: FastMathFlag) -> Int:
 
 def _test_result_rank(result: TestResult) -> Int:
     match result:
-        case .PASS:
+        case .pass:
             return 0
-        case .FAIL:
+        case .fail:
             return 1
-        case .SKIP:
+        case .skip:
             return 2
 
 
@@ -81,9 +81,9 @@ def test_fast_math_match() raises:
 
 def test_result_match() raises:
     var results = List[TestResult]()
-    results.append(TestResult.PASS)
-    results.append(TestResult.FAIL)
-    results.append(TestResult.SKIP)
+    results.append(.pass)
+    results.append(.fail)
+    results.append(.skip)
 
     for i in range(len(results)):
         assert_equal(

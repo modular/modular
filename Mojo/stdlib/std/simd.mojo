@@ -388,41 +388,39 @@ struct FastMathFlag(
     comptime fast = Self(8)
     """Enable all fast-math optimizations."""
 
-    # TODO: Use `@deprecated(use=...)` once it can name a sibling `comptime`
-    # member. Today it only resolves methods and module-level declarations.
-    @deprecated("Use `FastMathFlag.none` instead.")
+    @deprecated(use=none)
     comptime NONE = Self.none
     """Deprecated: The former name of `none`."""
 
-    @deprecated("Use `FastMathFlag.nnan` instead.")
+    @deprecated(use=nnan)
     comptime NNAN = Self.nnan
     """Deprecated: The former name of `nnan`."""
 
-    @deprecated("Use `FastMathFlag.ninf` instead.")
+    @deprecated(use=ninf)
     comptime NINF = Self.ninf
     """Deprecated: The former name of `ninf`."""
 
-    @deprecated("Use `FastMathFlag.nsz` instead.")
+    @deprecated(use=nsz)
     comptime NSZ = Self.nsz
     """Deprecated: The former name of `nsz`."""
 
-    @deprecated("Use `FastMathFlag.arcp` instead.")
+    @deprecated(use=arcp)
     comptime ARCP = Self.arcp
     """Deprecated: The former name of `arcp`."""
 
-    @deprecated("Use `FastMathFlag.contract` instead.")
+    @deprecated(use=contract)
     comptime CONTRACT = Self.contract
     """Deprecated: The former name of `contract`."""
 
-    @deprecated("Use `FastMathFlag.afn` instead.")
+    @deprecated(use=afn)
     comptime AFN = Self.afn
     """Deprecated: The former name of `afn`."""
 
-    @deprecated("Use `FastMathFlag.reassoc` instead.")
+    @deprecated(use=reassoc)
     comptime REASSOC = Self.reassoc
     """Deprecated: The former name of `reassoc`."""
 
-    @deprecated("Use `FastMathFlag.fast` instead.")
+    @deprecated(use=fast)
     comptime FAST = Self.fast
     """Deprecated: The former name of `fast`."""
 

@@ -258,6 +258,7 @@ This version is still a work in progress.
     become `case .contract:`.
   - `Level` in `std.logger`: `notset`, `trace`, `debug`, `info`, `warning`,
     `error`, and `critical`.
+  - `TestResult` in `std.testing.suite`: `pass`, `fail`, and `skip`.
 
 - An optional mutable pointer now implicitly converts to an optional
   immutable pointer, as `Pointer` does.

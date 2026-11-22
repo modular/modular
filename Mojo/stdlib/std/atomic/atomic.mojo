@@ -77,33 +77,31 @@ struct Ordering(
     comptime sequential = Self(6)
     """Sequentially consistent."""
 
-    # TODO: Use `@deprecated(use=...)` once it can name a sibling `comptime`
-    # member. Today it only resolves methods and module-level declarations.
-    @deprecated("Use `Ordering.not_atomic` instead.")
+    @deprecated(use=not_atomic)
     comptime NOT_ATOMIC = Self.not_atomic
     """Deprecated: The former name of `not_atomic`."""
 
-    @deprecated("Use `Ordering.unordered` instead.")
+    @deprecated(use=unordered)
     comptime UNORDERED = Self.unordered
     """Deprecated: The former name of `unordered`."""
 
-    @deprecated("Use `Ordering.relaxed` instead.")
+    @deprecated(use=relaxed)
     comptime RELAXED = Self.relaxed
     """Deprecated: The former name of `relaxed`."""
 
-    @deprecated("Use `Ordering.acquire` instead.")
+    @deprecated(use=acquire)
     comptime ACQUIRE = Self.acquire
     """Deprecated: The former name of `acquire`."""
 
-    @deprecated("Use `Ordering.release` instead.")
+    @deprecated(use=release)
     comptime RELEASE = Self.release
     """Deprecated: The former name of `release`."""
 
-    @deprecated("Use `Ordering.acquire_release` instead.")
+    @deprecated(use=acquire_release)
     comptime ACQUIRE_RELEASE = Self.acquire_release
     """Deprecated: The former name of `acquire_release`."""
 
-    @deprecated("Use `Ordering.sequential` instead.")
+    @deprecated(use=sequential)
     comptime SEQUENTIAL = Self.sequential
     """Deprecated: The former name of `sequential`."""
 
