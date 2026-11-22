@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 //
 // The `MODULAR_DRIVER_PLUGINS` format, parsed in one place for its C++
-// readers. The HAL `DeviceContext` reads the same format in Mojo.
+// readers. The Mojo HAL parses the same grammar in `hal/plugin_spec.mojo`.
 //
 // Header-only so the compiler family's arch query can use it without
 // linking a DeviceContext runtime.
@@ -37,7 +37,9 @@ struct DriverPluginEntry {
 };
 
 /// The plugins named in `spec`, a `MODULAR_DRIVER_PLUGINS` value such as
-/// "CUDA@/a/CUDAPlugin.so;/b/CPUPlugin.so". Entries with no path are dropped.
+/// "CUDA@/a/CUDAPlugin.so;/b/CPUPlugin.so". A name ends at its entry's first
+/// '@'. Whitespace around a name or path is dropped, and so are entries with
+/// no path.
 inline llvm::SmallVector<DriverPluginEntry>
 parseDriverPluginSpec(llvm::StringRef spec) {
   llvm::SmallVector<llvm::StringRef> entries;
@@ -47,6 +49,8 @@ parseDriverPluginSpec(llvm::StringRef spec) {
     auto [name, path] = entry.contains('@')
                             ? entry.split('@')
                             : std::make_pair(llvm::StringRef(), entry);
+    name = name.trim();
+    path = path.trim();
     if (!path.empty())
       plugins.push_back({name, path});
   }

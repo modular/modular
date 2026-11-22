@@ -77,3 +77,12 @@ TEST(DriverPluginLoadTest, ParsesNamedAndBareEntries) {
   EXPECT_EQ(plugins[1].name, "");
   EXPECT_EQ(plugins[1].path, "/b/stub.so");
 }
+
+TEST(DriverPluginLoadTest, ParsesEntriesSurroundedByWhitespace) {
+  auto plugins = parseDriverPluginSpec(" CUDA @ /a/cuda.so ; ; /b/stub.so ");
+  ASSERT_EQ(plugins.size(), 2u);
+  EXPECT_EQ(plugins[0].name, "CUDA");
+  EXPECT_EQ(plugins[0].path, "/a/cuda.so");
+  EXPECT_EQ(plugins[1].name, "");
+  EXPECT_EQ(plugins[1].path, "/b/stub.so");
+}

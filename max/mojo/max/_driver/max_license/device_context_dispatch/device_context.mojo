@@ -67,6 +67,10 @@ from max._driver.max_license.hal.extensions.traits import (
     SupportsCompletionFlagResetV1,
 )
 from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
+from max._driver.max_license.hal.plugin_spec import (
+    DriverPluginEntry,
+    parse_driver_plugins,
+)
 from max._plugin import MaxPluginForTarget
 from max._driver.max_license.hal._machine import DeviceRef, DeviceSpec
 from max.gpu.host import (
@@ -147,14 +151,14 @@ def _driver_satisfies_api(driver_name: String, api: String) -> Bool:
     return d == a
 
 
-def _plugin_spec_entry(api: String) raises -> String:
+def _plugin_spec_entry(api: String) raises -> DriverPluginEntry:
     """Returns the first `MODULAR_DRIVER_PLUGINS` entry that satisfies `api`.
 
     Args:
         api: The requested device API, such as "cpu", "gpu" or "cuda".
 
     Returns:
-        The matching `name@/path/to/plugin.so` entry.
+        The matching entry.
 
     Raises:
         If `MODULAR_DRIVER_PLUGINS` is not set or no entry satisfies `api`.
@@ -163,10 +167,9 @@ def _plugin_spec_entry(api: String) raises -> String:
     if not plugin_spec:
         raise Error("MODULAR_DRIVER_PLUGINS not set")
     # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so").
-    for entry in plugin_spec.split(";"):
-        var name = String(entry.split("@")[0])
-        if _driver_satisfies_api(name, api):
-            return String(entry)
+    for entry in parse_driver_plugins(plugin_spec):
+        if _driver_satisfies_api(entry.name, api):
+            return entry.copy()
     raise Error(
         String(t"Requested API {api} not provided by MODULAR_DRIVER_PLUGINS")
     )

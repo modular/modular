@@ -73,6 +73,16 @@ mojo_test(
     ],
 )
 
+mojo_test(
+    name = "test_hal_plugin_spec.mojo.test",
+    srcs = ["test_hal_plugin_spec.mojo"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 # Version negotiation and a failed create against the mock.
 mojo_test(
     name = "test_hal_plugin_load.mojo.test",

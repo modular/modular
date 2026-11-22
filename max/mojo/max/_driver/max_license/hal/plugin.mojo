@@ -43,6 +43,7 @@ from .status import (
 )
 
 from .plugins import *
+from .plugin_spec import DriverPluginEntry
 
 
 @fieldwise_init
@@ -57,31 +58,25 @@ struct RawDriver(Movable):
     var _driver_handle: DriverHandle
 
     @staticmethod
-    def load(plugin_spec: String) raises HALError -> Self:
-        """Load a plugin from a spec string of the form 'name@/path/to/lib.so'.
+    def load(entry: DriverPluginEntry) raises HALError -> Self:
+        """Load a plugin and create its driver.
 
-        If no '@' is present, the entire string is used as both name and path.
-        A failure keeps the status the plugin or the loader reported.
+        A bare path's name is its path. A failure keeps the status the plugin
+        or the loader reported.
         """
-        var name: String
-        var so_path: String
-        var parts = plugin_spec.split("@", maxsplit=1)
-        if len(parts) == 2:
-            name = String(parts[0])
-            so_path = String(parts[1])
-        else:
-            name = plugin_spec
-            so_path = plugin_spec
-
         var lib: OwnedDLHandle
         try:
-            lib = OwnedDLHandle(so_path, RTLD.NOW)
+            lib = OwnedDLHandle(entry.path, RTLD.NOW)
         except e:
             raise HALError(
                 STATUS_UNKNOWN_ERROR,
-                message=String(t"failed to open plugin '{so_path}': {e}"),
+                message=String(t"failed to open plugin '{entry.path}': {e}"),
             )
-        var raw = RawPlugin(lib^, name=name, so_path=so_path)
+        var raw = RawPlugin(
+            lib^,
+            name=entry.name if entry.name else entry.path,
+            so_path=entry.path,
+        )
         var driver_handle = raw._create_init_driver()
         return RawDriver(raw^, driver_handle)
 

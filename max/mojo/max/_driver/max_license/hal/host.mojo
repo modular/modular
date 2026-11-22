@@ -21,27 +21,7 @@ from .driver import Driver
 from std.memory import ArcPointer
 from .status import HALError, STATUS_INVALID_ARG
 from .driver import _first_accelerator, get_device_spec
-
-
-def _accelerator_plugin_entry(plugins_spec: String) -> Optional[String]:
-    """Returns the first non-`cpu` entry of a `MODULAR_DRIVER_PLUGINS` value.
-
-    An entry with no `name@` prefix counts as an accelerator.
-
-    Args:
-        plugins_spec: The `MODULAR_DRIVER_PLUGINS` value.
-
-    Returns:
-        The accelerator entry, or `None` if the value names no accelerator.
-    """
-    for entry in plugins_spec.split(";"):
-        var spec = String(entry.strip())
-        if not spec:
-            continue
-        var parts = spec.split("@", maxsplit=1)
-        if len(parts) == 1 or String(parts[0]).lower() != "cpu":
-            return spec
-    return None
+from .plugin_spec import parse_driver_plugins
 
 
 struct Host(not Copyable, Movable):
@@ -55,16 +35,16 @@ struct Host(not Copyable, Movable):
             )
 
         self.drivers = []
-        __guard case .Some(accelerator_spec) = _accelerator_plugin_entry(
-            plugins_spec
-        ) else:
-            raise HALError(
-                STATUS_INVALID_ARG,
-                message="No accelerator plugin in MODULAR_DRIVER_PLUGINS",
-            )
-        # TODO: support multiple drivers
-        var driver = Driver.create(accelerator_spec)
-        self.drivers.append(driver^)
+        # An entry with no `name@` prefix counts as an accelerator.
+        for entry in parse_driver_plugins(plugins_spec):
+            if entry.name.lower() != "cpu":
+                # TODO: support multiple drivers
+                self.drivers.append(Driver.create(entry))
+                return
+        raise HALError(
+            STATUS_INVALID_ARG,
+            message="No accelerator plugin in MODULAR_DRIVER_PLUGINS",
+        )
 
     def driver_count(self) -> Int64:
         return Int64(len(self.drivers))
