@@ -296,19 +296,6 @@ INTERNVL_INSTRUCT_MESSAGES = [
 ]
 INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
 
-IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|>User:<image>Describe the image:<end_of_utterance>\nAssistant:"
-IDEFICS3_INSTRUCT_MESSAGES = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "image"},
-            {"type": "text", "text": "Describe the image:"},
-        ],
-    }
-]
-IDEFICS3_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/idefics3_instruct_image.jpg"
-
-
 DEFAULT_PROMPTS = [LONG_TEXT_PROMPT, *SHORT_TEXT_PROMPTS]
 DEFAULT_TEXT_ONLY = [
     MockTextGenerationRequest.text_only(prompt=prompt)
@@ -328,19 +315,6 @@ INTERNVL_INSTRUCT_REQUESTS = [
         images=[INTERNVL_INSTRUCT_IMAGE],
         messages=INTERNVL_INSTRUCT_MESSAGES,
     )
-]
-
-IDEFICS3_INSTRUCT_REQUESTS = [
-    MockTextGenerationRequest.with_images(
-        IDEFICS3_INSTRUCT_PROMPT,
-        [MULTIMODAL_IMAGE],
-        messages=IDEFICS3_INSTRUCT_MESSAGES,
-    ),
-    MockTextGenerationRequest.with_images(
-        IDEFICS3_INSTRUCT_PROMPT,
-        [IDEFICS3_INSTRUCT_IMAGE],
-        messages=IDEFICS3_INSTRUCT_MESSAGES,
-    ),
 ]
 
 # Default pixel generation prompts

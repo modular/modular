@@ -39,7 +39,6 @@ import huggingface_hub
 import torch
 import transformers
 import transformers.integrations.peft as peft_integration
-from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.pipelines import TextGenerationPipelineInterface
@@ -383,85 +382,6 @@ class InternVLPipelineOracle(PipelineOracle):
             print_outputs=True,
             generate_logprobs=generate_logprobs,
             # Omit `use_cache` since the InternVL code hardcodes it.
-        )
-
-
-class Idefics3PipelineOracle(PipelineOracle):
-    """Pipeline oracle for Idefics3 architectures."""
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for Idefics3."""
-
-        return (
-            test_data.DEFAULT_TEXT_ONLY + test_data.IDEFICS3_INSTRUCT_REQUESTS
-        )
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        return _create_vision_max_pipeline(
-            self.model_path,
-            encoding,
-            device_specs,
-            # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.8,
-        )
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        config = transformers.AutoConfig.from_pretrained(
-            self.model_path, trust_remote_code=True
-        )
-        processor = transformers.AutoProcessor.from_pretrained(self.model_path)
-        # Use AutoModelForImageTextToText instead of AutoModel for Idefics3
-        # (transformers 5.12 removed AutoModelForVision2Seq).
-        model = transformers.AutoModelForImageTextToText.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
-            trust_remote_code=True,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-    def run_torch_text_generation(
-        self,
-        *,
-        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
-        device: torch.device,
-        num_steps: int,
-        inputs: list[Any],
-        generate_logprobs: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Run text generation using Idefics3-specific preprocessing logic."""
-
-        return idefics3_torch_utils.run_text_generation(
-            model=torch_pipeline_and_tokenizer.model,
-            data_processor=torch_pipeline_and_tokenizer.data_processor,
-            device=device,
-            textgen_requests=inputs,
-            num_steps=num_steps,
-            print_outputs=True,
-            use_cache=self.use_cache,
-            generate_logprobs=generate_logprobs,
         )
 
 
@@ -1694,9 +1614,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3_5-8B-Instruct"
-    ),
-    "HuggingFaceM4/Idefics3-8B-Llama3": Idefics3PipelineOracle(
-        "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
     "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
         model_path="Qwen/Qwen2.5-7B-Instruct",

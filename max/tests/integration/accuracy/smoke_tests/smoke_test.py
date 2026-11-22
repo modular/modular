@@ -255,7 +255,6 @@ def is_vision_model(model: str, framework: str | None = None) -> bool:
         for kw in (
             "gemma-3",
             "gemma-4",
-            "idefics",
             "inkling",
             "internvl",
             "kimi-k2",

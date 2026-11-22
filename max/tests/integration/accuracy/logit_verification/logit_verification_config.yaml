@@ -706,24 +706,6 @@ logit_verification_pipelines:
     tags: [nvidia-only]
     cos_dist_threshold: .6 # FIXME: Reduce to ~.0015 after MODELS-1490 is closed
 
-  HuggingFaceM4/Idefics3-8B-Llama3:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "HuggingFaceM4/Idefics3-8B-Llama3"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-only]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_idefics3_8b_llama3_golden/3/996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283/torch_idefics3_8b_llama3_golden.tar.gz"
-      json_file: "torch_HuggingFaceM4_Idefics3-8B-Llama3_bfloat16_golden.json"
-    # TODO: Accuracy is much worse on AMD.
-    # so we might have an AMD kernel bug here
-    # TODO(MODELS-730): With the update to transformers=4.55, the
-    # kl_div_threshold went from 8.7e-02 to 6.6e-01.
-    # This is likely due to changes in the reference implementation.
-    cos_dist_threshold: 5.0e-02
-    kl_div_threshold: 6.8e-01
-
   microsoft/Phi-3.5-mini-instruct-bfloat16:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
