@@ -51,7 +51,6 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
-from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
 from test_common import test_data, torch_utils
 from test_common.test_data import (
@@ -382,90 +381,6 @@ class InternVLPipelineOracle(PipelineOracle):
             print_outputs=True,
             generate_logprobs=generate_logprobs,
             # Omit `use_cache` since the InternVL code hardcodes it.
-        )
-
-
-class Qwen2_5VLPipelineOracle(PipelineOracle):
-    """Pipeline oracle for Qwen2.5VL architectures."""
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for Qwen2.5VL."""
-        # Torch model tries to return EOT for the default long text prompt,
-        # so add another bullet point to get it to generate more tokens.
-        long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
-        text_only_prompts = [long_prompt] + list(test_data.SHORT_TEXT_PROMPTS)
-        text_only_requests = [
-            MockTextGenerationRequest.text_only(prompt)
-            for prompt in text_only_prompts
-        ]
-        return qwen2_5vl_utils.INSTRUCT_REQUESTS + text_only_requests
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        return _create_vision_max_pipeline(
-            self.model_path,
-            encoding,
-            device_specs,
-            # Chunked prefill is not supported for image prompts.
-            # (technically, this script doesn't go through the scheduler so
-            # it's not a problem, but it's a good idea to disable it anyway.)
-            enable_chunked_prefill=False,
-        )
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        config = transformers.AutoConfig.from_pretrained(
-            self.model_path, trust_remote_code=True
-        )
-        processor = transformers.AutoProcessor.from_pretrained(self.model_path)
-        model = transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            # Qwen2.5VL 32B uses float32 for the vision model, and bfloat16 for the language model
-            # So, we don't set the encoding dtype for the torch model
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-    def run_torch_text_generation(
-        self,
-        *,
-        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
-        device: torch.device,
-        num_steps: int,
-        inputs: list[Any],
-        generate_logprobs: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Run text generation using Qwen2.5VL-specific preprocessing logic."""
-
-        return qwen2_5vl_utils.run_text_generation(
-            model=torch_pipeline_and_tokenizer.model,
-            data_processor=torch_pipeline_and_tokenizer.data_processor,
-            device=device,
-            textgen_requests=inputs,
-            num_steps=num_steps,
-            print_outputs=True,
-            use_cache=self.use_cache,
-            generate_logprobs=generate_logprobs,
         )
 
 
@@ -1603,24 +1518,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3_5-8B-Instruct"
-    ),
-    "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
-        model_path="Qwen/Qwen2.5-7B-Instruct",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen2.5-VL-3B-Instruct": Qwen2_5VLPipelineOracle(
-        "Qwen/Qwen2.5-VL-3B-Instruct"
-    ),
-    "Qwen/Qwen2.5-VL-7B-Instruct": Qwen2_5VLPipelineOracle(
-        "Qwen/Qwen2.5-VL-7B-Instruct"
-    ),
-    "Qwen/Qwen2.5-VL-32B-Instruct": Qwen2_5VLPipelineOracle(
-        "Qwen/Qwen2.5-VL-32B-Instruct"
-    ),
-    # Qwen2.VL-FP8
-    "allenai/olmOCR-2-7B-1025-FP8": Qwen2_5VLPipelineOracle(
-        "allenai/olmOCR-2-7B-1025-FP8"
     ),
     "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-30B-A3B-Instruct"

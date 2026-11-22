@@ -51,28 +51,7 @@ PIPELINES: list[PipelineEntry] = [
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
-        pipeline="Qwen/Qwen2.5-VL-3B-Instruct",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="Qwen/Qwen2.5-VL-7B-Instruct",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
         pipeline="OpenGVLab/InternVL3-38B-Instruct",
-        runner="modrunner-b200-2x",
-        gpu_flag="--devices gpu:0,1",
-        instance_type="bm.gpu.b200.2",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="Qwen/Qwen2.5-VL-32B-Instruct",
         runner="modrunner-b200-2x",
         gpu_flag="--devices gpu:0,1",
         instance_type="bm.gpu.b200.2",

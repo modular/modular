@@ -393,59 +393,6 @@ logit_verification_pipelines:
     kl_div_threshold: 1.6e-02
     timeout: 1200
 
-  Qwen/Qwen2.5-7B-Instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen2.5-7B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-only]  # TODO: Has much worse accuracy on AMD GPUs.
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-7b-instruct_bfloat16_golden/1/a18b2a5b0e4a63ba828fa956ffeed04feaf5501721dae0421670c94e93f445a0/torch_qwen2.5-7b-instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_qwen2.5_7b_instruct_bfloat16_golden.json"
-    cos_dist_threshold: 5.0e-2
-    kl_div_threshold: 5.0e-1
-
-  Qwen/Qwen2.5VL-3B-Instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen2.5-VL-3B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    # TODO(MODELS-803) Errors on 4x GPU
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-3b-instruct_bfloat16_golden/1/40a5c716c43ae003113b7a38eff4121619d4ca58bdf4d8b6f6b362529279ba5d/torch_qwen2.5-vl-3b-instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_qwen2.5_vl_3b_instruct_bfloat16_golden.json"
-    cos_dist_threshold: 1.9e00
-    kl_div_threshold: 4.0e-01
-
-  Qwen/Qwen2.5VL-7B-Instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen2.5-VL-7B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-multi]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-7b-instruct_bfloat16_golden/1/6c5aaac177ce9a8428b972667383621d2bb853a1ec3c44fdd63ca00661fff4e0/torch_qwen2.5-vl-7b-instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_qwen2.5_vl_7b_instruct_bfloat16_golden.json"
-    cos_dist_threshold: 3.5e-1
-    kl_div_threshold: 4.0e-1
-
-  Qwen/Qwen2.5VL-32B-Instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen2.5-VL-32B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-multi]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-32b-instruct_bfloat16_golden/1/62db96f972e210adb18a6042441b49feb5a163bdb6f5592e8788dbb9f887dbe8/torch_qwen2.5-vl-32b-instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_qwen2.5_vl_32b_instruct_bfloat16_golden.json"
-    cos_dist_threshold: 7.0e-2
-    kl_div_threshold: 3.0e-1
-    timeout: 900
-
   Qwen/Qwen3-VL-30B-A3B-Instruct:
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-VL-30B-A3B-Instruct"
@@ -646,20 +593,6 @@ logit_verification_pipelines:
     absolute_tolerance: 5.0e-03
     cos_dist_threshold: 5.0e-04
     kl_div_threshold: 2.8e-07
-
-  # Qwen2.VL-FP8
-  allenai/olmOCR-2-7B-1025-FP8:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "allenai/olmOCR-2-7B-1025-FP8"
-    compatible_with: [gpu]
-    encoding: float8_e4m3fn
-    tags: [nvidia-only]  # TODO(KERN-2196)
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_olmocr_2_7b_fp8_golden/1/7177335f99779ffdf6dd516a1c6082d75ce3d26b9a7dbe06ec88ebbd729a090e/torch_olmocr_2_7b_fp8_golden.tar.gz"
-      json_file: "olmocr_2_7b_fp8_torch_goldens.json"
-    cos_dist_threshold: 2.4e-01
-    kl_div_threshold: 1.1e0
 
   # Qwen3-4B in text-encoder mode
   # This simulates the text-encoder ComponentModel in FLUX-Klein models.

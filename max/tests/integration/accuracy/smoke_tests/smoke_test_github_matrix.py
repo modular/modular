@@ -68,7 +68,6 @@ MACH = {"MACH"}
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
 MODELS: Mapping[str, set[str]] = {
-    "allenai/olmOCR-2-7B-1025-FP8": _1xB200 | _1xMI355,
     "amd/MiniMax-M3-MXFP4": NIGHTLY | _4xMI355,
     "ByteDance-Seed/academic-ds-9B": DISABLE,  # TODO(SERVOPT-1120)
     "deepseek-ai/DeepSeek-V3.1-Terminus": _8xB200,
@@ -136,8 +135,6 @@ MODELS: Mapping[str, set[str]] = {
     "OpenGVLab/InternVL3_5-8B-Instruct": _1xB200 | _1xMI355,
     "poolside/Laguna-S-2.1-NVFP4": NIGHTLY | _1xB200,
     "poolside/Laguna-S-2.1-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200,
-    "Qwen/Qwen2.5-7B-Instruct": _1xB200 | _1xMI355,
-    "Qwen/Qwen2.5-VL-7B-Instruct": _1xB200 | _1xMI355,
     "Qwen/Qwen3-8B": _1xB200 | _1xMI355,
     "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": _1xB200 | _2xB200,
     "Qwen/Qwen3-VL-4B-Instruct-FP8": _1xB200 | _2xB200,
