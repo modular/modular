@@ -37,24 +37,10 @@ PIPELINES: list[PipelineEntry] = [
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
-        pipeline="OpenGVLab/InternVL3-8B-Instruct",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
         pipeline="modularai/Llama-3.1-8B-Instruct-GGUF",
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="OpenGVLab/InternVL3-38B-Instruct",
-        runner="modrunner-b200-2x",
-        gpu_flag="--devices gpu:0,1",
-        instance_type="bm.gpu.b200.2",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(

@@ -256,7 +256,6 @@ def is_vision_model(model: str, framework: str | None = None) -> bool:
             "gemma-3",
             "gemma-4",
             "inkling",
-            "internvl",
             "kimi-k2",
             "kimi-vl",
             "minimax-m3",

@@ -1219,31 +1219,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama3.3-70b-instruct_bfloat16_golden/1/e4a07947f7f23c0b1bc5d297bbe1575b637abb53270e99b284936bf6d2dc703f/torch_llama3.3-70b-instruct_bfloat16_golden.tar.gz",
     },
     {
-        "name": "torch_internvl3-1b_golden.tar.gz",
-        "sha256": "c0cc901fe70ef9f90801a921aae56e6c8a3ce11e7173cdeed27c46f147f29463",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-1b_golden/1/c0cc901fe70ef9f90801a921aae56e6c8a3ce11e7173cdeed27c46f147f29463/torch_internvl3-1b_golden.tar.gz",
-    },
-    {
-        "name": "torch_internvl3-8b_golden.tar.gz",
-        "sha256": "18c65a6f996008b7bb44ccb5369e862df5868a1d13b15165fe80bd8f9edc7415",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-8b_golden/1/18c65a6f996008b7bb44ccb5369e862df5868a1d13b15165fe80bd8f9edc7415/torch_internvl3-8b_golden.tar.gz",
-    },
-    {
-        "name": "torch_internvl3-14b_golden.tar.gz",
-        "sha256": "b0b6be883a40a1f44d85abbf077edec5c768fee8302f0595147ce7197da8560f",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-14b_golden/1/b0b6be883a40a1f44d85abbf077edec5c768fee8302f0595147ce7197da8560f/torch_internvl3-14b_golden.tar.gz",
-    },
-    {
-        "name": "torch_internvl3-38b_golden.tar.gz",
-        "sha256": "68ce8e1ca017a4b42b1a9f270345dd64e869c57c582d5ade12eb654a42893b21",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-38b_golden/1/68ce8e1ca017a4b42b1a9f270345dd64e869c57c582d5ade12eb654a42893b21/torch_internvl3-38b_golden.tar.gz",
-    },
-    {
-        "name": "torch_internvl3_5_8b_golden.tar.gz",
-        "sha256": "c1e88d08b863bc4e5ad250bf91bbe9e6a371f1244f96dd37befb8c1a086afcea",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3_5_8b_golden/1/c1e88d08b863bc4e5ad250bf91bbe9e6a371f1244f96dd37befb8c1a086afcea/torch_internvl3_5_8b_golden.tar.gz",
-    },
-    {
         "name": "torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden.tar.gz",
         "sha256": "43b1500269067c2e25bed53fefc98c3973e2132fabdfb6923acbedc531636bc0",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden/1/43b1500269067c2e25bed53fefc98c3973e2132fabdfb6923acbedc531636bc0/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden.tar.gz",

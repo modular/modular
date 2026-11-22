@@ -39,10 +39,8 @@ import huggingface_hub
 import torch
 import transformers
 import transformers.integrations.peft as peft_integration
-from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
@@ -105,7 +103,6 @@ class TorchModelAndDataProcessor:
         transformers.PreTrainedTokenizer
         | transformers.PreTrainedTokenizerFast
         | transformers.MllamaProcessor
-        | InternVLProcessor
     )
 
 
@@ -301,87 +298,6 @@ def _create_vision_max_pipeline(
     )
     assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
     return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-
-class InternVLPipelineOracle(PipelineOracle):
-    """Pipeline oracle for InternVL3 architectures."""
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-        self.trust_remote_code = True
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for InternVL."""
-        return (
-            test_data.DEFAULT_TEXT_ONLY + test_data.INTERNVL_INSTRUCT_REQUESTS
-        )
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        return _create_vision_max_pipeline(
-            self.model_path,
-            encoding,
-            device_specs,
-            # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.8,
-        )
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
-            use_fast=False,
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            self.model_path, trust_remote_code=True
-        )
-        processor = InternVLProcessor(tokenizer, config)
-        model = transformers.AutoModel.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
-            trust_remote_code=True,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-    def run_torch_text_generation(
-        self,
-        *,
-        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
-        device: torch.device,
-        num_steps: int,
-        inputs: list[Any],
-        generate_logprobs: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Run text generation using InternVL-specific preprocessing logic."""
-        return internvl_torch_utils.run_text_generation(
-            model=torch_pipeline_and_tokenizer.model,
-            processor=torch_pipeline_and_tokenizer.data_processor,
-            device=device,
-            textgen_requests=inputs,
-            num_steps=num_steps,
-            print_outputs=True,
-            generate_logprobs=generate_logprobs,
-            # Omit `use_cache` since the InternVL code hardcodes it.
-        )
 
 
 class Qwen3VLPipelineOracle(PipelineOracle):
@@ -1503,21 +1419,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="meta-llama/Llama-3.3-70B-Instruct",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "OpenGVLab/InternVL3-1B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-1B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-8B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-8B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-14B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-14B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-38B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-38B-Instruct"
-    ),
-    "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3_5-8B-Instruct"
     ),
     "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-30B-A3B-Instruct"
