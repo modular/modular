@@ -523,9 +523,7 @@ def _assert_cmp_error[
     return _assert_error(err, loc)
 
 
-struct assert_raises[T: Equatable & Copyable & Deinitable = String](
-    Writable where conforms_to(T, Writable)
-):
+struct assert_raises[T: Deinitable = String](not Movable):
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
@@ -602,9 +600,9 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
     def __init__(
         out self,
         *,
-        error: Self.T,
+        var error: Self.T,
         location: Optional[SourceLocation] = None,
-    ):
+    ) where conforms_to(Self.T, Movable):
         """Construct a context manager matching specific errors.
 
         Args:
@@ -612,7 +610,7 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
             location: The location of the error (defaults to `call_location`).
         """
         self.message_contains = None
-        self.error = error.copy()
+        self.error = error^
         self.call_location = location.or_else(call_location())
 
     def __enter__(self):
@@ -627,7 +625,7 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
         """
         raise Error("AssertionError: Didn't raise at ", self.call_location)
 
-    def __exit__[E: AnyType](self, expected_error: E) raises -> Bool:
+    def __exit__[CaughtError: AnyType](self, error: CaughtError) raises -> Bool:
         """Exit the context manager with an error.
 
         Works with `Error` and any custom `Writable` error type. When
@@ -635,27 +633,35 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
         it can be converted to a string for matching.
 
         Parameters:
-            E: The error type.
+            CaughtError: The error type.
 
         Args:
-            expected_error: The error raised.
+            error: The error raised.
 
         Returns:
             True if the error was successfully caught and matched.
+
+        Raises:
+          An error.
         """
 
-        if case .Some(_error) = self.error:
-            # I have to compare this because I have to ensure that the raised error
-            # can be compared using __eq__ method
-            comptime assert conforms_to(E, Equatable), (
-                "assert_raises[ErrorType](error=...) requires an Equatable"
-                " error type"
-            )
-            return expected_error == _error
+        comptime assert conforms_to(
+            CaughtError, Writable
+        ), "assert_raises(contains=...) requires a Writable error type"
 
+        # `assert_raises[error-type](error=error-instance())
+        if self.error:
+          comptime assert conforms_to(
+              Self.T, Equatable & Writable
+          ), "assert_raises[ErrorType](error=...) requires an Equatable and Writable Error type"
+
+          # this checks the error types and the content of the error
+          comptime error_types_match = CaughtError == Self.T
+          var error_values_match = String(self.error.value()) in String(error)
+          return error_types_match and error_values_match
+
+        # if not error type is provided, then first lets check if a message was passed
+        # if not, like in `assert_raises():` case, we just return True.
         __guard case .Some(message_contains) = self.message_contains else:
             return True
-        comptime assert conforms_to(
-            E, Writable
-        ), "assert_raises(contains=...) requires a Writable error type"
-        return message_contains in String(expected_error)
+        return message_contains in String(error)
