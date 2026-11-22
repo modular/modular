@@ -244,6 +244,7 @@ def _quant_scheme() -> Glm5NextQuantScheme:
         mlp_layers=mlp_layers,
         attn_layers=attn_layers,
         compute_dtype=DType.bfloat16,
+        moe_layers=frozenset(range(1, NUM_LAYERS + 1)),
     )
 
 

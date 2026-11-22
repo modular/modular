@@ -166,6 +166,7 @@ def _config() -> Glm5NextConfig:
         linear_head_dim=HEAD_DIM,
         linear_conv_kernel_dim=KERNEL,
         linear_lower_bound=-5.0,
+        linear_conv_dtype=DType.float32,
     )
 
 

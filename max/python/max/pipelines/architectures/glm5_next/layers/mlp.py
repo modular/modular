@@ -336,11 +336,13 @@ def build_mlp(
 ) -> Module[..., Tensor]:
     """Returns layer ``layer_idx``'s feed-forward block.
 
-    Dense below ``first_k_dense_replace``, MoE from there on. Every MLP in
-    this checkpoint is FP8. The dense blocks are replicated: the decoder layer
-    runs them on each device's share of the tokens.
+    Dense below ``first_k_dense_replace``, MoE from there on, quantized as
+    the checkpoint stores the layer: the NVFP4 checkpoint's MTP layer is
+    bf16. The dense blocks are replicated: the decoder layer runs them on
+    each device's share of the tokens.
     """
-    quant_config = config.quant_config
+    scheme = config.quant_scheme
+    quant_config = scheme.mlp_config(layer_idx) if scheme else None
     mlp_cls = functools.partial(Glm5NextMLP, swiglu_limit=config.swiglu_limit)
     if layer_idx < config.first_k_dense_replace:
         return mlp_cls(

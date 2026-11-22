@@ -63,7 +63,7 @@ from typing_extensions import Self, override
 
 from . import hybrid_layout
 from .checkpoint import (
-    _stored_hc_fn_dtype,
+    _stored_dtype,
     check_raw_projections,
     checkpoint_quant_scheme,
 )
@@ -105,7 +105,10 @@ class Glm5NextConfig(
     """Configuration for GLM-5.3-Flash on ModuleV3."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
-    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"float8_e4m3fn"}
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
 
     takes_batch_context_lengths: ClassVar[bool] = True
 
@@ -212,6 +215,9 @@ class Glm5NextConfig(
     linear_head_dim: int = 128
     linear_conv_kernel_dim: int = 4
     linear_lower_bound: float = -5.0
+    linear_conv_dtype: DType = DType.bfloat16
+    """Storage dtype of the KDA short-conv weights: float32 in NVIDIA's NVFP4
+    export, bfloat16 in the FP8 checkpoint."""
     state_pool_dtype: DType = DType.float32
     """Storage dtype of the KDA conv and recurrent pools."""
 
@@ -271,6 +277,8 @@ class Glm5NextConfig(
         Raises:
             ValueError: If the checkpoint's ``modules_to_not_convert``
                 disagrees with which MLA projections carry a scale.
+            ValueError: If the checkpoint mixes dtypes within the
+                ``*.hc_fn`` or the ``*_conv1d`` weights.
         """
         del outputs
         check_raw_projections(state_dict)
@@ -281,7 +289,11 @@ class Glm5NextConfig(
                 break
         # Held as stored: the fused pre-site op reads a bfloat16 projection,
         # and the unfused path widens it to float32, which is exact.
-        self.hc_fn_dtype = _stored_hc_fn_dtype(state_dict)
+        self.hc_fn_dtype = _stored_dtype(state_dict, ".hc_fn", DType.float32)
+        # Held as stored: the conv core widens the weights to float32.
+        self.linear_conv_dtype = _stored_dtype(
+            state_dict, "_conv1d", DType.bfloat16
+        )
         return self
 
     def __post_init__(self) -> None:
@@ -351,16 +363,24 @@ class Glm5NextConfig(
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the expert-parallel buffers for ``runtime``.
 
-        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
-        quantized, else in bf16. The shared expert fuses with the routed ones
-        only when it has their shape and weight layout. Flash is
-        tensor-parallel only, so the ranks' token counts differ by at most
-        one: each dispatches an even share of the step's rows, or all of
-        them under allreduce.
+        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when every
+        routed expert loaded is quantized, else in bf16: the NVFP4
+        checkpoint's MTP experts are bf16, and the MTP layer's config, built
+        first, sizes the buffers the target shares. The shared expert fuses
+        with the routed ones only when it has their shape and weight layout,
+        which a bf16 exchange's experts and the bf16 shared expert share.
+        Flash is tensor-parallel only, so the ranks' token counts differ by
+        at most one: each dispatches an even share of the step's rows, or all
+        of them under allreduce.
         """
         quant_config = self.quant_config
-        quantized_dispatch = quant_config is not None and (
-            self.dtype.is_float8() or quant_config.is_nvfp4
+        quantized_dispatch = (
+            quant_config is not None
+            and (self.dtype.is_float8() or quant_config.is_nvfp4)
+            and (
+                self.quant_scheme is None
+                or self.quant_scheme.quantizes_every_moe
+            )
         )
         n_devices = len(runtime.mesh.devices)
         return EPConfig(
@@ -378,9 +398,13 @@ class Glm5NextConfig(
             ),
             n_gpus_per_node=n_devices,
             n_nodes=runtime.ep_size // n_devices,
+            # A bf16 exchange fuses the bf16 shared expert: unfused, its
+            # side-stream matmul fails graph verification when the MTP layer
+            # runs it at a second draft step.
             fused_shared_expert=self.n_shared_experts == 1
             and (
                 quant_config is None
+                or not quantized_dispatch
                 or quant_config.shared_experts_use_quant(self.dtype)
             ),
             use_allreduce=runtime.ep_use_allreduce,

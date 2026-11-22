@@ -31,6 +31,16 @@ modular_py_test(
     ],
 )
 
+modular_py_test(
+    name = "test_nvfp4_precision_map",
+    srcs = ["test_nvfp4_precision_map.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)
+
 # The Python files, which test_no_legacy_ep_imports scans.
 filegroup(
     name = "py_srcs",

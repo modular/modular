@@ -29,7 +29,7 @@ import pytest
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.architectures.glm5_next.checkpoint import (
-    _stored_hc_fn_dtype,
+    _stored_dtype,
     check_raw_projections,
 )
 from max.pipelines.architectures.glm5_next.weight_adapters import (
@@ -153,7 +153,7 @@ def test_mhc_sites_keep_the_checkpoint_dtype() -> None:
     assert all(w.dtype == DType.float16 for w in out.values())
 
 
-def test_stored_hc_fn_dtype() -> None:
+def test_stored_dtype() -> None:
     """One checkpoint dtype is shared by every site; a mix is rejected."""
 
     def hc_fn(dtype: DType) -> WeightData:
@@ -161,22 +161,26 @@ def test_stored_hc_fn_dtype() -> None:
             dtype
         )
 
-    assert _stored_hc_fn_dtype({}) == DType.float32
+    assert _stored_dtype({}, ".hc_fn", DType.float32) == DType.float32
     assert (
-        _stored_hc_fn_dtype(
+        _stored_dtype(
             {
                 "layers.0.hc_attn.hc_fn": hc_fn(DType.bfloat16),
                 "layers.0.hc_ffn.hc_fn": hc_fn(DType.bfloat16),
-            }
+            },
+            ".hc_fn",
+            DType.float32,
         )
         == DType.bfloat16
     )
     with pytest.raises(ValueError, match="mixes"):
-        _stored_hc_fn_dtype(
+        _stored_dtype(
             {
                 "layers.0.hc_attn.hc_fn": hc_fn(DType.bfloat16),
                 "layers.1.hc_attn.hc_fn": hc_fn(DType.float32),
-            }
+            },
+            ".hc_fn",
+            DType.float32,
         )
 
 

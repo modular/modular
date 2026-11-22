@@ -171,6 +171,7 @@ def _config(kv_params: MultiKVCacheParams, mesh: DeviceMesh) -> Glm5NextConfig:
             mlp_layers=all_layers,
             attn_layers=attn_layers,
             compute_dtype=DType.bfloat16,
+            moe_layers=frozenset(range(1, num_layers + 1)),
         ),
         mesh=mesh,
     )

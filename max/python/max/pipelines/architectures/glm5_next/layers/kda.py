@@ -435,8 +435,8 @@ def kda_core(
 
     # q, k, v in that order: the conv's channel layout.
     qkv = F.concat([q, k, v], axis=-1)
-    # The module holds each conv weight as the checkpoint's depthwise
-    # `[channels, 1, kernel]`.
+    # The module holds each conv weight as the checkpoint stores it: its
+    # dtype and depthwise `[channels, 1, kernel]` shape.
     conv_weight = (
         F.concat([q_conv, k_conv, v_conv], axis=0)
         .reshape([-1, q_conv.shape[-1]])
@@ -646,9 +646,11 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         self.q_proj = head_rows(hidden, qkv_dim)
         self.k_proj = head_rows(hidden, qkv_dim)
         self.v_proj = head_rows(hidden, qkv_dim)
-        self.q_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
-        self.k_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
-        self.v_conv1d = _shard_rows(Tensor.zeros([qkv_dim, 1, kernel]))
+        conv_shape = [qkv_dim, 1, kernel]
+        conv_dtype = config.linear_conv_dtype
+        self.q_conv1d = _shard_rows(Tensor.zeros(conv_shape, dtype=conv_dtype))
+        self.k_conv1d = _shard_rows(Tensor.zeros(conv_shape, dtype=conv_dtype))
+        self.v_conv1d = _shard_rows(Tensor.zeros(conv_shape, dtype=conv_dtype))
 
         # The low-rank gate projections bottom out at `head_dim`, which is not
         # a head axis, so their down halves are replicated.

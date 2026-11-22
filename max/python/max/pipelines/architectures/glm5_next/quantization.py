@@ -33,6 +33,12 @@ self-consistent. The diagnostic that settles it: ``o_proj`` appears 46 times
 in the weight index but ``o_proj.weight_scale_inv`` only 12 -- exactly the
 sparse-MLA layers.
 
+NVIDIA's NVFP4 export (modelopt, ``quant_algo: "NVFP4"``) quantizes less:
+only the dense MLPs and the routed experts. Its map is read the same way,
+off ``weight_scale_2``, rather than off its ``ignore`` globs, which store the
+KDA layers under ``self_attn`` where MAX's shared modelopt reader looks for
+``linear_attn``.
+
 Anything this module cannot account for raises. A checkpoint that does not
 match the shape described above is one MAX has not been taught to read, and
 that has to fail at load time rather than in the logits.
@@ -81,27 +87,53 @@ _SCALED_WEIGHT = re.compile(
     r"^layers\.(\d+)\.(mlp|self_attn)\.(.+)\.weight_scale$"
 )
 
+# Modules each format stores in BF16, as `<block>.<projection>`.
+_FP8_UNSCALED = re.compile(
+    rf"^self_attn\..*(?:{'|'.join(sorted(UNQUANTIZED_ATTN_PROJECTIONS))})"
+)
+_NVFP4_UNSCALED = re.compile(r"^(?:self_attn|mlp\.shared_experts)\.")
+
 
 @dataclass(frozen=True)
 class Glm5NextQuantScheme:
-    """Which GLM-5.3-Flash modules are FP8, and how."""
+    """Which GLM-5.3-Flash modules are quantized, and how."""
 
     config: QuantConfig
-    """Blockwise-FP8 config for the modules the layer sets below name."""
+    """Blockwise-FP8 or NVFP4 config for the modules the layer sets below
+    name."""
 
     mlp_layers: frozenset[int]
-    """Layers whose MLP -- dense, shared expert and routed experts -- is FP8."""
+    """Layers whose MLP is quantized: dense, routed experts and, in the FP8
+    checkpoint, the shared expert."""
 
     attn_layers: frozenset[int]
     """Layers whose ``q_a_proj`` / ``q_b_proj`` / ``kv_a_proj_with_mqa`` /
-    ``o_proj`` are FP8. On GLM-5.3-Flash this is exactly the sparse-MLA layer
-    subset plus the MTP layer; the 34 KDA layers hold no FP8 weight at all."""
+    ``o_proj`` are FP8. On the FP8 checkpoint this is exactly the sparse-MLA
+    layer subset plus the MTP layer; the 34 KDA layers hold no FP8 weight at
+    all. Empty on the NVFP4 checkpoint."""
 
     compute_dtype: DType
     """Dtype of everything unquantized: activations, norms, embeddings, every
     KDA projection and conv, ``kv_b_proj``, the indexer, the vision tower and
     the mHC mapping. Distinct from :attr:`Glm5NextConfig.dtype`, which is the
     *storage* dtype the resolved encoding implies."""
+
+    moe_layers: frozenset[int]
+    """Layers whose routed experts the loaded weights hold, quantized or not.
+    The NVFP4 checkpoint's MTP layer is one of them but not of
+    :attr:`mlp_layers`."""
+
+    @property
+    def quantizes_every_moe(self) -> bool:
+        """Whether the expert exchange can carry quantized tokens.
+
+        True when every routed expert loaded is quantized.
+        """
+        return self.moe_layers <= self.mlp_layers
+
+    def mlp_config(self, layer_idx: int) -> QuantConfig | None:
+        """Returns the config for layer ``layer_idx``'s MLP."""
+        return self.config if layer_idx in self.mlp_layers else None
 
     def attn_config(self, layer_idx: int) -> QuantConfig | None:
         """Returns the config for layer ``layer_idx``'s attention projections.
@@ -114,9 +146,9 @@ class Glm5NextQuantScheme:
 
 
 def _scaled_layers(
-    state_dict: Mapping[str, WeightData],
+    state_dict: Mapping[str, WeightData], fmt: str, unscaled: re.Pattern[str]
 ) -> tuple[frozenset[int], frozenset[int]]:
-    """Returns the (mlp, attn) layer indices that carry FP8 weight scales."""
+    """Returns the (mlp, attn) layer indices that carry weight scales."""
     mlp: set[int] = set()
     attn: set[int] = set()
     for name in state_dict:
@@ -124,51 +156,20 @@ def _scaled_layers(
         if match is None:
             continue
         layer_idx, block, projection = match.groups()
-        if block == "mlp":
-            mlp.add(int(layer_idx))
-        elif any(p in projection for p in UNQUANTIZED_ATTN_PROJECTIONS):
-            # A scale on a projection the checkpoint is documented to leave
-            # BF16 means the map is being derived from the wrong checkpoint.
+        if unscaled.search(f"{block}.{projection}"):
+            # A scale on a module the checkpoint is documented to leave BF16
+            # means the map is being derived from the wrong checkpoint.
             raise ValueError(
-                f"'{name}' carries an FP8 weight scale, but GLM-5.3-Flash "
-                f"stores {sorted(UNQUANTIZED_ATTN_PROJECTIONS)} in bfloat16. "
-                "Re-derive the precision map from this checkpoint's weight "
-                "index before loading it."
+                f"'{name}' carries an {fmt} weight scale, but GLM-5.3-Flash's "
+                f"{fmt} checkpoint stores it in bfloat16. Re-derive the "
+                "precision map from this checkpoint's weight index before "
+                "loading it."
             )
-        else:
-            attn.add(int(layer_idx))
+        (mlp if block == "mlp" else attn).add(int(layer_idx))
     return frozenset(mlp), frozenset(attn)
 
 
-def parse_quant_scheme(
-    hf_quantization_config: Mapping[str, object] | None,
-    state_dict: Mapping[str, WeightData],
-    compute_dtype: DType,
-) -> Glm5NextQuantScheme | None:
-    """Builds the mixed-precision map for a GLM-5.3-Flash checkpoint.
-
-    Args:
-        hf_quantization_config: The checkpoint's resolved ``quantization_config``.
-            ``None`` for the BF16 variant, which has no quantized modules.
-        state_dict: Post-adapter MAX weights, read for ``weight_scale`` presence.
-        compute_dtype: Dtype of the unquantized modules.
-
-    Returns:
-        The scheme, or ``None`` when the checkpoint declares no quantization.
-
-    Raises:
-        ValueError: If the checkpoint declares a quantization shape this
-            module does not implement, or if no FP8 scales are found in a
-            checkpoint that declares FP8.
-    """
-    if not hf_quantization_config:
-        return None
-
-    method = hf_quantization_config.get("quant_method")
-    if method != "fp8":
-        raise ValueError(
-            f"GLM-5.3-Flash expects quant_method 'fp8', got {method!r}"
-        )
+def _check_fp8(hf_quantization_config: Mapping[str, object]) -> None:
     fmt = hf_quantization_config.get("fmt")
     if fmt != "e4m3":
         raise ValueError(f"GLM-5.3-Flash expects fmt 'e4m3', got {fmt!r}")
@@ -187,12 +188,66 @@ def parse_quant_scheme(
             f"got {block_size!r}"
         )
 
-    mlp_layers, attn_layers = _scaled_layers(state_dict)
+
+def parse_quant_scheme(
+    hf_quantization_config: Mapping[str, object] | None,
+    state_dict: Mapping[str, WeightData],
+    compute_dtype: DType,
+    moe_layers: frozenset[int],
+) -> Glm5NextQuantScheme | None:
+    """Builds the mixed-precision map for a GLM-5.3-Flash checkpoint.
+
+    Args:
+        hf_quantization_config: The checkpoint's resolved ``quantization_config``.
+            ``None`` for the BF16 variant, which has no quantized modules.
+        state_dict: Post-adapter MAX weights, read for ``weight_scale`` presence.
+        compute_dtype: Dtype of the unquantized modules.
+        moe_layers: Layers whose routed experts the loaded weights hold.
+
+    Returns:
+        The scheme, or ``None`` when the checkpoint declares no quantization.
+
+    Raises:
+        ValueError: If the checkpoint declares a quantization shape this
+            module does not implement, or if no scales are found in a
+            checkpoint that declares quantization.
+    """
+    if not hf_quantization_config:
+        return None
+
+    method = hf_quantization_config.get("quant_method")
+    algo = hf_quantization_config.get("quant_algo")
+    if method == "fp8":
+        _check_fp8(hf_quantization_config)
+        fmt, unscaled = "FP8", _FP8_UNSCALED
+    elif method == "modelopt" and algo == "NVFP4":
+        fmt, unscaled = "NVFP4", _NVFP4_UNSCALED
+    else:
+        raise ValueError(
+            "GLM-5.3-Flash expects quant_method 'fp8', or 'modelopt' with "
+            f"quant_algo 'NVFP4', got {method!r} with {algo!r}"
+        )
+
+    mlp_layers, attn_layers = _scaled_layers(state_dict, fmt, unscaled)
     if not mlp_layers and not attn_layers:
         raise ValueError(
-            "The checkpoint declares blockwise FP8 but no weight scales were "
-            "found in the loaded state dict. The weight adapter renames "
-            "'weight_scale_inv' to 'weight_scale'; check that it ran."
+            f"The checkpoint declares {fmt} but no weight scales were found "
+            "in the loaded state dict. The precision map renames "
+            "'weight_scale_inv' (FP8) and 'weight_scale_2' (NVFP4) to "
+            "'weight_scale'; check that it ran."
+        )
+    if fmt == "NVFP4":
+        return Glm5NextQuantScheme(
+            config=QuantConfig.nvfp4(
+                mlp_quantized_layers=mlp_layers,
+                attn_quantized_layers=attn_layers,
+                embedding_output_dtype=compute_dtype,
+                shared_experts_weight_dtype=compute_dtype,
+            ),
+            mlp_layers=mlp_layers,
+            attn_layers=attn_layers,
+            compute_dtype=compute_dtype,
+            moe_layers=moe_layers,
         )
 
     scale_dtype = DType.float32
@@ -212,4 +267,5 @@ def parse_quant_scheme(
         mlp_layers=mlp_layers,
         attn_layers=attn_layers,
         compute_dtype=compute_dtype,
+        moe_layers=moe_layers,
     )

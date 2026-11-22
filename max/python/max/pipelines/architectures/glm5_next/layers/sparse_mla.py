@@ -21,9 +21,10 @@ GLM-5.2's block with two changes:
   positions per query, which the kernel reads as logical positions with the
   k-pool layout.
 
-``kv_b_proj`` is BF16 in this checkpoint while the other projections are FP8,
-so the absorbed ``w_uk`` / ``w_uv`` carry no scales and the kernel takes no
-quant config. They pair with a BF16 latent cache or a unit-scale FP8 one.
+``kv_b_proj`` is BF16 in both checkpoints (the FP8 one quantizes the other
+projections, the NVFP4 one none), so the absorbed ``w_uk`` / ``w_uv`` carry
+no scales and the kernel takes no quant config. They pair with a BF16 latent
+cache or a unit-scale FP8 one.
 """
 
 from __future__ import annotations
@@ -94,15 +95,14 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
                 "reads both as one geometry."
             )
         self.latent_pad = config.mla_latent_pad_to - config.kv_lora_rank
-        # BF16 in the checkpoint even though the layer's other projections
+        # BF16 in the checkpoint even where the layer's other projections
         # are FP8.
         self.kv_b_proj = quant_ops.quantized_weight(
             self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
             self.kv_lora_rank,
             None,
         )
-        assert quant_config is not None
-        self.indexer = PooledIndexer(config, quant_config)
+        self.indexer = PooledIndexer(config, config.quant_config)
         tensor_parallel_latent_attention_with_rope(self)
 
     @property

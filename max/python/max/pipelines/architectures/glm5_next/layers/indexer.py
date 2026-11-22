@@ -211,7 +211,7 @@ class PooledIndexer(Module[..., Tensor]):
     """Selects the 2051 token positions each query's sparse MLA attends to."""
 
     def __init__(
-        self, config: Glm5NextConfig, quant_config: QuantConfig
+        self, config: Glm5NextConfig, quant_config: QuantConfig | None
     ) -> None:
         self.n_heads = config.index_n_heads
         self.head_dim = config.index_head_dim
@@ -374,14 +374,17 @@ def act_quant(
     return x, x_scales
 
 
-def indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
+def indexer_act_quant_config(quant_config: QuantConfig | None) -> QuantConfig:
     """Returns the quant config used for dynamic FP8 activation quant in the indexer.
 
     Full FP8 checkpoints reuse the model quant config. Mixed-precision paths
     (for example NVFP4 MoE with bf16 MLA) still dynamic-quantize indexer
     activations with block size 128.
     """
-    if quant_config.format == QuantFormat.BLOCKSCALED_FP8:
+    if (
+        quant_config is not None
+        and quant_config.format == QuantFormat.BLOCKSCALED_FP8
+    ):
         return quant_config
     return QuantConfig(
         input_scale=InputScaleSpec(
