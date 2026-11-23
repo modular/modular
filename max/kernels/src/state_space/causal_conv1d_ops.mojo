@@ -185,6 +185,8 @@ def causal_conv1d[
                         Int(input.dim[0]()),
                     ),
                     block_dim=(kNThreads),
+                    # Disambiguate the overload.
+                    cluster_dim=None,
                 )
             case 2:
                 comptime kWidth = 2
@@ -225,6 +227,8 @@ def causal_conv1d[
                         Int(input.dim[0]()),
                     ),
                     block_dim=(kNThreads),
+                    # Disambiguate the overload.
+                    cluster_dim=None,
                 )
             case 3:
                 comptime kWidth = 3
@@ -265,6 +269,8 @@ def causal_conv1d[
                         Int(input.dim[0]()),
                     ),
                     block_dim=(kNThreads),
+                    # Disambiguate the overload.
+                    cluster_dim=None,
                 )
             case 4:
                 comptime kWidth = 4
@@ -305,6 +311,8 @@ def causal_conv1d[
                         Int(input.dim[0]()),
                     ),
                     block_dim=(kNThreads),
+                    # Disambiguate the overload.
+                    cluster_dim=None,
                 )
             case _:
                 raise Error(
