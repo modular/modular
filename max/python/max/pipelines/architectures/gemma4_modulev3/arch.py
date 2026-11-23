@@ -14,6 +14,9 @@
 
 import dataclasses
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.gemma4.arch import gemma4_arch
 from max.pipelines.architectures.gemma4.context import Gemma4Context
@@ -59,6 +62,9 @@ gemma4_modulev3_arch = SupportedArchitecture(
     batching=Gemma4ModuleV3BatchProcessor,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
+    # The repo ids this architecture claims are the ones Cascade serves, so it
+    # needs the same factory the graph architecture carries.
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )
 
 # Text-only model_type "gemma4_unified" line (e.g. google/gemma-4-12B-it):
