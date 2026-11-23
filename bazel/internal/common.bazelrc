@@ -193,12 +193,6 @@ build --per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
 build --host_per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
 build --per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
 build --host_per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
-# Make symbols in TypeID visible
-build --per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
-build --host_per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
-# Generate typeinfo for llvm::support::format_adapter for use in python bindings
-build --per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
-build --host_per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
 
 build --per_file_copt=external/.*llvm-project/lldb/tools/lldb-dap/.*@-DLLDB_DAP_WELCOME_MESSAGE="\"Welcome to Mojo debugging! 🔥\\nInputs prefixed with a colon are treated as LLDB commands\\, e.g. `:thread list`. Other inputs are treated as expressions\\, e.g. `my_struct.some_field`.\\n\\n\""
 
