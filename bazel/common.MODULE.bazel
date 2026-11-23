@@ -1254,16 +1254,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3_embedding_0.6b_bfloat16_golden/1/98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48/torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz",
     },
     {
-        "name": "torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",
-        "sha256": "23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_phi_3_5_mini_instruct_bfloat16_golden/1/23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870/torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",
-    },
-    {
-        "name": "torch_phi_4_bfloat16_golden.tar.gz",
-        "sha256": "8634be2cd675ea0dbb8a2ce84692572dd003505fa86edd91f0d8b0659d09b6f0",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_phi_4_bfloat16_golden/0/8634be2cd675ea0dbb8a2ce84692572dd003505fa86edd91f0d8b0659d09b6f0/torch_phi_4_bfloat16_golden.tar.gz",
-    },
-    {
         "name": "torch_llama-gptq_golden.tar.gz",
         "sha256": "7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",

@@ -287,7 +287,7 @@ def test_max_get_server_cmd_variant_resolves_yaml(
     """
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
-    variant = "microsoft/phi-4__modulev3"
+    variant = "google/gemma-3-27b-it__modulev3"
     recipe_path = MODEL_RECIPES[variant]
     cmd, _ = smoke_test.get_server_cmd(
         "max", variant, gpu_spec=("NVIDIA L40S", 1)
@@ -311,7 +311,7 @@ def test_max_ci_validates_every_request(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: True)
 
     cmd, _ = smoke_test.get_server_cmd(
-        "max-ci", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+        "max-ci", "google/gemma-3-27b-it__modulev3", gpu_spec=("NVIDIA B200", 1)
     )
 
     assert "--eager-usage-validator" in cmd
@@ -325,7 +325,7 @@ def test_released_max_does_not_get_eager_usage_validator(
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
     cmd, _ = smoke_test.get_server_cmd(
-        "max", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+        "max", "google/gemma-3-27b-it__modulev3", gpu_spec=("NVIDIA B200", 1)
     )
 
     assert "--eager-usage-validator" not in cmd

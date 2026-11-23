@@ -100,10 +100,6 @@ MODELS: Mapping[str, set[str]] = {
     "meta-models/Muse-Glimmer-30B__gpu_vision_cache": NIGHTLY | VARIANT | MACH | _1xB200,
     "meta-models/Muse-Spark-Open-816B-A42B-NVFP4": NIGHTLY | MACH | _8xB200,
     "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark": NIGHTLY | VARIANT | MACH | _8xB200,
-    "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
-    "microsoft/Phi-3.5-mini-instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
-    "microsoft/phi-4": _1xB200 | _1xMI355,
-    "microsoft/phi-4__modulev3": VARIANT | _1xB200 | _1xMI355,
     "MiniMaxAI/MiniMax-M3-MXFP8": NIGHTLY | _8xMI355,  # TODO(MODELS-1611)
     "MiniMaxAI/MiniMax-M3-MXFP8__mtp": NIGHTLY | VARIANT | PRIVATE | _8xB200,
     "mistralai/Mistral-Large-4-1T-A52B-NVFP4": NIGHTLY | MACH | _8xB200,

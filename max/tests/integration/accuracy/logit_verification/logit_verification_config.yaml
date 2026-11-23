@@ -530,34 +530,6 @@ logit_verification_pipelines:
     tags: [nvidia-only]
     cos_dist_threshold: .6 # FIXME: Reduce to ~.0015 after MODELS-1490 is closed
 
-  microsoft/Phi-3.5-mini-instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "microsoft/Phi-3.5-mini-instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_phi_3_5_mini_instruct_bfloat16_golden/1/23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870/torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz"
-      json_file: "phi_3_5_mini_instruct_bfloat16_torch_goldens.json"
-    # TODO(MODELS-458): This model seems broken based on the thresholds
-    cos_dist_threshold: 1.6e-2
-    kl_div_threshold: 4.0e-1
-
-  microsoft/phi-4-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "microsoft/phi-4"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: []
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_phi_4_bfloat16_golden/0/8634be2cd675ea0dbb8a2ce84692572dd003505fa86edd91f0d8b0659d09b6f0/torch_phi_4_bfloat16_golden.tar.gz"
-      json_file: "phi_4_bfloat16_torch_goldens.json"
-    absolute_tolerance: 1.0e-04
-    relative_tolerance: 2.0e00
-    cos_dist_threshold: 1.5e-3
-    kl_div_threshold: 1.5e-02
-
   hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []

@@ -1304,20 +1304,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="meta-models/Muse-Glimmer-30B",
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "microsoft/Phi-3.5-mini-instruct": GenericOracle(
-        model_path="microsoft/Phi-3.5-mini-instruct",
-        device_encoding_map={
-            "cpu": ["float32"],
-            "gpu": ["float32", "bfloat16"],
-        },
-    ),
-    "microsoft/phi-4": GenericOracle(
-        model_path="microsoft/phi-4",
-        device_encoding_map={
-            "cpu": ["float32"],
-            "gpu": ["float32", "bfloat16"],
-        },
-    ),
     "LiquidAI/LFM3-1.7B": GenericOracle(
         model_path="LiquidAI/LFM3-1.7B",
         config_params={"max_length": 8192, "trust_remote_code": True},
