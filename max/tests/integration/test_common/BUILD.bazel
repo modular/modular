@@ -168,9 +168,10 @@ modular_py_library(
     testonly = True,
     srcs = ["mixed_step_split_ops.py"],
     imports = [".."],
-    # Also the MiniMax-M3.1 DSpark graph test, which lives with its model.
+    # Also the MiniMax-M3 graph tests, which live with their models.
     visibility = [
         "//max/tests:__subpackages__",
+        "//max_private/minimax_m3:__pkg__",
         "//max_private/minimax_m3_dspark:__pkg__",
     ],
     deps = ["//max/python/max/mlir"],
