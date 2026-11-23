@@ -1055,8 +1055,8 @@ def test_mla_decode_graph_sparse_index_share_single_token() -> None:
     The draft steps that set ``index_share`` decode one token, where the
     shared-index fold does not launch and the reused row is bounded by
     ``selection_lag`` alone. The output must be bit-identical to the plain
-    op with the same lag. The negative control drops the lag, which scores
-    the row's ``-1`` padding.
+    op with the same lag, and without the lag too: the decode bounds the row
+    by its first ``-1``.
     """
     width, cache_len, lag = 128, 100, 2
     fx = _sparse_decode_fixture(
@@ -1079,7 +1079,7 @@ def test_mla_decode_graph_sparse_index_share_single_token() -> None:
 
     want = fx.run(plain, indices)
     assert np.array_equal(fx.run(shared, indices), want)
-    assert not np.array_equal(fx.run(unbounded, indices), want)
+    assert np.array_equal(fx.run(unbounded, indices), want)
 
 
 @dataclasses.dataclass
@@ -1306,7 +1306,8 @@ def test_mla_decode_graph_sparse_kpool_row_bound() -> None:
     ``4 * 2 + 3 = 11`` slots. A token that sees 4096 keys fills only 8 of them
     (both pools, no tail), so slots 8 to 10 are ``-1`` while still below the
     causal limit. With the layout, the BF16 op must match the plain op given
-    ``topk_lengths = 8``; without it, the op scores the padding as zero keys.
+    ``topk_lengths = 8``; without it too, as the decode bounds the row by
+    its first ``-1``.
     A row reused two positions later (``selection_lag = 2``) was computed for
     4094 keys and holds ``8 + 4094 % 4 = 10``.
     """
@@ -1327,8 +1328,7 @@ def test_mla_decode_graph_sparse_kpool_row_bound() -> None:
     fresh = h.row(8)
     want = h.run(plain, fresh, 8)
     assert np.array_equal(h.run(pooled, fresh, h.width), want)
-    # Without the layout the padding is scored, so the output must move.
-    assert not np.array_equal(h.run(plain, fresh, h.width), want)
+    assert np.array_equal(h.run(plain, fresh, h.width), want)
 
     stale = h.row(10)
     assert np.array_equal(
@@ -1353,8 +1353,9 @@ def test_mla_graph_sparse_plain_topk_selection_lag(
     An MTP draft step reuses the selection step 0 made for the token
     ``selection_lag`` positions earlier. Below ``top_k`` keys that row holds
     one entry per key that token saw, so the slots between its length and
-    this token's causal limit are ``-1`` and must not be scored. Both the
-    decode op and the combined op's decode branch must take the lag.
+    this token's causal limit are ``-1`` and must not be scored. The decode
+    op and the combined op's decode branch match the plain op with the lag,
+    and without it too: the decode bounds the row by its first ``-1``.
     """
     lag = 2
     h = _bf16_sparse_row_harness(width=128, cache_len=100)
@@ -1365,8 +1366,7 @@ def test_mla_graph_sparse_plain_topk_selection_lag(
     stale = h.row(valid)
     want = h.run(plain, stale, valid)
     assert np.array_equal(h.run(reused, stale, h.width), want)
-    # Without the lag the padding below the causal limit is scored.
-    assert not np.array_equal(h.run(plain, stale, h.width), want)
+    assert np.array_equal(h.run(plain, stale, h.width), want)
 
 
 @dataclasses.dataclass

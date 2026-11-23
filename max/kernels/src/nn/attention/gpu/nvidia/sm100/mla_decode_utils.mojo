@@ -19,6 +19,7 @@ across the BF16, native FP8, and per-token-scale decode backends.
 """
 
 from std.collections import OptionalReg
+from std.bit import pop_count
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import get_defined_int, size_of, align_of, _RegisterPackType
@@ -219,6 +220,33 @@ def _sparse_physical_sentinel_bits[
                 valid_bits |= UInt32(1) << UInt32(slot)
             slot += 1
         return valid_bits
+
+
+@inline(.always)
+def _sparse_row_length(
+    row: MutPointer[Int32, MutAnyOrigin], n: Int, lane: Int
+) -> Int:
+    """Returns the index of a packed row's first negative (`-1`) entry, or
+    `n` if none.
+
+    The row's valid entries come first, so validity is monotone and each
+    warp-wide round of 32 probes cuts the span to under one probe step: a
+    2176-slot row takes one load when full, three more rounds otherwise.
+    """
+    if n <= 0 or row[n - 1] >= 0:
+        return max(n, 0)
+    # The first `-1` lies in `[lo, hi]`.
+    var lo = 0
+    var hi = n - 1
+    while lo < hi:
+        var step = ceildiv(hi - lo, WARP_SIZE)
+        var q = lo + lane * step
+        # Probes below the first `-1` are valid, so they are the k lowest.
+        var k = Int(pop_count(vote[.uint32](q < hi and row[q] >= 0)))
+        hi = min(hi, lo + k * step)
+        if k > 0:
+            lo += (k - 1) * step + 1
+    return lo
 
 
 # ------------------------------------------------------------------------------
@@ -726,6 +754,12 @@ comptime _MLA_SMX_BOUND_SLACK = get_defined_int["MLA_SMX_BOUND_SLACK", 0]()
 # admits the null-mask forms without the check.
 comptime _MLA_SMX_NULL_MASK_FAST = get_defined_int[
     "MLA_SMX_NULL_MASK_FAST", 0
+]()
+# 1 is a planted fault (`test_mla_decode_sparse_kv_bf16_sentinel_break` must
+# fail): a sparse decode stops bounding a row by its first `-1`, so it scores
+# the `-1` slots inside the row's causal read range.
+comptime _MLA_DECODE_SENTINEL_BREAK = get_defined_int[
+    "MLA_DECODE_SENTINEL_BREAK", 0
 ]()
 # FA4's split loop: the walk becomes a prefix whose tiles are wholly inside the
 # bound (mask-free body, no per-tile test, the split point computed once before
@@ -5490,6 +5524,27 @@ struct MLA_SM100_Decode_Common[
             )
             comptime if _op_has_extra_kv:
                 main_slots_hi = gap_hi
+            # A row longer than its producer's top-k (a top-k extended by
+            # appended keys, padded to a wider stride) can hold `-1` below the
+            # causal horizon and the stated length. A `-1` gathers a zero row,
+            # which the slot-count mask would score as a key, so the row's
+            # length bounds it too; rows are packed (`SparseRowLayout`). A
+            # tile-skipping walk checks each gathered row instead.
+            comptime if (
+                not mask_physical_sentinels and _MLA_DECODE_SENTINEL_BREAK == 0
+            ):
+                if case .Some(indices) = physical_sentinel_indices:
+                    row_slot_limit = min(
+                        row_slot_limit,
+                        _sparse_row_length(
+                            indices.unsafe_offset(
+                                offset_position.q_token_idx
+                                * logical_indices_stride
+                            ),
+                            logical_indices_len,
+                            lane_id & (WARP_SIZE - 1),
+                        ),
+                    )
 
         var mi: Scalar[Self.AccumType] = min_or_neg_inf[Self.AccumType]()
         var li: Scalar[Self.AccumType] = 0.0

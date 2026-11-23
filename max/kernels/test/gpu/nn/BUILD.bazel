@@ -1548,6 +1548,8 @@ mojo_test(
 # the shipped routing. `_cg2_slice_break1` and
 # `_cg2_slice_break2` hand the follower the leader's V depth slice or key
 # half: their pair cells must fail and the unpaired cell pass.
+# `_sentinel_break` stops bounding a decode row by its first -1: its
+# row-padding cells must fail.
 [
     mojo_test(
         name = "test_mla_decode_sparse_kv_bf16{}.mojo.test".format(suffix),
@@ -1603,6 +1605,12 @@ mojo_test(
                 "MLA_SPARSE_CG2_ROUTE=0",
                 "MLA_CG2_SLICE_BREAK=2",
             ],
+        ),
+        (
+            # Negative control: the decode softmax scores the -1 slots inside
+            # a row's read range, so the row-padding cells must fail.
+            "_sentinel_break",
+            ["MLA_DECODE_SENTINEL_BREAK=1"],
         ),
     ]
 ]
