@@ -158,6 +158,14 @@ This version is still a work in progress.
 
 ## Python API
 
+- `max.functional.random.gaussian` and `max.graph.ops.random.gaussian` on the
+  CPU now draw the stream of PyTorch's CPU generator. For a given seed, a
+  float32 or float64 tensor equals
+  `torch.empty(shape).normal_(mean, std, generator=torch.Generator().manual_seed(seed))`
+  bit for bit on x86. float16 and bfloat16 samples are the float32 stream
+  rounded to that type. CPU values for a given seed differ from earlier
+  releases, so refresh any stored CPU samples. GPU results are unchanged.
+
 - `GGUFWeights` now reads checkpoints through MAX's own GGUF parser instead of
   the `gguf` Python package, so loading no longer needs that dependency. The
   parser skips tokenizer metadata, whose payload dominates a typical file, and

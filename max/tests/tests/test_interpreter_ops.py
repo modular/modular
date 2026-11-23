@@ -108,13 +108,14 @@ ELEMENTWISE_DTYPES = SIGNED_DTYPES + UINT_DTYPES
 # DTypes to test for matmul operations (float and integer)
 MATMUL_DTYPES = FLOAT_DTYPES + INT_DTYPES
 
-# Captured pre-migration; the shared kernel's counter mapping must not change them.
+# `torch.empty(4).normal_(generator=torch.Generator().manual_seed(7))`: a CPU
+# gaussian follows torch's stream bit for bit.
 _RANDOM_NORMAL_SEED7_F32 = np.array(
     [
-        -0.30484700202941895,
-        1.0453333854675293,
-        -0.27856412529945374,
-        0.7178202867507935,
+        -0.1467950940132141,
+        0.7861412763595581,
+        0.9468216300010681,
+        -1.1143440008163452,
     ],
     dtype=np.float32,
 )
@@ -3154,12 +3155,8 @@ class TestRandomNormalOp:
         assert result_np.shape == (10, 10)
         assert result_np.dtype == dtype.to_numpy()
 
-    def test_random_normal_matches_recorded_baseline(self) -> None:
-        """Migrating to the shared GC kernel must not change sampled values.
-
-        A mismatch means the counter mapping diverged, not that the baseline
-        is stale.
-        """
+    def test_random_normal_matches_torch_cpu(self) -> None:
+        """A CPU gaussian reproduces torch's CPU stream for the same seed."""
         with (
             rc.EagerRealizationContext() as ctx,
             realization_context(ctx),
