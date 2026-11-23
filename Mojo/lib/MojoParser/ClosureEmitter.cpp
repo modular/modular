@@ -1206,6 +1206,21 @@ static bool isOutlinedInteriorOrigin(
   return interiorOrigins.contains(cast<TypedAttr>(getCanonicalAttr(stripped)));
 }
 
+static bool namesOutlinedInteriorOrigin(
+    TypedAttr typed,
+    const llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins) {
+  if (!typed)
+    return false;
+  bool found = false;
+  auto visit = [&](Attribute nested) {
+    if (isOutlinedInteriorOrigin(dyn_cast<TypedAttr>(nested), interiorOrigins))
+      found = true;
+  };
+  typed.walk(visit);
+  typed.getType().walk(visit);
+  return found;
+}
+
 static bool hasOutlinedInteriorOrigin(
     Type type,
     const llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins) {
@@ -1383,7 +1398,7 @@ static LogicalResult outlineAndPromoteOrigins(
     SmallVector<TypedAttr> newParamValues;
     newParamValues.reserve(sym.getParamValues().size());
     for (TypedAttr pv : sym.getParamValues()) {
-      bindsOutlinedInterior |= isOutlinedInteriorOrigin(pv, interiorOrigins);
+      bindsOutlinedInterior |= namesOutlinedInteriorOrigin(pv, interiorOrigins);
       auto newPv = cast<TypedAttr>(originReplacer.replace(pv));
       if (newPv != pv) {
         changed = true;
@@ -1412,18 +1427,24 @@ static LogicalResult outlineAndPromoteOrigins(
       return {sym, WalkResult::skip()};
 
     mlir::AttrTypeReplacer symTypeReplacer;
-    symTypeReplacer.addReplacement(
-        [&](TypedAttr attr) -> std::optional<TypedAttr> {
-          if (!sugarIsa<OriginType>(attr.getType()))
-            return std::nullopt;
-          TypedAttr canon = cast<TypedAttr>(getCanonicalAttr(attr));
-          auto it = paramReplacements.find(canon);
-          if (it != paramReplacements.end())
-            return it->second;
-          return getPromotedOriginRef(ctx,
-                                      OriginType::stripMutCastAndRebind(attr),
-                                      promotedOriginNames);
-        });
+    symTypeReplacer.addReplacement([&](TypedAttr attr)
+                                       -> std::optional<TypedAttr> {
+      if (!sugarIsa<OriginType>(attr.getType()))
+        return std::nullopt;
+      TypedAttr canon = cast<TypedAttr>(getCanonicalAttr(attr));
+      auto it = paramReplacements.find(canon);
+      if (it != paramReplacements.end())
+        return it->second;
+      TypedAttr stripped = OriginType::stripMutCastAndRebind(attr);
+      if (sugarIsa<InteriorOriginAttr, OriginSubtreeAttr>(stripped)) {
+        auto outlined =
+            interiorOrigins.find(cast<TypedAttr>(getCanonicalAttr(stripped)));
+        if (outlined == interiorOrigins.end() || attr != stripped)
+          return std::nullopt;
+        return getOutlinedOriginRef(ctx, outlined->second, promotedOriginNames);
+      }
+      return getPromotedOriginRef(ctx, stripped, promotedOriginNames);
+    });
     auto newType = cast<FuncType>(symTypeReplacer.replace(sym.getType()));
     return {FuncSymbolAttr::get(sym.getSymbol(), newType, newParamValues),
             WalkResult::skip()};
