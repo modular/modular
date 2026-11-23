@@ -2389,8 +2389,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         Launch the result with `enqueue_closure(kernel, closure, ...)`, which
         passes the closure's captures. Only targets whose MAX plugin handles
-        closure kernels support this, and the HAL backend has no closure
-        kernels.
+        closure kernels support this. The HAL backend takes
+        `enqueue_closure(closure, ...)` instead, which compiles and launches
+        the closure in one call.
 
         ```mojo
         var kernel = ctx.compile_closure[type_of(closure)]()

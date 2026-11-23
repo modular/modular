@@ -298,27 +298,43 @@ modular_cc_binary(
     ],
 )
 
-modular_cc_test(
-    name = "CPUPluginTest",
-    size = "small",
-    srcs = [
-        "lib/CPU/Common.h",
-        "test/CPUPluginTest.cpp",
-        "test/Fixture.h",
-    ],
-    data = [":CPUPlugin.so"],
-    env = {
-        "MODULAR_DRIVER_PLUGINS": "$(location :CPUPlugin.so)",
-    },
-    visibility = ["//visibility:private"],
-    deps = [
-        ":DriverPluginTests",
-        ":Support",
-        "@dlpack",
-        "@llvm-project//llvm:Support",
-        "@tl_expected",
-    ],
-)
+_CPU_PLUGIN_TEST_ENV = {
+    "MODULAR_DRIVER_PLUGINS": "CPU@$(location :CPUPlugin.so)",
+}
+
+# `CPUPluginSharedContextsTest` runs the context-level cases
+# in the shared session, which no other host test reaches.
+[
+    modular_cc_test(
+        name = name,
+        size = "small",
+        srcs = [
+            "lib/CPU/Common.h",
+            "test/CPUPluginTest.cpp",
+            "test/Fixture.h",
+        ],
+        data = [":CPUPlugin.so"],
+        env = env,
+        visibility = ["//visibility:private"],
+        deps = [
+            ":DriverPluginTests",
+            ":Support",
+            "@dlpack",
+            "@llvm-project//llvm:Support",
+            "@tl_expected",
+        ],
+    )
+    for name, env in [
+        ("CPUPluginTest", _CPU_PLUGIN_TEST_ENV),
+        (
+            "CPUPluginSharedContextsTest",
+            dict(
+                _CPU_PLUGIN_TEST_ENV,
+                MODULAR_DRIVER_TEST_SHARE_CONTEXTS = "1",
+            ),
+        ),
+    ]
+]
 
 modular_cc_binary(
     name = "LegacyStubPlugin.so",
