@@ -17,11 +17,11 @@
 #
 # The gates are held to 1e-5: the kernel keeps about 16 bits of the weight
 # and sums in float32. The output is modeled from the kernel's own `pre`, with
-# the kernel's roundings (the collapse and the normalized value rounded to
-# bfloat16 before gamma). The bar is 2^-6 of the element. Where the collapse
-# sits on a bfloat16 tie (within 1e-5), the kernel's float32 sum may round to
-# either neighbour and the two later roundings can carry that one step to
-# three, so the output from both neighbours is accepted.
+# the kernel's roundings (the collapse rounded to bfloat16, then the norm and
+# gamma rounded once). The bar is 2^-6 of the element. Where the collapse sits
+# on a bfloat16 tie (within 1e-5), the kernel's float32 sum may round to
+# either neighbour and the later rounding can carry that one step to two, so
+# the output from both neighbours is accepted.
 
 from std.math import exp, sqrt
 from std.testing import assert_false, assert_true
@@ -184,9 +184,7 @@ def run_case[
             var got = Float64(out_h[r * hidden + d].cast[DType.float32]())
             var ok = False
             for nudge in [0.0, 1e-5, -1e-5]:
-                var want = _bf16(
-                    _bf16(_bf16(exact[d] * (1 + nudge)) * factor) * g
-                )
+                var want = _bf16(_bf16(exact[d] * (1 + nudge)) * factor * g)
                 ok = (
                     ok
                     or abs(got - want) <= max(abs(got), abs(want)) / 64 + 1e-6
