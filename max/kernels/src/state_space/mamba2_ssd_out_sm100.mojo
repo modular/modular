@@ -212,10 +212,6 @@ struct SsdOutParams(DevicePassable, ImplicitlyCopyable):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "SsdOutParams"
-
 
 comptime ParamsPtr = Pointer[SsdOutParams, ImmUntrackedOrigin]
 

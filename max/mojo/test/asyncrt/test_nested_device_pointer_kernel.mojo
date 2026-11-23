@@ -64,10 +64,6 @@ struct DevicePtrAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "DevicePtrAndSentinel"
-
 
 # Host-side wrapper: holds a `DevicePointer` (host-only) plus a sentinel.
 # `_to_device_type` manually peels off the `Pointer` view and writes the
@@ -98,10 +94,6 @@ struct DevicePointerAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
             ),
             target,
         )
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "DevicePointerAndSentinel"
 
 
 def write_sentinel_via_direct_field(arg: DevicePtrAndSentinel[MutAnyOrigin]):

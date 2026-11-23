@@ -468,10 +468,6 @@ struct NullSwiGLUOutput[
     ):
         pass
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "NullSwiGLUOutput"
-
 
 struct RealSwiGLUOutput[
     # Output row stride in bytes. NVFP4: H/2. MXFP8: H.
@@ -623,10 +619,6 @@ struct RealSwiGLUOutput[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "RealSwiGLUOutput"
 
 
 # =============================================================================

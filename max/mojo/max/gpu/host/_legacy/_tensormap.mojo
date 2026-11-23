@@ -237,15 +237,6 @@ struct TensorMap(DevicePassable, ImplicitlyCopyable):
         """
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Gets the type name for this tensor map.
-
-        Returns:
-            The string "TensorMap".
-        """
-        return "TensorMap"
-
     @inline(.always)
     def __init__(out self):
         """Initialize an empty TensorMap descriptor.

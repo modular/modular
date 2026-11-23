@@ -399,15 +399,6 @@ struct NullExpertLoad(ExpertLoadSink):
     ):
         pass
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"NullExpertLoad"`.
-        """
-        return "NullExpertLoad"
-
 
 struct ExpertLoadTally(ExpertLoadSink):
     """Running per-layer, per-local-expert token totals in device memory.
@@ -461,15 +452,6 @@ struct ExpertLoadTally(ExpertLoadSink):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"ExpertLoadTally"`.
-        """
-        return "ExpertLoadTally"
 
 
 @inline(.always)

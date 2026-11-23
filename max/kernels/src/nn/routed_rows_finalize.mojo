@@ -184,10 +184,6 @@ struct RoutedRowsFinalizeArgs[out_dtype: DType = DType.float32](
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "RoutedRowsFinalizeArgs"
-
 
 comptime _RED = 0
 comptime _BARS[top_k: Int] = 2 * WORK_WARPS * top_k * 4

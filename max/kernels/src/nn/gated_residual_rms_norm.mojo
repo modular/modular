@@ -250,10 +250,6 @@ struct GatedResidualArgs(DevicePassable, ImplicitlyCopyable):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "GatedResidualArgs"
-
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](

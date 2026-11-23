@@ -94,10 +94,6 @@ struct QkArgs[cache_dtype: DType, freq_dtype: DType = DType.float32](
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "QkArgs"
-
 
 @fieldwise_init
 struct GateArgs(DevicePassable, ImplicitlyCopyable):
@@ -118,10 +114,6 @@ struct GateArgs(DevicePassable, ImplicitlyCopyable):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "GateArgs"
 
 
 @always_inline

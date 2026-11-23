@@ -116,10 +116,6 @@ struct ConvIm2colParams(
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "ConvIm2colParams"
-
 
 struct MmaOpApple[
     out_type: DType,

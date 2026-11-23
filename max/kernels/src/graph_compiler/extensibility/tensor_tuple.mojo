@@ -250,15 +250,6 @@ struct TensorTuple[*Ts: AnyType](
             )
 
     @staticmethod
-    def get_type_name() -> String:
-        """Returns the host type's name, for kernel-launch diagnostics.
-
-        Returns:
-            The name `TensorTuple`.
-        """
-        return String("TensorTuple")
-
-    @staticmethod
     def _element_offset[idx: Int, *, target: CompilationTarget]() -> Int:
         """Returns the byte offset of element `idx` in `target`'s layout.
 

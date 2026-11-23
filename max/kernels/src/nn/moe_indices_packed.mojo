@@ -101,10 +101,6 @@ struct PackedIndicesArgs(DevicePassable, ImplicitlyCopyable):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "PackedIndicesArgs"
-
 
 @always_inline
 def warp_span(slots: Int, w: Int) -> Tuple[Int, Int]:

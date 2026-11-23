@@ -65,10 +65,6 @@ struct PtrPair[
     ):
         encoder.encode_fields[Self.device_type](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "PtrPair"
-
 
 def test_closure_registers_captured_buffers() raises:
     var ctx = DeviceContext()

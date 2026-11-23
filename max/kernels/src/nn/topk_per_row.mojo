@@ -126,15 +126,6 @@ struct _PerRowBound[dtype: DType](RowBound):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"_PerRowBound"`.
-        """
-        return "_PerRowBound"
-
 
 def topk_per_row_gpu[
     dtype: DType, //

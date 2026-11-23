@@ -93,16 +93,18 @@ trait DevicePassable:
     def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
-        For example, Int would return "Int", DeviceBuffer[.float32] would
-        return "DeviceBuffer[DType.float32]". This is used for error messages
-        when passing types to the device.
+
+        The default is the type's base name without its parameters, so a
+        `Foo[1]` returns "Foo". A type that wants its parameters in the name,
+        such as `DeviceBuffer[DType.float32]`, overrides it. This is used for
+        error messages when passing types to the device.
         TODO: This method will be retired soon when better kernel call error
         messages arrive.
 
         Returns:
             The host type's name.
         """
-        ...
+        return String(reflect[Self].base_name())
 
 
 trait DevicePointerLike:

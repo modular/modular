@@ -150,10 +150,6 @@ struct SsdStateParams(DevicePassable, ImplicitlyCopyable):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "SsdStateParams"
-
 
 comptime StPtr = Pointer[SsdStateParams, ImmUntrackedOrigin]
 

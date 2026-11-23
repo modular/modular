@@ -138,15 +138,6 @@ struct NoRemap(SparseIndexRemap):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"NoRemap"`.
-        """
-        return "NoRemap"
-
 
 struct PagedKVRemap[page_size: Int](SparseIndexRemap):
     """Writes each slot's physical paged-cache row, as the remap kernel would.
@@ -241,15 +232,6 @@ struct PagedKVRemap[page_size: Int](SparseIndexRemap):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"PagedKVRemap"`.
-        """
-        return "PagedKVRemap"
 
 
 @inline(.always)
@@ -425,15 +407,6 @@ struct PagedKVScaleRemap[page_size: Int, top_k: Int](SparseIndexRemap):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"PagedKVScaleRemap"`.
-        """
-        return "PagedKVScaleRemap"
 
 
 @inline(.always)

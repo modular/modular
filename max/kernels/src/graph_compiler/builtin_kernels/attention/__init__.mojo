@@ -824,15 +824,6 @@ struct _RebasedRemap[R: SparseIndexRemap](SparseIndexRemap):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"_RebasedRemap"`.
-        """
-        return "_RebasedRemap"
-
 
 @inline(.always)
 def _split_record_pointer(

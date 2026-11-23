@@ -262,10 +262,6 @@ trait InputFusion(DevicePassable, TrivialRegisterPassable):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return String(reflect[Self].name())
-
     def load[
         dtype: DType,
         rank: Int,

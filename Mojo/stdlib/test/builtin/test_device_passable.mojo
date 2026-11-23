@@ -41,10 +41,6 @@ struct ScaledInt(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
     ):
         encoder.encode(self.raw * 2, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "ScaledInt"
-
 
 # A register-passable aggregate that is NOT itself `DevicePassable` but holds a
 # `DevicePassable` member alongside a plain one.
@@ -113,10 +109,6 @@ struct DevicePassableCoordBox(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields(self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "DevicePassableCoordBox"
 
 
 # `DefaultDeviceTypeEncoder.target()` is the current (host) target, so the
@@ -522,10 +514,6 @@ struct OptionalScaledIntBox(
     ):
         encoder.encode_fields[Self.device_type](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "OptionalScaledIntBox"
-
 
 def test_optional_reg_field_encodes_payload() raises:
     var box = OptionalScaledIntBox(OptionalReg[ScaledInt](ScaledInt(5)), 9)
@@ -577,10 +565,6 @@ struct _Wrapper[T: TrivialRegisterPassable](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields(self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "_Wrapper"
 
 
 comptime _target = CompilationTarget.current()

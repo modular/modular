@@ -169,15 +169,6 @@ struct RowBoundsPtr(RowBound):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"RowBoundsPtr"`.
-        """
-        return "RowBoundsPtr"
-
 
 # ===----------------------------------------------------------------------=== #
 # Compile-time constants

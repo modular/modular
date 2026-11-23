@@ -303,15 +303,6 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Gets the type name for this descriptor.
-
-        Returns:
-            The string "TMADescriptor".
-        """
-        return "TMADescriptor"
-
     @inline(.always)
     def __init__(out self):
         """Initializes an empty TMA descriptor.

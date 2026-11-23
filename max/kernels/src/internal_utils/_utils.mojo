@@ -83,10 +83,6 @@ struct InitializationType(
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "InitializationType"
-
     def __init__(out self, value: Int):
         self._value = Int64(value)
 

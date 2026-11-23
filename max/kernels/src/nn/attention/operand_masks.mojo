@@ -132,10 +132,6 @@ struct AdditiveMask[
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "AdditiveMask"
-
-    @staticmethod
     def name() -> String:
         return "AdditiveMask"
 
@@ -318,10 +314,6 @@ struct SegmentMask[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "SegmentMask"
 
     @staticmethod
     def name() -> String:
@@ -604,10 +596,6 @@ struct RelativeLogitsMask[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "RelativeLogitsMask"
 
     @staticmethod
     def name() -> String:

@@ -48,10 +48,6 @@ struct CoordBox(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return String("CoordBox")
-
 
 # Launched single-threaded (grid=1/block=1), so the kernel writes
 # unconditionally and needs no `global_idx`.

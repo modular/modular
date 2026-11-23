@@ -40,10 +40,6 @@ struct DeviceTensorSlice(
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "DeviceTensorSlice"
-
 
 @fieldwise_init
 struct HostTensorSlice(
@@ -59,10 +55,6 @@ struct HostTensorSlice(
     ):
         encoder.encode(DeviceTensorSlice(self.ptr, self.layout), target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "HostTensorSlice"
-
 
 # Nested-closure captures whose device_type is not Self. The kernel reads each
 # capture as its host type, so host and device layouts must match.
@@ -76,10 +68,6 @@ struct HostInt(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
     ):
         encoder.encode(self.value * 2, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "HostInt"
-
 
 @fieldwise_init
 struct HostString(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
@@ -90,10 +78,6 @@ struct HostString(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode(self.value + 1, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "HostString"
 
 
 def apply_closure[

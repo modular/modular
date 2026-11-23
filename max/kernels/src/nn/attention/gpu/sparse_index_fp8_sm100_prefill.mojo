@@ -408,15 +408,6 @@ struct NoScoreHook(IndexerScoreHook):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"NoScoreHook"`.
-        """
-        return "NoScoreHook"
-
 
 # Bytes of one row one `KIND_MXF4` MMA contracts: 64 E2M1 values.
 comptime _MXF4_K_BYTES = 32

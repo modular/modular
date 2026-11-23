@@ -243,17 +243,13 @@ trait TileConsumer(DevicePassable, TrivialRegisterPassable):
 
     # Default `DevicePassable` boilerplate so conformers need not restate it:
     # the device type is the consumer itself, encoding recurses into the
-    # fields, and the name comes from reflection.
+    # fields, and the name is the `DevicePassable` default.
     comptime device_type: AnyType = Self
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return String(reflect[Self].name())
 
     def __call__[
         dtype: DType,
@@ -298,17 +294,13 @@ trait TileOperation(DevicePassable, TrivialRegisterPassable):
 
     # Default `DevicePassable` boilerplate so conformers need not restate it:
     # the device type is the op itself, encoding recurses into the fields, and
-    # the name comes from reflection.
+    # the name is the `DevicePassable` default.
     comptime device_type: AnyType = Self
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return String(reflect[Self].name())
 
     def __call__[
         dtype: DType,

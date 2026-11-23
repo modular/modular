@@ -79,15 +79,6 @@ struct NullRowScales(RowScales):
     ):
         pass
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name.
-
-        Returns:
-            Always `"NullRowScales"`.
-        """
-        return "NullRowScales"
-
 
 struct RealRowScales(RowScales):
     """Row scales read from an array of one `bfloat16` per output row."""
@@ -124,15 +115,6 @@ struct RealRowScales(RowScales):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name.
-
-        Returns:
-            Always `"RealRowScales"`.
-        """
-        return "RealRowScales"
 
 
 struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](
