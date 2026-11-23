@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # COM: `==` between `Int` parameters compares their extracted `_mlir_value`
 # COM: fields, and scalar int-like `eq` canonicalizes to `#kgen.param.identical`
@@ -18,7 +18,7 @@
 # COM: assertions, so both merge into one n-ary class when conjoined.
 
 
-def needs_equal[N: Int, K: Int]() where N == K:
+def issue1_needs_equal[N: Int, K: Int]() where N == K:
     pass
 
 
@@ -27,10 +27,10 @@ def needs_equal[N: Int, K: Int]() where N == K:
 # CHECK-LABEL: lit.fn @"transitive_split
 def transitive_split[N: Int, M: Int, K: Int]() where N == M where M == K:
     # CHECK: lit.call tail @{{.*}}needs_equal
-    needs_equal[N, K]()
+    issue1_needs_equal[N, K]()
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 def needs_equal[N: Int, K: Int]() where N == K:
@@ -45,10 +45,10 @@ def transitive_conj[N: Int, M: Int, K: Int]() where N == M and M == K:
     needs_equal[N, K]()
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
-def needs_same[A: AnyType, B: AnyType]() where A == B:
+def issue1_needs_same[A: AnyType, B: AnyType]() where A == B:
     pass
 
 
@@ -56,10 +56,10 @@ def needs_same[A: AnyType, B: AnyType]() where A == B:
 # CHECK-LABEL: lit.fn @"transitive_types
 def transitive_types[A: AnyType, B: AnyType, C: AnyType]() where A == C where B == C:
     # CHECK: lit.call tail @{{.*}}needs_same
-    needs_same[A, B]()
+    issue1_needs_same[A, B]()
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 def needs_same[A: AnyType, B: AnyType]() where A == B:
@@ -73,7 +73,7 @@ def ex_falso_int_bool[A: AnyType]() where A == Int where A == Bool:
     needs_same[A, String]()
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 def needs_zero[x: Int]() where x == 0:
@@ -88,7 +88,7 @@ def has_zero[x: Int]() where x == 0:
     needs_zero[x]()
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 def needs_fp[dtype: DType]() where dtype.is_floating_point():
@@ -103,7 +103,7 @@ def has_fp[dtype: DType]() where dtype.is_floating_point():
     needs_fp[dtype]()
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 trait HasElem:
@@ -133,7 +133,7 @@ def infer_parent_through_conjunction():
     Keyed.from_holder(IntHolder())
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 struct Boxed[n: Int]:

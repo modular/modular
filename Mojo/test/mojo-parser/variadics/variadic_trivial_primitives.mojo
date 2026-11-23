@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK-LABEL: lit.alias.decl *"T`0x": meta<!lit.struct<#Tuple <:param_list<!AnyType_Movable>
 # CHECK-SAME: [!Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int]
