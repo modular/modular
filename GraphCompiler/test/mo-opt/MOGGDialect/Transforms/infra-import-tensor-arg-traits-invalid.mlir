@@ -54,15 +54,15 @@
 // diagnostic in the same run).
 // CHECK-DAG: error: store access is not valid on a read-only Input argument
 
-// `Input & Fused & _LegacyComputeOutput` (kernel `trait_transform_on_input`)
-// -- transform access on a read-only Input.
-// CHECK-DAG: error: transform access requires an Output argument
+// `Input & Fused & _LegacyComputeOutput` (kernel `trait_legacy_compute_on_input`)
+// -- legacy_compute access on a read-only Input.
+// CHECK-DAG: error: legacy_compute access requires an Output argument
 
 // `MutableInput & Fused & _LegacyComputeOutput`
-// (kernel `trait_transform_on_mutable_input`) -- transform access on a mutable
-// input; transform requires an Output (a second "transform access requires an
-// Output argument" diagnostic in the same run).
-// CHECK-DAG: error: transform access requires an Output argument
+// (kernel `trait_legacy_compute_on_mutable_input`) -- legacy_compute access on a
+// mutable input; legacy_compute requires an Output (a second "legacy_compute
+// access requires an Output argument" diagnostic in the same run).
+// CHECK-DAG: error: legacy_compute access requires an Output argument
 
 // `Output & Fused & _LegacyComputable` (kernel `trait_computable_on_signature`)
 // -- the compute capability on a signature. The graph compiler may deliver a

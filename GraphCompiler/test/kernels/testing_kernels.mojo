@@ -1421,20 +1421,20 @@ struct TraitFusedStoreHostNegative:
         z.store[1]((0,), SIMD[type_of(z).dtype, 1](0))
 
 
-# Output-transform (compute-output) fusion: the kernel computes `x[i] + 1`.
-# In the compute form it applies the fused transform via `z.compute`, then
-# performs the final dense store itself (a compute-form operand transforms a
+# Legacy compute-output fusion: the kernel computes `x[i] + 1`.
+# In the compute form it applies the fused compute via `z.compute`, then
+# performs the final dense store itself (a compute-form operand maps a
 # computed value and leaves the parent responsible for the store).
 # `_LegacyComputable` is the sole access form; `TileTensorable` adds only the
 # dense projection used for that final store. In the store form (the graph
 # compiler downgraded a cast, reshape, or multi-store epilogue) it calls
 # `z.store`, which runs the whole epilogue. `x` is a plain dense input.
-# Device entry for the fused-transform path: one thread per element computes
-# `x[i] + 1`, applies the fused transform via `z.compute`, and stores through
-# the output-buffer projection `z.to_tile_tensor()`. `z` is the device-projected
-# transform wrapper, `ZHost.device_type`. The body assert requires ONLY
-# `_LegacyComputable & TileTensorable`.
-def _gpu_fused_transform_bias_kernel[
+# Device entry for the fused legacy compute path: one thread per element
+# computes `x[i] + 1`, applies the fused compute via `z.compute`, and stores
+# through the output-buffer projection `z.to_tile_tensor()`. `z` is the
+# device-projected compute wrapper, `ZHost.device_type`. The body assert
+# requires ONLY `_LegacyComputable & TileTensorable`.
+def _gpu_fused_legacy_compute_bias_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
@@ -1462,7 +1462,7 @@ def _gpu_fused_transform_bias_kernel[
 # Device entry for the store form of a `_LegacyComputeOutput` slot: one thread
 # per element computes `x[i] + 1` and stores it through `z.store`, which runs
 # the whole downgraded epilogue.
-def _gpu_fused_transform_bias_store_form_kernel[
+def _gpu_fused_legacy_compute_bias_store_form_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
@@ -1482,8 +1482,8 @@ def _gpu_fused_transform_bias_store_form_kernel[
     z.store[1](Coord(i), raw)
 
 
-@extensibility.register("trait_fused_transform_bias")
-struct TraitFusedTransformBias:
+@extensibility.register("trait_fused_legacy_compute_bias")
+struct TraitFusedLegacyComputeBias:
     @staticmethod
     def execute(
         # The output declares only `Output & Fused & _LegacyComputeOutput`.
@@ -1518,7 +1518,7 @@ struct TraitFusedTransformBias:
             comptime block_size = 64
             comptime if conforms_to(type_of(z), _LegacyComputable):
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_kernel[
+                    _gpu_fused_legacy_compute_bias_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1530,7 +1530,7 @@ struct TraitFusedTransformBias:
                 )
             else:
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_store_form_kernel[
+                    _gpu_fused_legacy_compute_bias_store_form_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1542,15 +1542,15 @@ struct TraitFusedTransformBias:
                 )
 
 
-# UNIFIED-closure fused-transform variant: the device kernel binds the PROJECTED
-# transform proxy (`ZHost.device_type`, access-enabled), asserts that it is
-# `_LegacyComputable & TileTensorable`, and applies the transform + final store
+# UNIFIED-closure fused legacy compute variant: the device kernel binds the
+# PROJECTED compute proxy (`ZHost.device_type`, access-enabled), asserts that it
+# is `_LegacyComputable & TileTensorable`, and applies the compute + final store
 # through a unified closure that captures that projected value. Same context
 # gate as store/load: the closure captures `device_type`, so the
 # `compute`/`to_tile_tensor` bodies' `comptime assert _access_enabled` passes; a
-# host-side transform is a compile error (see
-# `trait_fused_transform_host_negative`).
-def _gpu_fused_transform_bias_unified_closure_kernel[
+# host-side compute is a compile error (see
+# `trait_fused_legacy_compute_host_negative`).
+def _gpu_fused_legacy_compute_bias_unified_closure_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
@@ -1578,8 +1578,8 @@ def _gpu_fused_transform_bias_unified_closure_kernel[
     transform_and_store(coord, raw)
 
 
-@extensibility.register("trait_fused_transform_bias_unified_closure")
-struct TraitFusedTransformBiasUnifiedClosure:
+@extensibility.register("trait_fused_legacy_compute_bias_unified_closure")
+struct TraitFusedLegacyComputeBiasUnifiedClosure:
     @staticmethod
     def execute(
         z: Some[Output & Fused & _LegacyComputeOutput & Tensor],
@@ -1610,7 +1610,7 @@ struct TraitFusedTransformBiasUnifiedClosure:
             comptime block_size = 64
             comptime if conforms_to(type_of(z), _LegacyComputable):
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_unified_closure_kernel[
+                    _gpu_fused_legacy_compute_bias_unified_closure_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1622,7 +1622,7 @@ struct TraitFusedTransformBiasUnifiedClosure:
                 )
             else:
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_store_form_kernel[
+                    _gpu_fused_legacy_compute_bias_store_form_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1637,7 +1637,7 @@ struct TraitFusedTransformBiasUnifiedClosure:
 # A fused-output `TensorTuple` declared before a `_LegacyComputeOutput` slot,
 # so each argument's position differs from its result position. Copies `x`
 # into every tuple element through its fused store, and computes `z` as in
-# `trait_fused_transform_bias`.
+# `trait_fused_legacy_compute_bias`.
 @extensibility.register("trait_tuple_then_compute_output")
 struct TraitTupleThenComputeOutput:
     @staticmethod
@@ -1679,13 +1679,13 @@ struct TraitTupleThenComputeOutput:
             raise Error("trait_tuple_then_compute_output is CPU-only")
 
 
-# NEGATIVE control: transforms DIRECTLY on the fused-transform proxy at the host
-# entry. On a GPU device the emitted proxy is the device-passable HOST proxy
-# (`_access_enabled=False`), so the compute body's `comptime assert
+# NEGATIVE control: computes DIRECTLY on the fused legacy compute proxy at the
+# host entry. On a GPU device the emitted proxy is the device-passable HOST
+# proxy (`_access_enabled=False`), so the compute body's `comptime assert
 # _access_enabled` fails at instantiation -- must NOT compile. Exercised
-# (expecting failure) by `mogg-kernel-api-e2e-trait-fused-transform-host-negative.mlir`.
-@extensibility.register("trait_fused_transform_host_negative")
-struct TraitFusedTransformHostNegative:
+# (expecting failure) by `mogg-kernel-api-e2e-trait-fused-legacy-compute-host-negative.mlir`.
+@extensibility.register("trait_fused_legacy_compute_host_negative")
+struct TraitFusedLegacyComputeHostNegative:
     @staticmethod
     def execute(
         z: Some[Output & Fused & _LegacyComputeOutput],

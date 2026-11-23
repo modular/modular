@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Mojo source emitted once per module for the advanced-fusion MOGG-ABI lane:
-// the buffer capture and the input-load / output-store / transform fusion
+// the buffer capture and the input-load / output-store / legacy compute fusion
 // argument definitions.
 //
 //===----------------------------------------------------------------------===//
@@ -66,7 +66,7 @@ struct _MoggTensorBufferCapture[
 // `TileTensor` field would be bit-copied, so the tile is rebuilt in `__call__`.
 //
 // NOTE: this and `kOutputStoreFusionDefinitions` /
-// `kTransformFusionDefinitions` are near-identical. If a fourth fused form
+// `kLegacyComputeFusionDefinitions` are near-identical. If a fourth fused form
 // appears, generate them from a builder instead of adding another verbatim
 // block.
 static constexpr llvm::StringLiteral kInputLoadFusionDefinitions = R"mojo(
@@ -324,20 +324,20 @@ struct _MoggOutputStoreFusionTensor[
         ](idx, value)
 )mojo";
 
-// The fused output-transform (compute-output) argument. The kernel both
-// transforms and writes one output edge, so a single operand composes
+// The fused legacy compute-output argument. The kernel both computes and
+// writes one output edge, so a single operand composes
 // `_LegacyComputable` (pure value->value) and `TileTensorable` (projects the
 // output buffer for the parent's final store). The callable surfaces are gated
 // by `_access_enabled`; the device kernel refines via `downcast[...,
 // _LegacyComputable & TileTensorable]`. The buffer is a bare `Pointer` so it
 // translates to a device address.
-static constexpr llvm::StringLiteral kTransformFusionDefinitions = R"mojo(
+static constexpr llvm::StringLiteral kLegacyComputeFusionDefinitions = R"mojo(
 from layout import Coord, TensorLayout, TileTensor
 from extensibility import Fused, Output, TileTensorable, UnsafeFusedView, _LegacyComputable, _LegacyComputeOutput
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
-trait TransformFusion(TrivialRegisterPassable):
+trait LegacyComputeFusion(TrivialRegisterPassable):
     def __call__[
         dtype: DType,
         rank: Int,
@@ -352,15 +352,15 @@ trait TransformFusion(TrivialRegisterPassable):
 # The access gate is a `comptime assert Self._access_enabled` in each callable
 # body: `_access_enabled` is False on the device-passable HOST proxy and True on
 # the projected `device_type` (device_type flips it), so a direct host-side
-# transform/store is a compile error while access on the projected device value --
+# compute/store is a compile error while access on the projected device value --
 # what the closure captures after projection -- is allowed. Same context gate as
 # the store proxy.
-struct _MoggTransformFusionTensor[
+struct _MoggLegacyComputeTensor[
     _dtype: DType,
     _LayoutType: TensorLayout,
     _alignment: Int,
     _mut: Bool,
-    _TransformFusion: TransformFusion,
+    _LegacyComputeFusion: LegacyComputeFusion,
     _device_passable: Bool,
     _access_enabled: Bool,
 ](
@@ -384,16 +384,16 @@ struct _MoggTransformFusionTensor[
     comptime access_enabled = Self._access_enabled
     comptime _shape_types = Self.LayoutType._shape_types
     comptime __shape_types = Self.LayoutType.__shape_types
-    var transform_fusion: Self._TransformFusion
+    var compute_fusion: Self._LegacyComputeFusion
     var _layout: Self.LayoutType
     var handle: Pointer[Scalar[Self.dtype], UntrackedOrigin[mut = Self.mut]]
 
-    comptime device_type: AnyType = _MoggTransformFusionTensor[
+    comptime device_type: AnyType = _MoggLegacyComputeTensor[
         Self._dtype,
         Self._LayoutType,
         Self._alignment,
         Self._mut,
-        Self._TransformFusion,
+        Self._LegacyComputeFusion,
         False,
         True,
     ]
@@ -403,11 +403,11 @@ struct _MoggTransformFusionTensor[
     @inline(.always)
     def __init__(
         out self,
-        transform_fusion: Self._TransformFusion,
+        compute_fusion: Self._LegacyComputeFusion,
         layout: Self.LayoutType,
         ptr: Pointer[Scalar[Self.dtype], UntrackedOrigin[mut = Self.mut]],
     ):
-        self.transform_fusion = transform_fusion
+        self.compute_fusion = compute_fusion
         self._layout = layout
         self.handle = ptr
 
@@ -418,8 +418,8 @@ struct _MoggTransformFusionTensor[
         comptime fusion_offset = reflect[Self.device_type].field_offset[
             index=0, target=encoder.target()
         ]()
-        encoder.encode_fields[Self._TransformFusion](
-            self.transform_fusion,
+        encoder.encode_fields[Self._LegacyComputeFusion](
+            self.compute_fusion,
             target.unsafe_bitcast[UInt8]()
             .unsafe_offset(fusion_offset)
             .unsafe_bitcast[NoneType](),
@@ -445,7 +445,7 @@ struct _MoggTransformFusionTensor[
 
     @staticmethod
     def get_type_name() -> String where Self._device_passable:
-        return String("_MoggTransformFusionTensor")
+        return String("_MoggLegacyComputeTensor")
 
     @inline(.always)
     def shape(self) -> Coord[*Self._shape_types]:
@@ -466,9 +466,9 @@ struct _MoggTransformFusionTensor[
         origin = UntrackedOrigin[mut = Self.mut],
     ]:
         comptime assert Self._access_enabled, (
-            "fused transform output projection is only valid on an access-enabled"
-            " tensor (the projected device value); the device-passable host proxy"
-            " cannot be projected to a tile directly"
+            "fused legacy compute output projection is only valid on an"
+            " access-enabled tensor (the projected device value); the"
+            " device-passable host proxy cannot be projected to a tile directly"
         )
         return TileTensor[
             dtype = Self.dtype,
@@ -484,11 +484,11 @@ struct _MoggTransformFusionTensor[
         Self.dtype, width
     ]:
         comptime assert Self._access_enabled, (
-            "fused transform is only valid on an access-enabled tensor (the"
-            " projected device value); the device-passable host proxy cannot be"
-            " transformed directly"
+            "fused legacy compute is only valid on an access-enabled tensor"
+            " (the projected device value); the device-passable host proxy"
+            " cannot compute directly"
         )
-        return self.transform_fusion.__call__[
+        return self.compute_fusion.__call__[
             Self.dtype, Self.rank, width, element_alignment
         ](idx, value)
 )mojo";

@@ -167,10 +167,10 @@ struct TraitLoadOnOutput:
         pass
 
 
-# Transform access on a read-only Input: `Input & Fused & _LegacyComputeOutput`
-# -- transform requires an Output.
-@extensibility.register("trait_transform_on_input")
-struct TraitTransformOnInput:
+# Legacy compute access on a read-only Input: `Input & Fused &
+# _LegacyComputeOutput` -- legacy compute requires an Output.
+@extensibility.register("trait_legacy_compute_on_input")
+struct TraitLegacyComputeOnInput:
     @staticmethod
     def execute(
         z: Some[Input & Fused & _LegacyComputeOutput], ctx: DeviceContext
@@ -178,11 +178,11 @@ struct TraitTransformOnInput:
         pass
 
 
-# Transform access on a MutableInput: `MutableInput & Fused &
-# _LegacyComputeOutput` -- transform requires an Output, so a mutable input is
-# also rejected.
-@extensibility.register("trait_transform_on_mutable_input")
-struct TraitTransformOnMutableInput:
+# Legacy compute access on a MutableInput: `MutableInput & Fused &
+# _LegacyComputeOutput` -- legacy compute requires an Output, so a mutable
+# input is also rejected.
+@extensibility.register("trait_legacy_compute_on_mutable_input")
+struct TraitLegacyComputeOnMutableInput:
     @staticmethod
     def execute(
         z: Some[MutableInput & Fused & _LegacyComputeOutput],

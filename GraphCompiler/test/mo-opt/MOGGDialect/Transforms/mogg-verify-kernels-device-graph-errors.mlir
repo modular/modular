@@ -21,6 +21,6 @@
 // CHECK-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 1 of the execute function)
 // CHECK-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 1 of the execute function)
 // CHECK-DAG: error: the output at position 0 is trait #mogg.tensor_arg<{role = output, fused = true, access = store, capabilities = none}> on execute but trait #mogg.tensor_arg<{role = output, fused = false, access = none, capabilities = none}> on build_graph; build_graph takes the same arguments as execute, with the DeviceContext replaced by a DeviceGraphBuilder
-// CHECK-DAG: error: the output at position 0 is trait #mogg.tensor_arg<{role = output, fused = true, access = transform, capabilities = none}> on execute but trait #mogg.tensor_arg<{role = output, fused = true, access = store, capabilities = none}> on build_graph; build_graph takes the same arguments as execute, with the DeviceContext replaced by a DeviceGraphBuilder
+// CHECK-DAG: error: the output at position 0 is trait #mogg.tensor_arg<{role = output, fused = true, access = legacy_compute, capabilities = none}> on execute but trait #mogg.tensor_arg<{role = output, fused = true, access = store, capabilities = none}> on build_graph; build_graph takes the same arguments as execute, with the DeviceContext replaced by a DeviceGraphBuilder
 
 module {}

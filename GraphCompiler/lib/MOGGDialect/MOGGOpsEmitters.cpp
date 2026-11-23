@@ -2648,8 +2648,9 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   // build one, which it marks by yielding. Otherwise (a cast, reshape, or
   // multi-store epilogue) the slot is downgraded to a store fusion.
   bool isComputeOutputSlot =
-      getContract() && bitEnumContainsAny(getContract()->getAccess(),
-                                          MOGG::TensorArgAccessKind::transform);
+      getContract() &&
+      bitEnumContainsAny(getContract()->getAccess(),
+                         MOGG::TensorArgAccessKind::legacy_compute);
 
   // A trait-ABI fused output (`Some[Output & Fused & StoreAccess]`, `$contract`
   // stamped at MAP lowering), or a downgraded compute-output slot, wants the
@@ -2667,20 +2668,20 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   };
 
   // A compute-output slot that got a compute lambda wants the functor in the
-  // inline `TransformFusion` shape (Coord `__call__` RETURNING the transformed
-  // value) wrapped in `_MoggTransformFusionTensor`, which also holds the real
+  // inline `LegacyComputeFusion` shape (Coord `__call__` RETURNING the computed
+  // value) wrapped in `_MoggLegacyComputeTensor`, which also holds the real
   // output buffer for the kernel's own store.
-  bool wrapTransform = isComputeOutputSlot && isCompute;
-  if (!wrapStore && !wrapTransform)
+  bool wrapLegacyCompute = isComputeOutputSlot && isCompute;
+  if (!wrapStore && !wrapLegacyCompute)
     return emitOpError("expected a fused trait argument contract");
-  const FusionLambdaInfo traitTransformLane = {
-      /*structName=*/"TransformFunctor",
-      /*traitName=*/"TransformFusion",
+  const FusionLambdaInfo traitLegacyComputeLane = {
+      /*structName=*/"LegacyComputeFunctor",
+      /*traitName=*/"LegacyComputeFusion",
       /*methodName=*/"__call__",
       /*takesValue=*/true,
   };
-  if (wrapTransform)
-    state.declare(kTransformFusionDefinitions);
+  if (wrapLegacyCompute)
+    state.declare(kLegacyComputeFusionDefinitions);
 
   // Inner-dynamic store-index reshapes carry their runtime from/to shapes as
   // trailing shape captures: each `!mogg.shape` Coord is passed whole, and
@@ -2697,16 +2698,16 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
 
   FailureOr<MojoValue> functorOr = emitMapFusionFunctor(
       state, getBody(), captureInfos,
-      wrapTransform ? traitTransformLane : traitStoreLane, inputDtypeParam,
-      shapeCaptureTypes, shapeCaptureArgs);
+      wrapLegacyCompute ? traitLegacyComputeLane : traitStoreLane,
+      inputDtypeParam, shapeCaptureTypes, shapeCaptureArgs);
   if (failed(functorOr))
     return failure();
   MojoValue functorInstance = *functorOr;
 
-  if (wrapTransform) {
-    // Wrap the transform functor in `_MoggTransformFusionTensor`, which also
+  if (wrapLegacyCompute) {
+    // Wrap the compute functor in `_MoggLegacyComputeTensor`, which also
     // holds the real output buffer (`$outputPtr`): the wrapper stores the
-    // transformed value through it. Sourced from this op's own device/shape.
+    // computed value through it. Sourced from this op's own device/shape.
     StringRef deviceLabel = getDevice();
     bool devicePassable = deviceLabel != kCPULabel;
     MojoValue alignmentParam(static_cast<uint64_t>(
@@ -2725,7 +2726,7 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
         llvm::formatv("{0}.unsafe_origin_cast[MutUntrackedOrigin]()",
                       ManagedTensorSliceRef(baseSlice).unsafePtr().text)
             .str());
-    MojoValue wrapper = kStructMoggTransformFusionTensor[{
+    MojoValue wrapper = kStructMoggLegacyComputeTensor[{
         dtypeParam, kFnTypeOf({layoutVar}), alignmentParam, true,
         kFnTypeOf({functorInstance}), devicePassable, !devicePassable}](
         {functorInstance, layoutVar, basePtr});

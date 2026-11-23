@@ -71,7 +71,7 @@ enum class TensorArgAccess {
   none,
   load,
   store,
-  transform,
+  legacyCompute,
   legacyTileStore,
   legacyTileTransform,
 };
@@ -89,7 +89,7 @@ inline unsigned bit(TensorArgAccess access) {
     return 1u << 0;
   case TensorArgAccess::store:
     return 1u << 1;
-  case TensorArgAccess::transform:
+  case TensorArgAccess::legacyCompute:
     return 1u << 2;
   case TensorArgAccess::legacyTileStore:
     return 1u << 3;
@@ -130,7 +130,7 @@ struct TensorArgContract {
     assert(accessCount() == 1 && "soleAccess requires exactly one access form");
     for (TensorArgAccess a :
          {TensorArgAccess::load, TensorArgAccess::store,
-          TensorArgAccess::transform, TensorArgAccess::legacyTileStore,
+          TensorArgAccess::legacyCompute, TensorArgAccess::legacyTileStore,
           TensorArgAccess::legacyTileTransform})
       if (hasAccess(a))
         return a;

@@ -247,8 +247,8 @@ constexpr MojoStaticValue kStructTileCopier = "layout.tile_io.TileCopier";
 constexpr MojoStaticValue kStructTileLayout = "layout.MixedLayout";
 constexpr MojoStaticValue kStructMoggOutputStoreFusionTensor =
     "_MoggOutputStoreFusionTensor";
-constexpr MojoStaticValue kStructMoggTransformFusionTensor =
-    "_MoggTransformFusionTensor";
+constexpr MojoStaticValue kStructMoggLegacyComputeTensor =
+    "_MoggLegacyComputeTensor";
 constexpr MojoStaticValue kStructMoggInputLoadFusionTensor =
     "_MoggInputLoadFusionTensor";
 constexpr MojoStaticValue kStructStateContext =

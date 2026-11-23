@@ -105,7 +105,7 @@ trait UnsafeFusedView(Fused, TrivialRegisterPassable):
 
     - `TraitFusedLoadNegate` (`_gpu_fused_load_negate_kernel`).
     - `TraitFusedStoreDouble` (`_gpu_fused_store_double_kernel`).
-    - `TraitFusedTransformBias` (`_gpu_fused_transform_bias_kernel`).
+    - `TraitFusedLegacyComputeBias` (`_gpu_fused_legacy_compute_bias_kernel`).
 
     `FusedViewType` is the trait's contract field -- the access-enabled
     view the rebind returns. It is `Self.device_type` on every conformer
@@ -362,7 +362,7 @@ trait TileTensorable(Tensor):
     Adds the layout type, preferred alignment, and engine on top of `Tensor`.
     Lets the kernel work on a non-fused argument directly as a `TileTensor`
     (via `to_tile_tensor`) instead of going through the fused
-    load/store/transform access. Bind it in the signature when the kernel
+    load/store/compute access. Bind it in the signature when the kernel
     projects the argument on every target it supports, or refine to it in the
     body with `conforms_to` when that varies by target.
 

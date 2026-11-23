@@ -485,11 +485,11 @@ classifyEpilogueLambdaKind(IterEpilogueOp epilogueOp, MAPToMOGGState &state) {
       return *lane == MOGG::LegacyTileLane::compute ? Kind::ComputeTile
                                                     : Kind::OutputTile;
 
-  // Only a `_LegacyComputeOutput` slot (contract access `transform`) may take
-  // a compute lambda.
+  // Only a `_LegacyComputeOutput` slot (contract access `legacy_compute`) may
+  // take a compute lambda.
   bool isComputeOutputSlot =
       tensorArg->traitContract &&
-      tensorArg->traitContract->hasAccess(MOGG::TensorArgAccess::transform);
+      tensorArg->traitContract->hasAccess(MOGG::TensorArgAccess::legacyCompute);
   if (!isComputeOutputSlot)
     return Kind::Output;
 

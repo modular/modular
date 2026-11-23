@@ -105,7 +105,7 @@ def MOGG_TensorArgContractAttr : MOGGAttr<"TensorArgContract", "tensor_arg"> {
       - `role`         : `input` / `output` / `mutable_input`. An argument is
                          mutable iff its role is not `input`.
       - `fused`        : whether the operand is functor-backed.
-      - `access`       : set of `load` / `store` / `transform` (`none` if
+      - `access`       : set of `load` / `store` / `legacy_compute` (`none` if
                          empty). A non-fused dense argument may carry several
                          (e.g. `load|store`); a fused argument exactly one.
       - `capabilities` : the subset of `access` that required the callable

@@ -277,7 +277,7 @@ enum class TraitCategory {
   storage,
   /// An access-form marker (`LoadAccess` / `StoreAccess`), or the
   /// `_LegacyComputeOutput` slot. The row's `access` payload names the form it
-  /// contributes. Unlike the markers, the slot's `transform` form doesn't
+  /// contributes. Unlike the markers, the slot's `legacy_compute` form doesn't
   /// promise its capability: the slot may be delivered as a store fusion.
   accessMarker,
   /// An access-form callable capability (`Loadable` / `Storable` /
@@ -357,9 +357,9 @@ constexpr VocabEntry kTensorArgVocab[] = {
     {"StoreAccess", TraitCategory::accessMarker, TensorArgAccess::store},
     {"Storable", TraitCategory::accessCapability, TensorArgAccess::store},
     {"_LegacyComputeOutput", TraitCategory::accessMarker,
-     TensorArgAccess::transform},
+     TensorArgAccess::legacyCompute},
     {"_LegacyComputable", TraitCategory::accessCapability,
-     TensorArgAccess::transform},
+     TensorArgAccess::legacyCompute},
     // TODO(GEX-4340): the interim legacy tile traits; remove with GEX-4467.
     {"_LegacyTileStoreAccess", TraitCategory::accessMarker,
      TensorArgAccess::legacyTileStore},
@@ -953,7 +953,7 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
   // allowed on a non-fused arg, so each is checked independently:
   //   * `load`      invalid on Output.
   //   * `store`     invalid on a read-only Input.
-  //   * `transform` requires Output.
+  //   * `legacy_compute` requires Output.
   // (So `load & store` together implies a MutableInput.)
   if (contract.hasAccess(TensorArgAccess::load) &&
       contract.role == TensorArgRole::output) {
@@ -965,22 +965,22 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
     emitError("store access is not valid on a read-only Input argument");
     return mlir::failure();
   }
-  if (contract.hasAccess(TensorArgAccess::transform) &&
+  if (contract.hasAccess(TensorArgAccess::legacyCompute) &&
       contract.role != TensorArgRole::output) {
-    emitError("transform access requires an Output argument");
+    emitError("legacy_compute access requires an Output argument");
     return mlir::failure();
   }
 
   // The graph compiler may deliver a `_LegacyComputeOutput` slot as a store
   // fusion, so a signature can't demand the compute capability up front.
-  if (contract.hasCapability(TensorArgAccess::transform)) {
+  if (contract.hasCapability(TensorArgAccess::legacyCompute)) {
     emitError("declare _LegacyComputeOutput on the kernel signature and "
               "refine to _LegacyComputable in the body; the graph compiler "
               "may deliver a store fusion instead");
     return mlir::failure();
   }
   // The store-fusion wrapper doesn't conform to `TileTensorable`.
-  if (contract.hasAccess(TensorArgAccess::transform) &&
+  if (contract.hasAccess(TensorArgAccess::legacyCompute) &&
       isPresentLeaf(kTileTensorableLeaf)) {
     emitError("a _LegacyComputeOutput argument cannot require TileTensorable "
               "on the kernel signature; refine in the body, since the graph "
@@ -1114,8 +1114,8 @@ StringRef toString(TensorArgAccess access) {
     return "load";
   case TensorArgAccess::store:
     return "store";
-  case TensorArgAccess::transform:
-    return "transform";
+  case TensorArgAccess::legacyCompute:
+    return "legacy_compute";
   case TensorArgAccess::legacyTileStore:
     return "legacy_tile_store";
   case TensorArgAccess::legacyTileTransform:

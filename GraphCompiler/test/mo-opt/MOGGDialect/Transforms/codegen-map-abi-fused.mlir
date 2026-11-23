@@ -158,14 +158,14 @@ mo.graph @real_kernel_fused_dynamic(%a: !mo.tensor<[batch, 2], f32>, %b: !mo.ten
 // CHECK-NEXT:         var [[SUM:.*]] = testing_kernels.testing_kernels.AddElementwise.elementwise[dtype = DType.float32]([[REBOUND2]], [[LOADED]])
 // CHECK-NEXT:         {{.*}}simd_store_into_tensor_pointer[static_spec = Self.[[SPEC0]], simd_width = simd_width, element_alignment = element_alignment](self.{{.*}}, self.{{.*}}, self.{{.*}}, {{.*}}, rebind[SIMD[{{.*}}, simd_width]]([[SUM]]))
 
-// A kernel declaring `_LegacyComputeOutput` gets a TRANSFORM functor: it
-// conforms to `TransformFusion`, its `__call__` RETURNS the transformed value
-// rather than storing it, and a `_MoggTransformFusionTensor` wraps it. The
+// A kernel declaring `_LegacyComputeOutput` gets a LEGACY COMPUTE functor: it
+// conforms to `LegacyComputeFusion`, its `__call__` RETURNS the computed value
+// rather than storing it, and a `_MoggLegacyComputeTensor` wraps it. The
 // primary kernel performs the one store. All `def ..._mogg(...)` functions are
 // emitted before any struct definitions, so these three land in different
 // sections; match them order-independently.
-// COMPUTE-DAG: _MoggTransformFusionTensor[
-// COMPUTE-DAG: struct TransformFunctor{{[0-9_]*}}[{{.*}}](TransformFusion, TrivialRegisterPassable):
+// COMPUTE-DAG: _MoggLegacyComputeTensor[
+// COMPUTE-DAG: struct LegacyComputeFunctor{{[0-9_]*}}[{{.*}}](LegacyComputeFusion, TrivialRegisterPassable):
 // COMPUTE-DAG: def __call__[{{.*}}](self, idx: {{.*}}, value: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
 
 mo.graph @compute_lambda(%a: !mo.tensor<[2, 2], f32>, %b: !mo.tensor<[2, 2], f32>, %bias: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {

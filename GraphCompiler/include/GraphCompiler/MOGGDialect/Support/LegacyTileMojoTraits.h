@@ -32,11 +32,11 @@ inline constexpr llvm::StringLiteral
         "_MoggLegacyTileTransformFusionTensor";
 
 // The tile versions of `_MoggOutputStoreFusionTensor` and
-// `_MoggTransformFusionTensor` (MojoTraits.h). Each one holds the emitted tile
+// `_MoggLegacyComputeTensor` (MojoTraits.h). Each one holds the emitted tile
 // fusion struct and forwards `store` or `compute` to it. As in MojoTraits.h,
 // `_access_enabled` stops these calls on the GPU host value.
 //
-// The transform wrapper also holds the output buffer. `to_tile_tensor` works
+// The compute wrapper also holds the output buffer. `to_tile_tensor` works
 // on the host too, because the kernel gets the buffer there to pass it to the
 // launch.
 static constexpr llvm::StringLiteral kLegacyTileFusionDefs = R"mojo(
