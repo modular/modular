@@ -243,8 +243,8 @@ def exp_sleef[
 def _exp_taylor0[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    comptime coefficients: List[Scalar[dtype]] = [
-        1.0,
+    comptime coefficients = [
+        Scalar[dtype](1.0),
         1.0,
         0.5,
         0.16666666666666666667,
@@ -313,8 +313,8 @@ def exp_mojo_opt2[
 def _exp_taylor3[
     dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    comptime coefficients: List[Scalar[dtype]] = [
-        0.5,
+    comptime coefficients = [
+        Scalar[dtype](0.5),
         0.16666666666666666667,
         0.041666666666666666667,
         0.0083333333333333333333,
