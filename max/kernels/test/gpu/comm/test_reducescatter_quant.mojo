@@ -177,6 +177,7 @@ def run_shapes[
     run_case[ngpus, quant_bits, False](list_of_ctx, 4 * ngpus * 16, 6144)
     run_case[ngpus, quant_bits, True](list_of_ctx, 4 * ngpus * 16 + 3, 6144)
     run_case[ngpus, quant_bits, True](list_of_ctx, 2 * ngpus * 600 + 1, 256)
+    run_case[ngpus, quant_bits, True](list_of_ctx, 2048 * ngpus + 5, 256)
     run_case[ngpus, quant_bits, False](list_of_ctx, ngpus - 1, 64)
 
 
