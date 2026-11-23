@@ -7602,6 +7602,7 @@ def mla_decode_graph(
     dcp_size: int = 1,
     dcp_interleave: int = 1,
     dcp_rank: TensorValue | int = 0,
+    nope_inputs: bool = False,
 ) -> TensorValue:
     """A manually fused kernel that performs the following operations.
 
@@ -7695,6 +7696,14 @@ def mla_decode_graph(
             rank's turn: 1 stripes tokens, the page size stripes pages.
         dcp_rank: This device's rank in the group, as a Python int or an
             ``int32`` scalar on the host.
+        nope_inputs: Whether ``q`` and ``kv`` come without rope columns, for
+            a model without rope whose latent cache keeps the kernel's
+            ``kv_lora_rank + qk_rope_head_dim`` geometry: ``q`` is
+            ``[total_seq_len, num_heads, qk_nope_head_dim]`` and ``kv`` is
+            ``[num_tokens, kv_lora_rank]``. The kernel takes both rope parts
+            as the zeros that zero-padding the inputs would put there, so
+            the caller pads neither. Requires the BF16 sparse op: no
+            ``quant_config``, ``sparse_indices`` set and no NVFP4 cache.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -7736,6 +7745,25 @@ def mla_decode_graph(
     input_values.append(scalar_args)
 
     sparse = sparse_indices is not None
+    if nope_inputs:
+        if (
+            quant_config is not None
+            or not sparse
+            or kv_params.is_nvfp4_kv_cache
+        ):
+            raise ValueError(
+                "nope_inputs requires the BF16 sparse MLA decode op: no"
+                " quant_config, sparse_indices set and no NVFP4 cache."
+            )
+        if kv.shape[1] != kv_norm_gamma.shape[0] or q.shape[2] != w_uk.shape[2]:
+            raise ValueError(
+                "nope_inputs takes q as [total_seq_len, num_heads,"
+                " qk_nope_head_dim] and kv as [num_tokens, kv_lora_rank], got"
+                f" q {q.shape}, kv {kv.shape}, w_uk {w_uk.shape} and"
+                f" kv_norm_gamma {kv_norm_gamma.shape}."
+            )
+        # Emitted only when set, so every other caller's op is unchanged.
+        parameters["nope_inputs"] = True
     if index_share and physical_indices is not False:
         raise ValueError(
             "index_share masks by logical key position, so it requires"

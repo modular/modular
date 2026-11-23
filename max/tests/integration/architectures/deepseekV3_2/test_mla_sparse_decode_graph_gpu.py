@@ -20,6 +20,10 @@ build the sparse ``mla_decode_graph`` graph only (no execution).
 layout masks the ``-1`` padding inside the scan, including for a reused row.
 ``test_mla_graph_sparse_plain_topk_selection_lag`` checks the same for a
 reused plain top-k row, through the decode and the combined op.
+``test_mla_decode_graph_sparse_bf16_nope_inputs_match_padded`` checks that
+unpadded inputs with ``nope_inputs`` match zero-padded ones bit for bit, and
+``test_mla_decode_graph_sparse_bf16_nope_inputs_poisoned_scratch`` reruns it
+with every device allocation NaN-filled.
 ``test_mla_decode_graph_sparse_bf16_gfx950_matches_dense`` checks the gfx950
 BF16 sparse arm, which reads the selected rows in place, against dense
 attention, and
@@ -1365,6 +1369,232 @@ def test_mla_graph_sparse_plain_topk_selection_lag(
     assert not np.array_equal(h.run(plain, stale, h.width), want)
 
 
+@dataclasses.dataclass
+class _NopeInputsHarness:
+    """One sparse MLA decode graph over zero-padded inputs, one over unpadded
+    inputs with ``nope_inputs``, sharing weights."""
+
+    padded: Model
+    nope: Model
+    run: Callable[..., tuple[np.ndarray, np.ndarray]]
+
+
+@functools.cache
+def _nope_inputs_harness() -> _NopeInputsHarness:
+    # GLM-5.3-Flash's per-rank geometry at TP4: a 512-wide latent and 256
+    # query columns a head, no rope, in the kernels' 576-wide cache.
+    num_heads = 16
+    hidden_size = 1024
+    q_lora_rank = 256
+    kv_lora_rank = 512
+    qk_nope_head_dim = 256
+    rope_pad = 64
+    v_head_dim = 256
+    page_size = 128
+    width = 256
+    cache_head_dim = kv_lora_rank + rope_pad
+
+    kv_params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=cache_head_dim,
+        num_layers=1,
+        page_size=page_size,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+    )
+
+    def make_layers() -> tuple[
+        DeepseekYarnRotaryEmbedding, LatentAttentionWithRope
+    ]:
+        # Fresh layers per graph: weight values bind to the first graph. The
+        # rope table multiplies only zeros here; its signs set their bits.
+        rope = make_deepseek_rope(num_heads, 4096)
+        attn = LatentAttentionWithRope(
+            rope=rope,
+            num_attention_heads=num_heads,
+            num_key_value_heads=1,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            dtype=DType.bfloat16,
+            devices=[DeviceRef.GPU()],
+            graph_mode="auto",
+            q_lora_rank=q_lora_rank,
+            kv_lora_rank=kv_lora_rank,
+            qk_nope_head_dim=qk_nope_head_dim,
+            qk_rope_head_dim=rope_pad,
+            v_head_dim=v_head_dim,
+            buffer_size=4096,
+        )
+        _ = attn.state_dict()
+        return rope, attn
+
+    gpu = DeviceRef.GPU()
+
+    def construct(nope_inputs: bool) -> Graph:
+        pad = 0 if nope_inputs else rope_pad
+        input_types = [
+            TensorType(
+                DType.bfloat16,
+                ["total_tokens", num_heads, qk_nope_head_dim + pad],
+                gpu,
+            ),
+            TensorType(
+                DType.bfloat16, ["total_tokens", kv_lora_rank + pad], gpu
+            ),
+            TensorType(DType.uint32, ["row_offsets_len"], gpu),
+            TensorType(DType.int32, ["total_tokens", width], gpu),
+            TensorType(DType.int32, ["batch"], gpu),
+            *tree.leaves(kv_params.get_symbolic_inputs()[0]),
+        ]
+        name = "nope_inputs" if nope_inputs else "padded"
+        with Graph(name, input_types=input_types) as g:
+            q, kv, input_row_offsets, sparse_indices, topk_lengths = (
+                x.tensor for x in g.inputs[:5]
+            )
+            kv_collection = paged_kv_from_flat_graph_inputs(
+                kv_params, list(g.inputs[5:])
+            )
+            assert kv_collection.attention_dispatch_metadata is not None
+            assert kv_collection.mla_num_partitions is not None
+            rope, attn = make_layers()
+            out = mla_decode_graph(
+                q,
+                kv,
+                input_row_offsets,
+                ops.cast(rope.freqs_cis, q.dtype).to(q.device),
+                attn.kv_a_proj_layernorm,
+                attn.w_uk,
+                attn.w_uv,
+                kv_params=kv_params,
+                kv_collection=kv_collection,
+                layer_idx=ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=attn.scale,
+                epsilon=1e-6,
+                v_head_dim=v_head_dim,
+                scalar_args=kv_collection.attention_dispatch_metadata,
+                num_partitions_scalar=kv_collection.mla_num_partitions,
+                sparse_indices=sparse_indices,
+                physical_indices=False,
+                sparse_topk_lengths=topk_lengths,
+                sparse_indices_stride=width,
+                nope_inputs=nope_inputs,
+            )
+            g.output(out)
+        return g
+
+    device = Accelerator(0)
+    session = InferenceSession(devices=[Accelerator()])
+    weights = random_weights(make_layers()[1])
+    padded = session.load(construct(False), weights_registry=weights)
+    nope = session.load(construct(True), weights_registry=weights)
+
+    def run(
+        model: Model, seq_lens: Sequence[int], cache_lens: Sequence[int]
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Returns the output's and the cache's bits after one decode step.
+
+        Every input is seeded by the batch shape, so both models see the same
+        query, latent, cache and selection; the padded model gets zeros in
+        the rope columns.
+        """
+        gen = torch.Generator().manual_seed(
+            sum(seq_lens) * 7919 + sum(cache_lens) + len(seq_lens)
+        )
+        kv_inputs = paged_kv_cache_inputs(
+            kv_params, list(seq_lens), cache_lengths=list(cache_lens)
+        )
+        blocks = (
+            torch.randn(tuple(kv_inputs.kv_blocks.shape), generator=gen) * 0.5
+        ).to(torch.bfloat16)
+        kv_inputs = dataclasses.replace(
+            kv_inputs, kv_blocks=Buffer.from_dlpack(blocks).to(device)
+        )
+        total = sum(seq_lens)
+        q = (
+            torch.randn((total, num_heads, qk_nope_head_dim), generator=gen)
+            * 0.1
+        ).to(torch.bfloat16)
+        kv = (torch.randn((total, kv_lora_rank), generator=gen) * 0.1).to(
+            torch.bfloat16
+        )
+        if model is padded:
+            q = torch.cat(
+                [q, torch.zeros((total, num_heads, rope_pad), dtype=q.dtype)],
+                dim=-1,
+            )
+            kv = torch.cat(
+                [kv, torch.zeros((total, rope_pad), dtype=kv.dtype)], dim=-1
+            )
+        indices = np.full((total, width), -1, dtype=np.int32)
+        lengths = np.zeros(len(seq_lens), dtype=np.int32)
+        row = 0
+        for b, (n, c) in enumerate(zip(seq_lens, cache_lens, strict=True)):
+            valid = min(width, c + 1)
+            lengths[b] = valid
+            for _ in range(n):
+                picks = torch.randperm(c + 1, generator=gen)[:valid]
+                indices[row, :valid] = picks.numpy()
+                row += 1
+        offsets = np.concatenate([[0], np.cumsum(seq_lens)]).astype(np.uint32)
+        out = model.execute(
+            Buffer.from_dlpack(q).to(device),
+            Buffer.from_dlpack(kv).to(device),
+            Buffer.from_numpy(offsets).to(device),
+            Buffer.from_numpy(indices).to(device),
+            Buffer.from_numpy(lengths).to(device),
+            *tree.leaves(kv_inputs),
+        )[0]
+        out_bits = from_dlpack(out).cpu().view(torch.int16).numpy()
+        cache_bits = (
+            from_dlpack(kv_inputs.kv_blocks).cpu().view(torch.int16).numpy()
+        )
+        return out_bits, cache_bits
+
+    return _NopeInputsHarness(padded, nope, run)
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip",
+    reason="Sparse MLA decode graph is only wired for NVIDIA GPUs.",
+)
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="Sparse MLA decode kernel is SM100-class (B100/B200); skip elsewhere.",
+)
+@pytest.mark.parametrize(
+    "seq_lens, cache_lens",
+    [
+        # One row.
+        ([1], [300]),
+        # A prime row count in one request.
+        ([7], [129]),
+        # Ragged requests, one of them with an empty cache.
+        ([3, 1, 5, 2], [0, 37, 260, 1000]),
+        # The largest decode batch: 32 requests of 6 rows (an MTP 5 verify).
+        ([6] * 32, [64 * i + 11 for i in range(32)]),
+    ],
+)
+def test_mla_decode_graph_sparse_bf16_nope_inputs_match_padded(
+    seq_lens: list[int], cache_lens: list[int]
+) -> None:
+    """``nope_inputs`` matches zero-padded inputs bit for bit.
+
+    A model without rope whose latent cache keeps the kernels' rope geometry
+    either zero-pads its query and latent or passes them unpadded with
+    ``nope_inputs``, and the op then rotates the zeros itself. The output and
+    every cache row the step stores, rope columns included (a rotated zero
+    keeps the sign its rope coefficients give it), must be the same bits.
+    """
+    h = _nope_inputs_harness()
+    want_out, want_cache = h.run(h.padded, seq_lens, cache_lens)
+    got_out, got_cache = h.run(h.nope, seq_lens, cache_lens)
+    # The stored rope columns hold negative zeros, so the sign check can fail.
+    assert (want_cache == np.int16(-0x8000)).any()
+    assert np.array_equal(got_out, want_out)
+    assert np.array_equal(got_cache, want_cache)
+
+
 _GFX950_SPARSE_WIDTH = 320
 
 
@@ -1719,6 +1949,66 @@ def test_mla_decode_graph_sparse_bf16_gfx950_poisoned_scratch() -> None:
     assert re.search(rf"\b{_POISONED_CHILD_CASES} passed\b", result.stdout), (
         result.stdout
     )
+
+
+# The child's cases: every `nope_inputs_match_padded` shape.
+_NOPE_POISONED_CHILD_CASES = 4
+
+
+@pytest.mark.compile_on_gpu(
+    "Compiles nothing itself; its child pytest replays the recorded cases"
+)
+@pytest.mark.skipif(
+    accelerator_api() == "hip",
+    reason="Sparse MLA decode graph is only wired for NVIDIA GPUs.",
+)
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="Sparse MLA decode kernel is SM100-class (B100/B200); skip elsewhere.",
+)
+@pytest.mark.skipif(
+    os.environ.get(_POISON_ENV) == "poison-all",
+    reason="Already running under the poisoned allocator.",
+)
+def test_mla_decode_graph_sparse_bf16_nope_inputs_poisoned_scratch() -> None:
+    """``nope_inputs`` matches the padded inputs when allocations start NaN.
+
+    The rope columns of the op's staged query are only multiplied by the
+    cache's zero rope columns, so a finite value left there changes nothing:
+    a kernel that skips writing them passes on fresh, usually zeroed memory.
+    ``poison-all`` fills each allocation with 0xFF, a BF16 NaN, which turns
+    such an output NaN. The allocator reads the setting when the device is
+    created, hence the child process.
+    """
+    replay = (
+        ["-p", "precompile_mefs_plugin"]
+        if os.environ.get("PRECOMPILE_MEFS_MODE") == "replay"
+        else []
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            __file__,
+            "-q",
+            "--tb=line",
+            "-p",
+            "no:cacheprovider",
+            *replay,
+            "-k",
+            "bf16_nope_inputs_match_padded",
+        ],
+        env=os.environ | {_POISON_ENV: "poison-all"},
+        capture_output=True,
+        text=True,
+        timeout=_POISONED_CHILD_TIMEOUT_S,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    # A child that skipped or deselected cases would exit 0 too.
+    assert re.search(
+        rf"\b{_NOPE_POISONED_CHILD_CASES} passed\b", result.stdout
+    ), result.stdout
 
 
 @pytest.mark.skipif(

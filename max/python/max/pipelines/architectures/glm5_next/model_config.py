@@ -233,7 +233,8 @@ class Glm5NextConfig(
 
     mla_latent_pad_to: int = 576
     """Latent width the MLA kernels compile against; the 512-wide NoPE latent
-    is zero-padded to it on the way in."""
+    is zero-padded to it on the way in, or on SM100 read as padded by the
+    kernel itself."""
 
     swiglu_limit: float = 10.0
     """Clamp applied before the activation in every MLP and expert."""

@@ -16,7 +16,9 @@ GLM-5.2's block with two changes:
 
 * **NoPE.** The latent is 512 wide, but every MLA kernel compiles against 576,
   so the query and the latent are zero-padded to that geometry on the way into
-  the kernel. That is exact: the padded columns are zero in both operands.
+  the kernel. That is exact: the padded columns are zero in both operands. On
+  SM100 the kernel takes those zeros itself (``nope_inputs``), so neither pad
+  runs as a launch of its own.
 * **k-pooled indexing.** :class:`~.indexer.PooledIndexer` selects 2051 token
   positions per query, which the kernel reads as logical positions with the
   k-pool layout.
@@ -31,6 +33,7 @@ from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
+from max.nn._graph_ops import _is_sm10x_gpu
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -193,8 +196,15 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
 
         xq = quant_ops.matmul(q_a_normed, self.q_b_proj)
         xq = xq.reshape((xq.shape[0], self.n_heads, self.qk_head_dim))
-        xq = _zero_pad_last(xq, self.latent_pad)
-        kv = _zero_pad_last(kv, self.latent_pad)
+        # On SM100 the kernel reads the pad columns as zeros itself.
+        nope_inputs = (
+            self.latent_pad > 0
+            and not any(device.is_host for device in x.mesh.devices)
+            and _is_sm10x_gpu()
+        )
+        if not nope_inputs:
+            xq = _zero_pad_last(xq, self.latent_pad)
+            kv = _zero_pad_last(kv, self.latent_pad)
 
         w_uk, _ = self.w_uk
         w_uv, _ = self.w_uv
@@ -233,6 +243,7 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
             index_pool_topk=self.indexer.pools_selected,
             index_kpool_select_tail=self.indexer.always_select_tail,
             selection_lag=selection_lag,
+            nope_inputs=nope_inputs,
         ).rebind_mapping(xq.mapping)
         attn_out = attn_out.reshape(
             (attn_out.shape[0], self.n_heads * self.v_head_dim)

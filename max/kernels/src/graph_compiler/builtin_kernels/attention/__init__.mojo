@@ -6567,6 +6567,10 @@ trait _MLADecodeGraphBF16PagedSparseOp:
         has_attn_sink: Bool = True,
         dcp_size: Int = 1,
         dcp_interleave: Int = 1,
+        # Set by the Python wrapper for a model without rope: `q` and `kv`
+        # carry no rope columns, and the kernels take both rope parts as the
+        # zeros a zero-padded input holds. Off unless set.
+        nope_inputs: Bool = False,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -6709,6 +6713,7 @@ trait _MLADecodeGraphBF16PagedSparseOp:
                 kernels=Self.kernels,
                 dcp_size=dcp_size,
                 dcp_interleave=dcp_interleave,
+                nope_inputs=nope_inputs,
             ](
                 output.to_tile_tensor[.bfloat16](),
                 q.to_tile_tensor[.bfloat16](),
