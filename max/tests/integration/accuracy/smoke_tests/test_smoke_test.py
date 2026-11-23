@@ -146,7 +146,7 @@ def test_max_enables_vmm_on_amd_up_to_4_gpus(monkeypatch: MonkeyPatch) -> None:
 
     def vmm(gpu_spec: tuple[str, int]) -> str | None:
         _, env = smoke_test.get_server_cmd(
-            "max", "Qwen/Qwen3-8B", gpu_spec=gpu_spec
+            "max", "Qwen/Qwen3.5-9B", gpu_spec=gpu_spec
         )
         return env.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM")
 

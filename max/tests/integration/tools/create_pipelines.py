@@ -1422,31 +1422,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         padded_length=512,
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "Qwen/Qwen3-8B": GenericOracle(
-        model_path="Qwen/Qwen3-8B",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-32B": GenericOracle(
-        model_path="Qwen/Qwen3-32B",
-        config_params={"max_length": 512, "max_batch_size": 1},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-30B-A3B": GenericOracle(
-        model_path="Qwen/Qwen3-30B-A3B",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-30B-A3B-Instruct-2507": GenericOracle(
-        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8": GenericOracle(
-        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-    ),
     "Qwen/Qwen3.8-27B": GenericOracle(
         model_path="Qwen/Qwen3.8-27B",
         device_encoding_map={"gpu": ["bfloat16"]},

@@ -336,19 +336,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.7e00
     kl_div_threshold: 5.6e-01
 
-  Qwen/Qwen3-8B-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "Qwen/Qwen3-8B"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-only]  # TODO: Attention is broken on AMD.
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3_8b_golden/1/a952c1f1cae7dd647abbb01db7232b73d2cd084a561a7da5d3027e95acbeaf71/torch_qwen3_8b_golden.tar.gz"
-      json_file: "torch_qwen3_8b_golden.json"
-    cos_dist_threshold: 1.1e-3
-    kl_div_threshold: 7.1e-3
-
   Qwen/Qwen3.8-27B-bfloat16:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []

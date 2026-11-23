@@ -1234,21 +1234,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3-vl-4b-instruct_fp8_golden/1/f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3/torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz",
     },
     {
-        "name": "torch_qwen3_8b_golden.tar.gz",
-        "sha256": "a952c1f1cae7dd647abbb01db7232b73d2cd084a561a7da5d3027e95acbeaf71",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3_8b_golden/1/a952c1f1cae7dd647abbb01db7232b73d2cd084a561a7da5d3027e95acbeaf71/torch_qwen3_8b_golden.tar.gz",
-    },
-    {
-        "name": "torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden.tar.gz",
-        "sha256": "4427d3205be77073d7f0274d8fca0774974fe8677934a5b8dc60b3705aac9aaf",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden/1/4427d3205be77073d7f0274d8fca0774974fe8677934a5b8dc60b3705aac9aaf/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden.tar.gz",
-    },
-    {
-        "name": "Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden.tar.gz",
-        "sha256": "51490a4ac6612bf0a3af0f6953d5a1bff2b12683ca4c134dba9a13ea5c44f2bb",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden/1/51490a4ac6612bf0a3af0f6953d5a1bff2b12683ca4c134dba9a13ea5c44f2bb/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden.tar.gz",
-    },
-    {
         "name": "torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz",
         "sha256": "98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3_embedding_0.6b_bfloat16_golden/1/98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48/torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz",
