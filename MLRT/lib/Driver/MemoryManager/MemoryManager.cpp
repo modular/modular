@@ -3547,10 +3547,10 @@ ErrorOrSuccess MemoryManagerFreeList::free(void *ptr) {
     }
   }
 
-  LOG_MSG("free_buffer(" + TWINE_PTR(ptr) + ")");
-  return ctx_->memFree(ptr, memoryManager_.isHost()
-                                ? AllocatorContext::FreeKind::HOST
-                                : AllocatorContext::FreeKind::DEVICE);
+  LOG_MSG("free_buffer(" + TWINE_PTR(unwrappedPtr) + ")");
+  return ctx_->memFree(unwrappedPtr, memoryManager_.isHost()
+                                         ? AllocatorContext::FreeKind::HOST
+                                         : AllocatorContext::FreeKind::DEVICE);
 }
 
 void MemoryManagerFreeList::freeDesc(MemoryManager::Desc *desc) {

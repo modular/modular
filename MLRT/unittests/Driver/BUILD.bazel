@@ -1014,6 +1014,21 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "RedzoneDirectFreeTest",
+    size = "small",
+    srcs = ["RedzoneDirectFreeTest.cpp"],
+    env = {
+        "MODULAR_DEBUG_DEVICE_ALLOCATOR": "out-of-bounds",
+    },
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
+        "//Support:Base",
+    ],
+)
+
+modular_cc_test(
     name = "SelectStreamSiblingFreeListTest",
     size = "medium",
     srcs = ["SelectStreamSiblingFreeListTest.cpp"],
