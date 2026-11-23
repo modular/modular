@@ -955,7 +955,12 @@ def rms_norm_quantize_fp8_block(
     return normed, FP8BlockActivation(data=data, scales=scales)
 
 
-def matmul(x: Tensor | FP8BlockActivation, weight: QuantAwareTensor) -> Tensor:
+def matmul(
+    x: Tensor | FP8BlockActivation,
+    weight: QuantAwareTensor,
+    *,
+    pow2_scales: bool = False,
+) -> Tensor:
     """Matmul ``x @ weight.T`` dispatching on the weight type.
 
     ``weight`` follows the Linear convention: shape ``[out_dim, in_dim]``.
@@ -977,9 +982,14 @@ def matmul(x: Tensor | FP8BlockActivation, weight: QuantAwareTensor) -> Tensor:
       :class:`MXFP8Quantizer`, :class:`MXFP4Quantizer`): each is its format's
       container, so it takes that container's path and reads the fields of
       its cached quantization.
+
+    ``pow2_scales`` rounds the FP8 block activation scales up to powers of
+    two, as DeepGEMM's UE8M0 recipe does. It runs the quantize as a custom
+    op, which the graph compiler's norm and all-reduce fusions do not match.
+    A pre-quantized FP8 activation rejects it; other formats ignore it.
     """
     if isinstance(weight, FP8BlockTensor):
-        return _matmul_fp8_block(x, weight)
+        return _matmul_fp8_block(x, weight, pow2_scales)
     # A pre-quantized activation is only meaningful for a block-scaled FP8
     # weight; every other format quantizes the float activation itself.
     assert isinstance(x, Tensor), (
@@ -1081,7 +1091,9 @@ def _matmul_nvfp4(x: Tensor, weight: NVFP4Tensor) -> Tensor:
 
 
 def _matmul_fp8_block(
-    x: Tensor | FP8BlockActivation, weight: FP8BlockTensor
+    x: Tensor | FP8BlockActivation,
+    weight: FP8BlockTensor,
+    pow2_scales: bool = False,
 ) -> Tensor:
     """Block-scaled FP8 matmul ``x @ weight.T``.
 
@@ -1095,6 +1107,8 @@ def _matmul_fp8_block(
     input_spec, weight_spec = fp8_block_activation_specs(weight)
 
     if isinstance(x, FP8BlockActivation):
+        # No producer of a pre-quantized activation rounds its scales.
+        assert not pow2_scales, "pow2_scales needs an unquantized activation"
         x_fp8, x_scales = x.data, x.scales
         assert x_scales.shape[0] == x_fp8.shape[1] // block_k, (
             "a pre-quantized activation must carry one scale per "
@@ -1109,6 +1123,7 @@ def _matmul_fp8_block(
             group_size_or_per_token=block_k,
             scales_type=DType.float32,
             out_type=DType.float8_e4m3fn,
+            pow2_scales=pow2_scales,
         )
 
     return dynamic_scaled_matmul(
@@ -1134,6 +1149,7 @@ def grouped_matmul(
     estimated_total_m: Tensor | None = None,
     decode_grid_m_cap: int = 0,
     expert_scales: Tensor | None = None,
+    pow2_scales: bool = False,
 ) -> Tensor:
     """Grouped (MoE) matmul dispatching on the stacked-weight type.
 
@@ -1169,6 +1185,9 @@ def grouped_matmul(
             kernel; 0 disables. Ignored elsewhere.
         expert_scales: The NVFP4 branch's precomputed
             ``weight_scale_2 * input_scale`` on the device; ``None`` derives it.
+        pow2_scales: Round the FP8 branch's activation scales up to powers
+            of two when it quantizes ``x`` here. A pre-quantized FP8 ``x``
+            rejects it; other branches ignore it.
     """
     if isinstance(weight, NVFP4Tensor):
         if isinstance(x, NVFP4Activation):
@@ -1250,11 +1269,17 @@ def grouped_matmul(
     if isinstance(weight, FP8BlockTensor):
         if isinstance(x, FP8BlockActivation):
             # Activations already block-quantized (e.g. by the EP FP8 dispatch
-            # or a quantized SiLU); pass them through directly.
+            # or a quantized SiLU); pass them through directly. No such
+            # producer rounds its scales.
+            assert not pow2_scales, (
+                "pow2_scales needs an unquantized activation"
+            )
             x_fp8, x_scales = x.data, x.scales
         else:
             assert isinstance(x, Tensor)
-            x_fp8, x_scales = _quantize_activation_fp8(x, weight.block_size)
+            x_fp8, x_scales = _quantize_activation_fp8(
+                x, weight.block_size, pow2_scales
+            )
         assert expert_usage_stats is not None
         return _grouped_fp8_matmul(
             x_fp8,
@@ -1532,6 +1557,7 @@ def grouped_matmul_silu(
     swiglu_limit: float = 0.0,
     scales: NVFP4ExpertScales | None = None,
     max_total_m: int = 0,
+    pow2_scales: bool = False,
 ) -> QuantAwareTensor:
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
 
@@ -1544,7 +1570,8 @@ def grouped_matmul_silu(
     GLM-5.3-Flash needs. The fused NVFP4 path reads ``scales`` when given,
     else derives them. ``max_total_m`` bounds a dynamic token row count, which
     lets the graph compiler fuse the NVFP4 gate/up and down matmuls into one
-    MegaFFN launch.
+    MegaFFN launch. ``pow2_scales`` applies to the gate/up input only, as
+    :func:`grouped_matmul` takes it.
     """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.
@@ -1617,6 +1644,7 @@ def grouped_matmul_silu(
         scales_offset=scales_offset,
         estimated_total_m=estimated_total_m,
         decode_grid_m_cap=decode_grid_m_cap,
+        pow2_scales=pow2_scales,
     )
     # Fuse the down-proj re-quant into the SiLU only when the activation was
     # pre-quantized upstream (EP dispatch); otherwise emit bf16 and let the
@@ -1654,7 +1682,7 @@ def grouped_matmul_silu(
 
 
 def _quantize_activation_fp8(
-    x: Tensor, weight_block: tuple[int, int]
+    x: Tensor, weight_block: tuple[int, int], pow2_scales: bool = False
 ) -> tuple[Tensor, Tensor]:
     """Per-token FP8 block quantization of ``x`` matching ``weight_block``."""
     block_m, block_k = weight_block
@@ -1667,6 +1695,7 @@ def _quantize_activation_fp8(
         weight_spec,
         scales_type=DType.float32,
         out_type=DType.float8_e4m3fn,
+        pow2_scales=pow2_scales,
     )
 
 

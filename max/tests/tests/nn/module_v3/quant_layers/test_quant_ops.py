@@ -1225,6 +1225,85 @@ def test_grouped_silu_takes_a_swiglu_limit(
         assert list(out.shape) == [_TOKENS, _MOE_DIM]
 
 
+@pytest.mark.parametrize("pow2_scales", [False, True])
+def test_fp8_block_matmuls_pass_pow2_scales(
+    pow2_scales: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The FP8 block activation quant takes ``pow2_scales`` from each caller.
+
+    ``grouped_matmul_silu`` quantizes only the gate/up input; its SwiGLU
+    output leaves as bf16 for the caller's down matmul.
+    """
+    seen: list[bool] = []
+
+    def quantize(
+        x: Tensor, *_: object, **kwargs: object
+    ) -> tuple[Tensor, Tensor]:
+        seen.append(bool(kwargs["pow2_scales"]))
+        rows, cols = (int(d) for d in x.shape)
+        return (
+            Tensor.zeros(
+                (rows, cols), dtype=DType.float8_e4m3fn, device=x.device
+            ),
+            Tensor.zeros(
+                (cols // 128, rows), dtype=DType.float32, device=x.device
+            ),
+        )
+
+    def zeros(rows: int, cols: int) -> Callable[..., Tensor]:
+        return lambda *_, **__: Tensor.zeros(
+            (rows, cols), dtype=DType.bfloat16, device=CPU()
+        )
+
+    monkeypatch.setattr(quant_ops, "quantize_dynamic_scaled_float8", quantize)
+    monkeypatch.setattr(
+        quant_ops, "dynamic_scaled_matmul", zeros(_TOKENS, _MOE_DIM)
+    )
+    monkeypatch.setattr(
+        quant_ops, "_grouped_fp8_matmul", zeros(_TOKENS, 2 * _MOE_DIM)
+    )
+    monkeypatch.setattr(quant_ops, "grouped_silu", zeros(_TOKENS, _MOE_DIM))
+    device = CPU()
+    x = Tensor.zeros(
+        (_TOKENS, _HIDDEN_DIM), dtype=DType.bfloat16, device=device
+    )
+    offsets = Tensor.zeros(
+        (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+    )
+    ids = Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device)
+    stats = Tensor.zeros((2,), dtype=DType.uint32, device=device)
+    dense = FP8BlockTensor(
+        weight=Tensor.zeros(
+            (_MOE_DIM, _HIDDEN_DIM), dtype=DType.float8_e4m3fn, device=device
+        ),
+        weight_scale_inv=Tensor.zeros(
+            (1, _HIDDEN_DIM // 128), dtype=DType.float32, device=device
+        ),
+    )
+    with F.lazy():
+        quant_ops.matmul(x, dense, pow2_scales=pow2_scales)
+        quant_ops.grouped_matmul(
+            x,
+            _stacked_fp8(2 * _MOE_DIM, _HIDDEN_DIM, device),
+            offsets,
+            ids,
+            stats,
+            pow2_scales=pow2_scales,
+        )
+        quant_ops.grouped_matmul_silu(
+            x,
+            _stacked_fp8(2 * _MOE_DIM, _HIDDEN_DIM, device),
+            _stacked_fp8(_HIDDEN_DIM, _MOE_DIM, device),
+            offsets,
+            ids,
+            stats,
+            None,
+            pow2_scales=pow2_scales,
+        )
+
+    assert seen == [pow2_scales] * 3
+
+
 # --------------------------------------------------------------------------- #
 # MXFP4 and on-the-fly MX quantization
 # --------------------------------------------------------------------------- #
