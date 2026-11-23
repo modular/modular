@@ -25,14 +25,16 @@ grouped_matmul_sm100_blockwise_scaled_fp8 in
 test_grouped_matmul_sm100_blockwise_fp8.mojo.
 """
 
-from std.math import isnan
+from std.math import exp2, floor, isnan, log2
 from std.random import rand
+from std.testing import assert_equal
 
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
+    sm100_decode_token_rows,
 )
 
 
@@ -235,6 +237,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
     K: Int = 256,
     tokens_per_expert: Int = 2,
     pass_row_estimate: Bool = False,
+    ue8m0_scales: Bool = False,
 ](ctx: DeviceContext) raises:
     """Non-zero correctness case for grouped_matmul_dynamic_scaled_fp8.
 
@@ -302,6 +305,12 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
     rand(b_host._storage, b_host.num_elements())
     rand(a_scales_host._storage, a_scales_host.num_elements())
     rand(b_scales_host._storage, b_scales_host.num_elements())
+    comptime if ue8m0_scales:
+        # UE8M0 scales are powers of two: round each down to one.
+        for i in range(a_scales_size):
+            a_scales_host_ptr[i] = exp2(floor(log2(a_scales_host_ptr[i])))
+        for i in range(b_scales_size):
+            b_scales_host_ptr[i] = exp2(floor(log2(b_scales_host_ptr[i])))
 
     var a_device_buffer = ctx.enqueue_create_buffer[in_type](a_size)
     var b_device_buffer = ctx.enqueue_create_buffer[in_type](b_size)
@@ -441,6 +450,19 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
     _ = b_scales_device_buffer^
 
 
+def test_sm100_decode_token_rows() raises:
+    """Pins which expert GEMM shapes take the SM100 swapped-AB decode tile."""
+    # GLM-5.3-Flash: gate/up (N 4096, K 4096) and down (N 4096, K 2048).
+    assert_equal(sm100_decode_token_rows[4096, 4096](), 32)
+    assert_equal(sm100_decode_token_rows[4096, 2048](), 32)
+    # Hidden 6144: gate/up (N 4096, K 6144) and down (N 6144, K 2048).
+    assert_equal(sm100_decode_token_rows[4096, 6144](), 32)
+    assert_equal(sm100_decode_token_rows[6144, 2048](), 16)
+    # Shapes not measured in a model keep the 64-row tile.
+    assert_equal(sm100_decode_token_rows[4096, 7168](), 0)
+    assert_equal(sm100_decode_token_rows[7168, 2048](), 0)
+
+
 def main() raises:
     """Run all edge case tests for grouped_matmul_dynamic_scaled_fp8."""
     with DeviceContext() as ctx:
@@ -480,6 +502,60 @@ def main() raises:
         # decode tile at the expert GEMM shapes it serves.
         test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
             num_experts=4, N=4096, K=2048, pass_row_estimate=True
+        ](ctx=ctx)
+
+        test_sm100_decode_token_rows()
+
+        # Hidden-6144 expert GEMMs at decode, 1, 2 and 4 rows a group, take the
+        # swapped tile, with UE8M0 scales. The buffer holds fewer rows than a
+        # token tile, so the producer warp copies the scales.
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4,
+            N=4096,
+            K=6144,
+            tokens_per_expert=1,
+            pass_row_estimate=True,
+            ue8m0_scales=True,
+        ](ctx=ctx)
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4,
+            N=4096,
+            K=6144,
+            tokens_per_expert=2,
+            pass_row_estimate=True,
+            ue8m0_scales=True,
+        ](ctx=ctx)
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4,
+            N=4096,
+            K=6144,
+            tokens_per_expert=4,
+            pass_row_estimate=True,
+            ue8m0_scales=True,
+        ](ctx=ctx)
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4,
+            N=6144,
+            K=2048,
+            tokens_per_expert=1,
+            pass_row_estimate=True,
+            ue8m0_scales=True,
+        ](ctx=ctx)
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4,
+            N=6144,
+            K=2048,
+            tokens_per_expert=2,
+            pass_row_estimate=True,
+            ue8m0_scales=True,
+        ](ctx=ctx)
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4,
+            N=6144,
+            K=2048,
+            tokens_per_expert=4,
+            pass_row_estimate=True,
+            ue8m0_scales=True,
         ](ctx=ctx)
 
     print("\n✓ All edge case tests passed!")

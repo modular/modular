@@ -37,11 +37,13 @@ from max.gpu import (
     warp_id as get_warp_id,
 )
 from max.gpu.memory import (
+    async_copy,
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
 from max.gpu.sync import (
+    async_copy_arrive,
     named_barrier,
     named_barrier_arrive,
     syncwarp,
@@ -933,20 +935,38 @@ def _copy_a_scales_strip_from_gmem[
     expert_end_row: Int,
     m_tile_global_start: Int,
     iter_idx: Int,
+    stage_mbar: MutPointer[Int64, _, address_space=.SHARED],
 ):
     """Warp copy of the BM-entry `a_scales` strip of one K block into SMEM.
     Rows at or past the current expert's end are zeroed. All lanes of the
-    calling warp must execute this."""
+    calling warp must execute this.
+
+    With 4-byte scales the copies are asynchronous and `stage_mbar` tracks
+    them, so the warp does not wait for a global load before it issues the
+    stage's TMAs. Each K block would otherwise cost one global load latency.
+    """
     comptime assert a_scales_gmem.flat_rank == a_scales_smem_tile.flat_rank == 2
     var lane = lane_id()
     comptime for i in range(ceildiv(BM, WARP_SIZE)):
         var row = i * WARP_SIZE + lane
         if row < BM:
             var g_row = m_tile_global_start + row
-            var sv = Scalar[a_scales_type](0)
-            if g_row < expert_end_row:
-                sv = a_scales_gmem[iter_idx, g_row]
-            a_scales_smem_tile[0, row] = sv
+            comptime if size_of[a_scales_type]() == 4:
+                var in_expert = g_row < expert_end_row
+                async_copy[4, fill=Scalar[a_scales_type](0)](
+                    a_scales_gmem.ptr_at_offset(
+                        Coord(iter_idx, min(g_row, expert_end_row - 1))
+                    ).unsafe_address_space_cast[.GLOBAL](),
+                    a_scales_smem_tile.ptr_at_offset(Coord(0, row)),
+                    src_size=Int32(4) if in_expert else 0,
+                )
+            else:
+                var sv = Scalar[a_scales_type](0)
+                if g_row < expert_end_row:
+                    sv = a_scales_gmem[iter_idx, g_row]
+                a_scales_smem_tile[0, row] = sv
+    comptime if size_of[a_scales_type]() == 4:
+        async_copy_arrive(stage_mbar)
 
 
 @inline(.always)
@@ -1001,6 +1021,7 @@ def load_AB[
     ],
     scales_by_warp: Bool,
     expert_end_row: Int,
+    fence_scales: Bool,
 ):
     """Issues multicast TMA loads for A, B, and A scales into the producer stage of the load-MMA pipeline.
 
@@ -1066,6 +1087,8 @@ def load_AB[
             instead of the scales TMA.
         expert_end_row: Global row index one past the last row of the
             current expert; the warp copy zeroes the scales at or past it.
+        fence_scales: Whether an earlier tile of this CTA took the warp
+            copy, so a scales TMA must fence first.
     """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -1152,10 +1175,14 @@ def load_AB[
             expert_end_row,
             work_tile_coord[0],
             iter_idx,
+            tma_mbar[0].unsafe_ptr(),
         )
         syncwarp()
-        # A later tile's scales TMA may write this slot: order the generic
-        # writes before that async-proxy write.
+
+    if not scales_by_warp and fence_scales:
+        # An earlier tile's warp copy wrote this slot, and its copies have
+        # landed. Each lane fences its own generic writes before the
+        # async-proxy write below.
         fence_async_view_proxy()
 
     if elect_one_sync():
@@ -1543,35 +1570,74 @@ def _promote_and_store_swapped[
     var warp_tmem = tmem_addr + (UInt32(warp_id * WARP_SIZE) << 16)
 
     var acc = SIMD[accum_type, BM](0)
-    for k_iter in range(num_k_iters):
-        var b_scale = b_scales[b_scale_row, k_iter].cast[accum_type]()
-        var load_stage = load_mma_pipeline.consumer_stage()
-        var out_stage = mma_output_pipeline.consumer_stage()
+    # Two K blocks a round: one TMEM load wait covers both, so the promotion
+    # keeps up with the load pipeline. An odd last block runs alone.
+    var k_iter = 0
+    while k_iter + 1 < num_k_iters:
+        var b0 = b_scales[b_scale_row, k_iter].cast[accum_type]()
+        var b1 = b_scales[b_scale_row, k_iter + 1].cast[accum_type]()
+        var ls0 = load_mma_pipeline.consumer_stage()
+        var os0 = mma_output_pipeline.consumer_stage()
         mma_output_pipeline.wait_producer()
-        var a_scales = (
-            a_scales_smem_base.unsafe_offset(
-                Int(load_stage) * a_scales_stage_stride
-            )
+        var as0 = (
+            a_scales_smem_base.unsafe_offset(Int(ls0) * a_scales_stage_stride)
             .unsafe_load[width=BM, alignment=16]()
             .cast[accum_type]()
         )
-        syncwarp()
-        if lane_id() < Int(CLUSTER_SIZE):
-            _ = load_mma_pipeline.consumer_mbar(load_stage)[0].arrive()
-        syncwarp()
-        var frag = tcgen05_ld[
-            datapaths=32,
-            bits=32,
-            repeat=BM,
-            dtype=accum_type,
-            pack=False,
-        ](warp_tmem + out_stage * UInt32(stage_stride_cols))
-        tcgen05_load_wait()
-        _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(out_stage))
-        comptime for t in range(BM):
-            acc[t] = acc[t] + frag[t] * (a_scales[t] * b_scale)
         load_mma_pipeline.consumer_step()
         mma_output_pipeline.consumer_step()
+        var ls1 = load_mma_pipeline.consumer_stage()
+        var os1 = mma_output_pipeline.consumer_stage()
+        mma_output_pipeline.wait_producer()
+        var as1 = (
+            a_scales_smem_base.unsafe_offset(Int(ls1) * a_scales_stage_stride)
+            .unsafe_load[width=BM, alignment=16]()
+            .cast[accum_type]()
+        )
+        load_mma_pipeline.consumer_step()
+        mma_output_pipeline.consumer_step()
+        syncwarp()
+        if lane_id() < Int(CLUSTER_SIZE):
+            _ = load_mma_pipeline.consumer_mbar(ls0)[0].arrive()
+            _ = load_mma_pipeline.consumer_mbar(ls1)[0].arrive()
+        syncwarp()
+        var f0 = tcgen05_ld[
+            datapaths=32, bits=32, repeat=BM, dtype=accum_type, pack=False
+        ](warp_tmem + os0 * UInt32(stage_stride_cols))
+        var f1 = tcgen05_ld[
+            datapaths=32, bits=32, repeat=BM, dtype=accum_type, pack=False
+        ](warp_tmem + os1 * UInt32(stage_stride_cols))
+        tcgen05_load_wait()
+        _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(os0))
+        _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(os1))
+        comptime for t in range(BM):
+            acc[t] = acc[t] + f0[t] * (as0[t] * b0)
+        comptime for t in range(BM):
+            acc[t] = acc[t] + f1[t] * (as1[t] * b1)
+        k_iter += 2
+    if k_iter < num_k_iters:
+        var b0 = b_scales[b_scale_row, k_iter].cast[accum_type]()
+        var ls0 = load_mma_pipeline.consumer_stage()
+        var os0 = mma_output_pipeline.consumer_stage()
+        mma_output_pipeline.wait_producer()
+        var as0 = (
+            a_scales_smem_base.unsafe_offset(Int(ls0) * a_scales_stage_stride)
+            .unsafe_load[width=BM, alignment=16]()
+            .cast[accum_type]()
+        )
+        load_mma_pipeline.consumer_step()
+        mma_output_pipeline.consumer_step()
+        syncwarp()
+        if lane_id() < Int(CLUSTER_SIZE):
+            _ = load_mma_pipeline.consumer_mbar(ls0)[0].arrive()
+        syncwarp()
+        var f0 = tcgen05_ld[
+            datapaths=32, bits=32, repeat=BM, dtype=accum_type, pack=False
+        ](warp_tmem + os0 * UInt32(stage_stride_cols))
+        tcgen05_load_wait()
+        _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(os0))
+        comptime for t in range(BM):
+            acc[t] = acc[t] + f0[t] * (as0[t] * b0)
 
     var group_end = Int(
         rebind[UInt32](
@@ -2298,6 +2364,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         # var required_clc_query = True
 
         var total_m = Int(a_scales_gmem.dim[1]())
+        var warp_copied = False
 
         while not work_info.is_done():
             if (
@@ -2350,8 +2417,10 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     a_scales_gmem,
                     scales_by_warp,
                     expert_end_row,
+                    warp_copied,
                 )
                 load_mma_pipeline.producer_step()
+            warp_copied = warp_copied or scales_by_warp
 
             syncwarp()
             var next_work_info = scheduler.fetch_next_work()
@@ -2700,6 +2769,9 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         and BM >= 16
         and BM.is_power_of_two()
         and BM <= 512 // config.num_accum_pipeline_stages
+        # The promotion waits on two stages before it releases either.
+        and config.num_accum_pipeline_stages >= 2
+        and config.num_pipeline_stages >= 2
     ), "swap_ab needs 128 weight rows dividing N and a power-of-two token tile"
 
     # `_copy_a_scales_strip_from_gmem` reads one scale row per BK step without
@@ -2920,6 +2992,27 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
 # ===----------------------------------------------------------------------=== #
 
 
+def sm100_decode_token_rows[N: Int, K: Int]() -> Int:
+    """Token rows of the SM100 swapped-AB decode tile for an expert GEMM of
+    `N` output columns and `K` reduction, or 0 when decode keeps the 64-row
+    tile.
+
+    While the groups average a few rows (decode), a swapped tile carries them
+    without padding a 64-row MMA, and its promotion scales one weight row a
+    thread. Scoped to the expert GEMMs measured in their models: GLM-5.3-Flash
+    (hidden 4096, expert width 2048) and a hidden-6144 model with expert width
+    2048, whose down projection averages under 2 rows a group, where 16 token
+    rows run faster than 32.
+    TODO(KERN-3992): widen to other expert shapes once they are measured in
+    their models.
+    """
+    comptime if N == 4096 and (K == 4096 or K == 2048 or K == 6144):
+        return 32
+    elif N == 6144 and K == 2048:
+        return 16
+    return 0
+
+
 @inline(.always)
 def grouped_matmul_dynamic_scaled_fp8[
     c_type: DType,
@@ -3082,28 +3175,22 @@ def grouped_matmul_dynamic_scaled_fp8[
             # tiles. `max_num_tokens_per_expert` cannot make this choice: the
             # expert-parallel path passes its static dispatch capacity there.
             comptime prefill_m = 128
-            # While the groups average a few rows (decode), a swapped tile of
-            # 32 token rows carries them without padding a 64-row MMA, and
-            # its promotion scales one weight row a thread. Scoped to the
-            # expert GEMMs of hidden 4096 and expert width 2048.
-            # TODO(KERN-3992): widen to other expert shapes once they are
-            # measured in their models.
-            comptime decode_m = 32
+            comptime decode_m = sm100_decode_token_rows[
+                c.static_shape[1], a.static_shape[1]
+            ]()
             comptime decode_rows_per_group = 8
-            comptime swapped_decode_shape = c.static_shape[1] == 4096 and (
-                a.static_shape[1] == 4096 or a.static_shape[1] == 2048
-            )
             if estimated_total_m > prefill_m * num_active_experts:
                 launch[prefill_m]()
-            elif (
-                swapped_decode_shape
-                and estimated_total_m > 0
-                and estimated_total_m
-                <= decode_rows_per_group * num_active_experts
-            ):
-                launch[decode_m, swap_ab=True, accum_stages=8]()
-            else:
-                launch[64]()
+                return
+            comptime if decode_m > 0:
+                if (
+                    estimated_total_m > 0
+                    and estimated_total_m
+                    <= decode_rows_per_group * num_active_experts
+                ):
+                    launch[decode_m, swap_ab=True, accum_stages=8]()
+                    return
+            launch[64]()
             return
 
         else:

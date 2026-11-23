@@ -456,6 +456,47 @@ def main() raises:
             swap_ab=True,
         ](3, [4, 20, 8], [1, 2, 0], ctx)
 
+        # Swapped AB at hidden-6144 expert shapes and decode group sizes, packed
+        # with no padding (12 rows keep the scales stride 16-byte aligned).
+        # The buffer holds fewer rows than a token tile, so the producer warp
+        # copies every tile's scales asynchronously.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=6,
+            expert_shape=(4096, 6144),
+            umma_shape=(Int(32), Int(128), Int(32)),
+            swap_ab=True,
+        ](5, [1, 2, 4, 1, 4], [3, 0, 5, 1, 4], ctx)
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=6,
+            expert_shape=(6144, 2048),
+            umma_shape=(Int(16), Int(128), Int(32)),
+            swap_ab=True,
+        ](5, [1, 2, 4, 1, 4], [3, 0, 5, 1, 4], ctx)
+        # 192 tiles over 148 CTAs: with the scheduler's tile order, a CTA can
+        # copy a small group's scales by warp and then load the 64-row
+        # group's aligned strips by TMA, the path that fences.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=6,
+            expert_shape=(4096, 6144),
+            umma_shape=(Int(32), Int(128), Int(32)),
+            swap_ab=True,
+        ](5, [1, 2, 4, 1, 64], [3, 0, 5, 1, 4], ctx)
+        # Three K blocks: the swapped promotion runs its last block alone.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=6,
+            expert_shape=(4096, 384),
+            umma_shape=(Int(32), Int(128), Int(32)),
+            swap_ab=True,
+        ](5, [1, 2, 4, 1, 4], [3, 0, 5, 1, 4], ctx)
+
         # Swapped AB with a misaligned group start (row 5): the warp copies
         # the token tile's scales. With bf16 scales a 32-row strip is 64
         # bytes in a 128-byte SMEM stage.
