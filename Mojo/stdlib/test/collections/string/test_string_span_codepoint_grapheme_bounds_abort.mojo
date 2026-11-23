@@ -18,15 +18,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo -D test=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
-# RUN: not %mojo -D test=2 %s 2>&1 | FileCheck --check-prefix CHECK_2 %s
-# RUN: not %mojo -D test=3 %s 2>&1 | FileCheck --check-prefix CHECK_3 %s
-# RUN: not %mojo -D test=4 %s 2>&1 | FileCheck --check-prefix CHECK_4 %s
-# RUN: not %mojo -D test=5 %s 2>&1 | FileCheck --check-prefix CHECK_5 %s
-# RUN: not %mojo -D test=6 %s 2>&1 | FileCheck --check-prefix CHECK_6 %s
-# RUN: not %mojo -D test=7 %s 2>&1 | FileCheck --check-prefix CHECK_7 %s
-# RUN: not %mojo -D test=8 %s 2>&1 | FileCheck --check-prefix CHECK_8 %s
-# RUN: not %mojo -D test=9 %s 2>&1 | FileCheck --check-prefix CHECK_9 %s
+# RUN: not --crash %mojo -D test=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
+# RUN: not --crash %mojo -D test=2 %s 2>&1 | FileCheck --check-prefix CHECK_2 %s
+# RUN: not --crash %mojo -D test=3 %s 2>&1 | FileCheck --check-prefix CHECK_3 %s
+# RUN: not --crash %mojo -D test=4 %s 2>&1 | FileCheck --check-prefix CHECK_4 %s
+# RUN: not --crash %mojo -D test=5 %s 2>&1 | FileCheck --check-prefix CHECK_5 %s
+# RUN: not --crash %mojo -D test=6 %s 2>&1 | FileCheck --check-prefix CHECK_6 %s
+# RUN: not --crash %mojo -D test=7 %s 2>&1 | FileCheck --check-prefix CHECK_7 %s
+# RUN: not --crash %mojo -D test=8 %s 2>&1 | FileCheck --check-prefix CHECK_8 %s
+# RUN: not --crash %mojo -D test=9 %s 2>&1 | FileCheck --check-prefix CHECK_9 %s
 
 from std.sys import get_defined_int
 
