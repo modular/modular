@@ -1196,6 +1196,7 @@ def ep_fused_dispatch_kernel_api[
                 n_experts,
                 fused_shared_expert,
                 allreduce_world_size,
+                has_input_scales,
                 ExpertLoadT=ExpertLoadT,
             ](
                 token_handler,
@@ -1207,6 +1208,7 @@ def ep_fused_dispatch_kernel_api[
                 topk_ids,
                 send_ptrs,
                 context,
+                input_scales_fn,
                 expert_load,
             )
         return

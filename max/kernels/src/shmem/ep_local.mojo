@@ -68,6 +68,7 @@ from shmem.ep_comm import (
     EPCombineStoreFn,
     EPLocalSyncCounters,
     ExpertLoadSink,
+    InputScalesFn,
     NullExpertLoad,
     RouterWeightsFn,
     TokenFormat,
@@ -107,17 +108,17 @@ def _local_expert(expert: Int32, first_expert: Int32, n_local: Int) -> Int32:
 
 
 @always_inline
-def _slots_below[n_words: Int](mask: _SharedPtr[.uint32], slot: Int) -> Int32:
-    """Returns how many set bits of `mask` lie below bit `slot`."""
+def _slots_below(mask: _SharedPtr[.uint32], slot: Int) -> Int32:
+    """Returns how many set bits of `mask` lie below bit `slot`.
+
+    It reads only the words up to `slot`'s: a decode step's slots fill a few
+    of a chunk's words, and each read is a step of a serial chain.
+    """
     var word = slot // 32
     var below = (UInt32(1) << UInt32(slot % 32)) - 1
-    var rank = UInt32(0)
-    comptime for w in range(n_words):
-        var bits = mask[unsafe_offset=w]
-        if w < word:
-            rank += pop_count(bits)
-        elif w == word:
-            rank += pop_count(bits & below)
+    var rank = pop_count(mask[unsafe_offset=word] & below)
+    for w in range(word):
+        rank += pop_count(mask[unsafe_offset=w])
     return Int32(rank)
 
 
@@ -134,6 +135,30 @@ def _load_row[
                 width=width, alignment=align_of[SIMD[dtype, width]]()
             ](i * width)
     return row^
+
+
+comptime _EP_SELF_SCALE_CTAS = 32
+"""Fewest CTAs a dispatch with a blocked scale layout launches. A decode
+step's few CTAs would otherwise each store whole groups' scale tails (128
+rows of `hidden / 16` bytes a group), at one SM's store rate."""
+
+
+@always_inline
+def local_dispatch_grid[
+    sf_block: Int
+](num_tokens: Int, tokens_per_cta: Int) -> Int:
+    """Returns the CTAs of a local dispatch of `num_tokens` tokens; those
+    past the tokens build the layout and take a share of the tails."""
+    var grid = max(ceildiv(num_tokens, tokens_per_cta), 1)
+    comptime if sf_block > 0:
+        grid = max(grid, _EP_SELF_SCALE_CTAS)
+    # A one-chunk step's `total` counts only its own chunk's mask, so no
+    # padding CTA may start past that chunk.
+    debug_assert(
+        num_tokens > _EP_SELF_CHUNK or grid * tokens_per_cta <= _EP_SELF_CHUNK,
+        "a one-chunk dispatch's CTAs must stay in its chunk",
+    )
+    return grid
 
 
 @always_inline
@@ -218,6 +243,396 @@ def _count_kernel[
             )
 
 
+struct LocalDispatchTables[
+    n_local: Int, top_k: Int, fused_shared_expert: Bool, sf_block: Int
+](TrivialRegisterPassable):
+    """The shared-memory tables one local dispatch CTA builds its rows from.
+
+    Each method is one phase of the dispatch, run by every thread of a CTA of
+    `_EP_SELF_THREADS`; the caller meets the CTA between phases. No method
+    waits on another thread. `ep_local_dispatch`'s kernel and the dispatch's
+    Moka component (`Kernels/test/gpu/Moka/kernels/ep/`) call these phases.
+    The kernel writes the scale offsets through its format's
+    `pad_expert_offsets` and the component through `scale_offsets`; the
+    component's test holds the two bit for bit.
+
+    Parameters:
+        n_local: Experts on this device.
+        top_k: Experts each token is routed to.
+        fused_shared_expert: Whether the shared expert's rows lead the
+            output, as its group 0.
+        sf_block: The token format's `scale_block_rows`.
+    """
+
+    comptime shared_off = 1 if Self.fused_shared_expert else 0
+    comptime n_groups = Self.n_local + Self.shared_off
+    comptime n_words = _EP_SELF_CHUNK * Self.top_k // 32
+    # One spare word per expert puts each expert's words on different banks.
+    comptime mask_stride = Self.n_words + 1
+    comptime n_slots = _EP_SELF_MAX_TOKENS_PER_CTA * Self.top_k
+    # Each group's first block of the format's blocked scale layout, and each
+    # slot's row in it; one word each when the format has no such layout.
+    comptime sf_groups = Self.n_groups + 1 if Self.sf_block > 0 else 1
+    """Also the words of the tail list: its length, then the groups whose
+    last scale block their rows do not fill."""
+    comptime sf_slots = Self.n_slots if Self.sf_block > 0 else 1
+
+    comptime _mask_words = Self.n_local * Self.mask_stride
+    comptime layout_words = (
+        Self._mask_words
+        + 2 * Self.n_local
+        + Self.n_groups
+        + 1
+        + 2 * Self.sf_groups
+        + Self.n_slots
+    )
+    """The 4-byte words of the tables `place` reads: the masks, counts,
+    earlier chunks' counts, group and scale-block starts, the tail list and
+    this CTA's slots' experts."""
+    comptime slot_words = Self.n_slots + Self.sf_slots
+    """The 4-byte words of the tables `place` writes: each slot's row and
+    scale row."""
+
+    var mask: _SharedPtr[.uint32]
+    var counts: _SharedPtr[.int32]
+    var before: _SharedPtr[.int32]
+    var group_start: _SharedPtr[.uint32]
+    var sf_start: _SharedPtr[.uint32]
+    var tails: _SharedPtr[.uint32]
+    var mine_experts: _SharedPtr[.int32]
+    var slot_row: _SharedPtr[.int32]
+    var slot_sf_row: _SharedPtr[.int32]
+
+    @always_inline
+    def __init__(
+        out self, base: _SharedPtr[.uint32], slots: _SharedPtr[.uint32]
+    ):
+        """Lays the tables out from `base`, which holds `layout_words`
+        words, and `slots`, which holds `slot_words`."""
+        var at = 0
+        self.mask = base
+        at += Self._mask_words
+        self.counts = base.unsafe_offset(at).unsafe_bitcast[Int32]()
+        at += Self.n_local
+        self.before = base.unsafe_offset(at).unsafe_bitcast[Int32]()
+        at += Self.n_local
+        self.group_start = base.unsafe_offset(at)
+        at += Self.n_groups + 1
+        self.sf_start = base.unsafe_offset(at)
+        at += Self.sf_groups
+        self.tails = base.unsafe_offset(at)
+        at += Self.sf_groups
+        self.mine_experts = base.unsafe_offset(at).unsafe_bitcast[Int32]()
+        self.slot_row = slots.unsafe_bitcast[Int32]()
+        self.slot_sf_row = slots.unsafe_offset(Self.n_slots).unsafe_bitcast[
+            Int32
+        ]()
+
+    @always_inline
+    def clear(self):
+        """Zeros the slot masks and the per-expert counts."""
+        var tid = thread_idx.x
+        for i in range(tid, Self._mask_words, _EP_SELF_THREADS):
+            self.mask[unsafe_offset=i] = 0
+        for e in range(tid, Self.n_local, _EP_SELF_THREADS):
+            self.counts[unsafe_offset=e] = 0
+            self.before[unsafe_offset=e] = 0
+
+    @always_inline
+    @staticmethod
+    def chunk_ids(
+        topk_ids: TileTensor[mut=False, .int32, ...], first_tok: Int
+    ) -> Array[Int32, Self.top_k]:
+        """Returns the expert ids of this thread's token of the chunk that
+        holds `first_tok`; -1 past the step's tokens. A caller issues the
+        loads early and hands the ids to `mark`."""
+        comptime assert topk_ids.flat_rank == 2
+        var ids = Array[Int32, Self.top_k](fill=-1)
+        var t = first_tok // _EP_SELF_CHUNK * _EP_SELF_CHUNK + thread_idx.x
+        if t < Int(topk_ids.dim(0)):
+            comptime for k in range(Self.top_k):
+                ids[k] = rebind[Int32](topk_ids[t, k])
+        return ids^
+
+    @always_inline
+    def mark(
+        self,
+        ids: Array[Int32, Self.top_k],
+        chunk_counts: ImmPointer[Int32, _],
+        num_tokens: Int,
+        first_tok: Int,
+        n_mine: Int,
+        first_expert: Int32,
+    ):
+        """Marks every local slot of this CTA's chunk in its expert's mask,
+        keeps the experts of this CTA's own tokens, and adds the earlier
+        chunks' counts from `chunk_counts` when the step has more than one.
+
+        `ids` are this thread's token's expert ids (`chunk_ids`).
+        """
+        comptime assert (
+            _EP_SELF_CHUNK * Self.top_k % 32 == 0
+        ), "a chunk's slots must fill whole words"
+        var tid = thread_idx.x
+        var chunk = first_tok // _EP_SELF_CHUNK
+        var chunk_start = chunk * _EP_SELF_CHUNK
+        var t = chunk_start + tid
+        if t < num_tokens:
+            comptime for k in range(Self.top_k):
+                var e = _local_expert(ids[k], first_expert, Self.n_local)
+                if e >= 0:
+                    var slot = tid * Self.top_k + k
+                    _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
+                        ordering=.relaxed
+                    ](
+                        self.mask.unsafe_offset(
+                            Int(e) * Self.mask_stride + slot // 32
+                        ),
+                        UInt32(1) << UInt32(slot % 32),
+                    )
+                if t >= first_tok and t < first_tok + n_mine:
+                    self.mine_experts[
+                        unsafe_offset=(t - first_tok) * Self.top_k + k
+                    ] = e
+
+        # TODO(KERN-4016): every CTA reads every chunk's counts. Past
+        # 8 * _EP_SELF_MAX_TOKENS_PER_CTA * sm_count tokens a step (37,888 on
+        # B200) the grid grows with the step as well, so the reads of all CTAs
+        # grow with its square. Before a configuration dispatches that many
+        # tokens a step, compute each chunk's exclusive prefix and the totals
+        # once, right after the count launch.
+        var n_chunks = ceildiv(num_tokens, _EP_SELF_CHUNK)
+        if n_chunks > 1:
+            # All of a batch's loads are in flight before any is summed.
+            comptime batch = 8
+            var n_entries = n_chunks * Self.n_local
+            for base in range(tid, n_entries, _EP_SELF_THREADS * batch):
+                var vals = Array[Int32, batch](fill=0)
+                comptime for i in range(batch):
+                    var w = base + i * _EP_SELF_THREADS
+                    if w < n_entries:
+                        vals[i] = chunk_counts.unsafe_load(w)
+                comptime for i in range(batch):
+                    var w = base + i * _EP_SELF_THREADS
+                    if w < n_entries and vals[i] != 0:
+                        var c, e = divmod(w, Self.n_local)
+                        _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
+                            ordering=.relaxed
+                        ](self.counts.unsafe_offset(e), vals[i])
+                        if c < chunk:
+                            _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
+                                ordering=.relaxed
+                            ](self.before.unsafe_offset(e), vals[i])
+
+    @always_inline
+    def total(self, num_tokens: Int):
+        """Counts each expert's slots from its mask, for a one-chunk step.
+
+        It reads only the words the step's slots fill.
+        """
+        var tid = thread_idx.x
+        if num_tokens <= _EP_SELF_CHUNK and tid < Self.n_local:
+            var total = UInt32(0)
+            var used = ceildiv(num_tokens * Self.top_k, 32)
+            for w in range(used):
+                total += pop_count(
+                    self.mask[unsafe_offset=tid * Self.mask_stride + w]
+                )
+            self.counts[unsafe_offset=tid] = Int32(total)
+
+    @always_inline
+    def starts[m_padding: Int](self, shared_count: UInt32):
+        """Warp 0 scans the groups' padded rows into their first rows, and
+        their scale blocks into their first blocks, and lists the groups
+        whose last block their rows do not fill.
+
+        Parameters:
+            m_padding: Rows each group rounds up to.
+        """
+        if warp_id() != 0:
+            return
+        var lane = lane_id()
+        # One scan a round of 32 groups. With a blocked scale layout it adds
+        # the rows (bits 0-31), the scale blocks (32-47) and the tail flags
+        # (48-63) at once: a step holds far fewer than 2^23 rows, so the
+        # blocks stay below 2^16.
+        var run = UInt64(0)
+        if lane == 0:
+            self.group_start[unsafe_offset=0] = 0
+            comptime if Self.sf_block > 0:
+                self.sf_start[unsafe_offset=0] = 0
+        comptime for base in range(0, Self.n_groups, WARP_SIZE):
+            var g = base + lane
+            var rows = UInt32(0)
+            if g < Self.n_groups:
+                comptime if Self.fused_shared_expert:
+                    rows = shared_count if g == 0 else UInt32(
+                        self.counts[unsafe_offset=g - 1]
+                    )
+                else:
+                    rows = UInt32(self.counts[unsafe_offset=g])
+                rows = UInt32(align_up(Int(rows), m_padding))
+            var item = UInt64(rows)
+            var has = UInt64(0)
+            comptime if Self.sf_block > 0:
+                has = UInt64(1) if rows % UInt32(Self.sf_block) else 0
+                var blocks = UInt64(ceildiv(Int(rows), Self.sf_block))
+                item |= (blocks << 32) | (has << 48)
+            var end = run + warp.prefix_sum[exclusive=False](item)
+            run = warp.shuffle_idx(end, UInt32(WARP_SIZE - 1))
+            if g < Self.n_groups:
+                self.group_start[unsafe_offset=g + 1] = UInt32(
+                    end & 0xFFFF_FFFF
+                )
+                comptime if Self.sf_block > 0:
+                    self.sf_start[unsafe_offset=g + 1] = UInt32(
+                        (end >> 32) & 0xFFFF
+                    )
+                    if has != 0:
+                        var at = Int(end >> 48) - 1
+                        self.tails[unsafe_offset=1 + at] = UInt32(g)
+        comptime if Self.sf_block > 0:
+            if lane == 0:
+                self.tails[unsafe_offset=0] = UInt32(run >> 48)
+
+    @always_inline
+    def publish[
+        ExpertLoadT: ExpertLoadSink
+    ](
+        self,
+        row_offsets: TileTensor[mut=True, .uint32, ...],
+        expert_ids: TileTensor[mut=True, .int32, ...],
+        ep_counters: EPLocalSyncCounters[Self.n_local],
+        expert_load: ExpertLoadT,
+    ):
+        """Writes the grouped matmul's offsets and expert ids, and the row
+        ranges both all-reduce-mode combines read; CTA 0 alone calls it."""
+        var tid = thread_idx.x
+        if tid <= Self.n_groups:
+            row_offsets[tid] = self.group_start[unsafe_offset=tid]
+        if tid < Self.n_groups:
+            expert_ids[tid] = Int32(tid)
+        if tid < Self.n_local:
+            # The protocol dispatch's Region A: (flag + end, count).
+            var count = self.counts[unsafe_offset=tid]
+            var region_a = ep_counters.get_dispatch_wait_ptr()
+            region_a.unsafe_store(
+                2 * tid,
+                EP_DATA_READY_FLAG
+                + Int32(self.group_start[unsafe_offset=tid + Self.shared_off])
+                + count,
+            )
+            region_a.unsafe_store(2 * tid + 1, count)
+            expert_load.add(tid, Self.n_local, UInt32(count))
+
+    @always_inline
+    def scale_offsets(self, offsets: MutPointer[UInt32, _]):
+        """Writes each group's first scale block less its first row's block,
+        which the grouped matmul adds to a row's block; CTA 0 alone calls it.
+        """
+        comptime assert Self.sf_block > 0
+        var g = thread_idx.x
+        if g < Self.n_groups:
+            offsets[g] = self.sf_start[unsafe_offset=g] - self.group_start[
+                unsafe_offset=g
+            ] // UInt32(Self.sf_block)
+
+    @always_inline
+    def tail_items(self, atoms: Int) -> Int:
+        """Returns the tail items, one atom of one listed group each. Every
+        warp of the grid takes its share, so the tails' stores spread over
+        the grid."""
+        comptime assert Self.sf_block > 0
+        return Int(self.tails[unsafe_offset=0]) * atoms
+
+    @always_inline
+    def tail_item(self, item: Int, atoms: Int) -> Tuple[Int, Int, Int]:
+        """Returns the tail rows `[begin, end)` and the atom of tail item
+        `item`."""
+        var k, atom = divmod(item, atoms)
+        var begin, end = self.tail(Int(self.tails[unsafe_offset=1 + k]))
+        return (begin, end, atom)
+
+    @always_inline
+    def tail(self, g: Int) -> Tuple[Int, Int]:
+        """Returns the scale rows `[begin, end)` of group `g`'s last block
+        that hold no row; empty when its rows fill the block."""
+        comptime assert Self.sf_block > 0
+        var rows = Int(self.group_start[unsafe_offset=g + 1]) - Int(
+            self.group_start[unsafe_offset=g]
+        )
+        var first = Int(self.sf_start[unsafe_offset=g]) * Self.sf_block
+        return (first + rows, first + align_up(rows, Self.sf_block))
+
+    @always_inline
+    def place(self, first_tok: Int, n_mine: Int):
+        """Gives each slot of this CTA's tokens its row, and its row in the
+        scale blocks; -1 for a slot routed elsewhere."""
+        var chunk_start = first_tok // _EP_SELF_CHUNK * _EP_SELF_CHUNK
+        for j in range(thread_idx.x, n_mine * Self.top_k, _EP_SELF_THREADS):
+            var dst = Int32(-1)
+            var e = Int(self.mine_experts[unsafe_offset=j])
+            if e >= 0:
+                dst = (
+                    Int32(self.group_start[unsafe_offset=e + Self.shared_off])
+                    + self.before[unsafe_offset=e]
+                    + _slots_below(
+                        self.mask.unsafe_offset(e * Self.mask_stride),
+                        (first_tok - chunk_start) * Self.top_k + j,
+                    )
+                )
+            self.slot_row[unsafe_offset=j] = dst
+            comptime if Self.sf_block > 0:
+                var g = e + Self.shared_off
+                self.slot_sf_row[unsafe_offset=j] = (
+                    Int32(self.sf_start[unsafe_offset=g]) * Int32(Self.sf_block)
+                    + dst
+                    - Int32(self.group_start[unsafe_offset=g])
+                ) if e >= 0 else Int32(-1)
+
+    @always_inline
+    def token_rows[
+        world_size: Int
+    ](
+        self,
+        src_info: TileTensor[mut=True, .int32, ...],
+        jt: Int,
+        tok: Int,
+        num_tokens: Int,
+        my_rank: Int32,
+    ) -> Tuple[Array[Int, Self.top_k + 1], Array[Int, Self.top_k + 1]]:
+        """Returns token `tok`'s rows and their scale rows, the shared
+        expert's last, and writes its routed rows' source info.
+
+        `jt` is the token's index among this CTA's.
+        """
+        var tid = thread_idx.x
+        if tid < Self.top_k:
+            var dst = self.slot_row[unsafe_offset=jt * Self.top_k + tid]
+            if dst >= 0:
+                src_info[Int(dst), 0] = Int32(tok)
+                src_info[Int(dst), 1] = Int32(tid)
+        var rows = Array[Int, Self.top_k + 1](fill=-1)
+        var scale_rows = Array[Int, Self.top_k + 1](fill=-1)
+        comptime for k in range(Self.top_k):
+            rows[k] = Int(self.slot_row[unsafe_offset=jt * Self.top_k + k])
+            comptime if Self.sf_block > 0:
+                scale_rows[k] = Int(
+                    self.slot_sf_row[unsafe_offset=jt * Self.top_k + k]
+                )
+        comptime if Self.fused_shared_expert:
+            var shared_begin, shared_count = ep_shared_expert_rows[world_size](
+                UInt32(num_tokens), UInt32(my_rank)
+            )
+            if UInt32(tok) >= shared_begin and UInt32(tok) < (
+                shared_begin + shared_count
+            ):
+                # The shared expert is group 0, whose blocks come first.
+                rows[Self.top_k] = tok - Int(shared_begin)
+                scale_rows[Self.top_k] = rows[Self.top_k]
+        return (rows^, scale_rows^)
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(_EP_SELF_THREADS)
@@ -238,6 +653,8 @@ def _dispatch_kernel[
     n_local: Int,
     fused_shared_expert: Bool,
     world_size: Int,
+    InputScalesFnType: InputScalesFn,
+    has_input_scales: Bool,
     ExpertLoadT: ExpertLoadSink = NullExpertLoad,
     *,
     InputTokensEngine: TensorEngine = DefaultEngine[element_width=1],
@@ -270,6 +687,7 @@ def _dispatch_kernel[
     tokens_per_cta: Int32,
     my_rank: Int32,
     expert_load: ExpertLoadT,
+    input_scales_fn: InputScalesFnType,
 ):
     """Writes this device's routed and shared expert rows in protocol layout.
 
@@ -280,7 +698,9 @@ def _dispatch_kernel[
     another CTA. The token format writes each token to all of its rows, and
     CTA 0 also writes the grouped matmul's offsets and expert ids, and the
     row ranges that both all-reduce-mode combines read from the counter
-    buffer.
+    buffer. With a blocked scale layout, CTA 0 also writes each group's
+    block offset, and the CTAs zero the groups' last-block tails between
+    them.
 
     Parameters:
         input_type: The type of the input tokens.
@@ -295,6 +715,8 @@ def _dispatch_kernel[
             output, as its group 0.
         world_size: Devices of the all-reduce, which split the shared
             expert's rows.
+        InputScalesFnType: The type of `input_scales_fn`.
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
         ExpertLoadT: Type of `expert_load`.
         InputTokensEngine: Storage engine backing `input_tokens`.
         TopkIdsEngine: Storage engine backing `topk_ids`.
@@ -315,67 +737,46 @@ def _dispatch_kernel[
         tokens_per_cta: Tokens per CTA; divides `_EP_SELF_CHUNK`.
         my_rank: The rank of this device.
         expert_load: Receives each local expert's routed-token count.
+        input_scales_fn: The input scale, read when `has_input_scales`.
     """
     comptime hid_dim = token_fmt_type.hid_dim
     comptime top_k = token_fmt_type.top_k
-    comptime shared_off = 1 if fused_shared_expert else 0
-    comptime n_groups = n_local + shared_off
-    comptime n_words = _EP_SELF_CHUNK * top_k // 32
-    # One spare word per expert puts each expert's words on different banks.
-    comptime mask_stride = n_words + 1
+    comptime Tables = LocalDispatchTables[
+        n_local, top_k, fused_shared_expert, token_fmt_type.scale_block_rows
+    ]
     comptime width = simd_width_of[input_type]()
     comptime n_vecs = hid_dim // width
     comptime per_thread = ceildiv(n_vecs, _EP_SELF_THREADS)
-    comptime assert n_groups < _EP_SELF_THREADS, "one thread per expert group"
     comptime assert (
-        _EP_SELF_CHUNK * top_k % 32 == 0
-    ), "a chunk's slots must fill whole words"
+        Tables.n_groups < _EP_SELF_THREADS
+    ), "one thread per expert group"
     comptime assert input_tokens.flat_rank == 2
-    comptime assert topk_ids.flat_rank == 2
     comptime assert row_offsets.flat_rank == 1
     comptime assert expert_ids.flat_rank == 1
     comptime assert src_info.flat_rank == 2
 
-    var mask = unsafe_stack_allocation[
-        n_local * mask_stride, UInt32, address_space=.SHARED
-    ]()
-    var counts = unsafe_stack_allocation[
-        n_local, Int32, address_space=.SHARED
-    ]()
-    var before = unsafe_stack_allocation[
-        n_local, Int32, address_space=.SHARED
-    ]()
-    var group_start = unsafe_stack_allocation[
-        n_groups + 1, UInt32, address_space=.SHARED
-    ]()
-    var mine_experts = unsafe_stack_allocation[
-        _EP_SELF_MAX_TOKENS_PER_CTA * top_k, Int32, address_space=.SHARED
-    ]()
-    var slot_row = unsafe_stack_allocation[
-        _EP_SELF_MAX_TOKENS_PER_CTA * top_k, Int32, address_space=.SHARED
-    ]()
-
-    var tid = thread_idx.x
-    for i in range(tid, n_local * mask_stride, _EP_SELF_THREADS):
-        mask[unsafe_offset=i] = 0
-    for e in range(tid, n_local, _EP_SELF_THREADS):
-        counts[unsafe_offset=e] = 0
-        before[unsafe_offset=e] = 0
+    var tables = Tables(
+        unsafe_stack_allocation[
+            Tables.layout_words, UInt32, address_space=.SHARED
+        ](),
+        unsafe_stack_allocation[
+            Tables.slot_words, UInt32, address_space=.SHARED
+        ](),
+    )
+    tables.clear()
 
     var num_tokens = Int(input_tokens.dim(0))
     var first_tok = block_idx.x * Int(tokens_per_cta)
     var n_mine = max(min(Int(tokens_per_cta), num_tokens - first_tok), 0)
-    var chunk = first_tok // _EP_SELF_CHUNK
-    var chunk_start = chunk * _EP_SELF_CHUNK
-    var n_chunks = ceildiv(num_tokens, _EP_SELF_CHUNK)
-    var first_expert = my_rank * Int32(n_local)
-    var shared_begin, shared_count = ep_shared_expert_rows[world_size](
+    var shared_count = ep_shared_expert_rows[world_size](
         UInt32(num_tokens), UInt32(my_rank)
-    )
+    )[1]
 
     with PDL():
-        # The first token's row loads while the layout is built, and each
-        # token's processing has the next one's row in flight.
+        # The first token's row and the chunk's expert ids load together
+        # while the layout is built, and each token's processing has the next
+        # one's row in flight.
+        var ids = Tables.chunk_ids(topk_ids, first_tok)
         var row = Array[SIMD[input_type, width], per_thread](fill=0)
         if n_mine > 0:
             row = _load_row[input_type, width, n_vecs, per_thread](
@@ -383,109 +784,46 @@ def _dispatch_kernel[
             )
 
         barrier()
-        var t = chunk_start + tid
-        if t < num_tokens:
-            comptime for k in range(top_k):
-                var e = _local_expert(
-                    rebind[Int32](topk_ids[t, k]), first_expert, n_local
-                )
-                if e >= 0:
-                    var slot = tid * top_k + k
-                    _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                        ordering=.relaxed
-                    ](
-                        mask.unsafe_offset(Int(e) * mask_stride + slot // 32),
-                        UInt32(1) << UInt32(slot % 32),
-                    )
-                if t >= first_tok and t < first_tok + n_mine:
-                    mine_experts[unsafe_offset=(t - first_tok) * top_k + k] = e
-
-        # TODO(KERN-4016): every CTA reads every chunk's counts. Past
-        # 8 * _EP_SELF_MAX_TOKENS_PER_CTA * sm_count tokens a step (37,888 on
-        # B200) the grid grows with the step as well, so the reads of all CTAs
-        # grow with its square. Before a configuration dispatches that many
-        # tokens a step, compute each chunk's exclusive prefix and the totals
-        # once, right after the count launch.
-        if n_chunks > 1:
-            # All of a batch's loads are in flight before any is summed.
-            comptime batch = 8
-            var n_entries = n_chunks * n_local
-            for base in range(tid, n_entries, _EP_SELF_THREADS * batch):
-                var vals = Array[Int32, batch](fill=0)
-                comptime for i in range(batch):
-                    var w = base + i * _EP_SELF_THREADS
-                    if w < n_entries:
-                        vals[i] = chunk_counts.unsafe_load(w)
-                comptime for i in range(batch):
-                    var w = base + i * _EP_SELF_THREADS
-                    if w < n_entries and vals[i] != 0:
-                        var c, e = divmod(w, n_local)
-                        _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
-                            ordering=.relaxed
-                        ](counts.unsafe_offset(e), vals[i])
-                        if c < chunk:
-                            _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
-                                ordering=.relaxed
-                            ](before.unsafe_offset(e), vals[i])
+        tables.mark(
+            ids,
+            chunk_counts,
+            num_tokens,
+            first_tok,
+            n_mine,
+            my_rank * Int32(n_local),
+        )
         barrier()
-
-        if n_chunks == 1 and tid < n_local:
-            var total = UInt32(0)
-            comptime for w in range(n_words):
-                total += pop_count(mask[unsafe_offset=tid * mask_stride + w])
-            counts[unsafe_offset=tid] = Int32(total)
+        tables.total(num_tokens)
         barrier()
-
-        var group_rows = UInt32(0)
-        if tid < n_groups:
-            comptime if fused_shared_expert:
-                group_rows = shared_count if tid == 0 else UInt32(
-                    counts[unsafe_offset=tid - 1]
-                )
-            else:
-                group_rows = UInt32(counts[unsafe_offset=tid])
-            group_rows = UInt32(
-                align_up(Int(group_rows), token_fmt_type.expert_m_padding)
-            )
-        var group_end = block_prefix_sum[n_groups](group_rows)
-        if tid < n_groups:
-            group_start[unsafe_offset=tid + 1] = group_end
-        if tid == 0:
-            group_start[unsafe_offset=0] = 0
+        tables.starts[token_fmt_type.expert_m_padding](shared_count)
         barrier()
 
         if block_idx.x == 0:
-            if tid <= n_groups:
-                row_offsets[tid] = group_start[unsafe_offset=tid]
-            if tid < n_groups:
-                expert_ids[tid] = Int32(tid)
-            if tid < n_local:
-                # The protocol dispatch's Region A: (flag + end, count).
-                var count = counts[unsafe_offset=tid]
-                var region_a = ep_counters.get_dispatch_wait_ptr()
-                region_a.unsafe_store(
-                    2 * tid,
-                    EP_DATA_READY_FLAG
-                    + Int32(group_start[unsafe_offset=tid + shared_off])
-                    + count,
+            tables.publish(row_offsets, expert_ids, ep_counters, expert_load)
+            comptime if Tables.sf_block > 0:
+                token_handler.pad_expert_offsets[Tables.n_groups](
+                    tables.group_start
                 )
-                region_a.unsafe_store(2 * tid + 1, count)
-                expert_load.add(tid, n_local, UInt32(count))
 
-        for j in range(tid, n_mine * top_k, _EP_SELF_THREADS):
-            var dst = Int32(-1)
-            var e = Int(mine_experts[unsafe_offset=j])
-            if e >= 0:
-                dst = (
-                    Int32(group_start[unsafe_offset=e + shared_off])
-                    + before[unsafe_offset=e]
-                    + _slots_below[n_words](
-                        mask.unsafe_offset(e * mask_stride),
-                        (first_tok - chunk_start) * top_k + j,
-                    )
-                )
-            slot_row[unsafe_offset=j] = dst
+        # Each group's last scale block past its rows reads as zero, as the
+        # protocol dispatch's 128-row scale boxes leave it.
+        comptime if Tables.sf_block > 0:
+            comptime atoms = token_fmt_type.scale_atoms
+            comptime warps = _EP_SELF_THREADS // WARP_SIZE
+            for item in range(
+                block_idx.x * warps + warp_id(),
+                tables.tail_items(atoms),
+                grid_dim.x * warps,
+            ):
+                var begin, end, atom = tables.tail_item(item, atoms)
+                token_handler.zero_scale_atom(begin, end, atom)
+
+        tables.place(first_tok, n_mine)
         barrier()
+
+        var input_scale = Float32(1.0)
+        comptime if has_input_scales:
+            input_scale = input_scales_fn[.float32](0)
 
         for jt in range(n_mine):
             var tok = first_tok + jt
@@ -494,22 +832,12 @@ def _dispatch_kernel[
                 row = _load_row[input_type, width, n_vecs, per_thread](
                     input_tokens.ptr_at_offset((tok + 1, Idx[0]))
                 )
-
-            if tid < top_k:
-                var dst = slot_row[unsafe_offset=jt * top_k + tid]
-                if dst >= 0:
-                    src_info[Int(dst), 0] = Int32(tok)
-                    src_info[Int(dst), 1] = Int32(tid)
-
-            var rows = Array[Int, top_k + 1](fill=-1)
-            comptime for k in range(top_k):
-                rows[k] = Int(slot_row[unsafe_offset=jt * top_k + k])
-            comptime if fused_shared_expert:
-                if UInt32(tok) >= shared_begin and UInt32(tok) < (
-                    shared_begin + shared_count
-                ):
-                    rows[top_k] = tok - Int(shared_begin)
-            token_handler.copy_token_to_output_rows[_EP_SELF_THREADS](cur, rows)
+            var rows, scale_rows = tables.token_rows[world_size](
+                src_info, jt, tok, num_tokens, my_rank
+            )
+            token_handler.copy_token_to_output_rows[_EP_SELF_THREADS](
+                cur, rows, scale_rows, input_scale
+            )
 
 
 @always_inline
@@ -523,10 +851,12 @@ def ep_local_dispatch[
     TopkIdsEngine: TensorEngine,
     SendPtrsEngine: TensorEngine,
     input_type: DType,
+    InputScalesFnType: InputScalesFn,
     //,
     n_local: Int,
     fused_shared_expert: Bool,
     world_size: Int,
+    has_input_scales: Bool,
     ExpertLoadT: ExpertLoadSink = NullExpertLoad,
 ](
     token_handler: token_fmt_type,
@@ -540,6 +870,7 @@ def ep_local_dispatch[
     topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
     send_ptrs: TileTensor[.uint64, Engine=SendPtrsEngine, ...],
     context: DeviceContext,
+    input_scales_fn: InputScalesFnType,
     expert_load: ExpertLoadT = NullExpertLoad(),
 ) raises:
     """Runs the all-reduce-mode dispatch of this device's tokens on it alone.
@@ -560,10 +891,12 @@ def ep_local_dispatch[
         TopkIdsEngine: Storage engine backing `topk_ids` (inferred).
         SendPtrsEngine: Storage engine backing `send_ptrs` (inferred).
         input_type: The type of the input tokens (inferred).
+        InputScalesFnType: The type of `input_scales_fn` (inferred).
         n_local: Experts on this device.
         fused_shared_expert: Whether the shared expert's rows lead the
             output.
         world_size: Devices of the all-reduce.
+        has_input_scales: Whether `input_scales_fn` supplies the input scale.
         ExpertLoadT: Type of `expert_load`.
 
     Args:
@@ -577,6 +910,8 @@ def ep_local_dispatch[
         topk_ids: Every token's expert ids.
         send_ptrs: The dispatch send buffers.
         context: The device context.
+        input_scales_fn: The input scale, read on the device when
+            `has_input_scales`.
         expert_load: Receives each local expert's routed-token count.
 
     Raises:
@@ -638,6 +973,8 @@ def ep_local_dispatch[
         n_local,
         fused_shared_expert,
         world_size,
+        InputScalesFnType,
+        has_input_scales,
         ExpertLoadT,
         InputTokensEngine=InputTokensEngine,
         TopkIdsEngine=TopkIdsEngine,
@@ -662,7 +999,10 @@ def ep_local_dispatch[
         Int32(tokens_per_cta),
         my_rank,
         expert_load,
-        grid_dim=max(ceildiv(num_tokens, tokens_per_cta), 1),
+        host_args=(input_scales_fn,),
+        grid_dim=local_dispatch_grid[token_fmt_type.scale_block_rows](
+            num_tokens, tokens_per_cta
+        ),
         block_dim=_EP_SELF_THREADS,
         attributes=pdl_launch_attributes(PDLLevel.ON),
     )

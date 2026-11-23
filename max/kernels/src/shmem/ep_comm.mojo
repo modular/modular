@@ -1214,6 +1214,17 @@ trait TokenFormat(Deinitable, DevicePassable):
     # local dispatch rounds its groups up to as well.
     comptime expert_m_padding: Int = 1
 
+    # Rows per block of a scale layout that starts each expert group on a new
+    # block (the NVFP4 grouped matmul's 128), or 0 when the format has no such
+    # layout. The local dispatch then gives each row its place in the blocks,
+    # writes the per-group block offsets and zeros each group's last-block
+    # tail, as the protocol dispatch does.
+    comptime scale_block_rows: Int = 0
+
+    # Scale atoms (`SF_ATOM_K` scales of 128 rows) in a row of that layout;
+    # the local dispatch zeros a group's tail one atom a warp.
+    comptime scale_atoms: Int = 0
+
     @inline(.always)
     @staticmethod
     def token_size() -> Int:
@@ -1313,6 +1324,8 @@ trait TokenFormat(Deinitable, DevicePassable):
         self,
         token: Array[SIMD[src_type, width], per_thread],
         rows: Array[Int, n_rows],
+        scale_rows: Array[Int, n_rows],
+        input_scale: Float32,
     ) -> None:
         """Writes one token straight to its output rows.
 
@@ -1332,11 +1345,30 @@ trait TokenFormat(Deinitable, DevicePassable):
         Args:
             token: This thread's vectors of the token.
             rows: The output rows to write; negative entries are skipped.
+            scale_rows: Each row's place in the blocked scale layout, read
+                only when `scale_block_rows > 0`.
+            input_scale: The input scale, as the protocol dispatch passes
+                `copy_token_to_send_buf`.
         """
         comptime assert src_type != src_type, (
             "this token format has no local rows, so it cannot take the"
             " all-reduce mode's local dispatch"
         )
+
+    @always_inline
+    def zero_scale_atom(self, begin: Int, end: Int, atom: Int) -> None:
+        """Zeros scale atom `atom` of the blocked-layout rows `[begin, end)`,
+        which lie in one block.
+
+        The local dispatch calls it from every lane of a warp at once, for
+        each group's last-block tail, only when `scale_block_rows > 0`.
+
+        Args:
+            begin: The first row to zero.
+            end: One past the last row to zero.
+            atom: The atom of the rows to zero, below `scale_atoms`.
+        """
+        pass
 
     @always_inline
     @staticmethod
@@ -1557,6 +1589,8 @@ struct BF16TokenFormat[
         self,
         token: Array[SIMD[src_type, width], per_thread],
         rows: Array[Int, n_rows],
+        scale_rows: Array[Int, n_rows],
+        input_scale: Float32,
     ) -> None:
         comptime assert src_type == .bfloat16, "the rows hold the token as is"
         comptime n_vecs = Self.hid_dim // width
@@ -1839,6 +1873,8 @@ struct BlockwiseFP8TokenFormat[
         self,
         token: Array[SIMD[src_type, width], per_thread],
         rows: Array[Int, n_rows],
+        scale_rows: Array[Int, n_rows],
+        input_scale: Float32,
     ) -> None:
         comptime n_vecs = Self.hid_dim // width
         comptime group_lanes = Self.group_size // width
@@ -2083,6 +2119,20 @@ struct NVBlockScaledTokenFormat[
         and not Self.ep_copy_role_split
         and not Self.ep_prequantized
     )
+    # NVFP4 with the kernel-wide input scale, the variant the all-reduce mode
+    # dispatches; the protocol dispatch keeps the others. The local writer
+    # needs each NVIDIA warp's 16-byte BF16 vectors to cover whole rows
+    # (256 elements a warp); other widths fall back to the protocol.
+    comptime local_rows = (
+        Self.is_nvfp4
+        and not Self.nvfp4_dyn_global_scales
+        and not Self.ep_prequantized
+        and Self.sf_arena_rows == 0
+        and Self._hid_dim % 256 == 0
+    )
+    comptime scale_block_rows = SF_MN_GROUP_SIZE if Self.local_rows else 0
+    comptime _sf_atoms_per_row = Self._hid_dim // Self.group_size // SF_ATOM_K
+    comptime scale_atoms = Self._sf_atoms_per_row if Self.local_rows else 0
 
     comptime ScalesTMATensorTileType = TMATensorTile[
         Self.scales_dtype,
@@ -2097,6 +2147,9 @@ struct NVBlockScaledTokenFormat[
     var output_tokens: Self.TensorType
     var output_scales_offset: Self.ScalesOffsetTensorType
     var output_rowwise_scales: Self.RowwiseScalesTensorType
+    # The scale tiles the TMA descriptor addresses, which the local dispatch
+    # writes with plain stores.
+    var output_scales_ptr: MutPointer[UInt8, MutUntrackedOrigin]
 
     comptime device_type: AnyType = Self
 
@@ -2169,6 +2222,9 @@ struct NVBlockScaledTokenFormat[
             ),
             output_scales_offset.layout,
         }
+        self.output_scales_ptr = MutPointer[UInt8, MutUntrackedOrigin](
+            unsafe_from_address=Int(output_scales.unsafe_ptr())
+        )
         comptime if Self.nvfp4_dyn_global_scales:
             match output_rowwise_scales:
                 case .Some(rowwise_scales):
@@ -2603,33 +2659,9 @@ struct NVBlockScaledTokenFormat[
         var loaded_vec = src_p.unsafe_load[
             width=src_width, alignment=Self.alignment, invariant=True
         ](i * src_width)
-
-        # each thread finds maximum value in its local 8 elements
-        var thread_max = abs(loaded_vec).reduce_max().cast[DType.float32]()
-        # find the maximum value among all 16 elements
-        var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
-            thread_max
-        )
-
-        var scale_factor: Float32
-        comptime if Self.is_mxfp8:
-            scale_factor = group_max * recip(Float32(448.0))
-        elif Self.is_nvfp4:
-            scale_factor = input_scale * (group_max * recip(Float32(6.0)))
-        else:
-            scale_factor = group_max * recip(Float32(6.0))
-
-        # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
-        var fp8_scale_factor = scale_factor.cast[Self.scales_dtype]()
-
-        var output_scale = Float32(0.0)
-        if group_max != 0:
-            comptime if Self.is_nvfp4:
-                output_scale = recip(
-                    fp8_scale_factor.cast[DType.float32]() * recip(input_scale)
-                )
-            else:
-                output_scale = recip(fp8_scale_factor.cast[DType.float32]())
+        var fp8_scale_factor, output_scale = Self._block_scale[
+            NUM_THREADS_PER_SF
+        ](loaded_vec, input_scale)
 
         # write back the scale factor
         comptime scale_bytes = size_of[Self.scales_dtype]()
@@ -2665,6 +2697,182 @@ struct NVBlockScaledTokenFormat[
                 i * byte_width,
                 bitcast[DType.uint8, byte_width](output_vector),
             )
+
+    @always_inline
+    @staticmethod
+    def _block_scale[
+        src_type: DType, width: Int, //, group_lanes: Int
+    ](vec: SIMD[src_type, width], input_scale: Float32) -> Tuple[
+        Scalar[Self.scales_dtype], Float32
+    ]:
+        """Returns one scale group's scale and the factor that quantizes it.
+
+        The `group_lanes` adjacent lanes that hold a group's vectors call it
+        together: the scale comes from their shared maximum.
+        """
+        # each thread finds maximum value in its local 8 elements
+        var thread_max = abs(vec).reduce_max().cast[DType.float32]()
+        # find the maximum value among all 16 elements
+        var group_max = warp.lane_group_max[num_lanes=group_lanes](thread_max)
+
+        var scale_factor: Float32
+        comptime if Self.is_mxfp8:
+            scale_factor = group_max * recip(Float32(448.0))
+        elif Self.is_nvfp4:
+            scale_factor = input_scale * (group_max * recip(Float32(6.0)))
+        else:
+            scale_factor = group_max * recip(Float32(6.0))
+
+        # NOTE: NVFP4 uses FP8-UE4M3 format for the scale factor but we know that scale_factor is always positive, so we can use E4M3 instead of UE4M3.
+        var fp8_scale_factor = scale_factor.cast[Self.scales_dtype]()
+
+        var output_scale = Float32(0.0)
+        if group_max != 0:
+            comptime if Self.is_nvfp4:
+                output_scale = recip(
+                    fp8_scale_factor.cast[DType.float32]() * recip(input_scale)
+                )
+            else:
+                output_scale = recip(fp8_scale_factor.cast[DType.float32]())
+        return (fp8_scale_factor, output_scale)
+
+    @always_inline
+    @staticmethod
+    def _sf_atom_offset(scale_row: Int, atom: Int) -> Int:
+        """Returns the byte offset of a row's `atom`-th scale atom in the
+        grouped matmul's 5D scale layout, which the scales TMA box writes."""
+        var block, u = divmod(scale_row, SF_MN_GROUP_SIZE)
+        var u_hi, u_lo = divmod(u, SF_ATOM_M[0])
+        return (
+            (block * Self._sf_atoms_per_row + atom) * SF_ATOM_ELEMS_LOCAL
+            + u_lo * SF_ROW_STRIDE_LOCAL
+            + u_hi * SF_ATOM_K
+        )
+
+    @always_inline
+    def copy_token_to_output_rows[
+        src_type: DType,
+        width: Int,
+        per_thread: Int,
+        n_rows: Int,
+        //,
+        block_size: Int,
+    ](
+        self,
+        token: Array[SIMD[src_type, width], per_thread],
+        rows: Array[Int, n_rows],
+        scale_rows: Array[Int, n_rows],
+        input_scale: Float32,
+    ) -> None:
+        Self.write_local_rows[block_size](
+            self.output_tokens._storage.unsafe_bitcast[UInt8](),
+            self.output_scales_ptr,
+            token,
+            rows,
+            scale_rows,
+            input_scale,
+        )
+
+    @always_inline
+    @staticmethod
+    def write_local_rows[
+        src_type: DType,
+        width: Int,
+        per_thread: Int,
+        n_rows: Int,
+        //,
+        block_size: Int,
+    ](
+        tokens_base: MutPointer[UInt8, _],
+        scales_base: MutPointer[UInt8, _],
+        token: Array[SIMD[src_type, width], per_thread],
+        rows: Array[Int, n_rows],
+        scale_rows: Array[Int, n_rows],
+        input_scale: Float32,
+    ) -> None:
+        """`copy_token_to_output_rows` on the rows at `tokens_base` and the
+        5D scale tiles at `scales_base`, for callers that hold no format."""
+        comptime assert Self.local_rows, "this variant writes no local rows"
+        comptime assert size_of[Self.scales_dtype]() == 1
+        comptime n_vecs = Self.hid_dim // width
+        comptime group_lanes = Self.group_size // width
+        comptime atom_lanes = group_lanes * SF_ATOM_K
+        comptime byte_width = width // 2
+        comptime assert (
+            Self.group_size % width == 0 and WARP_SIZE % atom_lanes == 0
+        ), "a warp must hold whole scale atoms"
+        comptime assert (
+            n_vecs % WARP_SIZE == 0 and block_size % WARP_SIZE == 0
+        ), "each warp must quantize whole groups at once"
+        # Every vector is quantized before any is stored, so the store loop
+        # keeps one row's addresses live at a time. The first lane of each
+        # atom gathers its four scales into one word.
+        var quants = Array[SIMD[DType.uint8, byte_width], per_thread](fill=0)
+        var atoms = Array[UInt32, per_thread](fill=0)
+        comptime for v in range(per_thread):
+            if thread_idx.x + v * block_size < n_vecs:
+                var scale, factor = Self._block_scale[group_lanes](
+                    token[v], input_scale
+                )
+                var scaled = token[v].cast[DType.float32]() * factor
+                quants[v] = bitcast[DType.uint8, byte_width](
+                    cast_fp32_to_fp4e2m1(scaled)
+                )
+                var byte = UInt32(bitcast[DType.uint8, 1](scale))
+                var word = byte
+                comptime for j in range(1, SF_ATOM_K):
+                    word |= warp.shuffle_down(
+                        byte, UInt32(j * group_lanes)
+                    ) << UInt32(8 * j)
+                atoms[v] = word
+        var stores_atom = lane_id() % atom_lanes == 0
+        comptime for k in range(n_rows):
+            if rows[k] >= 0:
+                comptime for v in range(per_thread):
+                    var i = thread_idx.x + v * block_size
+                    if i < n_vecs:
+                        tokens_base.unsafe_store[alignment=byte_width](
+                            rows[k] * Self.quant_size() + i * byte_width,
+                            quants[v],
+                        )
+                        if stores_atom:
+                            scales_base.unsafe_store[alignment=4](
+                                Self._sf_atom_offset(
+                                    scale_rows[k], i // atom_lanes
+                                ),
+                                bitcast[DType.uint8, 4](atoms[v]),
+                            )
+
+    @always_inline
+    def zero_scale_atom(self, begin: Int, end: Int, atom: Int) -> None:
+        Self.zero_scale_atom_at(self.output_scales_ptr, begin, end, atom)
+
+    @always_inline
+    @staticmethod
+    def zero_scale_atom_at(
+        scales_base: MutPointer[UInt8, _],
+        begin: Int,
+        end: Int,
+        atom: Int,
+    ) -> None:
+        """`zero_scale_atom` on the 5D scale tiles at `scales_base`."""
+        comptime assert SF_ATOM_M[0] == WARP_SIZE, "one lane a 16-byte chunk"
+        # Lane `l`'s 16-byte chunk holds rows `l + 32 q` (q < 4) of the atom;
+        # it is stored whole when all four rows are in range.
+        var lo = begin - begin % SF_MN_GROUP_SIZE + lane_id()
+        var base = Self._sf_atom_offset(lo, atom)
+        var hi = lo + (SF_ATOM_M[1] - 1) * SF_ATOM_M[0]
+        if lo >= begin and hi < end:
+            scales_base.unsafe_store[alignment=16](
+                base, SIMD[DType.uint8, 16](0)
+            )
+        else:
+            comptime for q in range(SF_ATOM_M[1]):
+                var r = lo + q * SF_ATOM_M[0]
+                if r >= begin and r < end:
+                    scales_base.unsafe_store[alignment=4](
+                        base + q * SF_ATOM_K, SIMD[DType.uint8, 4](0)
+                    )
 
     @inline(.always)
     def copy_msg_to_output_tensor[
