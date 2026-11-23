@@ -144,8 +144,7 @@ struct MODULAR_CXX_EXPORT CPUDeviceOptions {
   bool tcmallocAllocator = true;
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
-  WorkQueueType workQueueType = numThreads == 1 ? WorkQueueType::kSingleThread
-                                                : WorkQueueType::kThreadPool;
+  WorkQueueType workQueueType = WorkQueueType::kThreadPool;
   /// When true and workQueueType is kThreadPool, creates a partitioned
   /// WorkQueue per NUMA node and wraps them in a DelegateThreadPoolWorkQueue.
   bool numaPartitioned = false;

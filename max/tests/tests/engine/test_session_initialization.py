@@ -14,8 +14,7 @@
 """Session initialization regressions for modular/modular#7531.
 
 The CPU runtime and Python CPU cache are process-wide, so each lifecycle runs
-in a fresh interpreter. These tests initialize sessions and graphs only; they
-do not compile or execute models.
+in a fresh interpreter.
 """
 
 import os
@@ -112,4 +111,25 @@ def test_runtime_initialization_order(
         """,
         tmp_path,
         num_threads,
+    )
+
+
+def test_compile_twice_with_one_thread(tmp_path: Path) -> None:
+    _run(
+        """
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+
+        session = InferenceSession(devices=[CPU()])
+        tensor = TensorType(DType.float32, [1], device=DeviceRef.CPU())
+        with Graph("identity", input_types=[tensor]) as graph:
+            graph.output(graph.inputs[0].tensor)
+
+        session.compile(graph)
+        session.compile(graph)
+        """,
+        tmp_path,
+        num_threads=1,
     )

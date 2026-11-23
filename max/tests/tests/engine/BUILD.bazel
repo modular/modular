@@ -13,11 +13,13 @@ modular_py_test(
     # MAX imports live in subprocess strings to isolate the process CPU runtime.
     ignore_extra_deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
     ],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
     ],

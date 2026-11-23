@@ -29,7 +29,7 @@ CPUDeviceRef createTestCPUDevice() {
                                            .withMainWillNotDonate());
 }
 
-TEST(CPUDeviceDeathTest, ConfiguredThreadCountSelectsWorkQueue) {
+TEST(CPUDeviceDeathTest, ConfiguredThreadCountUsesThreadPool) {
   // Re-execute for each count because the runtime caches it process-wide.
   GTEST_FLAG_SET(death_test_style, "threadsafe");
   for (size_t count : {1u, 2u}) {
@@ -40,8 +40,7 @@ TEST(CPUDeviceDeathTest, ConfiguredThreadCountSelectsWorkQueue) {
           CPUDeviceOptions options;
           EXPECT_EQ(options.numThreads, count);
           EXPECT_EQ(options.workQueueType,
-                    count == 1 ? CPUDeviceOptions::WorkQueueType::kSingleThread
-                               : CPUDeviceOptions::WorkQueueType::kThreadPool);
+                    CPUDeviceOptions::WorkQueueType::kThreadPool);
           std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
         },
         ::testing::ExitedWithCode(0), "");
