@@ -600,17 +600,16 @@ kgen.func @arg_narrow_ints_linux(%u8: !kgen.scalar<ui8>, %s16: !kgen.scalar<si16
 // -----
 
 // I3: Darwin - {si8}, {ui16} and {bool} arguments, {si8} result. clang
-// coerces a struct of one narrow integer to an integer of its size and does
-// not extend it, so the coerced integers get no mark, whatever the sign of the
-// field.
+// coerces a struct of one narrow integer to i64 and does not extend it, so the
+// coerced integers get no mark, whatever the sign of the field.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_single_field_structs_darwin
 kgen.func @arg_single_field_structs_darwin(%s8: !kgen.struct<(scalar<si8>)>, %u16: !kgen.struct<(scalar<ui16>)>, %bool: !kgen.struct<(scalar<bool>)>) {
-  // CHECK: llvm.call @c_i3(%{{.*}}, %{{.*}}, %{{.*}}) : (i8, i16, i8) -> i8
+  // CHECK: llvm.call @c_i3(%{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64) -> i8
   %r = pop.external_call @c_i3(%s8, %u16, %bool) : (!kgen.struct<(scalar<si8>)>, !kgen.struct<(scalar<ui16>)>, !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)>
   hlcf.return
 }
-// CHECK: llvm.func @c_i3(i8, i16, i8) -> i8
+// CHECK: llvm.func @c_i3(i64, i64, i64) -> i8
 }
 
 // -----
