@@ -1004,6 +1004,9 @@ static LogicalResult lowerAttributesAndTypes(
             if (newOperands.size() != paramValues.size()) {
               TypedAttr generator =
                   cast<TypedAttr>(replacer.replace(bindParams.getGenerator()));
+              // If all params were singletons, there's nothing left to bind.
+              if (!sugarIsa<GeneratorType>(generator.getType()))
+                return std::make_pair(generator, WalkResult::skip());
               return std::make_pair(
                   BindParamsAttr::get(generator.getContext(), generator,
                                       newOperands,
