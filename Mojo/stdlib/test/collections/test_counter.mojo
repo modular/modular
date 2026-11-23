@@ -67,26 +67,26 @@ def test_construction_from_iterable_unicode() raises:
     assert_equal(len(cafe), 5)
 
 
-# def test_and() raises:
-#     var c1 = Counter[String]()
-#     c1["a"] = 1
-#     c1["b"] = 2
+def test_and() raises:
+    var c1 = Counter[String]()
+    c1["a"] = 1
+    c1["b"] = 2
 
-#     var c2 = Counter[String]()
-#     c2["b"] = 3
-#     c2["c"] = 4
+    var c2 = Counter[String]()
+    c2["b"] = 3
+    c2["c"] = 4
 
-#     var c3 = c1 & c2
+    var c3 = c1 & c2
 
-#     assert_equal(c3["a"], 0)
-#     assert_equal(c3["b"], 2)
-#     assert_equal(c3["c"], 0)
+    assert_equal(c3["a"], 0)
+    assert_equal(c3["b"], 2)
+    assert_equal(c3["c"], 0)
 
-#     c1 &= c2
+    c1 &= c2
 
-#     assert_equal(c1["a"], 0)
-#     assert_equal(c1["b"], 2)
-#     assert_equal(c1["c"], 0)
+    assert_equal(c1["a"], 0)
+    assert_equal(c1["b"], 2)
+    assert_equal(c1["c"], 0)
 
 
 # def test_bool() raises:
@@ -396,80 +396,80 @@ def test_most_common_clamps() raises:
 #     assert_equal(c1["c"], 4)
 
 
-# def test_add() raises:
-#     var c1 = Counter[String]()
-#     c1["a"] = 3
-#     c1["b"] = 2
-#     c1["d"] = -1  # should be ignored
+def test_add() raises:
+    var c1 = Counter[String]()
+    c1["a"] = 3
+    c1["b"] = 2
+    c1["d"] = -1  # should be ignored
 
-#     var c2 = Counter[String]()
-#     c2["a"] = -2
-#     c2["b"] = 3
-#     c2["c"] = 4
-#     c2["e"] = 0  # should be ignored
+    var c2 = Counter[String]()
+    c2["a"] = -2
+    c2["b"] = 3
+    c2["c"] = 4
+    c2["e"] = 0  # should be ignored
 
-#     var c3 = c1 + c2
+    var c3 = c1 + c2
 
-#     assert_equal(c3["a"], 1)
-#     assert_equal(c3["b"], 5)
-#     assert_equal(c3["c"], 4)
-#     # Check that the original counters are not modified
-#     assert_equal(c1["a"], 3)
-#     assert_equal(c1["b"], 2)
-#     assert_equal(c1["d"], -1)
+    assert_equal(c3["a"], 1)
+    assert_equal(c3["b"], 5)
+    assert_equal(c3["c"], 4)
+    # Check that the original counters are not modified
+    assert_equal(c1["a"], 3)
+    assert_equal(c1["b"], 2)
+    assert_equal(c1["d"], -1)
 
-#     c2 += c1
+    c2 += c1
 
-#     assert_equal(c2["a"], 1)
-#     assert_equal(c2["b"], 5)
-#     assert_equal(c2["c"], 4)
-
-
-# def test_subtract() raises:
-#     var c1 = Counter[String]()
-#     c1["a"] = 4
-#     c1["b"] = 2
-#     c1["c"] = 0
-
-#     var c2 = Counter[String]()
-#     c2["a"] = 1
-#     c2["b"] = -2
-#     c2["c"] = 3
-
-#     c1.subtract(c2)
-
-#     assert_equal(c1["a"], 3)
-#     assert_equal(c1["b"], 4)
-#     assert_equal(c1["c"], -3)
+    assert_equal(c2["a"], 1)
+    assert_equal(c2["b"], 5)
+    assert_equal(c2["c"], 4)
 
 
-# def test_sub() raises:
-#     var c1 = Counter[String]()
-#     c1["a"] = 4
-#     c1["b"] = 2
-#     c1["c"] = 0
+def test_subtract() raises:
+    var c1 = Counter[String]()
+    c1["a"] = 4
+    c1["b"] = 2
+    c1["c"] = 0
 
-#     var c2 = Counter[String]()
-#     c2["a"] = 1
-#     c2["b"] = -2
-#     c2["c"] = 3
+    var c2 = Counter[String]()
+    c2["a"] = 1
+    c2["b"] = -2
+    c2["c"] = 3
 
-#     var c3 = c1 - c2
+    c1.subtract(c2)
 
-#     assert_equal(c3["a"], 3)
-#     assert_equal(c3["b"], 4)
-#     assert_equal(c3["c"], 0)
+    assert_equal(c1["a"], 3)
+    assert_equal(c1["b"], 4)
+    assert_equal(c1["c"], -3)
 
-#     # Check that the original counters are not modified
-#     assert_equal(c1["a"], 4)
-#     assert_equal(c1["b"], 2)
-#     assert_equal(c1["c"], 0)
 
-#     c2 -= c1
+def test_sub() raises:
+    var c1 = Counter[String]()
+    c1["a"] = 4
+    c1["b"] = 2
+    c1["c"] = 0
 
-#     assert_equal(c2["a"], 0)
-#     assert_equal(c2["b"], 0)
-#     assert_equal(c2["c"], 3)
+    var c2 = Counter[String]()
+    c2["a"] = 1
+    c2["b"] = -2
+    c2["c"] = 3
+
+    var c3 = c1 - c2
+
+    assert_equal(c3["a"], 3)
+    assert_equal(c3["b"], 4)
+    assert_equal(c3["c"], 0)
+
+    # Check that the original counters are not modified
+    assert_equal(c1["a"], 4)
+    assert_equal(c1["b"], 2)
+    assert_equal(c1["c"], 0)
+
+    c2 -= c1
+
+    assert_equal(c2["a"], 0)
+    assert_equal(c2["b"], 0)
+    assert_equal(c2["c"], 3)
 
 
 # def test_counter_setitem() raises:
@@ -609,6 +609,192 @@ def test_most_common_clamps() raises:
 #     assert_equal(it.bounds()[0], 1)
 #     _ = it.__next__()
 #     assert_equal(it.bounds()[0], 0)
+
+
+# ===----------------------------------------------------------------------=== #
+# In-place operators that remove keys
+# ===----------------------------------------------------------------------=== #
+
+
+def _assert_keys_and_counts(
+    c: Counter[Int], keys: List[Int], counts: List[Int]
+) raises:
+    """Checks that `c` holds exactly `keys`, in order, with `counts`."""
+    assert_equal(len(c), len(keys))
+    var i = 0
+    for key in c.keys():
+        assert_true(i < len(keys), "more keys than expected")
+        assert_equal(key, keys[i])
+        assert_equal(c[key], counts[i])
+        i += 1
+    assert_equal(i, len(keys))
+
+
+def _check_inplace_removal(n: Int, remove: List[Int]) raises:
+    """Runs `&=`, `-=` and `+=` on a counter with keys `0..n-1`, so that the
+    keys in `remove` end up with a non-positive count or are excluded, and
+    checks that exactly the other keys remain, with the right counts and in
+    insertion order.
+    """
+    var removed = List[Bool](length=n, fill=False)
+    for k in remove:
+        removed[k] = True
+
+    var kept_keys = List[Int]()
+    var kept_counts = List[Int]()
+    for k in range(n):
+        if not removed[k]:
+            kept_keys.append(k)
+            kept_counts.append(3)
+
+    # Every key starts at 5, and every kept key ends at 3.
+    var base = Counter[Int]()
+    for k in range(n):
+        base[k] = 5
+
+    # `&=`: drop the removed keys from `other`, so they are excluded.
+    var and_other = Counter[Int]()
+    for k in range(n):
+        if not removed[k]:
+            and_other[k] = 3
+    var a = base.copy()
+    a &= and_other
+    _assert_keys_and_counts(a, kept_keys, kept_counts)
+    _assert_keys_and_counts(base & and_other, kept_keys, kept_counts)
+
+    # `-=`: removed keys alternate between landing on 0 and going negative.
+    var sub_other = Counter[Int]()
+    for k in range(n):
+        sub_other[k] = 5 + (k % 2) if removed[k] else 2
+    var s = base.copy()
+    s -= sub_other
+    _assert_keys_and_counts(s, kept_keys, kept_counts)
+    _assert_keys_and_counts(base - sub_other, kept_keys, kept_counts)
+
+    # `+=`: same, with negative counts in `other`.
+    var add_other = Counter[Int]()
+    for k in range(n):
+        add_other[k] = -5 - (k % 2) if removed[k] else -2
+    var p = base.copy()
+    p += add_other
+    _assert_keys_and_counts(p, kept_keys, kept_counts)
+    _assert_keys_and_counts(base + add_other, kept_keys, kept_counts)
+
+
+def _key_range(start: Int, end: Int) -> List[Int]:
+    var keys = List[Int]()
+    for k in range(start, end):
+        keys.append(k)
+    return keys^
+
+
+def test_iand_issue_7641() raises:
+    # Reproducer from https://github.com/modular/modular/issues/7641.
+    var left = Counter[Int].fromkeys([1, 2, 3], 1)
+    var right = Counter[Int].fromkeys([2], 1)
+    var ordinary = left & right
+    _assert_keys_and_counts(ordinary, [2], [1])
+    left &= right
+    _assert_keys_and_counts(left, [2], [1])
+
+
+def test_inplace_ops_issue_7658() raises:
+    # Reproducer from https://github.com/modular/modular/issues/7658.
+    var a = Counter[Int]()
+    var b = Counter[Int]()
+    for i in range(100):
+        a[i] = 1
+        b[i] = 5
+    assert_equal(len(a - b), 0)
+    a -= b
+    assert_equal(len(a), 0)
+
+    var c = Counter[Int]()
+    var d = Counter[Int]()
+    for i in range(100):
+        c[i] = 5
+    for i in range(90, 100):
+        d[i] = 3
+    assert_equal(len(c & d), 10)
+    c &= d
+    assert_equal(len(c), 10)
+    for i in range(90, 100):
+        assert_equal(c[i], 3)
+
+    var e = Counter[Int]()
+    var f = Counter[Int]()
+    for i in range(100):
+        e[i] = 1
+        f[i] = -1
+    assert_equal(len(e + f), 0)
+    e += f
+    assert_equal(len(e), 0)
+
+
+def test_inplace_ops_remove_single_key() raises:
+    _check_inplace_removal(1, [0])
+    _check_inplace_removal(2, [0])
+    _check_inplace_removal(2, [1])
+    _check_inplace_removal(10, [5])
+
+
+def test_inplace_ops_remove_first_or_last_key() raises:
+    _check_inplace_removal(10, [0])
+    _check_inplace_removal(10, [9])
+    _check_inplace_removal(10, [0, 9])
+    _check_inplace_removal(100, [0])
+    _check_inplace_removal(100, [99])
+    _check_inplace_removal(100, [0, 99])
+
+
+def test_inplace_ops_remove_adjacent_keys() raises:
+    _check_inplace_removal(10, [3, 4])
+    _check_inplace_removal(100, _key_range(0, 50))
+    _check_inplace_removal(100, _key_range(50, 100))
+    _check_inplace_removal(100, _key_range(20, 80))
+    _check_inplace_removal(1000, _key_range(0, 999))
+    _check_inplace_removal(1000, _key_range(1, 1000))
+
+
+def test_inplace_ops_remove_many_keys() raises:
+    var evens = List[Int]()
+    var odds = List[Int]()
+    for k in range(1000):
+        if k % 2 == 0:
+            evens.append(k)
+        else:
+            odds.append(k)
+    _check_inplace_removal(1000, evens)
+    _check_inplace_removal(1000, odds)
+
+    var most = List[Int]()
+    for k in range(1000):
+        if k % 10 != 7:
+            most.append(k)
+    _check_inplace_removal(1000, most)
+
+
+def test_inplace_ops_remove_every_key() raises:
+    for n in [1, 2, 3, 8, 9, 100, 1000]:
+        _check_inplace_removal(n, _key_range(0, n))
+
+
+def test_iand_after_pop() raises:
+    # Popping leaves stale slots in the underlying `Dict`, so the next insert
+    # into it compacts its storage. `&=` must still visit every key.
+    var c = Counter[Int]()
+    for i in range(100):
+        c[i] = 5
+    for i in range(60):
+        _ = c.pop(i)
+
+    var other = Counter[Int]()
+    for i in range(60, 100):
+        other[i] = 3
+    c &= other
+    _assert_keys_and_counts(
+        c, _key_range(60, 100), List[Int](length=40, fill=3)
+    )
 
 
 def main() raises:
