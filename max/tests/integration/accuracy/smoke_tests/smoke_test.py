@@ -253,6 +253,37 @@ def is_vision_model(model: str, framework: str | None = None) -> bool:
     )
 
 
+CASCADE_FRAMEWORKS = ("max", "max-ci", "mach-ci")
+
+
+def cascade_gate(framework: str, cascade: bool) -> None:
+    """Refuse a Cascade recipe on a framework that cannot serve it."""
+    if cascade and framework not in CASCADE_FRAMEWORKS:
+        raise ValueError(
+            f"Cascade is only supported for MAX and Mach, not {framework}"
+        )
+
+
+def runs_vision(model: str, framework: str, cascade: bool) -> bool:
+    """Whether the run sends images.
+
+    TODO(SERVSYS-1330): run the vision task with Cascade once it accepts
+    images.
+    """
+    return is_vision_model(model, framework) and not cascade
+
+
+def tasks_for(
+    model: str, framework: str, cascade: bool, override: tuple[str, ...]
+) -> list[str]:
+    """The eval tasks this run uses."""
+    if override:
+        return list(override)
+    if runs_vision(model, framework, cascade):
+        return [VISION_TASK, TEXT_TASK]
+    return [TEXT_TASK]
+
+
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
@@ -865,8 +896,8 @@ def smoke_test(
         raise ValueError(f"{framework} serves its own config, not a recipe")
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
-    if cascade and framework not in ("max", "max-ci"):
-        raise ValueError(f"Cascade is only supported for MAX, not {framework}")
+    cascade_gate(framework, cascade)
+    vision = runs_vision(model, framework, cascade)
     # A recipe can serve its weights under another name; requests must use it.
     served = hf_model_path
     if recipe_path:
@@ -880,9 +911,7 @@ def smoke_test(
         # A variant selects how the server serves its base repo, which
         # requests name.
         served = model.split("__", 1)[0]
-        serving = SERVERS[framework](
-            model, timeout, is_vision_model(model, framework)
-        )
+        serving = SERVERS[framework](model, timeout, vision)
     else:
         cmd, server_env = get_server_cmd(
             framework,
@@ -896,13 +925,7 @@ def smoke_test(
         logger.info(f"Starting server with command:\n {shlex.join(cmd)}")
         serving = start_server(cmd, timeout, env_overrides=server_env)
 
-    if override_tasks:
-        tasks = list(override_tasks)
-    # TODO(SERVSYS-1330): Run the vision task with Cascade once it accepts images.
-    elif is_vision_model(model, framework) and not cascade:
-        tasks = [VISION_TASK, TEXT_TASK]
-    else:
-        tasks = [TEXT_TASK]
+    tasks = tasks_for(model, framework, cascade, override_tasks)
 
     results = []
     all_samples = []

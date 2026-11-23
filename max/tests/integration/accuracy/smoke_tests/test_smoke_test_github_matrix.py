@@ -203,3 +203,20 @@ def test_mach_models_run_only_on_mach() -> None:
     assert mach_only <= scheduled("mach-ci")
     for framework in ("max-ci", "vllm", "sglang"):
         assert not mach_only & scheduled(framework), framework
+
+
+def test_cascade_key_is_mach_only() -> None:
+    """The Cascade key has no MAX lane: only Mach CI schedules it."""
+
+    def scheduled(framework: str) -> set[str]:
+        result = CliRunner().invoke(
+            smoke_test_github_matrix.main,
+            ["--framework", framework, "--tier", "nightly", "--run-on-b200"],
+        )
+        assert result.exit_code == 0
+        return {job["model"] for job in json.loads(result.output)["include"]}
+
+    key = "google/gemma-4-31B-it__cascade"
+    assert key in scheduled("mach-ci")
+    for framework in ("max-ci", "vllm", "sglang"):
+        assert key not in scheduled(framework), framework
