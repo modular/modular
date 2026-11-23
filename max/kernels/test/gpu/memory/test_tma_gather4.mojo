@@ -203,14 +203,21 @@ def _typed_row_major[
     return ConcLayout(shape_c, stride_c)
 
 
-comptime _PagedCollection = PagedKVCacheCollection[
-    _,
-    _,
-    _,
-    MutAnyOrigin,
-    ImmutAnyOrigin,
-    ImmutAnyOrigin,
-    MutAnyOrigin,
+comptime _PagedCollection[
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
+    blocks_origin: MutOrigin,
+    cache_origin: Origin,
+    lookup_origin: Origin,
+] = PagedKVCacheCollection[
+    dtype,
+    kv_params,
+    page_size,
+    blocks_origin,
+    ImmOrigin(cache_origin),
+    ImmOrigin(lookup_origin),
+    MutUntrackedOrigin,
 ]
 
 
@@ -223,13 +230,27 @@ def _paged_collection[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    blocks: TileTensor[dtype, blocks_layout, _],
+    blocks: TileTensor[mut=True, dtype, blocks_layout, _],
     cache_lengths: TileTensor[.uint32, cache_layout, _],
     lookup_table: TileTensor[.uint32, lookup_layout, _],
     max_seq_length: UInt32,
     max_cache_length: UInt32,
-) -> _PagedCollection[dtype, kv_params, page_size]:
-    comptime C = _PagedCollection[dtype, kv_params, page_size]
+) -> _PagedCollection[
+    dtype,
+    kv_params,
+    page_size,
+    type_of(blocks).origin,
+    type_of(cache_lengths).origin,
+    type_of(lookup_table).origin,
+]:
+    comptime C = _PagedCollection[
+        dtype,
+        kv_params,
+        page_size,
+        type_of(blocks).origin,
+        type_of(cache_lengths).origin,
+        type_of(lookup_table).origin,
+    ]
     var blocks_shape = IndexList[6](
         Int(blocks.dim[0]()),
         Int(blocks.dim[1]()),
@@ -243,23 +264,17 @@ def _paged_collection[
     )
     return C(
         C.blocks_tt_type(
-            blocks.unsafe_ptr()
-            .unsafe_mut_cast[True]()
-            .unsafe_origin_cast[MutAnyOrigin](),
+            blocks.unsafe_ptr(),
             _typed_row_major[C.blocks_tt_layout](blocks_shape),
         ),
         C.CacheType.cache_lengths_tt_type(
-            ptr=cache_lengths.unsafe_ptr()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
+            ptr=cache_lengths.unsafe_ptr().as_imm(),
             layout=_typed_row_major[C.CacheType.cache_lengths_tt_layout](
                 IndexList[1](Int(cache_lengths.dim[0]()))
             ),
         ),
         C.CacheType.lookup_table_tt_type(
-            ptr=lookup_table.unsafe_ptr()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
+            ptr=lookup_table.unsafe_ptr().as_imm(),
             layout=_typed_row_major[C.CacheType.lookup_table_tt_layout](
                 lut_shape
             ),
@@ -269,8 +284,18 @@ def _paged_collection[
     )
 
 
-comptime _ContinuousCollection = ContinuousBatchingKVCacheCollection[
-    _, _, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+comptime _ContinuousCollection[
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    blocks_origin: MutOrigin,
+    cache_origin: Origin,
+    lookup_origin: Origin,
+] = ContinuousBatchingKVCacheCollection[
+    dtype,
+    kv_params,
+    blocks_origin,
+    ImmOrigin(cache_origin),
+    ImmOrigin(lookup_origin),
 ]
 
 
@@ -282,13 +307,25 @@ def _continuous_collection[
     dtype: DType,
     kv_params: KVCacheStaticParams,
 ](
-    blocks: TileTensor[dtype, blocks_layout, _],
+    blocks: TileTensor[mut=True, dtype, blocks_layout, _],
     cache_lengths: TileTensor[.uint32, cache_layout, _],
     lookup_table: TileTensor[.uint32, lookup_layout, _],
     max_seq_length: UInt32,
     max_cache_length: UInt32,
-) -> _ContinuousCollection[dtype, kv_params]:
-    comptime C = _ContinuousCollection[dtype, kv_params]
+) -> _ContinuousCollection[
+    dtype,
+    kv_params,
+    type_of(blocks).origin,
+    type_of(cache_lengths).origin,
+    type_of(lookup_table).origin,
+]:
+    comptime C = _ContinuousCollection[
+        dtype,
+        kv_params,
+        type_of(blocks).origin,
+        type_of(cache_lengths).origin,
+        type_of(lookup_table).origin,
+    ]
     var blocks_shape = IndexList[6](
         Int(blocks.dim[0]()),
         Int(blocks.dim[1]()),
@@ -299,23 +336,17 @@ def _continuous_collection[
     )
     return C(
         C.blocks_tt_type(
-            ptr=blocks.unsafe_ptr()
-            .unsafe_mut_cast[True]()
-            .unsafe_origin_cast[MutAnyOrigin](),
+            ptr=blocks.unsafe_ptr(),
             layout=_typed_row_major[C.blocks_tt_layout](blocks_shape),
         ),
         C.CacheType.cache_lengths_tt_type(
-            ptr=cache_lengths.unsafe_ptr()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
+            ptr=cache_lengths.unsafe_ptr().as_imm(),
             layout=_typed_row_major[C.CacheType.cache_lengths_tt_layout](
                 IndexList[1](Int(cache_lengths.dim[0]()))
             ),
         ),
         C.CacheType.lookup_table_tt_type(
-            ptr=lookup_table.unsafe_ptr()
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin](),
+            ptr=lookup_table.unsafe_ptr().as_imm(),
             layout=_typed_row_major[C.CacheType.lookup_table_tt_layout](
                 IndexList[1](Int(lookup_table.dim[0]()))
             ),

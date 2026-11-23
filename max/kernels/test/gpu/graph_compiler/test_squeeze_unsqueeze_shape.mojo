@@ -113,9 +113,9 @@ def run_case[
     ctx.enqueue_copy(idx_dev, idx_host)
     out_dev.enqueue_fill(CANARY)
 
-    var out_ptr = out_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-    var in_ptr = in_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-    var idx_ptr = idx_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var out_ptr = out_dev.unsafe_ptr()
+    var in_ptr = in_dev.unsafe_ptr()
+    var idx_ptr = idx_dev.unsafe_ptr()
     comptime if squeeze:
         squeeze_shape_gpu(
             out_ptr,
@@ -143,8 +143,8 @@ def run_case[
 
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
-    # The helpers take untracked pointers, so keep the device inputs alive
-    # until the kernel has run.
+    # The helpers launch the kernel asynchronously, so keep the device inputs
+    # alive until it has run.
     _ = in_dev^
     _ = idx_dev^
     for d in range(out_rank):

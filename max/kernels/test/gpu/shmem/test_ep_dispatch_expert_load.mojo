@@ -160,24 +160,24 @@ def test_expert_load[
     )
     ctx.enqueue_memset(device_input_buf, Scalar[input_type](0))
 
-    var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
+    var topk_ids_tensor = TileTensor(
         device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
-    )
-    var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
+    ).as_imm()
+    var input_tokens_tensor = TileTensor(
         device_input_buf,
         row_major(n_tokens_per_rank, Idx[hidden_size]),
-    )
-    var output_tensor = TileTensor[origin=MutAnyOrigin](
+    ).as_imm()
+    var output_tensor = TileTensor(
         device_output_buf,
         row_major(Idx[max_recv_num_tokens], Idx[hidden_size]),
     )
-    var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
+    var row_offsets_tensor = TileTensor(
         device_row_offsets_buf, row_major[n_local_experts + 1]()
     )
-    var expert_ids_tensor = TileTensor[origin=MutAnyOrigin](
+    var expert_ids_tensor = TileTensor(
         device_expert_ids_buf, row_major[n_local_experts]()
     )
-    var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
+    var src_token_info_tensor = TileTensor(
         device_src_token_info_buf,
         row_major(Idx[max_recv_num_tokens], Idx[2]),
     )
@@ -224,11 +224,9 @@ def test_expert_load[
     ]
     var func_wait = ctx.compile_function[dispatch_wait]()
 
-    var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [
-        recv_buf.as_unsafe_any_origin()
-    ]
-    var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
-        recv_count.as_unsafe_any_origin()
+    var recv_buf_ptrs: Array[Pointer[UInt8, MutUntrackedOrigin], 1] = [recv_buf]
+    var recv_count_ptrs: Array[Pointer[UInt64, MutUntrackedOrigin], 1] = [
+        recv_count
     ]
 
     for step in range(n_steps):

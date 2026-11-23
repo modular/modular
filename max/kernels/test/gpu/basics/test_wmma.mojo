@@ -322,28 +322,15 @@ def run_mma_fp32_tf32(
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function
-    # requires exact type matches).
+    # matmul_kernel_naive takes immutable a/b.
     var c_tt = TileTensor(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device_ref, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device_ref, row_major(K, N)).as_imm()
 
     @inline(.always)
-    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -504,21 +491,10 @@ def run_mma_fp32_bf16(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device_ref, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device_ref, row_major(K, N)).as_imm()
 
     @inline(.always)
-    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -678,21 +654,10 @@ def run_mma_fp32_bf16_2(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device_ref, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device_ref, row_major(K, N)).as_imm()
 
     @inline(.always)
-    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -852,21 +817,10 @@ def run_mma_fp32_fp16(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device_ref, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device_ref, row_major(K, N)).as_imm()
 
     @inline(.always)
-    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -1026,21 +980,10 @@ def run_mma_fp16_fp16(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device_ref, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device_ref, row_major(K, N)).as_imm()
 
     @inline(.always)
-    @__allow_legacy_any_origin_fields
     def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             DType.float32,

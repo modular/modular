@@ -89,7 +89,7 @@ struct Copy(Copyable):
 
 def delayed_publish[
     max_copies: Int
-](table: MutPointer[UInt64, MutAnyOrigin], count: Int32):
+](table: MutPointer[UInt64, MutUntrackedOrigin], count: Int32):
     """Waits for the grid before it, releases its dependent, sleeps, then copies.
 
     `table` holds a (destination, source, byte count) triple per copy.
@@ -100,10 +100,10 @@ def delayed_publish[
     var tid = Int(thread_idx.x + block_idx.x * block_dim.x)
     var stride = Int(grid_dim.x * block_dim.x)
     for j in range(min(Int(count), max_copies)):
-        var dst = MutPointer[UInt8, MutAnyOrigin](
+        var dst = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(table[3 * j])
         )
-        var src = MutPointer[UInt8, MutAnyOrigin](
+        var src = MutPointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(table[3 * j + 1])
         )
         for i in range(tid, Int(table[3 * j + 2]), stride):

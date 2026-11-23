@@ -48,10 +48,9 @@ def widest_load[
         var widest_dev = ctx.enqueue_create_buffer[DType.int32](1)
         sums_dev.enqueue_fill(0)
         widest_dev.enqueue_fill(0)
-        var sums = sums_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-        var widest = widest_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+        var sums = sums_dev.unsafe_ptr()
+        var widest = widest_dev.unsafe_ptr()
 
-        @__allow_legacy_any_origin_fields
         def body[
             params: rowwise.ContextParams
         ](row_coords: Coord, mut ctx: rowwise.Context[params]) {

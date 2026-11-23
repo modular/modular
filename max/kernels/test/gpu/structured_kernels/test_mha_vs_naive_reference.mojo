@@ -284,7 +284,7 @@ def test_mha_vs_naive[
     var k_ref_operand = TileTensorMHAOperand(k_ref_tt.as_imm())
     var v_ref_operand = TileTensorMHAOperand(v_ref_tt.as_imm())
     var null_valid_length = TileTensor(
-        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        MutPointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
         row_major(Idx[0]),
     )
 

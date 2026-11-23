@@ -57,8 +57,8 @@ comptime UNWRITTEN = Float32(-1)
 
 
 def late_producer(
-    payload: MutPointer[Float32, MutAnyOrigin],
-    table: MutPointer[Int32, MutAnyOrigin],
+    payload: MutPointer[Float32, MutUntrackedOrigin],
+    table: MutPointer[Int32, MutUntrackedOrigin],
     delay_us: Int32,
 ):
     """Releases the dependent grid, sleeps, then publishes its outputs."""
@@ -80,11 +80,11 @@ def late_producer(
 def consumer[
     readonly: Bool
 ](
-    weights: MutPointer[Float32, MutAnyOrigin],
-    payload: MutPointer[Float32, MutAnyOrigin],
-    table: MutPointer[Int32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
-    early_slot: MutPointer[Int32, MutAnyOrigin],
+    weights: MutPointer[Float32, MutUntrackedOrigin],
+    payload: MutPointer[Float32, MutUntrackedOrigin],
+    table: MutPointer[Int32, MutUntrackedOrigin],
+    output: MutPointer[Float32, MutUntrackedOrigin],
+    early_slot: MutPointer[Int32, MutUntrackedOrigin],
 ):
     """Reads the model weight before the wait, the producer's data after it."""
     var weight = weights.unsafe_offset(Int(thread_idx.x)).unsafe_load()

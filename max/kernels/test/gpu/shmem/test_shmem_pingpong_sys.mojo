@@ -34,12 +34,12 @@ from shmem import *
 
 
 def pingpong(
-    sig: Pointer[UInt64, MutAnyOrigin],
-    payload: Pointer[UInt8, MutAnyOrigin],
+    sig: MutPointer[UInt64, MutUntrackedOrigin],
+    payload: MutPointer[UInt8, MutUntrackedOrigin],
     payload_bytes_dev: Int32,
     base_dev: UInt64,
     rounds_dev: Int32,
-    out_ns: Pointer[UInt64, MutAnyOrigin],
+    out_ns: MutPointer[UInt64, MutUntrackedOrigin],
 ):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
