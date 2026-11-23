@@ -344,9 +344,7 @@ def run_one_case(
     ctx.enqueue_copy(expert_scales_dev, expert_scales_host)
     ctx.enqueue_memset(c_dev, Scalar[out_dtype](0))
 
-    var a_scales_tt = TileTensor(
-        a_scales_dev, a_scales_shape
-    ).as_unsafe_any_origin()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape)
     var b_scales_tt = TileTensor(
         b_scales_dev,
         row_major(
@@ -357,29 +355,25 @@ def run_one_case(
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
 
-    var c_tt = TileTensor(
-        c_dev, row_major(total_num_tokens, Idx[N])
-    ).as_unsafe_any_origin()
-    var a_tt = TileTensor(
-        a_dev, row_major(total_num_tokens, Idx[K])
-    ).as_unsafe_any_origin()
+    var c_tt = TileTensor(c_dev, row_major(total_num_tokens, Idx[N]))
+    var a_tt = TileTensor(a_dev, row_major(total_num_tokens, Idx[K]))
     var b_tt = TileTensor(
         b_dev, row_major(Idx[num_experts], Idx[N], Idx[K_PACKED])
-    ).as_unsafe_any_origin()
+    )
     var a_offsets_tt = TileTensor(
         a_offsets_dev, row_major(num_active_experts + 1)
-    ).as_unsafe_any_origin()
+    )
     var a_scale_offsets_tt = TileTensor(
         a_scale_offsets_dev, row_major(num_active_experts)
-    ).as_unsafe_any_origin()
+    )
     var expert_ids_tt = TileTensor(
         expert_ids_dev, row_major(num_active_experts)
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_dev, row_major(Idx[num_experts])
-    ).as_unsafe_any_origin()
+    )
 
     grouped_matmul_block_scaled_sm100_dispatch[transpose_b=transpose_b,](
         c_tt,

@@ -38,9 +38,9 @@ comptime budget = get_defined_int["budget", 16]()
 comptime BLOCK = 256
 
 
-def canary_kernel(
-    dst: MutPointer[Float32, MutAnyOrigin], n_dev: Int32, overflow_dev: Int32
-):
+def canary_kernel[
+    dst_origin: MutOrigin
+](dst: MutPointer[Float32, dst_origin], n_dev: Int32, overflow_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width args.
     var n = Int(n_dev)
     var overflow = Int(overflow_dev)
@@ -75,7 +75,7 @@ def gen_specs(n: Int) -> List[CanarySpec]:
 def run_one_case(ctx: DeviceContext, spec: CanarySpec) raises:
     var n = spec.num_elems
     var dst = ctx.enqueue_create_buffer[.float32](n)
-    ctx.enqueue_function[canary_kernel](
+    ctx.enqueue_function[canary_kernel[origin_of(dst)]](
         dst,
         Int32(n),
         Int32(spec.overflow),

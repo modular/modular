@@ -451,10 +451,10 @@ def run_one_case(
         dtype,
         kv_params,
         PAGE_SIZE,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
+        origin_of(blocks_device),
+        ImmOrigin(origin_of(cache_lengths_device)),
+        ImmOrigin(origin_of(lookup_table_device)),
+        MutUntrackedOrigin,
     ]
     comptime BlocksLayout = Collection.blocks_tt_layout
     var blocks_shape = Coord[*BlocksLayout.shape_types]()
@@ -482,9 +482,9 @@ def run_one_case(
         row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
     var kv_collection = Collection(
-        blocks.as_unsafe_any_origin(),
-        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+        blocks,
+        cache_lengths_tensor.as_imm(),
+        lookup_table.as_imm(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )

@@ -35,9 +35,11 @@ comptime budget = get_defined_int["budget", 16]()
 comptime BLOCK = 256
 
 
-def numeric_canary_kernel(
-    dst: MutPointer[Float32, MutAnyOrigin],
-    inp: MutPointer[Float32, MutAnyOrigin],
+def numeric_canary_kernel[
+    dst_origin: MutOrigin, inp_origin: ImmOrigin
+](
+    dst: MutPointer[Float32, dst_origin],
+    inp: ImmPointer[Float32, inp_origin],
     n_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -77,7 +79,9 @@ def run_one_case(
     var out_dev = ctx.enqueue_create_buffer[.float32](n)
     ctx.enqueue_copy(in_dev, in_host)
 
-    ctx.enqueue_function[numeric_canary_kernel](
+    ctx.enqueue_function[
+        numeric_canary_kernel[origin_of(out_dev), ImmOrigin(origin_of(in_dev))]
+    ](
         out_dev,
         in_dev,
         Int32(n),

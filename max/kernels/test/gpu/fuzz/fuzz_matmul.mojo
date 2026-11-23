@@ -54,10 +54,12 @@ comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()
 
 
-def naive_matmul_ref_kernel(
-    c: MutPointer[Scalar[dtype], MutAnyOrigin],
-    a: MutPointer[Scalar[dtype], MutAnyOrigin],
-    b: MutPointer[Scalar[dtype], MutAnyOrigin],
+def naive_matmul_ref_kernel[
+    c_origin: MutOrigin, a_origin: ImmOrigin, b_origin: ImmOrigin
+](
+    c: MutPointer[Scalar[dtype], c_origin],
+    a: ImmPointer[Scalar[dtype], a_origin],
+    b: ImmPointer[Scalar[dtype], b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -149,7 +151,13 @@ def run_one_case(
         var c_ref_dev = ctx.enqueue_create_buffer[dtype](c_size)
         comptime BX = 16
         comptime BY = 16
-        ctx.enqueue_function[naive_matmul_ref_kernel](
+        ctx.enqueue_function[
+            naive_matmul_ref_kernel[
+                origin_of(c_ref_dev),
+                ImmOrigin(origin_of(a_dev)),
+                ImmOrigin(origin_of(b_dev)),
+            ]
+        ](
             c_ref_dev,
             a_dev,
             b_dev,

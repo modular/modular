@@ -242,9 +242,13 @@ def _select_test_kernel[
     OutLT: TensorLayout,
     ScoresEngine: TensorEngine,
     OutEngine: TensorEngine,
+    scores_origin: MutOrigin,
+    out_origin: MutOrigin,
 ](
-    scores: TileTensor[score_type, ScoresLT, MutAnyOrigin, Engine=ScoresEngine],
-    out_idxs: TileTensor[out_idx_type, OutLT, MutAnyOrigin, Engine=OutEngine],
+    scores: TileTensor[
+        score_type, ScoresLT, scores_origin, Engine=ScoresEngine
+    ],
+    out_idxs: TileTensor[out_idx_type, OutLT, out_origin, Engine=OutEngine],
     num_blocks_dev: Int32,
     k_dev: Int32,
 ):
@@ -363,6 +367,8 @@ def run_one_case(
         type_of(out_t).LayoutType,
         type_of(scores_t).Engine,
         type_of(out_t).Engine,
+        scores_t.origin,
+        out_t.origin,
     ]
     ctx.enqueue_function[kernel](
         scores_t,
@@ -510,6 +516,8 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
             type_of(out_t).LayoutType,
             type_of(scores_t).Engine,
             type_of(out_t).Engine,
+            scores_t.origin,
+            out_t.origin,
         ]
         ctx.enqueue_function[kernel](
             scores_t,

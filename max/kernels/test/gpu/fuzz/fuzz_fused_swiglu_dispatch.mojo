@@ -283,15 +283,9 @@ def run_one_case(
     var s_ref_tt = TileTensor(s_ref_dev, swiglu_scales_shape)
     var s_test_tt = TileTensor(s_test_dev, swiglu_scales_shape)
 
-    var a_scales_tt = TileTensor(
-        a_scales_dev, a_scales_shape
-    ).as_unsafe_any_origin()
-    var b_scales_tt = TileTensor(
-        b_scales_dev, b_scales_shape
-    ).as_unsafe_any_origin()
-    var escale_tt = TileTensor(
-        escale_dev, row_major(Int64(num_experts))
-    ).as_unsafe_any_origin()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape)
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape)
+    var escale_tt = TileTensor(escale_dev, row_major(Int64(num_experts)))
 
     # ---- REF: unfused matmul -> bf16 -> standalone SwiGLU epilogue. ----
     grouped_matmul_mxfp8_dispatch[transpose_b=transpose_b](

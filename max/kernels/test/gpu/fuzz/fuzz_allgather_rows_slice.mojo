@@ -136,13 +136,6 @@ def run_one_case(contexts: List[DeviceContext[]], spec: CaseSpec) raises:
             row.append(contexts[d].create_buffer_sync[dtype](slice_elems))
         outputs.append(row^)
 
-    comptime InTile = type_of(
-        TileTensor(inputs[0], row_major(total)).as_imm().as_unsafe_any_origin()
-    )
-    comptime OutTile = type_of(
-        TileTensor(outputs[0][0], row_major(slice_elems)).as_unsafe_any_origin()
-    )
-
     def signal_at(i: Int) {mut signals} -> MutPointer[Signal, MutAnyOrigin]:
         return Signal.unsafe_ptr_from(signals[i])
 
@@ -153,22 +146,21 @@ def run_one_case(contexts: List[DeviceContext[]], spec: CaseSpec) raises:
         var active_total = 0 if empty else total
         var active_slice = 0 if empty else slice_elems
 
-        def input_at(i: Int) {mut inputs, imm active_total} -> InTile:
-            return (
-                TileTensor(inputs[i], row_major(active_total))
-                .as_imm()
-                .as_unsafe_any_origin()
-            )
-
-        var in_tensors = Array[_, ngpus](fill_with=input_at)
-
-        def output_at(i: Int) {mut outputs, imm active_slice} -> OutTile:
+        var in_tensors = Array[_, ngpus](
+            fill=TileTensor(inputs[0], row_major(active_total)).as_imm()
+        )
+        for i in range(1, ngpus):
+            in_tensors[i] = TileTensor(
+                inputs[i], row_major(active_total)
+            ).as_imm()
+        var out_tensors = Array[_, ngpus * ngpus](
+            fill=TileTensor(outputs[0][0], row_major(active_slice))
+        )
+        for i in range(1, ngpus * ngpus):
             var d, source = divmod(i, ngpus)
-            return TileTensor(
+            out_tensors[i] = TileTensor(
                 outputs[d][source], row_major(active_slice)
-            ).as_unsafe_any_origin()
-
-        var out_tensors = Array[_, ngpus * ngpus](fill_with=output_at)
+            )
         for source in range(ngpus):
             fill_bits(hosts[source], spec.data_seed, source, iteration)
             contexts[source].enqueue_copy(inputs[source], hosts[source])

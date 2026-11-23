@@ -232,9 +232,9 @@ def run_one_case(
 
         quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             ctx,
-            output_tt.as_unsafe_any_origin(),
-            scales_tt.as_unsafe_any_origin(),
-            input_tt.as_unsafe_any_origin(),
+            output_tt,
+            scales_tt,
+            input_tt.as_imm(),
             num_cols=N,
             num_cols_padded=N,
         )
@@ -277,9 +277,9 @@ def run_one_case(
 
         quantize_mx_amd(
             ctx,
-            output_tt.as_unsafe_any_origin(),
-            scales_tt.as_unsafe_any_origin(),
-            input_tt.as_unsafe_any_origin(),
+            output_tt,
+            scales_tt,
+            input_tt.as_imm(),
         )
         ctx.synchronize()
 
