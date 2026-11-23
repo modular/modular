@@ -651,6 +651,10 @@ Most code that no longer compiles matches one of these patterns:
 
 ## Fixed
 
+- The compiler now rejects a call that passes a container immutably along with
+  one of its elements mutably, such as `f(items, items[0])` where the second
+  argument is `mut`. This was unsound and could be used to read dangling data.
+
 - `VariadicPack` now conforms to `Writable` when all of its element types do,
   so a pack can be passed to `print()`, `String()` and `repr()`.
 

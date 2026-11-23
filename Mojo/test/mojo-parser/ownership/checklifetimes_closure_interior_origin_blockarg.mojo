@@ -131,7 +131,8 @@ def keep_base[O: Origin[mut=True]](ref [O] list: MyList[Int]):
         _ = list
         _ = p[]
 
-    closure()
+    # The closure is not called: the call is an exclusivity error, because the
+    # mutable pointee of `p` aliases the immutable capture of `list`.
 
 
 def two_interiors():

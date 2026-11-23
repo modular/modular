@@ -1654,17 +1654,13 @@ void ExclusivityChecker::checkOriginAccess(Value val,
       continue;
     }
 
-    // If this is derived from an interior origin, process the base as an
-    // immutable access.
+    // If this is derived from an interior origin, process the base next.
     if (auto interior = dyn_cast<InteriorOriginAttr>(origin)) {
       origin = interior.getBase();
-      // This is going to read the base.
-      isImmut = true;
       continue;
     }
 
-    // If this is derived from an subtree origin, process the base as an
-    // immutable access.
+    // If this is derived from a subtree origin, process the base.
     if (auto subtree = dyn_cast<OriginSubtreeAttr>(origin)) {
       origin = subtree.getBase();
       // Don't set isImmut; this could mutate the base if it's a mutable origin.
