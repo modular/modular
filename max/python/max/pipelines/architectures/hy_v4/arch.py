@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Registers Hy4 with the ModuleV3 registry."""
+"""Registers Hy4 and Hy4 VL with the ModuleV3 registry."""
+
+from dataclasses import replace
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
@@ -18,11 +20,11 @@ from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from .decoder import HYV4Decoder
-from .model_config import HYV4Config
+from .model_config import HYV4Config, HYV4VLConfig
 from .reasoning import HYV4ReasoningParser  # noqa: F401  registers "hy_v4"
 from .tokenizer import HYV4Tokenizer
 from .tool_parser import HYV4ToolParser  # noqa: F401  registers "hy_v4"
-from .weight_adapters import hy_v4_weight_rules
+from .weight_adapters import hy_v4_vl_weight_rules, hy_v4_weight_rules
 
 hy_v4_arch = SupportedArchitecture(
     name="HYV4ForCausalLM_ModuleV3",
@@ -48,4 +50,17 @@ hy_v4_arch = SupportedArchitecture(
     tool_parser="hy_v4",
     reasoning_parser="hy_v4",
     mach_only=True,
+)
+
+# Hy4-FP8 ships no MTP layers; the text backbone reuses Hy4's decoder.
+hy_v4_vl_arch = replace(
+    hy_v4_arch,
+    name="HYV4VLForConditionalGeneration_ModuleV3",
+    example_repo_ids=["tencent/Hy4-FP8"],
+    config=HYV4VLConfig,
+    weight_rules=hy_v4_vl_weight_rules,
+    checkpoint_drafts={},
+    # replace() copies the pipeline model derived from HYV4Config; None
+    # re-derives it from HYV4VLConfig.
+    pipeline_model=None,
 )

@@ -279,6 +279,11 @@ def register_all_models() -> None:
         _LazyArch("HYV3ForCausalLM", ".hy_v3", "hy_v3_arch"),
         _LazyArch("HYV4ForCausalLM_ModuleV3", ".hy_v4", "hy_v4_arch"),
         _LazyArch(
+            "HYV4VLForConditionalGeneration_ModuleV3",
+            ".hy_v4",
+            "hy_v4_vl_arch",
+        ),
+        _LazyArch(
             "Idefics3ForConditionalGeneration", ".idefics3", "idefics3_arch"
         ),
         _LazyArch(
