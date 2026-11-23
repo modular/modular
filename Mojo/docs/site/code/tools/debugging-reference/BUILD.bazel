@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
+
+package(default_visibility = ["//visibility:private"])
+
+# test_debug_reference.sh covers the page's tool behavior (stack traces,
+# MODULAR_DEBUG, and LLDB) and runs by hand. See README.md.
+
+mojo_binary(
+    name = "tests",
+    srcs = ["tests.mojo"],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tests_test",
+    size = "small",
+    binary = "tests",
+)
