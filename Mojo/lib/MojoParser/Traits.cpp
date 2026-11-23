@@ -1221,21 +1221,8 @@ SmallVector<ConstraintAttr> LIT::canonicalizeTraitSymbolsAndConstraints(
 
   // Canonicalize the symbols first.
   canonicalizeTraitCompositionSymbols(shared, symbols);
-  if (constraintMap.empty())
-    return {};
-
-  // fill in the missing constraints if we have an non-empty map.
-  SmallVector<ConstraintAttr> constraints;
-  constraints.reserve(symbols.size());
-  for (TraitSymbolAttr symbol : symbols) {
-    if (auto it = constraintMap.find(symbol); it != constraintMap.end()) {
-      constraints.push_back(it->second);
-    } else {
-      // FIXME(MOCO-4250): `True` is wrong, should be inherited from parents.
-      constraints.push_back(getUnconditionalConstraint(shared.getContext()));
-    }
-  }
-  return constraints;
+  return getTraitConstraintsInSymbolOrder(shared.getContext(), symbols,
+                                          constraintMap);
 }
 
 static std::pair<TraitType, StructDeclOp> extractTraitBound(SharedState &shared,

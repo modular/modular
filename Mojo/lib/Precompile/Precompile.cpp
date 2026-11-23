@@ -14,6 +14,8 @@
 #include "Mojo/Precompile/Precompile.h"
 
 #include "Mojo/LITDialect/LITAttrs.h"
+#include "Mojo/LITDialect/LITTypes.h"
+#include "Mojo/LITDialect/LITUtils.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 
@@ -226,6 +228,27 @@ ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
             nested.push_back(FlatSymbolRefAttr::get(component));
           llvm::append_range(nested, ref.getNestedReferences());
           return {SymbolRefAttr::get(importPathAttrs.front(), nested),
+                  WalkResult::skip()};
+        });
+    // A trait composition sorts its symbols by name, and the new renamed root
+    // can disrupt the pre-established order. Sort the rewritten symbols again,
+    // so that the artifact keeps the canonical order.
+    replacer.addReplacement(
+        [&](LIT::TraitType trait) -> std::pair<Type, WalkResult> {
+          SmallVector<TraitSymbolAttr> symbols;
+          DenseMap<TraitSymbolAttr, ConstraintAttr> constraintMap;
+          for (auto [index, symbol] : llvm::enumerate(trait.getSymbols())) {
+            auto newSymbol = cast<TraitSymbolAttr>(replacer.replace(symbol));
+            symbols.push_back(newSymbol);
+            if (trait.hasConstraints()) {
+              constraintMap[newSymbol] = cast<ConstraintAttr>(
+                  replacer.replace(trait.getConstraints()[index]));
+            }
+          }
+          LIT::sortAndDeduplicateTraitSymbols(symbols);
+          return {LIT::TraitType::get(ctx, symbols,
+                                      LIT::getTraitConstraintsInSymbolOrder(
+                                          ctx, symbols, constraintMap)),
                   WalkResult::skip()};
         });
     // Debug-info source names snapshot the symbol lineage as plain strings at

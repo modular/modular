@@ -717,6 +717,25 @@ void LIT::sortAndDeduplicateTraitSymbols(
   symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
 }
 
+SmallVector<ConstraintAttr> LIT::getTraitConstraintsInSymbolOrder(
+    MLIRContext *context, ArrayRef<TraitSymbolAttr> symbols,
+    const DenseMap<TraitSymbolAttr, ConstraintAttr> &constraintMap) {
+  if (constraintMap.empty())
+    return {};
+
+  SmallVector<ConstraintAttr> constraints;
+  constraints.reserve(symbols.size());
+  for (TraitSymbolAttr symbol : symbols) {
+    if (auto it = constraintMap.find(symbol); it != constraintMap.end()) {
+      constraints.push_back(it->second);
+    } else {
+      // FIXME(MOCO-4250): `True` is wrong, should be inherited from parents.
+      constraints.push_back(getUnconditionalConstraint(context));
+    }
+  }
+  return constraints;
+}
+
 std::optional<ParameterEvaluator>
 LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
                                    TraitDeclOp traitDecl) {

@@ -224,6 +224,13 @@ LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 
 // Trait symbols sorting and canonicalization.
 void sortAndDeduplicateTraitSymbols(SmallVectorImpl<TraitSymbolAttr> &symbols);
+/// Return the constraint of each symbol in `symbols`, in the same order, from
+/// `constraintMap`. A symbol without an entry is unconditional. An empty
+/// `constraintMap` gives an empty list, which is the unconditional form of a
+/// trait composition.
+SmallVector<ConstraintAttr> getTraitConstraintsInSymbolOrder(
+    MLIRContext *context, ArrayRef<TraitSymbolAttr> symbols,
+    const DenseMap<TraitSymbolAttr, ConstraintAttr> &constraintMap);
 void canonicalizeTraitCompositionSymbols(
     SmallVectorImpl<TraitSymbolAttr> &symbols,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
