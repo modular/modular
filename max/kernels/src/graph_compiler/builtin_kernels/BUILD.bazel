@@ -66,17 +66,24 @@ MODULES = [init.removesuffix("/__init__.mojo") for init in glob(["*/__init__.moj
         import_path = "..",
         use_production_compiler_for_asan = True,
         validate_missing_docs = False,
-        deps = _COMMON_DEPS + _DEPS.get(module, []),
+        # A sibling module goes through its `//max` alias, as in the group
+        # below, so an overlaid build links the plugin's copy of it.
+        deps = _COMMON_DEPS + [
+            "//max:builtin_kernels." + dep.removeprefix(":")
+            for dep in _DEPS.get(module, [])
+        ],
     )
     for module in MODULES
 ]
 
 # One label for the whole namespace, for a target that wants the registry
 # rather than a particular module. It is not a package and has no import name.
+# It names each module through its `//max` alias, which a plugin overlay can
+# redirect, so an overlaid build gets the plugin's modules.
 mojo_package_group(
     name = "builtin_kernels",
     visibility = ["//visibility:public"],
-    deps = [":" + module for module in MODULES],
+    deps = ["//max:builtin_kernels." + module for module in MODULES],
 )
 
 # Raw sources for plugin overlays, one filegroup per module so an overlay
