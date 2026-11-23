@@ -1067,23 +1067,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     if (!refType.isDefaultAddrSpace()) {
       auto *expr = argValAndExpr.expr;
-      // Non-trivially copyable types cannot be copied from a non-default
-      // address space, because copyinit doesn't allow 'ref'.
-      if (!ASTType(refType.getElementType())
-               .isProvablyImplicitlyTriviallyCopyable(
-                   expr->getLoc(), emitter.shared, emitter.declScope)) {
-        emitter.emitError(
-            expr->getLoc(),
-            "non-implicitly trivially copyable value cannot be copied from a "
-            "non-default address space")
-            << expr->getRange();
+      RValue copy =
+          emitter.emitCopyFromNonDefaultAddressSpace({someMValue, expr}, ctx);
+      if (!copy)
         return {};
-      }
-
-      // If this is a trivially copyable value, then we can do a copy by doing a
-      // load.
-      auto srVal = emitter.emitSRValue({someMValue, expr}, ctx);
-      someMValue = emitter.emitMRValue({srVal, expr}, ctx);
+      someMValue = emitter.emitMRValue({copy, expr}, ctx);
       if (!someMValue)
         return {};
     }

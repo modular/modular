@@ -24,8 +24,6 @@ def take[T: ImplicitlyCopyable](value: T):
 def copy_out[
     T: ImplicitlyCopyable, AS: AddressSpace
 ](ref[AS] x: T) -> T where downcast[T, Copyable].__copy_ctor_is_trivial:
-    # FIXME: MOCO-5481
-    # expected-error @+1 {{cannot load non-register passable type into SSA register (compiler bug, please report!)}}
     take(x)
     return x
 

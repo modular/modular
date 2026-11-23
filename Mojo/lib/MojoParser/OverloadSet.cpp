@@ -643,24 +643,9 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     // wrong address space, we need to emit a copy.
     if (operands[operandIdx].ir.isMValue() &&
         !operands[operandIdx].ir.getMValueType().isDefaultAddrSpace()) {
-      auto eltType = operands[operandIdx].ir.getMValueType().getElementType();
-      // Non-trivially copyable types cannot be copied from a non-default
-      // address space, because copyinit doesn't allow 'ref'.
-      if (!ASTType(eltType).isProvablyImplicitlyTriviallyCopyable(
-              operands[operandIdx].expr->getLoc(), emitter.shared,
-              emitter.declScope)) {
-        emitter.emitError(
-            operands[operandIdx].expr->getLoc(),
-            "non-implicitly trivially copyable value cannot be copied from a "
-            "non-default address space")
-            << operands[operandIdx].expr->getRange();
-        return failure();
-      }
-
-      // Because this is a trivially copyable value, then we can do a copy by
-      // doing a load.
       operands.values[operandIdx].ir =
-          emitter.emitSRValue(operands[operandIdx], EC_CallArgValue);
+          emitter.emitCopyFromNonDefaultAddressSpace(operands[operandIdx],
+                                                     EC_CallArgValue);
       if (!operands[operandIdx].ir)
         return failure();
     }

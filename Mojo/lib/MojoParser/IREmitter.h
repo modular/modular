@@ -632,6 +632,13 @@ public:
   /// there is no consuming dest, otherwise a BValue.
   CValue emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest);
 
+  /// Copy a reference outside the default address space to a new owned value
+  /// in the default address space, where argument conventions take values.
+  /// Emits an error and returns null if the type is not provably trivially
+  /// copyable.
+  RValue emitCopyFromNonDefaultAddressSpace(ASTExprAnd<AnyValue> value,
+                                            ExprContext context);
+
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.
   CValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,

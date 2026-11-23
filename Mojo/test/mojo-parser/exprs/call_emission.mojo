@@ -306,6 +306,38 @@ struct ExampleRegPassable(TrivialRegisterPassable):
         pass
 
 
+# Pass a trivially copyable value that is not register passable from a
+# non-default address space. A memcpy copies it into a temporary.
+# CHECK-LABEL: lit.fn @"copy_memory_only_from_addrspace
+def copy_memory_only_from_addrspace(
+    ptr: Pointer[ExampleMemTriviallyCopyable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
+):
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
+    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.memcpy [[PTRREF]], [[TMP]] : <!ExampleMemTriviallyCopyable, mut #lit.any.origin, 1>
+    # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[TMP]]
+    # CHECK-NEXT: lit.call {{.*}}@"take_mem_trivially_copyable{{.*}}([[IMM]])
+    take_mem_trivially_copyable(ptr[])
+
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
+    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.memcpy [[PTRREF]], [[TMP]] : <!ExampleMemTriviallyCopyable, mut #lit.any.origin, 1>
+    # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[TMP]]
+    # CHECK-NEXT: lit.ref.pack.create([[IMM]])
+    _ = pack_it(ptr[])
+
+
+struct ExampleMemTriviallyCopyable(ImplicitlyCopyable):
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+
+def take_mem_trivially_copyable(value: ExampleMemTriviallyCopyable):
+    pass
+
+
 ## Partial Binding of Function Symbols With Implicit Parameters
 
 

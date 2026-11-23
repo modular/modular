@@ -1230,6 +1230,44 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
   return emitConstructorCall(valueType, std::move(operands));
 }
 
+RValue IREmitter::emitCopyFromNonDefaultAddressSpace(ASTExprAnd<AnyValue> value,
+                                                     ExprContext context) {
+  assert(value.ir.isMValue() &&
+         !value.ir.getMValueType().isDefaultAddrSpace() &&
+         "expected a reference outside the default address space");
+  // Only a trivial copy can read from another address space. emitCopyOfValue
+  // makes it with a load or a memcpy.
+  ASTType valueType(value.ir.getMValueType().getElementType());
+  SMLoc loc = value.expr->getLoc();
+  if (!valueType.isProvablyImplicitlyTriviallyCopyable(loc, shared,
+                                                       declScope)) {
+    emitError(loc, "non-implicitly trivially copyable value cannot be copied "
+                   "from a non-default address space")
+        << value.expr->getRange();
+    return {};
+  }
+
+  // A transfer gives an owned value that is still in the other address space.
+  // The trivial copy moves it to the default address space, so the copy owns
+  // the value and the original ends without a destructor.
+  if (MRValue mrValue = value.ir.getIfMRValue()) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    ExprDest dest(context);
+    CValue copy = emitCopyOfValue({mrValue, value.expr}, dest);
+    if (!copy) {
+      dest.resetForError(*this);
+      return {};
+    }
+    OwnershipMarkDestroyedOp::create(*builder, value.expr->getLocation(*this),
+                                     mrValue);
+    return copy.getIfRValue();
+  }
+  return emitRValue(value, context);
+}
+
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
                                     ExprContext context) {
   // Convert nonmaterializables.
