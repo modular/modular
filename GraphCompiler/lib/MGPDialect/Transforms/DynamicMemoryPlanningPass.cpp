@@ -15,7 +15,10 @@
 
 #include "GraphCompiler/MGPDialect/Dialect/MGPBufferLifetimeAnalysis.h"
 #include "GraphCompiler/MGPDialect/Dialect/MGPOps.h"
+#include "GraphCompiler/MGPDialect/Dialect/MGPUtils.h"
 #include "GraphCompiler/MGPDialect/Transforms/Utils.h"
+#include "MLRT/GraphRT/GRTDialect/GRTControlFlowInterface.h"
+#include "MLRT/GraphRT/MEFDialect/MEFTypes.h"
 #include "Mojo/POPDialect/POPDialect.h"
 #include "Support/AssertStream.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -76,6 +79,28 @@ bool isTriviallyComputable(Value v, DenseMap<Operation *, bool> &trivial) {
   return cacheResult(trivialOperands);
 }
 
+/// Returns the blocks whose allocations are planned, each with the chain its
+/// pool is allocated on: `execute`, then every control flow region block in
+/// it. Regions are isolated from above, so each block's pool takes the block's
+/// own chain argument; a block without one is not planned.
+SmallVector<std::pair<Block *, Value>> getBlocksToPlan(Block *execute) {
+  SmallVector<std::pair<Block *, Value>> blocks;
+  auto addBlock = [&](Block *block) {
+    auto chainArg = llvm::find_if(block->getArguments(), [](Value arg) {
+      return isa<MLRT::MEF::ChainType>(arg.getType());
+    });
+    if (chainArg != block->args_end())
+      blocks.emplace_back(block, *chainArg);
+  };
+  addBlock(execute);
+  execute->walk([&](MLRT::GRT::GRTControlFlowInterface cfOp) {
+    for (Region &region : cfOp->getRegions())
+      for (Block &block : region)
+        addBlock(&block);
+  });
+  return blocks;
+}
+
 } // end namespace
 
 class DynamicMemoryPlanningPass
@@ -83,6 +108,26 @@ class DynamicMemoryPlanningPass
   using Base::Base;
 
   void runOnOperation() override {
+    ModelOp modelOp = getOperation();
+    ExecuteState execState(modelOp->getContext(), modelOp);
+    BufferBuilderContext builderContext =
+        TensorBufferDialectInterface::getAllBufferBuilders(modelOp);
+
+    // A region block gets its own pools, so a region that runs every step
+    // makes one allocation per device rather than one per buffer.
+    SmallVector<BufferAllocOp> allocsToDelete;
+    for (auto [block, chain] : getBlocksToPlan(execState.execute))
+      planBlock(execState, builderContext, block, chain, allocsToDelete);
+
+    for (BufferAllocOp alloc : allocsToDelete)
+      alloc.erase();
+  }
+
+  /// Plans `block`'s allocations into one pool per device, allocated on
+  /// `chain`.
+  void planBlock(ExecuteState &execState, BufferBuilderContext &builderContext,
+                 Block *block, Value chain,
+                 SmallVectorImpl<BufferAllocOp> &allocsToDelete) {
     ModelOp modelOp = getOperation();
 
     auto getDeviceContext = [&modelOp](DeviceRefAttr dev,
@@ -95,20 +140,15 @@ class DynamicMemoryPlanningPass
     };
 
     auto &analysis = getAnalysis<BufferLifetimeAnalysisPass>();
-
-    BufferBuilderContext builderContext =
-        TensorBufferDialectInterface::getAllBufferBuilders(modelOp);
-
-    ExecuteState execState(modelOp->getContext(), modelOp);
     OpBuilder &execBuilder = execState.builder;
 
-    DependencyTree &tree = analysis.getDepTree(execState.execute);
+    DependencyTree &tree = analysis.getDepTree(block);
 
     llvm::MapVector<DeviceRefAttr, SmallVector<AllocInfo>> deviceToAllocs;
 
     DenseMap<Operation *, bool> trivialVals;
 
-    for (auto allocOp : execState.execute->getOps<MGP::BufferAllocOp>()) {
+    for (auto allocOp : block->getOps<MGP::BufferAllocOp>()) {
       // TODO(GEX-557): Plan CPU allocations too.
       if (allocOp.getDevice().getLabel() == kCPULabel)
         continue;
@@ -140,9 +180,8 @@ class DynamicMemoryPlanningPass
     }
 
     // At the block start, for readability.
-    execBuilder.setInsertionPointToStart(modelOp.getExecuteBlock());
+    execBuilder.setInsertionPointToStart(block);
 
-    SmallVector<BufferAllocOp> allocsToDelete;
     for (auto &[device, allocs] : deviceToAllocs) {
       if (allocs.size() <= 1)
         continue;
@@ -192,8 +231,12 @@ class DynamicMemoryPlanningPass
       auto loc = execBuilder.getFusedLoc(locations);
       MGPBufferBuilder &bufferBuilder = builderContext.getBufferBuilder(device);
 
+      // A region is isolated from above, so its pool reuses the device
+      // context its allocations take.
       std::optional<Value> deviceContext =
-          getDeviceContext(device, modelOp.getExecuteDevices());
+          block == execState.execute
+              ? getDeviceContext(device, modelOp.getExecuteDevices())
+              : std::optional<Value>(allocs.front().alloc.getDeviceContext());
       ASSERT_STREAM(deviceContext, "Could not find device context for device");
 
       auto bufferPlanOp = BufferPlanOp::create(execBuilder, loc, runtimeSizes,
@@ -203,8 +246,8 @@ class DynamicMemoryPlanningPass
       TypedValue<IndexType> poolSize = bufferPlanOp.getHighWatermark();
 
       Value alloc = bufferBuilder.bufferAlloc(
-          execBuilder, loc, execState.getContext(), execState.getRootChain(),
-          poolSize, deviceContext.value(), totalAlignment);
+          execBuilder, loc, getContextForBlock(block), chain, poolSize,
+          deviceContext.value(), totalAlignment);
 
       auto memPoolBuffer = cast<TypedValue<DeviceBufferType>>(alloc);
 
@@ -226,9 +269,6 @@ class DynamicMemoryPlanningPass
         allocsToDelete.push_back(allocs[i].alloc);
       }
     }
-
-    for (BufferAllocOp alloc : allocsToDelete)
-      alloc.erase();
   }
 };
 } // namespace M::MGP
