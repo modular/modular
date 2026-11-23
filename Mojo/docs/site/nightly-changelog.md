@@ -279,6 +279,10 @@ This version is still a work in progress.
   that captures values. Write `take_while(items, pred)` instead of
   `take_while[pred](items)`.
 
+- `Iterator` has a new `count()` method that consumes the iterator and returns
+  how many elements it yielded, e.g. `iter(my_list).count()`. It is O(n); an
+  iterator that knows its remaining length can override it.
+
 - `List(length=, fill_with=)` and `Array(fill_with=)` now accept a function
   that raises. If it raises, the initializer destroys the elements it already
   wrote and propagates the error.
