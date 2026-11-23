@@ -170,5 +170,44 @@
       "video_clip_close": "",
       "text_part_separator": "\n\n"
     }
+  },
+  "hy_v4_vl": {
+    "image": {
+      "patch_size": 16,
+      "merge_size": 2,
+      "strategy": {
+        "rule": "smart_resize",
+        "min_pixels": 4096,
+        "max_pixels": 4194304,
+        "min_short_side_pixel": 0,
+        "default_max_long_side_pixel": 0,
+        "newline_per_row": true
+      },
+      "span": {
+        "static": {
+          "image_token_id": 120120,
+          "begin_marker": null,
+          "end_marker": null
+        }
+      },
+      "template_markers": {
+        "begin": 120118,
+        "end": 120119
+      },
+      "video_layout": {
+        "mode": "per_frame"
+      }
+    },
+    "video": null,
+    "max_image_bytes": 0,
+    "max_video_bytes": 0,
+    "max_images_per_request": 1,
+    "prompt": {
+      "video_unit_separator": "",
+      "video_label_suffix": "",
+      "video_clip_open": "",
+      "video_clip_close": "",
+      "text_part_separator": ""
+    }
   }
 }

@@ -59,6 +59,9 @@ class SmartResize:
             none.
         default_max_long_side_pixel: The long-side cap when a request gives
             none, or ``0`` to bound the area alone.
+        newline_per_row: Whether each merged row ends with one more
+            placeholder, the projector's newline row, for
+            ``rows * (cols + 1)`` placeholders.
     """
 
     rule: ClassVar[str] = "smart_resize"
@@ -66,6 +69,7 @@ class SmartResize:
     max_pixels: int
     min_short_side_pixel: int = 0
     default_max_long_side_pixel: int = 0
+    newline_per_row: bool = False
 
 
 @dataclass(frozen=True)
@@ -372,7 +376,7 @@ class ModalityLayout:
         return {
             "patch_size": self.patch_size,
             "merge_size": self.merge_size,
-            "strategy": {"rule": self.strategy.rule, **asdict(self.strategy)},
+            "strategy": _strategy_json(self.strategy),
             "span": {"static": asdict(self.span)},
             "template_markers": (
                 None
@@ -384,6 +388,15 @@ class ModalityLayout:
                 **asdict(self.video_layout),
             },
         }
+
+
+def _strategy_json(strategy: ResizeStrategy) -> dict[str, JsonValue]:
+    fields: dict[str, JsonValue] = {"rule": strategy.rule, **asdict(strategy)}
+    # Mach images that predate the field refuse it, so it is written only
+    # where it is set.
+    if fields.get("newline_per_row") is False:
+        del fields["newline_per_row"]
+    return fields
 
 
 @dataclass(frozen=True)

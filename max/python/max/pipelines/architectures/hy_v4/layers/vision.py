@@ -30,6 +30,7 @@ from typing import ClassVar
 import numpy as np
 import numpy.typing as npt
 from max import functional as F
+from max._artifact.vision import VisionMetadata
 from max.dtype import DType
 from max.graph import DeviceRef, DimLike, TensorType
 from max.nn import (
@@ -50,9 +51,13 @@ from max.nn.legacy.graph_groups import (
     VisionRows,
     VisionSegments,
 )
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.graph_specs import GraphSpec
 from max.tensor import Tensor, default_dtype
 
+from ..image_processor import HYV4VLImageProcessor
 from ..model_config import HYV4VLConfig, HYV4VLVisionConfig
+from ..vision_preprocess import image_preprocess_spec, vision_metadata
 
 
 def _bilinear_axis(
@@ -354,3 +359,25 @@ class HYV4VLVisionEncoder(HYV4VLVisionModel):
             super().__init__(config.vision, config.devices[0])
         self.embedding_dtype = DType.bfloat16
         self.embedding_dim = config.vision.out_hidden_size
+
+    @classmethod
+    def vision_metadata(
+        cls, pipeline_config: PipelineConfig, config: HYV4VLConfig
+    ) -> VisionMetadata:
+        """Returns the image layout the checkpoint is served with."""
+        del config
+        return vision_metadata(pipeline_config, _processor(pipeline_config))
+
+    @classmethod
+    def vision_preprocess_spec(
+        cls, pipeline_config: PipelineConfig, config: HYV4VLConfig
+    ) -> GraphSpec:
+        """Returns the graph that preprocesses one image for the tower."""
+        return image_preprocess_spec(_processor(pipeline_config), config.vision)
+
+
+def _processor(pipeline_config: PipelineConfig) -> HYV4VLImageProcessor:
+    model = pipeline_config.model
+    return HYV4VLImageProcessor.from_pretrained(
+        model.model_path, model.huggingface_model_revision
+    )

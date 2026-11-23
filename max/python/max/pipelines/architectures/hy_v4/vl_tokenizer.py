@@ -15,8 +15,6 @@
 from __future__ import annotations
 
 import dataclasses
-import json
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -36,7 +34,6 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
 )
 from max.support.image import hash_image
-from transformers.utils import cached_file
 
 from .image_processor import HYV4VLImageProcessor
 from .tokenizer import HYV4VLTokenizer
@@ -61,11 +58,8 @@ class HYV4VLImageTokenizer(HYV4VLTokenizer):
         super().__init__(
             model_path, pipeline_config, revision=revision, **kwargs
         )
-        path = cached_file(
-            model_path, "processor_config.json", revision=revision
-        )
-        self._processor = HYV4VLImageProcessor.from_config(
-            json.loads(Path(path).read_text())["image_processor"]
+        self._processor = HYV4VLImageProcessor.from_pretrained(
+            model_path, revision
         )
         hf_config = pipeline_config.model.huggingface_config
         self._image_token_id: int = hf_config.image_token_id

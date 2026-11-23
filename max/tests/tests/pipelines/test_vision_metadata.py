@@ -50,6 +50,12 @@ from max.pipelines.architectures.gemma4.video_processor import (
 from max.pipelines.architectures.gemma4.vision_model.vision_spec import (
     gemma4_vision_metadata,
 )
+from max.pipelines.architectures.hy_v4.image_processor import (
+    HYV4VLImageProcessor,
+)
+from max.pipelines.architectures.hy_v4.vision_preprocess import (
+    vision_metadata as hy_v4_vl_vision_metadata,
+)
 from max.pipelines.architectures.muse_glimmer.image_processor import (
     MuseGlimmerImageProcessor,
 )
@@ -137,11 +143,36 @@ def _deepseek_v41() -> VisionMetadata | None:
     )
 
 
+def _hy_v4_vl() -> VisionMetadata | None:
+    """The ids and processor block `tencent/Hy4-FP8` states."""
+    return hy_v4_vl_vision_metadata(
+        _config(
+            model=_config(
+                huggingface_config=_config(
+                    image_token_id=120_120,
+                    image_start_token_id=120_118,
+                    image_end_token_id=120_119,
+                )
+            )
+        ),
+        HYV4VLImageProcessor(
+            patch_size=16,
+            merge_size=2,
+            min_pixels=4096,
+            max_pixels=4_194_304,
+            image_mean=(0.5, 0.5, 0.5),
+            image_std=(0.5, 0.5, 0.5),
+            rescale_factor=0.00392156862745098,
+        ),
+    )
+
+
 _CASES: dict[str, Callable[[], VisionMetadata | None]] = {
     "gemma4": _gemma4_31b,
     "muse_glimmer": _muse_glimmer,
     "qwen3_5": _qwen3_5,
     "deepseek_v41": _deepseek_v41,
+    "hy_v4_vl": _hy_v4_vl,
 }
 
 

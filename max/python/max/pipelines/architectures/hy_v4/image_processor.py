@@ -21,14 +21,17 @@ bytes, so the patches equal the reference's. ``resample: 1`` (LANCZOS) in
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 from PIL import Image
+from transformers.utils import cached_file
 
 _MAX_PRECISION_BITS = 22
 
@@ -165,6 +168,19 @@ class HYV4VLImageProcessor:
             image_mean=tuple(config["image_mean"]),
             image_std=tuple(config["image_std"]),
             rescale_factor=config["rescale_factor"],
+        )
+
+    @classmethod
+    def from_pretrained(
+        cls, model_path: str, revision: str | None
+    ) -> HYV4VLImageProcessor:
+        """Reads the checkpoint's ``processor_config.json``."""
+        path = cached_file(
+            model_path, "processor_config.json", revision=revision
+        )
+        assert path is not None
+        return cls.from_config(
+            json.loads(Path(path).read_text())["image_processor"]
         )
 
     def grid(self, height: int, width: int) -> tuple[int, int]:

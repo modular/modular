@@ -13,6 +13,7 @@
 """Registers Hy4 and Hy4 VL with the ModuleV3 registry."""
 
 from dataclasses import replace
+from pathlib import Path
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext, TextContext
@@ -52,6 +53,7 @@ hy_v4_arch = SupportedArchitecture(
     config=HYV4Config,
     tool_parser="hy_v4",
     reasoning_parser="hy_v4",
+    format_spec=Path(__file__).parent / "formatspec.json",
     mach_only=True,
 )
 

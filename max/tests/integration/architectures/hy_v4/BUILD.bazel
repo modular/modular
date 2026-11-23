@@ -57,3 +57,20 @@ modular_py_test(
         requirement("numpy"),
     ],
 )
+
+# Both Hy4 archs name formatspec.json, and an artifact stores it, so Mach runs
+# the reasoning and tool parsers. It breaks if the arch drops format_spec, or
+# if export.py's checkpoint_format_spec or the artifact's format_spec
+# component change.
+modular_py_test(
+    name = "test_format_spec",
+    size = "small",
+    srcs = ["test_format_spec.py"],
+    deps = [
+        "//max/python/max/_artifact:export",
+        "//max/python/max/_artifact:model_artifact",
+        "//max/python/max/pipelines/architectures/hy_v4",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
+    ],
+)
