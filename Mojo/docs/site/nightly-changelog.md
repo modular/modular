@@ -659,6 +659,10 @@ Most code that no longer compiles matches one of these patterns:
   one of its elements mutably, such as `f(items, items[0])` where the second
   argument is `mut`. This was unsound and could be used to read dangling data.
 
+- A `@deprecated` method that satisfies a trait requirement no longer emits a
+  deprecation warning at the struct's conformance list. The warning now fires
+  only where the method is called directly.
+
 - `VariadicPack` now conforms to `Writable` when all of its element types do,
   so a pack can be passed to `print()`, `String()` and `repr()`.
 

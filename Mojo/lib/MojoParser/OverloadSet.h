@@ -103,6 +103,11 @@ public:
   /// assumptions when discharging candidates' constraints.
   TypedAttr additionalAssumptions;
 
+  /// True when resolving a trait requirement's witness. Satisfying a
+  /// requirement is not a use of the method, so it does not warn about
+  /// deprecation.
+  bool isConformanceWitness = false;
+
   /// When doing resolution, we should only raise new errors if previous errors
   /// haven't already been raised about functions in the overload set.  The most
   /// common issue is when one of the included declarations is erroneous.

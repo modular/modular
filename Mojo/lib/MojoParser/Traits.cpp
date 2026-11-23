@@ -207,6 +207,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     OverloadSet ov(name, structDefinesMethods, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic,
                    /*contextualType=*/structSelfType);
+    ov.isConformanceWitness = true;
     // This runs in the struct's scope, not the conformance's, so the
     // conformance `where` clause is not among the scope's own assumptions and
     // has to be handed over explicitly.
@@ -595,6 +596,7 @@ checkConformanceMember(ConformanceWitnessASTDecl &member,
     OverloadSet ov(name, decls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic,
                    /*contextualType=*/selfType);
+    ov.isConformanceWitness = true;
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       // `attachNote(decl)` also appends the requirement's synthesized
       // signature, redundant with the "no candidates have type" note below;

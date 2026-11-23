@@ -194,7 +194,8 @@ OverloadSet::getCallee(ASTDecl *fnDecl,
     fixitLoc = getAttributeNameLoc(paramBindings.getExpr());
   checkDeclUsageWarnings(*fnDecl, paramBindings.getExprLoc(),
                          paramBindings.declScope, paramBindings.shared,
-                         paramBindings.getExpr()->getRange(), syntax, fixitLoc);
+                         paramBindings.getExpr()->getRange(), syntax, fixitLoc,
+                         /*checkDeprecation=*/!isConformanceWitness);
 
   ASTType ctxType = getContextualType(fnDecl);
   // Take the fast path to avoid verify binding again if a verified binding has
