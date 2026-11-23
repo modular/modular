@@ -737,16 +737,6 @@ class TestOpenAIStreamRecorder:
 
         assert repr(data) in str(raised.value)
 
-    def test_a_non_string_completion_text_fails_at_that_chunk(self) -> None:
-        """``chat=False`` rejects a non-string ``text`` the same way."""
-        recorder = OpenAIStreamRecorder(prompt_len=1, chat=False)
-        data = '{"choices": [{"text": {"a": 1}}]}'
-
-        with pytest.raises(TypeError, match=r"choice\.text") as raised:
-            recorder.on_read([data])
-
-        assert repr(data) in str(raised.value)
-
     @pytest.mark.parametrize(
         "data",
         [
@@ -754,9 +744,10 @@ class TestOpenAIStreamRecorder:
             pytest.param(
                 '{"choices": [{"finish_reason": "stop"}]}', id="missing"
             ),
+            pytest.param('{"choices": [{"text": {"a": 1}}]}', id="object"),
         ],
     )
-    def test_a_completion_chunk_without_text_fails_at_that_chunk(
+    def test_a_completion_chunk_without_string_text_fails_at_that_chunk(
         self, data: str
     ) -> None:
         """A completion's ``text`` is the response text, so null is not empty.

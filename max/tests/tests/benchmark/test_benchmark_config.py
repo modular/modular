@@ -1536,9 +1536,13 @@ class TestGoodputFlag:
             ttft_ms=1.0, e2el_ms=2500.5
         )
 
-    def test_cli_rejects_unknown_key(self) -> None:
+    @pytest.mark.parametrize(
+        "value",
+        [pytest.param("itl:5", id="unknown_key"), pytest.param("", id="empty")],
+    )
+    def test_cli_rejects_invalid_goodput(self, value: str) -> None:
         with pytest.raises(SystemExit):
-            parse_args(["--model", "m", "--goodput", "itl:5"])
+            parse_args(["--model", "m", "--goodput", value])
 
     @pytest.mark.parametrize(
         ("value", "match"),
@@ -1560,10 +1564,6 @@ class TestGoodputFlag:
     def test_rejects_invalid_targets(self, value: object, match: str) -> None:
         with pytest.raises(ValidationError, match=match):
             ServingBenchmarkConfig.model_validate({"goodput": value})
-
-    def test_cli_rejects_empty_string(self) -> None:
-        with pytest.raises(SystemExit):
-            parse_args(["--model", "m", "--goodput", ""])
 
     def test_env_var_takes_space_separated_targets(
         self, monkeypatch: pytest.MonkeyPatch

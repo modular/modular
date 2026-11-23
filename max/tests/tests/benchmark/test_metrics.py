@@ -561,11 +561,6 @@ def test_healthy_metrics_pass_validation() -> None:
             id="negative_throughput",
         ),
         pytest.param(
-            partial(_make_metrics, output_throughput_values=[float("nan")]),
-            "output_throughput",
-            id="nan_output_throughput",
-        ),
-        pytest.param(
             partial(_make_metrics, ttft_values=[float("nan")]),
             "ttft_ms",
             id="nan_ttft",

@@ -401,16 +401,19 @@ def test_parse_comma_separated_none_with_explicit_default() -> None:
 # ---- is_castable_to_int ----
 
 
-def test_is_castable_to_int_valid() -> None:
-    assert is_castable_to_int("42") is True
-    assert is_castable_to_int("-1") is True
-    assert is_castable_to_int("0") is True
-
-
-def test_is_castable_to_int_invalid() -> None:
-    assert is_castable_to_int("hello") is False
-    assert is_castable_to_int("3.14") is False
-    assert is_castable_to_int("") is False
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("42", True),
+        ("-1", True),
+        ("0", True),
+        ("hello", False),
+        ("3.14", False),
+        ("", False),
+    ],
+)
+def test_is_castable_to_int(value: str, expected: bool) -> None:
+    assert is_castable_to_int(value) is expected
 
 
 # ---- int_or_none ----

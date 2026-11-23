@@ -185,6 +185,7 @@ def test_override_num_prompts_if_set_explicitly(
     tmp_path: Path,
     workload_config: Path,
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """When --num-prompts is set, no defaulting warning and the value is used."""
     cmd_missing_args = [
@@ -201,11 +202,12 @@ def test_override_num_prompts_if_set_explicitly(
         "--dry-run",
     ]
 
-    sweep_benchmark_serving.main(cmd_missing_args)
-    stdout, stderr = capsys.readouterr()
+    with caplog.at_level(logging.WARNING):
+        sweep_benchmark_serving.main(cmd_missing_args)
+    stdout, _stderr = capsys.readouterr()
 
-    assert _NUM_PROMPTS_DURATION_WARNING not in stderr, (
-        f"Unexpected defaulting warning in stderr:\n{stderr}"
+    assert _NUM_PROMPTS_DURATION_WARNING not in caplog.text, (
+        f"Unexpected defaulting warning in the log:\n{caplog.text}"
     )
     assert "num_prompts=700" in stdout
 
@@ -213,7 +215,7 @@ def test_override_num_prompts_if_set_explicitly(
 def test_override_benchmark_duration_s(
     tmp_path: Path,
     workload_config: Path,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """When --max-benchmark-duration-s is set, no defaulting warning."""
     cmd_missing_args = [
@@ -230,11 +232,10 @@ def test_override_benchmark_duration_s(
         "--dry-run",
     ]
 
-    sweep_benchmark_serving.main(cmd_missing_args)
-    _stdout, stderr = capsys.readouterr()
-
-    assert _NUM_PROMPTS_DURATION_WARNING not in stderr, (
-        f"Unexpected defaulting warning in stderr:\n{stderr}"
+    with caplog.at_level(logging.WARNING):
+        sweep_benchmark_serving.main(cmd_missing_args)
+    assert _NUM_PROMPTS_DURATION_WARNING not in caplog.text, (
+        f"Unexpected defaulting warning in the log:\n{caplog.text}"
     )
 
 
