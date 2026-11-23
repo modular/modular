@@ -2712,7 +2712,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ](
         self,
         execution_config: ExecutionConfigType,
-        f: DeviceFunction,
+        f: DeviceFunction[target=Self.target, ...],
         *args: *Ts,
         location: Optional[SourceLocation] = None,
     ) raises:
