@@ -344,13 +344,11 @@ public:
     std::string name;
     std::string functionName = "";
     std::string debugLevel = "";
-    int32_t maxDynamicSharedBytes = -1;
     int32_t optimizationLevel = -1;
 
     bool operator==(const FunctionCacheKey &other) const {
       return name == other.name && functionName == other.functionName &&
              debugLevel == other.debugLevel &&
-             maxDynamicSharedBytes == other.maxDynamicSharedBytes &&
              optimizationLevel == other.optimizationLevel;
     }
 
@@ -1139,8 +1137,7 @@ public:
   // DeviceFunction loading and execution.
   virtual ErrorOr<DeviceFunctionRef>
   loadFunction(StringRef moduleName, StringRef functionName, StringRef code,
-               int32_t maxDynamicSharedBytes = -1, StringRef debugLevel = "",
-               int32_t optimizationLevel = -1) = 0;
+               StringRef debugLevel = "", int32_t optimizationLevel = -1) = 0;
 
   /// loadFunction with a user-facing debug name to the loaded
   /// function.
@@ -1149,11 +1146,10 @@ public:
   /// the debugName.
   virtual ErrorOr<DeviceFunctionRef>
   loadFunctionWithDebugName(StringRef moduleName, StringRef functionName,
-                            StringRef code, int32_t maxDynamicSharedBytes,
-                            StringRef debugLevel, int32_t optimizationLevel,
-                            StringRef debugName) {
-    return loadFunction(moduleName, functionName, code, maxDynamicSharedBytes,
-                        debugLevel, optimizationLevel);
+                            StringRef code, StringRef debugLevel,
+                            int32_t optimizationLevel, StringRef debugName) {
+    return loadFunction(moduleName, functionName, code, debugLevel,
+                        optimizationLevel);
   }
   virtual ErrorOrSuccess enqueueFunctionExecDirect(
       const DeviceFunction &func, uint32_t gridX, uint32_t gridY,
@@ -1575,7 +1571,7 @@ struct DenseMapInfo<M::Driver::Device::FunctionCacheKey> {
   }
   static unsigned getHashValue(const M::Driver::Device::FunctionCacheKey &val) {
     return llvm::hash_combine(val.name, val.functionName, val.debugLevel,
-                              val.maxDynamicSharedBytes, val.optimizationLevel);
+                              val.optimizationLevel);
   }
   static bool isEqual(const M::Driver::Device::FunctionCacheKey &lhs,
                       const M::Driver::Device::FunctionCacheKey &rhs) {

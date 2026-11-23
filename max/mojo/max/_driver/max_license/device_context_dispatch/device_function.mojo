@@ -270,15 +270,15 @@ struct DeviceFunction[
 
         Args:
             ctx: The device context to compile for.
-            func_attribute: An attribute to use when compiling the function. The
-                HAL backend accepts only `MAX_DYNAMIC_SHARED_SIZE_BYTES`, and it
-                has no effect.
+            func_attribute: An attribute to use when compiling the function.
+                Only `MAX_DYNAMIC_SHARED_SIZE_BYTES` is accepted, and it has no
+                effect.
             name: The symbol name to give the function. The HAL backend
                 ignores it.
 
         Raises:
-            If the compilation or function loading fails, or if the HAL backend
-            is given an unsupported function attribute.
+            If the compilation or function loading fails, or if given an
+            unsupported function attribute.
         """
         comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(

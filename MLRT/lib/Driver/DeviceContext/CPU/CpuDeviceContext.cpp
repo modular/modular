@@ -379,8 +379,7 @@ CpuDeviceContext::memmapFileImpl(const std::filesystem::path &filename) const {
 
 ErrorOr<DeviceFunctionRef>
 CpuDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
-                               StringRef code, int32_t maxDynamicSharedBytes,
-                               StringRef debugLevel,
+                               StringRef code, StringRef debugLevel,
                                int32_t optimizationLevel) {
   M_PROFILE_SPAN("CpuDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   // Currently not implemented. Maybe never to be implemented.

@@ -37,6 +37,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -2312,15 +2313,13 @@ setupCompilationOptions(StringRef debugLevel, int32_t optimizationLevel) {
 
 ErrorOr<DeviceFunctionRef>
 CUDADeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
-                                StringRef code, int32_t maxDynamicSharedBytes,
-                                StringRef debugLevel,
+                                StringRef code, StringRef debugLevel,
                                 int32_t optimizationLevel) {
   M_PROFILE_SPAN("CUDADeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   Device::FunctionCacheKey key{
       /*name=*/Device::FunctionCacheKey::moduleCacheName(moduleName, code),
       /*functionName=*/functionName.str(),
       /*debugLevel=*/debugLevel.str(),
-      /*maxDynamicSharedBytes=*/maxDynamicSharedBytes,
       /*optimizationLevel=*/optimizationLevel};
   DeviceFunctionCacheEntryRef entry = device().findInFunctionCache(key);
   if (entry.getPointer() != nullptr && !bypassFunctionCache_) {
@@ -2375,12 +2374,20 @@ CUDADeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
       CUfunction_attribute::FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED,
       1));
 
-  if (maxDynamicSharedBytes >= 0) {
-    CUDA_CHECK_ERR(driver_.cuFuncSetAttribute(
-        function,
-        CUfunction_attribute::FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-        maxDynamicSharedBytes));
-  }
+  // CUDA caps dynamic shared memory at 48 KB by default. The cap only limits
+  // what a launch may ask for, so raise it to the device max once at load.
+  int optinBytes = 0;
+  CUDA_CHECK_ERR(driver_.cuDeviceGetAttribute(
+      &optinBytes, CUdevice_attribute::MAX_SHARED_MEMORY_PER_BLOCK_OPTIN,
+      CUDADevice::cast(device()).cudaDevice()));
+  int staticBytes = 0;
+  CUDA_CHECK_ERR(driver_.cuFuncGetAttribute(
+      &staticBytes, CUfunction_attribute::FUNC_ATTRIBUTE_SHARED_SIZE_BYTES,
+      function));
+  CUDA_CHECK_ERR(driver_.cuFuncSetAttribute(
+      function,
+      CUfunction_attribute::FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+      std::max(optinBytes - staticBytes, 0)));
 
   // Allocate func outside of the lock region to reduce the time spent under
   // lock. If this functionName has been registered concurrently, then we will

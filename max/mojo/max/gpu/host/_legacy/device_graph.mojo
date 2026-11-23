@@ -1698,10 +1698,6 @@ struct LegacyDeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             block_dim, location=call_location()
         )
 
-        var inferred_func_attribute = self._ctx._func_attribute_for_launch(
-            func_attribute, shared_mem_bytes
-        )
-
         var gpu_kernel = self.context().compile_function[
             func,
             dump_asm=dump_asm,
@@ -1709,7 +1705,7 @@ struct LegacyDeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             link_options=link_options,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=inferred_func_attribute)
+        ](func_attribute=func_attribute)
 
         return self.add_function(
             gpu_kernel,

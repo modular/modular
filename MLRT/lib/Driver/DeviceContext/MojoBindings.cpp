@@ -529,26 +529,23 @@ AsyncRT_DeviceContext_setMemory_async(DeviceContext *ctx, DeviceBuffer *dst,
 MODULAR_EXPORT const char *AsyncRT_DeviceContext_loadFunction(
     DeviceFunction **result, DeviceContext *ctx, const char *moduleName,
     const char *functionName, const char *data, size_t dataLen,
-    int32_t maxDynamicSharedBytes, const char *debugLevel,
-    int32_t optimizationLevel) {
+    const char *debugLevel, int32_t optimizationLevel) {
   M_PROFILE_SPAN("AsyncRT_DeviceContext_loadFunction", M_PROFILE_COLOR_GRAY);
   return checkRef(result, ctx->loadFunction(moduleName, functionName,
                                             StringRef(data, dataLen),
-                                            maxDynamicSharedBytes, debugLevel,
-                                            optimizationLevel));
+                                            debugLevel, optimizationLevel));
 }
 
 MODULAR_EXPORT const char *AsyncRT_DeviceContext_loadFunctionWithDebugName(
     DeviceFunction **result, DeviceContext *ctx, const char *moduleName,
     const char *functionName, const char *data, size_t dataLen,
-    int32_t maxDynamicSharedBytes, const char *debugLevel,
-    int32_t optimizationLevel, const char *debugName) {
+    const char *debugLevel, int32_t optimizationLevel, const char *debugName) {
   M_PROFILE_SPAN("AsyncRT_DeviceContext_loadFunctionWithDebugName",
                  M_PROFILE_COLOR_GRAY);
-  return checkRef(result, ctx->loadFunctionWithDebugName(
-                              moduleName, functionName,
-                              StringRef(data, dataLen), maxDynamicSharedBytes,
-                              debugLevel, optimizationLevel, debugName));
+  return checkRef(result,
+                  ctx->loadFunctionWithDebugName(
+                      moduleName, functionName, StringRef(data, dataLen),
+                      debugLevel, optimizationLevel, debugName));
 }
 
 MODULAR_EXPORT void AsyncRT_DeviceFunction_retain(DeviceFunction *func) {

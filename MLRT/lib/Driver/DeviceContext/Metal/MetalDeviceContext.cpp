@@ -894,7 +894,6 @@ ErrorOrSuccess MetalDeviceContext::enqueueSetMemory(void *dst, size_t byteSize,
   DEFINE_OR_RETURN_ERROR(DeviceFunctionRef, fillFn,
                          loadFunction("ModularMetalPatternFill", "pattern_fill",
                                       kPatternFillSource,
-                                      /*maxDynamicSharedBytes=*/-1,
                                       /*debugLevel=*/"",
                                       /*optimizationLevel=*/-1));
   MTL::ComputePipelineState *pipeline =
@@ -931,8 +930,7 @@ ErrorOrSuccess MetalDeviceContext::enqueueSetMemory(void *dst, size_t byteSize,
 
 ErrorOr<DeviceFunctionRef>
 MetalDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
-                                 StringRef code, int32_t maxDynamicSharedBytes,
-                                 StringRef debugLevel,
+                                 StringRef code, StringRef debugLevel,
                                  int32_t optimizationLevel) {
   M_PROFILE_SPAN("MetalDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
 
@@ -945,7 +943,6 @@ MetalDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
       /*name=*/Device::FunctionCacheKey::moduleCacheName(moduleName, code),
       /*functionName=*/functionName.str(),
       /*debugLevel=*/debugLevel.str(),
-      /*maxDynamicSharedBytes=*/maxDynamicSharedBytes,
       /*optimizationLevel=*/optimizationLevel};
   DeviceFunctionCacheEntryRef entry = device().findInFunctionCache(key);
   if (entry.getPointer() != nullptr) {

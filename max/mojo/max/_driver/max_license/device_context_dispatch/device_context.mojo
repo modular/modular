@@ -2865,11 +2865,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 link_options=link_options,
                 _dump_sass=_dump_sass,
                 _ptxas_info_verbose=_ptxas_info_verbose,
-            ](
-                func_attribute=self._impl._func_attribute_for_launch(
-                    func_attribute, shared_mem_bytes
-                )
-            )
+            ](func_attribute=func_attribute)
             comptime if plugin._handles_enqueue_function:
                 comptime assert (
                     HostArgs.length == 0
@@ -3213,9 +3209,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _ptxas_info_verbose=_ptxas_info_verbose,
             ](
                 self._impl,
-                func_attribute=self._impl._func_attribute_for_launch(
-                    func_attribute, shared_mem_bytes
-                ),
+                func_attribute=func_attribute,
             )
             gpu_kernel.dump_rep[
                 dump_asm=dump_asm,
@@ -3322,9 +3316,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _ptxas_info_verbose=_ptxas_info_verbose,
             ](
                 self._impl,
-                func_attribute=self._impl._func_attribute_for_launch(
-                    func_attribute, shared_mem_bytes
-                ),
+                func_attribute=func_attribute,
             )
             gpu_kernel.dump_rep[
                 dump_asm=dump_asm,

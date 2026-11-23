@@ -40,7 +40,7 @@ from max.runtime.asyncrt import task_id_for_device
 
 from comm.device_collective import _launch_device_collective
 from comm.sync import enable_p2p
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 
 # How long device 0 waits for its peer before giving up. Long enough that a
 # regression is unambiguous, short enough to leave the GPU usable afterwards.
@@ -54,11 +54,6 @@ comptime LOADER_DELAY_SEC = 0.1
 # was starved cannot finish before SPIN_TIMEOUT_NS, when device 0 gives up.
 # Anything between the two is a regression.
 comptime MAX_HEALTHY_SEC = 10.0
-
-# Large enough that the load must opt in through cuFuncSetAttribute, which is
-# the call that waits for the device to quiesce, but safely under the per-block
-# cap on every target. The per-SM figure is not a legal per-block request.
-comptime OPT_IN_SMEM_BYTES = UInt32(64 * 1024)
 
 # Side of the square operands the dispatch round multiplies. The handle round
 # dispatches nothing, so this is the first GEMM the library runs.
@@ -149,9 +144,8 @@ def _enqueue_release(
 ) raises:
     """Releases device 0's spin, modelling the last peer reaching the barrier.
 
-    Takes the same shared-memory opt-in as the loader, so this launch also
-    reaches cuFuncSetAttribute, as the peer launch did in the captured
-    deadlock. It does not contend with the loader through the driver here: the
+    Its first load reaches cuFuncSetAttribute, as the peer launch did in the
+    captured deadlock. It does not contend with the loader through the driver here: the
     driver's locks are per context, and the two run on different devices. What
     strands it is the loader parked on the worker this launch is pinned to.
     """
@@ -160,9 +154,6 @@ def _enqueue_release(
         flag,
         grid_dim=1,
         block_dim=1,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            OPT_IN_SMEM_BYTES
-        ),
     )
     clock.mark("dev1: release enqueued")
 
@@ -206,18 +197,12 @@ def _vendor_matmul_on_busy_device(
 def _cold_load_onto_busy_device(ctx: DeviceContext, clock: _Clock):
     """Cold-loads an unrelated kernel onto `ctx` while it is saturated.
 
-    The shared-memory opt-in is what gives this teeth. `loadFunction` issues
-    cuFuncSetAttribute for MAX_DYNAMIC_SHARED_SIZE_BYTES only when a size is
-    requested, and that is the call that waits for the device to quiesce. A
-    bare compile_function passes -1, skips it, and never blocks.
+    Every load calls cuFuncSetAttribute, which waits for the busy device to go
+    idle.
     """
     clock.mark("loader: starting cold load on dev0")
     try:
-        _ = ctx.compile_function[_unrelated](
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                OPT_IN_SMEM_BYTES
-            )
-        )
+        _ = ctx.compile_function[_unrelated]()
     except e:
         print("loader: cold load raised: ", e)
     clock.mark("loader: cold load returned")

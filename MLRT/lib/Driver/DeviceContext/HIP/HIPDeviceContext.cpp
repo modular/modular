@@ -1976,15 +1976,13 @@ HIPDeviceContext::memmapFileImpl(const std::filesystem::path &filename) const {
 
 ErrorOr<DeviceFunctionRef>
 HIPDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
-                               StringRef code, int32_t maxDynamicSharedBytes,
-                               StringRef debugLevel,
+                               StringRef code, StringRef debugLevel,
                                int32_t optimizationLevel) {
   M_PROFILE_SPAN("HIPDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   Device::FunctionCacheKey key{
       /*name=*/Device::FunctionCacheKey::moduleCacheName(moduleName, code),
       /*functionName=*/functionName.str(),
       /*debugLevel=*/debugLevel.str(),
-      /*maxDynamicSharedBytes=*/maxDynamicSharedBytes,
       /*optimizationLevel=*/optimizationLevel};
   DeviceFunctionCacheEntryRef entry = device().findInFunctionCache(key);
   if (entry.getPointer() != nullptr) {

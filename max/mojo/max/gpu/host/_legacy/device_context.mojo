@@ -2778,10 +2778,8 @@ struct LegacyDeviceEvent(ImplicitlyCopyable):
         )
 
 
-def _max_dynamic_shared_bytes_for_load[
-    target: CompilationTarget
-](func_attribute: OptionalReg[FuncAttribute]) raises -> Int32:
-    """Returns the dynamic shared-memory cap to load with, or -1 for none."""
+def _check_func_attribute(func_attribute: OptionalReg[FuncAttribute]) raises:
+    """Raises unless the attribute is `MAX_DYNAMIC_SHARED_SIZE_BYTES`."""
     if case .Some(attr) = func_attribute:
         if attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
             raise Error(
@@ -2789,11 +2787,6 @@ def _max_dynamic_shared_bytes_for_load[
                 attr.attribute,
                 "' is not currently supported",
             )
-        # Only CUDA has a per-function cap; elsewhere the value would only
-        # split the function cache.
-        comptime if target.is_nvidia_gpu():
-            return attr.value
-    return -1
 
 
 @inline(.never)
@@ -2852,8 +2845,8 @@ def _is_path_like(ss: StringSpan) -> Bool:
 # const char *AsyncRT_DeviceContext_loadFunctionWithDebugName(
 #     const DeviceFunction **result, const DeviceContext *ctx,
 #     const char *moduleName, const char *functionName, const char *data,
-#     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
-#     int32_t optimizationLevel, const char *debugName)
+#     size_t dataLen, const char *debugLevel, int32_t optimizationLevel,
+#     const char *debugName)
 @inline(.never)
 def _load_function(
     ctx: _DeviceContextPtr[mut=True],
@@ -2861,7 +2854,6 @@ def _load_function(
     module_name: StaticString,
     function_name: StaticString,
     asm: StaticString,
-    max_dynamic_shared_size_bytes: Int32,
     debug_name: StaticString = "",
 ) raises -> _DeviceFunctionPtr[mut=True]:
     """Loads a compiled kernel into the context and returns its handle.
@@ -2874,8 +2866,6 @@ def _load_function(
         module_name: The compiled module's name.
         function_name: The kernel's linkage name within the module.
         asm: The compiled module contents.
-        max_dynamic_shared_size_bytes: The dynamic shared memory the kernel
-            may request, or -1 for the default.
         debug_name: A display name for the kernel. Backends that have no use
             for it ignore it, and an empty name means the linkage name.
 
@@ -2900,7 +2890,6 @@ def _load_function(
             CStringSpan[ImmStaticOrigin],
             CStringSpan[ImmStaticOrigin],
             c_size_t,
-            Int32,
             CStringSpan[ImmStaticOrigin],
             Int32,
             type_of(owned_debug_name.as_c_string_span()),
@@ -2911,7 +2900,6 @@ def _load_function(
             function_name.as_c_string_span(),
             asm.as_c_string_span(),
             c_size_t(asm.byte_length()),
-            max_dynamic_shared_size_bytes,
             debug_level.as_c_string_span(),
             Int32(Int(OptimizationLevel)),
             owned_debug_name.as_c_string_span(),
@@ -3016,9 +3004,7 @@ struct LegacyDeviceFunction[
         """
         self._context = ctx
 
-        var max_dynamic_shared_size_bytes = _max_dynamic_shared_bytes_for_load[
-            Self.target
-        ](func_attribute)
+        _check_func_attribute(func_attribute)
 
         self._func_impl = _compile_code[
             Self._wrapped_func,
@@ -3032,7 +3018,6 @@ struct LegacyDeviceFunction[
             module_name=self._func_impl.module_name,
             function_name=self._func_impl.function_name,
             asm=self._func_impl.asm,
-            max_dynamic_shared_size_bytes=max_dynamic_shared_size_bytes,
             debug_name=name,
         )
 
@@ -3818,15 +3803,12 @@ struct LegacyDeviceExternalFunction[
         """
         self._context = ctx
 
-        var max_dynamic_shared_size_bytes = _max_dynamic_shared_bytes_for_load[
-            Self.target
-        ](func_attribute)
+        _check_func_attribute(func_attribute)
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
         #     const char *moduleName, const char *functionName, const char *data,
-        #     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
-        #     int32_t optimizationLevel)
+        #     size_t dataLen, const char *debugLevel, int32_t optimizationLevel)
         var module_name = StaticString("")
         var result: _DeviceFunctionPtr[mut=True] = {}
         var debug_level = String(DebugLevel)
@@ -3840,7 +3822,6 @@ struct LegacyDeviceExternalFunction[
                 type_of(function_name.as_c_string_span()),
                 type_of(asm.as_c_string_span()),
                 c_size_t,
-                Int32,
                 type_of(debug_level.as_c_string_span()),
                 Int32,
             ](
@@ -3850,7 +3831,6 @@ struct LegacyDeviceExternalFunction[
                 function_name.as_c_string_span(),
                 asm.as_c_string_span(),
                 c_size_t(asm.byte_length()),
-                max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_span(),
                 Int32(Int(OptimizationLevel)),
             )
@@ -4564,24 +4544,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             self._handle,
         )
         return String(api_ptr)
-
-    @inline(.always)
-    def _func_attribute_for_launch(
-        self,
-        func_attribute: OptionalReg[FuncAttribute],
-        shared_mem_bytes: OptionalReg[Int],
-    ) -> OptionalReg[FuncAttribute]:
-        """Returns the function attribute to compile a launch with.
-
-        CUDA's default cap is 48KB minus the kernel's static shared memory, so
-        the cap is set for every request, not only past a threshold.
-        """
-        var requested_bytes = shared_mem_bytes.or_else(0)
-        if func_attribute or requested_bytes <= 0:
-            return func_attribute
-        return FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(requested_bytes)
-        )
 
     @inline(.always)
     def enqueue[

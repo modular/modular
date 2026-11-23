@@ -567,6 +567,11 @@ This version is still a work in progress.
 - On DGX Spark, GPU kernels doing random reads or atomics on large host
   buffers run up to 150x faster.
 
+- Launching an NVIDIA kernel with more than 48 KB of dynamic shared memory
+  now needs only `shared_mem_bytes`.
+  `FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES` is no longer needed and has
+  no effect.
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,

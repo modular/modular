@@ -283,7 +283,6 @@ TEST_F(VirtualDeviceContextTest, FunctionLoadingIsRejected) {
   // Compiling a function is what a virtual device is for; resolving one to
   // device code is where it stops.
   EXPECT_ERR_MSG(ctx->loadFunction("vec_add_module", "vec_add", vecAddPtx,
-                                   /*maxDynamicSharedBytes=*/0,
                                    /*debugLevel=*/"",
                                    /*optimizationLevel=*/3),
                  "VirtualDevice does not support function loading");
