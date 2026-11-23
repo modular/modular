@@ -365,6 +365,51 @@ def _embedding_output_dtype_from_state_dict(
     return DType.bfloat16
 
 
+def _parse_compressed_tensors_block_fp8_config(
+    huggingface_config: AutoConfig,
+    group_config: Mapping[str, Any],
+    state_dict: Mapping[str, WeightData],
+) -> QuantConfig:
+    """Parses a compressed-tensors block FP8 W8A8 group (``block_fp8_w8a8``).
+
+    Weights have static (128, 128) block scales and activations dynamic
+    per-token scales per 128 inputs, as DeepSeek's ``fp8``. The architecture
+    picks which modules are FP8, so every layer is marked quantized.
+    """
+    weights = group_config["weights"]
+    inputs = group_config["input_activations"]
+    if weights["block_structure"] != [128, 128] or weights["dynamic"]:
+        raise ValueError(
+            f"unsupported compressed-tensors block FP8 weights: {weights}"
+        )
+    if (
+        inputs["strategy"] != "group"
+        or inputs["group_size"] != 128
+        or not inputs["dynamic"]
+    ):
+        raise ValueError(
+            f"unsupported compressed-tensors block FP8 activations: {inputs}"
+        )
+
+    scale_dtype = next(
+        (w.dtype for name, w in state_dict.items() if "weight_scale" in name),
+        None,
+    )
+    if scale_dtype is None:
+        raise ValueError(
+            "could not find weight scale dtype for FP8 quantized weights"
+        )
+
+    all_layers = range(_get_num_hidden_layers(huggingface_config))
+    return QuantConfig.blockscaled_fp8(
+        mlp_quantized_layers=all_layers,
+        attn_quantized_layers=all_layers,
+        scale_dtype=scale_dtype,
+        embedding_output_dtype=DType.bfloat16,
+        bias_dtype=_bias_dtype(state_dict),
+    )
+
+
 def _parse_compressed_tensors_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -383,6 +428,12 @@ def _parse_compressed_tensors_fp8_config(
         # compressed-tensors might have a missing quant_method if it's the default.
         or not hf_quant_config.get("quant_method")
     )
+
+    groups = list(hf_quant_config["config_groups"].values())
+    if len(groups) == 1 and groups[0]["weights"]["strategy"] == "block":
+        return _parse_compressed_tensors_block_fp8_config(
+            huggingface_config, groups[0], state_dict
+        )
 
     # Extract group config.
     # Assume only one group 'group_0' matters for now.
