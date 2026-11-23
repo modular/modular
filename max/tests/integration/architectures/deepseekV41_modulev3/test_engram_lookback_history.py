@@ -45,6 +45,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.history import (
     _record,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
+    LOOKBACK_HISTORY_ROW,
     V41Config,
     build_kv_params,
     extra_input_names,
@@ -252,7 +253,9 @@ def test_history_is_request_scratch_in_the_cache_tree(replicas: int) -> None:
     assert isinstance(history, RecurrentStateParams)
     assert len(history.regions) == 1
     assert history.regions[0].scratch
-    assert history.regions[0].row_shape == (3,)
+    assert history.regions[0].row_shape == (LOOKBACK_HISTORY_ROW,)
+    # Mach's KV pool rejects a leaf whose row is not a multiple of 16 bytes.
+    assert history.regions[0].bytes_per_page % 16 == 0
     assert history.regions[0].dtype == DType.int64
     assert len(kv_input_names(params)) == len(params.flattened_kv_inputs())
 
@@ -263,7 +266,7 @@ def test_history_graph_uses_request_rows_and_accepted_prefix(
 ) -> None:
     device = DeviceRef.CPU()
     types: list[BufferType | TensorType] = [
-        BufferType(DType.int64, [16, 3], device=device),
+        BufferType(DType.int64, [16, LOOKBACK_HISTORY_ROW], device=device),
         TensorType(DType.uint32, [1, 3], device),
         TensorType(DType.int64, [3, 3], device),
         TensorType(DType.int64, [3], device),
@@ -302,7 +305,7 @@ def test_history_commits_mixed_accepted_prefixes_by_request() -> None:
     """
     device = DeviceRef.CPU()
     types: list[BufferType | TensorType] = [
-        BufferType(DType.int64, [8, 3], device=device),
+        BufferType(DType.int64, [8, LOOKBACK_HISTORY_ROW], device=device),
         TensorType(DType.uint32, [1, 3], device),
         TensorType(DType.int64, [3, 3], device),
         TensorType(DType.int64, [3], device),
@@ -333,10 +336,10 @@ def test_history_commits_mixed_accepted_prefixes_by_request() -> None:
         mask = _mask(source.tensor, lookback, dead, 10)
         graph.output(lookback, ops.buffer_load(pool.buffer), mask)
     model = InferenceSession(devices=[CPU()]).load(graph)
-    expected = np.full((8, 3), -987654, np.int64)
-    expected[1] = [10, 9, 8]
-    expected[6] = [60, 59, 58]
-    expected[4] = [400, 399, 398]
+    expected = np.full((8, LOOKBACK_HISTORY_ROW), -987654, np.int64)
+    expected[1, :3] = [10, 9, 8]
+    expected[6, :3] = [60, 59, 58]
+    expected[4, :3] = [400, 399, 398]
     pool_buffer = Buffer.from_numpy(expected.copy())
     offsets_array = np.array([0, 1, 3, 6], np.uint32)
     for row_ids, sources, base in [
@@ -360,7 +363,7 @@ def test_history_commits_mixed_accepted_prefixes_by_request() -> None:
         counts = np.array([0, 1, 5], np.int64)
         before = np.stack(
             [
-                host_array[i] if sources[i] < 0 else expected[row]
+                host_array[i] if sources[i] < 0 else expected[row, :3]
                 for i, row in enumerate(row_ids)
             ]
         )
@@ -370,7 +373,7 @@ def test_history_commits_mixed_accepted_prefixes_by_request() -> None:
                 *token_array[offsets_array[i] : offsets_array[i + 1]],
                 *draft_array[i, : counts[i]],
             ]
-            expected[row] = sequence[-3:][::-1]
+            expected[row] = [*sequence[-3:][::-1], 0]
         result = model.execute(
             pool_buffer,
             Buffer.from_numpy(np.array([row_ids], np.uint32)),

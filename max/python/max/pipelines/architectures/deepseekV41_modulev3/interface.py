@@ -70,6 +70,9 @@ _ENGRAM_WKV_SHAPE = (25600, 6144)
 _ENGRAM_Q_ROWS = 4
 _BATCH_SYMBOL = "replica_0_batch_size"
 _NUM_LAST_TOKEN_LOOKBACK = 3
+# A Mach KV leaf row must be a multiple of 16 bytes, so the history leaf
+# stores the three int64 lookback tokens in a row of four; the fourth is unused.
+LOOKBACK_HISTORY_ROW = 4
 
 # The raw-byte dtypes the checkpoint stores float8 and E8M0 tensors in.
 _E4M3 = DType.float8_e4m3fn
@@ -886,7 +889,7 @@ def build_kv_params(
                 RecurrentStateRegion(
                     leaf_id="lookback_history",
                     num_layers=1,
-                    row_shape=(_NUM_LAST_TOKEN_LOOKBACK,),
+                    row_shape=(LOOKBACK_HISTORY_ROW,),
                     dtype=DType.int64,
                     scratch=True,
                 ),

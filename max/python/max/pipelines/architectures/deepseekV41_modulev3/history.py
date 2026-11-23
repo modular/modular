@@ -54,8 +54,10 @@ def _read(
     host: TensorValue,
     source: TensorValue,
 ) -> TensorValue:
-    # Only the batch's live rows move: the pool views the whole slab.
-    recorded = read_state_rows(pool, row_ids[0]).rebind(host.shape)
+    # Only the batch's live rows move: the pool views the whole slab. A pool
+    # row may be wider than the window (see LOOKBACK_HISTORY_ROW).
+    depth = int(host.shape[1])
+    recorded = read_state_rows(pool, row_ids[0])[:, :depth].rebind(host.shape)
     return ops.where(
         ops.unsqueeze(source.rebind([host.shape[0]]) >= 0, -1), recorded, host
     )
@@ -115,6 +117,18 @@ def _record(
         - i
     )
     window = ops.gather_nd(ordered, ops.unsqueeze(newest, -1), batch_dims=1)
+    width = int(pool.shape[1])
+    if width > depth:
+        window = ops.concat(
+            [
+                window,
+                ops.broadcast_to(
+                    ops.constant(0, DType.int64, device=lookback.device),
+                    [batch, width - depth],
+                ),
+            ],
+            axis=1,
+        )
     # The live indices follow request identity through reorder and
     # preemption, and only those rows of the slab are written.
     write_state_rows(pool, row_ids[0], window)
