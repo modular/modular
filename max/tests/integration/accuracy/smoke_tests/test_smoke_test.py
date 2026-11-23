@@ -203,6 +203,46 @@ def test_container_args_per_vendor(monkeypatch: MonkeyPatch) -> None:
         assert any(a.endswith("/root/.cache/huggingface/hub:ro") for a in cmd)
 
 
+@pytest.mark.parametrize(
+    "image",
+    [
+        "vllm/vllm-openai-rocm:v0.34.0",
+        f"registry.example/kimi-k3-reference@sha256:{'a' * 64}",
+    ],
+)
+def test_kimi_k3_vllm_selects_accuracy_recipe(
+    monkeypatch: MonkeyPatch,
+    image: str,
+) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    revision = "c" * 40
+    monkeypatch.setattr(smoke_test, "locked_revision", lambda _: revision)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "vllm", "moonshotai/Kimi-K3", serve_image=image, gpu_spec=("MI355X", 8)
+    )
+
+    for flag, value in {
+        "--tensor-parallel-size": "8",
+        "--revision": revision,
+        "--tokenizer-revision": revision,
+        "--max-model-len": "32768",
+        "--max-num-seqs": "16",
+        "--max-num-batched-tokens": "8192",
+        "--kv-cache-dtype": "bfloat16",
+        "--mamba-cache-dtype": "bfloat16",
+        "--mamba-ssm-cache-dtype": "float32",
+        "--media-io-kwargs": '{"image":{"image_mode":null}}',
+    }.items():
+        assert cmd.count(flag) == 1
+        assert cmd[cmd.index(flag) + 1] == value
+    assert "--enforce-eager" in cmd
+    assert "--no-async-scheduling" in cmd
+    assert "--no-enable-prefix-caching" in cmd
+    assert "/dev/kfd" in cmd
+    assert "VLLM_ROCM_USE_AITER_MOE_SITUV2=a8w4" in cmd
+
+
 def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
     monkeypatch: MonkeyPatch,
 ) -> None:

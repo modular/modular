@@ -30,6 +30,7 @@ Note that if you're running this script inside bazel, only available for max-ci,
 then the virtualenvs are not needed.
 """
 
+import csv
 import json
 import logging
 import os
@@ -313,6 +314,22 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
     return RecipeConfig.model_validate(data)
 
 
+def locked_revision(repo: str) -> str | None:
+    """Return the revision pinned by the CI cache populator, if available."""
+    for base in Path(__file__).resolve().parents:
+        lock_path = (
+            base
+            / "CloudInfra/services/huggingface-cache-populator/hf-repo-lock.tsv"
+        )
+        if lock_path.is_file():
+            with lock_path.open(encoding="utf-8") as lock_file:
+                for row in csv.DictReader(lock_file, dialect="excel-tab"):
+                    if row["hf_repo"] == repo:
+                        return row["revision"]
+            break
+    return None
+
+
 def resolve_model_path(
     model: str, recipe_path: str | None = None
 ) -> tuple[str, str | None]:
@@ -445,7 +462,9 @@ def accelerator(image: str) -> str:
     return "amd" if "rocm" in image.lower() else "nvidia"
 
 
-def container_argv(image: str, env: Mapping[str, str]) -> list[str]:
+def container_argv(
+    image: str, env: Mapping[str, str], *, gpu_vendor: str | None = None
+) -> list[str]:
     """Build the ``docker run`` prefix that serves ``image`` on the local GPUs."""
     offline = {
         key: os.environ[key] for key in ("HF_HUB_OFFLINE",) if key in os.environ
@@ -453,7 +472,7 @@ def container_argv(image: str, env: Mapping[str, str]) -> list[str]:
     hf_hub_cache = Path("~/.cache/huggingface/hub").expanduser()
     return [
         "docker", "run", "--rm", "--name", "smoke-server",
-        *GPU_ARGS[accelerator(image)],
+        *GPU_ARGS[gpu_vendor or accelerator(image)],
         "--ipc=host",
         "-p", "127.0.0.1:8000:8000",
         "-v", f"{hf_hub_cache}:/root/.cache/huggingface/hub:ro",
@@ -498,18 +517,67 @@ def get_server_cmd(
         "--host",
         "0.0.0.0",
     ]
-    # limit-mm-per-prompt.video is for InternVL3 on B200
     VLLM = [
         "vllm.entrypoints.openai.api_server",
         "--host",
         "0.0.0.0",
-        "--max-model-len",
-        "auto",
-        "--limit-mm-per-prompt.video",
-        "0",
-        "--limit-mm-per-prompt.audio",
-        "0",
     ]
+    kimi_k3_vllm = (
+        framework == "vllm" and model.casefold() == "moonshotai/kimi-k3"
+    )
+    if kimi_k3_vllm:
+        if "MI355" not in gpu_name.upper() or gpu_count != 8:
+            raise click.UsageError(
+                "The Kimi K3 vLLM accuracy recipe requires eight MI355 GPUs"
+            )
+        # Keep the accuracy settings aligned with the dataset eval action.
+        VLLM += [
+            "--tensor-parallel-size", "8",
+            "--dtype", "bfloat16",
+            "--quantization", "mxfp4",
+            "--kv-cache-dtype", "bfloat16",
+            "--mamba-cache-dtype", "bfloat16",
+            "--mamba-ssm-cache-dtype", "float32",
+            "--max-model-len", "32768",
+            "--max-num-seqs", "16",
+            "--max-num-batched-tokens", "8192",
+            "--gpu-memory-utilization", "0.90",
+            "--enforce-eager",
+            "--compilation-config", '{"mode":0,"cudagraph_mode":"NONE"}',
+            "--no-async-scheduling",
+            "--enable-chunked-prefill",
+            "--no-enable-prefix-caching",
+            "--mm-processor-cache-gb", "0",
+            "--limit-mm-per-prompt", '{"image":16,"video":0,"audio":0}',
+            "--mm-encoder-tp-mode", "data",
+            "--generation-config", "vllm",
+            "--seed", "0",
+            "--chat-template-content-format", "openai",
+            "--tool-call-parser", "kimi_k3",
+            "--enable-auto-tool-choice",
+            "--reasoning-parser", "kimi_k3",
+            "--media-io-kwargs", '{"image":{"image_mode":null}}',
+            "--no-mm-device-do-normalize",
+        ]  # fmt: skip
+        if revision := locked_revision(model):
+            VLLM += ["--revision", revision, "--tokenizer-revision", revision]
+        env.update(
+            HF_HUB_OFFLINE="1",
+            TRANSFORMERS_OFFLINE="1",
+            VLLM_ROCM_USE_AITER_MOE_SITUV2="a8w4",
+            VLLM_USE_BREAKABLE_CUDAGRAPH="0",
+            SAFETENSORS_FAST_GPU="0",
+        )
+    else:
+        # limit-mm-per-prompt.video is for InternVL3 on B200.
+        VLLM += [
+            "--max-model-len",
+            "auto",
+            "--limit-mm-per-prompt.video",
+            "0",
+            "--limit-mm-per-prompt.audio",
+            "0",
+        ]
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
@@ -528,7 +596,7 @@ def get_server_cmd(
     if framework == "max-ci":
         MAX += ["--eager-usage-validator", "enabled"]
 
-    if gpu_count > 1:
+    if gpu_count > 1 and not kimi_k3_vllm:
         if recipe is not None:
             if (
                 recipe.runtime.ep_size is not None
@@ -573,7 +641,8 @@ def get_server_cmd(
             SGLANG += [f"--tp-size={gpu_count}"]
             VLLM += [f"--tensor-parallel-size={gpu_count}"]
 
-    if framework == "vllm" and accelerator(serve_image) == "amd":
+    gpu_vendor = "amd" if kimi_k3_vllm else accelerator(serve_image)
+    if framework == "vllm" and gpu_vendor == "amd":
         env["VLLM_ROCM_USE_AITER"] = "1"
         # GLM-5.3-Flash recipes test text only; skip vision encoder warmup.
         if "glm-5.3-flash" in model.casefold():
@@ -606,7 +675,13 @@ def get_server_cmd(
             if not serve_image:
                 raise ValueError(f"--serve-image is required for {framework}")
             server = {"sglang": SGLANG, "vllm": VLLM}[framework]
-            cmd, env = [*container_argv(serve_image, env), *server], {}
+            cmd, env = (
+                [
+                    *container_argv(serve_image, env, gpu_vendor=gpu_vendor),
+                    *server,
+                ],
+                {},
+            )
 
     cmd = cmd + ["--port", "8000"]
     if recipe_config is not None:

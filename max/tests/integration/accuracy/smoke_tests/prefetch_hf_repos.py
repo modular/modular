@@ -49,7 +49,6 @@ import os
 # downloader, which doesn't have this race.
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-import csv
 import json
 import sys
 import tempfile
@@ -60,6 +59,7 @@ from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.constants import HF_HUB_OFFLINE
 from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from smoke_test import hf_repos_for_model
+from smoke_test import locked_revision as _locked_revision
 
 for _noisy in ("httpx", "httpcore", "urllib3", "huggingface_hub"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
@@ -161,32 +161,6 @@ def _snapshot_incomplete_reason(path: str) -> str | None:
                 f"{index.relative_to(root)} names {len(missing)} missing "
                 f"shard(s), e.g. {missing[0]}"
             )
-    return None
-
-
-_HF_REPO_LOCK_RELPATH = (
-    "CloudInfra/services/huggingface-cache-populator/hf-repo-lock.tsv"
-)
-
-
-def _locked_revision(repo: str) -> str | None:
-    """The revision ``hf-repo-lock.tsv`` pins for the repo, if any.
-
-    The cache-populator DaemonSet on CI's GPU nodes prunes any on-disk
-    revision that isn't in this file every ``cleanup_interval_seconds``
-    (30s, see ``huggingface-cache-populator/main.py``). Downloading an
-    unpinned repo without passing this exact revision lands in a directory
-    the populator doesn't protect, and it gets swept out from under the
-    in-progress download.
-    """
-    for base in Path(__file__).resolve().parents:
-        candidate = base / _HF_REPO_LOCK_RELPATH
-        if candidate.is_file():
-            with candidate.open() as lock_file:
-                for row in csv.DictReader(lock_file, dialect="excel-tab"):
-                    if row["hf_repo"] == repo:
-                        return row["revision"]
-            return None
     return None
 
 
