@@ -55,6 +55,7 @@ from .interfaces.pipeline_model import (
     compile_ep_init,
     init_ep_comm,
 )
+from .utils import CompilationTimer
 from .weight_transform import WeightEntry
 
 __all__ = [
@@ -277,18 +278,22 @@ class ExpertParallelInputs:
         """
         check_supported(ep, mesh)
         ep = dataclasses.replace(ep, fused_moe=_ep_fused_moe_requested())
-        init = ep_init.init_graph(ep)
-        specs: dict[str, GraphSpec] = {
-            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
-        }
-        if is_virtual_device_mode():
-            try:
-                return ep, None, compile_and_init_graphs(session, specs)
-            except CompilationStopped:
-                # `pre-jit` stops every compile, and this graph compiles
-                # before the decoder's, which must still be emitted.
-                return ep, None, {}
-        modules = compile_and_init_graphs(session, specs)
+        with CompilationTimer("ep_init graph") as timer:
+            init = ep_init.init_graph(ep)
+            specs: dict[str, GraphSpec] = {
+                GraphRole.EP_INIT: GraphSpec(
+                    init, "ep_init", init.input_types()
+                )
+            }
+            timer.mark_build_complete()
+            if is_virtual_device_mode():
+                try:
+                    return ep, None, compile_and_init_graphs(session, specs)
+                except CompilationStopped:
+                    # `pre-jit` stops every compile, and this graph compiles
+                    # before the decoder's, which must still be emitted.
+                    return ep, None, {}
+            modules = compile_and_init_graphs(session, specs)
         exchange = ep_init.start(ep, modules[GraphRole.EP_INIT].engine_model)
         return exchange.config, exchange, modules
 

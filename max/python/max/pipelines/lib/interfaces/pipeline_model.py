@@ -166,11 +166,17 @@ def compile_ep_init(
         :attr:`GraphRole.EP_INIT`.
     """
     initializer = initializer_cls(ep_config)
-    init = initializer.init_module()
-    modules = compile_and_init_graphs(
-        session,
-        {GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())},
-    )
+    # "graph", because the handshake these lines would otherwise seem to cover
+    # runs in `run_init` afterwards. It is a collective, so its wall clock
+    # includes waiting for the slowest rank, which does not belong in a
+    # compile-time number.
+    with CompilationTimer("ep_init graph") as timer:
+        init = initializer.init_module()
+        timer.mark_build_complete()
+        modules = compile_and_init_graphs(
+            session,
+            {GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())},
+        )
     return initializer, modules
 
 
