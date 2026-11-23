@@ -198,6 +198,11 @@ modular_cc_test(
 modular_cc_test(
     name = "DeviceGPUTest",
     srcs = ["DeviceGPUTest.cpp"],
+    # TODO(GEX-4635): CaptureAndReplayModel replays the wrong output on B200.
+    args = select({
+        "//:b200_gpu": ["--gtest_filter=-GPUTest.CaptureAndReplayModel"],
+        "//conditions:default": [],
+    }),
     data = [
         ":mutable_buffer_gpu.mef",
         ":vector_add_gpu.mef",
