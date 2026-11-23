@@ -29,7 +29,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
 from std.memory import Pointer
 from internal_utils import assert_almost_equal
-from std.testing import assert_equal, assert_false
+from std.testing import assert_equal, assert_false, assert_true
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.dispatch import (
     DECODE_AVG_M,
     DECODE_DEFAULT_STAGES,
@@ -37,7 +37,11 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.dispatch impor
     DECODE_K_GROUP_STAGES,
     SMALL_PREFILL_AVG_M,
     _k_group,
+    M_TILE_ROWS,
+    _large_prefill_bn_for_tokens,
+    _large_prefill_mma_bn,
     _tuned_stages,
+    _wide_tile_fills,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
@@ -571,8 +575,82 @@ def test_tuned_stages() raises:
     assert_false(Bool(_tuned_stages[2048, 4096, -1]()))
 
 
+def test_large_prefill_mma_bn() raises:
+    """Pins the large-prefill N tile rule: wide only where it is legal and
+    unmetered, and never for a shape whose pipeline depth was measured for the
+    narrow tile."""
+    # A shape with no measured stage row takes the wide tile above 64 rows an
+    # expert, with or without the fused SwiGLU epilogue: that epilogue pays one
+    # pipeline stage for the wider tile's C scratch, and still wins.
+    assert_equal(_large_prefill_mma_bn[3072, 4096, False](), 256)
+    assert_equal(_large_prefill_mma_bn[2304, 3072, False](), 256)
+    assert_equal(_large_prefill_mma_bn[3072, 4096, True](), 256)
+    assert_equal(_large_prefill_mma_bn[2304, 3072, True](), 256)
+    # N must hold a whole number of 256-wide tiles.
+    assert_equal(_large_prefill_mma_bn[1856, 2688, False](), 128)
+    assert_equal(_large_prefill_mma_bn[2048 + 128, 4096, False](), 128)
+    # A measured stage row keeps its narrow tile; its depth was ablated for
+    # that tile's per-stage shared memory. The same holds for the fused
+    # epilogue.
+    assert_equal(_large_prefill_mma_bn[4096, 7168, False](), 128)
+    assert_equal(_large_prefill_mma_bn[7168, 2048, False](), 128)
+    assert_equal(_large_prefill_mma_bn[7168, 256, False](), 128)
+    assert_equal(_large_prefill_mma_bn[4096, 7168, True](), 128)
+
+
+def test_wide_tile_fills() raises:
+    """Pins the fill test: the wide tile needs M tiles that are mostly live rows.
+
+    The narrow tile's cost tracks rows and the wide tile's tracks tiles, so they
+    cross where the last M tile is about a third full. Measured rows an expert:
+    the wide tile wins at 256, 448, 512, 640 and 683 and loses at 341 and 384.
+    """
+    # Zero padding takes the wide tile, whatever the multiple.
+    assert_true(_wide_tile_fills(256))
+    assert_true(_wide_tile_fills(512))
+    # A last tile two thirds empty does not.
+    assert_false(_wide_tile_fills(341))
+    assert_false(_wide_tile_fills(384))
+    # A last tile a quarter empty does.
+    assert_true(_wide_tile_fills(448))
+    assert_true(_wide_tile_fills(640))
+    assert_true(_wide_tile_fills(683))
+    # Degenerate counts keep the narrow tile rather than divide by zero.
+    assert_false(_wide_tile_fills(0))
+    assert_false(_wide_tile_fills(1))
+    assert_true(_wide_tile_fills(M_TILE_ROWS))
+
+
+def test_large_prefill_tile() raises:
+    """Pins the tile the dispatch launches for one large-prefill batch.
+
+    The fill rule is a runtime quantity, so this asserts the combined
+    legality-and-fill helper with the same `(total_m, num_active_experts)` the
+    dispatch passes, not just the legality rule.
+    """
+    # 448 rows an expert leaves a 64-row tail in the last 256-row M tile, so
+    # the dispatch launches the wide tile there.
+    assert_equal(
+        _large_prefill_bn_for_tokens[2304, 3072, False](6 * 448, 6), 256
+    )
+    # 96 rows leaves a 160-row tail; the same shape falls back to 128.
+    assert_equal(
+        _large_prefill_bn_for_tokens[2304, 3072, False](6 * 96, 6), 128
+    )
+    # A shape with a measured stage row stays at 128 even when its fill is
+    # wide enough.
+    assert_equal(
+        _large_prefill_bn_for_tokens[4096, 7168, False](6 * 448, 6), 128
+    )
+    # No active expert floors to one rather than dividing by zero.
+    assert_equal(_large_prefill_bn_for_tokens[2304, 3072, False](448, 0), 256)
+
+
 def main() raises:
     test_tuned_stages()
+    test_wide_tile_fills()
+    test_large_prefill_mma_bn()
+    test_large_prefill_tile()
     with DeviceContext() as ctx:
         # ============================================================
         # 1. Dispatch-tuned shape: N=4096, K=7168 (DeepSeek V3 up-proj)
@@ -1066,6 +1144,26 @@ def main() raises:
             4,
             [128, 128, 128, 128],
             [0, 1, 2, 3],
+            ctx,
+        )
+
+        # 9c: The wide large-prefill N tile (256): 448 rows an expert leaves a
+        # 64-row tail in the last 256-row M tile, inside the fill bound, so the
+        # dispatch launches the wide tile. Nine N tiles of 256, one expert
+        # skipped by id. Assert the tile here so a later fill change cannot
+        # silently drop this coverage.
+        var case_9c_tile = _large_prefill_bn_for_tokens[2304, 3072, False](
+            6 * 448, 6
+        )
+        assert_equal(case_9c_tile, 256)
+        print(
+            "  9c: N=2304, K=3072, large prefill 6 experts @ 448 tok, tile=",
+            case_9c_tile,
+        )
+        _test_dispatch[6, 2304, 3072](
+            6,
+            [448, 448, 448, 448, 448, 448],
+            [0, 2, -1, 1, 3, 4],
             ctx,
         )
 

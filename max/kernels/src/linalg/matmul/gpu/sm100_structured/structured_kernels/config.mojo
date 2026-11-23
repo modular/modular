@@ -675,6 +675,7 @@ struct MatmulConfig[
         num_pipeline_stages: Optional[Int] = None,
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
+        num_output_stages: Int = 2,
         register_based_epilogue: Bool = True,
         extra_smem_per_stage: Int = 0,
         gemm_kind: GEMMKind = GEMMKind.GEMM,
@@ -711,7 +712,7 @@ struct MatmulConfig[
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
-        self.num_output_stages = 2
+        self.num_output_stages = num_output_stages
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(
