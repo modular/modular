@@ -357,8 +357,8 @@ def main() raises:
         ](2, [707, 709], [0, 1], ctx)
 
         # Misaligned per-expert offset against the production umma_shape
-        # (64, 128, 32) so the BN=128 dispatch hits the partial-tile A copy
-        # path. Expert 1 starts at row 5 → byte offset 5*4=20, not 16-aligned.
+        # (64, 128, 32) so the BN=128 dispatch copies the scales by warp.
+        # Expert 1 starts at row 5 → byte offset 5*4=20, not 16-aligned.
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
@@ -366,6 +366,54 @@ def main() raises:
             expert_shape=(256, 256),
             umma_shape=(Int(64), Int(128), Int(32)),
         ](2, [5, 11], [0, 1], ctx)
+
+        # Groups packed with no padding, as `moe_create_indices` lays them
+        # out: every group start after the first is off the 4-row (fp32
+        # scales) alignment. These tiles, and the buffer-tail tiles, load A
+        # by TMA and only the scales strip by the producer warp. Both tile
+        # heights the dispatch picks (64 and 128 rows).
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=8,
+            expert_shape=(512, 1024),
+            umma_shape=(Int(64), Int(128), Int(32)),
+        ](
+            8,
+            [37, 129, 3, 250, 67, 1, 190, 63],
+            [5, 0, 7, 2, 6, 1, 4, 3],
+            ctx,
+        )
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=8,
+            expert_shape=(512, 1024),
+            umma_shape=(Int(128), Int(128), Int(32)),
+        ](
+            8,
+            [37, 129, 3, 250, 67, 1, 190, 63],
+            [5, 0, 7, 2, 6, 1, 4, 3],
+            ctx,
+        )
+        # bf16 scales align to 8 rows: starts 36, 300 and 524 are off it.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=6,
+            expert_shape=(512, 1024),
+            umma_shape=(Int(64), Int(128), Int(32)),
+            scales_type=.bfloat16,
+        ](6, [36, 260, 4, 132, 92, 4], [1, 3, 0, 5, 2, 4], ctx)
+        # Swapped AB: 32-row token tiles at unaligned group starts.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=4,
+            expert_shape=(512, 1024),
+            umma_shape=(Int(32), Int(128), Int(32)),
+            swap_ab=True,
+        ](4, [37, 70, 3, 46], [2, 0, 3, 1], ctx)
 
         # total_m stride misalignment: total_num_tokens=7 with fp32 scales
         # gives a K-row stride of 7*4=28, not a multiple of 16, so
@@ -408,8 +456,8 @@ def main() raises:
             swap_ab=True,
         ](3, [4, 20, 8], [1, 2, 0], ctx)
 
-        # Swapped AB with a misaligned group start (row 5): the partial-tile
-        # A copy fills the token tile. With bf16 scales a 32-row strip is 64
+        # Swapped AB with a misaligned group start (row 5): the warp copies
+        # the token tile's scales. With bf16 scales a 32-row strip is 64
         # bytes in a 128-byte SMEM stage.
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,

@@ -405,6 +405,9 @@ mojo_binary(
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
+            # Same reason: the blockwise-FP8 grouped matmul at unpadded group
+            # starts, timed on remote B200.
+            "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo",
             # Same reason: the GLM-5.3-Flash router arms, timed on remote B200.
             "gpu/linalg/bench_router_gate_gemv_glm.mojo",
         ],
@@ -461,6 +464,9 @@ mojo_binary(
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
+            # Same reason: the blockwise-FP8 grouped matmul at unpadded group
+            # starts, timed on remote B200.
+            "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo",
             # Same reason: the GLM-5.3-Flash router arms, timed on remote B200.
             "gpu/linalg/bench_router_gate_gemv_glm.mojo",
         ],
@@ -595,6 +601,38 @@ build_test(
     name = "gpu/linalg/bench_grouped_fp8_ep_decode.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/linalg/bench_grouped_fp8_ep_decode.mojo.run"],
+)
+
+# The blockwise-FP8 grouped matmul at unpadded `moe_create_indices` group
+# starts (`--test_arg=--tokens=...`), checked against the naive kernel and
+# timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "40",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo.run"],
 )
 
 # `mo.squeeze_shape` / `mo.unsqueeze_shape` through their registered

@@ -889,27 +889,25 @@ def _get_accumulator_size[
 
 
 @inline(.always)
-def _tile_fits_full_tma[
+def _a_scales_tile_fits_tma[
     a_scales_type: DType, BM: Int
 ](m_tile_global_start: Int, total_m: Int) -> Bool:
-    """Whether a full BM-row A/a_scales TMA is safe for this tile.
+    """Whether the `a_scales` TMA can load this tile's BM-entry strip.
 
-    The bound is the A buffer, not the current expert. A tile may read BM rows
-    past this expert's end into the next expert's rows: that read is in-bounds
-    as long as the whole BM strip lies within total_m, and the epilogue masks
-    the over-read rows with m < M (per-expert count) so they are never written.
-    The next expert's own tile recomputes them correctly. That makes the
-    expert boundary irrelevant to safety and lets small-M-per-expert decode
-    tiles keep the fast TMA path instead of falling onto the partial copy.
+    A itself always loads by TMA: its row stride is K bytes, and rows past
+    the A buffer read as zeros. A tile may also read BM rows past this
+    expert's end into the next expert's rows; the epilogue masks them with
+    m < M (per-expert count), so they are never written.
 
-    Three conditions must hold:
-      * the full BM-row strip stays within total_m, so the TMA load and the
-        matching a_scales strip never read past the A buffer,
+    The scales TMA needs more:
+      * the strip stays within total_m, so it never reads past the buffer,
       * m_tile_global_start is aligned (column offset within a K row), and
       * total_m is aligned, since it is the K-row stride: at any K>0 the scales
         byte offset is k * total_m * size_of(scales), which is only 16-byte
-        aligned when the stride itself is. Misalignment faults with
-        ILLEGAL_INSTRUCTION.
+        aligned when the stride itself is.
+    Either misalignment faults with ILLEGAL_INSTRUCTION on B200, the start
+    row included. When the scales TMA cannot take the strip, the producer
+    warp copies it.
     """
     comptime SCALES_M_ALIGN = 16 // size_of[a_scales_type]()
     return (
@@ -920,20 +918,15 @@ def _tile_fits_full_tma[
 
 
 @inline(.always)
-def _copy_partial_a_tile_blockwise_from_gmem[
-    a_type: DType,
+def _copy_a_scales_strip_from_gmem[
     a_scales_type: DType,
-    a_gmem_layout: TensorLayout,
     a_scales_gmem_layout: TensorLayout,
     *,
-    block_tile_shape: Coord[Int, Int, Int],
-    a_swizzle: TensorMapSwizzle,
+    BM: Int,
 ](
-    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     a_scales_gmem: TileTensor[
         a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
     ],
-    a_smem_tile: TileTensor[mut=True, a_type, address_space=.SHARED, ...],
     a_scales_smem_tile: TileTensor[
         mut=True, a_scales_type, address_space=.SHARED, ...
     ],
@@ -941,48 +934,11 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     m_tile_global_start: Int,
     iter_idx: Int,
 ):
-    """Cooperative warp copy of A and matching `a_scales` strip from gmem into
-    SMEM. Used when the full-width TMA load is ineligible: the final
-    buffer-tail tile whose BM-row strip would run past total_m, or a misaligned
-    scale stride that the scales TMA cannot address. Rows at or past the current
-    expert's end are zeroed so MMA still sees a full BM×BK tile without reading
-    past the activation buffer; the epilogue masks those rows, so the fill only
-    needs to be safe, not exact. Writes go to the physical SMEM offset produced
-    by `make_swizzle` so the MMA descriptor's swizzle XOR reads back the value
-    we just stored. All lanes of the calling warp must execute this."""
-    comptime assert a_gmem.rank == a_scales_gmem.rank == 2
-    comptime assert a_gmem.flat_rank == a_scales_gmem.flat_rank == 2
-    comptime assert a_scales_smem_tile.flat_rank == 2
-
-    comptime BM = block_tile_shape[0]
-    comptime BK = block_tile_shape[2]
-    comptime a_sw = make_swizzle[a_type, a_swizzle]()
-    comptime VEC = 16 // size_of[a_type]()
-    comptime CHUNKS_PER_ROW = BK // VEC
-    comptime TOTAL_CHUNKS = BM * CHUNKS_PER_ROW
-    comptime assert (
-        BK % VEC == 0 and TOTAL_CHUNKS % WARP_SIZE == 0
-    ), "partial-tile copy expects BK*BM aligned to 16-byte chunks per warp"
-    comptime CHUNKS_PER_LANE = TOTAL_CHUNKS // WARP_SIZE
+    """Warp copy of the BM-entry `a_scales` strip of one K block into SMEM.
+    Rows at or past the current expert's end are zeroed. All lanes of the
+    calling warp must execute this."""
+    comptime assert a_scales_gmem.flat_rank == a_scales_smem_tile.flat_rank == 2
     var lane = lane_id()
-    var zero_vec = SIMD[a_type, VEC](0)
-
-    var a_smem_flat = a_smem_tile.reshape(row_major[BM * BK]())
-    comptime for i in range(CHUNKS_PER_LANE):
-        var chunk = i * WARP_SIZE + lane
-        var row = chunk // CHUNKS_PER_ROW
-        var k0 = (chunk % CHUNKS_PER_ROW) * VEC
-        var g_row = m_tile_global_start + row
-        var av = zero_vec
-        if g_row < expert_end_row:
-            av = a_gmem.load[width=VEC, alignment=align_of[a_type]()](
-                (g_row, iter_idx * BK + k0)
-            )
-        a_smem_flat.store[alignment=align_of[a_type]()](
-            (Int(a_sw(Int32(row * BK + k0))),), av
-        )
-
-    # a_scales: BM scalars total; each lane writes one row per outer iteration.
     comptime for i in range(ceildiv(BM, WARP_SIZE)):
         var row = i * WARP_SIZE + lane
         if row < BM:
@@ -1006,6 +962,7 @@ def load_AB[
     a_scales_desc_shape: Coord,
     num_pipeline_stages: Int,
     expert_ids_layout: TensorLayout,
+    a_scales_gmem_layout: TensorLayout,
     /,
     *,
     a_smem_layout_t: TensorLayout,
@@ -1039,13 +996,20 @@ def load_AB[
     elect_one_cta: Bool,
     scheduler: TileScheduler,
     expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    a_scales_gmem: TileTensor[
+        a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
+    ],
+    scales_by_warp: Bool,
+    expert_end_row: Int,
 ):
     """Issues multicast TMA loads for A, B, and A scales into the producer stage of the load-MMA pipeline.
 
     Waits for the consumer (MMA) to release the buffer, then launches
     async multicast TMA copies of A, B, and the matching A scales strip
     into the current pipeline stage's SMEM and signals completion through
-    the stage's mbarrier.
+    the stage's mbarrier. When `scales_by_warp` is set, the calling warp
+    copies the A scales strip instead, for tiles the scales TMA cannot take
+    (see `_a_scales_tile_fits_tma`).
 
     Parameters:
         a_type: Element dtype of the A activation operand (inferred).
@@ -1063,6 +1027,8 @@ def load_AB[
             stages (inferred).
         expert_ids_layout: Layout of the expert-IDs mapping tensor
             (inferred).
+        a_scales_gmem_layout: Layout of the A per-block scales tensor in
+            global memory (inferred).
         a_smem_layout_t: Type of the SMEM layout of the A tile buffer.
         a_smem_layout: SMEM layout of the A tile buffer.
         b_smem_layout_t: Type of the SMEM layout of the B tile buffer.
@@ -1094,6 +1060,12 @@ def load_AB[
         scheduler: Tile scheduler tracking the current group and work
             tile.
         expert_ids: Mapping from group index to expert row offset in B.
+        a_scales_gmem: A per-block scales tensor in global memory, read
+            by the warp copy when `scales_by_warp` is set.
+        scales_by_warp: Whether the calling warp copies the A scales strip
+            instead of the scales TMA.
+        expert_end_row: Global row index one past the last row of the
+            current expert; the warp copy zeroes the scales at or past it.
     """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -1171,9 +1143,29 @@ def load_AB[
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
+    # The peer CTA of a pair would not see this warp's writes.
+    comptime assert cta_group == 1, "the scales warp copy assumes one CTA"
+    if scales_by_warp:
+        _copy_a_scales_strip_from_gmem[BM=BM](
+            a_scales_gmem,
+            a_scales_smem_tile,
+            expert_end_row,
+            work_tile_coord[0],
+            iter_idx,
+        )
+        syncwarp()
+        # A later tile's scales TMA may write this slot: order the generic
+        # writes before that async-proxy write.
+        fence_async_view_proxy()
+
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[0].expect_bytes(Int32(expected_bytes))
+            tma_mbar[0].expect_bytes(
+                Int32(
+                    expected_bytes
+                    - (a_scales_expected_bytes if scales_by_warp else 0)
+                )
+            )
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
@@ -1189,192 +1181,12 @@ def load_AB[
             b_multicast_mask,
         )
 
-        a_scales_tma_op.async_copy[cta_group](
-            a_scales_smem_tile,
-            tma_mbar[0],
-            (work_tile_coord[0], iter_idx),
-        )
-
-
-@inline(.always)
-def load_AB_partial[
-    a_type: DType,
-    b_type: DType,
-    a_scales_type: DType,
-    b_tile_shape: Coord,
-    b_desc_shape: Coord,
-    num_pipeline_stages: Int,
-    expert_ids_layout: TensorLayout,
-    a_gmem_layout: TensorLayout,
-    a_scales_gmem_layout: TensorLayout,
-    /,
-    *,
-    a_smem_layout_t: TensorLayout,
-    a_smem_layout: a_smem_layout_t,
-    b_smem_layout_t: TensorLayout,
-    b_smem_layout: b_smem_layout_t,
-    a_scales_smem_layout_t: TensorLayout,
-    a_scales_smem_layout: a_scales_smem_layout_t,
-    block_tile_shape: Coord[Int, Int, Int],
-    cta_group: Int = 1,
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](
-    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
-    a_scales_gmem: TileTensor[
-        a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
-    ],
-    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    a_smem_base: MutPointer[Scalar[a_type], _, address_space=.SHARED],
-    b_smem_base: MutPointer[Scalar[b_type], _, address_space=.SHARED],
-    a_scales_smem_base: MutPointer[
-        Scalar[a_scales_type], _, address_space=.SHARED
-    ],
-    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
-    peer_cta_coord: Tuple[Int, Int, Int],
-    work_tile_coord: Tuple[Int, Int],
-    b_multicast_mask: UInt16,
-    iter_idx: Int,
-    elect_one_cta: Bool,
-    scheduler: TileScheduler,
-    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
-    expert_end_row: Int,
-    m_tile_global_start: Int,
-):
-    """Sibling to `load_AB` for tiles the full-TMA path can't handle: fills A
-    and `a_scales` SMEM via a cooperative warp copy from gmem and issues TMA
-    only for B.
-
-    Parameters:
-        a_type: Element dtype of the A activation operand (inferred).
-        b_type: Element dtype of the B weight operand (inferred).
-        a_scales_type: Element dtype of the A per-block scales (inferred).
-        b_tile_shape: Shape of each B TMA tile copy (inferred).
-        b_desc_shape: Descriptor shape of the B TMA tensor (inferred).
-        num_pipeline_stages: Number of load-MMA pipeline buffer stages
-            (inferred).
-        expert_ids_layout: Layout of the expert-IDs mapping tensor
-            (inferred).
-        a_gmem_layout: Layout of the A activation tensor in global memory
-            (inferred).
-        a_scales_gmem_layout: Layout of the A per-block scales tensor in
-            global memory (inferred).
-        a_smem_layout_t: Type of the SMEM layout of the A tile buffer.
-        a_smem_layout: SMEM layout of the A tile buffer.
-        b_smem_layout_t: Type of the SMEM layout of the B tile buffer.
-        b_smem_layout: SMEM layout of the B tile buffer.
-        a_scales_smem_layout_t: Type of the SMEM layout of the A scales
-            strip.
-        a_scales_smem_layout: SMEM layout of the A scales strip.
-        block_tile_shape: Block tile shape as (BM, BN, BK).
-        cta_group: CTA group size, 1 or 2 (defaults to 1).
-        a_swizzle: Swizzle mode for the A SMEM buffer, used to compute
-            physical store offsets in the cooperative warp copy (defaults
-            to `SWIZZLE_NONE`).
-
-    Args:
-        a_gmem: A activation tensor in global memory, read by the
-            cooperative warp copy.
-        a_scales_gmem: A per-block scales tensor in global memory, read by
-            the cooperative warp copy.
-        b_tma_op: TMA descriptor for loading B weight tiles.
-        a_smem_base: Base pointer to the A SMEM buffer.
-        b_smem_base: Base pointer to the B SMEM buffer.
-        a_scales_smem_base: Base pointer to the A scales SMEM buffer.
-        load_mma_pipeline: Producer-consumer pipeline between load and MMA
-            warps.
-        peer_cta_coord: Peer CTA coordinates as (peer_id, mma_coord_m,
-            mma_coord_n).
-        work_tile_coord: Work tile coordinates as (m, n).
-        b_multicast_mask: Multicast mask selecting CTAs for B TMA loads.
-        iter_idx: K-iteration index of the current tile.
-        elect_one_cta: Whether this CTA is the elected leader for the
-            cluster.
-        scheduler: Tile scheduler tracking the current group and work
-            tile.
-        expert_ids: Mapping from group index to expert row offset in B.
-        expert_end_row: Global row index one past the last row of the
-            current expert; rows at or past it are zeroed during the
-            cooperative copy.
-        m_tile_global_start: Global M-row start of the current tile within
-            the A buffer.
-    """
-    comptime assert a_gmem.rank == a_scales_gmem.rank == 2
-    comptime assert a_gmem.flat_rank == a_scales_gmem.flat_rank == 2
-    comptime assert expert_ids.rank == expert_ids.flat_rank == 1
-
-    # `expect_bytes` below only accounts for B's TMA; A is populated by the
-    # calling warp under a `syncwarp` + `fence_async_view_proxy`. A peer CTA
-    # in a cluster would see A unsynchronised on the multicast path.
-    comptime assert (
-        cta_group == 1
-    ), "load_AB_partial assumes a single-CTA consumer"
-    comptime BN = block_tile_shape[1]
-    comptime BK = block_tile_shape[2]
-
-    comptime b_expected_bytes = b_smem_layout_t.static_product * size_of[
-        b_type
-    ]()
-    comptime b_tma_load_size = _idx_product[b_desc_shape]()
-    comptime b_tma_rows = b_desc_shape.element_types[0].static_value
-
-    var stage = load_mma_pipeline.producer_stage()
-
-    # Wait until MMA (consumer) has used the buffer.
-    load_mma_pipeline.wait_consumer()
-
-    var expert_id = expert_ids[Int(scheduler.current_group_idx)]
-    var b_gmem_slice_coord_vec = type_of(expert_id)(
-        peer_cta_coord[1] * b_tma_rows
-        + peer_cta_coord[0] * BN
-        + work_tile_coord[1]
-    ) + expert_id * type_of(expert_id)(scheduler.static_MN)
-    comptime assert b_gmem_slice_coord_vec.length == 1
-    var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
-
-    comptime a_smem_tile_size = a_smem_layout_t.static_product
-    comptime b_smem_tile_size = b_smem_layout_t.static_product
-    comptime a_scales_smem_tile_size = a_scales_smem_layout_t.static_product
-
-    var a_smem_tile = TileTensor(
-        a_smem_base.unsafe_offset(Int(stage) * a_smem_tile_size),
-        a_smem_layout,
-    )
-    var a_scales_smem_tile = TileTensor(
-        a_scales_smem_base.unsafe_offset(Int(stage) * a_scales_smem_tile_size),
-        a_scales_smem_layout,
-    )
-    var b_smem_slice = TileTensor(
-        b_smem_base.unsafe_offset(Int(stage) * b_smem_tile_size).unsafe_offset(
-            peer_cta_coord[1] * b_tma_load_size
-        ),
-        b_smem_layout,
-    )
-    var tma_mbar = load_mma_pipeline.producer_mbar(stage)
-
-    _copy_partial_a_tile_blockwise_from_gmem[
-        block_tile_shape=block_tile_shape,
-        a_swizzle=a_swizzle,
-    ](
-        a_gmem,
-        a_scales_gmem,
-        a_smem_tile,
-        a_scales_smem_tile,
-        expert_end_row,
-        m_tile_global_start,
-        iter_idx,
-    )
-    syncwarp()
-    if elect_one_sync():
-        if elect_one_cta:
-            tma_mbar[0].expect_bytes(Int32(cta_group * b_expected_bytes))
-        # Order the cooperative SMEM writes before the async-proxy TMA.
-        fence_async_view_proxy()
-        b_tma_op.async_multicast_load[cta_group](
-            b_smem_slice,
-            tma_mbar[0],
-            (iter_idx * BK, b_gmem_slice_coord),
-            b_multicast_mask,
-        )
+        if not scales_by_warp:
+            a_scales_tma_op.async_copy[cta_group](
+                a_scales_smem_tile,
+                tma_mbar[0],
+                (work_tile_coord[0], iter_idx),
+            )
 
 
 @inline(.always)
@@ -2156,7 +1968,6 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_desc_shape: Coord,
     a_scales_type: DType,
     OffsetsLayoutType: TensorLayout,
-    a_gmem_layout: TensorLayout,
     a_scales_gmem_layout: TensorLayout,
     b_scales_type: DType,
     b_scales_layout: TensorLayout,
@@ -2185,15 +1996,12 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
-    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     a_scales_gmem: TileTensor[
         a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
     ],
 ):
-    comptime assert a_gmem.rank == a_scales_gmem.rank == b_scales.rank == 2
-    comptime assert (
-        a_gmem.flat_rank == a_scales_gmem.flat_rank == b_scales.flat_rank == 2
-    )
+    comptime assert a_scales_gmem.rank == b_scales.rank == 2
+    comptime assert a_scales_gmem.flat_rank == b_scales.flat_rank == 2
     comptime assert expert_ids.rank == expert_ids.flat_rank == 1
 
     var _num_active_experts = Int(num_active_experts)
@@ -2508,42 +2316,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 )
             )
             var m_tile_global_start = Int(work_info.m)
-            var use_full_tma = _tile_fits_full_tma[
+            var scales_by_warp = not _a_scales_tile_fits_tma[
                 a_scales_type, config.block_tile_shape[0]
             ](m_tile_global_start, total_m)
 
             for i in range(_num_iters):
-                if not use_full_tma:
-                    load_AB_partial[
-                        a_smem_layout_t=type_of(a_smem_layout),
-                        a_smem_layout=a_smem_layout,
-                        b_smem_layout_t=type_of(b_smem_layout),
-                        b_smem_layout=b_smem_layout,
-                        a_scales_smem_layout_t=type_of(a_scales_smem_layout),
-                        a_scales_smem_layout=a_scales_smem_layout,
-                        block_tile_shape=config.block_tile_shape,
-                        cta_group=config.cta_group,
-                        a_swizzle=config.a_swizzle,
-                    ](
-                        a_gmem,
-                        a_scales_gmem,
-                        b_tma_op,
-                        a_smem_base,
-                        b_smem_base,
-                        a_scales_smem_base,
-                        load_mma_pipeline,
-                        peer_cta_coord,
-                        (Int(work_info.m), Int(work_info.n)),
-                        b_multicast_mask,
-                        i,
-                        elect_one_cta,
-                        scheduler,
-                        expert_ids,
-                        expert_end_row,
-                        m_tile_global_start,
-                    )
-                    load_mma_pipeline.producer_step()
-                    continue
                 load_AB[
                     a_smem_layout_t=type_of(a_smem_layout),
                     a_smem_layout=a_smem_layout,
@@ -2570,6 +2347,9 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     elect_one_cta,
                     scheduler,
                     expert_ids,
+                    a_scales_gmem,
+                    scales_by_warp,
+                    expert_end_row,
                 )
                 load_mma_pipeline.producer_step()
 
@@ -2922,7 +2702,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         and BM <= 512 // config.num_accum_pipeline_stages
     ), "swap_ab needs 128 weight rows dividing N and a power-of-two token tile"
 
-    # `_copy_partial_a_tile_blockwise_from_gmem` walks K in BK strides without
+    # `_copy_a_scales_strip_from_gmem` reads one scale row per BK step without
     # masking the K-tail, so any caller must size K to a BK multiple.
     comptime assert K % BK == 0, "K must be a multiple of BK"
 
@@ -2937,7 +2717,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     # `create_tma_tile` rejects an `a_scales` whose K-row byte stride
     # (= total_m * size_of(scales)) is not 16-byte aligned. Detect that
     # at the host and fall back to the naive grouped FP8 kernel — the
-    # per-tile `_tile_fits_full_tma` predicate alone is not enough,
+    # per-tile `_a_scales_tile_fits_tma` predicate alone is not enough,
     # because descriptor creation fails before any tile runs.
     var total_m = Int(a_scales.dim(1))
     if total_m * size_of[a_scales_type]() % 16 != 0:
@@ -3085,7 +2865,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         type_of(a_scales_tma_op).desc_shape,
         a_scales_type,
         type_of(a_offsets).LayoutType,
-        type_of(a.layout),
         type_of(a_scales.layout),
         b_scales_type,
         type_of(b_scales_2d.layout),
@@ -3126,7 +2905,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         b_scales_2d.as_unsafe_any_origin(),
         expert_ids.as_unsafe_any_origin(),
         problem_shape,
-        a.as_unsafe_any_origin(),
         a_scales.as_unsafe_any_origin(),
         execution_config=GridBlockLaunchConfig(
             grid_dim=grid_dim,
