@@ -3070,6 +3070,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location.or_else(call_location()),
             )
 
+    @inline(.always)
     def enqueue_closure[
         ClosureType: RegisterPassable & def() -> None,
     ](
@@ -3081,6 +3082,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *,
         grid_dim: Dim,
         block_dim: Dim,
+        num_cores: OptionalReg[Int] = None,
+        thread_mask: OptionalReg[Int] = None,
         location: Optional[SourceLocation] = None,
     ) raises:
         """Enqueues a closure kernel compiled by `compile_closure[ClosureType]`.
@@ -3096,6 +3099,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             closure: The closure whose captures to launch with.
             grid_dim: The grid dimensions.
             block_dim: The block dimensions.
+            num_cores: A core count that only some targets support.
+            thread_mask: A thread mask that only some targets support.
             location: Source location for the function call.
 
         Raises:
@@ -3107,6 +3112,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             closure,
             grid_dim=grid_dim,
             block_dim=block_dim,
+            num_cores=num_cores,
+            thread_mask=thread_mask,
             location=location.or_else(call_location()),
         )
 

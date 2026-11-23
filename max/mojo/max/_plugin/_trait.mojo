@@ -39,13 +39,7 @@ from max.gpu.host import (
     LaunchAttribute,
 )
 
-# Hooks the legacy `DeviceContext` calls take its types. It still compiles when
-# `--config=hal-device-context` points `max.gpu.host` at the HAL one.
 from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
-from max.gpu.host._legacy.device_context import (
-    LegacyDeviceContext,
-    LegacyDeviceFunction,
-)
 from max.gpu.host.info import get_gpu_info
 from max.gpu.memory.memory import (
     _AsyncCopyGroupPluginHookFnType,
@@ -467,6 +461,8 @@ trait MaxPluginHooks:
         closure: ClosureType,
         grid_dim: Dim,
         block_dim: Dim,
+        num_cores: OptionalReg[Int],
+        thread_mask: OptionalReg[Int],
         location: SourceLocation,
     ) raises:
         """Per-target plugin hook for launching a closure kernel.
@@ -481,6 +477,8 @@ trait MaxPluginHooks:
             closure: The closure whose captures to launch with.
             grid_dim: The grid dimensions.
             block_dim: The block dimensions.
+            num_cores: A core count that only some targets support.
+            thread_mask: A thread mask that only some targets support.
             location: Source location of the launch.
 
         Only invoked when `_handles_closure_kernels` is `True`; the default
