@@ -10,18 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""A data-parallel degree above one must be refused, not half-honoured.
+"""Which data-parallel degrees GLM-5.3-Flash constructs.
 
-The caches are built per batch shard -- both
-:class:`~max.nn.kv_cache.MLAKVCacheParams` leaves and the recurrent state take
-``data_parallel_degree`` straight from the pipeline config -- while the compute
-graph is tensor-parallel throughout: KDA and sparse MLA shard by head. So a
-batch shard would reach the cache and never reach the graph, which reads and
-writes as though it owned the whole batch.
-
-Nothing downstream notices. ``--data-parallel-degree 8`` is the shape GLM-5.x
-runs in production, so the failure mode this guards against is a crash at best
-and wrong logits at worst, on the flag a deployment is most likely to set.
+Data parallelism runs one attention replica per device: each device runs
+whole KDA and sparse-MLA heads on its own replica's rows. A degree between
+one and the device count would need tensor parallelism inside each replica,
+which the graph does not build, so the config refuses it rather than letting
+the caches split the batch one way and the graph another.
 """
 
 from __future__ import annotations
@@ -68,13 +63,22 @@ def _config(devices: list[DeviceRef], data_parallel_degree: int) -> None:
 
 
 def test_tensor_parallel_degree_is_accepted() -> None:
-    """The shape the architecture actually builds stays constructible."""
+    """Tensor-parallel attention over every device constructs."""
     _config([DeviceRef.GPU(0), DeviceRef.GPU(1)], data_parallel_degree=1)
 
 
 @pytest.mark.parametrize("degree", [2, 8])
-def test_data_parallel_degree_is_refused(degree: int) -> None:
-    """The production flag value is the one that must not construct."""
+def test_one_replica_per_device_is_accepted(degree: int) -> None:
+    """The production DP8 shape, and its two-device miniature, construct."""
     devices = [DeviceRef.GPU(i) for i in range(degree)]
-    with pytest.raises(ValueError, match="tensor-parallel only"):
+    _config(devices, data_parallel_degree=degree)
+
+
+@pytest.mark.parametrize(("degree", "num_devices"), [(2, 4), (4, 8), (3, 1)])
+def test_replicas_of_several_devices_are_refused(
+    degree: int, num_devices: int
+) -> None:
+    """A degree that is neither one nor the device count is refused."""
+    devices = [DeviceRef.GPU(i) for i in range(num_devices)]
+    with pytest.raises(ValueError, match="one data-parallel replica per"):
         _config(devices, data_parallel_degree=degree)

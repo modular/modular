@@ -19,7 +19,7 @@ from max.nn._graph_ops import ihc_pre as _ihc_pre
 from max.nn._graph_ops import mega_mhc as _mega_mhc
 from max.nn._graph_ops import mhc_post as _mhc_post
 from max.nn._graph_ops import mhc_pre as _mhc_pre
-from max.tensor.sharding import match_operand_placement
+from max.tensor.sharding import Sharded, match_operand_placement
 from max.tensor.sharding.action import AxisAssignment
 from max.tensor.sharding.cost import R
 from max.tensor.sharding.types import TensorLayout
@@ -34,7 +34,11 @@ def _mhc_post_rule(
     comb: TensorLayout,
 ) -> list[AxisAssignment]:
     # The mHC streams are replicated on every device, as a single residual is,
-    # so the write-back only runs on replicated inputs.
+    # so the write-back runs on replicated inputs; under data parallelism each
+    # device holds its own rows of all four, and the write-back is per row.
+    rows = Sharded(0)
+    if any(p == rows for p in streams.placements):
+        return [AxisAssignment((rows, rows, rows, rows), (rows,))]
     return [AxisAssignment((R, R, R, R), (R,))]
 
 

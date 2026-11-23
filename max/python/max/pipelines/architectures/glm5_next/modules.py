@@ -29,12 +29,15 @@ from .model_config import Glm5NextConfig
 class Glm5NextDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
     """Binds GLM's existing sparse-MLA and KDA computation to registered inputs.
 
+    It runs tensor-parallel attention over a ``tp`` mesh, or one attention
+    replica per device over a ``dp`` mesh, with its experts expert-parallel.
     It merges the batch's image rows into the token embeddings when the
     checkpoint ships a vision tower.
     """
 
     graph_name = "Glm5Next"
     consumes_vision: ClassVar[bool] = True
+    supports_data_parallel: ClassVar[bool] = True
 
     def __init__(self, config: Glm5NextConfig) -> None:
         super().__init__()
@@ -56,4 +59,6 @@ class Glm5NextDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
             *tree.leaves(inputs.kv),
             vision=inputs.vision,
             ep=inputs.ep,
+            host_input_row_offsets=inputs.host_input_row_offsets,
+            data_parallel_splits=inputs.data_parallel_splits,
         )

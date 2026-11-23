@@ -59,7 +59,7 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping, Sharded
+from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 from max.tensor.sharding.action import PerShard
 
 from ..model_config import Glm5NextConfig
@@ -292,12 +292,20 @@ class PooledIndexer(Module[..., Tensor]):
             always_select_tail=self.always_select_tail,
             quant_config=self.quant_config,
         )
-        # Every device selects the same positions from its own copy of the
-        # cache and ring.
+        # Under tensor parallelism every device selects the same positions
+        # from its own copy of the cache and ring; a data-parallel replica
+        # selects for its own rows, placed as they are.
+        rows_replicated = all(
+            isinstance(p, Replicated) for p in x.mapping.placements
+        )
         return F.call_on_mesh(
             functools.partial(select_pooled, pooling=pooling),
             x.mesh,
-            out_specs=DeviceMapping.replicated(x.mesh),
+            out_specs=(
+                DeviceMapping.replicated(x.mesh)
+                if rows_replicated
+                else x.mapping
+            ),
         )(
             k,
             self.index_kpool_compress_gate(x),

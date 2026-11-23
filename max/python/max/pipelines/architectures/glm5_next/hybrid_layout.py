@@ -325,7 +325,11 @@ def construct_kv_params(
                 index_kpool=index_kpool,
                 index_head_dim=text_config.index_head_dim,
                 dtype=declared_state_dtype(kv_cache_config),
-                num_devices=len(devices),
+                # Each replica splits the heads over its own devices: all
+                # of them under tensor parallelism, one under data
+                # parallelism.
+                num_devices=len(devices)
+                // max(1, pipeline_config.model.data_parallel_degree),
             ),
             devices=mla_kv_params.devices,
             data_parallel_degree=mla_kv_params.data_parallel_degree,

@@ -135,8 +135,10 @@ class Glm5NextConfig(
     """
 
     data_parallel_degree: int = 1
-    """Number of data-parallel attention replicas. Selects the decoder layer's
-    parallelism mode together with :attr:`ep_config`."""
+    """Number of data-parallel attention replicas: 1 for tensor-parallel
+    attention, or the device count for one replica per device. Under data
+    parallelism every device runs whole heads on its own replica's rows, and
+    the MoE layers run expert-parallel."""
 
     vocab_size: int = 129280
     hidden_size: int = 7168
@@ -324,10 +326,13 @@ class Glm5NextConfig(
                 f"reuse a top-k selection from (got {self.indexer_types[0]!r})."
             )
 
-        if self.data_parallel_degree != 1:
+        if self.data_parallel_degree not in (1, len(self.devices)):
+            # Each replica runs whole heads on one device; replicas of
+            # several devices would need tensor parallelism inside each.
             raise ValueError(
-                "GLM-5.3-Flash is tensor-parallel only: data_parallel_degree "
-                f"must be 1, got {self.data_parallel_degree}."
+                "GLM-5.3-Flash runs one data-parallel replica per device: "
+                f"data_parallel_degree must be 1 or {len(self.devices)} "
+                f"(the device count), got {self.data_parallel_degree}."
             )
         if self.qk_rope_head_dim != 0:
             raise ValueError(
@@ -370,9 +375,10 @@ class Glm5NextConfig(
         first, sizes the buffers the target shares. The shared expert fuses
         with the routed ones only when it has their shape and weight layout,
         which a bf16 exchange's experts and the bf16 shared expert share.
-        Flash is tensor-parallel only, so the ranks' token counts differ by
-        at most one: each dispatches an even share of the step's rows, or all
-        of them under allreduce.
+        Under tensor-parallel attention the ranks' token counts differ by at
+        most one: each dispatches an even share of the step's rows, or all of
+        them under allreduce. Data-parallel replicas each dispatch their own
+        requests' rows, which need not split evenly.
         """
         quant_config = self.quant_config
         quantized_dispatch = (
@@ -409,7 +415,7 @@ class Glm5NextConfig(
                 or quant_config.shared_experts_use_quant(self.dtype)
             ),
             use_allreduce=runtime.ep_use_allreduce,
-            tokens_split_evenly=True,
+            tokens_split_evenly=runtime.data_parallel_degree <= 1,
         )
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
@@ -514,9 +520,13 @@ class Glm5NextConfig(
     def per_request_state_bytes(self) -> int:
         """Returns the GPU bytes one request's recurrent state occupies.
 
-        The count is summed over every device.
+        The count is summed over the devices of the request's replica: every
+        device under tensor parallelism, one under data parallelism.
         """
-        return recurrent_state_bytes(self.kv_params, len(self.devices))
+        devices_per_replica = len(self.devices) // max(
+            1, self.data_parallel_degree
+        )
+        return recurrent_state_bytes(self.kv_params, devices_per_replica)
 
     @override
     @classmethod
@@ -579,6 +589,17 @@ class Glm5NextConfig(
         ):
             vision_config = Glm5NextVisionConfig.initialize_from_config(
                 hf_vision_config, dtype=declared_dtype or DType.bfloat16
+            )
+        if (
+            model_config.data_parallel_degree > 1
+            and pipeline_config.speculative
+        ):
+            # The fused verify graph and the MTP draft build replicated
+            # tensor-parallel batches.
+            raise ValueError(
+                "GLM-5.3-Flash does not run speculative decoding under data "
+                "parallelism yet: drop --speculative-method or set "
+                "--data-parallel-degree 1."
             )
         # With the cache off, a step's encoder rows cover only the images in
         # its window while the scatter indices cover every image, so a prompt

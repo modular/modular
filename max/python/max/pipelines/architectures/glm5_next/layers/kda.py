@@ -676,7 +676,14 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         self, x: Tensor, state: KdaStateAccess, input_row_offsets: Tensor
     ) -> Tensor:
         """Runs the delta attention over ``x`` and advances ``state``."""
-        head_split = NamedMapping(x.mesh, (None, TP))
+        # Each device's heads of every row under tensor parallelism; every
+        # head of its own replica's rows under data parallelism, where the
+        # ``tp`` specs resolve to replicated weights.
+        head_split = (
+            NamedMapping(x.mesh, (None, TP))
+            if TP in x.mesh.axis_names
+            else x.mapping
+        )
         verify = self.verify
         core = functools.partial(
             kda_core,

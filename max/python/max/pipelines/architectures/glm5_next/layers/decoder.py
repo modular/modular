@@ -33,7 +33,7 @@ from max.nn.common_layers.quant_moe import ExpertParallelMoE
 from max.nn.ep import EPBuffers
 from max.nn.kernels import mega_mhc, mhc_post
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping, Sharded
+from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
 from ..model_config import Glm5NextConfig
 from .mlp import Glm5NextTensorParallelMoE
@@ -77,8 +77,17 @@ def feed_forward(
         ep: The exchange's buffers, for an expert-parallel MoE.
 
     Returns:
-        The block's output, replicated over the mesh.
+        The block's output, placed as ``h`` is: replicated over a
+        tensor-parallel mesh, each replica's own rows under data parallelism.
     """
+    if not all(isinstance(p, Replicated) for p in h.mapping.placements):
+        # Data-parallel replicas already hold only their own rows, which
+        # is what the per-token blocks and the P2P dispatch take.
+        # :class:`Glm5NextTextModel` refuses the tensor-parallel MoE and the
+        # all-reduce exchange there: they sum the same rows across devices.
+        if isinstance(mlp, ExpertParallelMoE):
+            return mlp(h, ep=ep)
+        return mlp(h)
     replicated = DeviceMapping.replicated(h.mesh)
     if isinstance(mlp, Glm5NextTensorParallelMoE):
         # Its experts are split by columns, so every device needs every row.
@@ -218,12 +227,13 @@ class Glm5NextDecoderLayer(Module[..., tuple[Tensor, Pending]]):
             The streams and this layer's feed-forward output, not yet
             written back.
         """
-        replicated = DeviceMapping.replicated(streams.mesh)
         streams, post, comb, h = _site(
             streams, pending, self.hc_attn, self.input_layernorm
         )
-        # The attention output is a sum of per-device partials.
-        y = self.self_attn(h, *attn_args).to(replicated)
+        # Under tensor parallelism the attention output is a sum of
+        # per-device partials, reduced onto the replicated streams. A
+        # data-parallel replica's output is already its own rows.
+        y = self.self_attn(h, *attn_args).to(h.mapping)
         streams, post, comb, h = _site(
             streams, (y, post, comb), self.hc_ffn, self.post_attention_layernorm
         )

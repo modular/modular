@@ -208,7 +208,9 @@ def test_a_request_is_priced_its_ring() -> None:
     )
 
     def priced(params: MultiKVCacheParams) -> int:
-        holder = SimpleNamespace(kv_params=params, devices=[None, None])
+        holder = SimpleNamespace(
+            kv_params=params, devices=[None, None], data_parallel_degree=1
+        )
         return Glm5NextConfig.per_request_state_bytes(
             cast(Glm5NextConfig, holder)
         )
