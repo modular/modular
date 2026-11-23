@@ -58,11 +58,8 @@ mo.graph @nonContiguousMultiDimSlice(%input: !mo.tensor<[10, 64], f32>) -> !mo.t
   mo.output %res : !mo.tensor<[3, 32], f32>
 }
 
-// The sliced dim's start/stop aren't compile-time constants: left as a
-// map.iter.elementwise (only step needs to be a literal 1 for the fusion
-// permission check ViewFuser/ElementwiseFuser use elsewhere, but raising
-// back to mogg.slice needs actual scalar values for its start/stop
-// operands).
+// The sliced dim's start isn't a compile-time constant, so there is no scalar
+// start for mogg.slice: left as a map.iter.elementwise.
 
 // CHECK-LABEL: mo.graph @nonContiguousDynamicBounds
 // CHECK-NOT:     mogg.slice

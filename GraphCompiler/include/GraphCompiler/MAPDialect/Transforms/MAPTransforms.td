@@ -308,6 +308,7 @@ def RaiseBackContiguousViews
   let dependentDialects = [
     "M::MO::MODialect",
     "M::MOGG::MOGGDialect",
+    "M::MOSH::MOSHDialect",
   ];
 
   let statistics = [
