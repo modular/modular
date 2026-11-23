@@ -269,3 +269,111 @@ def test_loop_iteration(var list: List[Int]):
     for _ in list:
         # expected-note @+1 {{origin was invalidated here}}
         list.append(4)
+
+# ===----------------------------------------------------------------------=== #
+# MOCO-5371 - Mutable origins in argument types and captures
+# ===----------------------------------------------------------------------=== #
+
+def mutate_through[o: MutOrigin](p: Pointer[MyList[Int], o]):
+    p[].mutate()
+
+def read_through[o: ImmOrigin](p: Pointer[MyList[Int], o]):
+    p[].access()
+
+def call_closure[F: def() -> None](f: F):
+    f()
+
+def test_mut_pointer_argument():
+    var list = MyList[Int]()
+    var p = Pointer(to=list)
+    ref elt = list[]
+    mutate_through(p)   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_imm_pointer_argument(list: MyList[Int]):
+    ref elt = list[]
+    read_through(Pointer(to=list))
+    use_any(elt)
+
+def test_read_through_mut_pointer():
+    var list = MyList[Int]()
+    var p = Pointer(to=list)
+    ref elt = list[]
+    p[].access()
+    elt += 4
+
+def test_closure_mut_capture():
+    var list = MyList[Int]()
+
+    def inner() {mut list}:
+        list.mutate()
+
+    ref elt = list[]
+    inner()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_closure_imm_capture():
+    var list = MyList[Int]()
+
+    def inner() {list}:
+        list.access()
+
+    ref elt = list[]
+    inner()
+    elt += 4
+
+def test_closure_mut_pointer_capture():
+    var list = MyList[Int]()
+    var p = Pointer(to=list)
+
+    def inner() {p}:
+        p[].mutate()
+
+    ref elt = list[]
+    inner()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_nested_closure_mut_capture():
+    var list = MyList[Int]()
+
+    def inner() {mut list}:
+        list.mutate()
+
+    def outer() {inner}:
+        inner()
+
+    ref elt = list[]
+    outer()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_closure_argument_mut_capture():
+    var list = MyList[Int]()
+
+    def inner() {mut list}:
+        list.mutate()
+
+    ref elt = list[]
+    call_closure(inner)   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+@fieldwise_init
+struct MyView[origin: MutOrigin]:
+    var data: Pointer[MyList[Int], Self.origin]
+
+def mutate_viewed_element[o: MutOrigin](view: MyView[o]):
+    view.data[].mutate()
+
+# A mutable view cannot resize its container, but it can resize an element.
+def test_mut_view_argument():
+    var list = MyList[MyList[Int]]()
+    ref outer = list[]
+    var view = MyView(Pointer(to=outer))
+    ref elt = outer[]
+    mutate_viewed_element(view)   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]["element"]'}}
+    elt += 4

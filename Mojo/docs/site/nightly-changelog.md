@@ -741,3 +741,7 @@ Most code that no longer compiles matches one of these patterns:
 - A NUL byte (`\0`) in the literal text of a t-string is now kept as text.
   Previously it ended the literal segment early, so `t"a\0b{x}"` with
   `x = "ls"` produced `alsb` instead of `a\0bls`.
+
+- Fixed the lifetime checker to now invalidate uses of an interior reference
+  after its owner was mutated through a type holding the origin as a parameter.
+  This includes closures which capture `mut` data.

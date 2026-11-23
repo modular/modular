@@ -3049,6 +3049,15 @@ void UninitializedValueScan::scanBlock(Block &block) {
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
 
+    // Invalidate any origins reachable from the argument type rather than just
+    // the one on the ref itself.
+    for (TypedAttr origin : llvm::make_first_range(opEffects.origins)) {
+      if (OriginType::isMutableKnown(origin, false))
+        continue;
+      interiorOriginTracker.invalidateOnMutation(
+          OriginMutCastAttr::strip(origin), liveness, op);
+    }
+
     assert(opEffects.results.size() == op.getNumResults() &&
            "OperationEffects::analyze returned wrong # effects");
     for (auto [result, effect] :
