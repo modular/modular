@@ -285,8 +285,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
         var handle = self^._take_handle()
         var error: Error
         if Bool(
-            # TODO: co.await should return scalar<bool>
-            __mlir_op.`co.await`[_type=__mlir_type.i1](
+            __mlir_op.`co.await`[_type=__mlir_type.`!kgen.scalar<bool>`](
                 handle,
                 __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
                 __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
