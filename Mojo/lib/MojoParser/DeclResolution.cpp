@@ -2282,6 +2282,9 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
           p, getIndentation())))
     return failure();
 
+  if (fnSignature.parseAccessesIfPresent(p))
+    return failure();
+
   // Reject where clauses on trait methods. Users almost certainly expect
   // availability semantics (method absent when constraint fails), but `where`
   // gives callability (method exists, constraint checked at call site). To be

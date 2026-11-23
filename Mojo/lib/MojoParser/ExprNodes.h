@@ -805,13 +805,15 @@ struct FunctionTypeNode final : public ExprNode {
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ParsedArgument &resultArg, FnEffects effects,
                    bool isThin, const ExprNode *thrownTypeExpr,
-                   const ExprNode *originExpr,
+                   bool isNestedOriginsReadOnly, const ExprNode *originExpr,
 
                    ArrayRef<ParsedConstraint> parsedConstraints, SMLoc endLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
-        isThin(isThin), thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
-        parsedConstraints(parsedConstraints), endLoc(endLoc) {}
+        isThin(isThin), thrownTypeExpr(thrownTypeExpr),
+        isNestedOriginsReadOnly(isNestedOriginsReadOnly),
+        originExpr(originExpr), parsedConstraints(parsedConstraints),
+        endLoc(endLoc) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
@@ -820,6 +822,7 @@ struct FunctionTypeNode final : public ExprNode {
   FnEffects effects;
   bool isThin;
   const ExprNode *thrownTypeExpr;
+  bool isNestedOriginsReadOnly;
   const ExprNode *originExpr;
   ArrayRef<ParsedConstraint> parsedConstraints; // Trailing body constraints
   SMLoc endLoc;

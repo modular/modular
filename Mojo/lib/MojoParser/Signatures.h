@@ -309,6 +309,9 @@ public:
   /// absence of any abi annotation.
   bool hasExplicitABI = false;
   ExprNode *thrownTypeExpr = nullptr;
+  /// Whether the __unsafe_nested_origins_read_only access promise was
+  /// specified.
+  bool isNestedOriginsReadOnly = false;
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
@@ -317,6 +320,10 @@ public:
   /// Parse the result specifier starting with a `->` if present.
   void parseResultIfPresent(ParserBase &p,
                             std::optional<size_t> stmtIndent = std::nullopt);
+
+  /// Parses the experimental `__accesses(...)` clause and records its access
+  /// promise for later function type construction.
+  ParseResult parseAccessesIfPresent(ParserBase &p);
 
   /// Returns true when a function type should be interpreted as a closure
   /// trait rather than a thin function pointer or legacy capturing function.

@@ -91,6 +91,9 @@ struct MatchFailure {
     struct EffectsDiffer {
       FnEffects actual, expected;
     };
+    /// The expected function promises not to mutate nested origins, but the
+    /// actual function does not.
+    struct NestedOriginsReadOnlyRequired {};
     /// Only one of the two functions takes `**kwargs`.
     struct KwargsDiffer {
       bool actualHasKwargs;
@@ -121,7 +124,8 @@ struct MatchFailure {
     FnTypeMismatch(Detail detail) : detail(detail) {}
 
     std::variant<TooManyParams, UnmatchedParam, RefResultRequired,
-                 RefResultNotCopyable, EffectsDiffer, KwargsDiffer,
+                 RefResultNotCopyable, EffectsDiffer,
+                 NestedOriginsReadOnlyRequired, KwargsDiffer,
                  ArgConventionsIncompatible, ArgCountsDiffer,
                  KwOnlyArgNamesDiffer, VariadicElementTypeMismatch>
         detail;

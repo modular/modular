@@ -17,9 +17,10 @@ decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt NEWLINE | comptime_stmt | import_stmt)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test ['else' test]
+accesses_clause: '__accesses' '(' STRING ')'
 # Mojo terms: metaparams [..] = parameter list; parameters (..) = argument list;
 # captures {..} = capture list (production names kept from black's Python grammar).
-funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* ':' suite
+funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* [accesses_clause] ':' suite
 global_effects: global_effect_keyword*
 global_effect_keyword: 'raises' [raises_type] | 'escaping' | 'capturing'
 # `raises_type` lists allowed shapes after `raises` in global_effects. It
@@ -227,7 +228,7 @@ testlist_gexp: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|
 # name) picks the reading, and both format identically, so the merge is benign. Only
 # `[` / `{` / `->` are unique to the Mojo branch; a bare NAME / `*` / `**` stays
 # exclusively Python — making the whole production a superset of Python's form.
-lambdef: 'lambda' ([metaparams] [parameters [named_effect*] [global_effects]] [captures] ['->' result_type] | [varargslist]) ':' test
+lambdef: 'lambda' ([metaparams] [parameters [named_effect*] [global_effects]] [captures] ['->' result_type] (where_clause)* [accesses_clause] | [varargslist]) ':' test
 trailer: '(' [arglist] ')' | '{' [dictsetmaker] '}' | '[' [subscriptlist] ']' | '.' NAME
 subscriptlist: (subscript|star_expr) (',' (subscript|star_expr))* [',']
 subscript: test [':=' test] | [test] ':' [test] [sliceop] | test ['=' [test] ':' [test] [sliceop]] | test ['=' test] | '**' test
@@ -260,7 +261,7 @@ typeconv: (['*'|convention] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/'
 # whose result type is a function type must parenthesize it to keep a trailing
 # `where` of its own; the grammar accepts them on any function type and leaves
 # the `thin` restriction to the compiler.
-functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test] (where_clause)*
+functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test] (where_clause)* [accesses_clause]
 # `__generator_type[Idx: Int] ToT` — Mojo generator type literal (`!lit.generator`).
 generatortype: GENERATOR_TYPE [metaparams] type_test
 

@@ -52,6 +52,7 @@ class Symbols:
 
 
 class _python_symbols(Symbols):
+    accesses_clause: int
     and_expr: int
     and_test: int
     annassign: int

@@ -1407,6 +1407,7 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
 /// function_type ::= ["__async"] "def" [parameter_list] argument_list [effects]
 ///                   [origin_set] ["->" result_type] [constraint_clauses]
+///                   ["__accesses" "(" string ")"]
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
   ParsedParamList paramList;
@@ -1454,13 +1455,16 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
     return failure();
   }
 
+  if (fnSignature.parseAccessesIfPresent(*this))
+    return failure();
+
   result = create<FunctionTypeNode>(
       baseLoc, internElements<ParsedArgument>(paramList.params),
       internElements<ParsedArgument>(fnSignature.parsedArgs),
       internElements<ParsedArgument>(fnSignature.resultArg)[0],
       fnSignature.effects, fnSignature.isThin, fnSignature.thrownTypeExpr,
-      originExpr, internElements<ParsedConstraint>(paramList.bodyConstraints),
-      endLoc);
+      fnSignature.isNestedOriginsReadOnly, originExpr,
+      internElements<ParsedConstraint>(paramList.bodyConstraints), endLoc);
   return success();
 }
 

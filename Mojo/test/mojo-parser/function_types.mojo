@@ -269,6 +269,46 @@ comptime mut_ship_fn_alias_from_imm: def(mut MemType) thin -> None = imm_ship_fn
 # // -----
 
 
+@__unsafe_nested_origins_read_only
+def decorated_nested_origins_read_only(x: Int):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"explicit_nested_origins_read_only
+# CHECK-SAME: no_nested_origin_exclusivity
+def explicit_nested_origins_read_only(x: Int)
+    __accesses("__unsafe_nested_origins_read_only"):
+    pass
+
+
+def constrained_nested_origins_read_only[N: Int](x: Int) where N > 0 __accesses(
+    "__unsafe_nested_origins_read_only"
+):
+    pass
+
+
+comptime ConstrainedNestedOriginsReadOnly = def[N: Int](
+    Int
+) thin -> None where N > 0 __accesses(
+    "__unsafe_nested_origins_read_only"
+)
+
+
+def test_nested_origins_read_only_function_conversions():
+    # A function with the read-only promise converts to an unrestricted type.
+    comptime unrestricted: def(Int) thin = decorated_nested_origins_read_only
+    # The decorator and signature clause carry the same function-type promise.
+    comptime decorated: def(Int) thin __accesses(
+        "__unsafe_nested_origins_read_only"
+    ) = decorated_nested_origins_read_only
+    comptime explicit: def(Int) thin __accesses(
+        "__unsafe_nested_origins_read_only"
+    ) = explicit_nested_origins_read_only
+
+
+# // -----
+
+
 # Tests that we can infer a trait input-parameter (T here) from a
 # caller-supplied def-parameter-value's (device_func) args (Int), see FSWSTA.
 

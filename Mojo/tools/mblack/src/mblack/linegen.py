@@ -988,16 +988,17 @@ class _BracketSplitComponent(Enum):
 
 
 def _is_named_effect_paren(leaf: Leaf) -> bool:
-    """Is `leaf` the opening paren of a `named_effect` (e.g. `abi` in `abi("C")`)?
+    """Is `leaf` the opening paren of a named effect or access set?
 
-    A `named_effect` is `NAME '(' STRING ')'` on a function type or definition.
-    Its parenthesized string must not be used as a line-split point.
+    These clauses have the form `NAME '(' STRING ')'` on a function type or
+    definition. Their parenthesized strings must not be used as line-split
+    points.
     """
     parent = leaf.parent
     return (
         leaf.type == token.LPAR
         and parent is not None
-        and parent.type == syms.named_effect
+        and parent.type in {syms.named_effect, syms.accesses_clause}
     )
 
 

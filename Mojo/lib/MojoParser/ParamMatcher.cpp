@@ -110,6 +110,9 @@ static void addFnTypeMismatchReason(MojoInflightDiag &diag,
                                   : "must not return a reference");
             diag << "function " << llvm::join(rules, " and ");
           },
+          [&](const FnMismatch::NestedOriginsReadOnlyRequired &) {
+            diag << "function may mutate nested origins";
+          },
           [&](const FnMismatch::KwargsDiffer &d) {
             diag << (d.actualHasKwargs
                          ? "function must not take a '**kwargs' argument"
@@ -432,6 +435,11 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   if (actualEffects != expectedEffects)
     return error(
         FnMismatch{FnMismatch::EffectsDiffer{actualEffects, expectedEffects}});
+
+  // Verify __unsafe_nested_origins_read_only consistency.
+  if (expectedFnTp.getIsNestedOriginsReadOnly() &&
+      !actualFnTp.getIsNestedOriginsReadOnly())
+    return error(FnMismatch{FnMismatch::NestedOriginsReadOnlyRequired{}});
 
   PROP(matchParams(actualFnTp.getCaptureOrigins(),
                    expectedFnTp.getCaptureOrigins()));

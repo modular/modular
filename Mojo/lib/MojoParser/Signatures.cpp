@@ -1674,7 +1674,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     return spelling == "raises" || spelling == "capturing" ||
            spelling == "escaping" || spelling == "thin" ||
            spelling == "register_passable" || spelling == "abi" ||
-           spelling == "where";
+           spelling == "where" || spelling == "__accesses";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1805,7 +1805,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       // explicit but leaves the CABI bit unset.
       continue; // tokens already consumed; skip bottom p.consumeIdentifier()
     } else {
-      assert(spelling == "where" && "isEffectKeywordOrWhere unknown keyword");
+      assert((spelling == "where" || spelling == "__accesses") &&
+             "isEffectKeywordOrWhere unknown keyword");
       break;
     }
 
@@ -1869,6 +1870,31 @@ void ParsedArgumentList::parseResultIfPresent(
   // Indicate a present result by setting its convention to 'out' or 'ref'.
   resultArg.convention = isRefResult ? ParsedArgument::kConventionRef
                                      : ParsedArgument::kConventionOut;
+}
+
+/// Parses the experimental `__accesses(...)` clause and records its access
+/// promise for later function type construction.
+ParseResult ParsedArgumentList::parseAccessesIfPresent(ParserBase &p) {
+  while (p.consumeIfSoftIdentifier("__accesses")) {
+    auto loc = p.getToken().getLoc();
+    if (p.parseToken(Token::l_paren, "expected '(' after '__accesses'"))
+      return failure();
+    StringRef spelling = p.getTokenSpelling();
+    if (p.parseToken(Token::string, "expected access-set string") ||
+        p.parseToken(Token::r_paren, "expected ')' after access-set string"))
+      return failure();
+
+    if (Lexer::getStringLiteralValue(spelling) !=
+        "__unsafe_nested_origins_read_only") {
+      p.emitError(loc, "unsupported experimental access set ") << spelling;
+      continue;
+    }
+
+    if (isNestedOriginsReadOnly)
+      p.emitError(loc, "'__accesses' clause was already specified");
+    isNestedOriginsReadOnly = true;
+  }
+  return success();
 }
 
 /// This function creates a new anonymous origin decl for the specified
@@ -2687,7 +2713,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                const ExprNode *originExpr,
                                                DefASTDecl *fnDecl,
                                                StringAttr baseName)
-    : paramList(paramList), argList(argList) {
+    : paramList(paramList), argList(argList),
+      isNestedOriginsReadOnly(argList.isNestedOriginsReadOnly) {
 
   if (baseName) { // Function pointer types don't have a name.
     fnInfo =
