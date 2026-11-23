@@ -7566,6 +7566,23 @@ def _set_sparse_row_layout(
         parameters["index_kpool_select_tail"] = index_kpool_select_tail
 
 
+def _set_kv_norm_multiply_before_cast(
+    parameters: dict[str, Any], op_name: str, enabled: bool
+) -> None:
+    # Emitted only when True, so the default op is byte-identical.
+    if not enabled:
+        return
+    if op_name not in (
+        "attention.mla.graph.decode.paged.sparse",
+        "attention.mla.graph.prefill.decode.paged.sparse",
+    ):
+        raise ValueError(
+            "kv_norm_multiply_before_cast needs the BF16-weight sparse MLA"
+            f" op over a BF16 or FP8 cache; {op_name} cannot take it"
+        )
+    parameters["kv_norm_multiply_before_cast"] = True
+
+
 @_rejects_split_head_dims
 def mla_decode_graph(
     q: TensorValue,
@@ -7604,6 +7621,7 @@ def mla_decode_graph(
     dcp_interleave: int = 1,
     dcp_rank: TensorValue | int = 0,
     nope_inputs: bool = False,
+    kv_norm_multiply_before_cast: bool = False,
 ) -> TensorValue:
     """A manually fused kernel that performs the following operations.
 
@@ -7705,6 +7723,10 @@ def mla_decode_graph(
             as the zeros that zero-padding the inputs would put there, so
             the caller pads neither. Requires the BF16 sparse op: no
             ``quant_config``, ``sparse_indices`` set and no NVFP4 cache.
+        kv_norm_multiply_before_cast: Whether the latent RMSNorm applies
+            ``kv_norm_gamma`` in float32 and rounds once to bfloat16, instead
+            of rounding the normalized latent before ``kv_norm_gamma``. Only
+            the BF16-weight sparse op over a BF16 or FP8 cache takes it.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -7812,6 +7834,9 @@ def mla_decode_graph(
         quant_config=quant_config,
         physical_indices=physical_indices,
         sparse_indices_stride=sparse_indices_stride,
+    )
+    _set_kv_norm_multiply_before_cast(
+        parameters, op_name, kv_norm_multiply_before_cast
     )
 
     # Capturable-graph scalar is appended after the optional sparse
@@ -8123,6 +8148,7 @@ def mla_prefill_decode_graph(
     sparse_attn_sink_inert: bool = False,
     sparse_split_rows_per_request: int = 0,
     output_gate: TensorValue | None = None,
+    kv_norm_multiply_before_cast: bool = False,
 ) -> TensorValue:
     """Fused MLA prefill/decode kernel for FP8.
 
@@ -8193,14 +8219,19 @@ def mla_prefill_decode_graph(
             the prefill branch has no such store and applies it in one pass of
             its own, which is exactly the operation the caller would have run.
             Every other arm refuses a gate.
+        kv_norm_multiply_before_cast: Whether the latent RMSNorm applies
+            ``kv_norm_gamma`` in float32 and rounds once to bfloat16, instead
+            of rounding the normalized latent before ``kv_norm_gamma``. Only
+            the BF16-weight sparse op over a BF16 or FP8 cache takes it.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
 
     Raises:
         ValueError: If ``output_gate`` is supplied to an op that cannot fold
-            it, or if ``sparse_split_rows_per_request`` is non-zero on a call
-            whose op cannot take it.
+            it, or if ``sparse_split_rows_per_request`` or
+            ``kv_norm_multiply_before_cast`` is set on a call whose op cannot
+            take it.
     """
     _validate_mla_prefill_decode_graph_inputs(
         q,
@@ -8327,6 +8358,9 @@ def mla_prefill_decode_graph(
                 f" weights and an FP8 cache; {op_name} cannot take it"
             )
         parameters["split_rows_per_request"] = sparse_split_rows_per_request
+    _set_kv_norm_multiply_before_cast(
+        parameters, op_name, kv_norm_multiply_before_cast
+    )
 
     # Capturable-graph scalar appended after the optional sparse tensors
     # (see MoGG op signature).

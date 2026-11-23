@@ -6572,6 +6572,8 @@ trait _MLADecodeGraphBF16PagedSparseOp:
         # carry no rope columns, and the kernels take both rope parts as the
         # zeros a zero-padded input holds. Off unless set.
         nope_inputs: Bool = False,
+        # Whether the latent RMSNorm applies gamma in float32 and rounds once.
+        kv_norm_multiply_before_cast: Bool = False,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -6715,6 +6717,7 @@ trait _MLADecodeGraphBF16PagedSparseOp:
                 dcp_size=dcp_size,
                 dcp_interleave=dcp_interleave,
                 nope_inputs=nope_inputs,
+                kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
             ](
                 output.to_tile_tensor[.bfloat16](),
                 q.to_tile_tensor[.bfloat16](),
@@ -8796,6 +8799,8 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         # request carries; see `_row_invariant_sparse_decode_partitions`.
         # Zero leaves the split to the dispatcher.
         split_rows_per_request: Int = 0,
+        # Whether the latent RMSNorm applies gamma in float32 and rounds once.
+        kv_norm_multiply_before_cast: Bool = False,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -8981,6 +8986,7 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
                     select_tail=index_kpool_select_tail,
                 ),
                 kernels=Self.kernels,
+                kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
             ](
                 output.to_tile_tensor[.bfloat16](),
                 q.to_tile_tensor[.bfloat16](),

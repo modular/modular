@@ -831,6 +831,7 @@ def _fused_rope_rmsnorm_quantization_body[
     dcp_size: Int,
     dcp_interleave: Int,
     zero_rope: Bool = False,
+    kv_norm_multiply_before_cast: Bool,
 ](
     q_rope_output: TileTensor[
         mut=True,
@@ -1015,8 +1016,7 @@ def _fused_rope_rmsnorm_quantization_body[
                     ](Coord(idx))
 
                 var norm_val = _rms_norm_warp_tiling_subkernel[
-                    warps_per_block,
-                    False,  # Do not multiply the gamma before casting.
+                    warps_per_block, kv_norm_multiply_before_cast
                 ](
                     global_token_idx,
                     idx,
@@ -1053,7 +1053,7 @@ def _fused_rope_rmsnorm_quantization_body[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
 @__name(
-    t"fused_rope_rmsnorm_quantization_{dtype}_{out_rope_dtype}_{store_only}"
+    t"fused_rope_rmsnorm_quantization_{dtype}_{out_rope_dtype}_{store_only}{"_round_once" if kv_norm_multiply_before_cast else ""}"
 )
 def fused_rope_rmsnorm_quantization_kernel[
     dtype: DType,
@@ -1080,6 +1080,7 @@ def fused_rope_rmsnorm_quantization_kernel[
     FreqsCisEngine: TensorEngine,
     GammaEngine: TensorEngine,
     zero_rope: Bool = False,
+    kv_norm_multiply_before_cast: Bool = False,
 ](
     q_rope_output: TileTensor[
         mut=True,
@@ -1144,6 +1145,9 @@ def fused_rope_rmsnorm_quantization_kernel[
         zero_rope: Whether both rope parts are taken as zero and never
             loaded (defaults to `False`): `q_rope` gives only its shape and
             the latent is read only below `kv_norm_dim`.
+        kv_norm_multiply_before_cast: Whether the latent RMSNorm applies
+            `gamma` in float32 and rounds once, rather than rounding before
+            `gamma`.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -1183,6 +1187,7 @@ def fused_rope_rmsnorm_quantization_kernel[
         dcp_size=1,
         dcp_interleave=1,
         zero_rope=zero_rope,
+        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
     ](
         q_rope_output,
         q_rope,
@@ -1200,7 +1205,7 @@ def fused_rope_rmsnorm_quantization_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
 @__name(
-    t"fused_rope_rmsnorm_quantization_cp{dcp_size}x{dcp_interleave}_{dtype}_{out_rope_dtype}_{store_only}"
+    t"fused_rope_rmsnorm_quantization_cp{dcp_size}x{dcp_interleave}_{dtype}_{out_rope_dtype}_{store_only}{"_round_once" if kv_norm_multiply_before_cast else ""}"
 )
 def _fused_rope_rmsnorm_quantization_cp_kernel[
     dtype: DType,
@@ -1229,6 +1234,7 @@ def _fused_rope_rmsnorm_quantization_cp_kernel[
     dcp_size: Int,
     dcp_interleave: Int,
     zero_rope: Bool = False,
+    kv_norm_multiply_before_cast: Bool,
 ](
     q_rope_output: TileTensor[
         mut=True,
@@ -1289,6 +1295,7 @@ def _fused_rope_rmsnorm_quantization_cp_kernel[
         dcp_size=dcp_size,
         dcp_interleave=dcp_interleave,
         zero_rope=zero_rope,
+        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
     ](
         q_rope_output,
         q_rope,
@@ -1317,6 +1324,7 @@ def mla_fused_rope_rmsnorm_quantization[
     dcp_size: Int = 1,
     dcp_interleave: Int = 1,
     zero_rope: Bool = False,
+    kv_norm_multiply_before_cast: Bool = False,
 ](
     q_rope_output: TileTensor[mut=True, out_rope_dtype, ...],
     q_rope: TileTensor[mut=False, dtype, ...],
@@ -1354,6 +1362,9 @@ def mla_fused_rope_rmsnorm_quantization[
             loaded (defaults to `False`). They rotate zeros, the values
             zero-padded inputs hold there; `q_rope` gives only its shape and
             the latent is read only below `kv_norm_dim`.
+        kv_norm_multiply_before_cast: Whether the latent RMSNorm applies
+            `gamma` in float32 and rounds once, rather than rounding before
+            `gamma`.
 
     Args:
         q_rope_output: Output tensor for RoPE-applied query projections.
@@ -1444,6 +1455,7 @@ def mla_fused_rope_rmsnorm_quantization[
             dcp_size=dcp_size,
             dcp_interleave=dcp_interleave,
             zero_rope=zero_rope,
+            kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
         ]
 
         ctx.enqueue_function[kernel](
@@ -1484,6 +1496,7 @@ def mla_fused_rope_rmsnorm_quantization[
         FreqsCisEngine=freqs_cis.Engine,
         GammaEngine=gamma.Engine,
         zero_rope=zero_rope,
+        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
     ]
 
     ctx.enqueue_function[kernel](
@@ -4602,6 +4615,7 @@ def mla_decode_branch_bf16[
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
+    kv_norm_multiply_before_cast: Bool = False,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -4683,6 +4697,9 @@ def mla_decode_branch_bf16[
             `False`). Both rope parts are then the zeros a zero-padded
             input holds, and neither is read.
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
+        kv_norm_multiply_before_cast: Whether the latent RMSNorm applies
+            `gamma` in float32 and rounds once, rather than rounding before
+            `gamma` (defaults to False).
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim],
@@ -4847,6 +4864,7 @@ def mla_decode_branch_bf16[
         dcp_size=dcp_size,
         dcp_interleave=dcp_interleave,
         zero_rope=nope_inputs,
+        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
     ](
         mla_decode_input_rope,
         q_rope,
@@ -5046,6 +5064,7 @@ def mla_prefill_branch_sparse_bf16[
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
+    kv_norm_multiply_before_cast: Bool = False,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -5155,7 +5174,9 @@ def mla_prefill_branch_sparse_bf16[
             (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
         )
     )
-    mla_fused_rope_rmsnorm_quantization(
+    mla_fused_rope_rmsnorm_quantization[
+        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast
+    ](
         mla_decode_input_rope,
         q_rope,
         input_row_offsets,
@@ -5697,6 +5718,7 @@ def mla_prefill_decode_graph_bf16[
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
     allow_split: Bool = True,
+    kv_norm_multiply_before_cast: Bool = False,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -5770,6 +5792,9 @@ def mla_prefill_decode_graph_bf16[
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
         allow_split: Whether a passed `mixed_split` may run as two
             self-calls (defaults to True); the per-view calls pass False.
+        kv_norm_multiply_before_cast: Whether the latent RMSNorm applies
+            `gamma` in float32 and rounds once, rather than rounding before
+            `gamma` (defaults to False).
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -5931,6 +5956,7 @@ def mla_prefill_decode_graph_bf16[
                         OutputGatePtrType=OutputGatePtrType,
                         kernels=kernels,
                         allow_split=False,
+                        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
                     ](
                         _mla_split_token_rows(
                             output, view.first_token, view.tokens
@@ -5988,6 +6014,7 @@ def mla_prefill_decode_graph_bf16[
             sparse_row=sparse_row,
             skip_masked_tiles=skip_masked_tiles,
             kernels=kernels,
+            kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
         ](
             output,
             q,
@@ -6050,6 +6077,7 @@ def mla_prefill_decode_graph_bf16[
             nvfp4_convert_max_rows=nvfp4_convert_max_rows,
             AttnSinkPtrType=AttnSinkPtrType,
             kernels=kernels,
+            kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
         ](
             output,
             q,
