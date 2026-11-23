@@ -261,6 +261,7 @@ void M::MO::buildMoPipeline(mlir::OpPassManager &pm,
     pm.addPass(MO::createConstantFoldPass(cacheDir, kernelLibraryPaths));
 
   pm.addPass(MO::createHoistConstantSubgraphsIntoParent());
+  pm.addNestedPass<MO::GraphOp>(MO::createHoistConstantsOutOfIf());
   pm.addNestedPass<MO::GraphOp>(mlir::createCSEPass());
 
   SymbolicOptimizationOptions symbolicOptimizationOpts;
