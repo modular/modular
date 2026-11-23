@@ -34,17 +34,16 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   capture records the decode step, and a device-to-host copy cannot be
   captured (it also closed a 2-GPU collective deadlock, DRIV-462). The one
   size a ragged batch derives from its lengths, the per-ratio window count,
-  never reaches the host: `mo.compress_windows.ragged.paged`
+  never reaches the host: `attention.compress_windows.ragged.paged`
   (`max.nn._graph_ops.compress_windows_ragged`) sizes its output by a bound
   taken from shapes and reads the count from the window offsets on the
   device. Ops without a GPU kernel (`ops.tile`) round-trip through the host
   implicitly; keep them out.
 - **A compressed zone is a `slots_per_page = page_size // ratio` leaf written
-  by the stock ragged store with `cache_lengths // ratio`** (the kernel takes
-  the page size from the buffer's static slot dim). Each chunk stores
-  `ceil(s / ratio)` candidate entries; the trailing one may be an unclosed
-  window and lands on the open slot, which is allocated and unread
-  (`layers/csa.py` docstring has the proof). Do not add a conditional store.
+  by the compressor op at entry `cache_lengths // ratio + j`** (the kernel
+  takes the page size from the buffer's static slot dim). Each chunk stores
+  the entries of the windows it closes; a window still open after the chunk
+  is not stored, and its slot is unread until a later chunk closes it.
 - **The compressor is stateless.** Its open state is the last `coff · ratio`
   raw `wkv` / `wgate` rows in a sliding-window leaf (`*_state`, K/V of an MHA
   leaf); `ape` is added at read by slot. Chunk boundaries anywhere are
@@ -61,9 +60,11 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   The indexer scores its zone leaf in place through
   `mo.indexer_score.ragged.paged`
   (`max.nn._graph_ops.indexer_score_ragged`), so no per-token candidate
-  table exists on the cached path. The compressor pools every window of the
-  batch in one op that reads the state leaf in place, the same op for the
-  attention's and the indexer's stream. The cache-less path (`cache=None`) keeps
+  table exists on the cached path. The compressor is one op per stream, the
+  same op for the attention's and the indexer's: it stores the chunk's raw
+  rows into the state leaf, pools every window the chunk closes reading that
+  leaf in place, and stores the entries into the zone leaf. The cache-less
+  path (`cache=None`) keeps
   the graph-op compressor over per-window tables and the gathered-table
   attention as the gates' reference.
 - **Routed experts: grouped W4A8 for native weights, dense otherwise.**

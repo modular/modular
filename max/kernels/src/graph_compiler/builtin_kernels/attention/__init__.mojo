@@ -125,6 +125,7 @@ from nn.attention.gpu.mla_index_fp8 import (
 from nn.attention.gpu.cp_merge_topk import cp_merge_topk
 from nn.topk_filtered import FilteredTopk
 from nn.attention.compress_windows import compress_windows_ragged_paged
+from nn.attention.dsv4_attention_prep import dsv4_qkv_prep_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.gpu.mla_common import SparseRowLayout
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
@@ -9881,15 +9882,17 @@ struct Struct_indexer_score_ragged_paged:
 struct Struct_compress_windows_ragged_paged:
     """Registers the `attention.compress_windows.ragged.paged` graph op with the graph compiler.
 
-    DeepSeek-V4's compressor over the windows of a ragged chunk, reading the
-    positions before the chunk from a paged state leaf. See
-    `nn.attention.compress_windows`.
+    DeepSeek-V4's compressed stream over a ragged chunk: stores the chunk's
+    raw projections into a paged state leaf, pools every window it touches
+    (reading the positions before the chunk from that leaf), and stores the
+    entries into a paged zone leaf. See `nn.attention.compress_windows`.
     """
 
     @inline(.always)
     @staticmethod
     def execute[
         rotate: Bool,
+        groups: Int,
     ](
         output: Some[Output & Tensor],
         kv: Some[Input & Tensor],
@@ -9906,6 +9909,12 @@ struct Struct_compress_windows_ragged_paged:
         kv_lookup_table: Some[Input & Tensor],
         max_prompt_length: Some[Input & Tensor],
         max_cache_length: Some[Input & Tensor],
+        zone_blocks: Some[MutableInput & Tensor],
+        zone_page_stride: Some[Input & Tensor],
+        zone_cache_lengths: Some[Input & Tensor],
+        zone_lookup_table: Some[Input & Tensor],
+        zone_max_prompt_length: Some[Input & Tensor],
+        zone_max_cache_length: Some[Input & Tensor],
         layer: UInt32,
         epsilon: Float32,
         context: DeviceContext,
@@ -9925,6 +9934,16 @@ struct Struct_compress_windows_ragged_paged:
         comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
         comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
         comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(zone_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(zone_page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(zone_cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(zone_lookup_table), TileTensorable)
+        comptime assert conforms_to(
+            type_of(zone_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(zone_max_cache_length), TileTensorable
+        )
         comptime dtype = type_of(output).dtype
         comptime assert type_of(output).rank == 2
         comptime assert type_of(kv).rank == 2
@@ -9942,6 +9961,12 @@ struct Struct_compress_windows_ragged_paged:
         comptime assert type_of(kv_lookup_table).rank == 2
         comptime assert type_of(max_prompt_length).rank == 1
         comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(zone_blocks).rank == 6
+        comptime assert type_of(zone_page_stride).rank == 1
+        comptime assert type_of(zone_cache_lengths).rank == 1
+        comptime assert type_of(zone_lookup_table).rank == 2
+        comptime assert type_of(zone_max_prompt_length).rank == 1
+        comptime assert type_of(zone_max_cache_length).rank == 1
         var collection = generic_get_paged_cache(
             kv_blocks.to_tile_tensor(),
             page_stride.to_tile_tensor[.int64](),
@@ -9950,7 +9975,15 @@ struct Struct_compress_windows_ragged_paged:
             max_prompt_length.to_tile_tensor[.uint32](),
             max_cache_length.to_tile_tensor[.uint32](),
         )
-        compress_windows_ragged_paged[rotate=rotate](
+        var zone_collection = generic_get_paged_cache(
+            zone_blocks.to_tile_tensor(),
+            zone_page_stride.to_tile_tensor[.int64](),
+            zone_cache_lengths.to_tile_tensor[.uint32](),
+            zone_lookup_table.to_tile_tensor[.uint32](),
+            zone_max_prompt_length.to_tile_tensor[.uint32](),
+            zone_max_cache_length.to_tile_tensor[.uint32](),
+        )
+        compress_windows_ragged_paged[rotate=rotate, groups=groups](
             output.to_tile_tensor(),
             kv.to_tile_tensor[.float32](),
             score.to_tile_tensor[.float32](),
@@ -9962,6 +9995,85 @@ struct Struct_compress_windows_ragged_paged:
             starts.to_tile_tensor[.int32](),
             collection.get_key_cache(Int(layer)),
             collection.get_value_cache(Int(layer)),
+            zone_collection.get_key_cache(Int(layer)),
+            epsilon,
+            context,
+        )
+
+
+@extensibility.register("attention.dsv4.qkv_prep.ragged.paged")
+struct Struct_dsv4_qkv_prep_ragged_paged:
+    """Registers the `attention.dsv4.qkv_prep.ragged.paged` graph op with the graph compiler.
+
+    The DeepSeek-V4 query's weightless RMS normalize and tail RoPE, and the KV
+    latent's RMSNorm, tail RoPE, FP8 QAT round trip and store into the
+    sliding-window leaf, in one launch. See `nn.attention.dsv4_attention_prep`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        rope_dim: Int,
+    ](
+        q_output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        kv: Some[Input & Tensor],
+        kv_gamma: Some[Input & Tensor],
+        freqs: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        layer: UInt32,
+        kv_col: UInt32,
+        epsilon: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(q_output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(kv), TileTensorable)
+        comptime assert conforms_to(type_of(kv_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(freqs), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime dtype = type_of(q_output).dtype
+        comptime assert type_of(q_output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(kv_gamma).rank == 1
+        comptime assert type_of(freqs).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        var collection = generic_get_paged_cache(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+        )
+        dsv4_qkv_prep_ragged_paged[rope_dim=rope_dim](
+            q_output.to_tile_tensor[dtype](),
+            q.to_tile_tensor[dtype](),
+            kv.to_tile_tensor[dtype](),
+            kv_gamma.to_tile_tensor[.float32](),
+            freqs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            collection.get_key_cache(Int(layer)),
+            Int(kv_col),
             epsilon,
             context,
         )

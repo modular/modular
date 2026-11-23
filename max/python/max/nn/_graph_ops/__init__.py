@@ -19807,14 +19807,18 @@ def compress_windows_ragged(
     window_offsets: TensorValue,
     starts: TensorValue,
     state: PagedCacheValues,
+    zone: PagedCacheValues,
     layer: TensorValue,
     *,
     epsilon: float,
     rotate: bool,
 ) -> TensorValue:
-    """Pools every window of a ragged chunk into one compressed entry.
+    """Runs one DeepSeek-V4 compressed stream over a ragged chunk.
 
-    DeepSeek-V4's compressor. Request ``b``'s chunk touches
+    Stores the chunk's raw ``kv`` and ``score`` rows into the ``state`` leaf
+    at their positions and pools every window the chunk touches into one
+    compressed entry, stored into the ``zone`` leaf at entry
+    ``P // ratio + j`` of its request. Request ``b``'s chunk touches
     ``ceil(len_b / ratio)`` windows of ``ratio`` positions, the first at
     ``P - P % ratio`` for ``P = starts[b]``. A window's entry is a per-channel
     softmax over ``score + ape`` weighting ``kv`` across its positions, and
@@ -19837,15 +19841,17 @@ def compress_windows_ragged(
         starts: ``[batch]`` int32 tokens cached before the chunk.
         state: The state leaf, one head of ``proj_dim`` float32 channels
             holding ``wkv`` as K and ``wgate`` as V by position.
-        layer: uint32 scalar, this layer's index in the leaf.
+        zone: The zone leaf, one head of ``head_dim`` channels paged by
+            entry.
+        layer: uint32 scalar, this layer's index in both leaves.
         epsilon: RMSNorm epsilon.
         rotate: The indexer's variant.
 
     Returns:
         ``[rows, head_dim]`` entries in ``norm_weight``'s dtype, where
         ``rows = (total_rows + batch * (ratio - 1)) // ratio`` bounds the
-        window count. Rows past ``window_offsets[batch]`` are left unwritten;
-        the ragged store skips them.
+        window count. Rows past ``window_offsets[batch]`` are left
+        unwritten, as are their zone slots.
     """
     _check_rank(2, kv=kv, score=score, ape=ape)
     _check_rank(
@@ -19856,7 +19862,7 @@ def compress_windows_ragged(
         starts=starts,
     )
     _check_rank(3, freqs=freqs)
-    _check_rank(6, kv_blocks=state.kv_blocks)
+    _check_rank(6, kv_blocks=state.kv_blocks, zone_blocks=zone.kv_blocks)
     _check_dtype(DType.float32, kv=kv, score=score, ape=ape, freqs=freqs)
     _check_dtype(
         DType.uint32,
@@ -19880,6 +19886,9 @@ def compress_windows_ragged(
 
     batch = window_offsets.shape[0] - 1
     rows = (kv.shape[0] + batch * (ratio - 1)) // ratio
+    # One thread set per window: splitting a window's positions over several
+    # sets merges their softmax sums in another order and changes the entries.
+    groups = 1
     return ops.inplace_custom(
         "attention.compress_windows.ragged.paged",
         device=kv.device,
@@ -19898,11 +19907,96 @@ def compress_windows_ragged(
             state.lookup_table,
             state.max_prompt_length,
             state.max_cache_length,
+            zone.kv_blocks,
+            zone.page_stride,
+            zone.cache_lengths,
+            zone.lookup_table,
+            zone.max_prompt_length,
+            zone.max_cache_length,
             layer,
             ops.constant(epsilon, DType.float32, DeviceRef.CPU()),
         ],
         out_types=[TensorType(norm_weight.dtype, [rows, head_dim], kv.device)],
-        parameters={"rotate": rotate},
+        parameters={"rotate": rotate, "groups": groups},
+    )[0].tensor
+
+
+@_rejects_split_head_dims
+def _dsv4_qkv_prep_ragged(
+    q: TensorValue,
+    kv: TensorValue,
+    kv_gamma: TensorValue,
+    freqs: TensorValue,
+    input_row_offsets: TensorValue,
+    swa: PagedCacheValues,
+    layer: TensorValue,
+    *,
+    kv_col: int,
+    epsilon: float,
+) -> TensorValue:
+    """DeepSeek-V4 query and KV-latent preparation in one launch.
+
+    For each query row and head: ``x * rsqrt(mean(x ** 2) + eps)`` over
+    ``head_dim`` with no gain, then interleaved RoPE on the trailing
+    ``rope_dim`` columns. For each KV row: ``RMSNorm(kv_gamma)``, the same
+    RoPE, an FP8 e4m3 quantize/dequantize round trip over 64-column groups of
+    the non-RoPE columns with power-of-two scales, and a store into ``swa``
+    at the row's absolute position. Every intermediate rounds to ``q``'s
+    dtype where the graph composition would.
+
+    Args:
+        q: ``[total_rows, num_heads, head_dim]`` raw ``wq_b`` output.
+        kv: ``[total_rows, width]`` with the raw ``wkv`` output at columns
+            ``kv_col .. kv_col + head_dim``; ``q``'s dtype.
+        kv_gamma: ``[head_dim]`` float32 ``kv_norm`` weight.
+        freqs: ``[max_seq_len, rope_dim]`` float32 cos/sin interleaved per
+            position.
+        input_row_offsets: ``[batch + 1]`` uint32 row offsets.
+        swa: The sliding-window leaf (one latent head of ``head_dim``).
+        layer: uint32 scalar, this layer's index in the leaf.
+        kv_col: First ``wkv`` column within ``kv``.
+        epsilon: Epsilon of both normalizations.
+
+    Returns:
+        ``[total_rows, num_heads, head_dim]`` queries in ``q``'s dtype.
+    """
+    _check_rank(3, q=q)
+    _check_rank(2, kv=kv, freqs=freqs)
+    _check_rank(1, kv_gamma=kv_gamma, input_row_offsets=input_row_offsets)
+    _check_rank(6, swa_kv_blocks=swa.kv_blocks)
+    _check_dtype(q.dtype, kv=kv)
+    _check_dtype(DType.float32, kv_gamma=kv_gamma, freqs=freqs)
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets, layer=layer)
+    head_dim = int(q.shape[2])
+    if int(kv_gamma.shape[0]) != head_dim:
+        raise ValueError(
+            f"kv_gamma has {kv_gamma.shape[0]} columns, expected {head_dim}"
+        )
+    if kv_col < 0 or int(kv.shape[1]) < kv_col + head_dim:
+        raise ValueError(
+            f"kv of width {kv.shape[1]} has no {head_dim} columns at {kv_col}"
+        )
+    return ops.inplace_custom(
+        "attention.dsv4.qkv_prep.ragged.paged",
+        device=q.device,
+        values=[
+            q,
+            kv,
+            kv_gamma,
+            freqs,
+            input_row_offsets,
+            swa.kv_blocks,
+            swa.page_stride,
+            swa.cache_lengths,
+            swa.lookup_table,
+            swa.max_prompt_length,
+            swa.max_cache_length,
+            layer,
+            ops.constant(kv_col, DType.uint32, DeviceRef.CPU()),
+            ops.constant(epsilon, DType.float32, DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(q.dtype, q.shape, q.device)],
+        parameters={"rope_dim": int(freqs.shape[1])},
     )[0].tensor
 
 

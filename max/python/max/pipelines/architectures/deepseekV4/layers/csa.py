@@ -23,11 +23,13 @@ shared by the two streams of a layer), it
 1. stores the tokens' raw ``wkv`` / ``wgate`` projections into the state leaf;
 2. pools every window's ``coff * ratio`` source rows, from the state leaf
    for positions before the request's ``P`` and from the fresh projections at
-   or after it, into one candidate entry per window -- in one op that reads
-   the leaf in place (:meth:`~.compressor.DeepseekV4Compressor.pool_paged`),
-   or without a cache from per-window tables;
+   or after it, into one candidate entry per window;
 3. stores the candidates into the zone leaf at entry slots ``P // ratio ...``
    of their request;
+
+-- with a cache all three in one op that reads the state leaf in place
+(:func:`~max.nn._graph_ops.compress_windows_ragged`), without one by
+pooling per-window tables, with nothing stored;
 4. hands back the candidates and where the closed entries live, so a reader
    can address the zone leaf by entry (:meth:`CompressedStream.entries`, the
    fused attention and indexer kernels) or, without a cache, build a
@@ -56,8 +58,9 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import Dim, TensorValue, ops
+from max.nn._graph_ops import compress_windows_ragged
 
-from .cache import KEY, VALUE, CacheLeaf, LayerIndex, arange, ceildiv, scalar
+from .cache import CacheLeaf, LayerIndex, arange, ceildiv, scalar
 from .compressor import DeepseekV4Compressor
 from .ragged import RaggedRows, WindowRows
 
@@ -243,26 +246,23 @@ def compressed_stream(
         fresh = ops.reshape(fresh, [w, compressor.head_dim])
     else:
         assert zone_leaf is not None
-        state_leaf.store(layer.zone, KEY, kv_proj, rows.offsets)
-        state_leaf.store(layer.zone, VALUE, score_proj, rows.offsets)
-        woff = ops.cast(windows.woff, DType.uint32)
-        fresh = compressor.pool_paged(
+        fresh = compress_windows_ragged(
             kv_proj,
             score_proj,
-            rows,
-            woff,
+            compressor.ape,
+            # As :class:`RMSNorm` applies it: the weight in the input's dtype.
+            compressor.norm.weight.cast(compressor.activation_dtype).to(
+                kv_proj.device
+            ),
             freqs_table,
+            rows.offsets,
+            ops.cast(windows.woff, DType.uint32),
+            rows.starts,
             state_leaf.values,
+            zone_leaf.values,
             layer.zone,
-        )
-        zone_leaf.store(
-            layer.zone,
-            KEY,
-            fresh,
-            woff,
-            cache_lengths=windows.base,
-            rows_per_seq=cap,
-            ratio=ratio,
+            epsilon=compressor.norm.eps,
+            rotate=compressor.rotate,
         )
     return CompressedStream(
         fresh=fresh,

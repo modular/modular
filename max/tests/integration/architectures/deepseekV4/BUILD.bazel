@@ -147,3 +147,31 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV4",
     ],
 )
+
+modular_py_test(
+    name = "test_attention_prep_gpu",
+    srcs = ["test_attention_prep_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/tests/integration/test_common:simple_kv_cache",
+    ],
+)
