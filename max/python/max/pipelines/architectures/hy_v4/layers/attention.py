@@ -29,9 +29,8 @@ import math
 from typing import Any
 
 from max import functional as F
-from max.driver import Device
 from max.dtype import DType
-from max.nn import Linear, Module
+from max.nn import Module
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -45,11 +44,11 @@ from max.nn.kernels import (
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping, DeviceMesh, NamedMapping
-from typing_extensions import Self
+from max.tensor.sharding import NamedMapping
 
 from ..model_config import HYV4Config
 from . import mxfp8
+from .functional_kernels import rope_rows
 from .indexer import HYV4Indexer
 
 __all__ = ["HYV4Attention"]
@@ -74,10 +73,12 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
 
     Args:
         config: The model config; ``config.kv_params`` holds the ``mla`` and
-            ``indexer`` caches, and ``config.quant_config`` decides whether
-            the MLA projections, ``o_proj`` and the indexer's ``wq_b`` are
-            quantized. ``kv_b_proj`` and the indexer's ``wk`` run BF16,
-            dequantized in the graph; ``linear_gate`` is BF16.
+            ``indexer`` caches. An MXFP8 ``config.quant_config`` quantizes
+            the MLA projections, ``o_proj`` and the indexer's ``wq_b``;
+            ``kv_b_proj`` and the indexer's ``wk`` run BF16, dequantized in
+            the graph, and ``linear_gate`` is BF16. A block-FP8 one
+            quantizes only ``o_proj`` and ``linear_gate``, on the layers in
+            its ``attn_quantized_layers``.
         layer_idx: The decoder layer, which picks its indexer kind.
         graph_mode: ``"auto"`` runs ``mla_prefill_decode_graph``, which picks
             the sparse prefill or decode kernel per batch; ``"decode"`` runs
@@ -122,41 +123,45 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         q_dim = self.n_heads * self.qk_head_dim
         o_dim = self.n_heads * self.v_head_dim
 
-        def weight(out_dim: int, in_dim: int) -> quant_ops.QuantAwareTensor:
-            return quant_ops.quantized_weight(
-                out_dim, in_dim, config.quant_config
+        def proj(in_dim: int, out_dim: int) -> QuantizedLinear:
+            return QuantizedLinear(
+                in_dim,
+                out_dim,
+                bias=False,
+                quant_config=config.mxfp8_quant_config,
             )
 
         # Both read x, so the graph stacks them for one matmul.
-        self.q_a_proj = weight(self.q_lora_rank, hidden)
-        self.kv_a_proj_with_mqa = weight(self.cache_head_dim, hidden)
-        self.q_a_layernorm = RMSNorm(self.q_lora_rank, eps=_EPS)
-        self.q_b_proj = weight(q_dim, self.q_lora_rank)
+        self.q_a_proj = proj(hidden, self.q_lora_rank)
+        self.kv_a_proj_with_mqa = proj(hidden, self.cache_head_dim)
+        self.q_a_layernorm = RMSNorm(
+            self.q_lora_rank, eps=_EPS, multiply_before_cast=True
+        )
+        self.q_b_proj = proj(self.q_lora_rank, q_dim)
         self.kv_a_proj_layernorm = Tensor.ones([self.kv_lora_rank])
         # MLA absorb has no MXFP8 path: the graph dequantizes it.
-        self.kv_b_proj = weight(
-            self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
+        self.kv_b_proj = proj(
             self.kv_lora_rank,
+            self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
         )
+        quant = config.quant_config
+        block_fp8 = quant_ops.is_fp8_block_quantized(quant)
+        if (
+            quant is not None
+            and block_fp8
+            and layer_idx not in quant.attn_quantized_layers
+        ):
+            quant = None
         self.o_proj = QuantizedLinear(
-            o_dim, hidden, bias=False, quant_config=config.quant_config
+            o_dim, hidden, bias=False, quant_config=quant
         )
-        self.linear_gate = Linear(hidden, o_dim, bias=False)
+        self.linear_gate = QuantizedLinear(
+            hidden, o_dim, bias=False, quant_config=quant if block_fp8 else None
+        )
         self.learnable_sink_param = Tensor.zeros(
             [self.n_heads], dtype=DType.float32
         )
         self.indexer = HYV4Indexer(config, layer_idx)
-
-    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
-        """Moves the layer and its quantized projections to ``target`` in place."""
-        super().to(target)
-        # A quantized weight's ``to`` returns a copy, which ``Module.to``
-        # drops for child modules.
-        self.q_a_proj = self.q_a_proj.to(target)
-        self.kv_a_proj_with_mqa = self.kv_a_proj_with_mqa.to(target)
-        self.q_b_proj = self.q_b_proj.to(target)
-        self.kv_b_proj = self.kv_b_proj.to(target)
-        return self
 
     def shard_heads(self) -> None:
         """Splits the heads over the mesh (tensor parallel), as R3 does.
@@ -168,8 +173,8 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         """
         mesh = self.linear_gate.weight.mesh
         rows = NamedMapping(mesh, (TP, None))
-        self.q_b_proj = self.q_b_proj.to(rows)
-        self.kv_b_proj = self.kv_b_proj.to(rows)
+        self.q_b_proj.weight = self.q_b_proj.weight.to(rows)
+        self.kv_b_proj.weight = self.kv_b_proj.weight.to(rows)
         self.o_proj.weight = self.o_proj.weight.to(
             NamedMapping(mesh, (None, TP))
         )
@@ -180,7 +185,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
 
     @property
     def _qkv_a(self) -> quant_ops.QuantAwareTensor:
-        q_a, kv_a = self.q_a_proj, self.kv_a_proj_with_mqa
+        q_a, kv_a = self.q_a_proj.weight, self.kv_a_proj_with_mqa.weight
         if isinstance(q_a, MXFP8Tensor) and isinstance(kv_a, MXFP8Tensor):
             return mxfp8.concat_rows([q_a, kv_a])
         assert isinstance(q_a, Tensor) and isinstance(kv_a, Tensor)
@@ -189,7 +194,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
     # The absorbed kv_b_proj views, as LatentAttentionWithRope builds them.
     @property
     def _kv_b(self) -> Tensor:
-        kv_b = self.kv_b_proj
+        kv_b = self.kv_b_proj.weight
         if isinstance(kv_b, MXFP8Tensor):
             kv_b = mxfp8.dequantize(kv_b)
         assert isinstance(kv_b, Tensor)
@@ -239,6 +244,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         input_row_offsets: Tensor,
         prev_topk_indices: Tensor | None,
         buffer_length: Tensor,
+        token_rope: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Returns the block output and the top-k MLA cache rows it attended.
 
@@ -258,6 +264,11 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             buffer_length: ``[1]`` int32 on the host, the batch's prefill
                 buffer length. The sparse kernels do not read it; the op
                 takes it.
+            token_rope: ``[tokens, qk_rope_head_dim]`` rows of each token
+                (M-RoPE). The MLA kernel reads ``freqs_cis`` by cache
+                position, so the block rotates ``q`` and the latent's rope
+                columns itself; ``freqs_cis`` must then be the identity
+                rotation.
         """
         q_a, kv = F.split(
             mxfp8.matmul(x, self._qkv_a),
@@ -265,7 +276,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             axis=-1,
         )
         q_resid = self.q_a_layernorm(q_a)
-        q = mxfp8.matmul(q_resid, self.q_b_proj)
+        q = mxfp8.matmul(q_resid, self.q_b_proj.weight)
         if not self.rope_interleave:
             q = _neox_to_interleaved(
                 q.reshape([-1, self.n_heads, self.qk_head_dim]),
@@ -273,6 +284,12 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             )
             kv = _neox_to_interleaved(kv, self.qk_rope_head_dim)
         q = q.reshape([q.shape[0], self.n_heads, self.qk_head_dim])
+        if token_rope is not None:
+            start_pos = input_row_offsets[:-1]
+            q = rope_rows(q, input_row_offsets, start_pos, token_rope)
+            kv = rope_rows(
+                kv.unsqueeze(1), input_row_offsets, start_pos, token_rope
+            ).squeeze(1)
 
         topk = self.indexer(
             x,
@@ -283,6 +300,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             indexer_layer,
             kv_collection,
             prev_topk_indices,
+            token_rope,
         )
 
         assert kv_collection.attention_dispatch_metadata is not None
@@ -293,6 +311,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             input_row_offsets=input_row_offsets,
             freqs_cis=freqs_cis,
             kv_norm_gamma=self.kv_a_proj_layernorm,
+            kv_norm_multiply_before_cast=True,
             w_uk=self.w_uk,
             w_uv=self.w_uv,
             kv_params=self.kv_params,
@@ -320,7 +339,8 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         attn = attn.rebind_mapping(q.mapping)
         attn = attn.reshape([attn.shape[0], self.n_heads * self.v_head_dim])
         out = mxfp8.matmul(
-            attn * F.sigmoid(self.linear_gate(x)), self.o_proj.weight
+            attn * F.sigmoid(mxfp8.matmul(x, self.linear_gate.weight)),
+            self.o_proj.weight,
         )
         if out.mesh.num_devices > 1:
             out = F.allreduce_sum(out)

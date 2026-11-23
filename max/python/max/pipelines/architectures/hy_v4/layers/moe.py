@@ -12,31 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 """Hy4 mixture of experts.
 
-It pairs a noaux_tc router with clamped MXFP8 routed experts and an unclamped
-shared expert.
+It pairs a noaux_tc router with clamped MXFP8 or block-FP8 routed experts and
+an unclamped shared expert.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TypeVar
 
 from max import functional as F
 from max import tree
 from max.driver import Device
 from max.dtype import DType
-from max.nn import Module
+from max.nn import Module, ModuleList
 from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.moe import MoEGate
+from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_tensor import MXFP8Activation, MXFP8Tensor
 from max.nn.kernels import (
     grouped_quantize_dynamic_block_scaled,
     moe_create_indices,
     moe_finalize,
+    moe_fp8_host_usage_stats,
     moe_router_group_limited,
 )
-from max.tensor import Tensor
+from max.nn.quant_config import QuantConfig
+from max.tensor import Tensor, default_device, defaults
 from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -50,6 +54,11 @@ from ..model_config import HYV4Config
 from .mlp import HYV4MLP, is_partial
 
 _M = TypeVar("_M", bound=Module[..., Tensor])
+
+# What ``moe_create_indices(..., needs_scales_offset=True)`` returns: token
+# order, expert start rows, restore order, expert ids, usage stats and scale
+# offsets.
+_Indices = tuple[Tensor, ...]
 
 
 def _on_device(module: _M, rank: int) -> _M:
@@ -155,21 +164,28 @@ class HYV4Experts(Module[..., Tensor]):
         self.down_proj = self.down_proj.to(target)
         return self
 
-    def forward(
-        self,
-        x: Tensor,
-        token_order: Tensor,
-        top_k: int,
-        expert_start_indices: Tensor,
-        expert_ids: Tensor,
-        scales_offset: Tensor,
-        estimated_total_m: Tensor,
-    ) -> Tensor:
+    @property
+    def num_experts(self) -> int:
+        """The number of experts this module holds."""
+        return int(self.gate_up_proj.weight.shape[0])
+
+    def local(self, rank: int) -> Self:
+        """A view holding only device ``rank``'s experts."""
+        return _on_device(self, rank)
+
+    def grouped(self, x: Tensor, top_k: int, indices: _Indices) -> Tensor:
         """Runs the routed experts over the rows the router sent each token to.
 
-        Slot ``i`` of ``token_order`` reads token row ``token_order[i] //
-        top_k`` of ``x``; the quantize does that gather in its loads.
+        ``indices`` is what ``moe_create_indices`` returns. Slot ``i`` of its
+        order reads token row ``order[i] // top_k`` of ``x``; the quantize
+        does that gather in its loads.
         """
+        token_order, expert_start_indices, _, expert_ids, _, scales_offset = (
+            indices
+        )
+        estimated_total_m = F.shape_to_tensor(token_order.shape)[0].cast(
+            DType.uint32
+        )
         unit_scales = F.broadcast_to(
             F.constant(1.0, DType.float32, device=expert_ids.device),
             expert_ids.shape,
@@ -221,6 +237,157 @@ class HYV4Experts(Module[..., Tensor]):
         )
 
 
+class HYV4BlockFP8Experts(ModuleList[QuantizedMLP]):
+    """Block-FP8 routed experts with the clamped SwiGLU, one module each.
+
+    The checkpoint stores each expert's projections apart; the graph stacks
+    gate rows before up rows. On several devices each expert is built on the
+    device that owns it, the first ``num_experts / devices`` on device 0.
+    """
+
+    def __init__(
+        self,
+        experts: Iterable[QuantizedMLP],
+        swiglu_limit: float,
+        per_device: int,
+    ) -> None:
+        super().__init__(experts)
+        self.swiglu_limit = swiglu_limit
+        self.per_device = per_device
+
+    @classmethod
+    def zeros(
+        cls,
+        hidden_dim: int,
+        moe_dim: int,
+        num_experts: int,
+        swiglu_limit: float,
+        quant_config: QuantConfig,
+    ) -> HYV4BlockFP8Experts:
+        """Builds the experts on the default mesh's devices, all zeros."""
+        _, mesh = defaults()
+        per_device = num_experts // mesh.num_devices
+        experts: list[QuantizedMLP] = []
+        for device in mesh.devices:
+            with default_device(device):
+                experts.extend(
+                    QuantizedMLP(hidden_dim, moe_dim, quant_config=quant_config)
+                    for _ in range(per_device)
+                )
+        return cls(experts, swiglu_limit, per_device)
+
+    @property
+    def num_experts(self) -> int:
+        """The number of experts this module holds."""
+        return len(self)
+
+    def local(self, rank: int) -> HYV4BlockFP8Experts:
+        """A view holding only device ``rank``'s experts."""
+        first = rank * self.per_device
+        return HYV4BlockFP8Experts(
+            self[first : first + self.per_device],
+            self.swiglu_limit,
+            self.per_device,
+        )
+
+    def grouped(self, x: Tensor, top_k: int, indices: _Indices) -> Tensor:
+        """Runs the routed experts over the rows the router sent each token to.
+
+        ``indices`` is what ``moe_create_indices`` returns. Slot ``i`` of its
+        order reads token row ``order[i] // top_k`` of ``x``.
+        """
+        token_order, expert_start_indices, _, expert_ids, usage_stats, _ = (
+            indices
+        )
+        # Every group counts, empty ones too, so shapes give the kernel's
+        # host bounds and no per-layer device-to-host copy runs.
+        usage_stats = moe_fp8_host_usage_stats(
+            usage_stats, token_order.shape[0], expert_ids.shape[0]
+        )
+        estimated_total_m = F.shape_to_tensor(token_order.shape)[0].cast(
+            DType.uint32
+        )
+        tokens = F.gather(x, (token_order // top_k).cast(DType.int32), axis=0)
+        gate_up = quant_ops.stack(
+            [
+                quant_ops.concat_weights(e.gate_proj.weight, e.up_proj.weight)
+                for e in self
+            ]
+        )
+        down = quant_ops.stack([e.down_proj.weight for e in self])
+        hidden = quant_ops.grouped_matmul_silu(
+            tokens,
+            gate_up,
+            down,
+            expert_start_indices,
+            expert_ids,
+            usage_stats,
+            None,
+            estimated_total_m=estimated_total_m,
+            swiglu_limit=self.swiglu_limit,
+            # As the TRTLLM experts vLLM runs at TP2 on B200: only the
+            # input's scales round; the weights keep fp32 scales and the
+            # kernel scales the SwiGLU by amax / 448.
+            pow2_scales=True,
+        )
+        return quant_ops.grouped_matmul(
+            hidden,
+            down,
+            expert_start_indices,
+            expert_ids,
+            usage_stats,
+            estimated_total_m=estimated_total_m,
+        )
+
+
+def expert_sum(
+    experts: HYV4Experts | HYV4BlockFP8Experts,
+    x: Tensor,
+    topk_idx: Tensor,
+    topk_weight: Tensor,
+    top_k: int,
+    first_expert: int | None = None,
+) -> Tensor:
+    """Sums ``experts`` over the routed rows they own.
+
+    ``first_expert`` is the global id of ``experts``' first expert under
+    expert parallelism. ``moe_create_indices`` leaves an id outside the
+    local range out of every group, and leaves the order slots and restore
+    entries it would have used unwritten, so those are masked here.
+    """
+    ids = F.reshape(topk_idx, [-1])
+    if first_expert is not None:
+        ids = ids - first_expert
+    num_local = experts.num_experts
+    indices = moe_create_indices(ids, num_local, needs_scales_offset=True)
+    order, start, restore = indices[0], indices[1], indices[2]
+    if first_expert is None:
+        return moe_finalize(
+            experts.grouped(x, top_k, indices), restore, topk_weight, x.dtype
+        )
+    # Order slots past the local rows are never written and may hold any
+    # index; point them at row 0 so a full gather stays in bounds.
+    local_rows = (
+        F.arange(
+            0,
+            F.shape_to_tensor(ids.shape)[0],
+            out_dim=ids.shape[0],
+            dtype=DType.uint32,
+            device=ids.device,
+        )
+        < start[num_local]
+    )
+    order = F.where(local_rows, order, 0)
+    down = experts.grouped(x, top_k, (order, *indices[1:]))
+    foreign = (ids < 0) | (ids >= num_local)
+    restore = F.where(foreign, 0, restore)
+    topk_weight = F.where(foreign.reshape(topk_weight.shape), 0.0, topk_weight)
+    # A where, not a zero weight: rows past the local ones are never
+    # written and may hold NaN.
+    down = F.where(local_rows.unsqueeze(1), down, 0.0)
+    return moe_finalize(down, restore, topk_weight, x.dtype)
+
+
 class HYV4MoE(Module[[Tensor], Tensor]):
     """Routed experts plus one always-on shared expert."""
 
@@ -240,16 +407,27 @@ class HYV4MoE(Module[[Tensor], Tensor]):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
         )
-        self.experts = HYV4Experts(
-            config.hidden_size,
-            config.moe_intermediate_size,
-            config.n_routed_experts,
-            config.swiglu_limit,
-        )
+        self.experts: HYV4Experts | HYV4BlockFP8Experts
+        if quant_ops.is_fp8_block_quantized(config.quant_config):
+            assert config.quant_config is not None
+            self.experts = HYV4BlockFP8Experts.zeros(
+                config.hidden_size,
+                config.moe_intermediate_size,
+                config.n_routed_experts,
+                config.swiglu_limit,
+                config.quant_config,
+            )
+        else:
+            self.experts = HYV4Experts(
+                config.hidden_size,
+                config.moe_intermediate_size,
+                config.n_routed_experts,
+                config.swiglu_limit,
+            )
         self.shared_experts = HYV4MLP(
             config.hidden_size,
             config.moe_intermediate_size * config.n_shared_experts,
-            config.quant_config,
+            config.mxfp8_quant_config,
         )
 
     def shard(self) -> None:
@@ -261,8 +439,13 @@ class HYV4MoE(Module[[Tensor], Tensor]):
         self.shared_experts.shard()
 
     def shard_experts(self) -> None:
-        """Splits the routed experts evenly over the mesh (expert parallel)."""
+        """Splits the routed experts evenly over the mesh (expert parallel).
+
+        Block-FP8 experts are built on their devices already.
+        """
         experts = self.experts
+        if not isinstance(experts, HYV4Experts):
+            return
         spec = NamedMapping(experts.gate_up_proj.mesh, (TP, None, None))
         experts.gate_up_proj = experts.gate_up_proj.to(spec)
         experts.down_proj = experts.down_proj.to(spec)
@@ -275,7 +458,9 @@ class HYV4MoE(Module[[Tensor], Tensor]):
         topk_idx, topk_weight = self.gate(x)
         mesh = x.mesh
         if mesh.num_devices == 1:
-            return self._expert_sum(x, topk_idx, topk_weight, self.experts)
+            return expert_sum(
+                self.experts, x, topk_idx, topk_weight, self.top_k
+            )
 
         # Every device holds all tokens; each runs only its own experts, so
         # the per-device sums add up to the full one.
@@ -285,71 +470,18 @@ class HYV4MoE(Module[[Tensor], Tensor]):
         def local(
             x: Tensor, topk_idx: Tensor, topk_weight: Tensor, rank: int
         ) -> Tensor:
-            return self._expert_sum(
+            return expert_sum(
+                self.experts.local(rank),
                 x,
                 topk_idx,
                 topk_weight,
-                _on_device(self.experts, rank),
+                self.top_k,
                 first_expert=rank * self.num_experts // mesh.num_devices,
             )
 
         return F.call_on_mesh(
             local, mesh, out_specs=DeviceMapping(mesh, (Partial(),))
         )(x, topk_idx, topk_weight, PerShard(range(mesh.num_devices)))
-
-    def _expert_sum(
-        self,
-        x: Tensor,
-        topk_idx: Tensor,
-        topk_weight: Tensor,
-        experts: HYV4Experts,
-        first_expert: int | None = None,
-    ) -> Tensor:
-        """Sums ``experts`` over the routed rows they own.
-
-        ``first_expert`` is the global id of ``experts``' first expert under
-        expert parallelism. ``moe_create_indices`` leaves an id outside the
-        local range out of every group, and the restore entries it would
-        have used unwritten, so those are masked here. The grouped kernels
-        read only the grouped rows, so the order needs no mask.
-        """
-        ids = F.reshape(topk_idx, [-1])
-        if first_expert is not None:
-            ids = ids - first_expert
-        num_local = int(experts.gate_up_proj.weight.shape[0])
-        order, start, restore, expert_ids, _, scales_offset = (
-            moe_create_indices(ids, num_local, needs_scales_offset=True)
-        )
-        slots = F.shape_to_tensor(ids.shape)[0]
-        down = experts(
-            x,
-            order,
-            self.top_k,
-            start,
-            expert_ids,
-            scales_offset,
-            estimated_total_m=slots.cast(DType.uint32),
-        )
-        if first_expert is not None:
-            foreign = (ids < 0) | (ids >= num_local)
-            restore = F.where(foreign, 0, restore)
-            topk_weight = F.where(
-                foreign.reshape(topk_weight.shape), 0.0, topk_weight
-            )
-            # A where, not a zero weight: rows past the local ones are never
-            # written and may hold NaN.
-            local_rows = (
-                F.arange(
-                    0,
-                    slots,
-                    out_dim=ids.shape[0],
-                    dtype=DType.uint32,
-                    device=ids.device,
-                )
-                < start[num_local]
-            )
-            down = F.where(local_rows.unsqueeze(1), down, 0.0)
-        return moe_finalize(down, restore, topk_weight, x.dtype)
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the routed and shared experts over ``x``."""

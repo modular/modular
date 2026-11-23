@@ -14,12 +14,15 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
+from types import MappingProxyType
 from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.common_layers.quant_ops import is_fp8_block_quantized
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
@@ -27,7 +30,12 @@ from max.nn.kv_cache import (
 )
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    GraphRole,
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+)
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -162,6 +170,18 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
                 "indexer_types[0] must be 'full': a 'shared' layer reuses the"
                 f" most recent full layer's top-k, got {self.indexer_types[0]!r}"
             )
+
+    @property
+    def mxfp8_quant_config(self) -> QuantConfig | None:
+        """``quant_config`` when it is MXFP8, else ``None``.
+
+        A block-FP8 checkpoint (Hy4-FP8) quantizes only ``o_proj``,
+        ``linear_gate`` and the routed experts: the MLA projections, the
+        indexer and the dense and shared MLPs stay BF16.
+        """
+        if is_fp8_block_quantized(self.quant_config):
+            return None
+        return self.quant_config
 
     @property
     def num_key_value_heads(self) -> int:
@@ -337,6 +357,25 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
         )
 
 
+def _compressed_tensors_quantizes(scheme: Mapping[str, Any], name: str) -> bool:
+    """Returns whether a compressed-tensors scheme quantizes module ``name``.
+
+    A module is quantized when a group targets it and ``ignore`` does not
+    list it; a ``re:`` entry matches from the start of the name.
+    """
+
+    def listed(patterns: list[str]) -> bool:
+        return any(
+            re.match(p[3:], name) if p.startswith("re:") else p == name
+            for p in patterns
+        )
+
+    targets = [
+        t for g in scheme["config_groups"].values() for t in g["targets"]
+    ]
+    return listed(targets) and not listed(scheme.get("ignore", []))
+
+
 @dataclass(frozen=True, kw_only=True)
 class HYV4VLVisionConfig:
     """The vision tower and projector fields of ``vision_config``."""
@@ -391,10 +430,43 @@ class HYV4VLConfig(HYV4Config):
     The text fields come from ``text_config``.
     """
 
+    weight_prefixes: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {GraphRole.VISION: "vision_encoder."}
+    )
+
     mrope_section: list[int]
     mrope_interleaved: bool
     vision: HYV4VLVisionConfig
     dfly: HYV4DFlyConfig
+
+    @override
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Keeps block FP8 on the attention layers the checkpoint quantizes.
+
+        The parser marks every layer; the checkpoint's ``ignore`` list leaves
+        layer 0's attention BF16. ``linear_gate`` follows ``o_proj``: the
+        scheme targets and ignores both together.
+        """
+        config = super().finalize(huggingface_config, state_dict, outputs)
+        quant = config.quant_config
+        if quant is None or not is_fp8_block_quantized(quant):
+            return config
+        scheme = huggingface_config.quantization_config
+        layers = {
+            i
+            for i in range(config.num_hidden_layers)
+            if _compressed_tensors_quantizes(
+                scheme, f"model.layers.{i}.self_attn.o_proj"
+            )
+        }
+        return replace(
+            config, quant_config=replace(quant, attn_quantized_layers=layers)
+        )
 
     @override
     @classmethod

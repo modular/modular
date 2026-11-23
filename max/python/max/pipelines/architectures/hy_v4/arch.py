@@ -15,15 +15,18 @@
 from dataclasses import replace
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
+from max.pipelines.context import TextAndVisionContext, TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from .decoder import HYV4Decoder
+from .batch_processor import HYV4VLBatchProcessor
+from .decoder import HYV4Decoder, HYV4VLDecoder
+from .layers.vision import HYV4VLVisionEncoder
 from .model_config import HYV4Config, HYV4VLConfig
 from .reasoning import HYV4ReasoningParser  # noqa: F401  registers "hy_v4"
 from .tokenizer import HYV4Tokenizer
 from .tool_parser import HYV4ToolParser  # noqa: F401  registers "hy_v4"
+from .vl_tokenizer import HYV4VLImageTokenizer
 from .weight_adapters import hy_v4_vl_weight_rules, hy_v4_weight_rules
 
 hy_v4_arch = SupportedArchitecture(
@@ -52,11 +55,19 @@ hy_v4_arch = SupportedArchitecture(
     mach_only=True,
 )
 
-# Hy4-FP8 ships no MTP layers; the text backbone reuses Hy4's decoder.
+# Hy4-FP8 ships no MTP layers; the text backbone reuses Hy4's layers.
 hy_v4_vl_arch = replace(
     hy_v4_arch,
     name="HYV4VLForConditionalGeneration_ModuleV3",
     example_repo_ids=["tencent/Hy4-FP8"],
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    modules={
+        GraphRole.DECODER: HYV4VLDecoder,
+        GraphRole.VISION: HYV4VLVisionEncoder,
+    },
+    batching=HYV4VLBatchProcessor,
+    tokenizer=HYV4VLImageTokenizer,
+    context_type=TextAndVisionContext,
     config=HYV4VLConfig,
     weight_rules=hy_v4_vl_weight_rules,
     checkpoint_drafts={},

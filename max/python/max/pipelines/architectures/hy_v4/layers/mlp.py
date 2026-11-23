@@ -34,12 +34,12 @@ def is_partial(x: Tensor) -> bool:
 
 
 class HYV4MLP(Module[[Tensor], Tensor]):
-    """``down(silu(gate(x)) * up(x))``, unclamped, gate and up in one GEMM.
+    """``down(silu(gate(x)) * up(x))``, unclamped, MXFP8 or BF16.
 
     Only the routed experts clamp their SwiGLU (``swiglu_limit``); the dense
-    layer-0 MLP and the shared expert do not. ``gate_proj`` and ``up_proj``
-    load as stored and are stacked in the graph once sharded, so each rank
-    stacks its own ``[gate_r; up_r]`` rows.
+    layer-0 MLP and the shared expert do not. MXFP8 ``gate_proj`` and
+    ``up_proj`` load as stored and are stacked in the graph once sharded,
+    so each rank stacks its own ``[gate_r; up_r]`` rows for one GEMM.
     """
 
     def __init__(
@@ -85,10 +85,14 @@ class HYV4MLP(Module[[Tensor], Tensor]):
         gate, up, down = (
             p.weight for p in (self.gate_proj, self.up_proj, self.down_proj)
         )
-        assert isinstance(gate, MXFP8Tensor) and isinstance(up, MXFP8Tensor)
-        assert isinstance(down, MXFP8Tensor)
-        gate_up = mxfp8.matmul(x, mxfp8.concat_rows([gate, up]))
-        return mxfp8.swiglu_matmul(gate_up, down)
+        if isinstance(down, MXFP8Tensor):
+            assert isinstance(gate, MXFP8Tensor)
+            assert isinstance(up, MXFP8Tensor)
+            gate_up = mxfp8.matmul(x, mxfp8.concat_rows([gate, up]))
+            return mxfp8.swiglu_matmul(gate_up, down)
+        assert isinstance(gate, Tensor) and isinstance(up, Tensor)
+        assert isinstance(down, Tensor)
+        return (F.silu(x @ gate.T) * (x @ up.T)) @ down.T
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the SwiGLU feed-forward over ``x``."""
