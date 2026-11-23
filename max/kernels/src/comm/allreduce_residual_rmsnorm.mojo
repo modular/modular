@@ -1356,8 +1356,6 @@ def _launch_split_allreduce_rmsnorm[
             weight_offset,
             grid_dim=min(rows, MAX_NUM_BLOCKS_UPPER_BOUND),
             block_dim=norm_threads,
-            # Disambiguate the overload.
-            cluster_dim=None,
         )
 
 

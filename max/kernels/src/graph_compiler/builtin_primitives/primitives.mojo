@@ -1543,8 +1543,6 @@ def mogg_launch_declarative[
         *args,
         grid_dim=config.get_grid_dim(),
         block_dim=config.get_block_dim(),
-        # Disambiguate the overload.
-        cluster_dim=None,
     )
 
 

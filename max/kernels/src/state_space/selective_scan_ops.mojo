@@ -228,8 +228,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_tt,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
-                    # Disambiguate the overload.
-                    cluster_dim=None,
                 )
             else:
                 comptime DSTATE_VAL = 8
@@ -272,8 +270,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_tt,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
-                    # Disambiguate the overload.
-                    cluster_dim=None,
                 )
         else:
             raise Error("Unsupported target")
@@ -492,8 +488,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     C_tt,
                     grid_dim=(num_blocks),
                     block_dim=(BLOCK_SIZE),
-                    # Disambiguate the overload.
-                    cluster_dim=None,
                 )
             else:
                 comptime DSTATE_VAL = 8
@@ -528,8 +522,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     C_tt,
                     grid_dim=(num_blocks),
                     block_dim=(BLOCK_SIZE),
-                    # Disambiguate the overload.
-                    cluster_dim=None,
                 )
         else:
             raise Error("Unsupported target device")
@@ -758,8 +750,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     dt_bias_tt,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
-                    # Disambiguate the overload.
-                    cluster_dim=None,
                 )
             else:
                 comptime DSTATE_VAL = 8
@@ -801,8 +791,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     dt_bias_tt,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
-                    # Disambiguate the overload.
-                    cluster_dim=None,
                 )
         else:
             raise Error("Unsupported target")
