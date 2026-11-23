@@ -715,15 +715,6 @@ static bool isCABICallee(const SymbolTable &symtab, FlatSymbolRefAttr sym) {
   return false;
 }
 
-/// Get the KGEN types of the C ABI arguments: the arguments that are left
-/// after the arguments of empty type are dropped.
-static SmallVector<Type> getCABIArgTypes(TypeRange argTypes,
-                                         const TypeConverter &typeConverter) {
-  return llvm::to_vector(llvm::make_filter_range(argTypes, [&](Type type) {
-    return !isEmptyType(typeConverter.convertType(type));
-  }));
-}
-
 /// Get the type of the C ABI result: the KGEN type of one result, or
 /// `packedType`, the LLVM struct that packs several results. Returns null if
 /// there is no result.
@@ -804,20 +795,18 @@ public:
       (void)b.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
     }
 
-    // Drop empty struct arguments.
-    dropEmptyStructArguments(funcOp, b);
-
-    // Give an abi("C") function its C ABI signature. ConvertKGENReturn
-    // applies the result coercion when it converts the returns.
+    // Give an abi("C") function its C ABI signature, in which the C ABI
+    // classification drops empty arguments. ConvertKGENReturn applies the
+    // result coercion when it converts the returns.
     if (isCABI) {
       std::unique_ptr<CABIInfo> abiInfo =
           createCABIInfo(target.getTriple(), getContext(), *getTypeConverter());
       cabiDefinitions[funcOp] = rewriteCABIFunctionEntry(
-          funcOp, *abiInfo,
-          getCABIArgTypes(func.getFunctionType().getInputs(),
-                          *getTypeConverter()),
+          funcOp, *abiInfo, func.getFunctionType().getInputs(),
           getCABIResultType(func.getFunctionType().getResults(),
                             funcOp.getFunctionType().getReturnType()));
+    } else {
+      dropEmptyStructArguments(funcOp, b);
     }
 
     // Remove the function.
@@ -860,20 +849,13 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
       return emitError(op.getLoc(),
                        "cannot lower call to nested symbol to LLVM");
 
-    // Drop empty struct arguments.
-    auto filteredOperands = to_vector(
-        llvm::make_filter_range(adaptor.getOperands(), [](Value operand) {
-          return !isEmptyType(operand.getType());
-        }));
-
     // If the callee is a abi("C") function definition, apply C ABI coercion
     // at the call site so that struct args/returns are passed correctly.
     if (isCABICallee(symtab, flatSymbol)) {
       CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
       Location loc = op.getLoc();
       auto prep = cabi.prepareCall(
-          getCABIArgTypes(op.getOperandTypes(), *getTypeConverter()),
-          filteredOperands,
+          op.getOperandTypes(), adaptor.getOperands(),
           getCABIResultType(op.getResultTypes(),
                             types.empty() ? Type() : types.front()),
           loc, rewriter);
@@ -884,6 +866,12 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
           cabi.finishCall(llvmCall, prep, op.getTailKind(), loc, rewriter));
       return success();
     }
+
+    // Drop empty struct arguments.
+    auto filteredOperands = to_vector(
+        llvm::make_filter_range(adaptor.getOperands(), [](Value operand) {
+          return !isEmptyType(operand.getType());
+        }));
 
     // Create the LLVM call operation (Mojo ABI).
     LLVM::CallOp llvmCall = createLLVMCall(rewriter, op.getLoc(), types,

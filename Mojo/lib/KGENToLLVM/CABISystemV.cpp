@@ -41,6 +41,9 @@ CoercionInfo SystemVABIInfo::classifyArgumentType(mlir::Type type,
   // (isVariadicArg is used by ARM64 AAPCS but not needed here.)
   (void)isVariadicArg;
 
+  if (isZeroSize(type))
+    return CoercionInfo::ignore();
+
   // Arrays should be passed indirectly, as per the C specification
   if (isa<mlir::LLVM::LLVMArrayType>(convertType(type)))
     return CoercionInfo::indirectArgument(/*useByval=*/false);
@@ -54,6 +57,8 @@ CoercionInfo SystemVABIInfo::classifyArgumentType(mlir::Type type,
 
 CoercionInfo SystemVABIInfo::classifyReturnType(mlir::Type type,
                                                 mlir::Location loc) const {
+  if (isZeroSize(type))
+    return CoercionInfo::ignore();
   return classifyStructType(type, loc, /*useSRet=*/true);
 }
 
@@ -81,10 +86,7 @@ CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
                    : CoercionInfo::indirectArgument(/*useByval=*/true);
   }
 
-  // clang passes nothing for a 0-byte struct, but CoercionInfo cannot express
-  // "nothing", so it keeps its previous integer coercion.
-  if (size == 0)
-    return CabiUtils::classifySmallIntegerStruct(size, ctx);
+  assert(size > 0 && "a struct without size is not passed");
 
   // Classify each member at its offset and merge the classes per eightbyte.
   EightbyteClass lo = EightbyteClass::NoClass; // Bytes 0-7
@@ -245,6 +247,8 @@ SystemVABIInfo::argRegisterUsage(const CoercionInfo &info,
     return {1, 1};
   case ABIArgClass::Memory:
     // Passed in memory; consumes no argument registers.
+    return {0, 0};
+  case ABIArgClass::Ignore:
     return {0, 0};
   case ABIArgClass::NoClass:
     break; // Identity arg: derive usage from the LLVM type below.

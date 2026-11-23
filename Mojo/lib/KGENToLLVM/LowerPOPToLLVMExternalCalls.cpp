@@ -213,9 +213,10 @@ public:
 
     mlir::ArrayAttr expectedArgAttrs =
         buildLLVMArgAttrs(argAttrs, sigClass, op, numFixedArgs, rewriter);
-    // resAttrs are dropped when sret is active (no LLVM-level return value).
+    // resAttrs are dropped when there is no LLVM-level return value: the
+    // result is sret or ignored.
     mlir::ArrayAttr expectedResAttrs;
-    if (!sigClass.ret.useSRet) {
+    if (!sigClass.ret.useSRet && !sigClass.ret.isIgnore()) {
       NamedAttrList attrs =
           resAttrs ? NamedAttrList(resAttrs) : NamedAttrList();
       // As for a struct argument, the padding of a struct result is not

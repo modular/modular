@@ -115,6 +115,9 @@ SmallVector<Value> CABICallHelper::prepareArg(const CoercionInfo &coercion,
                                               DirectRewriter &rewriter) const {
   SmallVector<Value> result;
 
+  if (coercion.isIgnore())
+    return result;
+
   if (coercion.isIdentity()) {
     // No coercion - pass directly
     result.push_back(squashPointlessCasts(originalArg));
@@ -176,6 +179,9 @@ Value CABICallHelper::extractReturn(const CoercionInfo &retClass,
     // Load from sret pointer
     return LoadOp::create(rewriter, loc, origRetTy, sretPointer);
   }
+
+  if (retClass.isIgnore())
+    return UndefOp::create(rewriter, loc, origRetTy);
 
   if (retClass.isIdentity()) {
     // No coercion - use directly
@@ -262,7 +268,9 @@ Value CABICallHelper::finishCall(CallOp call, const CABICallPrep &prep,
 
   if (!prep.retType)
     return {};
-  Value callResult = sigClass.ret.useSRet ? Value() : call.getResult();
+  Value callResult = sigClass.ret.useSRet || sigClass.ret.isIgnore()
+                         ? Value()
+                         : call.getResult();
   return extractReturn(sigClass.ret, callResult, prep.sretPtr, prep.retType,
                        loc, rewriter);
 }

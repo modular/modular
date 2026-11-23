@@ -95,6 +95,9 @@ std::optional<CoercionInfo> AAPCSABIInfo::classifyHomogeneousAggregate(
 CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
                                                 mlir::Location loc,
                                                 bool isVariadicArg) const {
+  if (isZeroSize(type))
+    return CoercionInfo::ignore();
+
   // Arrays should be passed indirectly, as per the C specification
   mlir::Type llvmType = convertType(type);
   if (isa<mlir::LLVM::LLVMArrayType>(llvmType))
@@ -156,6 +159,9 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
 
 CoercionInfo AAPCSABIInfo::classifyReturnType(mlir::Type type,
                                               mlir::Location loc) const {
+  if (isZeroSize(type))
+    return CoercionInfo::ignore();
+
   // Only types that convert to an LLVM struct need C ABI classification
   auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(convertType(type));
   if (!structType) {
@@ -232,6 +238,8 @@ unsigned AAPCSABIInfo::argGPRUsage(const CoercionInfo &info,
     return info.useByval ? 0 : 1;
   case ABIArgClass::SSE:
     return 0; // Homogeneous aggregate: V registers or the stack
+  case ABIArgClass::Ignore:
+    return 0;
   case ABIArgClass::NoClass:
     break; // Identity arg: derive usage from the LLVM type below.
   default:

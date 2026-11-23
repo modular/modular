@@ -92,6 +92,11 @@
 //                                 Darwin: {si8}, {ui16}, {bool} args, {si8} result
 //                                         -> i8, i16, i8, i8, all unmarked
 //
+// Group Z - Types without size (MOCO-5490)
+//   Z1  arg_empty_between            Linux:  si32, {}, si32     -> (i32, i32)
+//   Z2  ret_empty_darwin             Darwin: returns {}         -> void
+//   Z3  variadic_empty_fixed_darwin  Darwin: si32, {}, ... si32 -> (i32, ...)
+//
 // MODULE HEADER NOTE: Each test uses the standard ARM64 Linux data layout. The data_layout string
 // drives struct size and alignment computation. The triple selects
 // AAPCSABIInfo.
@@ -775,4 +780,52 @@ kgen.func @arg_decorated_align16_rollback_linux(%a: !kgen.scalar<si64>, %b: !kge
   hlcf.return
 }
 // CHECK: llvm.func @c_ar11(i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>)
+}
+
+//===----------------------------------------------------------------------===//
+// Group Z: Types without size
+//
+// Rule: as in clang, C passes no data for a type without size. An argument
+// takes no register and no stack slot, and a result is void (MOCO-5490).
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// Z1: {} between two i32 args. The i32 after it stays in W1.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_empty_between
+kgen.func @arg_empty_between(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %b: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z1(%{{[^,]*}}, %{{[^,]*}}) : (i32, i32) -> ()
+  pop.external_call @c_z1(%a, %e, %b) : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> ()
+  hlcf.return
+}
+// CHECK: llvm.func @c_z1(i32, i32)
+}
+
+// -----
+
+// Z2: a {} result is void on Darwin, where a scalar result is extended.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @ret_empty_darwin
+kgen.func @ret_empty_darwin(%a: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z2(%{{[^)]*}}) : (i32) -> (){{$}}
+  %r = pop.external_call @c_z2(%a) : (!kgen.scalar<si32>) -> !kgen.struct<()>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z2(i32) attributes
+}
+
+// -----
+
+// Z3: {} among the fixed args of a variadic call on Darwin. numFixedArgs
+// counts it, but the declaration has one fixed parameter.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_empty_fixed_darwin
+kgen.func @variadic_empty_fixed_darwin(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %b: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z3(%{{[^,]*}}, %{{[^,]*}}) vararg(!llvm.func<void (i32, ...)>) : (i32, i32) -> ()
+  pop.external_call @c_z3(%a, %e, %b)
+    : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> () <numFixedArgs = 2 : index>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z3(i32, ...)
 }
