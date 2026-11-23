@@ -1088,11 +1088,16 @@ def tanh[
     """
 
     if __is_run_in_comptime_interpreter:
+        comptime if size_of[dtype]() < size_of[DType.float32]():
+            return tanh(x.cast[.float32]()).cast[dtype]()
         return _tanh_impl(x)
 
     comptime hook = CurrentPlugin.unary_math_fn[.tanh, dtype, width]
     comptime if hook:
         return comptime (hook.value())(x)
+
+    comptime if size_of[dtype]() < size_of[DType.float32]():
+        return _narrow_from_f32[dtype](tanh(x.cast[.float32]()))
 
     return _tanh_impl(x)
 
@@ -1101,6 +1106,7 @@ def tanh[
 def _tanh_impl[
     dtype: DType, width: SIMDLength, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
+    comptime assert dtype in (DType.float32, DType.float64)
     comptime if dtype == .float64 and not is_gpu():
         # For float64 on CPU, use the expm1-based identity for full accuracy:
         #   tanh(x) = -expm1(-2|x|) / (expm1(-2|x|) + 2)
