@@ -5,10 +5,20 @@ code in this repository.
 
 ## Overview
 
-This is the Mojo programming language repository, containing the Mojo standard
-library, examples, and documentation. Mojo is a programming language that
-bridges the gap between research and production by combining Python syntax and
-ecosystem with systems programming and metaprogramming features.
+This is the Mojo programming language repository, containing the Mojo compiler,
+the Mojo standard library, examples, and documentation. Mojo is a programming
+language that bridges the gap between research and production by combining
+Python syntax and ecosystem with systems programming and metaprogramming
+features.
+
+## Mojo compiler
+
+The compiler source is in `lib/`, `include/` and `tools/`, and its tests are in
+`test/`. The [compiler docs index](docs/compiler/README.md) lists the docs to
+read first.
+
+Before you add or change a compiler test, read the
+[compiler testing guide](docs/compiler/testing.md).
 
 ## Essential Commands
 
@@ -86,6 +96,8 @@ mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/std/
 
 ### Repository Structure
 
+- `lib/`, `include/`, `tools/`: Mojo compiler source
+- `test/`: Mojo compiler tests
 - `stdlib/`: Mojo standard library implementation
   - `stdlib/std/`: Source code organized by module (builtin, collections,
     memory, etc.)

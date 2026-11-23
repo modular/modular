@@ -1352,17 +1352,18 @@ kgen --mlir-print-ir-after-all -elaborate main.mojo 2> ir-dump.mlir
 ### Testing
 
 The compiler tests live in `Mojo/test/` and use LLVM's **lit** test framework
-with **FileCheck**:
+with **FileCheck**. Read the [compiler testing guide](testing.md) before adding
+or modifying any compiler tests.
 
 ```bash
 # Run all Mojo tests
 bt //Mojo/test/...
 
 # Run a specific test file
-bt //Mojo/test/mojo-integration:my_test.mojo
+bt //Mojo/test/mojo-parser:my_test.mojo
 
 # Or just use the file name
-bt Mojo/test/mojo-integration/my_test.mojo
+bt Mojo/test/mojo-parser/my_test.mojo
 ```
 
 Test files use FileCheck directives to verify output:
