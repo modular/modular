@@ -18,6 +18,9 @@ lit_tests(
             "test_mxfp8_fused_silu_scale_fusion.mojo",
             "test_mxfp6_fused_silu.mojo",
             "test_mxfp6_send_buf.mojo",
+            # Host-side layout test: a comptime offset comparison, no device
+            # and no RUN commands for the lit sweep.
+            "test_ep_recv_offset.mojo",
             "test_mxfp8_scale_overflow_probe.mojo",
             # Single-GPU device-scope ordering regression guard. Pure std, no
             # rocshmem runtime; runs as the standalone mojo_test below.
@@ -138,6 +141,19 @@ mojo_test(
     deps = [
         "//max:layout",
         "//max:linalg",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
+# The combine receive buffer's linear offset past 2^31 and 2^32. Host-side:
+# the layout is comptime, so this needs no device.
+mojo_test(
+    name = "test_ep_recv_offset_host.mojo.test",
+    size = "small",
+    srcs = ["test_ep_recv_offset.mojo"],
+    deps = [
+        "//max:layout",
         "//max:shmem",
         "@mojo//:std",
     ],

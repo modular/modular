@@ -6296,8 +6296,10 @@ struct EPCombineKernel[
 
     @staticmethod
     @inline(.always)
-    def recv_buf_layout(coord: Coord) -> Int32:
-        return Self._recv_layout[linear_idx_type=.int32](coord)
+    def recv_buf_layout(coord: Coord) -> Int64:
+        """The receive buffer's linear byte offset, 64-bit because the buffer
+        can exceed 2^31 bytes."""
+        return Self._recv_layout[linear_idx_type=.int64](coord)
 
     @staticmethod
     @inline(.always)
