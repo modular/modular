@@ -164,7 +164,6 @@ modular_py_binary(
         ":run_models",
         "//max/python/max/_entrypoints",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/architectures/laguna",
         "//max/python/max/pipelines/architectures/lfm3",
         "//max/python/max/pipelines/architectures/lfm3_vl",
         "//max/python/max/pipelines/architectures/llama4",

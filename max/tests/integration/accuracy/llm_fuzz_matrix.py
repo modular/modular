@@ -135,17 +135,6 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.8",
         timeout=120,
     ),
-    # Laguna S-2.1 on one B200: the gated lane, carrying the mixed NVFP4/bf16
-    # expert split. Mach only.
-    PipelineEntry(
-        pipeline="poolside/Laguna-S-2.1-NVFP4",
-        model_path="poolside/Laguna-S-2.1-NVFP4",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,
-        mach_key="poolside/Laguna-S-2.1-NVFP4",
-    ),
     # 8x B200: TP8 attention, EP8 MoE.
     PipelineEntry(
         pipeline="zai-org/GLM-5.3-Flash-FP8-ep-tp",

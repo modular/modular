@@ -1628,13 +1628,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # unconditionally, so it needs DeepGEMM's weight layout.
         vllm_env={"VLLM_USE_DEEP_GEMM": "1"},
     ),
-    # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
-    # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.
-    "poolside/Laguna-S-2.1-NVFP4": GenericOracle(
-        model_path="poolside/Laguna-S-2.1-NVFP4",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
-    ),
     # transformers cannot load ML4's consolidated NVFP4 checkpoint, so the
     # reference has to be a vLLM golden. ep_size stays at its default
     # (TP-sharded routed experts), the layout Mach serves by default

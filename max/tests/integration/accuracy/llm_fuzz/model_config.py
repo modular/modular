@@ -183,12 +183,6 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:deepseek_v4"],
         description="DeepSeek-V4-Flash-0731",
     ),
-    "laguna": ModelProfile(
-        name="laguna",
-        default_port=8091,
-        tags=["model:laguna"],
-        description="Laguna S-2.1 on Mach",
-    ),
 }
 
 
