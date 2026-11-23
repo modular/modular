@@ -564,16 +564,17 @@ struct Counter[
         Args:
             other: The other `Counter` to intersect with.
         """
-        for key in self.keys():
-            if key not in other:
-                try:
-                    var key_copy = key.copy()  # Copy due to incorrect origins.
-                    _ = self.pop(key_copy)
-                except:
-                    pass  # this should not happen
+        var to_remove = List[Self.V]()
+        # Update counts through the entry reference rather than `self[key]`,
+        # since any insert into `self._data` may compact its storage under the
+        # iterator.
+        for ref entry in self._data.items():
+            var other_count = other._data.get(entry.key)
+            if other_count:
+                entry.value = min(entry.value, other_count.value())
             else:
-                var key_copy = key.copy()  # Copy due to incorrect origins.
-                self[key_copy] = min(self.get(key, 0), other.get(key, 0))
+                to_remove.append(entry.key.copy())
+        self._remove_keys(to_remove)
 
     def __or__(self, other: Self) -> Self:
         """Union: keep all elements with the maximum count.
@@ -611,13 +612,24 @@ struct Counter[
 
     def _keep_positive(mut self):
         """Remove zero and negative counts from the `Counter`."""
-        for key in self.keys():
-            if self.get(key, 0) <= 0:
-                try:
-                    var key_copy = key.copy()  # Copy due to incorrect origins.
-                    _ = self.pop(key_copy)
-                except:
-                    pass  # this should not happen
+        var to_remove = List[Self.V]()
+        for entry in self._data.items():
+            if entry.value <= 0:
+                to_remove.append(entry.key.copy())
+        self._remove_keys(to_remove)
+
+    def _remove_keys(mut self, keys: List[Self.V]):
+        """Remove `keys` from the `Counter`.
+
+        Callers must collect the keys first and call this after iterating:
+        popping while iterating over `self` ends the iteration early, because
+        the `Dict` iterator stops once it has visited `len(self)` entries.
+
+        Args:
+            keys: The keys to remove. Keys not in the `Counter` are ignored.
+        """
+        for key in keys:
+            _ = self._data.pop(key, 0)
 
     # ===------------------------------------------------------------------=== #
     # Unary operators
