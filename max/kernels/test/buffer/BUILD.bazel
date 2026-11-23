@@ -105,6 +105,13 @@ mojo_test(
             "--debug-level",
             "full",
         ],
+        # TODO(HWB-1015): `sync_parallelize` opens a HAL CPU `DeviceContext`,
+        # which resolves no `DeviceSpec`
+        # in a build without an accelerator target.
+        target_compatible_with = select({
+            "//:hal_device_context_enabled": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src == "test_managed_tensor_slice.mojo" else [],
         deps = [
             "//max:extensibility",
             "//max:internal_utils",

@@ -11,6 +11,13 @@ _MOJO_COMPILE_OPTS = {}
 
 _DISABLED_ASSERTIONS = []
 
+# TODO(HWB-1015): `sync_parallelize` opens a HAL CPU `DeviceContext`,
+# which resolves no `DeviceSpec` in a build without an accelerator target.
+_LEGACY_DEVICE_CONTEXT_ONLY = select({
+    "//:hal_device_context_enabled": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -20,6 +27,7 @@ _DISABLED_ASSERTIONS = []
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
+        target_compatible_with = _LEGACY_DEVICE_CONTEXT_ONLY,
         deps = [
             "//max:max_mojo",
             "@mojo//:std",
@@ -39,6 +47,7 @@ mojo_test(
         "ASSERT=warn",
     ],
     enable_assertions = False,  # ASSERT cannot be passed more than once
+    target_compatible_with = _LEGACY_DEVICE_CONTEXT_ONLY,
     deps = [
         "//max:max_mojo",
         "@mojo//:std",

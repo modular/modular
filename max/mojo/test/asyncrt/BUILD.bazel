@@ -64,6 +64,11 @@ _EXTRA_CONSTRAINTS = {
             "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu",
         ],
         main = src,
+        # TODO(HWB-1015): The HAL `HostBuffer` has no `enqueue_fill` yet.
+        target_compatible_with = select({
+            "//:hal_device_context_enabled": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src == "test_copies.mojo" else [],
         deps = [
             "//max:max_mojo",
             "@mojo//:std",
