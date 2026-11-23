@@ -175,6 +175,9 @@ This version is still a work in progress.
   integer, float and boolean metadata plus float, integer and block-quantized
   tensors, and `write()` emits the file.
 
+- `KVConnector.offload()` takes a keyword-only `placement_key`, the same for
+  every offload of one request. Custom connectors must accept it.
+
 - `AutoModel(eager=True)`, `AutoPipeline(eager=True)` and `max generate --eager`
   run the decoder op by op instead of as a compiled graph, so `pdb` stopped
   inside a module's `forward()` sees real values on every step. It is for

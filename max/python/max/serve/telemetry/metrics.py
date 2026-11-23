@@ -626,6 +626,10 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "max.dkv.settle_jobs_finished",
         description="dKV settle jobs the connector workers finished or dropped for a gone dKV incarnation.",
     ),
+    "max.dkv.offloads_capacity_refused": _create_counter(
+        "max.dkv.offloads_capacity_refused",
+        description="Offloads dKV refused for capacity. The connector stays healthy and drops each one.",
+    ),
     # Cross-node pull. Counters, not gauges: take_metrics clears these every
     # batch, so each publish carries that window's delta. Mach exports the same
     # set under dkv.connector.peer_attach_count, peer_drop_count,
@@ -2503,6 +2507,15 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.settle_jobs_finished",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_offloads_capacity_refused(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.offloads_capacity_refused",
                 value,
                 self.extra_attributes,
             ),

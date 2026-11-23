@@ -22,6 +22,7 @@ different caches. This allows the memory to be fungible between the caches.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -194,22 +195,33 @@ def _env_flag(name: str, default: bool = True) -> bool:
     return value == "1"
 
 
+def _placement_key(request_id: RequestID) -> int:
+    """Returns the connector placement key every offload of a request shares.
+
+    A stable digest rather than ``hash``, which Python salts per process.
+    """
+    digest = hashlib.blake2b(request_id.value.encode(), digest_size=8)
+    return int.from_bytes(digest.digest(), "big")
+
+
 @dataclass(frozen=True)
 class _QueuedOffload:
     """One entry the next ``offload`` sends, and what orders it.
 
-    ``parent_hash`` is the hash of the block before the entry in its request's
-    chain, the same on every leaf, or ``None`` for an entry that starts the
-    chain or does not stream, as a checkpoint does. ``writeback`` marks
-    peer-filled hashes written back to the connector's own tier, which
-    ``offload`` counts in the write-back metrics as it walks them.
-    ``orphaned`` marks a write-back whose request let its pages go, by a
-    rollback or a release before the copy landed: a hash missing by the
-    offload is then a block nobody wrote back, counted as dropped rather than
-    evicted.
+    ``placement_key`` is the connector placement key of the request the entry
+    came from, which every save of its pages carries. ``parent_hash`` is the
+    hash of the block before the entry in its request's chain, the same on
+    every leaf, or ``None`` for an entry that starts the chain or does not
+    stream, as a checkpoint does. ``writeback`` marks peer-filled hashes
+    written back to the connector's own tier, which ``offload`` counts in the
+    write-back metrics as it walks them. ``orphaned`` marks a write-back whose
+    request let its pages go, by a rollback or a release before the copy
+    landed: a hash missing by the offload is then a block nobody wrote back,
+    counted as dropped rather than evicted.
     """
 
     hashes: Mapping[str, Sequence[bytes]]
+    placement_key: int
     parent_hash: bytes | None = None
     writeback: bool = False
     orphaned: bool = False
@@ -704,6 +716,9 @@ class RequestCacheState:
 
     replica_idx: int
 
+    placement_key: int
+    """The connector placement key every offload of the request carries."""
+
     hashes: list[bytes] = field(default_factory=list)
     """The chained key of each full block of the request's tokens."""
 
@@ -947,6 +962,7 @@ class JengaBlockManager:
             )
         self._requests[req_id] = RequestCacheState(
             replica_idx=replica_idx,
+            placement_key=_placement_key(req_id),
             hashes=list(self._priced_hashes.pop(req_id, ())),
         )
         for group in self._groups.values():
@@ -1687,7 +1703,7 @@ class JengaBlockManager:
                 needed[leaf_id] = state.hashes[num_blocks - held : num_blocks]
             if needed:
                 self._pending_offloads[state.replica_idx].append(
-                    _QueuedOffload(needed)
+                    _QueuedOffload(needed, state.placement_key)
                 )
         if not self._pending_offloads[replica_idx]:
             return
@@ -1743,6 +1759,7 @@ class JengaBlockManager:
                 bids,
                 block_hashes,
                 replica_idx=replica_idx,
+                placement_key=queued.placement_key,
             )
             # Use the event to determine which pages the connector needs to read
             # and track only those in the transfer. A held one is not polled
@@ -2412,6 +2429,9 @@ class JengaBlockManager:
         cached, and counts one gone by then as dropped.
         """
         assert pending.commit_hashes is not None
+        # every onload that commits carries its splice, whose request names
+        # the placement key even after the request itself is gone
+        assert pending.splice is not None
         hashes = pending.commit_hashes
         pulled = self._peer_filled(pending.event, pending.blocks, hashes)
         if not any(pulled.values()):
@@ -2424,6 +2444,7 @@ class JengaBlockManager:
         self._pending_offloads[replica_idx].append(
             _QueuedOffload(
                 pulled,
+                _placement_key(pending.splice.request_id),
                 parent_hash=hashes[first - 1] if first else pending.parent_hash,
                 writeback=True,
                 orphaned=True,
@@ -2456,6 +2477,7 @@ class JengaBlockManager:
             self._pending_offloads[state.replica_idx].append(
                 _QueuedOffload(
                     state.peer_loaded_hashes,
+                    state.placement_key,
                     parent_hash=state.hashes[first - 1] if first else None,
                     writeback=True,
                     orphaned=orphaned,
@@ -3439,6 +3461,7 @@ class JengaBlockManager:
                         leaf_id: [h for h in run if h in prefix_caches[leaf_id]]
                         for leaf_id in self._streamed_leaf_ids
                     },
+                    self._state_of(ctx).placement_key,
                     parent_hash=req_hashes[first_block - 1]
                     if first_block
                     else None,

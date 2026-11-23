@@ -398,6 +398,11 @@ class KVConnectorConfigInterface(Protocol):
         """Endpoint for the co-located dKV service."""
         ...
 
+    @property
+    def sequence_major_striping(self) -> bool:
+        """Whether dKV keeps a sequence's blocks in the same region."""
+        ...
+
 
 @dataclass(frozen=True)
 class NullKVConnectorConfig:
@@ -417,6 +422,7 @@ class NullKVConnectorConfig:
     num_h2d_onload_lanes: int = 1
     use_disk_direct_io: bool = False
     block_store_endpoint: str | None = None
+    sequence_major_striping: bool = False
 
 
 def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:

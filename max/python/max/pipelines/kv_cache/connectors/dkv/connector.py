@@ -61,6 +61,8 @@ from max.pipelines.kv_cache.kv_connector import (
 )
 from max.profiler import traced
 
+__all__ = ["DKVConnector", "DkvClientTooOldError"]
+
 _logger = logging.getLogger("max.pipelines")
 
 # Entries a dkv extension gained after the blocking ones. An older extension
@@ -71,6 +73,35 @@ _PRESENCE_ENTRIES = ("presence", "presence_supported", "start_presence")
 # Lookup entries that gained ``chain_start`` later. pyo3 rejects an unknown
 # keyword, so each entry is passed it only where its signature names it.
 _CHAIN_START_ENTRIES = ("prepare_load", "start_prepare_load")
+
+# The extension's ``DkvConnector.API_LEVEL`` this shim needs: 1 takes the
+# per-block ``placement_keys`` on ``offload`` (required only under striping)
+# and the ``sequence_major_striping`` constructor argument.
+_MIN_CLIENT_API_LEVEL = 1
+
+
+class DkvClientTooOldError(RuntimeError):
+    """The installed dkv_connector extension predates what this shim calls."""
+
+
+def _require_client_api_level(client_cls: type) -> None:
+    """Refuses an extension older than the shim at construction.
+
+    Without this an old extension fails on its first offload, mid-serve,
+    with a ``TypeError`` that names neither side's version.
+
+    Raises:
+        DkvClientTooOldError: If the extension's ``API_LEVEL`` is below
+            ``_MIN_CLIENT_API_LEVEL``, or it has none.
+    """
+    level = getattr(client_cls, "API_LEVEL", 0)
+    if level < _MIN_CLIENT_API_LEVEL:
+        raise DkvClientTooOldError(
+            f"the dkv_connector extension is at API level {level}, but this "
+            f"MAX needs API level {_MIN_CLIENT_API_LEVEL} or later (per-block "
+            "offload placement keys); install a dkv-connector wheel built "
+            "with them"
+        )
 
 
 class _DkvLookup(Protocol):
@@ -203,6 +234,7 @@ class _DkvClient(Protocol):
         group_id: int,
         block_ids: Sequence[int],
         block_hashes: Sequence[int],
+        placement_keys: Sequence[int],
     ) -> KVTransfer: ...
 
     def touch(self, *, group_id: int, block_hashes: Sequence[int]) -> None: ...
@@ -1382,6 +1414,7 @@ class DKVConnector(KVConnector):
         local_block_store_endpoint: str,
         devices: Sequence[Device],
         params: KVCacheParamInterface,
+        sequence_major_striping: bool = False,
     ) -> None:
         """Constructs and admits one dKV Rust client per DP replica.
 
@@ -1392,6 +1425,9 @@ class DKVConnector(KVConnector):
             devices: The pipeline's flat, ordered device list across replicas.
             params: KV-cache parameters, folded into the tenant store's layout
                 ``kv_config_hash``.
+            sequence_major_striping: Targets new blocks with equal placement
+                keys to one dKV region per TP shard. Deduplicated blocks keep
+                their stored locations. Advertises this in the handshake.
 
         Raises:
             ValueError: If either operator-injected variable is missing —
@@ -1417,6 +1453,8 @@ class DKVConnector(KVConnector):
         import dkv_connector as _dkv_extension
 
         _DkvConnectorClient = _dkv_extension.DkvConnector
+
+        _require_client_api_level(_DkvConnectorClient)
 
         # The Rust client creates a NIXL agent, which dlopens the transport
         # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
@@ -1610,6 +1648,7 @@ class DKVConnector(KVConnector):
                     overlap_peer_lookups=overlap_peer_lookups,
                     peer_attach_wait_ms=peer_attach_wait_ms,
                     admission_timeout_s=admission_timeout_s,
+                    sequence_major_striping=sequence_major_striping,
                 )
             self._clients.append(clients_for_replica)
         # One client per leaf per DP replica. load/offload index
@@ -1716,6 +1755,7 @@ class DKVConnector(KVConnector):
         overlap_peer_lookups: bool,
         peer_attach_wait_ms: int,
         admission_timeout_s: float,
+        sequence_major_striping: bool,
     ) -> _DkvClient:
         # Group the per-leaf units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
@@ -1820,6 +1860,7 @@ class DKVConnector(KVConnector):
                 tenant_gpu_device_ids=list(tenant_gpu_device_ids),
                 overlap_peer_lookups=overlap_peer_lookups,
                 admission_timeout_s=admission_timeout_s,
+                sequence_major_striping=sequence_major_striping,
                 # passed only when set, so an extension that predates the
                 # keyword still builds with the wait off
                 **(
@@ -2724,6 +2765,8 @@ class DKVConnector(KVConnector):
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
+        *,
+        placement_key: int,
     ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
 
@@ -2737,6 +2780,8 @@ class DKVConnector(KVConnector):
         alone.
 
         Routes to the processing replica's per-leaf clients, one call per leaf.
+        Every block of the call is one request's, so each takes
+        ``placement_key``.
 
         Returns:
             A :class:`_DkvBatchTransfer` over the posted WRITEs, reporting
@@ -2779,6 +2824,7 @@ class DKVConnector(KVConnector):
                 group_id=self._wire_ids[leaf_id],
                 block_ids=list(block_ids[leaf_id]),
                 block_hashes=[_to_dkv_u64(h) for h in block_hashes[leaf_id]],
+                placement_keys=[placement_key] * len(block_hashes[leaf_id]),
             )
             for leaf_id in self._leaves
         ]
@@ -3081,6 +3127,9 @@ class DKVConnector(KVConnector):
                         "settle_queue_oldest_age_ms", 0.0
                     ),
                     dkv_settle_jobs_finished=m.get("settle_jobs_finished", 0),
+                    dkv_offloads_capacity_refused=m.get(
+                        "offload_capacity_refused", 0
+                    ),
                     dkv_owner_releases_halted=int(
                         m.get("owner_releases_halted", False)
                     ),

@@ -231,6 +231,12 @@ def test_tokens_per_request_carry_the_turn_when_given(
             "max.dkv.settle_jobs_finished",
             False,
         ),
+        (
+            "dkv_offloads_capacity_refused",
+            4,
+            "max.dkv.offloads_capacity_refused",
+            False,
+        ),
     ],
 )
 def test_dkv_settle_metrics_record_on_their_own_instruments(

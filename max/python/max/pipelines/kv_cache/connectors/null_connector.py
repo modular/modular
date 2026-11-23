@@ -69,6 +69,8 @@ class NullConnector(KVConnector):
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
+        *,
+        placement_key: int,
     ) -> KVConnectorTransfer:
         """Returns a completed transfer without writing any block."""
         return CompletedTransfer()

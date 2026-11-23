@@ -652,6 +652,8 @@ class KVConnector(Protocol):
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
+        *,
+        placement_key: int,
     ) -> KVConnectorTransfer:
         """Offloads each leaf's blocks under that leaf's hashes.
 
@@ -665,6 +667,10 @@ class KVConnector(Protocol):
                 form (8 big-endian bytes for ahash64-family, 32 for SHA-256).
             replica_idx: DP replica whose device buffers source the offloaded
                 blocks. The external tier itself is replica-agnostic.
+            placement_key: An opaque unsigned 64-bit key that is the same for
+                every offload of one request. A connector that spreads blocks
+                over storage regions keeps one key's blocks together; others
+                ignore it.
 
         Returns:
             A :class:`KVConnectorTransfer` for the D2H copy; ``g0_blocks_per_leaf`` are

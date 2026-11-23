@@ -330,6 +330,9 @@ class BatchMetrics:
     dkv_settle_queue_oldest_age_ms: float = 0.0
     dkv_settle_jobs_finished: int = 0
     dkv_owner_releases_halted: int = 0
+    # Offloads a page-managed dKV share refused for capacity: a per-window
+    # delta that publishes as a counter.
+    dkv_offloads_capacity_refused: int = 0
 
     # Cache blocks dKV landed in device memory this batch, credited from
     # transfer accounting: a block behind a hole in the request's hash chain is
@@ -606,6 +609,7 @@ class BatchMetrics:
         dkv_settle_queue_oldest_age_ms = 0.0
         dkv_settle_jobs_finished = 0
         dkv_owner_releases_halted = 0
+        dkv_offloads_capacity_refused = 0
         dkv_read_blocks = 0
         dkv_read_bytes = 0
         dkv_peer_attaches = 0
@@ -797,6 +801,9 @@ class BatchMetrics:
             )
             dkv_settle_jobs_finished = metrics_agg.dkv_settle_jobs_finished
             dkv_owner_releases_halted = metrics_agg.dkv_owner_releases_halted
+            dkv_offloads_capacity_refused = (
+                metrics_agg.dkv_offloads_capacity_refused
+            )
             dkv_read_blocks = metrics_agg.nixl_read_blocks
             dkv_read_bytes = metrics_agg.nixl_read_bytes
 
@@ -1027,6 +1034,7 @@ class BatchMetrics:
             dkv_settle_queue_oldest_age_ms=dkv_settle_queue_oldest_age_ms,
             dkv_settle_jobs_finished=dkv_settle_jobs_finished,
             dkv_owner_releases_halted=dkv_owner_releases_halted,
+            dkv_offloads_capacity_refused=dkv_offloads_capacity_refused,
             dkv_read_blocks=dkv_read_blocks,
             dkv_read_bytes=dkv_read_bytes,
             dkv_peer_attaches=dkv_peer_attaches,
@@ -1561,6 +1569,9 @@ class BatchMetrics:
             )
             extra["dkv_settle_jobs_finished"] = self.dkv_settle_jobs_finished
             extra["dkv_owner_releases_halted"] = self.dkv_owner_releases_halted
+            extra["dkv_offloads_capacity_refused"] = (
+                self.dkv_offloads_capacity_refused
+            )
             # Same guard as the health gauges above.
             extra["dkv_peer_attaches"] = self.dkv_peer_attaches
             extra["dkv_peer_attach_failures"] = self.dkv_peer_attach_failures
@@ -1891,6 +1902,9 @@ class BatchMetrics:
             # A per-window delta, so a window skipped here loses its count for
             # good, the same as the peer counters below.
             METRICS.dkv_settle_jobs_finished(self.dkv_settle_jobs_finished)
+            METRICS.dkv_offloads_capacity_refused(
+                self.dkv_offloads_capacity_refused
+            )
             # Same guard as the health gauges: per-window deltas, so a window
             # skipped here loses its count for good.
             METRICS.dkv_peer_attaches(self.dkv_peer_attaches)

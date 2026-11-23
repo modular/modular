@@ -295,7 +295,11 @@ def test_offload_counts_blocks_the_pool_had_no_room_for_as_dropped() -> None:
     connector = _connector({"a": FULL, "b": FULL}, rust)
 
     run = [_h(1), _h(2), _h(3)]
-    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, {"a": run, "b": run})
+    connector.offload(
+        {"a": [1, 2, 3], "b": [4, 5, 6]},
+        {"a": run, "b": run},
+        placement_key=0,
+    )
 
     assert connector._offload_blocks_dropped == 4
 
@@ -309,7 +313,11 @@ def test_offload_does_not_count_blocks_the_host_tier_already_holds() -> None:
     connector = _connector({"a": FULL, "b": FULL}, rust)
 
     run = [_h(1), _h(2), _h(3)]
-    connector.offload({"a": [1, 2, 3], "b": [4, 5, 6]}, {"a": run, "b": run})
+    connector.offload(
+        {"a": [1, 2, 3], "b": [4, 5, 6]},
+        {"a": run, "b": run},
+        placement_key=0,
+    )
 
     assert connector._offload_blocks_dropped == 0
 
@@ -319,7 +327,9 @@ def test_leaves_of_different_depth_drop_nothing_they_were_not_given() -> None:
     connector = _connector({"a": FULL, "b": FULL}, rust)
 
     connector.offload(
-        {"a": [1, 2, 3], "b": [4]}, {"a": [_h(1), _h(2), _h(3)], "b": [_h(3)]}
+        {"a": [1, 2, 3], "b": [4]},
+        {"a": [_h(1), _h(2), _h(3)], "b": [_h(3)]},
+        placement_key=0,
     )
 
     assert connector._offload_blocks_dropped == 0

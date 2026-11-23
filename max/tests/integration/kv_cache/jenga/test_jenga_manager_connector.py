@@ -25,8 +25,8 @@ a tuple led by its name.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, Literal
 
 import numpy as np
 import pytest
@@ -39,6 +39,9 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors import tier_connector
+from max.pipelines.kv_cache.connectors.dkv.connector import (
+    _DkvBatchTransfer,
+)
 from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     CompletedLookup,
@@ -96,6 +99,8 @@ class ScriptedConnector:
         self._loads: list[str] = []
         self._transfers: list[ScriptedTransfer] = []
         self._calls: list[tuple[Any, ...]] = []
+        # Each offload's placement key, in call order.
+        self.placement_keys: list[int] = []
 
     # -- What the test scripts ----------------------------------------------
 
@@ -228,7 +233,10 @@ class ScriptedConnector:
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
+        *,
+        placement_key: int,
     ) -> KVConnectorTransfer:
+        self.placement_keys.append(placement_key)
         self._calls.append(
             (
                 "offload",
@@ -735,6 +743,138 @@ def test_a_release_offloads_its_pages_before_freeing_them(
     assert offloaded_hashes(connector) == hashes
 
 
+@pytest.mark.parametrize(
+    "immediate", [True, False], ids=["immediate", "deferred"]
+)
+@pytest.mark.parametrize("outcome", ["refused", "allocated", "dedup"])
+def test_dkv_offload_completion_uses_actual_external_residency(
+    monkeypatch: pytest.MonkeyPatch,
+    immediate: bool,
+    outcome: Literal["refused", "allocated", "dedup"],
+) -> None:
+    """A completed offload releases pins; only stored hashes yield a hit."""
+    mgr, connector = make_manager(monkeypatch)
+    (leaf_id,) = connector.leaves
+    pool = mgr.pools[0]
+    prefix_cache = pool.prefix_caches[leaf_id]
+    original_offload = connector.offload
+    handles: list[tuple[ScriptedTransfer, list[bytes]]] = []
+    events: list[_DkvBatchTransfer] = []
+
+    def offload(
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        *,
+        placement_key: int,
+    ) -> KVConnectorTransfer:
+        handle = original_offload(
+            block_ids,
+            block_hashes,
+            replica_idx=replica_idx,
+            placement_key=placement_key,
+        )
+        assert isinstance(handle, ScriptedTransfer)
+        hashes = list(block_hashes[leaf_id])
+        if outcome == "dedup":
+            assert set(hashes) <= connector.held[leaf_id]
+        if immediate and outcome == "allocated":
+            connector.hold(hashes)
+        handle.done = immediate
+        handles.append((handle, hashes))
+        event = _DkvBatchTransfer([handle], block_ids)
+        events.append(event)
+        return event
+
+    def complete_offloads() -> None:
+        for handle, hashes in handles:
+            if not handle.done and outcome == "allocated":
+                connector.hold(hashes)
+            # PyO3's synchronize returns None even for a refused save; its
+            # terminal poll is True, never a failure-valued False.
+            synchronize: Callable[[], object] = handle.synchronize
+            assert synchronize() is None
+            assert handle.is_complete() is True
+        mgr.poll_transfers()
+        assert all(event.is_complete() for event in events)
+        assert not mgr.pending_transfers_exist(0)
+
+    monkeypatch.setattr(connector, "offload", offload)
+    # dKV owns its server-side lifetime; resetting G0 does not purge it.
+    monkeypatch.setattr(connector, "reset_prefix_cache", lambda: None)
+    prompt_pages = 2
+    prompt = prompt_pages * PAGE + 1
+    for _ in range(2 if outcome == "refused" else 1):
+        source = make_ctx(prompt)
+        forward(mgr, source)
+        assert len(prefix_cache) == prompt_pages
+        if outcome == "dedup":
+            connector.hold(prefix_cache.keys())
+        sources = prefix_cache.values()
+        refs = [block.ref_cnt for block in sources]
+        posted = len(events)
+
+        mgr.offload(0)
+
+        assert len(events) == posted + 1
+        assert mgr.pending_transfers_exist(0) is (not immediate)
+        assert [block.ref_cnt for block in sources] == [
+            ref + (not immediate) for ref in refs
+        ]
+        assert bool(connector.held[leaf_id]) is (
+            outcome == "dedup" or (immediate and outcome == "allocated")
+        )
+        complete_offloads()
+        assert [block.ref_cnt for block in sources] == refs
+
+        # Leave a new decode page queued for release to offload, so draining
+        # only the earlier save cannot make the empty-G0 check pass.
+        for _ in range(PAGE):
+            mgr.alloc(source)
+            run(mgr, source)
+            if len(prefix_cache) > prompt_pages:
+                break
+        assert len(prefix_cache) == prompt_pages + 1
+        if outcome == "dedup":
+            connector.hold(prefix_cache.keys())
+        sources = prefix_cache.values()
+        posted = len(events)
+        mgr.release(source)
+        assert len(events) == posted + 1
+        assert mgr.pending_transfers_exist(0) is (not immediate)
+        complete_offloads()
+        assert all(block.ref_cnt == 0 for block in sources)
+
+        stored = set(connector.held[leaf_id])
+        assert len(stored) == (0 if outcome == "refused" else prompt_pages + 1)
+        mgr.reset_prefix_cache()
+        assert not prefix_cache, "a device hit would hide a refused save"
+        assert mgr.block_count().free == mgr.block_count().total
+        assert connector.held[leaf_id] == stored
+        connector.take_calls()
+
+        fresh = make_ctx(prompt)
+        assert fresh.request_id != source.request_id
+        (hits,) = mgr.get_prefix_cache_hit_counts(fresh)
+        expected = 0 if outcome == "refused" else prompt_pages
+        assert (hits.device_blocks, hits.external_blocks) == (0, expected)
+        mgr.claim(fresh)
+        event = mgr.alloc(fresh)
+        assert event.is_complete()
+        assert fresh.cached_prefix_external_length == expected * PAGE
+        assert fresh.tokens.processed_length == expected * PAGE
+        assert fresh.tokens.active_length == prompt - expected * PAGE
+        assert bool(calls_named(connector, "load")) is (outcome != "refused")
+        run(mgr, fresh)
+        assert fresh.tokens.processed_length == prompt
+        mgr.release(fresh)
+        complete_offloads()
+        assert connector.held[leaf_id] == stored
+        mgr.reset_prefix_cache()
+        assert not prefix_cache
+        assert mgr.block_count().free == mgr.block_count().total
+
+
 def test_runs_reach_the_connector_in_commit_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -759,6 +899,35 @@ def test_runs_reach_the_connector_in_commit_order(
         probe = make_ctx(2 * PAGE + 1, offset=0 if ctx is first else 1000)
         (hits,) = mgr.get_prefix_cache_hit_counts(probe)
         assert hits.device_blocks == 2
+
+
+def test_later_batches_of_one_request_keep_its_placement_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request's prefill and decode commits offload under one key.
+
+    A second request that extends the first's prefix offloads only its own
+    pages, under a key of its own, so a connector keeps each request's blocks
+    together and spreads distinct requests.
+    """
+    mgr, connector = make_manager(monkeypatch)
+    first = make_ctx(2 * PAGE + 1)
+    forward(mgr, first)
+    settle(mgr)
+    for _ in range(PAGE):
+        mgr.alloc(first)
+        run(mgr, first)
+    settle(mgr)
+    second = make_ctx(4 * PAGE + 1)
+    forward(mgr, second)
+    settle(mgr)
+
+    runs = [len(call[2][0]) for call in calls_named(connector, "offload")]
+    assert runs == [2, 1, 2], "prefill, then a decode commit, then the suffix"
+    keys = connector.placement_keys
+    assert keys[0] == keys[1], "a decode commit keeps its request's key"
+    assert keys[2] != keys[0], "another request offloads under its own key"
+    assert all(0 <= key < 2**64 for key in keys)
 
 
 def test_paging_to_host_on_cpu_raises(

@@ -266,6 +266,8 @@ class FakeConnector:
         self.offloads: list[
             tuple[dict[str, list[int]], dict[str, list[bytes]]]
         ] = []
+        # Each offload's placement key, parallel to ``offloads``.
+        self.placement_keys: list[int] = []
         self.touches: list[tuple[list[bytes], int]] = []
         self.transfers: list[FakeTransfer] = []
         # Offload transfers in the order the manager saw them land.
@@ -434,7 +436,10 @@ class FakeConnector:
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
+        *,
+        placement_key: int,
     ) -> KVConnectorTransfer:
+        self.placement_keys.append(placement_key)
         for leaf_id, hashes in block_hashes.items():
             assert len(hashes) == len(block_ids[leaf_id]), (
                 f"leaf {leaf_id!r} got {len(block_ids[leaf_id])} blocks for "
@@ -1572,6 +1577,31 @@ def test_a_state_offloads_only_where_a_checkpoint_landed() -> None:
     )
     assert len(block_ids[STATE]) == 1
     assert set(checkpoint[STATE]) == set(manager.pools[0].prefix_caches[STATE])
+
+
+def test_a_checkpoint_offloads_under_its_requests_commit_key() -> None:
+    """A checkpoint is the same request's sequence, so it keeps its key.
+
+    Another request's commit offloads under a key of its own.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    end_prompt(manager, ctx)
+    other = make_ctx(list(range(100, 100 + 2 * PAGE + 1)))
+    manager.claim(other)
+    forward_to_boundary(manager, other)
+    manager.offload(0)
+
+    commit, checkpoint, other_commit = connector.placement_keys
+    assert connector.offloads[1][1][STATE], (
+        "the second offload is the checkpoint"
+    )
+    assert checkpoint == commit
+    assert other_commit != commit
 
 
 def test_a_state_reloads_from_the_connector_at_the_deepest_checkpoint() -> None:
@@ -4357,7 +4387,11 @@ def test_an_unwritten_sliding_page_does_not_stop_the_offload_past_it() -> None:
     connector.offloads.clear()
 
     # A checkpoint window reaching back over the gap queues unpublished pages.
-    manager._pending_offloads[0].append(_QueuedOffload({SLIDING: hashes[:12]}))
+    manager._pending_offloads[0].append(
+        _QueuedOffload(
+            {SLIDING: hashes[:12]}, manager._state_of(ctx).placement_key
+        )
+    )
     manager.offload(0)
 
     ((_, sent),) = connector.offloads
@@ -4373,7 +4407,9 @@ def test_a_missing_block_stops_a_full_leaf_but_not_a_windowed_one() -> None:
 
     run = [hashes[0], gone, hashes[2]]
     manager._pending_offloads[0].append(
-        _QueuedOffload({FULL: run, SLIDING: run})
+        _QueuedOffload(
+            {FULL: run, SLIDING: run}, manager._state_of(ctx).placement_key
+        )
     )
     manager.offload(0)
 
@@ -4517,9 +4553,11 @@ def test_a_peer_served_prefix_is_offloaded_once_its_onload_lands(
 
     pulled = connector.loads[-1][1][FULL]
     assert pulled == prefix
+    placement_key = manager._state_of(ctx).placement_key
     ((block_ids, hashes),) = _offloaded_on_landing(manager, connector)
     assert hashes == {FULL: pulled}
     assert len(block_ids[FULL]) == len(pulled)
+    assert connector.placement_keys[-1] == placement_key
     assert _offloaded_at_release(manager, connector, ctx) == []
     assert manager.take_metrics().dkv_peer_writeback_blocks_dropped == 0
 

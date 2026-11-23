@@ -526,6 +526,7 @@ def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_settle_queue_depth.assert_not_called()
     mock_metrics.dkv_settle_jobs_finished.assert_not_called()
     mock_metrics.dkv_owner_releases_halted.assert_not_called()
+    mock_metrics.dkv_offloads_capacity_refused.assert_not_called()
 
     extra = metrics.to_log_extra()
     assert "dkv_peer_loads" not in extra
@@ -548,9 +549,11 @@ def test_dkv_settle_metrics_reach_the_log_and_the_published_metrics() -> None:
         dkv_settle_queue_oldest_age_ms=2.5,
         dkv_settle_jobs_finished=9,
         dkv_owner_releases_halted=1,
+        dkv_offloads_capacity_refused=4,
     )
 
     extra = metrics.to_log_extra()
+    assert extra["dkv_offloads_capacity_refused"] == 4
     assert extra["dkv_settle_queue_depth"] == 3
     assert extra["dkv_settle_queue_oldest_age_ms"] == 2.5
     assert extra["dkv_settle_jobs_finished"] == 9
@@ -563,6 +566,7 @@ def test_dkv_settle_metrics_reach_the_log_and_the_published_metrics() -> None:
     mock_metrics.dkv_settle_queue_oldest_age_ms.assert_called_once_with(2.5)
     mock_metrics.dkv_settle_jobs_finished.assert_called_once_with(9)
     mock_metrics.dkv_owner_releases_halted.assert_called_once_with(1)
+    mock_metrics.dkv_offloads_capacity_refused.assert_called_once_with(4)
 
 
 def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:

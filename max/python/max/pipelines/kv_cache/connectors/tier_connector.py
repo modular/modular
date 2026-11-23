@@ -1001,8 +1001,12 @@ class TierConnector(KVConnector):
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
+        *,
+        placement_key: int,
     ) -> KVConnectorTransfer:
         """Offloads each leaf's blocks under that leaf's hashes.
+
+        The host pool has no regions, so ``placement_key`` changes nothing.
 
         Raises:
             ValueError: If the keys do not match the connector's leaves.

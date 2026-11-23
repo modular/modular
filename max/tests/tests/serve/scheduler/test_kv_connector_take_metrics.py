@@ -75,6 +75,16 @@ def test_kv_cache_metrics_add_folds_the_dkv_settle_fields() -> None:
     assert KVCacheMetrics().dkv_settle_queue_oldest_age_ms == 0.0
 
 
+def test_kv_cache_metrics_add_sums_dkv_offloads_capacity_refused() -> None:
+    """Capacity refusals are a per-window count, so two windows sum."""
+    total = KVCacheMetrics(dkv_offloads_capacity_refused=3) + KVCacheMetrics(
+        dkv_offloads_capacity_refused=4
+    )
+
+    assert total.dkv_offloads_capacity_refused == 7
+    assert KVCacheMetrics().dkv_offloads_capacity_refused == 0
+
+
 def test_kv_cache_metrics_add_sums_the_dkv_orphan_fields() -> None:
     """The orphan queue's outcome counts and its depth each sum."""
     first = KVCacheMetrics(

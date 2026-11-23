@@ -287,6 +287,14 @@ class KVCacheMetrics:
     """
     dkv_settle_jobs_finished: int = 0
     """Settle jobs the workers finished or dropped this window, summed."""
+    dkv_offloads_capacity_refused: int = 0
+    """Offloads dKV refused for capacity this window, summed over leaf clients.
+
+    Only a page-managed dKV share refuses with a typed capacity error, and the
+    connector stays healthy when it does: the offload is dropped and its
+    blocks are recomputed if asked for again. A steady rate is cache the store
+    could not keep.
+    """
     dkv_owner_releases_halted: int = 0
     """1 while any leaf client's owner release halt is up, else 0.
 
@@ -719,6 +727,8 @@ class KVCacheMetrics:
             ),
             dkv_settle_jobs_finished=self.dkv_settle_jobs_finished
             + other.dkv_settle_jobs_finished,
+            dkv_offloads_capacity_refused=self.dkv_offloads_capacity_refused
+            + other.dkv_offloads_capacity_refused,
             # Up when either side's is, and still 1 rather than a count.
             dkv_owner_releases_halted=max(
                 self.dkv_owner_releases_halted, other.dkv_owner_releases_halted

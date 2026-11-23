@@ -32,6 +32,7 @@ from max.nn.kv_cache import (
     KVConnectorConfigInterface,
     KVConnectorType,
     MHAKVCacheParams,
+    NullKVConnectorConfig,
 )
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -421,9 +422,14 @@ def test_kv_connector_config_is_frozen() -> None:
     assert connector.type is KVConnectorType.null
 
 
-def test_frozen_kv_connector_config_matches_interface() -> None:
-    connector = KVConnectorConfig()
+@pytest.mark.parametrize(
+    "connector", [KVConnectorConfig(), NullKVConnectorConfig()]
+)
+def test_frozen_kv_connector_config_matches_interface(
+    connector: KVConnectorConfigInterface,
+) -> None:
     assert isinstance(connector, KVConnectorConfigInterface)
+    assert connector.sequence_major_striping is False
 
 
 def test_kv_connector_config_disk_budget_bounds() -> None:
