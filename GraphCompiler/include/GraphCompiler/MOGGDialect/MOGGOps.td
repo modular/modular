@@ -2299,6 +2299,9 @@ def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
     `$staticPermutations[i]` is the `$input` dimension that becomes output
     dimension `i` (`?` if known only at runtime, then read from
     `$permutations`).
+
+    `$permutations` is present exactly when some entry of
+    `$staticPermutations` is `?`.
   }];
   let arguments = (ins
     MOSH_ShapeAttr:$outShape,
@@ -2306,11 +2309,12 @@ def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
     TypeAttr:$elementType,
     BoolAttr:$mut,
     MOGG_TensorLike:$input,
-    MOGG_Tensor:$permutations
+    Optional<MOGG_Tensor>:$permutations
   );
   let results = (outs MOGG_Tensor:$result);
+  let hasVerifier = 1;
   let assemblyFormat = [{
-    `(` $input `,` $permutations `)`
+    `(` $input (`,` $permutations^)? `)`
     `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
         `outShape` `=` qualified($outShape) `,`
         `staticPermutations` `=` qualified($staticPermutations) `>`

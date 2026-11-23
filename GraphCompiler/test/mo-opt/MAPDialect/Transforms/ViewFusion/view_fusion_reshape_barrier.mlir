@@ -70,8 +70,8 @@ mo.graph @sliceReshapeTransposeIntoPrologue(
       index   (%k: !map.index<2>)
       -> !mo.tensor<[6, 16], f32>
   {
-    %ti = map.index.transpose<#map.index.transpose.spec<[16, 6] -> [6, 16], perm = [1, 0]>> (%k, %perm)
-        : (!map.index<2>, !mo.tensor<[2], si64>) -> !map.index<2>
+    %ti = map.index.transpose<#map.index.transpose.spec<[16, 6] -> [6, 16], perm = [1, 0]>> (%k)
+        : (!map.index<2>) -> !map.index<2>
     %v = map.load %reshaped[%ti] : !mo.tensor<[16, 6], f32>
     map.store %to[%k] = %v : !mo.tensor<[6, 16], f32>
   }

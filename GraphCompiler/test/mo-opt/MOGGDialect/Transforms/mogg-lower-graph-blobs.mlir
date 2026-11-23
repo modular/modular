@@ -266,6 +266,47 @@ mo.graph @broadcast(%arg0: !mo.tensor<[1, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   mo.output %0#1 : !mo.tensor<[2, 2], f32>
 }
 
+// A transpose view with a static permutation is rebuilt in the call region from
+// the tensor it views. The permutation tensor lives on the host, and it
+// doesn't cross.
+
+// CHECK-LABEL: mo.graph @transpose
+// CHECK:        inputs (%[[A:[^ ,)]+]], %{{[^ ,)]+}})
+// CHECK-NEXT:   outputs (%[[B:[^ ,)]+]], %[[C:[^ ,)]+]])
+// CHECK:        mogg.graph_blob.launch context(%{{[^)]+}}) config(%{{[^)]+}}) args {%[[X:[^ ]+]] = %[[A]] : !mogg.pointer, %{{[^ ]+}} = %[[B]] : !mogg.pointer, %{{[^ ]+}} = %[[C]] : !mogg.pointer, %{{[^ ]+}} = %{{[^ ]+}} : i32, %{{[^ ]+}} = %{{[^ ]+}} : i32} {
+// CHECK-NEXT:     mogg.graph_blob.call
+// CHECK:            %[[T:.+]] = mogg.tensor.create(%[[X]],
+// CHECK:            %[[V:.+]] = mogg.tensor.create.transpose(%[[T]])
+// CHECK:            %[[IN:.+]] = mogg.trait.create(%[[V]])
+// CHECK:            mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%[[IN]] : !mogg.tensor)
+// CHECK:          mogg.graph_blob.barrier
+mo.graph @transpose(%arg0: !mo.tensor<[2, 3], f32>) -> !mo.tensor<[3, 2], f32> {
+  %perm = mo.constant <#M.dense_array<1, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %0:2 = mogg.routine (%arg0, %perm : !mo.tensor<[2, 3], f32>, !mo.tensor<[2], si64>) -> (!mo.tensor<[3, 2], f32>, !mo.tensor<[3, 2], f32>)
+    inputs (%a, %p)
+    outputs (%b, %c)
+    context (%ctx) attributes {device = #M.device_ref<"gpu", 0>} {
+    mogg.graph_blob {
+      %s0 = mogg.shape.create() <shape = #mosh<ape[3, 2]> : !mosh.ape>
+      %s1 = mogg.shape.create() <shape = #mosh<ape[2, 3]> : !mosh.ape>
+      %a0 = mogg.tensor.create(%a, %s1) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 3]> : !mosh.ape> : !mogg.tensor
+      %s2 = mogg.shape.create() <shape = #mosh<ape[2]> : !mosh.ape>
+      %p0 = mogg.tensor.create(%p, %s2) <device = "cpu", elementType = si64, io = Input, mut = false, shapeAttr = #mosh<ape[2]> : !mosh.ape> : !mogg.tensor
+      %a1 = mogg.tensor.create.transpose(%a0) <elementType = f32, mut = false, outShape = #mosh<ape[3, 2]> : !mosh.ape, staticPermutations = array<i64: 1, 0>> : !mogg.tensor
+      %b0 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[3, 2]> : !mosh.ape> : !mogg.tensor
+      %a2 = mogg.trait.create(%a1) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+      %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      %b2 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[3, 2]> : !mosh.ape> : !mogg.tensor
+      %c0 = mogg.tensor.create(%c, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[3, 2]> : !mosh.ape> : !mogg.tensor
+      %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+      %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
+    }
+  }
+  mo.output %0#1 : !mo.tensor<[3, 2], f32>
+}
+
 // A constant buffer stays on the host, and its pointer crosses.
 
 // CHECK-LABEL: mo.graph @constant

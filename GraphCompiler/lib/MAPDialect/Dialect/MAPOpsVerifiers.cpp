@@ -879,6 +879,20 @@ LogicalResult ReshapeStrideOp::verify() {
 // map.index.transpose
 //===----------------------------------------------------------------------===//
 
+static LogicalResult verifyTransposePermutations(Operation *op,
+                                                 TransposeSpecAttr spec,
+                                                 Value permutations) {
+  bool isStatic =
+      llvm::none_of(spec.getPerm().asArrayRef(), ShapedType::isDynamic);
+  if (isStatic == static_cast<bool>(permutations))
+    return op->emitOpError("takes a permutations operand only when some "
+                           "entry of the spec's perm is dynamic");
+  if (!permutations)
+    return mlir::success();
+  return verifySliceBoundsOperandsAreRank1(
+      op, {std::pair{"permutations", permutations}});
+}
+
 LogicalResult TransposeIndexOp::verify() {
   MAP::ViewSignatureAttr signature = getSpec().getSignature();
   auto indexTy = llvm::cast<IndexType>(getIndex().getType());
@@ -893,8 +907,8 @@ LogicalResult TransposeIndexOp::verify() {
                          << " does not match spec's in-shape rank "
                          << signature.getIn().getRank();
 
-  return verifySliceBoundsOperandsAreRank1(
-      getOperation(), {std::pair{"permutations", getPermutations()}});
+  return verifyTransposePermutations(getOperation(), getSpec(),
+                                     getPermutations());
 }
 
 //===----------------------------------------------------------------------===//
@@ -920,6 +934,6 @@ LogicalResult TransposeStrideOp::verify() {
                          << " does not match input element type "
                          << inputTy.getElementType();
 
-  return verifySliceBoundsOperandsAreRank1(
-      getOperation(), {std::pair{"permutations", getPermutations()}});
+  return verifyTransposePermutations(getOperation(), getSpec(),
+                                     getPermutations());
 }

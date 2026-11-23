@@ -1293,10 +1293,10 @@ def MAP_TransposeIndexOp : MAP_Op<"index.transpose", [
     `mo.transpose`. Since `out.dim[i] == in.dim[perm[i]]`, this applies
     `perm`'s inverse.
 
-    `permutations` is the runtime permutation, read only where `spec` is
-    dynamic (the eager interpreter's one-graph-per-op transpose). It rides
-    along for the hoisted `map.index.transpose.stride`; this op is never
-    lowered to MOGG directly.
+    `permutations` is the runtime permutation, present exactly when some
+    entry of `spec`'s perm is dynamic (the eager interpreter's one-graph-per-op
+    transpose). It rides along for the hoisted `map.index.transpose.stride`;
+    this op is never lowered to MOGG directly.
 
     Example:
     ```mlir
@@ -1308,14 +1308,14 @@ def MAP_TransposeIndexOp : MAP_Op<"index.transpose", [
   let arguments = (ins
     MAP_TransposeSpecAttr:$spec,
     MAP_AnyIndex:$index,
-    MO_Tensor:$permutations
+    Optional<MO_Tensor>:$permutations
   );
   let results = (outs MAP_AnyIndex:$result);
 
   let assemblyFormat = [{
-    `<` qualified($spec) `>` `(` $index `,` $permutations `)` attr-dict
-    `:` `(` qualified(type($index)) `,` qualified(type($permutations)) `)` `->`
-    qualified(type($result))
+    `<` qualified($spec) `>` `(` $index (`,` $permutations^)? `)` attr-dict
+    `:` `(` qualified(type($index)) (`,` qualified(type($permutations))^)? `)`
+    `->` qualified(type($result))
   }];
 
   let hasVerifier = 1;
@@ -1341,8 +1341,8 @@ def MAP_TransposeStrideOp : MAP_Op<"index.transpose.stride", [
     whose loads it feeds. `input` is a buffer when the view feeds an in-place
     kernel's fused load.
 
-    `permutations` is read only where `spec` is dynamic; emission elides the
-    read behind a `comptime if` for a static perm.
+    `permutations` is present exactly when some entry of `spec`'s perm is
+    dynamic, and is read only for those entries.
 
     Example:
     ```mlir
@@ -1354,14 +1354,14 @@ def MAP_TransposeStrideOp : MAP_Op<"index.transpose.stride", [
   let arguments = (ins
     MAP_TransposeSpecAttr:$spec,
     AnyTypeOf<[MO_Tensor, MO_Buffer]>:$input,
-    MO_Tensor:$permutations
+    Optional<MO_Tensor>:$permutations
   );
   let results = (outs MO_Tensor:$result);
 
   let assemblyFormat = [{
-    `<` qualified($spec) `>` `(` $input `,` $permutations `)` attr-dict
-    `:` `(` qualified(type($input)) `,` qualified(type($permutations)) `)` `->`
-    qualified(type($result))
+    `<` qualified($spec) `>` `(` $input (`,` $permutations^)? `)` attr-dict
+    `:` `(` qualified(type($input)) (`,` qualified(type($permutations))^)? `)`
+    `->` qualified(type($result))
   }];
 
   let hasVerifier = 1;

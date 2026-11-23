@@ -475,6 +475,14 @@ LogicalResult RowwiseMapOp::verify() {
   return success();
 }
 
+LogicalResult TensorCreateTransposeOp::verify() {
+  bool isStatic = llvm::none_of(getStaticPermutations(), ShapedType::isDynamic);
+  if (isStatic == static_cast<bool>(getPermutations()))
+    return emitOpError("takes a permutations operand only when some static "
+                       "permutation is dynamic");
+  return success();
+}
+
 LogicalResult TensorCreatePrologueOp::verify() {
   Block &body = getBody().front();
   auto yield = body.empty() ? YieldOp() : dyn_cast<YieldOp>(body.back());

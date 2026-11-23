@@ -985,12 +985,14 @@ LogicalResult TransposeStrideOp::lowerToMOGG(MAPToMOGGState &state) {
   MAP::ViewSignatureAttr signature = getSpec().getSignature();
   Type elementType =
       MO::castFromTensorLike(getInput().getType()).getElementType();
+  Value permutations = getPermutations();
+  if (permutations)
+    permutations = state.mapping.lookup(permutations);
   auto createTranspose = MOGG::TensorCreateTransposeOp::create(
       state.builder, getLoc(), MOGG::TensorType::get(ctx), signature.getOut(),
       getSpec().getPerm(), TypeAttr::get(elementType),
       state.builder.getBoolAttr(viewsMutableStorage(getInput())),
-      state.mapping.lookup(getInput()),
-      state.mapping.lookup(getPermutations()));
+      state.mapping.lookup(getInput()), permutations);
   state.mapping.map(getResult(), createTranspose.getResult());
   return success();
 }

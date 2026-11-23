@@ -3042,6 +3042,19 @@ comptime _MoggTransposeStrideTypes[
 ]()
 
 
+comptime _MoggTransposeLayout[
+    rank: Int,
+    output_static_shape: Coord,
+    static_permutations: Coord,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+] = Layout[
+    shape_types=output_static_shape.element_types,
+    stride_types=_MoggTransposeStrideTypes[
+        rank, static_permutations, input_stride_types
+    ],
+]
+
+
 @register_internal("mogg.tensor.create.transpose")
 def mogg_tensor_create_transpose[
     dtype: DType,
@@ -3057,13 +3070,11 @@ def mogg_tensor_create_transpose[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_tile_layout[
         rank,
-        Layout[
-            shape_types=output_static_shape.element_types,
-            stride_types=_MoggTransposeStrideTypes[
-                rank,
-                static_permutations,
-                input.static_spec.static_layout._stride_types,
-            ],
+        _MoggTransposeLayout[
+            rank,
+            output_static_shape,
+            static_permutations,
+            input.static_spec.static_layout._stride_types,
         ],
     ](),
 ]:
@@ -3090,9 +3101,7 @@ def mogg_tensor_create_transpose[
         input: The tensor to transpose.
         permutations: One-dimensional tensor giving `input`'s source
             dimension for each view dimension. Read only for the dimensions
-            `static_permutations` leaves dynamic; the `comptime if` below
-            elides the read entirely when every source is static, so a
-            fully-static transpose never touches this operand.
+            `static_permutations` leaves dynamic.
     """
     var new_shape = IndexList[rank]()
     var new_strides = IndexList[rank]()
@@ -3105,6 +3114,48 @@ def mogg_tensor_create_transpose[
             comptime src = static_permutations.element_types[i].static_value
             new_shape[i] = input.dim_size[src]()
             new_strides[i] = input.stride_length[src]()
+    return {input.unsafe_ptr(), new_shape, new_strides}
+
+
+def mogg_tensor_create_transpose[
+    dtype: DType,
+    rank: Int,
+    //,
+    output_static_shape: Coord,
+    static_permutations: Coord,
+](input: ManagedTensorSlice[dtype=dtype, rank=rank, ...]) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_tile_layout[
+        rank,
+        _MoggTransposeLayout[
+            rank,
+            output_static_shape,
+            static_permutations,
+            input.static_spec.static_layout._stride_types,
+        ],
+    ](),
+]:
+    """Backing primitive for a `mogg.tensor.create.transpose` whose
+    permutation is fully known at compile time, so it takes no `permutations`
+    operand. A graph blob launch builds this view inside its kernel, where the
+    host's permutation tensor isn't readable.
+
+    Parameters:
+        dtype: The element type of `input`.
+        rank: The rank of `input` and of the returned view.
+        output_static_shape: The view's shape, where known at compile time.
+        static_permutations: The `input` dimension for each view dimension.
+            Every entry is static.
+
+    Args:
+        input: The tensor to transpose.
+    """
+    var new_shape = IndexList[rank]()
+    var new_strides = IndexList[rank]()
+    comptime for i in range(rank):
+        comptime src = static_permutations.element_types[i].static_value
+        new_shape[i] = input.dim_size[src]()
+        new_strides[i] = input.stride_length[src]()
     return {input.unsafe_ptr(), new_shape, new_strides}
 
 

@@ -409,7 +409,8 @@ Value TransposeIndexOp::createStridedView(OpBuilder &builder, Value tensor,
   auto inputTy = M::MO::castFromTensorLike(tensor.getType());
   auto resultTy = M::MO::TensorType::get(getSpec().getSignature().getOut(),
                                          inputTy.getElementType());
+  Value permutations = getPermutations();
   return TransposeStrideOp::create(
       builder, getLoc(), resultTy, getSpec(), tensor,
-      outerValues.lookupOrDefault(getPermutations()));
+      permutations ? outerValues.lookupOrDefault(permutations) : Value());
 }

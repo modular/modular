@@ -5,9 +5,9 @@
 // enclosing map.iter.opaque, rewriting the load to use the loop's own
 // (untransformed) index directly -- same generic IndexTransformOpInterface
 // mechanism already exercised by map.index.slice/map.index.broadcast, no
-// pass changes needed. The transpose's perm operand rides along into the
-// hoisted stride op (like slice's bounds), and canonicalize then drops the
-// now-dead original input capture.
+// pass changes needed. A constant perm takes no operand, so the hoisted stride
+// op reads only the input, and canonicalize then drops the now-dead original
+// input capture.
 
 module {
 
@@ -15,9 +15,9 @@ module {
 
 // CHECK-LABEL: mo.graph @transposeSwap
 // CHECK:         [[RESULT:%[^ ]+]] = map.iter.opaque
-// CHECK-NEXT:    inputs ([[INPUT:%[^ :,]+]]: !mo.tensor<[2, 3], f32>, [[PERM:%[^ :,]+]]: !mo.tensor<[2], si64>)
+// CHECK-NEXT:    inputs ([[INPUT:%[^ :,]+]]: !mo.tensor<[2, 3], f32>{{.*}})
 // CHECK-NEXT:    outputs ([[OUT:%[^ :,]+]] : !mo.tensor<[3, 2], f32>) {
-// CHECK-NEXT:      [[STRIDED:%[^ ]+]] = map.index.transpose.stride<#map.index.transpose.spec<[2, 3] -> [3, 2], perm = [1, 0]>> ([[INPUT]], [[PERM]])
+// CHECK-NEXT:      [[STRIDED:%[^ ]+]] = map.index.transpose.stride<#map.index.transpose.spec<[2, 3] -> [3, 2], perm = [1, 0]>> ([[INPUT]])
 // CHECK-NEXT:      map.iter.elementwise.body<[3, 2]>
 // CHECK-NEXT:        index   ([[IDX:%[^ :,]+]]: !map.index<2>)
 // CHECK-NEXT:        capturing {{{.*}}[[OUT0:%[^ ,]+]] = [[OUT]] : !mo.tensor<[3, 2], f32>, [[NEWCAP:%[^ ]+]] = [[STRIDED]] : !mo.tensor<[3, 2], f32>} {
@@ -33,8 +33,8 @@ mo.graph @transposeSwap(%input: !mo.tensor<[2, 3], f32>, %perm: !mo.tensor<[2], 
     map.iter.elementwise.body<[3, 2]>
         index (%idx: !map.index<2>)
         capturing {%input0 = %input : !mo.tensor<[2, 3], f32>, %perm0 = %perm : !mo.tensor<[2], si64>, %out0 = %out : !mo.tensor<[3, 2], f32>} {
-      %idx_ = map.index.transpose<#map.index.transpose.spec<[2, 3] -> [3, 2], perm = [1, 0]>> (%idx, %perm0)
-          : (!map.index<2>, !mo.tensor<[2], si64>) -> !map.index<2>
+      %idx_ = map.index.transpose<#map.index.transpose.spec<[2, 3] -> [3, 2], perm = [1, 0]>> (%idx)
+          : (!map.index<2>) -> !map.index<2>
       %val = map.load %input0[%idx_] : !mo.tensor<[2, 3], f32>
       map.store %out0[%idx] = %val : !mo.tensor<[3, 2], f32>
     }
@@ -46,9 +46,9 @@ mo.graph @transposeSwap(%input: !mo.tensor<[2, 3], f32>, %perm: !mo.tensor<[2], 
 
 // CHECK-LABEL: mo.graph @transpose3D
 // CHECK:         [[RESULT2:%[^ ]+]] = map.iter.opaque
-// CHECK-NEXT:    inputs ([[INPUT2:%[^ :,]+]]: !mo.tensor<[2, 3, 4], f32>, [[PERM2:%[^ :,]+]]: !mo.tensor<[3], si64>)
+// CHECK-NEXT:    inputs ([[INPUT2:%[^ :,]+]]: !mo.tensor<[2, 3, 4], f32>{{.*}})
 // CHECK-NEXT:    outputs ([[OUT2:%[^ :,]+]] : !mo.tensor<[4, 2, 3], f32>) {
-// CHECK-NEXT:      [[STRIDED2:%[^ ]+]] = map.index.transpose.stride<#map.index.transpose.spec<[2, 3, 4] -> [4, 2, 3], perm = [2, 0, 1]>> ([[INPUT2]], [[PERM2]])
+// CHECK-NEXT:      [[STRIDED2:%[^ ]+]] = map.index.transpose.stride<#map.index.transpose.spec<[2, 3, 4] -> [4, 2, 3], perm = [2, 0, 1]>> ([[INPUT2]])
 // CHECK-NEXT:      map.iter.elementwise.body<[4, 2, 3]>
 // CHECK-NEXT:        index   ([[IDX2:%[^ :,]+]]: !map.index<3>)
 // CHECK-NEXT:        capturing {{{.*}}[[OUT02:%[^ ,]+]] = [[OUT2]] : !mo.tensor<[4, 2, 3], f32>, [[NEWCAP2:%[^ ]+]] = [[STRIDED2]] : !mo.tensor<[4, 2, 3], f32>} {
@@ -64,8 +64,8 @@ mo.graph @transpose3D(%input: !mo.tensor<[2, 3, 4], f32>, %perm: !mo.tensor<[3],
     map.iter.elementwise.body<[4, 2, 3]>
         index (%idx: !map.index<3>)
         capturing {%input0 = %input : !mo.tensor<[2, 3, 4], f32>, %perm0 = %perm : !mo.tensor<[3], si64>, %out0 = %out : !mo.tensor<[4, 2, 3], f32>} {
-      %idx_ = map.index.transpose<#map.index.transpose.spec<[2, 3, 4] -> [4, 2, 3], perm = [2, 0, 1]>> (%idx, %perm0)
-          : (!map.index<3>, !mo.tensor<[3], si64>) -> !map.index<3>
+      %idx_ = map.index.transpose<#map.index.transpose.spec<[2, 3, 4] -> [4, 2, 3], perm = [2, 0, 1]>> (%idx)
+          : (!map.index<3>) -> !map.index<3>
       %val = map.load %input0[%idx_] : !mo.tensor<[2, 3, 4], f32>
       map.store %out0[%idx] = %val : !mo.tensor<[4, 2, 3], f32>
     }

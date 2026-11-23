@@ -779,7 +779,7 @@ LogicalResult TensorCreateTransposeOp::emitMojo(EmitMojoState &state) {
   // Mojo infers dtype/rank/perm_type from $input/$perm.
   // output_static_shape/static_permutations carry the compile-time-known parts
   // (`?` where runtime-only); the runtime `$perm` supplies the rest, and a
-  // fully static perm never reads it.
+  // fully static perm has none.
   auto transposeCreatePrimDecl = state.registry.lookupPrimitive(
       TensorCreateTransposeOp::getOperationName());
   ASSERT_STREAM(transposeCreatePrimDecl,
@@ -790,11 +790,13 @@ LogicalResult TensorCreateTransposeOp::emitMojo(EmitMojoState &state) {
       EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
   MojoValue staticPermutations = state.file->comptime(
       EmitMojoState::getAsCoordMojoValue(getStaticPermutations()));
+  SmallVector<MojoValue> args = {state.getMojoValueFor(getInput())};
+  if (Value permutations = getPermutations())
+    args.push_back(state.getMojoValueFor(permutations));
   MojoValue result = state.file->var(
       primitive[{kParameterOutputStaticShape.equal(outputStaticShape),
                  kParameterStaticPermutations.equal(staticPermutations)}](
-          {state.getMojoValueFor(getInput()),
-           state.getMojoValueFor(getPermutations())}));
+          args));
   state.setMojoValueFor(getResult(), result);
   return success();
 }

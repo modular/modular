@@ -96,3 +96,21 @@ func.func @execute_device_not_declarative(%ctx: !mogg.context, %cfg: !mogg.launc
   }
   return
 }
+
+// -----
+
+// A static permutation reads no permutations operand.
+func.func @transpose_static_with_permutations(%input: !mogg.tensor, %perm: !mogg.tensor) {
+  // expected-error@+1 {{takes a permutations operand only when some static permutation is dynamic}}
+  %0 = mogg.tensor.create.transpose(%input, %perm) <elementType = f32, mut = false, outShape = #mosh<ape[3, 2]> : !mosh.ape, staticPermutations = array<i64: 1, 0>> : !mogg.tensor
+  return
+}
+
+// -----
+
+// A run-time permutation is read from the permutations operand.
+func.func @transpose_dynamic_without_permutations(%input: !mogg.tensor) {
+  // expected-error@+1 {{takes a permutations operand only when some static permutation is dynamic}}
+  %0 = mogg.tensor.create.transpose(%input) <elementType = f32, mut = false, outShape = #mosh<ape[3, 2]> : !mosh.ape, staticPermutations = array<i64: -9223372036854775808, 0>> : !mogg.tensor
+  return
+}

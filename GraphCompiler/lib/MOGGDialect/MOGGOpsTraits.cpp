@@ -285,9 +285,8 @@ LaunchPlacement TensorCreateBroadcastOp::getLaunchPlacement() {
 
 // A run-time permutation is read from `$permutations` on the host.
 LaunchPlacement TensorCreateTransposeOp::getLaunchPlacement() {
-  return llvm::none_of(getStaticPermutations(), ShapedType::isDynamic)
-             ? LaunchPlacement::Kernel
-             : LaunchPlacement::HostOnly;
+  return getPermutations() ? LaunchPlacement::HostOnly
+                           : LaunchPlacement::Kernel;
 }
 
 // The starts, stops and steps are read on the host.
