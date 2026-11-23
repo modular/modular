@@ -20,7 +20,9 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )

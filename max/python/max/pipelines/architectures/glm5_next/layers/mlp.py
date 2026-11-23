@@ -320,9 +320,11 @@ class Glm5NextMLP(QuantizedMLP):
         gate_up_weight = quant_ops.concat_weights(
             self.gate_proj.weight, self.up_proj.weight, axis=0
         )
-        gate, up = quant_ops.matmul(x, gate_up_weight).split(
-            [self.feed_forward_length, self.feed_forward_length], axis=-1
-        )
+        gate_up = quant_ops.matmul(x, gate_up_weight)
+        # Half the output's own width: one device's copy of a column-split
+        # shared expert holds only its slice of ``feed_forward_length``.
+        width = int(gate_up.shape[-1]) // 2
+        gate, up = gate_up.split([width, width], axis=-1)
         limit = self.swiglu_limit
         gate = F.min(gate.cast(DType.float32), limit)
         up = F.max(F.min(up.cast(DType.float32), limit), -limit)
@@ -373,5 +375,11 @@ def build_mlp(
         swiglu_limit=config.swiglu_limit,
     )
     if ep_config is not None:
-        return Glm5NextExpertParallelMoE(**moe_kwargs, ep_config=ep_config)
+        # Under the all-reduce exchange, each rank runs its share of the
+        # shared expert instead of rank 0 all of it while the others wait.
+        return Glm5NextExpertParallelMoE(
+            **moe_kwargs,
+            ep_config=ep_config,
+            shard_shared_expert=True,
+        )
     return Glm5NextTensorParallelMoE(**moe_kwargs)

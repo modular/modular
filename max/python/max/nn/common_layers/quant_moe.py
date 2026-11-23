@@ -858,15 +858,37 @@ class ExpertParallelMoE(QuantizedMoE):
     :func:`~max.tensor.default_device` at construction; the
     gate and shared experts are replicated. ``ep_config`` configures the
     exchange.
+
+    With ``shard_shared_expert``, under the all-reduce exchange and an
+    unfused shared expert, the shared expert's feed-forward axis is split
+    over a one-axis mesh instead, so each device adds a partial sum to its combine
+    output and the caller's all-reduce completes both. The shared expert's
+    MLP must then split its gate/up output by its own width, not by
+    ``feed_forward_length``.
     """
+
+    # Set on the class: a subclass may skip the ``__init__`` that turns it on.
+    shard_shared_expert: bool = False
 
     def __init__(
         self,
         *args,
         ep_config: EPConfig,
+        shard_shared_expert: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
+        if (
+            shard_shared_expert
+            and self.shared_experts is not None
+            and ep_config.use_allreduce
+            and not ep_config.fused_shared_expert
+            # The split is over the one TP axis; a DP axis would add the
+            # shared expert once per replica.
+            and self.mesh.ndim == 1
+        ):
+            self.shard_shared_expert = True
+            self.shared_experts = tensor_parallel_mlp(self.shared_experts)
         if self.activation is not None:
             # The EP expert paths don't read it yet, so they would run SiLU.
             raise ValueError(
@@ -1410,10 +1432,12 @@ class ExpertParallelMoE(QuantizedMoE):
             payload = exchange.dispatch(x, router_idx, input_scales, layer_idx)
 
         # Under allreduce, combine outputs are per-device partial sums that get
-        # summed later, so add the replicated shared expert on one device only.
+        # summed later, so add a replicated shared expert on one device only.
         if has_unfused_shared and not overlap_shared_expert:
             devices = (
-                [0] if config.use_allreduce else range(self.mesh.num_devices)
+                [0]
+                if config.use_allreduce and not self.shard_shared_expert
+                else range(self.mesh.num_devices)
             )
             shared_by_device = dict(
                 zip(
