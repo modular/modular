@@ -1566,18 +1566,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
     ),
-    "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        add_bos_token=True,
-    ),
     # The reference is a vLLM golden on the same fp8/fp4 checkpoint. MAX runs
     # the ModuleV3 recipe (flash_0731_fp8_tp2_b200.yaml) at TP=2 from the
     # 2x B200 job's device list, with its default BF16 KV cache.

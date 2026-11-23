@@ -68,15 +68,15 @@ def test_variant_lookup_is_case_insensitive() -> None:
 
 def test_variants_preserve_key_model_path_and_speculation() -> None:
     mtp_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["nvidia/DeepSeek-V3.1-NVFP4__mtp"]
+        MODEL_RECIPES["nvidia/GLM-5.2-NVFP4__mtp_tpep"]
     )
     assert mtp_recipe.speculative is not None
-    assert mtp_recipe.speculative.num_speculative_tokens == 3
+    assert mtp_recipe.speculative.num_speculative_tokens == 5
 
 
 def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
     recipe = smoke_test._load_recipe(
-        "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml"
+        "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_nvfp4_8x_b200.yaml"
     )
 
     args = smoke_test._recipe_gpu_overrides(recipe, gpu_count=4)
@@ -93,7 +93,7 @@ def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
 
 def test_recipe_gpu_overrides_preserve_intentional_fixed_parallelism() -> None:
     recipe = smoke_test._load_recipe(
-        "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml"
+        "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml"
     )
 
     args = smoke_test._recipe_gpu_overrides(recipe, gpu_count=4)
@@ -250,7 +250,7 @@ def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
 
     cmd, _ = smoke_test.get_server_cmd(
         "vllm",
-        "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         serve_image="vllm/vllm-openai:v0.27.1",
         gpu_spec=("NVIDIA B200", 8),
     )
@@ -267,7 +267,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
-        "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
@@ -276,7 +276,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     assert "--expert-parallel-size" in cmd
     assert "8" in cmd
     assert "--mem-fraction-static" in cmd
-    assert "0.8" in cmd
+    assert "0.75" in cmd
     assert "--data-parallel-size=8" not in cmd
     assert "--enable-dp-attention" not in cmd
 
@@ -288,18 +288,19 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
-        "nvidia/DeepSeek-V3.1-NVFP4__fp8kv",
+        "nvidia/DeepSeek-V4.1-Flash-NVFP4",
         serve_image="lmsysorg/sglang:v0.5.18",
-        gpu_spec=("NVIDIA B200", 8),
+        gpu_spec=("NVIDIA B200", 4),
     )
 
-    assert "--data-parallel-size=8" in cmd
+    assert "--data-parallel-size=4" in cmd
     assert "--enable-dp-attention" in cmd
     assert "--expert-parallel-size" in cmd
-    assert "8" in cmd
-    assert "--mem-fraction-static" in cmd
-    assert "0.8" in cmd
-    assert "--tp-size=8" not in cmd
+    assert "4" in cmd
+    assert "--tp-size=4" not in cmd
+    # The recipe sets no device memory utilization, so sglang keeps its default
+    # rather than capping it.
+    assert "--mem-fraction-static" not in cmd
 
 
 def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:

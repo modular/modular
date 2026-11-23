@@ -70,7 +70,6 @@ MACH = {"MACH"}
 MODELS: Mapping[str, set[str]] = {
     "amd/MiniMax-M3-MXFP4": NIGHTLY | _4xMI355,
     "ByteDance-Seed/academic-ds-9B": DISABLE,  # TODO(SERVOPT-1120)
-    "deepseek-ai/DeepSeek-V3.1-Terminus": _8xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__modulev3": NIGHTLY | VARIANT | _2xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": NIGHTLY | VARIANT | _2xB200,
     "deepseek-ai/DeepSeek-V4.1-Flash-1017": NIGHTLY | _4xB200,
@@ -107,13 +106,6 @@ MODELS: Mapping[str, set[str]] = {
     "modularai/MiniMax-M3-MXFP6": NIGHTLY | _4xMI355 | _8xMI355,
     "moonshotai/Kimi-K3": NIGHTLY | _8xMI355,
     "moonshotai/Kimi-K3__dspark": NIGHTLY | VARIANT | MACH | _8xMI355,
-    "nvidia/DeepSeek-V3.1-NVFP4": _8xB200,
-    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": VARIANT | _8xB200,
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp": VARIANT | _8xB200,
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": VARIANT | _8xB200,
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep": VARIANT | _8xB200,
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": VARIANT | _8xB200,
-    "nvidia/DeepSeek-V3.1-NVFP4__tptp": VARIANT | _8xB200,
     "nvidia/DeepSeek-V4.1-Flash-NVFP4": _4xB200,
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": _1xB200,
     "nvidia/Gemma-4-26B-A4B-NVFP4": NIGHTLY | _1xB200,

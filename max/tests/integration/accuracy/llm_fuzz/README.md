@@ -31,7 +31,7 @@ Bazel manages all dependencies; no extra setup is needed.
 
 ```bash
 # Run all fuzz scenarios against a local vLLM/TGI/Dynamo server
-$LLM_FUZZ --url http://localhost:8000 --model nvidia/DeepSeek-V3.1-NVFP4
+$LLM_FUZZ --url http://localhost:8000 --model nvidia/DeepSeek-V4.1-Flash-NVFP4
 
 # Run against OpenAI
 $LLM_FUZZ --url https://api.openai.com --api-key $OPENAI_API_KEY --model gpt-4o-mini
@@ -96,7 +96,7 @@ test sizes to the model's actual parameters. The tool tries to fetch
 
 ```bash
 # Auto-detect: --model is used as HF repo ID to fetch max_position_embeddings
-$LLM_FUZZ --url http://localhost:8000 --model deepseek-ai/DeepSeek-R1
+$LLM_FUZZ --url http://localhost:8000 --model deepseek-ai/DeepSeek-V4-Flash-0731
 
 # Manual override (takes priority over HF config)
 $LLM_FUZZ --url http://localhost:8000 --model my-model \

@@ -677,19 +677,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.0e-03
     kl_div_threshold: 3.0e-01
 
-  deepseek-ai/DeepSeek-V3.1-Terminus:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "deepseek-ai/DeepSeek-V3.1-Terminus"
-    compatible_with: [gpu]
-    encoding: float8_e4m3fn
-    tags: [nvidia-multi, 8xb200]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_deepseek-ai_deepseek-v3_1-terminus_golden/1/d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447/torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz"
-      json_file: "torch_deepseek-ai_deepseek-v3_1-terminus_float8_e4m3fn_golden.json"
-    cos_dist_threshold: 1.3e-01
-    kl_div_threshold: 4.0e-01
-
   # ModuleV3 at TP=2 on the 2x B200 job (nvidia-multi, `gpu:0,1`) against a
   # vLLM 0.33.0 golden. vLLM's KV cache is fp8_ds_mla, its only DeepSeek-V4
   # path on B200; MAX keeps a BF16 KV cache.
