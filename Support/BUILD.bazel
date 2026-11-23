@@ -506,6 +506,7 @@ modular_cc_library(
         "include/Support/Profiling/CaptureLabels.h",
         "include/Support/Profiling/ExternalProfilerAnnotation.h",
         "include/Support/Profiling/Ranges.h",
+        "include/Support/Profiling/TraceActivity.h",
     ],
     deps = [
         # Holds the process-global gates + cached sink, so every statically
@@ -524,11 +525,15 @@ modular_cc_library(
 # archive order.
 modular_cc_library(
     name = "ProfilingRangesHeaders",
-    hdrs = ["include/Support/Profiling/Ranges.h"],
+    hdrs = [
+        "include/Support/Profiling/Ranges.h",
+        "include/Support/Profiling/TraceActivity.h",
+    ],
     visibility = ["//max/internal/profiler:__pkg__"],
     deps = [
         ":Base",
         ":SymbolExport",
+        "@llvm-project//llvm:Support",
     ],
 )
 

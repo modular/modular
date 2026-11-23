@@ -21,6 +21,7 @@ from max._core.profiler import (
     load_profiler_plugin,
     start_capture,
     stop_capture,
+    stop_capture_activities,
 )
 
 
@@ -40,3 +41,12 @@ def test_capture_calls_without_plugin(tmp_path: Path) -> None:
     assert not start_capture()
     assert not is_capture_recording()
     assert stop_capture(str(output_path))
+
+
+def test_in_memory_stop_without_plugin() -> None:
+    assert not load_profiler_plugin()
+    assert not start_capture()
+    activities, metadata, error = stop_capture_activities()
+    assert activities == []
+    assert metadata == {}
+    assert error
