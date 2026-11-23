@@ -152,6 +152,16 @@ bool M::Graph::Python::Analysis::hasShapeFunction(const std::string &name) {
   return reg.containsShapeFunction(name);
 }
 
+bool M::Graph::Python::Analysis::resolvesKernel(const std::string &name,
+                                                MlirOperation op,
+                                                const std::string &label,
+                                                int64_t id) {
+  auto module = unwrap(op)->getParentOfType<mlir::ModuleOp>();
+  if (!module)
+    throw nb::value_error("The operation is not in a module.");
+  return ensureRegistry().resolvesKernel(name, module, label, id);
+}
+
 void M::Graph::Python::Analysis::addPath(std::filesystem::path path) {
   auto abs = std::filesystem::absolute(path);
   bool inserted = libraryPathsSet.insert(abs).second;

@@ -57,6 +57,19 @@ def test_adding_a_path_leaves_the_shared_analysis_alone() -> None:
     assert "my_add" not in first._kernel_library
 
 
+def test_resolves_selects_a_kernel_by_device() -> None:
+    path = Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
+    graph = _graph_with_builtin_custom_op("resolves", path)
+    library = graph._kernel_library
+
+    # Registered for the CPU API alone: the name is known, but no
+    # registration applies to another device.
+    assert library.resolves("my_add_cpu_api", graph._mlir_op, DeviceRef.CPU())
+    assert not library.resolves(
+        "my_add_cpu_api", graph._mlir_op, DeviceRef.GPU()
+    )
+
+
 def test_adding_a_loaded_path_keeps_the_shared_analysis() -> None:
     path = Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
     graph = _graph_with_builtin_custom_op("loaded", path)

@@ -694,15 +694,32 @@ static StringAttr getParamTypeName(MLIRContext *ctx, Type paramType) {
 // Python's `Analysis`, has no `mo.device_info_mapping`, so it knows a device
 // only by its label. The graph module holding `op` carries the full device
 // info, which a registration scoped by `api`, `arch`, or `model` needs.
-static ErrorOr<KernelDeclOp> resolveKernelForOp(const MojoRegistry &registry,
-                                                llvm::StringRef name,
-                                                mlir::Operation *op,
-                                                DeviceRefAttr device) {
-  auto module = op->getParentOfType<mlir::ModuleOp>();
+static ErrorOr<KernelDeclOp>
+resolveKernelForModule(const MojoRegistry &registry, llvm::StringRef name,
+                       mlir::ModuleOp module, DeviceRefAttr device) {
   if (module && module->hasAttr(MO::DeviceInfoMapping::kAttrName))
     return registry.getResolvedKernel(
         name, MO::DeviceInfoMapping(module).get(device));
   return registry.getResolvedKernel(name, device);
+}
+
+static ErrorOr<KernelDeclOp> resolveKernelForOp(const MojoRegistry &registry,
+                                                llvm::StringRef name,
+                                                mlir::Operation *op,
+                                                DeviceRefAttr device) {
+  return resolveKernelForModule(registry, name,
+                                op->getParentOfType<mlir::ModuleOp>(), device);
+}
+
+bool MojoRegistry::resolvesKernel(llvm::StringRef name,
+                                  mlir::ModuleOp graphModule,
+                                  llvm::StringRef deviceLabel,
+                                  int64_t deviceId) const {
+  if (!containsKernel(name))
+    return false;
+  auto device =
+      DeviceRefAttr::get(graphModule->getContext(), deviceLabel, deviceId);
+  return !resolveKernelForModule(*this, name, graphModule, device).isError();
 }
 
 static ErrorOrSuccess validateCustomOpParameters(const MojoRegistry &registry,

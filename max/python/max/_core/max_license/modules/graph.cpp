@@ -536,7 +536,12 @@ void M::Graph::Python::bindGraphModule(nb::module_ m) {
            "unknown or has an unsupported argument type.")
       .def("has_shape_function", &Analysis::hasShapeFunction, "name"_a,
            "Returns true if a shape function is registered for the named "
-           "kernel.");
+           "kernel.")
+      .def("resolves_kernel", &Analysis::resolvesKernel, "name"_a, "op"_a,
+           "label"_a, "id"_a,
+           "Returns true if a kernel registered under the name applies to "
+           "the device with the given label and id, by the device info of "
+           "the module that holds the operation.");
 
   M::Profiler::Python::addTracingToNanobindModuleClassMethods(
       m, "max._core.graph.");

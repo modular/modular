@@ -200,3 +200,10 @@ class Analysis:
 
     def has_shape_function(self, name: str) -> bool:
         """Returns true if a shape function is registered for the named kernel."""
+
+    def resolves_kernel(
+        self, name: str, op: max._mlir.ir.Operation, label: str, id: int
+    ) -> bool:
+        """
+        Returns true if a kernel registered under the name applies to the device with the given label and id, by the device info of the module that holds the operation.
+        """

@@ -96,6 +96,14 @@ public:
   ErrorOr<KernelDeclOp> getResolvedKernel(llvm::StringRef name,
                                           DeviceInfoAttr deviceInfo) const;
 
+  /// Returns whether a kernel registered under `name` is selected for the
+  /// device `deviceLabel`:`deviceId` of a graph in `graphModule`. Matches the
+  /// device info that `graphModule` carries when it has a
+  /// `mo.device_info_mapping`, since a registry over kernel decls alone knows
+  /// a device only by its label.
+  bool resolvesKernel(llvm::StringRef name, mlir::ModuleOp graphModule,
+                      llvm::StringRef deviceLabel, int64_t deviceId) const;
+
   /// Finds each op whose selection is ambiguous on some device, over all
   /// representative devices of its registrations. With `builtinsOnly`, only
   /// built-in registrations take part, as in a registry with no user

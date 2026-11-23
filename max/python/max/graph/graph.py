@@ -370,6 +370,30 @@ class KernelLibrary:
         """
         self._shared_analysis().verify_custom_op(custom_op)
 
+    def resolves(
+        self, kernel: str, graph_op: mlir.Operation, device: DeviceRef
+    ) -> bool:
+        """Returns whether a kernel registered as *kernel* applies to *device*.
+
+        A registration may be scoped to some devices only, by their API,
+        architecture or model, so a kernel that is registered under a name
+        does not apply to every device.
+
+        Args:
+            kernel: The registered name of the kernel to look up.
+            graph_op: The operation of the graph. Its module carries the
+                info of each device, which the scope of a registration is
+                matched against.
+            device: The device to resolve the kernel for.
+
+        Returns:
+            ``True`` if exactly one registration of *kernel* is selected for
+            *device*.
+        """
+        return self._shared_analysis().resolves_kernel(
+            kernel, graph_op, device.device_type.value, device.id
+        )
+
     def has_shape_function(self, kernel: str) -> bool:
         """Returns whether *kernel* registers a shape function.
 

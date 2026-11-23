@@ -138,6 +138,43 @@ def allgather(
                     f"each group. {inputs=}"
                 )
 
+    # Get the current chain for synchronization.
+    graph = Graph.current
+    in_chain = graph.device_chains.merge_for(devices)
+    group_size_attr = IntegerAttr(IntegerType(64), group_size)
+
+    # A target whose collective writes the concatenated tensor registers a
+    # kernel for the op that returns it. Elsewhere the collective returns the
+    # pieces, and each device concatenates its own.
+    if graph._kernel_library.resolves(
+        "mo.distributed.allgather.concat", graph._mlir_op, devices[0]
+    ):
+        gathered_types: list[TensorType] = []
+        for device_idx, device in enumerate(devices):
+            group_start = (device_idx // group_size) * group_size
+            group_inputs = inputs[group_start : group_start + group_size]
+            gathered = list(group_inputs[0].shape)
+            gathered[axis] = sum(
+                (input.shape[axis] for input in group_inputs[1:]),
+                group_inputs[0].shape[axis],
+            )
+            gathered_types.append(TensorType(dtype, gathered, device))
+
+        *results, out_chain = graph._add_op_generated(
+            mo.DistributedAllgatherConcatOp,
+            gathered_types,
+            _ChainType(),
+            inputs,
+            signal_buffers,
+            in_chain,
+            IntegerAttr(IntegerType(64), axis),
+            group_size_attr,
+        )
+        graph._update_chain(out_chain)
+        for device in devices:
+            graph.device_chains[device] = out_chain
+        return [res.tensor for res in results]
+
     # Prepare raw output types - one gathered input per group member per device.
     output_types: list[TensorType] = []
     for device_idx, device in enumerate(devices):
@@ -148,12 +185,7 @@ def allgather(
             TensorType(dtype, input.shape, device) for input in group_inputs
         )
 
-    # Get the current chain for synchronization.
-    graph = Graph.current
-    in_chain = graph.device_chains.merge_for(devices)
-
     # Stage the allgather op with signal buffers and chain.
-    group_size_attr = IntegerAttr(IntegerType(64), group_size)
     *results, out_chain = graph._add_op_generated(
         mo.DistributedAllgatherOp,
         # Output types: tensors + chain
