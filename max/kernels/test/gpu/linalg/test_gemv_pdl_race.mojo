@@ -59,7 +59,7 @@ from std.time import global_perf_counter_ns
 def slow_producer[
     dtype: DType,
 ](
-    act: MutPointer[Scalar[dtype], MutAnyOrigin],
+    act: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length_dev: Int32,
     delay_dev: Int32,
 ):
@@ -90,10 +90,10 @@ def slow_producer[
 def handshake_producer[
     dtype: DType,
 ](
-    act: MutPointer[Scalar[dtype], MutAnyOrigin],
+    act: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length_dev: Int32,
-    flag: MutPointer[Int32, MutAnyOrigin],
-    seen: MutPointer[Int32, MutAnyOrigin],
+    flag: MutPointer[Int32, MutUntrackedOrigin],
+    seen: MutPointer[Int32, MutUntrackedOrigin],
     timeout_us: Int32,
 ):
     """Releases the dependent grid at entry, then holds `act` back until a
@@ -121,7 +121,7 @@ def handshake_producer[
         act[i] = Scalar[dtype](2.0)
 
 
-def flag_stub(flag: MutPointer[Int32, MutAnyOrigin]):
+def flag_stub(flag: MutPointer[Int32, MutUntrackedOrigin]):
     """Marks itself resident before the PDL wait, then waits for its
     predecessor like any dependent."""
     if thread_idx.x == 0 and block_idx.x == 0:
@@ -132,8 +132,8 @@ def flag_stub(flag: MutPointer[Int32, MutAnyOrigin]):
 def consumer[
     dtype: DType,
 ](
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length_dev: Int32,
 ):
     """Waits for the GEMV grid, then copies its output backwards."""

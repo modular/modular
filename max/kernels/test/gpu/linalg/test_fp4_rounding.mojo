@@ -60,10 +60,12 @@ def _round_kernel[
     input_engine: TensorEngine,
     output_engine: TensorEngine,
     width: Int,
+    input_origin: ImmOrigin,
+    output_origin: MutOrigin,
 ](
-    input: TileTensor[dtype, input_layout, ImmutAnyOrigin, Engine=input_engine],
+    input: TileTensor[dtype, input_layout, input_origin, Engine=input_engine],
     output: TileTensor[
-        dtype, output_layout, MutAnyOrigin, Engine=output_engine
+        dtype, output_layout, output_origin, Engine=output_engine
     ],
     count: Int32,
 ):
@@ -120,7 +122,7 @@ def _run[dtype: DType, width: Int](ctx: DeviceContext) raises:
     ctx.enqueue_copy(input_d, input_h)
     output_d.enqueue_fill(inf[dtype]())
 
-    var input_t = TileTensor(input_d, row_major(Int32(count)))
+    var input_t = TileTensor(input_d, row_major(Int32(count))).as_imm()
     var output_t = TileTensor(output_d, row_major(Int32(count + 8)))
     comptime kernel = _round_kernel[
         dtype,
@@ -129,10 +131,12 @@ def _run[dtype: DType, width: Int](ctx: DeviceContext) raises:
         type_of(input_t).Engine,
         type_of(output_t).Engine,
         width,
+        input_t.origin,
+        output_t.origin,
     ]
     ctx.enqueue_function[kernel](
-        input_t.as_imm().as_unsafe_any_origin(),
-        output_t.as_unsafe_any_origin(),
+        input_t,
+        output_t,
         Int32(count),
         grid_dim=ceildiv(ceildiv(count, width), BLOCK_SIZE),
         block_dim=BLOCK_SIZE,

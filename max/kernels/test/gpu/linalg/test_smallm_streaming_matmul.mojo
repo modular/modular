@@ -70,7 +70,7 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
         transpose_b=True,
     )
 
-    # The production entry points take graph-marshaled AnyOrigin tensors;
+    # The production entry points take graph-marshaled AnyOrigin pointers;
     # rebind the test's concretely-originated buffers to match.
     var b_shuf_dst = MutPointer[Scalar[dtype], MutAnyOrigin](
         unsafe_from_address=Int(device_b_shuf.unsafe_ptr())
@@ -80,20 +80,6 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
     )
     smallm_preshuffle_b[dtype, k_static=K](b_shuf_dst, b_src, N, ctx)
 
-    var a_ptr = ImmPointer[Scalar[dtype], ImmutAnyOrigin](
-        unsafe_from_address=Int(device_a.unsafe_ptr())
-    )
-    comptime a_layout = row_major[max_m, K]()
-    var a_any = TileTensor[dtype, type_of(a_layout), ImmutAnyOrigin](
-        a_ptr, a_layout
-    )
-    var c_ptr = MutPointer[Float32, MutAnyOrigin](
-        unsafe_from_address=Int(device_c.unsafe_ptr())
-    )
-    comptime c_layout = row_major[max_m, N]()
-    var c_any = TileTensor[.float32, type_of(c_layout), MutAnyOrigin](
-        c_ptr, c_layout
-    )
     var b_shuf_src = ImmPointer[Scalar[dtype], ImmutAnyOrigin](
         unsafe_from_address=Int(device_b_shuf.unsafe_ptr())
     )
@@ -105,8 +91,8 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
     # A small grid cap forces the grid-strided column loop to iterate even at
     # the test's small N (production caps at 512 blocks).
     smallm_streaming_matmul[k_static=K, max_grid_blocks=8](
-        c_any,
-        a_any,
+        c_tt,
+        a_tt.as_imm(),
         b_shuf_src,
         scratch_ptr,
         m,

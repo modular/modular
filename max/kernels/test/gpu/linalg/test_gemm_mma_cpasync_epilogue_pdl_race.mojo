@@ -43,11 +43,11 @@ comptime bf16 = DType.bfloat16
 
 
 def late_producer(
-    src: MutPointer[Scalar[bf16], MutAnyOrigin],
-    dst: MutPointer[Scalar[bf16], MutAnyOrigin],
+    src: MutPointer[Scalar[bf16], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[bf16], MutUntrackedOrigin],
     length: Int32,
-    gate_src: MutPointer[Scalar[bf16], MutAnyOrigin],
-    gate_dst: MutPointer[Scalar[bf16], MutAnyOrigin],
+    gate_src: MutPointer[Scalar[bf16], MutUntrackedOrigin],
+    gate_dst: MutPointer[Scalar[bf16], MutUntrackedOrigin],
     delay_us: Int32,
 ):
     """Releases the dependent grid at entry, then writes `dst` and the gate late.

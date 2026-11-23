@@ -451,7 +451,7 @@ def test_dispatch_f32_out[
 
 
 def _late_fill_kernel(
-    a: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     n: Int32,
     spin_ns: Int64,
 ):
@@ -468,8 +468,8 @@ def _late_fill_kernel(
 
 
 def _slow_copy_kernel(
-    src: MutPointer[Scalar[DType.float32], MutAnyOrigin],
-    dst: MutPointer[Scalar[DType.float32], MutAnyOrigin],
+    src: ImmPointer[Scalar[DType.float32], ImmUntrackedOrigin],
+    dst: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     n: Int32,
     spin_ns: Int64,
 ):
@@ -508,11 +508,6 @@ def test_pdl_chain[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     var o = ctx.enqueue_create_buffer[c_type](m * N)
     var r1 = ctx.enqueue_create_buffer[c_type](m * N)
     var r2 = ctx.enqueue_create_buffer[c_type](m * N)
-    var a_ptr = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-        a_buf.unsafe_ptr()
-    )
-    var c_ptr = rebind[MutPointer[Scalar[c_type], MutAnyOrigin]](c.unsafe_ptr())
-    var o_ptr = rebind[MutPointer[Scalar[c_type], MutAnyOrigin]](o.unsafe_ptr())
     var c_tile = TileTensor(c, row_major(m, Idx[N]))
     var b_tile = TileTensor(b, row_major(Idx[N], Idx[K])).as_imm()
     # The chain only tests the split-K kernel if the dispatch picks the row: on
@@ -536,7 +531,7 @@ def test_pdl_chain[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
         c.enqueue_fill(Scalar[c_type](-7))
         o.enqueue_fill(Scalar[c_type](-9))
         ctx.enqueue_function[_late_fill_kernel](
-            a_ptr,
+            a_buf,
             Int32(m * K),
             Int64(spin_ns),
             grid_dim=32,
@@ -549,8 +544,8 @@ def test_pdl_chain[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
             ctx,
         )
         ctx.enqueue_function[_slow_copy_kernel](
-            c_ptr,
-            o_ptr,
+            c,
+            o,
             Int32(m * N),
             Int64(spin_ns),
             grid_dim=32,

@@ -64,9 +64,11 @@ def _pack_e8m0_scale_word(value: Float32) -> Int32:
 def _mfma_32x32x64_kernel[
     BaselineLayout: TensorLayout,
     ScaledLayout: TensorLayout,
+    baseline_origin: MutOrigin,
+    scaled_origin: MutOrigin,
 ](
-    baseline_out: TileTensor[.float32, BaselineLayout, MutAnyOrigin],
-    scaled_out: TileTensor[.float32, ScaledLayout, MutAnyOrigin],
+    baseline_out: TileTensor[.float32, BaselineLayout, baseline_origin],
+    scaled_out: TileTensor[.float32, ScaledLayout, scaled_origin],
 ):
     """Single-warp kernel that runs the 32x32x64 MFMA twice and writes both
     accumulators to global memory, one lane per row of each output buffer."""
@@ -128,11 +130,13 @@ def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:
     comptime kernel = _mfma_32x32x64_kernel[
         type_of(baseline_tt).LayoutType,
         type_of(scaled_tt).LayoutType,
+        baseline_tt.origin,
+        scaled_tt.origin,
     ]
 
     ctx.enqueue_function[kernel](
-        baseline_tt.as_unsafe_any_origin(),
-        scaled_tt.as_unsafe_any_origin(),
+        baseline_tt,
+        scaled_tt,
         grid_dim=1,
         block_dim=warp_size,
     )

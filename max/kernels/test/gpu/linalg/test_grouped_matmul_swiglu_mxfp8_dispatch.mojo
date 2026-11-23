@@ -378,9 +378,6 @@ def _test_swiglu_mxfp8_dispatch[
     var expert_ids_tensor = TileTensor(
         expert_ids_device, row_major(Idx[num_experts])
     )
-    var expert_scales_tensor = TileTensor(
-        shared.expert_scales, row_major(Idx[num_experts])
-    )
 
     var a_scale_dim0 = 0
     a_offsets_host_ptr[0] = 0
@@ -476,9 +473,7 @@ def _test_swiglu_mxfp8_dispatch[
     ctx.enqueue_copy(expert_ids_device, expert_ids_host_ptr)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
 
-    var a_scales_tt = TileTensor(
-        a_scales_device, a_scales_shape
-    ).as_unsafe_any_origin()
+    var a_scales_tt = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_perm_shape = row_major(
         Idx[num_experts],
         Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
@@ -487,12 +482,10 @@ def _test_swiglu_mxfp8_dispatch[
         Idx[SF_ATOM_M[1]],
         Idx[SF_ATOM_K],
     )
-    var b_scales_perm_tt = TileTensor(
-        shared.b_scales_perm, b_scales_perm_shape
-    ).as_unsafe_any_origin()
+    var b_scales_perm_tt = TileTensor(shared.b_scales_perm, b_scales_perm_shape)
     var expert_scales_tt = TileTensor(
         shared.expert_scales, row_major(Int64(num_experts))
-    ).as_unsafe_any_origin()
+    )
 
     # ---- Path REF: non-fused matmul -> BF16 -> standalone SwiGLU. ----
     grouped_matmul_mxfp8_dispatch[transpose_b=transpose_b](

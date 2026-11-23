@@ -142,10 +142,6 @@ def _test_kernel_impl[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
-    var expert_scales_tensor = TileTensor(
-        expert_scales_device,
-        row_major(Idx[num_experts]),
-    )
 
     var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
@@ -225,7 +221,6 @@ def _test_kernel_impl[
         rand(b_host.as_span())
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     for i in range(a_scales_host.num_elements()):
         a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
@@ -306,8 +301,6 @@ def _test_kernel_impl[
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
     ctx.enqueue_copy(expert_scales_device, expert_scales_host_ptr)
 
-    # expert_scales_tensor already created above
-
     # New structured kernel using grouped_matmul_block_scaled
     comptime new_matmul_config = StructuredBlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -338,7 +331,7 @@ def _test_kernel_impl[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
@@ -349,11 +342,11 @@ def _test_kernel_impl[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_device,
         row_major(Int64(num_experts)),
-    ).as_unsafe_any_origin()
+    )
 
     grouped_matmul_block_scaled[
         transpose_b=transpose_b,

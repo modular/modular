@@ -73,10 +73,12 @@ def _frag_row_sum(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     return SIMD[.float32, 2](r0, r1)
 
 
-def _frag_reduce_kernel(
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
-    out_max: MutPointer[Float32, MutAnyOrigin],
-    out_sum: MutPointer[Float32, MutAnyOrigin],
+def _frag_reduce_kernel[
+    d_origin: ImmOrigin, max_origin: MutOrigin, sum_origin: MutOrigin
+](
+    d_ptr: ImmPointer[Float32, d_origin],
+    out_max: MutPointer[Float32, max_origin],
+    out_sum: MutPointer[Float32, sum_origin],
 ):
     """One simdgroup loads a 16x16 fp32 tile into the MMA fragment layout, row-
     reduces, and writes the 16 per-row max/sum results."""
@@ -120,8 +122,14 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
     var sum_dev = ctx.enqueue_create_buffer[.float32](MMA_DIM)
     ctx.enqueue_copy(d_dev, d_host)
 
-    ctx.enqueue_function[_frag_reduce_kernel](
-        d_dev.unsafe_ptr(),
+    ctx.enqueue_function[
+        _frag_reduce_kernel[
+            ImmOrigin(origin_of(d_dev)),
+            origin_of(max_dev),
+            origin_of(sum_dev),
+        ]
+    ](
+        d_dev.unsafe_ptr().as_imm(),
         max_dev.unsafe_ptr(),
         sum_dev.unsafe_ptr(),
         grid_dim=1,

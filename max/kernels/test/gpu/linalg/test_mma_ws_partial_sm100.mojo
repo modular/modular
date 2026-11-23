@@ -238,7 +238,7 @@ def ss_qk_partial_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
-    c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutAnyOrigin],
+    c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutUntrackedOrigin],
     valid_k_mmas: UInt32,
 ):
     """SS (.ws) MMA: C [32,64] = A [32,576] x B [64,576]^T (FP8 e4m3).
@@ -452,7 +452,7 @@ def ss_qk_multistage_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
-    c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutAnyOrigin],
+    c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutUntrackedOrigin],
     valid_k_mmas: UInt32,
 ):
     """Two partial calls into the SAME accumulator, no barrier between.
@@ -675,18 +675,8 @@ def _ss_naive_ref[
     # A and B keep their physical row stride QK_K; only the K extent passed to
     # the kernel (k_valid) changes, so the naive reference reads cols
     # [0, k_valid) of each row.
-    var a_tt = TileTensor(
-        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
-        ),
-        row_major(M, QK_K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
-        ),
-        row_major(QK_N, QK_K),
-    )
+    var a_tt = TileTensor(a_ref_dev, row_major(M, QK_K)).as_imm()
+    var b_tt = TileTensor(b_ref_dev, row_major(QK_N, QK_K)).as_imm()
 
     comptime gemm_naive = matmul_kernel_naive[
         ACC_TYPE,
@@ -1262,7 +1252,7 @@ def ss_nonws_partial_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
-    c_output: TileTensor[ACC_TYPE, type_of(NW_C_LAYOUT), MutAnyOrigin],
+    c_output: TileTensor[ACC_TYPE, type_of(NW_C_LAYOUT), MutUntrackedOrigin],
     valid_k_mmas: UInt32,
 ):
     """Non-ws SS MMA: C [128,64] = A [128,576] x B [64,576]^T (FP8 e4m3).
@@ -1845,7 +1835,9 @@ def ts_partial_kernel[
 ](
     q_tma_op: TMATensorTile[TS_OP_TYPE, q_tile_shape, q_desc_shape],
     k_tma_op: TMATensorTile[TS_OP_TYPE, k_tile_shape, k_desc_shape],
-    p_output: TileTensor[TS_ACCUM_TYPE, type_of(TS_P_LAYOUT), MutAnyOrigin],
+    p_output: TileTensor[
+        TS_ACCUM_TYPE, type_of(TS_P_LAYOUT), MutUntrackedOrigin
+    ],
     valid_k_mmas: UInt32,
 ):
     """TS (.ws) MMA: P = Q x K^T via dual-GEMM fold; raw output [64,128].

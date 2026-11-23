@@ -496,9 +496,9 @@ def test_after_multiwave_dense[
 def _offsets_after_wait[
     invariant_offsets: Bool
 ](
-    offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    offsets: ImmPointer[UInt32, ImmUntrackedOrigin],
     num_active_experts: Int,
-    first_m: MutPointer[UInt32, MutAnyOrigin],
+    first_m: MutPointer[UInt32, MutUntrackedOrigin],
 ):
     """Runs the grouped GEMM's scheduler on predecessor-written offsets."""
     wait_on_dependent_grids()

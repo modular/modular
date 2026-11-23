@@ -76,8 +76,8 @@ comptime POISON = Scalar[dtype](-7)
 
 
 def slow_producer(
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length: Int64,
     spins: Int32,
 ):
@@ -98,7 +98,7 @@ def slow_producer(
 
 
 def tmem_hog(
-    ends: MutPointer[UInt64, MutAnyOrigin],
+    ends: MutPointer[UInt64, MutUntrackedOrigin],
     hold_ns: UInt64,
 ):
     """Releases its dependents on entry, then holds all of TMEM for `hold_ns`.
@@ -123,7 +123,7 @@ def tmem_hog(
 
 
 def launch_stamp(
-    stamp: MutPointer[UInt64, MutAnyOrigin],
+    stamp: MutPointer[UInt64, MutUntrackedOrigin],
 ):
     """Releases its dependents on entry and records when it became resident."""
     launch_dependent_grids()
@@ -133,8 +133,8 @@ def launch_stamp(
 
 
 def consumer(
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length: Int64,
 ):
     """Waits for its predecessor, then copies `src` to `dst`."""

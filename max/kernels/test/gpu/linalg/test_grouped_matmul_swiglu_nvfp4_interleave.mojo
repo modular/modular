@@ -161,10 +161,6 @@ def _test_swiglu_interleave[
         row_major(Idx[num_active_experts]),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
-    var expert_scales_tensor = TileTensor(
-        expert_scales_device,
-        row_major(Idx[num_experts]),
-    )
     var input_scales_device = ctx.enqueue_create_buffer[.float32](
         num_active_experts
     )
@@ -410,7 +406,7 @@ def _test_swiglu_interleave[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
@@ -421,7 +417,7 @@ def _test_swiglu_interleave[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_perm_tt = TileTensor(
         b_scales_perm_device,
         row_major(
@@ -432,11 +428,11 @@ def _test_swiglu_interleave[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_device,
         row_major(Int64(num_experts)),
-    ).as_unsafe_any_origin()
+    )
 
     # ---- Path REF: matmul on W ----
     grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b](

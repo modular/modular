@@ -269,12 +269,10 @@ def _test_w4a8_grouped[
     ctx.enqueue_memset(c_dev, Scalar[c_type](0))
 
     grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True](
-        TileTensor(c_dev, row_major(M, Idx[N])).as_unsafe_any_origin(),
-        TileTensor(a_dev, row_major(M, Idx[K])).as_unsafe_any_origin(),
-        TileTensor(
-            b_dev, row_major(Idx[num_experts], Idx[N], Idx[K_PACKED])
-        ).as_unsafe_any_origin(),
-        TileTensor(a_scales_dev, a_scales_shape).as_unsafe_any_origin(),
+        TileTensor(c_dev, row_major(M, Idx[N])),
+        TileTensor(a_dev, row_major(M, Idx[K])),
+        TileTensor(b_dev, row_major(Idx[num_experts], Idx[N], Idx[K_PACKED])),
+        TileTensor(a_scales_dev, a_scales_shape),
         TileTensor(
             b_scales_dev,
             row_major(
@@ -285,19 +283,11 @@ def _test_w4a8_grouped[
                 Idx[SF_ATOM_M[1]],
                 Idx[SF_ATOM_K],
             ),
-        ).as_unsafe_any_origin(),
-        TileTensor(
-            a_offsets_dev, row_major(num_active_experts + 1)
-        ).as_unsafe_any_origin(),
-        TileTensor(
-            a_scale_offsets_dev, row_major(num_active_experts)
-        ).as_unsafe_any_origin(),
-        TileTensor(
-            expert_ids_dev, row_major(num_active_experts)
-        ).as_unsafe_any_origin(),
-        TileTensor(
-            expert_scales_dev, row_major(Idx[num_experts])
-        ).as_unsafe_any_origin(),
+        ),
+        TileTensor(a_offsets_dev, row_major(num_active_experts + 1)),
+        TileTensor(a_scale_offsets_dev, row_major(num_active_experts)),
+        TileTensor(expert_ids_dev, row_major(num_active_experts)),
+        TileTensor(expert_scales_dev, row_major(Idx[num_experts])),
         num_active_experts,
         M,
         ctx,
@@ -371,14 +361,12 @@ def _test_w4a8_grouped[
             num_pipeline_stages=-1,
             k_group_size=1,
         ](
-            TileTensor(
-                c_pinned_dev, row_major(M, Idx[N])
-            ).as_unsafe_any_origin(),
-            TileTensor(a_dev, row_major(M, Idx[K])).as_unsafe_any_origin(),
+            TileTensor(c_pinned_dev, row_major(M, Idx[N])),
+            TileTensor(a_dev, row_major(M, Idx[K])),
             TileTensor(
                 b_dev, row_major(Idx[num_experts], Idx[N], Idx[K_PACKED])
-            ).as_unsafe_any_origin(),
-            TileTensor(a_scales_dev, a_scales_shape).as_unsafe_any_origin(),
+            ),
+            TileTensor(a_scales_dev, a_scales_shape),
             TileTensor(
                 b_scales_dev,
                 row_major(
@@ -389,19 +377,11 @@ def _test_w4a8_grouped[
                     Idx[SF_ATOM_M[1]],
                     Idx[SF_ATOM_K],
                 ),
-            ).as_unsafe_any_origin(),
-            TileTensor(
-                a_offsets_dev, row_major(num_active_experts + 1)
-            ).as_unsafe_any_origin(),
-            TileTensor(
-                a_scale_offsets_dev, row_major(num_active_experts)
-            ).as_unsafe_any_origin(),
-            TileTensor(
-                expert_ids_dev, row_major(num_active_experts)
-            ).as_unsafe_any_origin(),
-            TileTensor(
-                expert_scales_dev, row_major(Idx[num_experts])
-            ).as_unsafe_any_origin(),
+            ),
+            TileTensor(a_offsets_dev, row_major(num_active_experts + 1)),
+            TileTensor(a_scale_offsets_dev, row_major(num_active_experts)),
+            TileTensor(expert_ids_dev, row_major(num_active_experts)),
+            TileTensor(expert_scales_dev, row_major(Idx[num_experts])),
             num_active_experts,
             M,
             ctx,

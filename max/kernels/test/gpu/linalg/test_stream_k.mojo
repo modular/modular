@@ -65,13 +65,13 @@ def mac_loop[
     a_type: DType,
     b_type: DType,
 ](
-    C: MutPointer[Scalar[c_type], MutAnyOrigin],
-    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
-    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], _],
+    A: ImmPointer[Scalar[a_type], _],
+    B: ImmPointer[Scalar[b_type], _],
     M: Int,
     N: Int,
     K: Int,
-    locks: MutPointer[Int32, MutAnyOrigin],
+    locks: MutPointer[Int32, _],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -147,14 +147,18 @@ def first_wave_kernel[
     BLOCK_N: Int,
     BLOCK_K: Int,
     GROUP_M: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    locks_origin: MutOrigin,
 ](
-    C: MutPointer[Scalar[c_type], MutAnyOrigin],
-    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
-    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], c_origin],
+    A: ImmPointer[Scalar[a_type], a_origin],
+    B: ImmPointer[Scalar[b_type], b_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
-    locks: MutPointer[Int32, MutAnyOrigin],
+    locks: MutPointer[Int32, locks_origin],
     stride_am_dev: Int32,
     stride_ak_dev: Int32,
     stride_bk_dev: Int32,
@@ -231,14 +235,18 @@ def full_tiles_kernel[
     BLOCK_N: Int,
     BLOCK_K: Int,
     GROUP_M: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    locks_origin: ImmOrigin,
 ](
-    C: MutPointer[Scalar[c_type], MutAnyOrigin],
-    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
-    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], c_origin],
+    A: ImmPointer[Scalar[a_type], a_origin],
+    B: ImmPointer[Scalar[b_type], b_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
-    locks: ImmPointer[Int32, ImmutAnyOrigin],
+    locks: ImmPointer[Int32, locks_origin],
     stride_am_dev: Int32,
     stride_ak_dev: Int32,
     stride_bk_dev: Int32,
@@ -397,6 +405,10 @@ def matmul_stream_k[
             BLK_N,
             BLK_K,
             GROUP_M,
+            origin_of(c_buffer),
+            ImmOrigin(origin_of(a_buffer)),
+            ImmOrigin(origin_of(b_buffer)),
+            origin_of(locks_data),
         ]
 
         ctx.enqueue_function[first_wave](
@@ -430,6 +442,10 @@ def matmul_stream_k[
             BLK_N,
             BLK_K,
             GROUP_M,
+            origin_of(c_buffer),
+            ImmOrigin(origin_of(a_buffer)),
+            ImmOrigin(origin_of(b_buffer)),
+            ImmOrigin(origin_of(locks_data)),
         ]
         ctx.enqueue_function[full_tiles](
             c_buffer,
@@ -511,7 +527,7 @@ def run_matmul_stream_k[
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # a/b are constructed as immutable to match the immutable
     # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
 

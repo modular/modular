@@ -284,14 +284,14 @@ def test_grouped_matmul_rowwise_scaled_fp8[
 
 
 def late_producer(
-    a_dst: MutPointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    a_src: MutPointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    s_dst: MutPointer[Scalar[DType.float32], MutAnyOrigin],
-    s_src: MutPointer[Scalar[DType.float32], MutAnyOrigin],
-    o_dst: MutPointer[Scalar[DType.uint32], MutAnyOrigin],
-    o_src: MutPointer[Scalar[DType.uint32], MutAnyOrigin],
-    e_dst: MutPointer[Scalar[DType.int32], MutAnyOrigin],
-    e_src: MutPointer[Scalar[DType.int32], MutAnyOrigin],
+    a_dst: MutPointer[Scalar[DType.float8_e4m3fn], MutUntrackedOrigin],
+    a_src: MutPointer[Scalar[DType.float8_e4m3fn], MutUntrackedOrigin],
+    s_dst: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    s_src: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    o_dst: MutPointer[Scalar[DType.uint32], MutUntrackedOrigin],
+    o_src: MutPointer[Scalar[DType.uint32], MutUntrackedOrigin],
+    e_dst: MutPointer[Scalar[DType.int32], MutUntrackedOrigin],
+    e_src: MutPointer[Scalar[DType.int32], MutUntrackedOrigin],
     a_len: Int32,
     s_len: Int32,
     groups: Int32,
@@ -320,8 +320,8 @@ def late_producer(
 
 
 def copy_consumer(
-    src: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    dst: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    src: MutPointer[Scalar[DType.bfloat16], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[DType.bfloat16], MutUntrackedOrigin],
     length: Int32,
 ):
     """Waits for the matmul grid, then copies its output."""

@@ -43,8 +43,8 @@ comptime bf16 = DType.bfloat16
 
 
 def late_producer(
-    src: MutPointer[Scalar[bf16], MutAnyOrigin],
-    dst: MutPointer[Scalar[bf16], MutAnyOrigin],
+    src: MutPointer[Scalar[bf16], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[bf16], MutUntrackedOrigin],
     length: Int32,
     delay_us: Int32,
 ):

@@ -318,7 +318,7 @@ def _test_dispatch[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
@@ -329,11 +329,11 @@ def _test_dispatch[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_device,
         row_major(Int64(num_experts)),
-    ).as_unsafe_any_origin()
+    )
 
     # --- Call dispatch function (MOGG argument order) ---
     grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b, pdl_level=pdl_level](
@@ -443,11 +443,7 @@ def _test_dispatch[
         var row_scales_device = ctx.enqueue_create_buffer[.bfloat16](M)
         var c_rs_host = ctx.enqueue_create_host_buffer[c_type](c_size)
         var c_expected = ctx.enqueue_create_host_buffer[c_type](c_size)
-        var row_scales = RealRowScales(
-            rebind[Pointer[BFloat16, ImmutAnyOrigin]](
-                row_scales_device.unsafe_ptr()
-            )
-        )
+        var row_scales = RealRowScales(row_scales_device.unsafe_ptr().as_imm())
         comptime for pass_idx in range(2):
             comptime pow2 = pass_idx == 0
             for m in range(M):

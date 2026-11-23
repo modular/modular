@@ -64,11 +64,11 @@ comptime DET_RUNS = 8
 
 
 def block_scaled_matmul_fp8_ref(
-    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmUntrackedOrigin],
+    b_ptr: ImmPointer[UInt8, ImmUntrackedOrigin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmUntrackedOrigin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmUntrackedOrigin],
+    c_ptr: MutPointer[Float32, MutUntrackedOrigin],
     M_arg: Int32,
     N_arg: Int32,
     K_arg: Int32,
@@ -153,16 +153,17 @@ def _preb_fp8_grid_kernel[
     SFBEngine: TensorEngine,
     N: Int,
     K_BYTES: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_pre_origin: ImmOrigin,
+    sfa_origin: ImmOrigin,
+    sfb_origin: ImmOrigin,
 ](
-    c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine],
-    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin, Engine=AEngine],
-    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin, Engine=BPreEngine],
-    sfa: TileTensor[
-        .float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin, Engine=SFAEngine
-    ],
-    sfb: TileTensor[
-        .float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin, Engine=SFBEngine
-    ],
+    c: TileTensor[out_dtype, LayoutC, c_origin, Engine=CEngine],
+    a: TileTensor[.uint8, LayoutA, a_origin, Engine=AEngine],
+    b_pre: TileTensor[.uint8, LayoutBPre, b_pre_origin, Engine=BPreEngine],
+    sfa: TileTensor[.float8_e8m0fnu, LayoutSFA, sfa_origin, Engine=SFAEngine],
+    sfb: TileTensor[.float8_e8m0fnu, LayoutSFB, sfb_origin, Engine=SFBEngine],
 ):
     BlockScaledMatmulAMD_PreB[
         BM=BM,
@@ -371,6 +372,11 @@ def _test_case[
         type_of(sfb_tt).Engine,
         N_static,
         K_BYTES,
+        c_origin=c_tt.origin,
+        a_origin=a_tt.origin,
+        b_pre_origin=b_pre_tt.origin,
+        sfa_origin=sfa_tt.origin,
+        sfb_origin=sfb_tt.origin,
     ]
     ctx.enqueue_function[kernel](
         c_tt,

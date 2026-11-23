@@ -102,7 +102,7 @@ def tma_umma_kernel_ss[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutUntrackedOrigin],
     num_iters_dev: Int32,
 ):
     var num_iters = Int(num_iters_dev)
@@ -193,7 +193,6 @@ def tma_umma_kernel_ss[
 
     var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
-    var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
@@ -368,9 +367,9 @@ def tma_umma_kernel_ts_fp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
 ](
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    a: TileTensor[a_type, a_layout, ImmUntrackedOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutUntrackedOrigin],
     num_iters_dev: Int32,
 ):
     var num_iters = Int(num_iters_dev)

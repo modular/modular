@@ -108,6 +108,7 @@ def blockscaled_pair_cta_mxfp8[
     b_scales_tile_shape: Coord,
     b_scales_desc_shape: Coord,
     c_layout: TensorLayout,
+    c_origin: MutOrigin,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
@@ -128,7 +129,7 @@ def blockscaled_pair_cta_mxfp8[
         b_scales_tile_shape,
         b_scales_desc_shape,
     ],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, c_origin],
     num_iters_dev: Int32,
 ):
     comptime assert c.flat_rank == 2
@@ -713,6 +714,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
         type_of(b_scales_tma_op).tile_shape,
         type_of(b_scales_tma_op).desc_shape,
         c_layout,
+        c.origin,
         block_tile_shape,
         mma_shape,
         transpose_b=transpose_b,

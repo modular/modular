@@ -44,12 +44,18 @@ from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
 # ===----------------------------------------------------------------------=== #
 
 
-def block_scaled_matmul_ref(
-    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
+def block_scaled_matmul_ref[
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    a_scales_origin: ImmOrigin,
+    b_scales_origin: ImmOrigin,
+    c_origin: MutOrigin,
+](
+    a_ptr: ImmPointer[UInt8, a_origin],
+    b_ptr: ImmPointer[UInt8, b_origin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, a_scales_origin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, b_scales_origin],
+    c_ptr: MutPointer[Float32, c_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -253,7 +259,15 @@ def test_mxfp4_matmul[
 
     # --- Reference ---
     comptime BLOCK_DIM = 32
-    ctx.enqueue_function[block_scaled_matmul_ref](
+    ctx.enqueue_function[
+        block_scaled_matmul_ref[
+            ImmOrigin(origin_of(a_dev)),
+            ImmOrigin(origin_of(b_dev)),
+            ImmOrigin(origin_of(a_scales_dev)),
+            ImmOrigin(origin_of(b_scales_dev)),
+            origin_of(c_ref_dev),
+        ]
+    ](
         a_dev,
         b_dev,
         a_scales_dev,
@@ -391,7 +405,15 @@ def test_mxfp4_dispatch_plain_wide_n[
     )
 
     comptime BLOCK_DIM = 32
-    ctx.enqueue_function[block_scaled_matmul_ref](
+    ctx.enqueue_function[
+        block_scaled_matmul_ref[
+            ImmOrigin(origin_of(a_dev)),
+            ImmOrigin(origin_of(b_dev)),
+            ImmOrigin(origin_of(sfa_dev)),
+            ImmOrigin(origin_of(sfb_dev)),
+            origin_of(c_ref_dev),
+        ]
+    ](
         a_dev,
         b_dev,
         sfa_dev,
@@ -550,7 +572,15 @@ def test_mxfp4_matmul_split_k[
 
     # --- Reference ---
     comptime BLOCK_DIM = 32
-    ctx.enqueue_function[block_scaled_matmul_ref](
+    ctx.enqueue_function[
+        block_scaled_matmul_ref[
+            ImmOrigin(origin_of(a_dev)),
+            ImmOrigin(origin_of(b_dev)),
+            ImmOrigin(origin_of(a_scales_dev)),
+            ImmOrigin(origin_of(b_scales_dev)),
+            origin_of(c_ref_dev),
+        ]
+    ](
         a_dev,
         b_dev,
         a_scales_dev,

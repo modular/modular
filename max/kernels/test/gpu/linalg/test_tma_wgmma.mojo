@@ -111,10 +111,11 @@ def tma_wgmma_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
+    c_origin: MutOrigin,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, CLayout, MutAnyOrigin],
+    c: TileTensor[c_type, CLayout, c_origin],
     num_iters_dev: Int32,
 ):
     comptime BM = block_tile_shape[0]
@@ -178,7 +179,7 @@ def _tma_wgmma_body[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, CLayout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, CLayout, _],
     num_iters_dev: Int32,
 ):
     comptime assert c.rank == c.flat_rank == 2
@@ -385,6 +386,7 @@ def test_tma_wgmma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
+    var c_tt = c.device_tensor()
     comptime kernel = tma_wgmma_kernel[
         type_of(row_major[M, N]()),
         a_type,
@@ -400,12 +402,13 @@ def test_tma_wgmma[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         a_smem=a_smem,
+        c_origin=c_tt.origin,
     ]
 
     ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
-        c.device_tensor().as_unsafe_any_origin(),
+        c_tt,
         Int32(K // BK),
         grid_dim=(N // BN, M // BM),
         block_dim=(128),

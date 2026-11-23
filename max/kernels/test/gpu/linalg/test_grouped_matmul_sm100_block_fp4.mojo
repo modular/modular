@@ -141,10 +141,6 @@ def _test_kernel_impl_base[
         row_major(num_active_experts),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
-    var expert_scales_tensor = TileTensor(
-        expert_scales_device,
-        row_major(Idx[num_experts]),
-    )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
@@ -231,7 +227,6 @@ def _test_kernel_impl_base[
         rand(b_host.as_span(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     for i in range(a_scales_host.num_elements()):
         a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
@@ -335,8 +330,6 @@ def _test_kernel_impl_base[
     ctx.enqueue_copy(c_device, c_host_ptr)
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    # expert_scales_tensor already created above
-
     # New structured kernel using grouped_matmul_block_scaled
     comptime new_matmul_config = StructuredBlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -368,7 +361,7 @@ def _test_kernel_impl_base[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
@@ -379,11 +372,11 @@ def _test_kernel_impl_base[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_device,
         row_major(Int64(num_experts)),
-    ).as_unsafe_any_origin()
+    )
 
     grouped_matmul_block_scaled[
         transpose_b=transpose_b,
@@ -452,9 +445,7 @@ def _test_kernel_impl_base[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            (
-                a_scales_tensor.ptr_at_offset(Coord(a_scales_start, 0, 0, 0, 0))
-            ).as_unsafe_any_origin(),
+            a_scales_tensor.ptr_at_offset(Coord(a_scales_start, 0, 0, 0, 0)),
             row_major(
                 ceildiv(end - start, SF_MN_GROUP_SIZE),
                 Idx[ref_k_groups],

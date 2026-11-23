@@ -64,6 +64,7 @@ def kernel_3[
     a_tile_shape: Coord,
     b_tile_shape: Coord,
     c_layout: TensorLayout,
+    c_origin: MutOrigin,
     a_desc_shape: Coord,
     b_desc_shape: Coord,
     block_tile_shape: Coord[Int, Int, Int],
@@ -76,7 +77,7 @@ def kernel_3[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, c_origin],
     num_iters_dev: Int32,
 ):
     var num_iters = Int(num_iters_dev)
@@ -366,6 +367,7 @@ def kernel_2[
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c).LayoutType,
+        c.origin,
         type_of(a_tma_op).desc_shape,
         type_of(b_tma_op).desc_shape,
         block_tile_shape,

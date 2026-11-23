@@ -100,11 +100,9 @@ def check_reference_against_grouped_kernel[
     ctx.enqueue_memset(c_dev, nan[C_DTYPE]())
 
     grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True](
-        TileTensor(c_dev, row_major(Coord(M, Idx[N]))).as_unsafe_any_origin(),
-        TileTensor(a_dev, row_major(Coord(M, Idx[K]))).as_unsafe_any_origin(),
-        TileTensor(
-            b_dev, row_major(Coord(Idx[1], Idx[N], Idx[K // 2]))
-        ).as_unsafe_any_origin(),
+        TileTensor(c_dev, row_major(Coord(M, Idx[N]))),
+        TileTensor(a_dev, row_major(Coord(M, Idx[K]))),
+        TileTensor(b_dev, row_major(Coord(Idx[1], Idx[N], Idx[K // 2]))),
         TileTensor(
             sfa_dev,
             row_major(
@@ -116,7 +114,7 @@ def check_reference_against_grouped_kernel[
                     Idx[SF_ATOM_K],
                 )
             ),
-        ).as_unsafe_any_origin(),
+        ),
         TileTensor(
             sfb_dev,
             row_major(
@@ -129,15 +127,11 @@ def check_reference_against_grouped_kernel[
                     Idx[SF_ATOM_K],
                 )
             ),
-        ).as_unsafe_any_origin(),
-        TileTensor(
-            offsets_dev, row_major(Coord(Int(2)))
-        ).as_unsafe_any_origin(),
-        TileTensor(
-            sf_offsets_dev, row_major(Coord(Int(1)))
-        ).as_unsafe_any_origin(),
-        TileTensor(ids_dev, row_major(Coord(Int(1)))).as_unsafe_any_origin(),
-        TileTensor(escale_dev, row_major(Coord(Idx[1]))).as_unsafe_any_origin(),
+        ),
+        TileTensor(offsets_dev, row_major(Coord(Int(2)))),
+        TileTensor(sf_offsets_dev, row_major(Coord(Int(1)))),
+        TileTensor(ids_dev, row_major(Coord(Int(1)))),
+        TileTensor(escale_dev, row_major(Coord(Idx[1]))),
         1,
         M,
         ctx,

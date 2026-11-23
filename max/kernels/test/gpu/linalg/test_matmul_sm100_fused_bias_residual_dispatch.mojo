@@ -63,24 +63,22 @@ from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
 )
 from linalg.matmul.vendor.matmul import matmul as matmul_vendor
 
-comptime EpilogueTile = TileTensor[
-    _, RowMajorLayout[Int64, Int64], ImmutAnyOrigin
-]
+comptime EpilogueTile = TileTensor[_, RowMajorLayout[Int64, Int64], _]
 
 
 @inline(.always)
 def _make_epilogue[
     c_type: DType, //
-](resid_dev_buf: DeviceBuffer[c_type], epi_m: Int, epi_n: Int) -> EpilogueTile[
-    c_type
-]:
+](
+    ref resid_dev_buf: DeviceBuffer[c_type], epi_m: Int, epi_n: Int
+) -> EpilogueTile[c_type, ImmOrigin(origin_of(resid_dev_buf))]:
     """Wrap the residual/bias buffer as the dispatcher's immutable epilogue tile.
 
     Mirrors `FusedMatmulAdd.execute`: a 2D residual has `epi_m=M, epi_n=N`; a 1D
     bias has `epi_m=1, epi_n=N`. The layout uses `Int64` extents to match
     `RowMajorLayout[Int64, Int64]`.
     """
-    return rebind[EpilogueTile[c_type]](
+    return rebind[EpilogueTile[c_type, ImmOrigin(origin_of(resid_dev_buf))]](
         TileTensor(
             resid_dev_buf.unsafe_ptr(),
             row_major(Int64(epi_m), Int64(epi_n)),
@@ -92,9 +90,9 @@ def _make_epilogue[
 def _add_residual_and_assert[
     c_type: DType, //
 ](
-    c_host_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
-    c_ref_host_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
-    resid_host_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    c_host_ptr: MutPointer[Scalar[c_type], _],
+    c_ref_host_ptr: MutPointer[Scalar[c_type], _],
+    resid_host_ptr: MutPointer[Scalar[c_type], _],
     M: Int,
     N: Int,
     epilogue_is_1d: Bool,
@@ -272,9 +270,9 @@ def run_case[
     ctx.synchronize()
 
     _add_residual_and_assert(
-        c_host_ptr.unsafe_origin_cast[MutAnyOrigin](),
-        c_ref_host_ptr.unsafe_origin_cast[MutAnyOrigin](),
-        resid_host_ptr.unsafe_origin_cast[MutAnyOrigin](),
+        c_host_ptr,
+        c_ref_host_ptr,
+        resid_host_ptr,
         M,
         N,
         epilogue_is_1d,
@@ -306,8 +304,8 @@ def _pdl_val(idx: Int, salt: Int, seed: Int) -> Float32:
 def _pdl_producer_kernel[
     dtype: DType
 ](
-    a: MutPointer[Scalar[dtype], MutAnyOrigin],
-    resid: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    resid: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     a_len: Int32,
     resid_len: Int32,
     seed: Int32,

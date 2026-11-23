@@ -59,12 +59,15 @@ def gemv_tma_kernel[
     BLOCK_SIZE_K: Int,
     ROWS_PER_WARP: Int,
     NUM_PIPELINE_STAGES: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
 ](
     descriptor_a: TMADescriptor,
     descriptor_b: TMADescriptor,
-    c: TileTensor[dtype, c_layout, MutAnyOrigin],
-    a: TileTensor[dtype, a_layout, MutAnyOrigin],
-    b: TileTensor[dtype, b_layout, MutAnyOrigin],
+    c: TileTensor[dtype, c_layout, c_origin],
+    a: TileTensor[dtype, a_layout, a_origin],
+    b: TileTensor[dtype, b_layout, b_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -75,7 +78,6 @@ def gemv_tma_kernel[
 
     # `Int` is not device-passable; widen the fixed-width args.
     var M = Int(M_dev)
-    var N = Int(N_dev)
     var K = Int(K_dev)
     var bidx = block_idx.x
     var block_row = bidx * BLOCK_SIZE_M
@@ -202,7 +204,6 @@ def gemv_tma_kernel[
 def gemv_tma[
     dtype: DType,
 ](
-    c_device: DeviceBuffer[dtype],
     c: TileTensor[mut=True, dtype, ...],
     a_device: DeviceBuffer[dtype],
     a: TileTensor[dtype, ...],
@@ -255,14 +256,17 @@ def gemv_tma[
         BLOCK_SIZE_K,
         ROWS_PER_WARP,
         NUM_PIPELINE_STAGES,
+        c_origin=c.origin,
+        a_origin=ImmOrigin(a.origin),
+        b_origin=ImmOrigin(b.origin),
     ]
 
     ctx.enqueue_function[kernel](
         tma_desc_a,
         tma_desc_b,
         c,
-        a,
-        b,
+        a.as_imm(),
+        b.as_imm(),
         Int32(M),
         Int32(N),
         Int32(K),
@@ -310,9 +314,9 @@ def test_gemv_tma[
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_tt = TileTensor(a_device, row_major(a_shape)).as_unsafe_any_origin()
-    var b_tt = TileTensor(b_device, row_major(b_shape)).as_unsafe_any_origin()
-    var c_tt = TileTensor(c_device, row_major(c_shape)).as_unsafe_any_origin()
+    var a_tt = TileTensor(a_device, row_major(a_shape)).as_imm()
+    var b_tt = TileTensor(b_device, row_major(b_shape)).as_imm()
+    var c_tt = TileTensor(c_device, row_major(c_shape))
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -321,7 +325,6 @@ def test_gemv_tma[
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
     gemv_tma(
-        c_device,
         c_tt,
         a_device,
         a_tt,
@@ -340,10 +343,8 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @inline(.always)
-        @__allow_legacy_any_origin_fields
         def run_func(ctx: DeviceContext[]) raises {imm}:
             gemv_tma(
-                c_device,
                 c_tt,
                 a_device,
                 a_tt,

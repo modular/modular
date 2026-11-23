@@ -53,7 +53,7 @@ comptime dtype = DType.bfloat16
 
 
 def slow_producer(
-    act: MutPointer[Scalar[dtype], MutAnyOrigin],
+    act: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length_dev: Int32,
     delay_dev: Int32,
 ):
@@ -72,8 +72,8 @@ def slow_producer(
 
 
 def consumer(
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length_dev: Int32,
 ):
     """Waits for the matmul grid, then copies its output."""

@@ -59,7 +59,7 @@ from std.utils.index import Index
 def swiglu_bias_reference(
     full_ptr: ImmPointer[Float32, _],
     bias_ptr: ImmPointer[BFloat16, _],
-    ref_ptr: MutPointer[BFloat16, MutAnyOrigin],
+    ref_ptr: MutPointer[BFloat16, _],
     M: Int,
     N: Int,
 ):
@@ -170,7 +170,7 @@ def test_swiglu_bias[
     swiglu_bias_reference(
         full_host._storage,
         bias_host._storage,
-        c_ref._storage.as_unsafe_any_origin(),
+        c_ref._storage,
         M,
         N,
     )

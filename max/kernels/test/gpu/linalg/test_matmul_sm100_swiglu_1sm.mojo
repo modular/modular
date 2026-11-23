@@ -61,7 +61,7 @@ from std.utils.index import Index
 
 def swiglu_reference(
     full_ptr: ImmPointer[Float32, _],
-    ref_ptr: MutPointer[BFloat16, MutAnyOrigin],
+    ref_ptr: MutPointer[BFloat16, _],
     M: Int,
     N: Int,
 ):
@@ -151,9 +151,7 @@ def test_swiglu[
     ctx.enqueue_copy(full_host_buf, full_device)
     ctx.synchronize()
 
-    swiglu_reference(
-        full_host._storage, c_ref._storage.as_unsafe_any_origin(), M, N
-    )
+    swiglu_reference(full_host._storage, c_ref._storage, M, N)
 
     var c_tensor = TileTensor(c_device, c_shape)
     matmul_swiglu_dispatch_sm100[config](c_tensor, a_tensor, b_tensor, ctx)

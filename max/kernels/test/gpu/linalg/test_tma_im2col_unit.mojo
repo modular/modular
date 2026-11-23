@@ -51,7 +51,7 @@ def im2col_load_kernel[
     BK: Int,
 ](
     act_tma_op: TMATensorTileIm2col[dtype, tile_shape, desc_shape],
-    output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     k_coord: Int32,
     m_coord: Int32,
 ):

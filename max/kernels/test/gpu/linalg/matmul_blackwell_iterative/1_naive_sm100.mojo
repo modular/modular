@@ -36,19 +36,18 @@ def kernel_1[
     M: Int,
     N: Int,
     K: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
 ](
     c: TileTensor[
-        .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
+        .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], c_origin
     ],
     a: TileTensor[
-        .bfloat16,
-        RowMajorLayout[ComptimeInt[M], ComptimeInt[K]],
-        ImmutAnyOrigin,
+        .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[K]], a_origin
     ],
     b: TileTensor[
-        .bfloat16,
-        RowMajorLayout[ComptimeInt[K], ComptimeInt[N]],
-        ImmutAnyOrigin,
+        .bfloat16, RowMajorLayout[ComptimeInt[K], ComptimeInt[N]], b_origin
     ],
 ):
     var row = global_idx.y
@@ -103,14 +102,16 @@ def test_kernel_1[
     b.to_device()
     b_vendor.to_device()
 
-    comptime kernel = kernel_1[M, N, K]
+    comptime kernel = kernel_1[
+        M, N, K, origin_of(c), ImmOrigin(origin_of(a)), ImmOrigin(origin_of(b))
+    ]
     # Use 2D thread block for memory coalescing
     comptime BLOCKSIZE = 32
 
     ctx.enqueue_function[kernel](
         c.device_tensor(),
-        a.device_tensor(),
-        b.device_tensor(),
+        a.device_tensor().as_imm(),
+        b.device_tensor().as_imm(),
         grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
         block_dim=(BLOCKSIZE, BLOCKSIZE),
     )
@@ -125,8 +126,8 @@ def test_kernel_1[
         def run_kernel(ctx: DeviceContext[]) raises {mut a, mut b, mut c, imm}:
             ctx.enqueue_function[kernel](
                 c.device_tensor(),
-                a.device_tensor(),
-                b.device_tensor(),
+                a.device_tensor().as_imm(),
+                b.device_tensor().as_imm(),
                 grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
                 block_dim=(BLOCKSIZE, BLOCKSIZE),
             )

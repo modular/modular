@@ -123,14 +123,20 @@ def _build_routing(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
 )
 def _mxfp6_matmul_ref[
-    fmt: FP6Format
+    fmt: FP6Format,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    a_sf_origin: ImmOrigin,
+    b_sf_origin: ImmOrigin,
+    c_origin: MutOrigin,
+    mag_origin: MutOrigin,
 ](
-    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    a_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    mag_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, a_origin],
+    b_ptr: ImmPointer[UInt8, b_origin],
+    a_sf_ptr: ImmPointer[Float8_e8m0fnu, a_sf_origin],
+    b_sf_ptr: ImmPointer[Float8_e8m0fnu, b_sf_origin],
+    c_ptr: MutPointer[Float32, c_origin],
+    mag_ptr: MutPointer[Float32, mag_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -208,7 +214,17 @@ def _per_expert_reference[
         if num_tokens <= 0 or expert_id < 0:
             continue
 
-        ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
+        ctx.enqueue_function[
+            _mxfp6_matmul_ref[
+                fmt,
+                ImmOrigin(origin_of(a_dev)),
+                ImmOrigin(origin_of(b_dev)),
+                ImmOrigin(origin_of(a_scales_dev)),
+                ImmOrigin(origin_of(b_scales_dev)),
+                origin_of(c_ref_dev),
+                origin_of(mag_dev),
+            ]
+        ](
             a_dev.unsafe_ptr().unsafe_offset(token_start * K_BYTES),
             b_dev.unsafe_ptr().unsafe_offset(expert_id * N * K_BYTES),
             a_scales_dev.unsafe_ptr().unsafe_offset(token_start * scale_K),

@@ -92,6 +92,7 @@ def block_scaled_mxfp8_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 256,
+    c_origin: MutOrigin,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -105,7 +106,7 @@ def block_scaled_mxfp8_kernel[
         b_scales_tile_shape,
         b_scales_desc_shape,
     ],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, c_origin],
     num_iters_dev: Int32,
 ):
     comptime assert c.flat_rank == 2
@@ -220,7 +221,6 @@ def block_scaled_mxfp8_kernel[
 
     var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
-    var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
 
     var tmem_addr_ptr = mma_mbar.unsafe_offset(1).unsafe_bitcast[UInt32]()
@@ -628,6 +628,7 @@ def sm100_block_scaled_mxfp8[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=block_dim,
+        c_origin=c.origin,
     ]
     ctx.enqueue_function[kernel](
         a_tma_op,

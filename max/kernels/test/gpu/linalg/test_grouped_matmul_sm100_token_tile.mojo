@@ -36,7 +36,7 @@ comptime STORE = 2
 
 
 def fill_kernel(
-    ptr: MutPointer[Scalar[dtype], MutAnyOrigin], n: Int64, stream: UInt32
+    ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int64, stream: UInt32
 ):
     var i = Int(global_idx.x)
     var stride = Int(grid_dim.x * block_dim.x)
@@ -62,7 +62,7 @@ def shift[
 
 def fill(ctx: DeviceContext, buf: DeviceBuffer[dtype], stream: UInt32) raises:
     ctx.enqueue_function[fill_kernel](
-        buf.unsafe_ptr(), Int64(len(buf)), stream, grid_dim=4096, block_dim=256
+        buf, Int64(len(buf)), stream, grid_dim=4096, block_dim=256
     )
 
 
@@ -71,7 +71,7 @@ def run[
 ](
     ctx: DeviceContext,
     c: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    out_ptr: MutPointer[Scalar[dtype], _],
     a: TileTensor[dtype, address_space=.GENERIC, ...],
     b: TileTensor[dtype, address_space=.GENERIC, ...],
     offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
@@ -87,7 +87,6 @@ def run[
         return shift(Int(idx[0]), Int(idx[1]), val)
 
     @inline(.always)
-    @__allow_legacy_any_origin_fields
     def store_fn[
         dt: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dt, width]) {var out_ptr}:
@@ -181,14 +180,15 @@ def check[
     var stats_t = TileTensor(stats, row_major(2))
     var c_t = TileTensor(c, row_major(M, Idx[N]))
     var c_32_t = TileTensor(c_32, row_major(M, Idx[N]))
-    # A store epilogue writes through the pointer; `c` only gives the shape.
+    # Only a store epilogue writes through the pointer, and `c` then gives
+    # only the shape.
     var scratch = ctx.enqueue_create_buffer[dtype](max(M, 1) * N)
     var scratch_t = TileTensor(scratch, row_major(M, Idx[N]))
     if mode == STORE:
         run[N, K, E, mode, False](
             ctx,
             scratch_t,
-            c.unsafe_ptr().as_unsafe_any_origin(),
+            c.unsafe_ptr(),
             a_t,
             b_t,
             offsets_t,
@@ -198,7 +198,7 @@ def check[
         run[N, K, E, mode, True](
             ctx,
             scratch_t,
-            c_32.unsafe_ptr().as_unsafe_any_origin(),
+            c_32.unsafe_ptr(),
             a_t,
             b_t,
             offsets_t,
@@ -209,7 +209,7 @@ def check[
         run[N, K, E, mode, False](
             ctx,
             c_t,
-            c.unsafe_ptr().as_unsafe_any_origin(),
+            scratch.unsafe_ptr(),
             a_t,
             b_t,
             offsets_t,
@@ -219,7 +219,7 @@ def check[
         run[N, K, E, mode, True](
             ctx,
             c_32_t,
-            c_32.unsafe_ptr().as_unsafe_any_origin(),
+            scratch.unsafe_ptr(),
             a_t,
             b_t,
             offsets_t,
