@@ -953,6 +953,34 @@ def test_divmod() raises:
     )
 
 
+def test_divmod_float_zero_divisor() raises:
+    # A float zero divisor gives the IEEE results of `//` and `%` (inf or
+    # nan), not 0. Integer zero divisors still give 0 (see `test_divmod`).
+    var x = black_box(SIMD[DType.float64, 4](1.0, -1.0, 0.0, 7.0))
+    var y = black_box(SIMD[DType.float64, 4](0.0, 0.0, 0.0, 2.0))
+    var q, r = divmod(x, y)
+    assert_true(isinf(q[0]) and q[0] > 0)
+    assert_true(isinf(q[1]) and q[1] < 0)
+    assert_true(isnan(q[2]))
+    assert_equal(q[3], 3.0)
+    assert_true(isnan(r[0]))
+    assert_true(isnan(r[1]))
+    assert_true(isnan(r[2]))
+    assert_equal(r[3], 1.0)
+
+    # Same as `//` and `%`, lane by lane (`nan != nan`, so compare the masks).
+    var fq = x // y
+    assert_equal(isnan(q), isnan(fq))
+    assert_equal(isinf(q), isinf(fq))
+    assert_equal(q.lt(0), fq.lt(0))
+    assert_equal(isnan(r), isnan(x % y))
+
+    # Float32, evaluated at compile time.
+    comptime ct = divmod(Float32(1.0), Float32(0.0))
+    assert_true(isinf(ct[0]) and ct[0] > 0)
+    assert_true(isnan(ct[1]))
+
+
 def test_rmod() raises:
     assert_equal(Int32(3).__rmod__(Int32(Int(4))), 1)
 

@@ -688,6 +688,10 @@ Most code that no longer compiles matches one of these patterns:
   so `Float64(2.0) ** Int64(4294967296)` is now `inf` instead of `1.0`, and
   `Float64(2.0) ** Int32.MIN` is now `0.0` instead of `1.0`.
 
+- Floating-point `divmod(x, 0.0)` now returns `(inf, nan)`, `(-inf, nan)` or
+  `(nan, nan)`, matching `x // 0.0` and `x % 0.0`, instead of `(0.0, 0.0)`.
+  Integer `divmod` with a zero divisor still returns `(0, 0)`.
+
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns. Contributed by [@a-tarasyuk](https://github.com/a-tarasyuk) in
   [#7316](https://github.com/modular/modular/pull/7316).

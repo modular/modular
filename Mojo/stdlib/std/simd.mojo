@@ -1364,7 +1364,9 @@ struct SIMD[dtype: DType, length: SIMDLength](
             The quotient and remainder as a
             `Tuple(self // denominator, self % denominator)`.
         """
-        var is_zero_mask = denominator.eq(0)
+        var is_zero_mask = Self._Mask(
+            fill=Self.dtype.is_integral()
+        ) and denominator.eq(0)
         var safe_denominator = is_zero_mask.select(Self(1), denominator)
 
         comptime if Self.dtype.is_unsigned():
