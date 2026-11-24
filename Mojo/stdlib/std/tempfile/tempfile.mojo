@@ -269,11 +269,10 @@ struct TemporaryDirectory:
     ```
 
     The directory and all its contents are removed on exit, even if an error
-    occurs inside the context. Such an error is discarded as long as cleanup
-    succeeds. Set `ignore_cleanup_errors=True` to suppress cleanup failures;
-    errors raised inside the context are then discarded even when the directory
-    can't be fully removed. Use `try` inside the context when you need to
-    handle or report an error.
+    occurs inside the context. That error is then raised again, as in Python.
+    If cleanup also fails, the error from inside the context is the one
+    raised. Set `ignore_cleanup_errors=True` to also ignore cleanup failures
+    when the context exits normally.
 
     The directory name is built as `prefix` followed by 8 random characters and
     `suffix`. The random characters come from `std.random`, so every run of the
@@ -331,17 +330,20 @@ struct TemporaryDirectory:
     def __exit__(self, err: Error) -> Bool:
         """Called when exiting the context with an error.
 
+        Removes the directory, ignoring cleanup failures so that they do not
+        hide `err`.
+
         Args:
             err: The error raised inside the context.
 
         Returns:
-            True if the temporary directory was removed successfully.
+            False, so that `err` is raised again.
         """
         try:
-            self.__exit__()
-            return True
+            _rmtree(self.name, ignore_errors=True)
         except:
-            return False
+            pass
+        return False
 
 
 struct NamedTemporaryFile(Movable, _FieldNicheable):

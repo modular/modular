@@ -22,7 +22,13 @@ from std.tempfile import (
     mkdtemp,
 )
 
-from std.testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_mkdtemp() raises:
@@ -186,6 +192,18 @@ def test_temporary_directory() raises -> None:
         std.os.mkdir(Path(tmp_dir) / "test_dir")
         _ = open(Path(tmp_dir) / "test_dir" / "test_file2", "w")
         tmp_dir2 = tmp_dir
+    assert_false(exists(tmp_dir2), "Failed to delete temp dir " + tmp_dir2)
+
+
+def test_temporary_directory_raises_error_from_block() raises:
+    # An error raised inside the block must reach the caller once the
+    # directory is removed, not be discarded.
+    var tmp_dir2 = String()
+    with assert_raises(contains="raised inside the block"):
+        with TemporaryDirectory() as tmp_dir:
+            tmp_dir2 = tmp_dir
+            _ = open(Path(tmp_dir) / "test_file", "w")
+            raise Error("raised inside the block")
     assert_false(exists(tmp_dir2), "Failed to delete temp dir " + tmp_dir2)
 
 

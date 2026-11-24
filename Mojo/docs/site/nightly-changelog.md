@@ -724,3 +724,8 @@ Most code that no longer compiles matches one of these patterns:
   `os.path.isdir()` and `isfile()` returned `False` for every path,
   `getsize()` returned `0`, `tempfile` could not find a temporary directory,
   and `listdir()` returned truncated names along with `.` and `..`.
+
+- `TemporaryDirectory` no longer discards an error raised inside its `with`
+  block. It removes the directory and raises the error again, as Python's
+  `tempfile.TemporaryDirectory` does. Previously the error was dropped
+  whenever cleanup succeeded, so a failed assertion inside the block passed.

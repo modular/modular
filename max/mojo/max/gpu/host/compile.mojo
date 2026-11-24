@@ -84,9 +84,8 @@ def _to_sass[
     Raises:
         If the selected `nvdisasm` or `ptxas` does not exist.
     """
-    # Resolve both tools here, outside the `with` below: `TemporaryDirectory`
-    # swallows errors raised inside its block, which would turn a missing
-    # tool into empty SASS.
+    # Resolve both tools first, so a missing tool raises before the temporary
+    # directory is created.
     var nvdisasm_path = _nvdisasm_path()
     _ = _ptxas_path()
     with std.tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
