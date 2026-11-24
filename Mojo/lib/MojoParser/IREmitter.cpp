@@ -1107,16 +1107,20 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
   // Otherwise, we'll need to memcpy or invoke the copy ctor method which will
   // take the destination by reference, so we're dealing with a memory case.
-  bool isNonDefaultAddressSpace = dest.isNonDefaultAddressSpace();
+  bool isDestNonDefaultAddressSpace = dest.isNonDefaultAddressSpace();
+  bool isSourceNonDefaultAddressSpace =
+      value.ir.isMValue() && !value.ir.getMValueType().isDefaultAddrSpace();
 
   // If the value's type is trivially copyable, emit a memcpy. This allows
   // us to handle values residing in the non-default address space.
   // Only use memcpy for non-register passable types, unless we're forced to by
-  // address space constraints.
+  // address space constraints: the copy constructor takes both its source and
+  // its destination in the default address space.
   if (value.ir.isMValue() &&
       valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared,
                                                       declScope) &&
-      (!isRegisterPassable || isNonDefaultAddressSpace)) {
+      (!isRegisterPassable || isDestNonDefaultAddressSpace ||
+       isSourceNonDefaultAddressSpace)) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
@@ -1132,7 +1136,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
   // Memory-only copy ctor will take the destination as address space zero, so
   // we need to reject ExprDest's expecting it in GPU memory.
-  if (isNonDefaultAddressSpace) {
+  if (isDestNonDefaultAddressSpace) {
     emitError(exprLoc, "value of type ")
         << valueType << " cannot be copied into a non-default address space"
         << value.expr->getRange();
