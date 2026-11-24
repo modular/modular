@@ -14,7 +14,11 @@
 
 from std.collections import OptionalReg
 from std.collections.string.string_span import get_static_string
-from std.math.math import _UnaryMathOp, _UnaryMathPluginHookFnType
+from std.math.math import (
+    _tanh_ratio,
+    _UnaryMathOp,
+    _UnaryMathPluginHookFnType,
+)
 from std.sys import llvm_intrinsic
 
 
@@ -43,8 +47,22 @@ def _amdgcn_unary_math_fn[op: _UnaryMathOp, dtype: DType]() -> _MathFn:
                     dtype in (DType.float16, DType.float32),
                 ]
             )
-        case .exp | .log | .sqrt | .sin | .cos | .tanh:
+        case .tanh:
+            return comptime (
+                _lowering[_amdgcn_tanh_f32, dtype == DType.float32]
+            )
+        case .exp | .log | .sqrt | .sin | .cos:
             return None
+
+
+@inline(.always)
+def _amdgcn_tanh_f32(x: SIMD) -> type_of(x):
+    # Multiply by 1/q, which is faster than dividing. This costs at most
+    # 1 ulp, and tanh stays within 4 ulp.
+    var pq = _tanh_ratio(x._refine[.float32]())
+    return (pq[0] * _amdgcn_unary_math["llvm.amdgcn.rcp"](pq[1]))._refine[
+        x.dtype
+    ]()
 
 
 comptime _lowering[

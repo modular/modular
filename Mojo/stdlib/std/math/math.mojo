@@ -1119,6 +1119,17 @@ def _tanh_impl[
         var e = expm1((-2) * x_abs)
         return copysign((-e) / (e + 2), xc64)
 
+    var pq = _tanh_ratio(x)
+    return pq[0] / pq[1]
+
+
+@inline(.always)
+def _tanh_ratio[
+    dtype: DType, width: SIMDLength, //
+](x: SIMD[dtype, width]) -> Tuple[
+    type_of(x), type_of(x)
+] where dtype.is_floating_point():
+    """Returns `(p, q)` with `tanh(x)` approximated by `p / q`."""
     var xc = x.clamp(-9, 9)
     var x_squared = xc * xc
 
@@ -1143,7 +1154,7 @@ def _tanh_impl[
         ],
     ](x_squared)
 
-    return numerator / denominator
+    return (numerator, denominator)
 
 
 # ===----------------------------------------------------------------------=== #
