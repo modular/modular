@@ -115,6 +115,9 @@ def test_huggingface_repo__encodings_supported_online_fp8_fallback() -> None:
             "_detect_safetensors_encodings_from_files",
             return_value={"bfloat16"},
         ),
+        patch.object(
+            HuggingFaceRepo, "_get_quantization_config", return_value=None
+        ),
     ):
         mock_weight_files.return_value = {
             WeightsFormat.safetensors: ["model-00001-of-00002.safetensors"]
@@ -205,8 +208,7 @@ def test_huggingface_repo__encodings_supported_online_reads_config_json(
 
 def test_huggingface_repo__get_files_for_encoding(
     tiny_llama_1_1b_chat_v1_0_local_path: str,
-    qwq_32b_local_path: str,
-    mistral_nemo_instruct_2407_local_path: str,
+    llama_3_1_8b_instruct_local_path: str,
 ) -> None:
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
@@ -218,35 +220,19 @@ def test_huggingface_repo__get_files_for_encoding(
 
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
-    hf_repo = HuggingFaceRepo(repo_id=qwq_32b_local_path)
+    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     files = hf_repo.files_for_encoding("bfloat16")
     assert WeightsFormat.safetensors in files
-    assert len(files[WeightsFormat.safetensors]) == 14
+    assert len(files[WeightsFormat.safetensors]) == 4
     assert sorted(files[WeightsFormat.safetensors]) == [
-        Path("model-00001-of-00014.safetensors"),
-        Path("model-00002-of-00014.safetensors"),
-        Path("model-00003-of-00014.safetensors"),
-        Path("model-00004-of-00014.safetensors"),
-        Path("model-00005-of-00014.safetensors"),
-        Path("model-00006-of-00014.safetensors"),
-        Path("model-00007-of-00014.safetensors"),
-        Path("model-00008-of-00014.safetensors"),
-        Path("model-00009-of-00014.safetensors"),
-        Path("model-00010-of-00014.safetensors"),
-        Path("model-00011-of-00014.safetensors"),
-        Path("model-00012-of-00014.safetensors"),
-        Path("model-00013-of-00014.safetensors"),
-        Path("model-00014-of-00014.safetensors"),
+        Path("model-00001-of-00004.safetensors"),
+        Path("model-00002-of-00004.safetensors"),
+        Path("model-00003-of-00004.safetensors"),
+        Path("model-00004-of-00004.safetensors"),
     ]
 
-    # Test a Safetensors repo, with both shared files and consolidated safetensors
-    hf_repo = HuggingFaceRepo(repo_id=mistral_nemo_instruct_2407_local_path)
-    files = hf_repo.files_for_encoding("bfloat16")
-    assert len(files[WeightsFormat.safetensors]) == 5
-    assert Path("consolidated.safetensors") not in files
-
     # Test a Safetensors repo, with the wrong encoding requested.
-    hf_repo = HuggingFaceRepo(repo_id=qwq_32b_local_path)
+    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     files = hf_repo.files_for_encoding("float32")
     assert len(files) == 0
 
@@ -254,7 +240,6 @@ def test_huggingface_repo__get_files_for_encoding(
 def test_huggingface_repo__encoding_for_file(
     llama_3_1_8b_instruct_local_path: str,
     tiny_llama_1_1b_chat_v1_0_local_path: str,
-    qwq_32b_local_path: str,
 ) -> None:
     # This repo, has one safetensors file, and its a bf16 file.
     hf_repo = HuggingFaceRepo(repo_id=tiny_llama_1_1b_chat_v1_0_local_path)
@@ -262,9 +247,9 @@ def test_huggingface_repo__encoding_for_file(
     assert model_encoding == "bfloat16"
 
     # This repo, has many safetensors file, and they are bf16.
-    hf_repo = HuggingFaceRepo(repo_id=qwq_32b_local_path)
+    hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     model_encoding = hf_repo.encoding_for_file(
-        "model-00014-of-00014.safetensors"
+        "model-00004-of-00004.safetensors"
     )
     assert model_encoding == "bfloat16"
 

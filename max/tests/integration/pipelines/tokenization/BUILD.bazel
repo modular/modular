@@ -224,7 +224,6 @@ modular_py_test(
         "skip-ci-macos",
     ],
     deps = [
-        "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
