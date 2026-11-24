@@ -345,6 +345,24 @@ struct DeviceBuffer[dtype: DType](
             Pointer(to=self._impl)
         )[]
 
+    def _identity(self) -> Int:
+        """Returns a value that is equal for two buffers exactly when
+        `DevicePointer` treats them as the same buffer.
+
+        A legacy buffer is identified by its C++ handle, so a sub-buffer is
+        distinct from its parent even when they start at the same address. A
+        HAL buffer has no handle and is identified by its base device address.
+
+        Returns:
+            The buffer's identity.
+        """
+        comptime __guard not use_legacy_backend() else:
+            if case .Some(handle) = self._legacy_buffer()._handle:
+                return Int(handle)
+            return 0
+
+        return Int(self._impl._device_ptr)
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
@@ -701,11 +719,6 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If this buffer has size 0.
         """
-        comptime __guard not use_legacy_backend() else:
-            return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
-                self._impl.device_ptr()
-            )
-
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         return DevicePointer[Self.dtype, origin_of(self)](self)
 

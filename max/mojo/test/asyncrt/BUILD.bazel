@@ -78,4 +78,7 @@ _EXTRA_CONSTRAINTS = {
 ]
 
 # Exported so tests of other DeviceContext backends can run these suites.
-exports_files(_TEST_DATA + _CPU_TESTS)
+exports_files(_TEST_DATA + _CPU_TESTS + [
+    "test_device_pointer_kernel.mojo",
+    "test_nested_device_pointer_kernel.mojo",
+])

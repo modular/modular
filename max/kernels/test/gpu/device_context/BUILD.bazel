@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 
 exports_files([
     "test_buffer_copy_to_cross_device.mojo",
+    "test_enqueue_function_closure_encode.mojo",
     "test_hip_stream.mojo",
 ])
 

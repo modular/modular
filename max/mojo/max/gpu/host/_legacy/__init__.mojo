@@ -25,7 +25,6 @@ from .device_context import (
     LegacyDeviceEvent,
     LegacyDeviceFunction,
     LegacyDeviceMulticastBuffer,
-    LegacyDevicePointer,
     LegacyDeviceStream,
     LegacyHostBuffer,
 )
