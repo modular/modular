@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/ToolCommon/ElaborationStats.h"
 #include "Support/Compiler/ErrorTree.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -54,6 +55,12 @@ mlir::StringAttr applyLinkageName(mlir::StringAttr resolved,
 ///
 /// Sets `failed = true` on errors (unresolved linkage name, duplicate symbols).
 void renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed);
+
+/// Whether symbol names for `target` are sanitized to identifiers, both when
+/// functions are renamed and in `get_linkage_name`. `isGPU()` covers the
+/// built-in GPU triples. A GPU target from a plugin is not in that list, so
+/// its registered traits decide.
+bool sanitizesSymbolNames(TargetInfoAttr target);
 
 /// Bundle a set of `compile_offload` ops in a deterministic order that does not
 /// depend on the order elaboration discovered them (which varies run to run,

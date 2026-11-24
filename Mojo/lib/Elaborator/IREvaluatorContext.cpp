@@ -137,7 +137,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
 
   ErrorTreeOr<StringAttr> nameOrError = evaluateMangledName(
       getLinkageNameAttr.getFunc(),
-      /*sanitize=*/target.isGPU(), *errorLoc, "get_linkage_name");
+      /*sanitize=*/sanitizesSymbolNames(target), *errorLoc, "get_linkage_name");
 
   if (nameOrError.isError()) {
     emitError(nameOrError.takeError());

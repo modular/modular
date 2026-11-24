@@ -2998,7 +2998,7 @@ LogicalResult Elaborator::run(
   // Update the symbol table with the new one.
   theModule.getBodyRegion().push_back(newBlock);
 
-  renameFunctions(theModule, target.isGPU(), failed);
+  renameFunctions(theModule, sanitizesSymbolNames(target), failed);
 
   // Rewrite each top-level op in parallel. Emit the errors afterward, in module
   // order, so the error limit keeps the same errors at every thread count.
