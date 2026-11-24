@@ -2636,9 +2636,14 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
   ASTType fullResultType = resultType;
   TypeConvention rp = resultType.getRegisterPassability(resultArg.loc, shared);
 
-  bool mightThrows =
-      tcSignature.argList.effects.isThrows() || tcSignature.partial;
+  if (tcSignature.partial && tcSignature.argList.effects == FnEffects()) {
+    // TODO: set to a unresolved effect to match any effect in the contextual
+    // type.
+    tcSignature.argList.effects.setUnresolved();
+  }
 
+  bool mightThrows = tcSignature.argList.effects.isThrows() ||
+                     tcSignature.argList.effects.isUnresolved();
   // If this function throws, add a result slot for the error that may be
   // raised.
   if (mightThrows) {

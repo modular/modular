@@ -116,12 +116,27 @@ public:
   bool isAsync() const { return get(Impl::Async); }
   bool isCABI() const { return get(Impl::CABI); }
   bool isRefResult() const { return get(Impl::RefResult); }
+  bool isUnresolved() const { return get(Impl::Unresolved); }
 
-  FnEffects setThrows(bool throws = true) { return set(Impl::Throws, throws); }
-  FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
-  FnEffects setCABI(bool value = true) { return set(Impl::CABI, value); }
+  FnEffects setThrows(bool throws = true) {
+    assert(!isUnresolved());
+    return set(Impl::Throws, throws);
+  }
+  FnEffects setAsync(bool async = true) {
+    assert(!isUnresolved());
+    return set(Impl::Async, async);
+  }
+  FnEffects setCABI(bool value = true) {
+    assert(!isUnresolved());
+    return set(Impl::CABI, value);
+  }
   FnEffects setRefResult(bool value = true) {
+    assert(!isUnresolved());
     return set(Impl::RefResult, value);
+  }
+  FnEffects setUnresolved(bool value = true) {
+    assert(impl == Impl::None);
+    return set(Impl::Unresolved, value);
   }
 
   bool operator==(FnEffects rhs) const { return getImpl() == rhs.getImpl(); }

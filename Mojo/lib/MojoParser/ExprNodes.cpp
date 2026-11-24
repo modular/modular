@@ -5045,10 +5045,16 @@ AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
 
-  LambdaUValue lambda = LambdaUValue::create(
-      getLoc(), signature, parsedParams, parsedArgs, body, captures,
-      hasExplicitCaptureList, captureAllByConvention);
-  return lambda.emitAsCValue(emitter, dest);
+  if constexpr (doPartialParsing) {
+    return LambdaUValue::create(getLoc(), signature, parsedParams, parsedArgs,
+                                body, captures, hasExplicitCaptureList,
+                                captureAllByConvention);
+  } else {
+    auto lambda = LambdaUValue::create(
+        getLoc(), signature, parsedParams, parsedArgs, body, captures,
+        hasExplicitCaptureList, captureAllByConvention);
+    return lambda.emitAsCValue(emitter, dest);
+  }
 }
 
 AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {

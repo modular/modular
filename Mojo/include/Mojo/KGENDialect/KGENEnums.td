@@ -297,6 +297,10 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// Lowering must apply platform C ABI coercion (via CABIInfo) rather than
   /// the default Mojo calling convention.
   I16BitEnumAttrCaseBit<"CABI", 9, "cabi">,
+  /// The effects of this function are not known yet. This is only valid in
+  /// the signature of a partially typed lambda expression, before its body is
+  /// checked.
+  I16BitEnumAttrCaseBit<"Unresolved", 10, "unresolved">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;

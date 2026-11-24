@@ -223,6 +223,26 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     return SmartVariant<CValue, ASTType>(expectedType);
   }
 
+  if (auto lambdaUVal = operand.ir.getIfLambda()) {
+    if (auto expectedTrait =
+            dyn_cast<TraitType>(expectedType.extractMetaType())) {
+      if (auto expected = extractClosureSymbol(shared, expectedTrait)) {
+        // We don't allow implicit conversion when matching against a partially
+        // typed lambda.
+        ParamMatcher matcher(operand.expr, *this,
+                             /*allowImplicitConversion=*/false);
+        ParamMatcher::FailableScope lambdaMatchingScope(matcher);
+        // This is the contextual type.
+        auto partialSig = lambdaUVal.getPartialSignature();
+        auto expectedSig = shared.getClosureFnSigWithoutSelf(expected);
+        if (failed(matcher.matchFunctionTypes(partialSig, expectedSig, true))) {
+          lambdaMatchingScope.revert();
+          return failure();
+        }
+        llvm_unreachable("Not implemented!");
+      }
+    }
+  }
   auto orValue = operand.ir.getIfOverloadSet();
   assert(orValue && "Unknown UValue!");
 

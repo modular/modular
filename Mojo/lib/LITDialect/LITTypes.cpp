@@ -1450,8 +1450,12 @@ size_t FuncType::getNumImplicitOriginDecls() {
 
 Type FuncType::getUserResultType() {
   // If this function has a byref_result, return the reference element type.
-  if (hasMemoryOnlyResult())
-    return ::cast<RefType>(getArguments().back()).getElementType();
+  if (hasMemoryOnlyResult()) {
+    if (auto refType = ::dyn_cast<RefType>(getArguments().back()))
+      return refType.getElementType();
+    assert(isa<UnresolvedType>(getArguments().back()));
+    return getArguments().back();
+  }
   return getResultType();
 }
 

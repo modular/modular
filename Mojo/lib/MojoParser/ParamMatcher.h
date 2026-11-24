@@ -199,7 +199,8 @@ public:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
   LogicalResult matchFunctionTypes(FnTypeGeneratorType actual,
-                                   FnTypeGeneratorType expected);
+                                   FnTypeGeneratorType expected,
+                                   bool isPartiallyTypedActual = false);
   LogicalResult matchSingleEltStruct(TypedAttr actual, TypedAttr expected);
 
   /// When matching parameters, we sometimes try different options.  This object
