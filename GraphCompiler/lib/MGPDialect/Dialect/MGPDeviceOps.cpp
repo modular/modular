@@ -655,7 +655,15 @@ LogicalResult BufferPlanOp::emitMojo(MOGG::EmitMojoState &state) {
   size_t numRuntimeSizes = getRuntimeSizes().size();
 
   MojoValue alignmentsParam = inlineArray(state, getAlignments());
-  MojoValue canShareParam = inlineArray(state, getCanShare());
+
+  // One string literal of 0/1 digits instead of a list literal: the Mojo
+  // parser resolves an overload and implicit conversion per element, and
+  // elaboration unrolls the Array constructor once per element (GEX-4663).
+  std::string canShareDigits;
+  canShareDigits.reserve(getCanShare().size());
+  for (uint8_t value : getCanShare())
+    canShareDigits.push_back(static_cast<char>('0' + value));
+  MojoValue canShareParam = MojoValue(std::move(canShareDigits)).quote();
 
   MojoValue staticSizesParam;
   if (auto staticSizes = getStaticSizes()) {
@@ -819,6 +827,9 @@ LogicalResult BufferPlanOp::verify() {
                  "share with itself) at index ")
              << i;
     for (size_t j : llvm::seq(totalAllocs)) {
+      if (mat[i * totalAllocs + j] > 1)
+        return emitOpError("expected canShare values to be 0 or 1 at index ")
+               << i * totalAllocs + j;
       if (mat[i * totalAllocs + j] != mat[j * totalAllocs + i])
         return emitOpError("expected canShare to be symmetric: canShare[")
                << i << "][" << j << "]=" << mat[i * totalAllocs + j]

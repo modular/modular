@@ -953,11 +953,7 @@ def mgp_buffer_plan[
     num_runtime_sizes: Int,
     //,
     alignments: Array[Int, num_static_sizes + num_runtime_sizes],
-    can_share: Array[
-        Int,
-        (num_static_sizes + num_runtime_sizes)
-        * (num_static_sizes + num_runtime_sizes),
-    ],
+    can_share: StaticString,
     static_sizes: Array[Int, num_static_sizes],
 ](runtime_sizes: Array[Int, num_runtime_sizes]) -> Tuple[
     Int, Array[Int, num_static_sizes + num_runtime_sizes]
@@ -972,15 +968,16 @@ def mgp_buffer_plan[
     where the first num_static_sizes allocations have compile-time known sizes,
     and the remaining num_runtime_sizes allocations have runtime sizes.
 
-    can_share is a flat NxN matrix (row-major) where can_share[i*N+j]=1 iff
-    allocations i and j have non-overlapping lifetimes and can therefore
-    occupy the same memory slot. N = num_static_sizes + num_runtime_sizes.
+    can_share is a string of NxN '0'/'1' digits in row-major order, where
+    digit i*N+j is 1 iff allocations i and j have non-overlapping lifetimes
+    and can therefore occupy the same memory slot.
+    N = num_static_sizes + num_runtime_sizes.
 
     Parameters:
         num_static_sizes: Number of allocations with static sizes.
         num_runtime_sizes: Number of allocations with runtime sizes.
         alignments: Alignment requirements for each allocation.
-        can_share: NxN sharing matrix (row-major, 0/1 values).
+        can_share: NxN sharing matrix (row-major, 0/1 values) as a digit string.
         static_sizes: Compile-time known sizes for first num_static_sizes allocations.
 
     Args:
