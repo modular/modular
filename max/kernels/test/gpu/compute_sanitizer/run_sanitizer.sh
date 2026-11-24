@@ -64,6 +64,7 @@ CS="${COMPUTE_SANITIZER:-/usr/local/cuda/bin/compute-sanitizer}"
 RESULTS="${CS_RESULTS_DIR:-$WORKDIR/.derived/cs-findings}/$TOOL"
 mkdir -p "$RESULTS"
 CLASSIFY="$WORKDIR/max/kernels/test/gpu/compute_sanitizer/classify_synccheck.py"
+CLASSIFY_INITCHECK="$WORKDIR/max/kernels/test/gpu/compute_sanitizer/classify_initcheck.py"
 
 COMMON=(
   # Build the test binaries under the shared CI GPU config (same as the
@@ -124,13 +125,21 @@ case "$TOOL" in
   # `VENDOR_BLAS_ZERO_WORKSPACE` hands cuBLAS a zeroed workspace: its split-K
   # reduction reads workspace bytes it never wrote. Other builds skip the
   # zeroing, which costs a 32 MiB memset a call.
+  # `VENDOR_BLAS_ZERO_OUTPUT` and `VENDOR_CUDNN_ZERO_OUTPUT` likewise zero what
+  # a vendor GEMM or conv is about to write: compute-sanitizer does not
+  # instrument cuBLAS's and cuDNN's Blackwell kernels, so their writes leave no
+  # shadow and the epilogue or reference kernel that reads the result reports
+  # every byte of it as uninitialized. The zeroing starts the shadow
+  # initialized; the lane still gates on the reads MAX performs.
   #
   # The PDL tests below assert that a dependent kernel starts before its
   # producer ends. The sanitizer serializes launches, so they raise under every
   # tool, and initcheck is the lane that gates on a raise (see below).
   initcheck) EXTRA=""; POOL="--//:gpu_disable_memory_manager"
              MOJOCOPTS=(--mojocopt=-D --mojocopt=FA4_WS_POISON=1
-                        --mojocopt=-D --mojocopt=VENDOR_BLAS_ZERO_WORKSPACE=true)
+                        --mojocopt=-D --mojocopt=VENDOR_BLAS_ZERO_WORKSPACE=true
+                        --mojocopt=-D --mojocopt=VENDOR_BLAS_ZERO_OUTPUT=true
+                        --mojocopt=-D --mojocopt=VENDOR_CUDNN_ZERO_OUTPUT=true)
              set -- "$@" \
                -//max/kernels/test/gpu/nn:attention/test_fa4_splitk_combine_pdl.mojo.test \
                -//max/kernels/test/gpu/nn:test_mha_fallback_pdl_wait.mojo.test \
@@ -163,6 +172,19 @@ NO_LINE_TABLES_TARGETS=(
   # Same OOM (Exit 34): it aborted the line-tables invocation on 2026-11-14
   # and 2026-11-15, so those nights swept about half of the targets.
   //max/kernels/test/gpu/nn:attention/test_mha_sm100_ws_bm32_fuse_gqa_tail_rows.mojo.test
+)
+
+# Graph capture records the conv routes' scratch buffers as graph memory
+# nodes, which needs the allocator's stream-ordered path. With the pool
+# disabled (memcheck and initcheck) each scratch is a 1:1 allocation made
+# outside the graph, so a replay writes into memory the record-time free
+# already returned -- which is what these tests record and replay, not a
+# kernel bug. They run in a second invocation with the memory manager on;
+# their own output comparisons still gate, and the sanitizer still sees
+# violations outside the pool.
+POOL_ON_TARGETS=(
+  //max/kernels/test/gpu/nn:test_conv2d_im2col_graph_capture.mojo.test
+  //max/kernels/test/gpu/nn:test_conv3d_qslice_sm100_graph_replay.mojo.test
 )
 
 # Expand the caller's patterns (honoring `-//...` excludes) to concrete test
@@ -217,6 +239,16 @@ for h in "${NO_LINE_TABLES_TARGETS[@]}"; do
     [ "$t" = "$h" ] && NO_LT_SELECTED+=("$h")
   done
 done
+POOL_ON_SELECTED=()
+POOL_ON_EXCLUDES=()
+if [ -n "$POOL" ]; then
+  for h in "${POOL_ON_TARGETS[@]}"; do
+    POOL_ON_EXCLUDES+=("-$h")
+    for t in ${EXPANDED[@]+"${EXPANDED[@]}"}; do
+      [ "$t" = "$h" ] && POOL_ON_SELECTED+=("$h")
+    done
+  done
+fi
 if [ "$queried" -eq 0 ]; then
   # The query failed or matched nothing: one run over the caller's patterns.
   EXPANDED=("$@")
@@ -260,11 +292,13 @@ else
   # finding. Restrict to `gpu`-tagged tests while we're at it.
   CS_FLAGS=("${COMMON[@]}" "--test_tag_filters=gpu,-filecheck" --run_under="$RUNUNDER")
   [ -n "$POOL" ] && CS_FLAGS+=("$POOL")
-  if [ "${#NO_LT_SELECTED[@]}" -lt "${#EXPANDED[@]}" ]; then
+  if [ "${#NO_LT_SELECTED[@]}" -lt "${#EXPANDED[@]}" ] \
+     && [ "${#POOL_ON_SELECTED[@]}" -lt "${#EXPANDED[@]}" ]; then
     run_bazel test "${CS_FLAGS[@]}" \
       --mojocopt=--debug-level --mojocopt=line-tables \
       ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
       -- "$@" ${NO_LT_EXCLUDES[@]+"${NO_LT_EXCLUDES[@]}"} \
+      ${POOL_ON_EXCLUDES[@]+"${POOL_ON_EXCLUDES[@]}"} \
       ${SHARD_EXCLUDES[@]+"${SHARD_EXCLUDES[@]}"}
   fi
   if [ "${#NO_LT_SELECTED[@]}" -gt 0 ]; then
@@ -272,6 +306,14 @@ else
     run_bazel test "${CS_FLAGS[@]}" \
       ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
       -- "${NO_LT_SELECTED[@]}"
+  fi
+  if [ "${#POOL_ON_SELECTED[@]}" -gt 0 ]; then
+    echo ">>> ${#POOL_ON_SELECTED[@]} target(s) with the memory manager on" | tee -a "$LOG"
+    run_bazel test "${COMMON[@]}" "--test_tag_filters=gpu,-filecheck" \
+      --run_under="$RUNUNDER" \
+      --mojocopt=--debug-level --mojocopt=line-tables \
+      ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
+      -- "${POOL_ON_SELECTED[@]}"
   fi
 fi
 
@@ -310,6 +352,15 @@ for tgt in "${EXPANDED[@]}"; do
     # nothing else -- a plain `barrier()` divergence, which is what a real
     # desynchronized block looks like, still reports.
     hits="$("$CLASSIFY" --markers "$MARKERS" "$tl" 2>>"$LOG" | head -40)"
+  elif [ "$TOOL" = initcheck ]; then
+    # Same marker set, minus the one class we can prove is the tool's own gap:
+    # an uninitialized read whose whole device stack is a vendor library's,
+    # which compute-sanitizer does not instrument (cuDNN's padded staging
+    # buffers). NVIDIA's `--suppressions` cannot express "no Mojo frame", so
+    # the filter lives here. It removes nothing else: a report carrying any
+    # `.mojo` frame still gates, which is what every finding in the four conv
+    # targets looked like before the lane zeroed what the vendor writes.
+    hits="$("$CLASSIFY_INITCHECK" --markers "$MARKERS" "$tl" 2>>"$LOG" | head -40)"
   else
     hits="$(grep -nE "$MARKERS" "$tl" 2>/dev/null | grep -vE 'ERROR SUMMARY: 0 errors' | head -40)"
   fi

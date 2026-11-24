@@ -321,6 +321,11 @@ def run_case[
     # ----- the reference -----
     comptime if two_stage:
         var plain_tt = TileTensor(plain_dev, row_major(batch, h, w, COUT))
+        # The conv overwrites `plain_dev`, but its cuDNN engine writes leave no
+        # shadow for initcheck, so the reference kernel below would report
+        # every byte it reads as uninitialized. Zeroing first starts the shadow
+        # initialized.
+        ctx.enqueue_memset(plain_dev, Scalar[dt](0))
         conv_gpu[dt, dt, dt](
             act_tt,
             route_tt,

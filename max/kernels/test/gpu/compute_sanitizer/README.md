@@ -61,6 +61,9 @@ Two limits drive the rest of this directory's design:
 - `classify_synccheck.py` — the filter that acts on that proof: drops a
   divergence report when its source line is a `named_barrier` call, keeps
   everything else.
+- `classify_initcheck.py` — drops an uninitialized-read report whose device
+  stack has no Mojo frame and whose host backtrace names cuDNN or cuBLAS,
+  keeping everything else.
 
 ## Running it locally
 
@@ -161,6 +164,36 @@ total build failure reported green because no test.log existed to hold a marker.
   block looks like, and what `test_topk_topp_sampling_with_dist` reported at
   `block.mojo:100` — still gates. Anything the filter cannot resolve is
   reported, because a suppression rule has to fail toward reporting.
+- **`initcheck` runs with `-D VENDOR_BLAS_ZERO_OUTPUT=true` and
+  `-D VENDOR_CUDNN_ZERO_OUTPUT=true`.** compute-sanitizer does not instrument
+  cuBLAS's and cuDNN's Blackwell kernels, so their writes leave no shadow and a
+  MAX epilogue or a test's reference kernel that reads their output reports
+  every byte as uninitialized — as does cuDNN reading its own workspace. The
+  lane zeroes those buffers first, which starts the shadow initialized; the
+  lane still gates on the reads MAX performs, and other builds skip the memsets
+  because each costs its buffer in traffic. Precedent:
+  `VENDOR_BLAS_ZERO_WORKSPACE` below.
+- **Two graph-replay targets run with the memory manager on.** Graph capture
+  records the conv routes' scratch buffers as graph memory nodes, which needs
+  the allocator's stream-ordered path; with the pool disabled each scratch is a
+  1:1 allocation made outside the graph, so a replay writes into memory the
+  record-time free already returned. `POOL_ON_TARGETS` in `run_sanitizer.sh`
+  runs those targets in a second invocation without
+  `--//:gpu_disable_memory_manager`: their own output comparisons still gate,
+  and the sanitizer still sees violations outside the pool.
+- **`initcheck`'s vendor-only reports are filtered, not excluded.**
+  compute-sanitizer does not instrument cuDNN's precompiled engine kernels, so
+  cuDNN's own padded staging buffer never acquires a shadow and the engine
+  kernel that reads it reports an uninitialized read with no Mojo frame
+  anywhere in its device stack (`nhwcAddPaddingKernel`, from
+  `test_conv2d_sm100_narrow_out`). `classify_initcheck.py` drops exactly that:
+  a report whose device frames carry no `.mojo` source line and whose host
+  backtrace names a vendor library. The calibration is the four conv targets
+  this lane runs clean after the zeroing above: every one of their reports
+  before that zeroing carried a Mojo frame (`nn_conv_conv_closure_conv_gpu...`,
+  `ref_epilogue_kernel`, the vendor-matmul epilogue), and the filter keeps all
+  of them. Anything it cannot resolve is reported, because a suppression rule
+  has to fail toward reporting.
 - **Controls in both directions.** `positive_control_memcheck_oob.mojo` proves
   a lane catches a real bug; `negative_control_synccheck_named_barrier.mojo`
   proves `synccheck` flags a kernel that is correct by construction. The second

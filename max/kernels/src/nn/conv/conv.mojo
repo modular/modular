@@ -131,7 +131,7 @@ from linalg.utils import partition_work
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_amd_rdna_gpu_accelerator
+from std.sys import get_defined_bool, has_amd_rdna_gpu_accelerator
 from std.utils.numerics import get_accum_type
 
 
@@ -4237,6 +4237,20 @@ def _get_cached_cudnn_meta_nhwc_full(
     return new_ptr_meta.as_unsafe_any_origin()
 
 
+comptime _VENDOR_CUDNN_ZERO_OUTPUT = get_defined_bool[
+    "VENDOR_CUDNN_ZERO_OUTPUT", False
+]()
+"""Whether to zero cuDNN's workspace and the epilogue's conv temporary first.
+
+The initcheck lane sets this: compute-sanitizer does not instrument cuDNN's
+engine kernels, so their writes leave no shadow and the epilogue that reads the
+conv's output, or cuDNN reading its own workspace, reports every byte as
+uninitialized. Zeroing both starts the shadow initialized, so the lane still
+gates on the reads MAX performs. Other builds skip it, since each memset costs
+its buffer in traffic. Precedent: `VENDOR_BLAS_ZERO_WORKSPACE` in
+`linalg/matmul/vendor/blas.mojo`."""
+
+
 def _conv_cudnn[
     input_type: DType,
     filter_type: DType,
@@ -4437,6 +4451,8 @@ def _conv_cudnn[
     var scratch = ctx.enqueue_create_buffer[.uint8](
         filter_bytes + ptr_meta[].workspace_size
     )
+    comptime if _VENDOR_CUDNN_ZERO_OUTPUT:
+        ctx.enqueue_memset(scratch, UInt8(0))
     var filter_krsc = TileTensor(
         scratch.unsafe_ptr()
         .unsafe_bitcast[Scalar[filter_type]]()
@@ -6327,6 +6343,8 @@ def conv_gpu[
                 var output_tmp_data = ctx.enqueue_create_buffer[output_type](
                     output.num_elements()
                 )
+                comptime if _VENDOR_CUDNN_ZERO_OUTPUT:
+                    ctx.enqueue_memset(output_tmp_data, Scalar[output_type](0))
 
                 var output_tmp = TileTensor(output_tmp_data, output.layout)
                 var output_tmp_rm = output_tmp.reshape(
