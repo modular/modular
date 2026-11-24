@@ -181,7 +181,7 @@ Block::BlockArgListType IterElementwiseOp::getOutputBlockArgs() {
 
 // Whether `op` produces an index or hands one to its regions: index
 // computation the width inference can't follow.
-static bool computesIndex(Operation *op) {
+bool M::MAP::computesIndex(Operation *op) {
   auto isIndex = [](Type type) { return isa<MAP::IndexType>(type); };
   return llvm::any_of(op->getResultTypes(), isIndex) ||
          llvm::any_of(op->getRegions(), [&](Region &region) {

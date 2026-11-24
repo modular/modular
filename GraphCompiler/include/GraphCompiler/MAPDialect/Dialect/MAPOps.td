@@ -259,6 +259,7 @@ def MAP_IterPrologueOp : MAP_Op<"iter.prologue", [
 //===----------------------------------------------------------------------===//
 
 def MAP_ConstantOp : MAP_Op<"constant", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
     ConstantLike,
     Pure,
     DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
@@ -641,6 +642,7 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
 //===----------------------------------------------------------------------===//
 
 def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["canFlattenDims", "flatten"]>,
   // Its index is the rowwise kernel's; the ops it holds limit the width.
   MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
@@ -688,6 +690,7 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
 //===----------------------------------------------------------------------===//
 
 def MAP_IterTileOp : MAP_Op<"iter.tile", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["canFlattenDims", "flatten"]>,
   // Its index is the rowwise kernel's; the ops it holds limit the width.
   MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
@@ -817,6 +820,7 @@ def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
 }
 
 def MAP_IterMapOp : MAP_Op<"iter.map", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["canFlattenDims", "flatten"]>,
   // Its index is the rowwise kernel's; the ops it holds limit the width.
   MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
@@ -995,6 +999,7 @@ def MAP_CallElementwiseOp : MAP_Op<"call.elementwise", [
 //===----------------------------------------------------------------------===//
 
 def MAP_SliceIndexOp : MAP_Op<"index.slice", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   Pure,
   DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
 ]> {
@@ -1037,6 +1042,7 @@ def MAP_SliceIndexOp : MAP_Op<"index.slice", [
 //===----------------------------------------------------------------------===//
 
 def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["canFlattenDims", "flatten"]>,
   SingleBlock,
   NoTerminator,
   RecursiveMemoryEffects,
@@ -1108,6 +1114,7 @@ def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
 //===----------------------------------------------------------------------===//
 
 def MAP_ConcatSelectOp : MAP_Op<"index.concat.select", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["canFlattenDims", "flatten"]>,
   RecursiveMemoryEffects,
   DeclareOpInterfaceMethods<MAP_MaxSimdWidthInterface, ["getMaxSimdWidth"]>,
   DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
@@ -1160,6 +1167,7 @@ def MAP_ConcatSelectOp : MAP_Op<"index.concat.select", [
 //===----------------------------------------------------------------------===//
 
 def MAP_SliceStrideOp : MAP_Op<"index.slice.stride", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   ParentOneOf<["IterOpaqueOp"]>,
   Pure,
   MAP_StrideViewOpInterface,
@@ -1206,6 +1214,7 @@ def MAP_SliceStrideOp : MAP_Op<"index.slice.stride", [
 //===----------------------------------------------------------------------===//
 
 def MAP_BroadcastIndexOp : MAP_Op<"index.broadcast", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   Pure,
   DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
     "createStridedView", "mapLoopDims"]>,
@@ -1243,6 +1252,7 @@ def MAP_BroadcastIndexOp : MAP_Op<"index.broadcast", [
 //===----------------------------------------------------------------------===//
 
 def MAP_BroadcastStrideOp : MAP_Op<"index.broadcast.stride", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   ParentOneOf<["IterOpaqueOp"]>,
   Pure,
   MAP_StrideViewOpInterface,
@@ -1283,6 +1293,7 @@ def MAP_BroadcastStrideOp : MAP_Op<"index.broadcast.stride", [
 //===----------------------------------------------------------------------===//
 
 def MAP_TransposeIndexOp : MAP_Op<"index.transpose", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   Pure,
   DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
     "createStridedView", "mapLoopDims"]>,
@@ -1326,6 +1337,7 @@ def MAP_TransposeIndexOp : MAP_Op<"index.transpose", [
 //===----------------------------------------------------------------------===//
 
 def MAP_TransposeStrideOp : MAP_Op<"index.transpose.stride", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   ParentOneOf<["IterOpaqueOp"]>,
   Pure,
   MAP_StrideViewOpInterface,
@@ -1372,6 +1384,7 @@ def MAP_TransposeStrideOp : MAP_Op<"index.transpose.stride", [
 //===----------------------------------------------------------------------===//
 
 def MAP_ReshapeIndexOp : MAP_Op<"index.reshape", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["flatten", "getOutputLayout"]>,
   Pure,
   DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
     "createStridedView", "mapLoopDims"]>,
@@ -1413,6 +1426,7 @@ def MAP_ReshapeIndexOp : MAP_Op<"index.reshape", [
 //===----------------------------------------------------------------------===//
 
 def MAP_ReshapeStrideOp : MAP_Op<"index.reshape.stride", [
+  DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   ParentOneOf<["IterOpaqueOp"]>,
   Pure,
   MAP_StrideViewOpInterface,
@@ -1443,6 +1457,52 @@ def MAP_ReshapeStrideOp : MAP_Op<"index.reshape.stride", [
   let assemblyFormat = [{
     `<` qualified($spec) `>` `(` $input `)` attr-dict
     `:` qualified(type($input)) `->` qualified(type($result))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// map.index.collapse.stride
+//===----------------------------------------------------------------------===//
+
+def MAP_CollapseStrideOp : MAP_Op<"index.collapse.stride", [
+  ParentOneOf<["IterOpaqueOp"]>,
+  Pure,
+  MAP_StrideViewOpInterface,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "Merge groups of adjacent dims of a view, keeping its strides";
+  let description = [{
+    A view of `input` whose dims are `input`'s, merged in consecutive groups:
+    `groups` lists each group's size, and the view's dim `g` has the product
+    of its group's extents and the stride of the group's innermost dim.
+    Nothing is copied. It is only correct when, within each group, every dim's
+    stride is the next dim's stride times its extent (a group's rows are laid
+    out one after the other), or all are 0 (a broadcast);
+    `map-flatten-shapes` checks that before creating one, and the Mojo
+    primitive asserts it. On a contiguous input it produces the same code as
+    `map.index.reshape.stride`. It exists because it keeps the input's
+    strides, where reshape recomputes row-major ones: over a broadcast, a
+    slice or an in-order transpose, only the collapse view is correct.
+
+    Example:
+    ```mlir
+    %flat = map.index.collapse.stride<#map.view.signature<[B, S, 64] -> [BS, 64]>, groups = [2, 1]> (%x)
+        : !mo.tensor<[B, S, 64], f32> -> !mo.tensor<[BS, 64], f32>
+    ```
+  }];
+
+  let arguments = (ins
+    MAP_ViewSignatureAttr:$signature,
+    DenseI64ArrayAttr:$groups,
+    AnyTypeOf<[MO_Tensor, MO_Buffer]>:$input
+  );
+  let results = (outs MO_Tensor:$result);
+
+  let assemblyFormat = [{
+    `<` qualified($signature) `,` `groups` `=` $groups `>` `(` $input `)`
+    attr-dict `:` qualified(type($input)) `->` qualified(type($result))
   }];
 
   let hasVerifier = 1;

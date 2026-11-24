@@ -937,3 +937,57 @@ LogicalResult TransposeStrideOp::verify() {
   return verifyTransposePermutations(getOperation(), getSpec(),
                                      getPermutations());
 }
+
+//===----------------------------------------------------------------------===//
+// map.index.collapse.stride
+//===----------------------------------------------------------------------===//
+
+LogicalResult CollapseStrideOp::verify() {
+  MAP::ViewSignatureAttr signature = getSignature();
+  MOSH::ShapeAttr in = signature.getIn();
+  MOSH::ShapeAttr out = signature.getOut();
+  auto inputTy = M::MO::castFromTensorLike(getInput().getType());
+  auto resultTy = llvm::cast<M::MO::TensorType>(getResult().getType());
+  if (inputTy.getShape() != in)
+    return emitOpError() << "input shape " << inputTy.getShape()
+                         << " does not match the in-shape " << in;
+  if (resultTy.getShape() != out)
+    return emitOpError() << "result shape " << resultTy.getShape()
+                         << " does not match the out-shape " << out;
+  if (resultTy.getElementType() != inputTy.getElementType())
+    return emitOpError() << "result element type " << resultTy.getElementType()
+                         << " does not match input element type "
+                         << inputTy.getElementType();
+
+  ArrayRef<int64_t> groups = getGroups();
+  if (groups.size() != out.getRank())
+    return emitOpError() << "expected one group per out dim, got "
+                         << groups.size() << " for rank " << out.getRank();
+  SmallVector<int64_t> inDims = in.getIntDims();
+  SmallVector<int64_t> outDims = out.getIntDims();
+  size_t first = 0;
+  for (auto [g, size] : llvm::enumerate(groups)) {
+    if (size < 1)
+      return emitOpError() << "group " << g << " is empty";
+    if (first + size > inDims.size())
+      return emitOpError() << "groups cover more than the in-shape's "
+                           << inDims.size() << " dims";
+    // Symbolic extents can't be multiplied out here; static ones must match.
+    ArrayRef<int64_t> dims = ArrayRef(inDims).slice(first, size);
+    if (llvm::none_of(dims, ShapedType::isDynamic) &&
+        !ShapedType::isDynamic(outDims[g])) {
+      int64_t product = 1;
+      for (int64_t dim : dims)
+        product *= dim;
+      if (product != outDims[g])
+        return emitOpError()
+               << "out dim " << g << " is " << outDims[g]
+               << ", not the product " << product << " of its group";
+    }
+    first += size;
+  }
+  if (first != inDims.size())
+    return emitOpError() << "groups cover " << first << " of the in-shape's "
+                         << inDims.size() << " dims";
+  return success();
+}

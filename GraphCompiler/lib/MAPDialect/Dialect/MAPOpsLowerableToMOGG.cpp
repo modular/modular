@@ -979,6 +979,26 @@ LogicalResult ReshapeIndexOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
+// map.index.collapse.stride -> mogg.tensor.create.collapse. The run-time
+// extents are products of the input's own, so no shape is built. Unlike the
+// load-side views, a collapse view can be stored into, so it is as mutable as
+// what it views.
+LogicalResult CollapseStrideOp::lowerToMOGG(MAPToMOGGState &state) {
+  MLIRContext *ctx = getContext();
+  Type elementType =
+      MO::castFromTensorLike(getInput().getType()).getElementType();
+  Value input = state.mapping.lookup(getInput());
+  auto inputCreate = input.getDefiningOp<MOGG::TensorCreateInterface>();
+  bool mut =
+      viewsMutableStorage(getInput()) || (inputCreate && inputCreate.getMut());
+  auto createCollapse = MOGG::TensorCreateCollapseOp::create(
+      state.builder, getLoc(), MOGG::TensorType::get(ctx),
+      getSignature().getOut(), getGroupsAttr(), TypeAttr::get(elementType),
+      state.builder.getBoolAttr(mut), input);
+  state.mapping.map(getResult(), createCollapse.getResult());
+  return success();
+}
+
 // map.index.transpose.stride -> mogg.tensor.create.transpose.
 LogicalResult TransposeStrideOp::lowerToMOGG(MAPToMOGGState &state) {
   MLIRContext *ctx = getContext();

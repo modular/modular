@@ -360,6 +360,45 @@ def MAP_StrideViewOpInterface : OpInterface<"StrideViewOpInterface"> {
   ];
 }
 
+def MAP_FlattenableOpInterface : OpInterface<"FlattenableOpInterface"> {
+  let description = [{
+    An op `map-flatten-shapes` has to understand to merge the dims of the kernel
+    it is in, or of the views the kernel reads: a select in a kernel body, a
+    strided view of a kernel's tensor, or an index op. In an epilogue,
+    `map.index.reshape` merges its in-shape, the shape the epilogue's
+    tensors are read in.
+
+    An op without the interface that computes an index (see `computesIndex`)
+    keeps its loop from being flattened.
+  }];
+
+  let cppNamespace = "::M::MAP";
+
+  let methods = [
+    InterfaceMethod<
+      "Clears `merges[d]` for each pair of loop dims (d, d+1) this op needs "
+      "kept apart. By default every pair stays apart: an op that takes a "
+      "merge says so, so implementing the interface for its layout alone "
+      "never lets a loop it is in merge dims it doesn't rewrite.",
+      "void", "canFlattenDims", (ins "::llvm::MutableArrayRef<bool>":$merges),
+      [{}], [{ ::llvm::fill(merges, false); }]
+    >,
+    InterfaceMethod<
+      "Rewrites the op for the driver's groups. Called only for groups "
+      "`canFlattenDims` allows, so it can't fail.",
+      "void", "flatten", (ins "::M::MAP::FlattenDriver &":$driver),
+      [{}], [{ return; }]
+    >,
+    InterfaceMethod<
+      "The layout of this view, given its input's (nullopt when the input's "
+      "is unknown); nullopt when it can't be told.",
+      "std::optional<::M::MAP::Layout>", "getOutputLayout",
+      (ins "std::optional<::M::MAP::Layout>":$inputLayout),
+      [{}], [{ return std::nullopt; }]
+    >,
+  ];
+}
+
 def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
   let description = [{
     An op in a fused kernel body (`map.iter.elementwise.body` or

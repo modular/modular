@@ -2958,6 +2958,113 @@ def mogg_tensor_create_broadcast[
     return {input.unsafe_ptr(), output_shape, new_strides}
 
 
+def _mogg_collapse_group_start[groups: Coord, g: Int]() -> Int:
+    """Returns the input dim where group `g` of a collapse view starts."""
+    var start = 0
+    comptime for i in range(g):
+        start += groups.element_types[i].static_value
+    return start
+
+
+def _mogg_collapse_view_strides[
+    out_rank: Int,
+    groups: Coord,
+    input_strides: TypeList[Trait=CoordLike, ...],
+]() -> IndexList[out_rank]:
+    """Each group's stride is its innermost input dim's, -1 where that isn't
+    known at compile time."""
+    comptime tv = _reshape_types_sentinels[
+        input_strides.length, input_strides
+    ]()
+    var strides = IndexList[out_rank]()
+    comptime for g in range(out_rank):
+        strides[g] = tv[
+            _mogg_collapse_group_start[groups, g]()
+            + groups.element_types[g].static_value
+            - 1
+        ]
+    return strides
+
+
+@register_internal("mogg.tensor.create.collapse")
+def mogg_tensor_create_collapse[
+    dtype: DType,
+    in_rank: Int,
+    //,
+    output_static_shape: Coord,
+    groups: Coord,
+    out_rank: Int = output_static_shape.rank,
+](
+    input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
+) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_coord_layout_and_alignment[
+        out_rank,
+        output_static_shape,
+        _mogg_collapse_view_strides[
+            out_rank, groups, input.static_spec.static_layout._stride_types
+        ](),
+    ](input.alignment),
+]:
+    """Backing primitive for `mogg.tensor.create.collapse`: a zero-copy view
+    of `input` whose dim `g` merges `groups[g]` consecutive dims of `input`.
+    Its extent is their product and its stride the group's innermost stride,
+    which is only right when, within each group, each dim's stride is the
+    next one's times its extent, or both are 0 (a broadcast). The graph
+    compiler only builds such views; this checks it, at compile time where
+    the strides are static.
+
+    Parameters:
+        dtype: The element type of `input`.
+        in_rank: The rank of `input`.
+        output_static_shape: The view's shape, where known at compile time.
+        groups: The number of `input` dims each view dim merges, in order.
+        out_rank: The view's rank. The graph compiler passes it as a literal:
+            a rank the parser can't fold, like one read off
+            `output_static_shape`,
+            doesn't unify with the same rank written elsewhere, as when a
+            variadic's views and a kernel's other tensors bind one `rank`.
+
+    Args:
+        input: The tensor to view.
+    """
+    comptime sv = _reshape_types_sentinels[
+        in_rank, input.static_spec.static_layout._shape_types
+    ]()
+    comptime tv = _reshape_types_sentinels[
+        in_rank, input.static_spec.static_layout._stride_types
+    ]()
+    var new_shape = IndexList[out_rank]()
+    var new_strides = IndexList[out_rank]()
+    comptime for g in range(out_rank):
+        comptime first = _mogg_collapse_group_start[groups, g]()
+        comptime last = first + groups.element_types[g].static_value - 1
+        comptime for d in range(first, last):
+            comptime stride = tv[d]
+            comptime next_stride = tv[d + 1]
+            comptime next_dim = sv[d + 1]
+            comptime if stride != -1 and next_stride != -1 and next_dim != -1:
+                comptime assert stride == next_stride * next_dim or (
+                    stride == 0 and next_stride == 0
+                ), "a collapse group's dims must lie one row after the other"
+            else:
+                debug_assert[assert_mode="safe"](
+                    input.stride_length[d]()
+                    == input.stride_length[d + 1]() * input.dim_size[d + 1]()
+                    or (
+                        input.stride_length[d]() == 0
+                        and input.stride_length[d + 1]() == 0
+                    ),
+                    "a collapse group's dims must lie one row after the other",
+                )
+        var extent = 1
+        comptime for d in range(first, last + 1):
+            extent *= input.dim_size[d]()
+        new_shape[g] = extent
+        new_strides[g] = input.stride_length[last]()
+    return {input.unsafe_ptr(), new_shape, new_strides}
+
+
 @register_internal("mogg.tensor.create.reshape")
 def mogg_tensor_create_reshape[
     dtype: DType,

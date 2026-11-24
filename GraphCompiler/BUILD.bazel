@@ -1580,6 +1580,7 @@ modular_cc_library(
         ":MOSHDialect",
         ":OperandInference",
         ":ParameterInference",
+        "//Mojo:KGENDialect",
         "//Support:MDialect",
         "@llvm-project//mlir:IR",
     ],

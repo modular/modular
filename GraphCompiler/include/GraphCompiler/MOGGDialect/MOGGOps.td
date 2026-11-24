@@ -2353,6 +2353,35 @@ def MOGG_TensorCreateReshapeOp : MOGG_Op<"tensor.create.reshape", [
   }];
 }
 
+def MOGG_TensorCreateCollapseOp : MOGG_Op<"tensor.create.collapse", [
+  Pure,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
+]> {
+  let summary = "Build a codegen tensor that merges groups of adjacent dims of another.";
+  let description = [{
+    A zero-copy view of `$input` whose dim `g` merges the `$groups[g]`
+    consecutive dims of `$input` after the previous groups': its extent is
+    their product, its stride the group's innermost stride. `$outShape` is the
+    static shape (`dyn` where unknown); the run-time extents come from
+    `$input`'s own shape, so there is no shape operand.
+  }];
+  let arguments = (ins
+    MOSH_ShapeAttr:$outShape,
+    DenseI64ArrayAttr:$groups,
+    TypeAttr:$elementType,
+    BoolAttr:$mut,
+    MOGG_TensorLike:$input
+  );
+  let results = (outs MOGG_Tensor:$result);
+  let assemblyFormat = [{
+    `(` $input `)`
+    `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
+        `outShape` `=` qualified($outShape) `,` `groups` `=` $groups `>`
+    attr-dict `:` qualified(type($input))
+  }];
+}
+
 def MOGG_IndexReshapeOp : MOGG_Op<"index.reshape", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,

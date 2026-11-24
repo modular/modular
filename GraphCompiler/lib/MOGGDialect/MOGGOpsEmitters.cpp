@@ -800,6 +800,29 @@ LogicalResult TensorCreateTransposeOp::emitMojo(EmitMojoState &state) {
   state.setMojoValueFor(getResult(), result);
   return success();
 }
+
+LogicalResult TensorCreateCollapseOp::emitMojo(EmitMojoState &state) {
+  auto primDecl = state.registry.lookupPrimitive(
+      TensorCreateCollapseOp::getOperationName());
+  ASSERT_STREAM(primDecl, "Primitive not found for "
+                              << TensorCreateCollapseOp::getOperationName());
+  MojoValue primitive(primitiveMojoName(primDecl));
+  MojoValue outputStaticShape = state.file->comptime(
+      EmitMojoState::getAsCoordMojoValue(getOutShape().getIntDims()));
+  MojoValue groups =
+      state.file->comptime(EmitMojoState::getAsCoordMojoValue(getGroups()));
+  // The rank as a literal: Mojo can't fold a rank read off
+  // `output_static_shape` when it unifies it with the rank a kernel's other
+  // tensors bind.
+  MojoValue result = state.file->var(primitive[{
+      kParameterOutputStaticShape.equal(outputStaticShape),
+      MojoValue("groups").equal(groups),
+      MojoValue("out_rank")
+          .equal(MojoValue(std::to_string(getOutShape().getRank())))}](
+      {state.getMojoValueFor(getInput())}));
+  state.setMojoValueFor(getResult(), result);
+  return success();
+}
 namespace {} // namespace
 
 // Checks a declarative call and infers the parameters of both entry points.
