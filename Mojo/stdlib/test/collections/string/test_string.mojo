@@ -586,6 +586,12 @@ def test_atol_base_0() raises:
     ):
         _ = atol("0of_", base=0)
 
+    # A non-ASCII byte after the `0` is not a prefix letter.
+    with assert_raises():
+        _ = atol("0²", base=0)
+    with assert_raises():
+        _ = atol("0²1", base=16)
+
 
 def test_atof() raises:
     assert_equal(375.0, atof("375.f"))
@@ -1451,6 +1457,8 @@ def test_format_args() raises:
     assert_equal("{{".format(), "{")
 
     assert_equal("{{}}{}{{}}".format("foo"), "{}foo{}")
+    # More entries than the entry list starts with room for.
+    assert_equal(("{{}}" * 20).format(), "{}" * 20)
 
     assert_equal("{{ {0}".format("foo"), "{ foo")
     assert_equal("{{{0}".format("foo"), "{foo")
@@ -2017,6 +2025,26 @@ def test_append_codepoint() raises:
     s.append(Codepoint.ord("🔥"))
     assert_equal(s, "a€🔥")
     assert_equal(s.byte_length(), 8)
+
+    # A short static string moves inline.
+    var short = String("hi")
+    short.append(Codepoint.ord("!"))
+    assert_equal(short, "hi!")
+    assert_true(short._is_inline())
+
+    # Appending to a shared buffer leaves the other owner untouched.
+    var heap = String("x") * 40
+    var shared = heap.copy()
+    shared.append(Codepoint.ord("€"))
+    assert_equal(shared, "x" * 40 + "€")
+    assert_equal(heap, "x" * 40)
+
+    # Overflowing the inline buffer moves the string to the heap.
+    var full = String("a") * String.INLINE_CAPACITY
+    assert_true(full._is_inline())
+    full.append(Codepoint.ord("🔥"))
+    assert_equal(full, "a" * String.INLINE_CAPACITY + "🔥")
+    assert_false(full._is_inline())
 
 
 def test_string_zero_init() raises:
