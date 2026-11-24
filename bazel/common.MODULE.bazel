@@ -1261,11 +1261,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
     },
     {
-        "name": "vllm_kimik2_5_nvfp4_golden.tar.gz",
-        "sha256": "0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_kimik2_5_nvfp4_golden/1/0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822/vllm_kimik2_5_nvfp4_golden.tar.gz",
-    },
-    {
         "name": "torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz",
         "sha256": "d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_deepseek-ai_deepseek-v3_1-terminus_golden/1/d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447/torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz",

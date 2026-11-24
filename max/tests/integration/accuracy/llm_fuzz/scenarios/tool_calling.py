@@ -901,8 +901,7 @@ class ToolCallingAttacks(BaseScenario):
         # Without it, ``message.content`` would be non-empty (prose
         # explaining the answer) and ``tool_calls`` would be missing.
         # The schema lives in ``scenarios/_kimi_fixtures.py`` so the
-        # freeze-repro scenario (``kimi_freeze_repro``) and this test
-        # cannot drift.
+        # fixture and this test cannot drift.
         one_of_payload = {
             "model": model,
             "messages": [

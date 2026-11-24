@@ -29,7 +29,6 @@ extra_pipelines_args=(
 # GLM-5.3 uses the GLM-4.5+ tool format the glm-5.1 scenarios target.
 model_profile=glm-5.1
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # GLM-5.3's chat template has no thinking toggle: it always opens <think>, and

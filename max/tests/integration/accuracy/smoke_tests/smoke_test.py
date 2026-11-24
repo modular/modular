@@ -242,8 +242,6 @@ def is_vision_model(model: str, framework: str | None = None) -> bool:
             "gemma-4",
             "hy4-fp8",
             "inkling",
-            "kimi-k2",
-            "kimi-vl",
             "minimax-m3",
             "muse-glimmer",
             "muse-spark",

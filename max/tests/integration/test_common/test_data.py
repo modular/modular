@@ -299,33 +299,6 @@ DEFAULT_PIXEL_GENERATION = [
     for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
 ]
 
-# The prompt contains Kimi-specific media tokens for the vLLM path, which
-# uses it directly.  The messages are the clean (no special tokens) version
-# that the MAX tokenizer runs through the HuggingFace chat template.
-KIMIK2_5_PROMPT = (
-    "<|im_user|>user<|media_begin|>image<|media_content|>"
-    "<|media_pad|><|media_end|>Describe this image.<|im_end|>"
-    "<|im_assistant|>assistant<|im_middle|></think>"
-)
-KIMIK2_5_MESSAGES = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "image"},
-            {"type": "text", "text": "Describe this image."},
-        ],
-    }
-]
-KIMIK2_5_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/kimik2_5_image.jpg"
-
-KIMIK2_5_REQUESTS = [
-    MockTextGenerationRequest.with_images(
-        prompt=KIMIK2_5_PROMPT,
-        images=[KIMIK2_5_IMAGE],
-        messages=KIMIK2_5_MESSAGES,
-    ),
-]
-
 # Default negative prompt from the official Wan repo (sample_neg_prompt).
 # The model was trained with this as the "empty" negative; omitting it produces
 # over-saturated, jittery, low-detail output.

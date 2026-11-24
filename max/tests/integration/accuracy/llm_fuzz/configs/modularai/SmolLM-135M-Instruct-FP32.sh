@@ -55,5 +55,4 @@ scenarios=
 # response_format_json_schema both self-report "server rejects ... (400)",
 # which is accurate signal about this deployment rather than noise.
 exclude=tc_basics,tc_advanced,tc_schema_enforcement,tc_streaming_protocol,tool_arguments_json_stability,agentic_correctness,basic_reasoning_and_tool_usage,openrouter_tests,concurrent_stress,json_schema_compliance,so_basics,so_advanced,production_resilience:max_tokens_json_truncation
-k2vv_mode=
 circuit_breaker=0

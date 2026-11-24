@@ -20,7 +20,6 @@ max_length=16384
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
 model_profile=mimo_v2
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # Deliberately empty: no known-failure exemptions yet. A failing test is a

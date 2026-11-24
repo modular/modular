@@ -27,7 +27,6 @@ batch_size=32
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
 model_profile=beam
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # llm-fuzz defaults to 200 requests in flight. Against a batch of 32 the

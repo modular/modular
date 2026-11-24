@@ -18,7 +18,6 @@ max_length=131072
 
 model_profile=hy_v4
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # shellcheck source=/dev/null

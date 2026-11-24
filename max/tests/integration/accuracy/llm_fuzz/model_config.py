@@ -111,12 +111,6 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:hy_v4"],
         description="Hy4 model-specific tests",
     ),
-    "kimi-k2.5": ModelProfile(
-        name="kimi-k2.5",
-        default_port=8200,
-        tags=["model:kimi-k2.5"],
-        description="Kimi K2.5 model-specific tests",
-    ),
     "glm-5.1": ModelProfile(
         name="glm-5.1",
         default_port=8100,

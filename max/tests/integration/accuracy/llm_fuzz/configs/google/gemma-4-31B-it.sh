@@ -28,5 +28,4 @@ extra_pipelines_args=(
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
 model_profile=gemma4
 scenarios=
-k2vv_mode=
 circuit_breaker=0

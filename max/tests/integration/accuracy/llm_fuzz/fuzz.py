@@ -22,7 +22,6 @@ Usage (with ``LLM_FUZZ="./bazelw run //max/tests/integration/accuracy:llm-fuzz -
     $LLM_FUZZ --url http://localhost:8000 --model my-model --scenarios malformed_payloads,streaming_attacks
     $LLM_FUZZ --url http://localhost:8000 --model my-model --tags crash --verbose
     $LLM_FUZZ --url http://localhost:8000 --model my-model --validation-only
-    $LLM_FUZZ --url http://localhost:8200 --model kimi-k2.5 --model-profile kimi-k2.5
     $LLM_FUZZ --url http://localhost:8000 --model my-model --list
     $LLM_FUZZ --url https://api.openai.com --api-key sk-... --model gpt-4o-mini
 """
@@ -90,7 +89,6 @@ Examples:
   %(prog)s --url http://localhost:8000 --model llama3 --scenarios malformed_payloads
   %(prog)s --url http://localhost:8000 --model llama3 --tags crash,streaming
   %(prog)s --url http://localhost:8000 --model llama3 --validation-only
-  %(prog)s --url http://localhost:8200 --model kimi-k2.5 --model-profile kimi-k2.5
   %(prog)s --url https://api.openai.com --api-key $OPENAI_API_KEY --model gpt-4o-mini
   %(prog)s --list
         """,
@@ -227,7 +225,7 @@ Examples:
         "--model-profile",
         choices=list(MODEL_PROFILES.keys()),
         default=None,
-        help="Activate model-specific test scenarios (e.g. kimi-k2.5, glm-5.1, gemma4)",
+        help="Activate model-specific test scenarios (e.g. glm-5.1, gemma4)",
     )
     profile_group.add_argument(
         "--image-stress-nodes",
@@ -236,13 +234,6 @@ Examples:
         metavar="N",
         help="Scale image_stress concurrency for an N-node deployment (default: 1)",
     )
-    profile_group.add_argument(
-        "--k2vv-mode",
-        choices=["quick", "full"],
-        default="quick",
-        help="K2VV benchmark mode: quick=500 samples, full=2000 (default: quick)",
-    )
-
     needle_group = p.add_argument_group(
         "needle prefix cache",
         "Size of the needle_prefix_cache scenario (defaults run in minutes; "
@@ -521,7 +512,6 @@ async def run(args: argparse.Namespace) -> int:
 
     # Store validator and extra config for scenarios to access
     config.validator = validator
-    config.k2vv_mode = args.k2vv_mode
 
     print_banner()
 
