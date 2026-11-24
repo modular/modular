@@ -139,8 +139,7 @@ struct ArgMax:
             width: SIMDLength
         ](coords: Coord, val: SIMD[.int64, width]) {var out_view}:
             out_view.store[width=width](
-                coords,
-                rebind[SIMD[type_of(out_view).dtype, width]](val),
+                coords, val.cast[type_of(out_view).dtype]()
             )
 
         reduce_argmax[
