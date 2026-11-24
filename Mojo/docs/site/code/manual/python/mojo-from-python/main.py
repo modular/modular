@@ -10,8 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# The page's `main.py`, verbatim.
+
+import time
 
 import mojo.importer  # noqa: F401
-import mojo_module  # type: ignore[import-not-found]
 
-print(mojo_module.factorial(5))
+# isort: split
+
+import fast_primes  # type: ignore[import-not-found]
+import primes
+
+for module in (primes, fast_primes):
+    start = time.perf_counter()
+    count = module.count_primes(2_000_000)
+    elapsed = time.perf_counter() - start
+    print(f"{module.__name__}: {count} primes in {elapsed:.2f} s")

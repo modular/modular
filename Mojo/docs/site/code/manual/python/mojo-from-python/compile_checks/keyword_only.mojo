@@ -10,26 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# Doesn't compile: `def_function()` with a Mojo keyword-only parameter.
 
-import std.math
 from std.os import abort
-
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
 
+def scaled(*, scale: PythonObject) raises -> PythonObject:
+    return scale
+
+
 @export
-def PyInit_mojo_module() abi("C") -> PythonObject:
+def PyInit_keyword_only() abi("C") -> PythonObject:
     try:
-        var m = PythonModuleBuilder("mojo_module")
-        m.def_function[factorial]("factorial", docstring="Compute n!")
-        return m.finalize()
+        var module = PythonModuleBuilder("keyword_only")
+        module.def_function[scaled]("scaled")
+        return module.finalize()
     except e:
-        abort(String("error creating Python Mojo module:", e))
-
-
-def factorial(py_obj: PythonObject) raises -> PythonObject:
-    # Raises an exception if `py_obj` is not convertible to a Mojo `Int`.
-    var n = Int(py=py_obj)
-
-    return std.math.factorial(n)
+        abort(t"error creating keyword_only: {e}")
