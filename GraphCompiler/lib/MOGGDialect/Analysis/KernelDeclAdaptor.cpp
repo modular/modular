@@ -215,10 +215,10 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   // Use root+leaf matching because DeviceContext lives under max::gpu::host
   // (depth varies across package exports).
   if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContext))
-    return KernelDeclContextPtrAdaptor{};
+    return KernelDeclContextAdaptor{};
 
   if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContextArray))
-    return KernelDeclContextPtrListAdaptor{};
+    return KernelDeclContextArrayAdaptor{};
 
   // --- Device graph builder (launch arg of build_graph) ---
   if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceGraphBuilder))

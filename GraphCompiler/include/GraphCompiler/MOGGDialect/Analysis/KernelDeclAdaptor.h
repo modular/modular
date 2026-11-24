@@ -292,14 +292,12 @@ struct KernelDeclTileTensorAdaptor {
   bool operator==(const KernelDeclTileTensorAdaptor &) const { return true; }
 };
 
-struct KernelDeclContextPtrAdaptor {
-  bool operator==(const KernelDeclContextPtrAdaptor &) const { return true; }
+struct KernelDeclContextAdaptor {
+  bool operator==(const KernelDeclContextAdaptor &) const { return true; }
 };
 
-struct KernelDeclContextPtrListAdaptor {
-  bool operator==(const KernelDeclContextPtrListAdaptor &) const {
-    return true;
-  }
+struct KernelDeclContextArrayAdaptor {
+  bool operator==(const KernelDeclContextArrayAdaptor &) const { return true; }
 };
 
 struct KernelDeclGraphBuilderAdaptor {
@@ -324,8 +322,8 @@ struct KernelDeclOpaqueAdaptor {
 using KernelDeclOperandVariant =
     std::variant<KernelDeclTensorAdaptor, KernelDeclVariadicTensorAdaptor,
                  KernelDeclScalarAdaptor, KernelDeclTileTensorAdaptor,
-                 KernelDeclOpaqueAdaptor, KernelDeclContextPtrAdaptor,
-                 KernelDeclContextPtrListAdaptor, KernelDeclGraphBuilderAdaptor,
+                 KernelDeclOpaqueAdaptor, KernelDeclContextAdaptor,
+                 KernelDeclContextArrayAdaptor, KernelDeclGraphBuilderAdaptor,
                  KernelDeclUnsupportedAdaptor>;
 
 /// One argument decoded from a kernel's stored LIT signature.
@@ -427,14 +425,13 @@ struct KernelDeclOperandAdaptor {
   }
 
   bool isContextType() const {
-    return std::holds_alternative<KernelDeclContextPtrAdaptor>(
-               underlyingType) ||
-           std::holds_alternative<KernelDeclContextPtrListAdaptor>(
+    return std::holds_alternative<KernelDeclContextAdaptor>(underlyingType) ||
+           std::holds_alternative<KernelDeclContextArrayAdaptor>(
                underlyingType);
   }
 
   bool isVariadicContextType() const {
-    return std::holds_alternative<KernelDeclContextPtrListAdaptor>(
+    return std::holds_alternative<KernelDeclContextArrayAdaptor>(
         underlyingType);
   }
 
@@ -599,10 +596,9 @@ StreamType &operator<<(StreamType &os, const KernelDeclOperandVariant &var) {
           os << "Scalar";
         } else if constexpr (std::is_same_v<T, KernelDeclOpaqueAdaptor>) {
           os << "<" << v.typeName.strref() << ">";
-        } else if constexpr (std::is_same_v<T, KernelDeclContextPtrAdaptor>) {
+        } else if constexpr (std::is_same_v<T, KernelDeclContextAdaptor>) {
           os << "Context";
-        } else if constexpr (std::is_same_v<T,
-                                            KernelDeclContextPtrListAdaptor>) {
+        } else if constexpr (std::is_same_v<T, KernelDeclContextArrayAdaptor>) {
           os << "*Context";
         } else if constexpr (std::is_same_v<T, KernelDeclGraphBuilderAdaptor>) {
           os << "GraphBuilder";
