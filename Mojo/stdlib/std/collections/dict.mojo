@@ -1834,16 +1834,6 @@ struct Dict[
         return self._table.find_slot(hash, key)
 
     @inline(.always)
-    def _set_ctrl(mut self, index: Int, value: UInt8):
-        """Set a control byte. Forwards to the underlying SwissTable.
-
-        Args:
-            index: The slot index.
-            value: The control byte value.
-        """
-        self._table.set_ctrl(index, value)
-
-    @inline(.always)
     def _place_new_entry(
         mut self, slot_idx: Int, var entry: DictEntry[Self.K, Self.V, Self.H]
     ):

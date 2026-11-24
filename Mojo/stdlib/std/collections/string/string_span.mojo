@@ -1963,14 +1963,14 @@ struct StringSpan[origin: ImmOrigin](
         from std.testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:
-        assert_false(StringSpan("").isspace())
+        assert_false(StringSpan("").is_ascii_whitespace())
 
         # ASCII space characters
-        assert_true(StringSpan(" ").isspace())
-        assert_true(StringSpan("\t").isspace())
+        assert_true(StringSpan(" ").is_ascii_whitespace())
+        assert_true(StringSpan("\t").is_ascii_whitespace())
 
         # Contains non-space characters
-        assert_false(StringSpan(" abc  ").isspace())
+        assert_false(StringSpan(" abc  ").is_ascii_whitespace())
         ```
         """
 

@@ -1253,10 +1253,6 @@ struct String(
 
     def join[T: Copyable & Writable](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
-        Defaults to writing to the stack if total bytes of `elems` is less than
-        `buffer_size`, otherwise will allocate once to the heap and write
-        directly into that. The `buffer_size` defaults to 4096 bytes to match
-        the default page size on arm64 and x86-64.
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
@@ -1271,10 +1267,6 @@ struct String(
         Notes:
             - Defaults to writing directly to the string if the bytes
             fit in an inline `String`, otherwise will process it by chunks.
-            - The `buffer_size` defaults to 4096 bytes to match the default
-            page size on arm64 and x86-64, but you can increase this if you're
-            joining a very large `List` of elements to write into the stack
-            instead of the heap.
         """
         return StringSpan(self).join(elems)
 

@@ -869,14 +869,6 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         return self._is_nvidia_gpu_any[_SM_100X_ARCHS]()
 
     @inline(.nodebug)
-    def _is_sm_101x(self) -> Bool:
-        return self._is_nvidia_gpu_any[_SM_101X_ARCHS]()
-
-    @inline(.nodebug)
-    def _is_sm_103x(self) -> Bool:
-        return self._is_nvidia_gpu_any[_SM_103X_ARCHS]()
-
-    @inline(.nodebug)
     def _is_sm_110x(self) -> Bool:
         return self._is_nvidia_gpu_any[_SM_110X_ARCHS]()
 
@@ -902,12 +894,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     @inline(.nodebug)
     def _is_sm_100x_or_newer(self) -> Bool:
-        return (
-            self._has_blackwell_tcgen05()
-            or self._is_sm_100x()
-            or self._is_sm_103x()
-            or self._is_sm_110x_or_newer()
-        )
+        return self._has_blackwell_tcgen05() or self._is_sm_110x_or_newer()
 
     @inline(.nodebug)
     def _is_sm_110x_or_newer(self) -> Bool:
@@ -1061,11 +1048,6 @@ def _is_sm_100x() -> Bool:
 
 
 @inline(.nodebug)
-def _is_sm_110x() -> Bool:
-    return CompilationTarget.current()._is_sm_110x()
-
-
-@inline(.nodebug)
 def _is_sm_9x_or_newer() -> Bool:
     return CompilationTarget.current()._is_sm_9x_or_newer()
 
@@ -1073,11 +1055,6 @@ def _is_sm_9x_or_newer() -> Bool:
 @inline(.nodebug)
 def _is_sm_100x_or_newer() -> Bool:
     return CompilationTarget.current()._is_sm_100x_or_newer()
-
-
-@inline(.nodebug)
-def _is_sm_120x_or_newer() -> Bool:
-    return CompilationTarget.current()._is_sm_120x_or_newer()
 
 
 @inline(.nodebug)

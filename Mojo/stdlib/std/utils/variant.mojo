@@ -793,10 +793,6 @@ struct Variant[*Ts: AnyType](
         return self._storage^.unwrap[T]()
 
     @inline(.always)
-    def _unsafe_unchecked_unwrap[T: Movable](deinit self) -> T:
-        return self._storage^.unwrap[T]()
-
-    @inline(.always)
     def unsafe_unwrap[T: Movable](deinit self) -> T:
         """Unsafely take the current value of the variant with the provided type.
 
