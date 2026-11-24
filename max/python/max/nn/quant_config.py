@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# Touched to bust a stale CI cache entry; safe to remove.
+
 """Scaled quantization configuration data structures for models."""
 
 from __future__ import annotations
