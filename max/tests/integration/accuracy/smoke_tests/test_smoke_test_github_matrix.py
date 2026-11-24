@@ -197,6 +197,7 @@ def test_mach_models_run_only_on_mach() -> None:
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
         "mistralai/Mistral-Large-4-1T-A52B-NVFP4",
+        "tencent/Hy4-FP8",
         "tencent/Hy4-preview-FP8",
         "tencent/Hy4-preview-FP8__mtp",
     }

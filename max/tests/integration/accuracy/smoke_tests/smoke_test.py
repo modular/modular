@@ -240,6 +240,7 @@ def is_vision_model(model: str, framework: str | None = None) -> bool:
         for kw in (
             "gemma-3",
             "gemma-4",
+            "hy4-fp8",
             "inkling",
             "kimi-k2",
             "kimi-vl",
