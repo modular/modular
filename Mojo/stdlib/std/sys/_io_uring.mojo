@@ -17,10 +17,11 @@ kernel headers, which the `abi_linux` C ABI suite compiles against (the jammy
 sysroot). So this is the io_uring API of Linux 5.15.
 
 C declares parts of `struct io_uring_sqe` as anonymous unions. Mojo has no
-unions, so each union is one field named after its main member: `off` is also
-`addr2`, `addr` is also `splice_off_in`, `op_flags` is the per-operation flags
-union (`rw_flags`, `fsync_flags`, and the rest), `buf_index` is also
-`buf_group`, and `splice_fd_in` is also `file_index`.
+unions, so each union is one field named after its main member, and its other
+members are aliases of that field: `off` is also `addr2`, `addr` is also
+`splice_off_in`, `op_flags` is the per-operation flags union (`rw_flags`,
+`fsync_flags`, and the rest), `buf_index` is also `buf_group`, and
+`splice_fd_in` is also `file_index`.
 
 Moving to newer kernel headers: the kernel never moves or resizes an existing
 field, so these layouts hold on every newer kernel, and newer constants and
@@ -77,9 +78,7 @@ struct io_uring_sqe(TrivialRegisterPassable):
     var flags: UInt8
     var ioprio: UInt16
     var fd: Int32
-    # TODO: Use a union of `off` and `addr2` once Mojo has unions.
     var off: UInt64
-    # TODO: Use a union of `addr` and `splice_off_in` once Mojo has unions.
     var addr: UInt64
     var len: UInt32
 
@@ -90,10 +89,8 @@ struct io_uring_sqe(TrivialRegisterPassable):
     var op_flags: UInt32
 
     var user_data: UInt64
-    # TODO: Use a union of `buf_index` and `buf_group` once Mojo has unions.
     var buf_index: UInt16
     var personality: UInt16
-    # TODO: Use a union of `splice_fd_in` and `file_index` once Mojo has unions.
     var splice_fd_in: Int32
 
     @__annotation(CField(rename="__pad2", c_type=.array("__u64", 2)))
@@ -133,6 +130,126 @@ struct io_uring_sqe(TrivialRegisterPassable):
         self.buf_index = buf_index
         self.personality = personality
         self.splice_fd_in = splice_fd_in
+
+    # The other members of each union, as aliases of its field. Each overload
+    # matches one name by the type of its literal, `StringLiteral["addr2"]`.
+
+    @inline(.always)
+    def __getattr_param__[
+        name: type_of("addr2")
+    ](ref self) -> ref[self.off] UInt64:
+        """C `addr2`, the same bytes as `off`.
+
+        Parameters:
+            name: The member name.
+
+        Returns:
+            A reference to `off`.
+        """
+        return self.off
+
+    @inline(.always)
+    def __getattr_param__[
+        name: type_of("splice_off_in")
+    ](ref self) -> ref[self.addr] UInt64:
+        """C `splice_off_in`, the same bytes as `addr`.
+
+        Parameters:
+            name: The member name.
+
+        Returns:
+            A reference to `addr`.
+        """
+        return self.addr
+
+    @inline(.always)
+    def __getattr_param__[
+        name: type_of("rw_flags")
+    ](ref self) -> ref[self.op_flags] Int32:
+        """C `rw_flags`, the bytes of `op_flags` as a signed `int`.
+
+        Parameters:
+            name: The member name.
+
+        Returns:
+            A reference to `op_flags`, as an `Int32`.
+        """
+        return Pointer(to=self.op_flags).unsafe_bitcast[Int32]()[]
+
+    @inline(.always)
+    def __getattr_param__[
+        name: type_of("poll_events")
+    ](ref self) -> ref[self.op_flags] UInt16:
+        """C `poll_events`, the first two bytes of `op_flags`.
+
+        These are its low half, since every target Mojo supports is
+        little-endian.
+
+        Parameters:
+            name: The member name.
+
+        Returns:
+            A reference to the first two bytes of `op_flags`.
+        """
+        return Pointer(to=self.op_flags).unsafe_bitcast[UInt16]()[]
+
+    @inline(.always)
+    def __getattr_param__[
+        name: StringLiteral
+    ](ref self) -> ref[self.op_flags] UInt32:
+        """The other per-operation flags, the same bytes as `op_flags`.
+
+        Parameters:
+            name: The member name, such as `fsync_flags` or `msg_flags`.
+
+        Returns:
+            A reference to `op_flags`.
+        """
+        comptime assert name in (
+            "fsync_flags",
+            "poll32_events",
+            "sync_range_flags",
+            "msg_flags",
+            "timeout_flags",
+            "accept_flags",
+            "cancel_flags",
+            "open_flags",
+            "statx_flags",
+            "fadvise_advice",
+            "splice_flags",
+            "rename_flags",
+            "unlink_flags",
+            "hardlink_flags",
+        ), "not a member of `io_uring_sqe`"
+        return self.op_flags
+
+    @inline(.always)
+    def __getattr_param__[
+        name: type_of("buf_group")
+    ](ref self) -> ref[self.buf_index] UInt16:
+        """C `buf_group`, the same bytes as `buf_index`.
+
+        Parameters:
+            name: The member name.
+
+        Returns:
+            A reference to `buf_index`.
+        """
+        return self.buf_index
+
+    @inline(.always)
+    def __getattr_param__[
+        name: type_of("file_index")
+    ](ref self) -> ref[self.splice_fd_in] UInt32:
+        """C `file_index`, the bytes of `splice_fd_in` as an unsigned `__u32`.
+
+        Parameters:
+            name: The member name.
+
+        Returns:
+            A reference to `splice_fd_in`, as a `UInt32`.
+        """
+        return Pointer(to=self.splice_fd_in).unsafe_bitcast[UInt32]()[]
 
 
 @fieldwise_init
