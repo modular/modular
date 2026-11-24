@@ -175,3 +175,25 @@ modular_py_test(
         "//max/tests/integration/test_common:simple_kv_cache",
     ],
 )
+
+modular_py_test(
+    name = "test_routed_swiglu_quant_gpu",
+    srcs = ["test_routed_swiglu_quant_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+    ],
+)

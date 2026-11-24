@@ -348,7 +348,11 @@ def _routed_body(
 
     x_sorted = F.gather(x, slot_token, axis=0)
     gate_up_out = grouped(x_sorted, gate_up, gate_up_scale)
-    gate, up = gate_up_out.split([spec.inter, spec.inter], axis=1)
+    # Slices, not ``split``: casting both outputs of a split lets the graph
+    # compiler hoist one float32 cast over the whole GEMM output, a kernel of
+    # its own; sliced, the SwiGLU fuses into the down quantize.
+    gate = gate_up_out[:, : spec.inter]
+    up = gate_up_out[:, spec.inter :]
     h = _clamped_swiglu(gate, up, spec.swiglu_limit)
     h = h * slot_weight.unsqueeze(-1)
     down_out = grouped(h, down, down_scale)
