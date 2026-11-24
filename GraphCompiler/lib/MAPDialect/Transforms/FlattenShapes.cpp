@@ -11,9 +11,9 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Merges the neighbouring dims of each fused elementwise loop where every
-// tensor the kernel touches lays them out one after the other, so the kernel
-// does less index math and runs longer vectorized rows.
+// Merges the neighbouring dims of each fused kernel (an elementwise loop or a
+// reduction) where every tensor the kernel touches lays them out one after the
+// other, so the kernel does less index math and runs longer vectorized rows.
 //
 //===----------------------------------------------------------------------===//
 
@@ -233,6 +233,92 @@ void flattenElementwise(FlattenDriver &driver) {
   body.getBody().walk([&](FlattenableOpInterface op) { op.flatten(driver); });
 }
 
+// The group sizes the dims of `body`'s shape merge into, or nothing. As for a
+// loop, with two differences: the reduced axis merges with neither neighbor,
+// since a row is folded along it, and the innermost extent's rule doesn't
+// apply, since the Row API picks the kernel's width.
+std::optional<SmallVector<int64_t>> planRowwise(IterRowwiseBodyOp body) {
+  // 1) Skip rank 0-1 kernels.
+  ArrayRef<TypedAttr> dims = body.getShape().getValues();
+  size_t rank = dims.size();
+  if (rank < 2)
+    return std::nullopt;
+
+  // 2) Figure out which dims can be flattened.
+  SmallVector<bool> merges(rank - 1, true);
+  if (!bodyAllowsMerges(body.getBody(), merges) ||
+      !capturesAllowMerges(body, rank, merges))
+    return std::nullopt;
+
+  // 3) Don't flatten the reduced dim.
+  int64_t axis = body.getAxis();
+  if (axis > 0)
+    merges[axis - 1] = false;
+  if (axis + 1 < static_cast<int64_t>(rank))
+    merges[axis] = false;
+
+  // 4) Drop unsupported new parametric dims.
+  dropUndeclarableMerges(body, dims, merges);
+
+  // 5) Return the final groups of dims that can be flattened.
+  SmallVector<int64_t> groups = groupsOf(merges);
+  if (groups.size() == rank)
+    return std::nullopt;
+  return groups;
+}
+
+// Rewrites the driver's rowwise body over its groups: each capture is read and
+// written through a collapse view, the row and every fold's index drop to the
+// merged rank, and the axis moves to its group.
+//
+// A [4, 6, 8] reduction over the innermost dim merges the two row dims; the
+// reduced dim stays on its own, and the output collapses with them:
+//
+//  map.iter.opaque (%x, %o) {      map.iter.opaque (%x, %o) {
+//                                  %cx = collapse.stride<[4,6,8]->[24,8]>(%x)
+//                                  %co = collapse.stride<[4,6,1]->[24,1]>(%o)
+//    rowwise.body<[4, 6, 8],   =>  rowwise.body<[24, 8], axis = 1>
+//                 axis = 2>
+//      index (%r: index<3>)          index (%r: index<2>)
+//      map.iter.reduce ReduceSum     map.iter.reduce ReduceSum
+//        index (%i: index<3>)          index (%i: index<2>)
+//      map.store %y[%r] = %acc       map.store %y[%r] = %acc
+//  }                               }
+//
+// Dims on both sides of the axis merge, each side on its own, and the axis
+// moves to its group:
+//
+//   rowwise.body<[2, 3, 5, 4, 6], axis = 2>   (groups [2, 1, 2])
+//   =>
+//   rowwise.body<[6, 5, 24], axis = 1>
+//
+// Every phase of the row follows the folds to the merged rank:
+//
+//   map.iter.tile   index (%i: index<3>)   =>   index (%i: index<2>)
+//   map.iter.reduce index (%i: index<3>)   =>   index (%i: index<2>)
+//   map.iter.map    index (%j: index<3>)   =>   index (%j: index<2>)
+void flattenRowwise(FlattenDriver &driver) {
+  auto body = cast<IterRowwiseBodyOp>(driver.body);
+  MLIRContext *ctx = body.getContext();
+  MOSH::ShapeAttr shape = mergeShape(body.getShape(), driver);
+
+  // 1) Flatten the operands the kernel captures.
+  flattenCaptures(body, driver);
+
+  // 2) Rewrite the kernel's shape and axis, and its index type.
+  Block &block = body.getBody().front();
+  block.getArgument(0).setType(IndexType::get(ctx, driver.groups.size()));
+  body.setShapeAttr(shape);
+  int64_t axis = 0;
+  for (int64_t covered = 0; covered < static_cast<int64_t>(body.getAxis());
+       covered += driver.groups[axis++]) {
+  }
+  body.setAxis(axis);
+
+  // 3) Flatten the other ops in the body.
+  body.getBody().walk([&](FlattenableOpInterface op) { op.flatten(driver); });
+}
+
 struct FlattenShapesPass : public impl::FlattenShapesBase<FlattenShapesPass> {
   using Base::Base;
 
@@ -247,6 +333,17 @@ struct FlattenShapesPass : public impl::FlattenShapesBase<FlattenShapesPass> {
       driver.groups = std::move(*groups);
       driver.body = body;
       flattenElementwise(driver);
+      ++numLoopsFlattened;
+      return WalkResult::skip();
+    });
+
+    getOperation().walk([&](IterRowwiseBodyOp body) {
+      std::optional<SmallVector<int64_t>> groups = planRowwise(body);
+      if (!groups)
+        return WalkResult::skip();
+      driver.groups = std::move(*groups);
+      driver.body = body;
+      flattenRowwise(driver);
       ++numLoopsFlattened;
       return WalkResult::skip();
     });

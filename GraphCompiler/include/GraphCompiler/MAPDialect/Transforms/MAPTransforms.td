@@ -277,15 +277,17 @@ def FlattenShapes : Pass<"map-flatten-shapes", "MO::GraphOp"> {
   let summary = "Merge the neighbouring dims of fused kernels that are contiguous in memory.";
   let description = [{
     Runs after fusion, once views are hoisted out of the kernel bodies, and
-    before `InferMaxSimdWidth`. It handles each fused elementwise loop
-    (`map.iter.elementwise.body`).
+    before `InferMaxSimdWidth`. It handles each fused kernel: an elementwise
+    loop (`map.iter.elementwise.body`) and a reduction
+    (`map.iter.rowwise.body`).
 
     It first decides which pairs of neighbouring dims merge. Every pair starts
     allowed; a body that computes with the index keeps the kernel as it is;
     each op in the body clears the pairs it can't support
     (`FlattenableOpInterface::canFlattenDims`); each tensor clears the pairs
     its layout, followed through its views (`getOutputLayout`), doesn't keep
-    contiguous; a symbolic innermost dim stays apart. In a kernel nested
+    contiguous; a reduction keeps its axis apart from its neighbours; an
+    elementwise loop keeps a symbolic innermost dim apart. In a kernel nested
     in control flow or `mo.parallel`, only static dims merge.
 
     It then reads every tensor through a `map.index.collapse.stride` of the
