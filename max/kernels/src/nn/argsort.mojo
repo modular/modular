@@ -409,11 +409,10 @@ def _argsort_gpu_impl[
                 var cmp_val: Bool
                 if vi == vp:
                     # Only ties need the indices (padding loses ties).
+                    ii = indices_arg.load[width=1]((i,))
+                    ip = indices_arg.load[width=1]((partner,))
                     cmp_val = _sorts_after[ascending](
-                        vi,
-                        vp,
-                        _is_pad(indices_arg.load[width=1]((i,))),
-                        _is_pad(indices_arg.load[width=1]((partner,))),
+                        vi, vp, _is_pad(ii), _is_pad(ip)
                     )
                 else:
                     cmp_val = _sorts_after[ascending](vi, vp, False, False)
