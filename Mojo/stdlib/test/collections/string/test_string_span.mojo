@@ -1027,6 +1027,62 @@ def test_mul() raises:
     assert_equal(StringSpan("abcde") * 5, "abcdeabcdeabcdeabcdeabcde")
 
 
+def test_removeprefix() raises:
+    # Empty prefix returns original string unchanged.
+    assert_equal(StringSpan("hello world").removeprefix(""), "hello world")
+    # Prefix present at start is removed.
+    assert_equal(StringSpan("hello world").removeprefix("hello"), " world")
+    # Prefix not at start returns original string unchanged.
+    assert_equal(StringSpan("hello world").removeprefix("world"), "hello world")
+    # String equal to prefix returns empty string.
+    assert_equal(StringSpan("hello world").removeprefix("hello world"), "")
+    # Prefix longer than string returns original unchanged.
+    assert_equal(StringSpan("hi").removeprefix("hello world"), "hi")
+    # Middle substring is not treated as prefix.
+    assert_equal(
+        StringSpan("hello world").removeprefix("llo wor"), "hello world"
+    )
+    # Only removes once, not recursively.
+    assert_equal(StringSpan("aahello").removeprefix("aa"), "hello")
+    assert_equal(StringSpan("aaaahello").removeprefix("aa"), "aahello")
+    # Unicode prefix.
+    assert_equal(StringSpan("héllo").removeprefix("hé"), "llo")
+    assert_equal(StringSpan("héllo").removeprefix("ll"), "héllo")
+    # Empty string with empty prefix.
+    assert_equal(StringSpan("").removeprefix(""), "")
+    # Multi-byte codepoints at the prefix boundary.
+    assert_equal(StringSpan("hello🌍").removeprefix("hello"), "🌍")
+    assert_equal(StringSpan("🌍hello").removeprefix("🌍"), "hello")
+
+
+def test_removesuffix() raises:
+    # Empty suffix returns original string unchanged.
+    assert_equal(StringSpan("hello world").removesuffix(""), "hello world")
+    # Suffix present at end is removed.
+    assert_equal(StringSpan("hello world").removesuffix("world"), "hello ")
+    # Suffix not at end returns original string unchanged.
+    assert_equal(StringSpan("hello world").removesuffix("hello"), "hello world")
+    # String equal to suffix returns empty string.
+    assert_equal(StringSpan("hello world").removesuffix("hello world"), "")
+    # Suffix longer than string returns original unchanged.
+    assert_equal(StringSpan("hi").removesuffix("hello world"), "hi")
+    # Middle substring is not treated as suffix.
+    assert_equal(
+        StringSpan("hello world").removesuffix("llo wor"), "hello world"
+    )
+    # Only removes once, not recursively.
+    assert_equal(StringSpan("helloaa").removesuffix("aa"), "hello")
+    assert_equal(StringSpan("helloaaaa").removesuffix("aa"), "helloaa")
+    # Unicode suffix.
+    assert_equal(StringSpan("hellé").removesuffix("lé"), "hel")
+    assert_equal(StringSpan("hellé").removesuffix("ll"), "hellé")
+    # Empty string with empty suffix.
+    assert_equal(StringSpan("").removesuffix(""), "")
+    # Multi-byte codepoints at the suffix boundary.
+    assert_equal(StringSpan("🌍hello").removesuffix("hello"), "🌍")
+    assert_equal(StringSpan("hello🌍").removesuffix("🌍"), "hello")
+
+
 def test_isupper() raises:
     assert_true(StringSpan("ASDG").isupper())
     assert_false(StringSpan("AsDG").isupper())
