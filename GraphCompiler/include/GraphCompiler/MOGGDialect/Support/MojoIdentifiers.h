@@ -65,10 +65,6 @@ constexpr MojoStaticValue kOpaqueTypeMappingAttrName =
 constexpr MojoStaticValue kBuiltInKernelPackagesAttrName =
     "mogg.builtin_kernel_packages";
 
-/// The name generated code imports `max._graph_blob` as, the module of the
-/// primitives a graph blob calls.
-constexpr MojoStaticValue kGraphBlobModuleAlias = "_graph_blob";
-
 /// The `@register` decorators, owned by KGEN's `LITUtils.h`, which the Mojo
 /// parser also uses. A kernel struct's method names are
 /// `stringifyKernelFunctionKind`'s.
@@ -460,6 +456,9 @@ constexpr MojoStaticValue kParameterForeachElem = "elem";
 constexpr MojoStaticValue kParameterForeachCtx = "ctx";
 constexpr MojoStaticValue kMoggForeachTileRegistration =
     "mogg.call.foreach.tile";
+/// The guard `mogg.graph_blob.call` runs its region under.
+constexpr MojoStaticValue kMoggGraphBlobIsThreadActiveRegistration =
+    "mogg.graph_blob.is_thread_active";
 constexpr MojoStaticValue kParameterSelf = "self";
 constexpr MojoStaticValue kParameterIdx = "idx";
 constexpr MojoStaticValue kParameterVal = "val";
@@ -502,8 +501,6 @@ constexpr std::pair<llvm::StringLiteral, llvm::StringLiteral>
         {"algorithm.rowwise_types", ""},
         // For `layout.tile_io.TileCopier`.
         {"layout.tile_io", ""},
-        // For the graph blob primitives, as `kGraphBlobModuleAlias`.
-        {"max._graph_blob", "_graph_blob"},
 };
 
 /// TODO(GEX-2488): Find another way to detect that a type is an `IOSpec`

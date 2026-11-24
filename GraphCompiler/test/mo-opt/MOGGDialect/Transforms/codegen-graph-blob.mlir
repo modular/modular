@@ -22,27 +22,27 @@
 // CHECK:        var [[CONFIG0:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarativeFusedStore.execute_configuration(
 // CHECK-NEXT:   var [[CONFIG1:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration(
 // CHECK-NEXT:   var [[CONFIG2:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration(
-// CHECK-NEXT:   var [[LAUNCH:[A-Za-z0-9_]+]] = _graph_blob.launch_config([[CTX]])
-// CHECK-NEXT:   var [[ACT0:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
-// CHECK-NEXT:   var [[ACT1:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG1]].get_grid_dim(),
-// CHECK-NEXT:   var [[ACT2:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG2]].get_grid_dim(),
+// CHECK-NEXT:   var [[LAUNCH:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_launch_config([[CTX]])
+// CHECK-NEXT:   var [[ACT0:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
+// CHECK-NEXT:   var [[ACT1:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[CONFIG1]].get_grid_dim(),
+// CHECK-NEXT:   var [[ACT2:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[CONFIG2]].get_grid_dim(),
 // CHECK-NEXT:   comptime [[A_T:[A-Za-z0-9_]+]] = type_of([[A]])
 // CHECK-NEXT:   comptime [[FUSED_T:[A-Za-z0-9_]+]] = type_of([[FUSED]])
 // CHECK-NEXT:   comptime [[C_T:[A-Za-z0-9_]+]] = type_of([[C]])
 // CHECK-NEXT:   comptime [[D_T:[A-Za-z0-9_]+]] = type_of([[D]])
 // CHECK-NEXT:   comptime [[E_T:[A-Za-z0-9_]+]] = type_of([[E]])
 // CHECK:        def [[KERNEL:execute_device_[_0-9]+]]([[X:[A-Za-z0-9_]+]]: [[A_T]].device_type, [[O0:[A-Za-z0-9_]+]]: [[FUSED_T]].device_type, [[Y:[A-Za-z0-9_]+]]: [[C_T]].device_type, [[Z0:[A-Za-z0-9_]+]]: [[D_T]].device_type, [[Z1:[A-Za-z0-9_]+]]: [[E_T]].device_type, [[A0:[A-Za-z0-9_]+]]: {{[^,]+}}, [[A1:[A-Za-z0-9_]+]]: {{[^,]+}}, [[A2:[A-Za-z0-9_]+]]: {{[^,]+}}):
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A0]]){{\)?}}:
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A0]]){{\)?}}:
 // CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[X]].unsafe_bitcast
 // CHECK:            var [[IN0:[A-Za-z0-9_]+]] = _MoggDenseTensorArg[{{.*}}_MoggTensorIO.INPUT
 // CHECK-NEXT:       {{.*}}.MapLowerDeclarativeFusedStore.execute_device([[O0]], [[IN0]])
-// CHECK:          _graph_blob.barrier()
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A1]]){{\)?}}:
+// CHECK:          builtin_primitives.primitives._graph_blob_barrier()
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A1]]){{\)?}}:
 // CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[Y]].unsafe_bitcast
 // CHECK:            mogg_tensor_init[{{.*}}IO.Output{{.*}}]([[Z0]].unsafe_bitcast
 // CHECK:            {{.*}}.MapLowerDeclarative.execute_device(
-// CHECK:          _graph_blob.barrier()
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A2]]){{\)?}}:
+// CHECK:          builtin_primitives.primitives._graph_blob_barrier()
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A2]]){{\)?}}:
 // CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[Y]].unsafe_bitcast
 // CHECK:            mogg_tensor_init[{{.*}}IO.Output{{.*}}]([[Z1]].unsafe_bitcast
 // CHECK:            {{.*}}.MapLowerDeclarative.execute_device(

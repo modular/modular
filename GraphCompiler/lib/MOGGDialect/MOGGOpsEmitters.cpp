@@ -1051,26 +1051,27 @@ LogicalResult CallExecuteConfigurationOp::emitMojo(EmitMojoState &state) {
   return success();
 }
 
-//   var launch = _graph_blob.launch_config(ctx)
+//   var launch = _graph_blob_launch_config(ctx)
 LogicalResult GraphBlobLaunchConfigOp::emitMojo(EmitMojoState &state) {
-  MojoValue graphBlob(kGraphBlobModuleAlias);
+  MojoValue launchConfig(
+      primitiveMojoName(state.registry.lookupPrimitive(getOperationName())));
   MojoValue launch =
-      state.file->var(graphBlob.get("launch_config")(
-                          {state.getMojoValueFor(getDeviceContext())}),
+      state.file->var(launchConfig({state.getMojoValueFor(getDeviceContext())}),
                       /*cache=*/false);
   state.setMojoValueFor(getConfig(), launch);
   return success();
 }
 
-//   var active = _graph_blob.active_threads(
+//   var active = _graph_blob_active_threads(
 //       config.get_grid_dim(), config.get_block_dim(),
 //       launch.get_grid_dim(), launch.get_block_dim())
 LogicalResult GraphBlobActiveThreadsOp::emitMojo(EmitMojoState &state) {
-  MojoValue graphBlob(kGraphBlobModuleAlias);
+  MojoValue activeThreads(
+      primitiveMojoName(state.registry.lookupPrimitive(getOperationName())));
   MojoValue config = state.getMojoValueFor(getConfig());
   MojoValue launch = state.getMojoValueFor(getLaunch());
   MojoValue active = state.file->var(
-      graphBlob.get("active_threads")(
+      activeThreads(
           {config.get("get_grid_dim")(), config.get("get_block_dim")(),
            launch.get("get_grid_dim")(), launch.get("get_block_dim")()}),
       /*cache=*/false);
@@ -1124,12 +1125,13 @@ LogicalResult GraphBlobLaunchOp::emitMojo(EmitMojoState &state) {
   return success();
 }
 
-//   if _graph_blob.is_thread_active(active):
+//   if _graph_blob_is_thread_active(active):
 //       ...  # the region
 LogicalResult GraphBlobCallOp::emitMojo(EmitMojoState &state) {
-  MojoValue graphBlob(kGraphBlobModuleAlias);
-  MojoValue isActive =
-      graphBlob.get("is_thread_active")({state.getMojoValueFor(getActive())});
+  PrimitiveDeclOp isThreadActive =
+      state.registry.lookupPrimitive(kMoggGraphBlobIsThreadActiveRegistration);
+  MojoValue isActive = MojoValue(primitiveMojoName(isThreadActive))(
+      {state.getMojoValueFor(getActive())});
   bool failedToLower = false;
   state.file->if_(isActive, [&] {
     for (Operation &op : getBody().getOps())
@@ -1141,9 +1143,10 @@ LogicalResult GraphBlobCallOp::emitMojo(EmitMojoState &state) {
   return failure(failedToLower);
 }
 
-//   _graph_blob.barrier()
+//   _graph_blob_barrier()
 LogicalResult GraphBlobBarrierOp::emitMojo(EmitMojoState &state) {
-  state.file->call(MojoValue(kGraphBlobModuleAlias).get("barrier"));
+  state.file->call(MojoValue(
+      primitiveMojoName(state.registry.lookupPrimitive(getOperationName()))));
   return success();
 }
 

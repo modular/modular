@@ -14,7 +14,7 @@
 // CHECK:      var [[LIMIT:[A-Za-z0-9_]+]] = layout.Coord(layout.Idx[8], Scalar[DType.int](Int([[N]])))
 // CHECK:      var [[DIV:[A-Za-z0-9_]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list([[LIMIT]]))
 // CHECK-NEXT: builtin_primitives.primitives._graph_blob_foreach[dtypes = {{.+}}]({{[^,]+}}, {{[^,]+}}, max_simd_width = Scalar[DType.int]([[DIV]]))
-// CHECK:      _graph_blob.barrier()
+// CHECK:      builtin_primitives.primitives._graph_blob_barrier()
 // CHECK:      builtin_primitives.primitives._graph_blob_foreach[dtypes = {{.+}}]({{[^,]+}}, {{[^,]+}}, max_simd_width = layout.Idx[2])
 // CHECK:      mogg_launch_declarative
 mo.graph @blob<N>(%a: !mo.tensor<[N], f32, gpu:0>) -> !mo.tensor<[N], f32, gpu:0> {

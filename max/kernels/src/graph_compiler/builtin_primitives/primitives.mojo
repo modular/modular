@@ -38,7 +38,7 @@ from extensibility import (
 from std.collections import Array
 from max.gpu import block_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
-from max.gpu.host import GridBlockExecutionConfig
+from max.gpu.host import Dim, GridBlockExecutionConfig, GridBlockLaunchConfig
 from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
@@ -90,7 +90,7 @@ from extensibility import (
 from std.utils import Index, IndexList, StaticTuple
 
 from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
-from max._plugin import CurrentMaxPlugin
+from max._plugin import CurrentMaxPlugin, MaxPluginForTarget
 
 from .buffer_plan import BufferPlanState
 
@@ -2429,6 +2429,131 @@ def _foreach[
                     return
 
 
+# A graph blob runs the device code of several calls as one launch on every
+# thread of the device. Its kernel runs each call only on the threads that
+# `_graph_blob_is_thread_active` accepts, and every thread waits at a
+# `_graph_blob_barrier` between calls. Each target implements these primitives
+# through its MAX plugin. On a target that doesn't, the host primitive is a
+# compile-time error, and so are the device primitives on a GPU; elsewhere,
+# such as in a kernel body elaborated for the host, the device primitives
+# abort.
+comptime _NO_GRAPH_BLOBS = (
+    "graph blobs are not supported on this target; leave"
+    " max-debug.graph-blob-max-calls unset or 0"
+)
+
+
+@register_internal("mogg.graph_blob.launch_config")
+def _graph_blob_launch_config(ctx: DeviceContext) -> GridBlockLaunchConfig:
+    """Returns the launch configuration for a graph blob on `ctx`'s device:
+    launch on every thread of every core.
+
+    Args:
+        ctx: The device context the blob launches on.
+
+    Returns:
+        The blob's launch configuration.
+    """
+    comptime plugin = MaxPluginForTarget[ctx.target]
+    comptime assert plugin._handles_graph_blobs, _NO_GRAPH_BLOBS
+    return plugin.whole_device_launch_config()
+
+
+# TODO(GEX-4497): Once a call can run on blocks with gaps between them, or on
+# some of each block's threads, the encoding depends on the target. Take it
+# from the calls' configuration type, which knows its target, rather than
+# from a lookup of the accelerator at run time.
+@register_internal("mogg.graph_blob.active_threads")
+def _graph_blob_active_threads(
+    grid_dim: Dim, block_dim: Dim, launch_grid_dim: Dim, launch_block_dim: Dim
+) raises -> Int32:
+    """Returns what a graph blob's kernel needs to know about a call
+    launched on `grid_dim` and `block_dim`, as a kernel argument.
+
+    The host computes it, where the device's MAX plugin doesn't apply. For
+    now every target encodes it the same way, because a call runs on the
+    first blocks of the launch, as many as its own grid has, and on all
+    threads of each.
+
+    Args:
+        grid_dim: The grid of the call's own launch configuration.
+        block_dim: The block dims of the call's own launch configuration.
+        launch_grid_dim: The grid of the blob's launch.
+        launch_block_dim: The block dims of the blob's launch.
+
+    Returns:
+        The number of blocks the call runs on.
+
+    Raises:
+        If the call's grid isn't one-dimensional or has more blocks than the
+        launch, or if its block dims aren't the launch's.
+    """
+    if grid_dim.y() * grid_dim.z() != 1:
+        raise Error(
+            "an op in a graph blob runs on a one-dimensional grid, but got ",
+            grid_dim,
+        )
+    if grid_dim.x() > launch_grid_dim.x():
+        raise Error(
+            "an op in a graph blob runs on at most ",
+            launch_grid_dim.x(),
+            " blocks, but got ",
+            grid_dim.x(),
+        )
+    if (
+        block_dim.x() != launch_block_dim.x()
+        or block_dim.y() != launch_block_dim.y()
+        or block_dim.z() != launch_block_dim.z()
+    ):
+        raise Error(
+            "an op in a graph blob runs every thread of its blocks, ",
+            launch_block_dim,
+            ", but got ",
+            block_dim,
+        )
+    return Int32(grid_dim.x())
+
+
+# TODO(GEX-4497): A call runs on the first blocks of the launch, as many as
+# its own grid has, with every thread of each, so a block count describes it.
+# Pass each call's own thread mask instead once an op needs a core set with
+# gaps or only some of a core's threads, as NeoDriver's configurations can
+# describe.
+@register_internal("mogg.graph_blob.is_thread_active")
+@always_inline
+def _graph_blob_is_thread_active(active: Int32) -> Bool:
+    """Returns whether the calling thread runs the call with `active`.
+
+    Args:
+        active: The call's `_graph_blob_active_threads`: the number of blocks
+            it runs on, from the start of the launch's grid.
+
+    Returns:
+        Whether the calling thread's block is one the call runs on.
+    """
+    comptime if CurrentMaxPlugin._handles_graph_blobs:
+        return CurrentMaxPlugin.graph_blob_is_thread_active(active)
+    else:
+        comptime assert not CompilationTarget().is_gpu(), _NO_GRAPH_BLOBS
+        abort(_NO_GRAPH_BLOBS)
+
+
+@register_internal("mogg.graph_blob.barrier")
+@always_inline
+def _graph_blob_barrier():
+    """Waits until every thread of every block in the launch reaches it.
+
+    Writes made before the barrier are visible to every thread after it. Every
+    thread the launch runs must call it, so it can't sit under a condition
+    that some threads skip.
+    """
+    comptime if CurrentMaxPlugin._handles_graph_blobs:
+        CurrentMaxPlugin.graph_blob_barrier()
+    else:
+        comptime assert not CompilationTarget().is_gpu(), _NO_GRAPH_BLOBS
+        abort(_NO_GRAPH_BLOBS)
+
+
 @register_internal("mogg.graph_blob.foreach")
 @always_inline
 def _graph_blob_foreach[
@@ -2466,10 +2591,9 @@ def _graph_blob_foreach[
         max_simd_width: A number every width must divide; 0, the default,
             allows any width.
     """
-    comptime unsupported = "graph blobs are not supported on this target"
     comptime if not CurrentMaxPlugin._handles_graph_blobs:
-        comptime assert not CompilationTarget().is_gpu(), unsupported
-        abort(unsupported)
+        comptime assert not CompilationTarget().is_gpu(), _NO_GRAPH_BLOBS
+        abort(_NO_GRAPH_BLOBS)
 
     comptime simd_width = get_simd_width_for_dtypes[
         dtypes, CompilationTarget()

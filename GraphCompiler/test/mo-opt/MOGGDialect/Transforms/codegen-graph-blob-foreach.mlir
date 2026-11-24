@@ -20,15 +20,15 @@
 // CHECK:      def {{__[A-Za-z0-9_]+}}([[A:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[BIAS:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[B:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[C:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[CTX:[A-Za-z0-9_]+]]: {{.*}}DeviceContext) raises:
 // CHECK:        var [[CONFIG0:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration(
 // CHECK-NEXT:   var [[CONFIG2:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration(
-// CHECK-NEXT:   var [[LAUNCH:[A-Za-z0-9_]+]] = _graph_blob.launch_config([[CTX]])
-// CHECK-NEXT:   var [[ACT0:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG0]].get_grid_dim(),
-// CHECK-NEXT:   var [[ACT1:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
-// CHECK-NEXT:   var [[ACT2:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG2]].get_grid_dim(),
+// CHECK-NEXT:   var [[LAUNCH:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_launch_config([[CTX]])
+// CHECK-NEXT:   var [[ACT0:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[CONFIG0]].get_grid_dim(),
+// CHECK-NEXT:   var [[ACT1:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
+// CHECK-NEXT:   var [[ACT2:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[CONFIG2]].get_grid_dim(),
 // CHECK:        def [[KERNEL:execute_device_[_0-9]+]]([[X:[A-Za-z0-9_]+]]: {{[^,]+}}, [[Y:[A-Za-z0-9_]+]]: {{[^,]+}}, [[Z:[A-Za-z0-9_]+]]: {{[^,]+}}, [[W:[A-Za-z0-9_]+]]: {{[^,]+}}, [[A0:[A-Za-z0-9_]+]]: {{[^,]+}}, [[A1:[A-Za-z0-9_]+]]: {{[^,]+}}, [[A2:[A-Za-z0-9_]+]]: {{[^,]+}}):
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A0]]){{\)?}}:
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A0]]){{\)?}}:
 // CHECK:            .MapLowerDeclarative.execute_device(
-// CHECK:          _graph_blob.barrier()
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A1]]){{\)?}}:
+// CHECK:          builtin_primitives.primitives._graph_blob_barrier()
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A1]]){{\)?}}:
 // CHECK-NEXT:       var [[SHAPE:[A-Za-z0-9_]+]] = layout.Coord(layout.Idx[2], layout.Idx[2])
 // CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[Y]].unsafe_bitcast
 // CHECK-NEXT:       mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[Z]].unsafe_bitcast
@@ -36,8 +36,8 @@
 // CHECK:            def [[LAMBDA:lambda_[_0-9]+]][width : Int, element_alignment : Int = 1](idx: layout.Coord) {var}:
 // CHECK:              Add.elementwise
 // CHECK:            builtin_primitives.primitives._graph_blob_foreach[dtypes = std.utils.StaticTuple[DType, 1](DType.float32)]([[SHAPE]], [[LAMBDA]])
-// CHECK:          _graph_blob.barrier()
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A2]]){{\)?}}:
+// CHECK:          builtin_primitives.primitives._graph_blob_barrier()
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A2]]){{\)?}}:
 // CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[W]].unsafe_bitcast
 // CHECK:            mogg_tensor_init[{{.*}}IO.Output{{.*}}]([[Y]].unsafe_bitcast
 // CHECK:            .MapLowerDeclarative.execute_device(

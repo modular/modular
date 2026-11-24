@@ -494,10 +494,11 @@ trait MaxPluginHooks:
 
     @staticmethod
     def whole_device_launch_config() -> GridBlockLaunchConfig:
-        """Per-target plugin hook for `max._graph_blob.launch_config`.
+        """Per-target plugin hook for the graph blob primitive
+        `_graph_blob_launch_config`.
 
-        It runs on the host, so `max._graph_blob` reaches it through the plugin
-        of the device context's target rather than `CurrentMaxPlugin`.
+        It runs on the host, so the primitive reaches it through the plugin of
+        the device context's target rather than `CurrentMaxPlugin`.
 
         Returns:
             A launch on every thread of every core of the device.
@@ -535,7 +536,8 @@ trait MaxPluginHooks:
 
     @staticmethod
     def graph_blob_is_thread_active(active: Int32) -> Bool:
-        """Per-target plugin hook for `max._graph_blob.is_thread_active`.
+        """Per-target plugin hook for the graph blob primitive
+        `_graph_blob_is_thread_active`.
 
         Args:
             active: The number of blocks a call runs on, from the start of
@@ -551,7 +553,8 @@ trait MaxPluginHooks:
 
     @staticmethod
     def graph_blob_barrier():
-        """Per-target plugin hook for `max._graph_blob.barrier`.
+        """Per-target plugin hook for the graph blob primitive
+        `_graph_blob_barrier`.
 
         Only invoked when `_handles_graph_blobs` is `True`; the default is
         never called and is a no-op.

@@ -14,28 +14,26 @@
 // region builds its views inside the kernel and runs `execute_device` under
 // its guard, with the barrier between them.
 
-// CHECK: import max._graph_blob as _graph_blob
-
 // CHECK:      def {{__[A-Za-z0-9_]+}}([[A:[A-Za-z0-9_]+]]: {{[^,]+}}, [[B:[A-Za-z0-9_]+]]: {{[^,]+}}, [[C:[A-Za-z0-9_]+]]: {{[^,]+}}, [[CTX:[A-Za-z0-9_]+]]: {{.*}}DeviceContext) raises:
 // CHECK:        var [[CONFIG0:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration({{[A-Za-z0-9_]+}}, {{[A-Za-z0-9_]+}})
 // CHECK:        var [[CONFIG1:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration({{[A-Za-z0-9_]+}}, {{[A-Za-z0-9_]+}})
-// CHECK-NEXT:   var [[LAUNCH:[A-Za-z0-9_]+]] = _graph_blob.launch_config([[CTX]])
-// CHECK-NEXT:   var [[ACT0:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
-// CHECK-NEXT:   var [[ACT1:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG1]].get_grid_dim(), [[CONFIG1]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
+// CHECK-NEXT:   var [[LAUNCH:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_launch_config([[CTX]])
+// CHECK-NEXT:   var [[ACT0:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
+// CHECK-NEXT:   var [[ACT1:[A-Za-z0-9_]+]] = builtin_primitives.primitives._graph_blob_active_threads([[CONFIG1]].get_grid_dim(), [[CONFIG1]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
 // CHECK-NEXT:   comptime [[A_T:[A-Za-z0-9_]+]] = type_of([[A]])
 // CHECK-NEXT:   comptime [[B_T:[A-Za-z0-9_]+]] = type_of([[B]])
 // CHECK-NEXT:   comptime [[C_T:[A-Za-z0-9_]+]] = type_of([[C]])
 // CHECK-NEXT:   comptime [[ACT0_T:[A-Za-z0-9_]+]] = type_of([[ACT0]])
 // CHECK-NEXT:   comptime [[ACT1_T:[A-Za-z0-9_]+]] = type_of([[ACT1]])
 // CHECK-NEXT:   def [[KERNEL:execute_device_[_0-9]+]]([[X:[A-Za-z0-9_]+]]: [[A_T]].device_type, [[Y:[A-Za-z0-9_]+]]: [[B_T]].device_type, [[Z:[A-Za-z0-9_]+]]: [[C_T]].device_type, [[A0:[A-Za-z0-9_]+]]: [[ACT0_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[ACT1_T]].device_type):
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A0]]){{\)?}}:
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A0]]){{\)?}}:
 // CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[X]].unsafe_bitcast
 // CHECK:            mogg_tensor_init[{{.*}}IO.Output{{.*}}]([[Y]].unsafe_bitcast
 // CHECK:            var [[IN0:[A-Za-z0-9_]+]] = _MoggDenseTensorArg[{{.*}}_MoggTensorIO.INPUT
 // CHECK:            var [[OUT0:[A-Za-z0-9_]+]] = _MoggDenseTensorArg[{{.*}}_MoggTensorIO.OUTPUT
 // CHECK-NEXT:       {{.*}}.MapLowerDeclarative.execute_device([[OUT0]], [[IN0]])
-// CHECK:          _graph_blob.barrier()
-// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A1]]){{\)?}}:
+// CHECK:          builtin_primitives.primitives._graph_blob_barrier()
+// CHECK-NEXT:     if {{\(?}}builtin_primitives.primitives._graph_blob_is_thread_active([[A1]]){{\)?}}:
 // CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[Y]].unsafe_bitcast
 // CHECK:            mogg_tensor_init[{{.*}}IO.Output{{.*}}]([[Z]].unsafe_bitcast
 // CHECK:            var [[IN1:[A-Za-z0-9_]+]] = _MoggDenseTensorArg[{{.*}}_MoggTensorIO.INPUT
@@ -134,7 +132,7 @@ mo.graph @blob_dim<batch>(%arg0: !mo.tensor<[batch, 2], f32>) -> !mo.tensor<[bat
 // CHECK:            simd_store_into_tensor_pointer
 // CHECK:          var [[DIV:[A-Za-z0-9_]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list([[LIMIT]]))
 // CHECK-NEXT:     builtin_primitives.primitives._graph_blob_foreach[dtypes = std.utils.StaticTuple[DType, 1](DType.float32)]([[SHAPE0]], [[LAMBDA0]], max_simd_width = Scalar[DType.int]([[DIV]]))
-// CHECK:          _graph_blob.barrier()
+// CHECK:          builtin_primitives.primitives._graph_blob_barrier()
 // CHECK:          builtin_primitives.primitives._graph_blob_foreach[dtypes = {{.+}}]({{[A-Za-z0-9_]+}}, {{[A-Za-z0-9_]+}}, max_simd_width = layout.Idx[2])
 // CHECK:        builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]],
 mo.graph @blob_foreach<batch>(%arg0: !mo.tensor<[batch], f32>) -> !mo.tensor<[batch], f32> {
