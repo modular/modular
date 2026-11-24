@@ -427,7 +427,7 @@ class HYV4MoE(Module[[Tensor], Tensor]):
         self.shared_experts = HYV4MLP(
             config.hidden_size,
             config.moe_intermediate_size * config.n_shared_experts,
-            config.mxfp8_quant_config,
+            config.projection_quant_config,
         )
 
     def shard(self) -> None:

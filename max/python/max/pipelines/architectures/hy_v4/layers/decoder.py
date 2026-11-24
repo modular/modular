@@ -65,7 +65,7 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
             else HYV4MLP(
                 config.hidden_size,
                 config.intermediate_size,
-                config.mxfp8_quant_config,
+                config.projection_quant_config,
             )
         )
         if ihc:

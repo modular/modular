@@ -52,7 +52,9 @@ draft slots before any real draft exists. Defined here so the graph side
 (``architectures``) and the runtime side (``lib``) agree on a single value.
 """
 
-SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2", "dspark"]
+SpeculativeMethod = Literal[
+    "eagle", "mtp", "dflash", "dflash2", "dspark", "dfly"
+]
 """The supported methods for speculative decoding."""
 
 _ONE_TOKEN_PER_STEP: tuple[SpeculativeMethod, ...] = ("eagle", "mtp")
@@ -121,8 +123,8 @@ class SpeculativeConfig(ConfigModel):
     )
     """The speculative decoding method to use.
 
-    One of ``"eagle"``, ``"mtp"``, ``"dflash"``, ``"dflash2"``, or
-    ``"dspark"``. When ``None``, speculative decoding is disabled.
+    One of ``"eagle"``, ``"mtp"``, ``"dflash"``, ``"dflash2"``, ``"dspark"``,
+    or ``"dfly"``. When ``None``, speculative decoding is disabled.
     """
 
     num_speculative_tokens: int | None = Field(
@@ -558,8 +560,8 @@ class SpeculativeConfig(ConfigModel):
         """Returns whether the draft proposes a block of tokens per step.
 
         True for every method outside the one-token-per-step methods
-        (``"eagle"``, ``"mtp"``): ``"dflash"``, ``"dflash2"`` and
-        ``"dspark"``. Pipeline-class selection and KV cache sizing branch on
+        (``"eagle"``, ``"mtp"``): ``"dflash"``, ``"dflash2"``, ``"dspark"``
+        and ``"dfly"``. Pipeline-class selection and KV cache sizing branch on
         this; selecting a fused graph branches on the method itself.
         """
         return (

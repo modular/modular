@@ -36,7 +36,7 @@ from max.nn.common_layers import quant_ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_linear import QuantizedLinear
-from max.nn.common_layers.quant_tensor import MXFP8Tensor
+from max.nn.common_layers.quant_tensor import FP8BlockTensor, MXFP8Tensor
 from max.nn.kernels import (
     mla_decode_graph,
     mla_prefill_decode_graph,
@@ -47,7 +47,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
 
 from ..model_config import HYV4Config
-from . import mxfp8
+from . import block_fp8, mxfp8
 from .functional_kernels import rope_rows
 from .indexer import HYV4Indexer
 
@@ -77,8 +77,9 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
             the MLA projections, ``o_proj`` and the indexer's ``wq_b``;
             ``kv_b_proj`` and the indexer's ``wk`` run BF16, dequantized in
             the graph, and ``linear_gate`` is BF16. A block-FP8 one
-            quantizes only ``o_proj`` and ``linear_gate``, on the layers in
-            its ``attn_quantized_layers``.
+            quantizes ``o_proj`` and ``linear_gate`` on the layers in its
+            ``attn_quantized_layers``, and the MLA projections too on the
+            DFly2 drafter.
         layer_idx: The decoder layer, which picks its indexer kind.
         graph_mode: ``"auto"`` runs ``mla_prefill_decode_graph``, which picks
             the sparse prefill or decode kernel per batch; ``"decode"`` runs
@@ -128,7 +129,7 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
                 in_dim,
                 out_dim,
                 bias=False,
-                quant_config=config.mxfp8_quant_config,
+                quant_config=config.projection_quant_config,
             )
 
         # Both read x, so the graph stacks them for one matmul.
@@ -188,6 +189,9 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         q_a, kv_a = self.q_a_proj.weight, self.kv_a_proj_with_mqa.weight
         if isinstance(q_a, MXFP8Tensor) and isinstance(kv_a, MXFP8Tensor):
             return mxfp8.concat_rows([q_a, kv_a])
+        if isinstance(q_a, FP8BlockTensor) and isinstance(kv_a, FP8BlockTensor):
+            # A ragged last scale row, as in vLLM's fused_qkv_a_proj.
+            return quant_ops.concat_fp8_block(q_a, kv_a)
         assert isinstance(q_a, Tensor) and isinstance(kv_a, Tensor)
         return F.concat([q_a, kv_a])
 
@@ -197,6 +201,8 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         kv_b = self.kv_b_proj.weight
         if isinstance(kv_b, MXFP8Tensor):
             kv_b = mxfp8.dequantize(kv_b)
+        elif isinstance(kv_b, FP8BlockTensor):
+            kv_b = block_fp8.dequantize(kv_b)
         assert isinstance(kv_b, Tensor)
         return kv_b.T.reshape([self.kv_lora_rank, self.n_heads, -1])
 

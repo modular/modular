@@ -133,15 +133,18 @@ def image_grids(ctx: TextContext) -> npt.NDArray[np.int64]:
     return np.empty((0, 2), np.int64)
 
 
-def context_positions(ctx: TextContext, merge: int) -> npt.NDArray[np.int64]:
-    """Returns one request's ``[3, active_length]`` M-RoPE positions.
+def context_positions(
+    ctx: TextContext, merge: int, length: int | None = None
+) -> npt.NDArray[np.int64]:
+    """Returns one request's ``[3, length]`` M-RoPE positions.
 
-    Up to its last image, a request takes its slice of the whole prompt's
-    positions. Past it, the positions are the cache positions plus the
-    offset the images add, on all three axes.
+    ``length`` defaults to the active tokens; a verify window adds the
+    drafts. Up to its last image, a request takes its slice of the whole
+    prompt's positions. Past it, the positions are the cache positions plus
+    the offset the images add, on all three axes.
     """
     start = ctx.tokens.processed_length
-    end = start + ctx.tokens.active_length
+    end = start + (ctx.tokens.active_length if length is None else length)
     grids = image_grids(ctx)
     if (
         isinstance(ctx, TextAndVisionContext)

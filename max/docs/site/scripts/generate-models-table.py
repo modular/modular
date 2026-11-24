@@ -504,6 +504,8 @@ def collect_architectures() -> list[dict[str, Any]]:
     all_archs: list[dict[str, Any]] = []
 
     for module_name, var_names in imports:
+        if module_name.split(".")[0] in UNLISTED_MODULES:
+            continue
         arch_path = ARCH_BASE / module_name.replace(".", "/") / "arch.py"
         if not arch_path.exists():
             print(
@@ -538,7 +540,7 @@ def filter_architectures(archs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # when no base counterpart exists.
         module_name = arch.get("module_name", "")
         package = module_name.split(".")[0]
-        if package.endswith("_modulev3") or module_name in UNLISTED_MODULES:
+        if package.endswith("_modulev3"):
             continue
 
         filtered.append(arch)

@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
@@ -133,6 +135,32 @@ class HYV4TextModel(Module[..., Tensor]):
         and ``vision`` its image rows, which replace the placeholder tokens'
         embeddings.
         """
+        streams, _ = self.tapped_streams(
+            tokens,
+            kv_collection,
+            indexer_kv_collection,
+            input_row_offsets,
+            batch_context_length,
+            token_positions,
+            vision,
+        )
+        return streams
+
+    def tapped_streams(
+        self,
+        tokens: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        input_row_offsets: Tensor,
+        batch_context_length: Tensor,
+        token_positions: Tensor | None = None,
+        vision: VisionInputs[Tensor] | None = None,
+        topk_layers: Sequence[int] = (),
+    ) -> tuple[Tensor, list[Tensor]]:
+        """Returns :meth:`streams` and the top-k of each of ``topk_layers``.
+
+        Each top-k is ``[tokens, index_topk]`` int32 physical cache rows.
+        """
         h = self.embed_tokens(tokens)
         if vision is not None:
             h = F_merge_multimodal_embeddings(
@@ -153,6 +181,7 @@ class HYV4TextModel(Module[..., Tensor]):
         # A shared layer reuses the top-k of the most recent full layer;
         # layer 0 is always full, so no shared layer reads None.
         topk: Tensor | None = None
+        taps: dict[int, Tensor] = {}
         for idx, layer in enumerate(self.layers):
             indexer, mlp = self.layer_kinds[idx]
             streams, topk = as_subgraph(layer, name=f"{indexer}_{mlp}_layer")(
@@ -167,7 +196,9 @@ class HYV4TextModel(Module[..., Tensor]):
                 batch_context_length,
                 token_rope,
             )
-        return streams
+            if idx in topk_layers:
+                taps[idx] = topk
+        return streams, [taps[i] for i in topk_layers]
 
     def head(self, streams: Tensor) -> Tensor:
         """Collapses the streams to the final normalized hidden state."""

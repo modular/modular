@@ -57,7 +57,8 @@ hy_v4_arch = SupportedArchitecture(
     mach_only=True,
 )
 
-# Hy4-FP8 ships no MTP layers; the text backbone reuses Hy4's layers.
+# Hy4-FP8 ships a DFly2 drafter, not MTP layers; the text backbone reuses
+# Hy4's layers.
 hy_v4_vl_arch = replace(
     hy_v4_arch,
     name="HYV4VLForConditionalGeneration_ModuleV3",
@@ -72,7 +73,7 @@ hy_v4_vl_arch = replace(
     context_type=TextAndVisionContext,
     config=HYV4VLConfig,
     weight_rules=hy_v4_vl_weight_rules,
-    checkpoint_drafts={},
+    checkpoint_drafts={"dfly": "DFlyHYV4VLDraftModel"},
     # replace() copies the pipeline model derived from HYV4Config; None
     # re-derives it from HYV4VLConfig.
     pipeline_model=None,

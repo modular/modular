@@ -137,6 +137,9 @@ def register_all_models() -> None:
             "dflash2_qwen3_5_modulev3_draft_arch",
         ),
         _LazyArch(
+            "DFlyHYV4VLDraftModel", ".hy_v4.dfly_arch", "hy_v4_dfly_draft_arch"
+        ),
+        _LazyArch(
             "DFlashKimiK25DraftModel",
             ".dflash_kimi_k25",
             "dflash_kimi_k25_draft_arch",

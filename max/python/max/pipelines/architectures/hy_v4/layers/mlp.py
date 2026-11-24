@@ -34,7 +34,7 @@ def is_partial(x: Tensor) -> bool:
 
 
 class HYV4MLP(Module[[Tensor], Tensor]):
-    """``down(silu(gate(x)) * up(x))``, unclamped, MXFP8 or BF16.
+    """``down(silu(gate(x)) * up(x))``, unclamped, MXFP8, block FP8 or BF16.
 
     Only the routed experts clamp their SwiGLU (``swiglu_limit``); the dense
     layer-0 MLP and the shared expert do not. MXFP8 ``gate_proj`` and
@@ -47,6 +47,7 @@ class HYV4MLP(Module[[Tensor], Tensor]):
         hidden_dim: int,
         feed_forward_length: int,
         quant_config: QuantConfig | None,
+        out_dim: int | None = None,
     ) -> None:
         super().__init__()
         self.gate_proj = QuantizedLinear(
@@ -63,7 +64,7 @@ class HYV4MLP(Module[[Tensor], Tensor]):
         )
         self.down_proj = QuantizedLinear(
             feed_forward_length,
-            hidden_dim,
+            out_dim or hidden_dim,
             bias=False,
             quant_config=quant_config,
         )
@@ -90,9 +91,10 @@ class HYV4MLP(Module[[Tensor], Tensor]):
             assert isinstance(up, MXFP8Tensor)
             gate_up = mxfp8.matmul(x, mxfp8.concat_rows([gate, up]))
             return mxfp8.swiglu_matmul(gate_up, down)
-        assert isinstance(gate, Tensor) and isinstance(up, Tensor)
-        assert isinstance(down, Tensor)
-        return (F.silu(x @ gate.T) * (x @ up.T)) @ down.T
+        # BF16, or block FP8 (the DFly2 drafter).
+        return mxfp8.matmul(
+            F.silu(mxfp8.matmul(x, gate)) * mxfp8.matmul(x, up), down
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the SwiGLU feed-forward over ``x``."""

@@ -32,14 +32,18 @@ modular_py_test(
     name = "test_registration",
     size = "small",
     srcs = ["test_registration.py"],
+    # Resolves the target and its drafter by name.
+    ignore_extra_deps = ["//max/python/max/pipelines"],
     deps = [
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/hy_v4",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 

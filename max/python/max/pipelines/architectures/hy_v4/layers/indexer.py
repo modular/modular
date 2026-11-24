@@ -95,7 +95,7 @@ class HYV4Indexer(Module[..., Tensor]):
     ``prev_topk_indices`` it is given.
 
     Args:
-        config: The model config; ``config.mxfp8_quant_config`` decides
+        config: The model config; ``config.projection_quant_config`` decides
             whether ``wq_b`` is quantized.
         layer_idx: The decoder layer this indexer belongs to.
     """
@@ -114,13 +114,13 @@ class HYV4Indexer(Module[..., Tensor]):
             config.q_lora_rank,
             q_dim,
             bias=False,
-            quant_config=config.mxfp8_quant_config,
+            quant_config=config.projection_quant_config,
         )
         self.wk = QuantizedLinear(
             config.hidden_size,
             self.head_dim,
             bias=False,
-            quant_config=config.mxfp8_quant_config,
+            quant_config=config.projection_quant_config,
         )
         self.weights_proj = Linear(config.hidden_size, self.n_heads, bias=False)
         self.k_norm = LayerNorm(

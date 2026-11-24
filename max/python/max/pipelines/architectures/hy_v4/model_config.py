@@ -127,6 +127,10 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
     rope_theta: float
     max_position_embeddings: int
     num_nextn_predict_layers: int
+    dfly_draft: bool = False
+    """Whether the layers are the DFly2 drafter's: each attends with its
+    target layer's top-k and has no indexer, and block FP8 covers every
+    projection."""
 
     def finalize(
         self,
@@ -165,21 +169,21 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
                 f" mlp_layer_types ({len(self.mlp_layer_types)}) must both"
                 f" have num_hidden_layers ({n}) entries"
             )
-        if self.indexer_types[0] != "full":
+        if self.indexer_types[0] != "full" and not self.dfly_draft:
             raise ValueError(
                 "indexer_types[0] must be 'full': a 'shared' layer reuses the"
                 f" most recent full layer's top-k, got {self.indexer_types[0]!r}"
             )
 
     @property
-    def mxfp8_quant_config(self) -> QuantConfig | None:
-        """``quant_config`` when it is MXFP8, else ``None``.
+    def projection_quant_config(self) -> QuantConfig | None:
+        """The quant config of the MLA projections, indexer and dense MLPs.
 
         A block-FP8 checkpoint (Hy4-FP8) quantizes only ``o_proj``,
-        ``linear_gate`` and the routed experts: the MLA projections, the
-        indexer and the dense and shared MLPs stay BF16.
+        ``linear_gate`` and the routed experts of its target layers, so they
+        stay BF16 there; its DFly2 drafter quantizes every projection.
         """
-        if is_fp8_block_quantized(self.quant_config):
+        if is_fp8_block_quantized(self.quant_config) and not self.dfly_draft:
             return None
         return self.quant_config
 
