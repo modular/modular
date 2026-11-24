@@ -12,7 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/AnalysisManager.h"
+#include "mlir/Pass/PassInstrumentation.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/TypeID.h"
 #include "llvm/Support/SourceMgr.h"
 
 #include "GraphCompiler/MGPDialect/Dialect/MGPOps.h"
@@ -55,6 +58,33 @@ KGEN::CompilationContext *getJitCompilationContext(mlir::MLIRContext *ctx) {
   return &loadContext(ctx)->emplaceIfMissing<KGEN::CompilationContext>();
 }
 
+/// Times one phase of this pass into the pipeline's pass-timing tree. MLIR
+/// gives a pass no handle on that tree, so phases ride the analysis-timer
+/// hook, which nests them under the pass row and prefixes the name with
+/// "(A) ". `name` must outlive the timer: its address identifies the timer.
+class PhaseTimer {
+public:
+  PhaseTimer(mlir::PassInstrumentor *instrumentor, mlir::Operation *op,
+             const char *name)
+      : instrumentor(instrumentor), op(op), name(name),
+        id(mlir::TypeID::getFromOpaquePointer(name)) {
+    if (instrumentor)
+      instrumentor->runBeforeAnalysis(name, id, op);
+  }
+  PhaseTimer(const PhaseTimer &) = delete;
+  PhaseTimer &operator=(const PhaseTimer &) = delete;
+  ~PhaseTimer() {
+    if (instrumentor)
+      instrumentor->runAfterAnalysis(name, id, op);
+  }
+
+private:
+  mlir::PassInstrumentor *instrumentor;
+  mlir::Operation *op;
+  const char *name;
+  mlir::TypeID id;
+};
+
 struct JitCompileKernels
     : public impl::JitCompileKernelsBase<JitCompileKernels> {
   using Base::Base;
@@ -65,10 +95,18 @@ struct JitCompileKernels
     KGEN::CompilerTimeTraceScope traceScope("jit-compile-kernels",
                                             module->getName().getStringRef());
 
-    initLLVM();
+    {
+      auto phase = timePhase("jit.InitLLVM");
+      initLLVM();
+    }
 
     if (compileMojoToBinary(module, kernelLibraryPaths).isError())
       signalPassFailure();
+  }
+
+  PhaseTimer timePhase(const char *name) {
+    return PhaseTimer(getAnalysisManager().getPassInstrumentor(),
+                      getOperation(), name);
   }
 
   struct SemanticHashKey {
@@ -127,6 +165,7 @@ struct JitCompileKernels
   DenseMap<StringAttr, KGEN::GeneratorOp>
   renameGenerators(ModuleOp kgenModuleOp,
                    const llvm::SetVector<StringAttr> &uniqueSymbols) {
+    auto phase = timePhase("jit.SemanticNaming");
     auto symbolsToRename = llvm::map_to_vector(
         uniqueSymbols, [](StringAttr symbol) { return symbol; });
     return MOGG::applySemanticNaming(kgenModuleOp, symbolsToRename,
@@ -166,6 +205,7 @@ struct JitCompileKernels
 
   // Build cache key from environment attributes
   CompileDiagnosticOr<std::string> buildCacheKey(ModuleOp kgenModuleOp) {
+    auto phase = timePhase("jit.BuildCacheKey");
     WriteableBufferRef keyBufRef = WriteableBuffer::get();
     auto ctx = kgenModuleOp.getContext();
 
@@ -206,6 +246,7 @@ struct JitCompileKernels
   checkCache(const CompilationState &state,
              const DenseMap<StringAttr, KGEN::GeneratorOp> &renaming,
              const std::string &keyHash) {
+    auto phase = timePhase("jit.CacheLookup");
     MODULAR_CACHE_LOG("mogg") << "checkCache: keyHash=" << keyHash
                               << " kernelCount=" << renaming.size() << "\n";
 
@@ -346,6 +387,7 @@ struct JitCompileKernels
   parseMojoText(MLIRContext *ctx, ContextRef maxContext,
                 const KGEN::CompilationOptions &opts,
                 ArrayRef<std::string> kernelLibraryPaths) {
+    auto phase = timePhase("jit.ParseMojoText");
     auto resourceManager = DenseResourceElementsHandle::getManagerInterface(
         getOperation()->getContext());
     auto mojoTextResource = resourceManager.getBlobManager().lookup("mojo");
@@ -414,6 +456,7 @@ struct JitCompileKernels
   // Run LIT to KGEN pipeline
   CompileDiagnosticOrSuccess runLITToKGEN(KGEN::KGENCompiler &compiler,
                                           ModuleOp parsedMojoModule) {
+    auto phase = timePhase("jit.LITToKGEN");
     auto result = compiler.runGenerateLibraryPipeline(parsedMojoModule);
     if (result.isError()) {
       return parsedMojoModule.emitError(
@@ -428,26 +471,32 @@ struct JitCompileKernels
   handleCacheMisses(CompilationState &state,
                     const KGENCachingResult &cachingResult) {
     // KGENToElaboratedKGEN
-    if (state.compiler
-            ->runElaborationPipeline(
-                *state.kgenModule, state.targetInfo, *state.cpuDevice,
-                state.cpuDevice->getReadyChain().copy(),
-                Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
-                    "JitCompileKernels::elaborateKGEN",
-                    "mogg.elaborate.kgen.cache.miss.time",
-                    {{"pipeline", "JitCompileKernels::elaborateKGEN"}}),
-                Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
-                    "JitCompileKernels::elaborateKGEN"))
-            .isError()) {
-      return (*state.kgenModule)
-          ->emitError(
-              "The graph compiler could not elaborate the generated KGEN");
+    {
+      auto phase = timePhase("jit.ElaborateKGEN");
+      if (state.compiler
+              ->runElaborationPipeline(
+                  *state.kgenModule, state.targetInfo, *state.cpuDevice,
+                  state.cpuDevice->getReadyChain().copy(),
+                  Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
+                      "JitCompileKernels::elaborateKGEN",
+                      "mogg.elaborate.kgen.cache.miss.time",
+                      {{"pipeline", "JitCompileKernels::elaborateKGEN"}}),
+                  Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
+                      "JitCompileKernels::elaborateKGEN"))
+              .isError()) {
+        return (*state.kgenModule)
+            ->emitError(
+                "The graph compiler could not elaborate the generated KGEN");
+      }
     }
 
     // KGENToLLVM
     std::string outKeyHash;
-    ErrorOr<BufferRef> bufferOr = state.objectCompiler->emitArchive(
-        std::move(state.kgenModule), /*emitAssembly=*/false, &outKeyHash);
+    ErrorOr<BufferRef> bufferOr = [&] {
+      auto phase = timePhase("jit.EmitArchive");
+      return state.objectCompiler->emitArchive(
+          std::move(state.kgenModule), /*emitAssembly=*/false, &outKeyHash);
+    }();
     if (bufferOr.isError()) {
       return state.mgpModule->emitError(
           "An error occurred while lowering KGEN to LLVM "
@@ -459,21 +508,25 @@ struct JitCompileKernels
     DenseResourceElementsHandle binaryBlobHandle = archiveAttr.getRawHandle();
     StringRef binaryBlobKey = binaryBlobHandle.getKey();
     binaryBlobKey.consume_front("archive_");
-    for (const std::string &hash : cachingResult.cacheMissHashes) {
-      BufferRef buffer = Buffer::get(binaryBlobKey);
-      if (auto error = cachingResult.moggCache->insertKeyedSync(hash, buffer)) {
-        MODULAR_CACHE_LOG("mogg")
-            << "handleCacheMisses: MOGG cache insert failed for hash=" << hash
-            << ": " << error.getError() << "\n";
+    {
+      auto phase = timePhase("jit.CacheInsert");
+      for (const std::string &hash : cachingResult.cacheMissHashes) {
+        BufferRef buffer = Buffer::get(binaryBlobKey);
+        if (auto error =
+                cachingResult.moggCache->insertKeyedSync(hash, buffer)) {
+          MODULAR_CACHE_LOG("mogg")
+              << "handleCacheMisses: MOGG cache insert failed for hash=" << hash
+              << ": " << error.getError() << "\n";
 #ifndef MODULAR_PRODUCTION
-        state.mgpModule->emitWarning(
-            error.takeError()
-                .get()); // Swallow the error, because it's not critical
+          state.mgpModule->emitWarning(
+              error.takeError()
+                  .get()); // Swallow the error, because it's not critical
 #endif
-      } else {
-        MODULAR_CACHE_LOG("mogg")
-            << "handleCacheMisses: MOGG cache insert success for hash=" << hash
-            << "\n";
+        } else {
+          MODULAR_CACHE_LOG("mogg")
+              << "handleCacheMisses: MOGG cache insert success for hash="
+              << hash << "\n";
+        }
       }
     }
 
@@ -498,6 +551,7 @@ struct JitCompileKernels
   // Handle cache hits: load from cache
   void handleCacheHits(CompilationState &state,
                        const KGENCachingResult &cachingResult) {
+    auto phase = timePhase("jit.MaterializeCacheHits");
     for (const auto &[blobHash, symbolsAndBufferPair] :
          cachingResult.mojoCacheHits) {
       ArrayAttr symbolsAttr = state.builder.getArrayAttr(
@@ -565,8 +619,11 @@ struct JitCompileKernels
         << "compileMojoToBinary: creating ObjectCompiler with "
            "basePath=" +
                KGEN::kMojoCacheBaseDirName + "\n";
-    auto objectCompiler = KGEN::ObjectCompiler::create(
-        KGEN::kMojoCacheBaseDirName, opts, /*isJit=*/true, *ctx, {});
+    auto objectCompiler = [&] {
+      auto phase = timePhase("jit.CreateObjectCompiler");
+      return KGEN::ObjectCompiler::create(KGEN::kMojoCacheBaseDirName, opts,
+                                          /*isJit=*/true, *ctx, {});
+    }();
     if (objectCompiler.isError()) {
       return module->emitError("The graph compiler could not create an "
                                "object compiler for KGEN to LLVM lowering");

@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/TransformUtils/SCCUtils.h"
 #include "Support/AssertStream.h"
+#include "Support/CacheLog.h"
 #include "Support/HashUtils.h"
 
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -87,9 +88,13 @@ struct Graph : public KGEN::SCCGraph<Graph, Node> {
   bool setInputsHash(Node *node);
   bool setFinalHash(Node *node);
   bool setSccHash(Node *node);
+
+  const SymbolTable *symtab = nullptr;
 };
 
 void Graph::build(ModuleOp module, const SymbolTable &symtab) {
+  this->symtab = &symtab;
+
   // Overrides CallGraphBase::build, whose edges are call ops: before
   // elaboration, KGEN IR can refer to functions through FlatSymbolRefAttrs in
   // arbitrary attributes and types, so every such reference is an edge. The
@@ -135,10 +140,6 @@ void Graph::build(ModuleOp module, const SymbolTable &symtab) {
 bool Graph::setGeneratorHash(Node *node) {
   node->hasher = std::make_unique<raw_xxhash128_stream>();
 
-  ModuleOp module = node->func->getParentOfType<ModuleOp>();
-  ASSERT_STREAM(module, "generator must live under a module");
-  SymbolTable symtab(module);
-
   auto ctx = node->func.getContext();
   Builder builder(ctx);
 
@@ -163,7 +164,7 @@ bool Graph::setGeneratorHash(Node *node) {
     // their hash is incorporated via setInputsHash. Non-GeneratorOpInterface
     // refs (e.g., trait symbol refs from TypeConformsToTraitAttr) must be
     // preserved so they contribute to the bytecode hash.
-    if (auto *op = symtab.lookup(symbol.getAttr()))
+    if (auto *op = symtab->lookup(symbol.getAttr()))
       if (isa<KGEN::GeneratorOpInterface>(op))
         return emptyString;
     return symbol;
@@ -265,18 +266,17 @@ void Graph::doRewrite(const Node *node) {
 
 } // end namespace
 
-void M::MOGG::hashModuleContents(mlir::ModuleOp module) {
-  SymbolTable symtab(module);
-  hashModuleContents(module, symtab);
-}
-
 void M::MOGG::hashModuleContents(mlir::ModuleOp module,
                                  const mlir::SymbolTable &symtab) {
+  ASSERT_STREAM(symtab.getOp() == module,
+                "the symbol table must be the one for this module");
   AsyncRT::CPUDevice &cpuDevice =
       *loadContext(module.getContext())->get<AsyncRT::CPUDevice>();
 
   Graph graph;
   graph.build(module, symtab);
+  MODULAR_CACHE_LOG("mogg")
+      << "hashModuleContents: generators=" << graph.nodes.size() << "\n";
   graph.run(cpuDevice);
 }
 
