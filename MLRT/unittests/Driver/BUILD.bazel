@@ -330,6 +330,7 @@ modular_cc_test(
     srcs = [
         "MemoryManagerOomClassifyTest.cpp",
     ],
+    tags = ["ci-mojo-hal"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/MemoryManager",
@@ -720,6 +721,7 @@ modular_cc_test(
     # Virtual mode needs a CompilationDevice for the configured api, and CUDA's
     # is the only one that exists (Metal hard-errors -- FIXME: MOCO-2411); its
     # NVPTX compilation driver is Linux-only.
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -764,6 +766,7 @@ modular_cc_test(
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
     ],
+    tags = ["ci-mojo-hal"],
     deps = [
         "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CAPI",
@@ -881,6 +884,7 @@ modular_cc_test(
     env = {
         "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -906,6 +910,7 @@ modular_cc_test(
     env = {
         "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -929,6 +934,7 @@ modular_cc_test(
     env = {
         "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -1478,6 +1484,7 @@ modular_cc_test(
         "MemoryManagerFakeBackingTest.cpp",
         "MemoryManagerFakes.h",
     ],
+    tags = ["ci-mojo-hal"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/MemoryManager",
@@ -1732,6 +1739,7 @@ modular_cc_test(
         "M_DRIVER_CAPI_HEADER_CHECK": "$(rootpath DriverCAPIHeaderCheck.c)",
         "M_DRIVER_CAPI_SHIM": "$(rootpath //MLRT:Driver/CAPIShim)",
     },
+    tags = ["ci-mojo-hal"],
     deps = ["//Support:Base"],
 )
 

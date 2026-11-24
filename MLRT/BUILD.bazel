@@ -813,7 +813,10 @@ mojo_shared_library(
     name = "Driver/HALDeviceContextExports",
     srcs = ["lib/Driver/DeviceContext/HAL/hal_device_context_exports.mojo"],
     shared_lib_name = "libHALDeviceContextMojo.so",
-    tags = [ALLOW_UNUSED_TAG],
+    tags = [
+        ALLOW_UNUSED_TAG,
+        "ci-mojo-hal",
+    ],
     # The exports reach into HAL-specific DeviceContext internals, which only
     # exist when std's DeviceContext is the HAL implementation.
     target_compatible_with = select({
@@ -943,6 +946,7 @@ modular_cc_library(
         "lib/Driver/DeviceContext/HAL/MojoHALExports.h",
     ],
     hdrs = ["include/MLRT/Driver/DeviceContext/BinaryID.h"],
+    tags = ["ci-mojo-hal"],
     visibility = [
         "//GraphCompiler:__subpackages__",
         "//Kernels/tools/max_license/gpu-query:__pkg__",
@@ -1259,6 +1263,7 @@ modular_cc_library(
     srcs = ["lib/Driver/CAPI/DriverCAPI.cpp"],
     hdrs = ["include/MLRT/Driver/CAPI/DriverCAPI.h"],
     includes = ["include"],
+    tags = ["ci-mojo-hal"],
     visibility = ["//visibility:public"],
     deps = [
         ":Driver/ArchitectureVersion",
