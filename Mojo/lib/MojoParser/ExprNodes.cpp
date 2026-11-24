@@ -1301,6 +1301,83 @@ lookupMembersInDecls(SmallVectorImpl<ASTDecl *> &memberDecls,
   return success();
 }
 
+/// Return the stdlib's `IsTriviallyDeinitable[type]` as a scalar boolean
+/// proposition, or null without a stdlib. Emits an internal error and returns
+/// null if the stdlib does not declare it as expected.
+static TypedAttr getIsTriviallyDeinitable(ASTType type, SMLoc loc,
+                                          SharedState &shared) {
+  if (!shared.hasBuiltinModule())
+    return {};
+  ModuleASTDecl &traits =
+      shared.importModule({"std", "traits"}, /*currentPackage=*/nullptr, loc);
+  LookupResult lookup =
+      shared.lookupAndResolveDecl("IsTriviallyDeinitable", loc, traits,
+                                  /*searchParentScopes=*/false);
+  AliasASTDecl *alias = nullptr;
+  if (lookup.isSuccess() && !lookup.getIfSuccess().empty())
+    alias = dyn_cast<AliasASTDecl>(lookup.getIfSuccess().front());
+  TypedAttr predicate = alias ? alias->getOp().getValueAttr() : TypedAttr();
+  auto generator =
+      predicate ? sugarDynCast<GeneratorType>(predicate.getType()) : nullptr;
+  if (!generator || generator.getInputParamTypes().size() != 1) {
+    shared.emitError(loc, "internal error: 'std.traits' must declare "
+                          "'IsTriviallyDeinitable' as a comptime value with "
+                          "one parameter");
+    return {};
+  }
+
+  // A type parameter is referenced as the parameter itself.
+  TypedAttr typeValue = PValue(type).get();
+  if (auto paramType = sugarDynCast<ParamType>(type.mlirType))
+    typeValue = PValue(paramType.getParam()).get();
+
+  // `T: AnyType` takes the type as a value of its trait type.
+  TypedAttr argument = typeValue;
+  if (auto trait = sugarDynCast<TraitType>(generator.getInputParamTypes()[0]))
+    argument = UpcastAttr::get(trait, typeValue);
+
+  MLIRContext *ctx = predicate.getContext();
+  return LIT::StructExtractAttr::get(
+      BindParamsAttr::get(ctx, predicate, {argument},
+                          &shared.getEvaluationContext()),
+      StringAttr::get(ctx, "_mlir_value"),
+      SIMDAttr::getScalarBool(ctx, true).getType());
+}
+
+/// A variable outside the default address space may be one memory address
+/// shared by many threads. Each thread runs the variable's implicit destructor,
+/// so its type must be trivially deinitable. This is checked like a `where`
+/// clause: in generic code, the enclosing scope must establish it.
+static void checkAddressSpaceVarType(ASTType varType, TypedAttr addrSpace,
+                                     StringRef name, SMLoc loc,
+                                     const ExprNode *expr, ASTDecl &scope,
+                                     IREmitter &emitter) {
+  SharedState &shared = emitter.shared;
+  TypedAttr isTrivial = getIsTriviallyDeinitable(varType, loc, shared);
+  if (!isTrivial)
+    return;
+
+  TypedAttr assumptions = scope.getScopeAssumptions();
+  // Match the form `where` clause assumptions take.
+  TypedAttr proposition = getCanonicalAttr(deShortCircuitCond(isTrivial));
+  TriBool verdict = isPropositionImplied(proposition, assumptions);
+  if (verdict.isTrue())
+    return;
+
+  auto diag = emitter.emitError(loc, "variable '");
+  diag << name << "' in address space "
+       << ASTType::getAddressSpaceForDisplay(addrSpace)
+       << " must have a trivially deinitable type";
+  if (verdict.isFalse()) {
+    diag << ", not " << varType;
+  } else {
+    std::string typeName;
+    llvm::raw_string_ostream(typeName) << varType;
+    diag << "; add 'where IsTriviallyDeinitable[" << typeName << "]'";
+  }
+  diag << expr->getRange();
+}
+
 ExprNode::ELVIITResult
 DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                               ASTDecl &lookupScope, ExprDest &dest,
@@ -1362,6 +1439,11 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     // `EC_TupleElement`.
     if (dest.getContext() != EC_TupleElement)
       varType = maybeRefineTypeWithAssumptions(varType, emitter.declScope);
+
+    if (TypedAttr addrSpace = dest.getPatternAddressSpace()) {
+      checkAddressSpaceVarType(varType, addrSpace, spelling, loc, expr,
+                               emitter.declScope, emitter);
+    }
 
     // For bind/ref patterns, wrap with placeholder origin (replaced at store
     // time). The ultimate reference will be a !lit.ref<!lit.ref<T>> but we

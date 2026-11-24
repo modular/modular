@@ -182,6 +182,24 @@ static void buildPostElaborationPipeline(mlir::PassManager &pm,
                                          const CompilationOptions &options) {
   ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(target.getTriple());
+
+  // Every target needs its `pop.var_alloc`s lowered, and before anything could
+  // promote one to registers, so this runs ahead of a target's own pipeline.
+  LowerVarAllocsOptions varAllocOptions;
+  if (!backendOr.isError()) {
+    if (std::optional<unsigned> shared =
+            (*backendOr)->sharedMemoryAddressSpace())
+      varAllocOptions.sharedAddressSpace = *shared;
+  }
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(target.getTriple());
+  if (!traitsOr.isError()) {
+    if (std::optional<unsigned> stack =
+            (*traitsOr)->requiredStackAllocationAddressSpace())
+      varAllocOptions.stackAddressSpace = *stack;
+  }
+  pm.addPass(createLowerVarAllocs(varAllocOptions));
+
   if (!backendOr.isError() &&
       (*backendOr)->buildPostElaborationPipeline(pm, options))
     return;

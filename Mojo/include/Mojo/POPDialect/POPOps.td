@@ -1595,6 +1595,58 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
+// VarAllocOp
+//===----------------------------------------------------------------------===//
+
+def POP_VarAllocOp : POPOp<"var_alloc", [BytecodeOpInterface]> {
+  let summary = "storage for a variable in a non-default address space";
+  let description = [{
+    The `pop.var_alloc` operation allocates storage for a single instance of a
+    type in a certain address space. Both of these are inferred from the op's
+    result type.
+
+    The semantics of the address space storage depend on the target, and thus
+    the target is responsible for lowering the op to the appropriate series of
+    instructions. Typically this is either `pop.stack_allocation` or
+    `pop.global_alloc`.
+
+    The comptime interpreter, which has no threads, models it with a stack
+    slot.
+
+    Example:
+
+    ```mlir
+    %0 = pop.var_alloc "tile" !kgen.simd<4, f32> address_space 3
+    %1 = pop.var_alloc "x" index address_space 5 align 16
+    ```
+  }];
+
+  let arguments = (ins
+    StrAttr:$name,
+    OptionalAttr<AttrOfType<Index>>:$alignment
+  );
+  let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
+
+  let assemblyFormat = [{
+    $name custom<PointerOf>(type($result))
+    (`align` custom<IndexParamValue>($alignment)^)? attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    struct Payload { int32_t size, align; };
+    ErrorOrSuccess compile(Payload &payload, TargetInfoAttr target);
+    ErrorOrSuccess parametric_compile(Payload &payload,
+      TargetInfoAttr target,
+      ArrayRef<Attribute> operands,
+      ParametricInterpreterState& state);
+    ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
+      const Payload &payload, InterpreterState &state);
+    ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
+      const Payload &payload, ParametricInterpreterState &state);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // StackAllocLifetimeStartOp
 //===----------------------------------------------------------------------===//
 

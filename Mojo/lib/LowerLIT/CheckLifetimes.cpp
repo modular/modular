@@ -3726,6 +3726,18 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
       }
     }
 
+    // The parser accepts a variable outside the default address space only
+    // when its type is trivially deinitable, so it needs no destructor. For a
+    // generic type, the destructor is found using Deinitable.__deinit__ which
+    // takes self in the default address space, so we're not even able to model
+    // this.
+    // FIXME: This is making assumptions on the IR coming out of the parser. It
+    // would be better to be explicit and carry this through.
+    if (auto refType = dyn_cast<RefType>(value.getType());
+        refType && !refType.isDefaultAddrSpace() &&
+        stripToVarDeclLookThrough(value).getDefiningOp<VarDeclOp>())
+      return emitLifetimeEnd(value, builder);
+
     // Emit the destructor.
     emitDestructorCall(value, valueRef, builder);
     return;

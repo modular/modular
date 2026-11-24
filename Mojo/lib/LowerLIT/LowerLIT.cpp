@@ -2113,33 +2113,46 @@ static TypedAttr getAlignmentFromType(Type type, LITTypeLowerer &b) {
 
 static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  // TODO: Storage outside the default address space needs a target-specific
-  // allocation rather than a stack slot; reject it until that lowering exists.
+  // Check if the element type is a struct with explicit alignment.
+  TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);
+
+  // Where a variable outside the default address space lives depends on the
+  // target, which is only known after elaboration.
   if (!op.getType().isDefaultAddrSpace()) {
-    op.emitError("variables outside the default address space are not yet "
-                 "supported");
-    return {};
+    return POP::VarAllocOp::create(b, op.getLoc(),
+                                   op.getType().getAsPointerType(),
+                                   op.getName(), alignment);
   }
 
   // Lower a lit.var.decl to pop.stack_allocation.
-  // Check if the element type is a struct with explicit alignment.
-  TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);
   return POP::StackAllocationOp::create(
       b, op.getLoc(), op.getType().getAsPointerType(),
       /*count=*/1, alignment, /*markedLifetimes=*/true);
 }
 
+/// Return the stack slot that the lit.var.decl producing `var` was lowered
+/// to, or null if it was lowered to a `pop.var_alloc`, which has no lifetime
+/// markers.
+static Value getLoweredStackSlot(Value var) {
+  Value ptr = var.getDefiningOp()->getOperand(0);
+  return ptr.getDefiningOp<POP::StackAllocationOp>() ? ptr : Value();
+}
+
 static Value lowerOp(VarLifetimeStartOp op, VarLifetimeStartOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  b.replaceOpWithNewOp<POP::StackAllocLifetimeStartOp>(
-      op, op.getArg().getDefiningOp()->getOperand(0));
+  if (Value slot = getLoweredStackSlot(op.getArg()))
+    b.replaceOpWithNewOp<POP::StackAllocLifetimeStartOp>(op, slot);
+  else
+    b.eraseOp(op);
   return {};
 }
 
 static Value lowerOp(VarLifetimeEndOp op, VarLifetimeEndOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  b.replaceOpWithNewOp<POP::StackAllocLifetimeEndOp>(
-      op, op.getArg().getDefiningOp()->getOperand(0));
+  if (Value slot = getLoweredStackSlot(op.getArg()))
+    b.replaceOpWithNewOp<POP::StackAllocLifetimeEndOp>(op, slot);
+  else
+    b.eraseOp(op);
   return {};
 }
 

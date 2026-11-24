@@ -2285,12 +2285,21 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
 
   LogicalResult matchAndRewrite(GlobalAllocOp op, GlobalAllocOpAdaptor adaptor,
                                 DirectRewriter &b) const override {
-    // Set the alignment if specified. Otherwise use the natural alignment.
+    // The alignment attribute is a minimum, as it is for a stack slot: the
+    // global is at least as aligned as its element type in memory.
     auto kgenPtrType = cast<PointerType>(op.getType());
     auto elementType =
         getTypeConverter()->convertMemoryType(kgenPtrType.getElementType());
-    unsigned alignment =
-        getAlignment(getTypeConverter(), kgenPtrType, op.getAlignmentAttr());
+    std::optional<int64_t> naturalAlignment =
+        DataLayoutInterface::getTypeABIAlign(getTypeConverter()->getTarget(),
+                                             kgenPtrType.getElementType());
+    if (!naturalAlignment)
+      return op.emitError("could not get alignment of element type");
+    unsigned alignment = *naturalAlignment;
+    if (TypedAttr alignmentAttr = op.getAlignmentAttr()) {
+      alignment = std::max<int64_t>(alignment,
+                                    cast<IntegerAttr>(alignmentAttr).getInt());
+    }
 
     // Set the address space if specified.
     unsigned addrSpace = op.getType().getAddrSpaceOrZero();

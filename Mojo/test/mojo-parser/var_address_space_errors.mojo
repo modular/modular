@@ -13,6 +13,8 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
+from std.traits import IsTriviallyDeinitable
+
 
 def bad_decorator_arguments():
     @__address_space  # expected-error {{@__address_space takes a single positional 'AddressSpace' argument}}
@@ -168,3 +170,52 @@ def implicit_copy_ignores_cross_address_space_initializer():
     match s:
         case var y:  # expected-error {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
             _ = y.x
+
+
+struct HasDeinit:
+    var x: Int
+
+    def __deinit__(deinit self):
+        pass
+
+
+struct LinearOnly(Deinitable where False else "LinearOnly must be consumed"):
+    var x: Int
+
+
+def non_trivial_deinit_in_address_space():
+    @__address_space(.SHARED)
+    var a: HasDeinit  # expected-error {{variable 'a' in address space '2' must have a trivially deinitable type, not 'HasDeinit'}}
+
+    @__address_space(.SHARED)
+    var b: Int
+
+    @__address_space(.SHARED)
+    var c: LinearOnly  # expected-error {{variable 'c' in address space '2' must have a trivially deinitable type, not 'LinearOnly'}}
+
+    var d: HasDeinit
+
+
+def generic_type_needs_where_clause[T: Deinitable]():
+    @__address_space(.SHARED)
+    var a: T  # expected-error {{variable 'a' in address space '2' must have a trivially deinitable type; add 'where IsTriviallyDeinitable[T]'}}
+
+
+def generic_any_type_needs_where_clause[T: AnyType]():
+    @__address_space(.SHARED)
+    var a: T  # expected-error {{variable 'a' in address space '2' must have a trivially deinitable type; add 'where IsTriviallyDeinitable[T]'}}
+
+
+def generic_type_with_where_clause[
+    T: Deinitable
+]() where IsTriviallyDeinitable[T]:
+    @__address_space(.SHARED)
+    var a: T
+
+
+def generic_address_space[addr_space: AddressSpace]():
+    @__address_space(addr_space)
+    var a: Int
+
+    @__address_space(addr_space)
+    var b: HasDeinit  # expected-error {{variable 'b' in address space 'addr_space' must have a trivially deinitable type, not 'HasDeinit'}}

@@ -1748,13 +1748,13 @@ void SelectOp::getCanonicalizationPatterns(RewritePatternSet &results,
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
-                                          TargetInfoAttr target) {
-  auto countAttr = dyn_cast<IntegerAttr>(getCount());
-  if (!countAttr)
-    return Error("array size is not a constant");
-  int64_t count = countAttr.getInt();
-
+/// Compute the size and alignment of interpreter stack memory holding `count`
+/// values of the element type of `ptrType`. A missing or zero `alignAttr`
+/// means the element type's ABI alignment.
+template <typename PayloadT>
+static ErrorOrSuccess
+computeStackMemoryPayload(PayloadT &payload, TargetInfoAttr target,
+                          Type ptrType, int64_t count, TypedAttr alignAttr) {
   if (!target) {
     if (count != 1)
       return Error("array allocation requires a target model");
@@ -1762,7 +1762,7 @@ ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
   }
 
   // Determine the allocation size.
-  Type type = cast<PointerType>(getType()).getElementType();
+  Type type = cast<PointerType>(ptrType).getElementType();
   std::optional<int64_t> size =
       DataLayoutInterface::getTypeAllocSize(target, type);
   if (!size)
@@ -1771,7 +1771,7 @@ ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
   // Determine the alignment. If the alignment is unspecified or zero, query
   // the natural alignment of the type.
   int64_t align = 0;
-  if (TypedAttr alignAttr = getAlignmentAttr())
+  if (alignAttr)
     align = cast<IntegerAttr>(alignAttr).getInt();
   if (align < 0)
     return Error("invalid alignment value: " + Twine(align));
@@ -1786,6 +1786,32 @@ ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
   payload.size = count * *size;
   payload.align = align;
   return success();
+}
+
+/// Allocate the interpreter stack memory described by `payload` and map it to
+/// `op`'s result, a pointer of type `ptrType`.
+template <typename PayloadT, typename StateT>
+static ErrorTreeOrSuccess allocateStackMemory(Operation *op,
+                                              const PayloadT &payload,
+                                              Type ptrType, StateT &state) {
+  // If there is no target model, we know it is a count 1 alloc.
+  if (!state.getTarget())
+    return ErrorTree(op->getLoc(), "stack allocation requires a target model");
+
+  ErrorOr<int64_t> addr =
+      state.allocateStackMemory(payload.size, payload.align);
+  if (addr.isError())
+    return ErrorTree(op->getLoc(), addr.takeError());
+  return state.mapResults(PointerAttr::get(addr.takeValue(), ptrType));
+}
+
+ErrorOrSuccess StackAllocationOp::compile(Payload &payload,
+                                          TargetInfoAttr target) {
+  auto countAttr = dyn_cast<IntegerAttr>(getCount());
+  if (!countAttr)
+    return Error("array size is not a constant");
+  return computeStackMemoryPayload(payload, target, getType(),
+                                   countAttr.getInt(), getAlignmentAttr());
 }
 
 ErrorOrSuccess
@@ -1793,77 +1819,62 @@ StackAllocationOp::parametric_compile(Payload &payload, TargetInfoAttr target,
                                       ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
   auto countAttr = dyn_cast<IntegerAttr>(state.getReboundAttribute(getCount()));
-
   if (!countAttr)
     return Error("array size is not a constant");
-  int64_t count = countAttr.getInt();
-
-  if (!target) {
-    if (count != 1)
-      return Error("array allocation requires a target model");
-    return success();
-  }
-
-  Type reboundType = state.getReboundType(getType());
-
-  // Determine the allocation size.
-  Type type = cast<PointerType>(reboundType).getElementType();
-  std::optional<int64_t> size =
-      DataLayoutInterface::getTypeAllocSize(target, type);
-  if (!size)
-    return Error("could not query type size");
-
-  // Determine the alignment. If the alignment is unspecified or zero, query
-  // the natural alignment of the type.
-  int64_t align = 0;
-  if (getAlignmentAttr()) {
-    TypedAttr alignAttr = state.getReboundAttribute(getAlignmentAttr());
-    align = cast<IntegerAttr>(alignAttr).getInt();
-  }
-
-  if (align < 0)
-    return Error("invalid alignment value: " + Twine(align));
-  if (align == 0) {
-    std::optional<int64_t> typeAlign =
-        DataLayoutInterface::getTypeABIAlign(target, type);
-    if (!typeAlign)
-      return Error("could not query type alignment");
-    align = *typeAlign;
-  }
-
-  payload.size = count * *size;
-  payload.align = align;
-  return success();
+  TypedAttr alignAttr;
+  if (getAlignmentAttr())
+    alignAttr = state.getReboundAttribute(getAlignmentAttr());
+  return computeStackMemoryPayload(payload, target,
+                                   state.getReboundType(getType()),
+                                   countAttr.getInt(), alignAttr);
 }
 
 ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                                                 const Payload &payload,
                                                 InterpreterState &state) {
-  // If there is no target model, we know it is a count 1 alloc.
-  if (!state.getTarget())
-    return ErrorTree(getLoc(), "stack allocation requires a target model");
-
-  ErrorOr<int64_t> addr =
-      state.allocateStackMemory(payload.size, payload.align);
-  if (addr.isError())
-    return ErrorTree(getLoc(), addr.takeError());
-  return state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
+  return allocateStackMemory(*this, payload, getType(), state);
 }
 
 ErrorTreeOrSuccess
 StackAllocationOp::parametric_interpret(ArrayRef<Attribute> operands,
                                         const Payload &payload,
                                         ParametricInterpreterState &state) {
-  // If there is no target model, we know it is a count 1 alloc.
-  if (!state.getTarget())
-    return ErrorTree(getLoc(), "stack allocation requires a target model");
+  return allocateStackMemory(*this, payload, state.getReboundType(getType()),
+                             state);
+}
 
-  ErrorOr<int64_t> addr =
-      state.allocateStackMemory(payload.size, payload.align);
-  if (addr.isError())
-    return ErrorTree(getLoc(), addr.takeError());
-  return state.mapResults(
-      PointerAttr::get(addr.takeValue(), state.getReboundType(getType())));
+//===----------------------------------------------------------------------===//
+// VarAllocOp
+//===----------------------------------------------------------------------===//
+
+ErrorOrSuccess VarAllocOp::compile(Payload &payload, TargetInfoAttr target) {
+  return computeStackMemoryPayload(payload, target, getType(), /*count=*/1,
+                                   getAlignmentAttr());
+}
+
+ErrorOrSuccess
+VarAllocOp::parametric_compile(Payload &payload, TargetInfoAttr target,
+                               ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
+  TypedAttr alignAttr;
+  if (getAlignmentAttr())
+    alignAttr = state.getReboundAttribute(getAlignmentAttr());
+  return computeStackMemoryPayload(
+      payload, target, state.getReboundType(getType()), /*count=*/1, alignAttr);
+}
+
+ErrorTreeOrSuccess VarAllocOp::interpret(ArrayRef<Attribute> operands,
+                                         const Payload &payload,
+                                         InterpreterState &state) {
+  return allocateStackMemory(*this, payload, getType(), state);
+}
+
+ErrorTreeOrSuccess
+VarAllocOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 const Payload &payload,
+                                 ParametricInterpreterState &state) {
+  return allocateStackMemory(*this, payload, state.getReboundType(getType()),
+                             state);
 }
 
 //===----------------------------------------------------------------------===//

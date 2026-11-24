@@ -209,14 +209,13 @@ public:
   /// never match.
   virtual bool isSharedMemoryGlobal(const llvm::GlobalVariable &global) const;
 
-protected:
   /// The target's shared/threadgroup-memory address space, or nullopt for
-  /// targets without one (e.g. host). Backing datum for
-  /// `isSharedMemoryGlobal`.
+  /// targets without one (e.g. host).
   virtual std::optional<unsigned> sharedMemoryAddressSpace() const {
     return std::nullopt;
   }
 
+protected:
   /// Check if the specific Target is a base target.
   /// This is needed to gate max only targets for now.
   virtual bool isBaseTarget() const = 0;
