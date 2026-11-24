@@ -418,3 +418,60 @@ def test_reshape_producer_fuses_downstream(models: dict[str, Model]) -> None:
     np.testing.assert_allclose(
         out, np.maximum(a.reshape([24]), 0), rtol=1e-5, atol=1e-5
     )
+
+
+with _graph("concat_innermost_even", [4, 6], [4, 10]) as concat_innermost_even:
+    left, right = (v.tensor for v in concat_innermost_even.inputs)
+    concat_innermost_even.output(ops.concat([left, right], axis=-1))
+
+
+def test_concat_innermost_even(models: dict[str, Model]) -> None:
+    """A concat on the innermost axis reads each vector from one input.
+
+    The loop's width has to divide both rows, so no vector straddles the seam
+    between the two inputs. The width itself is pinned by
+    `InferMaxSimdWidth/concat.mlir`; this is the e2e check that the values
+    come out in the right order.
+    """
+    a = np.random.randn(4, 6).astype(np.float32)
+    b = np.random.randn(4, 10).astype(np.float32)
+    (out,) = execute(models[concat_innermost_even.name], a, b)
+    np.testing.assert_allclose(
+        out, np.concatenate([a, b], axis=-1), rtol=1e-5, atol=1e-5
+    )
+
+
+with _graph("concat_innermost_odd", [4, 5], [4, 7]) as concat_innermost_odd:
+    left, right = (v.tensor for v in concat_innermost_odd.inputs)
+    concat_innermost_odd.output(ops.concat([left, right], axis=-1))
+
+
+def test_concat_innermost_odd(models: dict[str, Model]) -> None:
+    """Rows sharing no factor leave the loop one element at a time."""
+    a = np.random.randn(4, 5).astype(np.float32)
+    b = np.random.randn(4, 7).astype(np.float32)
+    (out,) = execute(models[concat_innermost_odd.name], a, b)
+    np.testing.assert_allclose(
+        out, np.concatenate([a, b], axis=-1), rtol=1e-5, atol=1e-5
+    )
+
+
+with _graph(
+    "concat_innermost_dynamic", ["M", "N0"], ["M", "N1"]
+) as concat_innermost_dynamic:
+    left, right = (v.tensor for v in concat_innermost_dynamic.inputs)
+    concat_innermost_dynamic.output(ops.concat([left, right], axis=-1))
+
+
+@pytest.mark.parametrize(("n0", "n1"), [(8, 3), (8, 16)])
+def test_concat_innermost_dynamic(
+    models: dict[str, Model], n0: int, n1: int
+) -> None:
+    """Symbolic rows: the width is a runtime divisor of both, so the same
+    graph is correct whether the rows share a factor or not."""
+    a = np.random.randn(4, n0).astype(np.float32)
+    b = np.random.randn(4, n1).astype(np.float32)
+    (out,) = execute(models[concat_innermost_dynamic.name], a, b)
+    np.testing.assert_allclose(
+        out, np.concatenate([a, b], axis=-1), rtol=1e-5, atol=1e-5
+    )

@@ -20,6 +20,7 @@ _AMD_ONLY_TESTS = [
 _CPU_ONLY_TESTS = [
     "test_bf16_cpu_error.py",
     "test_devices_infos_mapping.py",
+    "test_flatten_shapes.py",
     "test_host_float8_outputs.py",
     "test_int_indexing.py",
     "test_is_inf.py",
@@ -626,6 +627,26 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("hypothesis"),
+    ],
+)
+
+# Its own target for the same reasons as `test_view_fusion`: out of
+# `cpu_tests` to not inherit "external-exclusive", and unsharded because the
+# file compiles all its graphs in one `load_all`.
+modular_py_test(
+    name = "test_flatten_shapes",
+    srcs = [
+        "conftest.py",
+        "test_flatten_shapes.py",
+    ],
+    deps = [
+        ":fusion_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 

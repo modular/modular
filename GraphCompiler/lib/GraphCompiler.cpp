@@ -362,7 +362,9 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
   // the duplicate captures.
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
-  // Last, once views are hoisted out of the loop bodies.
+  // Last, once views are hoisted out of the loop bodies; the width is
+  // inferred on the flattened loops.
+  pm.addNestedPass<GraphOp>(MAP::createFlattenShapes());
   pm.addNestedPass<GraphOp>(MAP::createInferMaxSimdWidth());
 }
 
