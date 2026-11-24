@@ -211,7 +211,7 @@ public:
 class TypeCheckedParamList {
 private:
   /// Private constructor - use the static create method instead.
-  TypeCheckedParamList(ASTDecl &declScope);
+  TypeCheckedParamList(ASTDecl &declScope, bool partial);
 
   /// Set when an implicit parameter can't be prepended to the list because of
   /// what its type depends on.
@@ -222,10 +222,15 @@ public:
   ASTDecl &declScope;
   SharedState &shared;
 
+  /// If set, a parameter without a type gets `!lit.unresolved` instead of
+  /// an error, so the type can be inferred from context later.
+  bool partial;
+
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation. Returns nullopt if type checking fails.
   static std::optional<TypeCheckedParamList>
-  create(ParsedParamList &parsedParams, ASTDecl &declScope);
+  create(ParsedParamList &parsedParams, ASTDecl &declScope,
+         bool partial = false);
 
   /// Emit the trailing `where` clauses parsed into `emittedBodyConstraints`.
   /// This cannot be performed at `create` because the body constraints may
@@ -362,7 +367,9 @@ public:
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
                          const ExprNode *originExpr, DefASTDecl *fnDecl,
-                         StringAttr baseName);
+                         StringAttr baseName, bool partial = false);
+
+  bool partial;
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
 

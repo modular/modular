@@ -1615,6 +1615,16 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return emitter.emitCResult(result, expr, dest);
   }
 
+  // Detect reference to a IRValue with unresolved type.
+  if (auto cv = decl->getIfIRValue();
+      cv && isa<UnresolvedType>(cv.getRValueType())) {
+    auto diag = emitter.emitError(loc, "reference to value '")
+                << spelling << "' with an unspecified type";
+    diag.attachNote(decl->getLoc())
+        << "specify the type for '" << spelling << "'";
+    return {};
+  }
+
   // Error if this is a direct reference to a parameter declared on an enclosing
   // struct.  It should use Self.param.
   if (auto pvalue = decl->getIfIRValue().getIfPValue()) {
@@ -5003,11 +5013,14 @@ AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   auto &signatureDecl = emitter.getDeclResolver().createFunctionTypeDecl(
       getLoc(), emitter.declScope);
   signatureDecl.setExplicitParamScope();
+  // TODO: toggle this after fully migrated.
+  constexpr bool doPartialParsing = false;
 
   ParsedParamList parsedParamList;
   parsedParamList.params = llvm::to_vector(parsedParams);
   std::optional<TypeCheckedParamList> paramListOrError =
-      TypeCheckedParamList::create(parsedParamList, signatureDecl);
+      TypeCheckedParamList::create(parsedParamList, signatureDecl,
+                                   /*partial=*/doPartialParsing);
   if (!paramListOrError)
     return {};
   TypeCheckedParamList &paramList = *paramListOrError;
@@ -5020,28 +5033,22 @@ AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.isParsingClosure = true;
 
   TypeCheckedFnSignature tcSignature(paramList, argList, /*originExpr=*/nullptr,
-                                     /*fnDecl=*/nullptr, StringAttr());
+                                     /*fnDecl=*/nullptr, StringAttr(),
+                                     /*partial=*/doPartialParsing);
+
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return {};
   for (const ParsedArgument &arg : tcSignature.argList.parsedArgs)
     if (arg.isErroneous)
       return {};
-  signatureDecl.setSignature(signature, paramList.paramASTDecls,
-                             tcSignature.argASTDecls);
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
 
   LambdaUValue lambda = LambdaUValue::create(
       getLoc(), signature, parsedParams, parsedArgs, body, captures,
       hasExplicitCaptureList, captureAllByConvention);
-
-  // TODO: The partial signature is fully resolved for now, use it as the
-  // contextual type, will be replaced to a actual contextual type later.
-  auto ctxSig = lambda.getPartialSignature();
-  return emitter.emitResult(emitter.getDeclResolver().resolveAnonymousClosure(
-                                lambda, ctxSig, emitter),
-                            this, dest);
+  return lambda.emitAsCValue(emitter, dest);
 }
 
 AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {

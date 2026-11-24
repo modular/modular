@@ -66,6 +66,8 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
   // extracting the actual type to compare. This also doesn't check for
   // passing convention, since those are trivially convertible.
   switch (expectedConv) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::PackImmMem:
@@ -468,6 +470,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
     AnyValue value;
     switch (convForActual) {
+    case ArgConvention::Unresolved:
+      llvm_unreachable("unresolved convention in a resolved signature");
     case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefResult:

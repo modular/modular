@@ -56,6 +56,8 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::PackMut:
   case ArgConvention::PackOwnedMem:
     return true;
+  case ArgConvention::Unresolved:
+    llvm_unreachable("invalid argument convention");
   }
   llvm_unreachable("invalid argument convention");
 }

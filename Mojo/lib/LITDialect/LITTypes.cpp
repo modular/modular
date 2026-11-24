@@ -1575,6 +1575,12 @@ PogListAttr FnTypeGeneratorType::getParamListAttrs() {
   return ::cast<PogListAttr>(GeneratorType::getParamListAttrs());
 }
 
+bool FnTypeGeneratorType::hasUnresolvedEntry() {
+  return Type(*this)
+      .walk([](UnresolvedType) { return WalkResult::interrupt(); })
+      .wasInterrupted();
+}
+
 FnTypeGeneratorType
 FnTypeGeneratorType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithBody(getBody().getWithCaptureOrigins(origins));

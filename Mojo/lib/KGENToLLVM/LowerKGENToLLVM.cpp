@@ -539,6 +539,8 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
     applyNonNullAttributes(list, type);
 
     switch (conv) {
+    case ArgConvention::Unresolved:
+      llvm_unreachable("unresolved convention in a resolved signature");
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
     case ArgConvention::ImmMem:

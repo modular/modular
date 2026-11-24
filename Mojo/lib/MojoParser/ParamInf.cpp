@@ -1464,6 +1464,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   // We'll bind the next provided value.
   switch (expectedConvention) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::OwnedReg:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:

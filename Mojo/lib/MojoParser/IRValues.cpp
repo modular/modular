@@ -24,6 +24,7 @@
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
+#include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/ExprNode.h"
 #include "Mojo/POPDialect/POPTypes.h"
 
@@ -99,6 +100,13 @@ static raw_ostream &printStorage(raw_ostream &os,
       // Print the inferred attribute expression (e.g. `.f64`).
       val.getExpr()->print(os);
     }
+  } else if (auto val = dyn_cast<LambdaUValue>(storage)) {
+    if (isDump)
+      os << "LambdaUValue: ";
+    if (!val)
+      os << "<<NULL>>";
+    else
+      os << "lambda " << val.getPartialSignature();
   } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
       os << "ML: ";
@@ -135,9 +143,7 @@ raw_ostream &LIT::operator<<(raw_ostream &os, OverloadSetUValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, LambdaUValue value) {
-  if (!value)
-    return os << "<<NULL>>";
-  return os << "LambdaUValue";
+  return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, InitializerUValue value) {
   return printStorage(os, value);
@@ -226,6 +232,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
   assert(!isa<OverloadSetUValue>(storage) && "overloaded rvalue has no type");
   assert(!isa<InferredBaseAttrRefUValue>(storage) &&
          "inferred base attr ref has no type");
+  assert(!isa<LambdaUValue>(storage) && "unresolved lambda has no type");
   llvm_unreachable("unknown IRValue");
 }
 
@@ -809,6 +816,16 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   return {};
 }
 
+CValue LambdaUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
+  // TODO: The partial signature is fully resolved for now, use it as the
+  // contextual type, will be replaced to a actual contextual type later.
+  auto ctxSig = getPartialSignature();
+  return emitter
+      .emitResult(emitter.getDeclResolver().resolveAnonymousClosure(
+                      *this, ctxSig, emitter),
+                  getBodyExpr(), dest)
+      .getIfCValue();
+}
 //===----------------------------------------------------------------------===//
 // InferredBaseAttrRefUValue
 //===----------------------------------------------------------------------===//

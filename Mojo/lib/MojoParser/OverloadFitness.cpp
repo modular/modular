@@ -156,6 +156,8 @@ void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
     }
   } else if (value.getIfInferredBaseAttrRef()) {
     diag << "inferred attribute reference";
+  } else if (value.getIfLambda()) {
+    diag << "lambda expression";
   } else
     diag << "unknown overload";
 }

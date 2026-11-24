@@ -1827,6 +1827,8 @@ static void finalizeResolvedFnOp(SharedState &shared, FnOp funcOp,
 AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
                                                FnTypeGeneratorType ctxSig,
                                                IREmitter &emitter) {
+  // Check ctxSig is fully resolved if present
+  assert(!ctxSig || !ctxSig.hasUnresolvedEntry());
   assert(lambda.getParams().size() <= ctxSig.getInputParamTypes().size() &&
          lambda.getArgs().size() <= ctxSig.getArguments().size() &&
          "signature must have the lambda's parameters and arguments");

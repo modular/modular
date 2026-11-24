@@ -201,6 +201,10 @@ public:
 
   FuncType getBody();
 
+  /// Return true if a `!lit.unresolved` type occurs anywhere in this
+  /// signature, including nested positions.
+  bool hasUnresolvedEntry();
+
   /// Reconstruct the generator using a list of named input parameters; these
   /// are prepended to the current signature and references are remapped to
   /// index references. If `paramNames` is non-empty, it must match

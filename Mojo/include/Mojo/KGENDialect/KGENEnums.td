@@ -274,6 +274,10 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   I32EnumAttrCase<"PackImmMem", 10, "pack_imm_mem">,
   I32EnumAttrCase<"PackMut", 11, "pack_mut">,
   I32EnumAttrCase<"PackOwnedMem", 12, "pack_owned_in_mem">,
+
+  // A special convention that ONLY exists in a partially resolved fn
+  // type.
+  I32EnumAttrCase<"Unresolved", 13, "unresolved">
 ]> {
   let cppNamespace = "M::KGEN";
 }

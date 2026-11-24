@@ -1011,6 +1011,9 @@ LogicalResult FnOp::verify() {
            << argAttrs.size();
   }
 
+  if (getFuncTypeGenerator().hasUnresolvedEntry())
+    return emitOpError("function has entries with unresolved type");
+
   // Check that the number of argument labels matches the number of argument
   // types.
   if (getFuncTypeGenerator().getBody().getArgListAttrs().getPogs().size() !=

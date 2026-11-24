@@ -379,7 +379,10 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     [[fallthrough]];
   case ArgConvention::ImmReg:
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unknown argument convention");
   }
+
   llvm_unreachable("unknown argument convention");
 }
 
@@ -1079,6 +1082,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   };
 
   switch (convention) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedMem:

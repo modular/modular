@@ -44,6 +44,8 @@ constexpr llvm::StringLiteral kStructElemLayoutError =
 /// Return a string like "imm" or "mut".
 const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::ImmReg:
   case ArgConvention::ImmMem:
   case ArgConvention::PackImmMem:

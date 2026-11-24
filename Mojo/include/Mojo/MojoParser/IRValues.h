@@ -24,6 +24,7 @@
 //     OverloadSetUValue         <- an unresolved overload set
 //     InitializerUValue         <- constructor operands {a=1, b="foo"}
 //     InferredBaseAttrRefUValue <- inferred-base attr ref `.f64`
+//     LambdaUValue              <- a `lambda` with an unresolved closure type
 //   CValue        <- Concrete value: something with a known type.
 //     LValue         <- mutable reference to storage
 //       MLValue        <- value is in memory with a mutable reference
@@ -472,6 +473,8 @@ public:
   bool hasExplicitCaptureList() const;
   std::optional<CaptureConvention> getCaptureAllByConvention() const;
 
+  CValue emitAsCValue(IREmitter &emitter, ExprDest &dest);
+
 private:
   struct LambdaWrapper;
   LambdaUValue(RCRef<LambdaWrapper> storage);
@@ -561,8 +564,8 @@ struct VariantValueStorageBase {
   using Storage =
       SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
                    OverloadSetUValue, InitializerUValue,
-                   InferredBaseAttrRefUValue, SBValue, MBPValue, PMBValue,
-                   PMRValue, MBValue, DLValue, MLValue, RLValue>;
+                   InferredBaseAttrRefUValue, LambdaUValue, SBValue, MBPValue,
+                   PMBValue, PMRValue, MBValue, DLValue, MLValue, RLValue>;
 
   VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -694,6 +697,11 @@ struct VariantUValue {
       getStorageR() = std::move(value);
   }
 
+  VariantUValue(LambdaUValue value) {
+    if (value)
+      getStorageR() = std::move(value);
+  }
+
   OverloadSetUValue getIfOverloadSet() const {
     return dyn_cast<OverloadSetUValue>(getStorageR());
   }
@@ -708,6 +716,10 @@ struct VariantUValue {
     return dyn_cast<InferredBaseAttrRefUValue>(getStorageR());
   }
 
+  LambdaUValue getIfLambda() const {
+    return dyn_cast<LambdaUValue>(getStorageR());
+  }
+
 private:
   // These are named getStorageR instead of getStorage to easy
   // multiple-inheritance name lookup issues.
@@ -720,7 +732,8 @@ private:
   }
 };
 
-/// UValue = OverloadSetUValue|InitializerUValue|InferredBaseAttrRefUValue
+/// UValue = OverloadSetUValue|InitializerUValue|InferredBaseAttrRefUValue|
+///          LambdaUValue
 class UValue : public VariantValueStorage<UValue>,
                public VariantUValue<UValue> {
 public:
@@ -730,8 +743,8 @@ public:
   static UValue getFrom(Storage storage) {
     UValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<OverloadSetUValue, InitializerUValue, InferredBaseAttrRefUValue>(
-            storage))
+    if (isa<OverloadSetUValue, InitializerUValue, InferredBaseAttrRefUValue,
+            LambdaUValue>(storage))
       result.storage = std::move(storage);
     return result;
   }

@@ -175,6 +175,8 @@ OriginTrackable::OriginTrackable(Value v) {
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getArgConvention(argIdx)) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::ImmReg:
     // This is immutable so don't need to be tracked.
     return;
@@ -307,6 +309,8 @@ void OperationEffects::analyzeCallOp(Operation &op) {
   auto getOperandEffectForConvention = [&](ArgConvention conv,
                                            Type argType) -> OperandEffect {
     switch (conv) {
+    case ArgConvention::Unresolved:
+      llvm_unreachable("unresolved convention in a resolved signature");
     case ArgConvention::OwnedReg:
       return OperandEffect::regConsume;
     case ArgConvention::OwnedMem:
