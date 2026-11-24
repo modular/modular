@@ -180,9 +180,9 @@ MessageSource = Literal["user", "assistant", "system"]
 # The selector is shared; the unit each augmentation's fraction draws in is
 # not. Draw per session when the payload persists into later turns, per turn
 # when it does not: images ride in the message history, a response_format is
-# per-request. That also decides whether "first" survives a warmed session --
-# the prefix loop resends its images but never sets response_format
-# (CENG-1086).
+# per-request. Both survive a warmed session, but differently: the prefix loop
+# resends its images, while a "first" response_format is moved onto the first
+# turn the driver sends (CENG-1086).
 TurnSelector = Literal["first", "last", "every"]
 
 

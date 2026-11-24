@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 import pytest
@@ -23,6 +24,7 @@ from max.benchmark.benchmark_shared.datasets.chat_judge import (
 )
 from max.benchmark.benchmark_shared.datasets.response_format_augmentation import (
     augment_samples_with_response_format,
+    move_first_turn_response_format,
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
@@ -162,30 +164,42 @@ def test_chat_judge_is_skipped_with_a_warning(
     assert all(m.response_format is None for m in session.messages)
 
 
-def test_first_turn_selector_warns_about_warmed_sessions(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A warmed session replays its opening turns locally, so a constraint on
-    the first one never reaches the wire (CENG-1086). Single-turn workloads
-    ignore the selector, so they must stay quiet."""
-    with caplog.at_level(logging.WARNING):
-        augment_samples_with_response_format(
-            ChatSamples(chat_sessions=[make_session(0, 3)]),
-            response_format=_RF,
-            fraction=1.0,
-            turn="first",
-        )
-    assert "--response-format-turn first" in caplog.text
+def _first_turn_constrained(prefix_turns: int) -> ChatSession:
+    session = make_session(0, num_user_turns=4)
+    augment_samples_with_response_format(
+        ChatSamples(chat_sessions=[session]),
+        response_format=_RF,
+        fraction=1.0,
+        turn="first",
+    )
+    return dataclasses.replace(session, prefix_turns=prefix_turns)
 
-    caplog.clear()
-    with caplog.at_level(logging.WARNING):
-        augment_samples_with_response_format(
-            RequestSamples(requests=[make_sampled_request()]),
-            response_format=_RF,
-            fraction=1.0,
-            turn="first",
-        )
-    assert caplog.text == ""
+
+def test_first_turn_constraint_moves_to_the_first_sent_turn() -> None:
+    """A warmed session replays its opening turns locally and never sends their
+    response_format, so the constraint goes on turn `prefix_turns`."""
+    warmed = _first_turn_constrained(prefix_turns=2)
+    (moved,) = move_first_turn_response_format([warmed])
+    assert _constrained_turn_indices(moved) == [2]
+    assert moved.messages[4].response_format == _RF
+    assert moved.prefix_turns == 2
+
+
+def test_first_turn_move_leaves_the_sampled_session_unchanged() -> None:
+    """Each run picks start turns again from the same sampled sessions."""
+    warmed = _first_turn_constrained(prefix_turns=3)
+    move_first_turn_response_format([warmed])
+    assert _constrained_turn_indices(warmed) == [0]
+
+
+def test_first_turn_move_skips_cold_and_unconstrained_sessions() -> None:
+    cold = _first_turn_constrained(prefix_turns=0)
+    unconstrained = dataclasses.replace(
+        make_session(1, num_user_turns=4), prefix_turns=2
+    )
+    moved = move_first_turn_response_format([cold, unconstrained])
+    assert moved[0] is cold
+    assert moved[1] is unconstrained
 
 
 def test_seed_makes_selection_reproducible() -> None:

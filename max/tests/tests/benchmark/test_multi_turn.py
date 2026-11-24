@@ -23,6 +23,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import msgspec
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
+from max.benchmark.benchmark_shared.datasets.response_format_augmentation import (
+    move_first_turn_response_format,
+)
 from max.benchmark.benchmark_shared.datasets.types import (
     AssistantToolCall,
     ChatMessage,
@@ -63,6 +66,7 @@ from tests.benchmark.benchmark_fakes import (
     FakeDriver,
     StreamBody,
     make_request_input,
+    make_session,
     mock_chat_stream,
     sent_bodies,
     sent_json,
@@ -168,6 +172,50 @@ def test_chat_session_driver_constrains_only_the_marked_turns() -> None:
         (response_format, False),
         (None, True),
     ]
+
+
+def test_moved_first_turn_constraint_is_sent_on_the_first_sent_turn() -> None:
+    """A replayed prefix never sends `response_format`, so a moved constraint
+    must sit on the first turn past the prefix, and only there."""
+    response_format: ResponseFormat = {"type": "json_object"}
+    sent: list[tuple[ResponseFormat | None, bool]] = []
+
+    class SnapshottingDriver(FakeDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            sent.append(
+                (
+                    request_func_input.response_format,
+                    request_func_input.ignore_eos,
+                )
+            )
+            return RequestFuncOutput(
+                success=True, latency=0.1, ttft=0.05, generated_text="ok"
+            )
+
+    session = make_session(0, num_user_turns=4)
+    session.messages[0].response_format = response_format
+    (moved,) = move_first_turn_response_format(
+        [dataclasses.replace(session, prefix_turns=2)]
+    )
+
+    asyncio.run(
+        chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=SnapshottingDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=moved,
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+        )
+    )
+
+    assert sent == [(response_format, False), (None, True)]
 
 
 def _replayed_history(
@@ -1802,11 +1850,10 @@ def test_prefix_turn_images_reach_the_wire() -> None:
     """An image on a locally-replayed prefix turn is still sent.
 
     The prefix loop builds those turns without a round-trip, but splices their
-    images into the history the first measured turn carries. This is why
-    `--image-turn first` is safe on a warmed session while
-    `--response-format-turn first` is not: an image lives in the message
-    history, a response_format is a per-request field the prefix loop never
-    sets. Ref CENG-1086.
+    images into the history the first measured turn carries, so
+    `--image-turn first` needs no help on a warmed session. A response_format
+    is a per-request field the prefix loop never sets, which is why
+    `move_first_turn_response_format` moves it to the first sent turn.
     """
     driver = CapturingDriver()
 

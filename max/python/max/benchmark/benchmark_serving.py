@@ -74,6 +74,7 @@ from max.benchmark.benchmark_shared.datasets.image_augmentation import (
 )
 from max.benchmark.benchmark_shared.datasets.response_format_augmentation import (
     augment_samples_with_response_format,
+    move_first_turn_response_format,
 )
 from max.benchmark.benchmark_shared.datasets.tool_augmentation import (
     augment_samples_with_tools,
@@ -495,6 +496,11 @@ async def _benchmark_with_client(
             )
             if report is not None:
                 log_warmup_sampling_report(report)
+            if (
+                args.openai_response_format is not None
+                and args.response_format_turn == "first"
+            ):
+                chat_sessions = move_first_turn_response_format(chat_sessions)
             cold_count = sum(
                 1 for s in chat_sessions[:warmup_count] if s.prefix_turns == 0
             )
