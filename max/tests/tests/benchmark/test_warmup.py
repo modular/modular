@@ -14,6 +14,9 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Sequence
+
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -21,10 +24,14 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SessionMessage,
 )
 from max.benchmark.benchmark_shared.warmup import (
+    WarmupPlan,
     _nested_size_biased_pick,
+    _session_lifetime_ms,
     _WarmupSamplingReport,
     log_warmup_sampling_report,
     pick_warmup_population,
+    resolve_warmup_plan,
+    warn_if_warmup_count_ignored,
 )
 
 # ---------------------------------------------------------------------------
@@ -249,8 +256,9 @@ def test_pick_warmup_mild_underproduction_shrinks_both_pools() -> None:
 
 
 def test_pick_warmup_raises_when_dataset_smaller_than_warmup_count() -> None:
+    """The error states the hard minimum and only levers that can meet it."""
     pool = _fixed_pool([5, 5, 5])
-    with pytest.raises(ValueError, match="warmup needs at least"):
+    with pytest.raises(ValueError, match="needs at least 4") as excinfo:
         pick_warmup_population(
             pool,
             warmup_count=4,
@@ -259,6 +267,11 @@ def test_pick_warmup_raises_when_dataset_smaller_than_warmup_count() -> None:
             main_pool_target=20,
             rng=np.random.default_rng(0),
         )
+    message = str(excinfo.value)
+    assert "32 candidates" in message
+    assert "--max-concurrency" in message
+    # Lowering the factor shrinks the dataset, so it cannot clear this bound.
+    assert "--warmup-oversample-factor" not in message
 
 
 def test_pick_warmup_severe_underproduction_floors_warmup() -> None:
@@ -437,3 +450,283 @@ def test_pick_warmup_keeps_main_pool_and_smaller_picks() -> None:
         picks, main_sessions = pick(warmup_count)
         assert picks == larger_picks[:warmup_count]
         assert main_sessions == larger_main
+
+
+# ---------------------------------------------------------------------------
+# resolve_warmup_plan: how big the steady-state population is
+# ---------------------------------------------------------------------------
+
+# What a swept run asks for, and the candidate pool it configures per slot.
+_MAIN = 3000
+_FACTOR = 8
+
+
+def _thinking_session(
+    session_id: int, turns: int, delay_ms: float, output_tokens: int = 5
+) -> ChatSession:
+    """A session whose turns each think ``delay_ms`` before the next one."""
+    msgs: list[SessionMessage] = []
+    for _ in range(turns):
+        msgs.append(SessionMessage(source="user", content="u", num_tokens=10))
+        msgs.append(
+            SessionMessage(
+                source="assistant",
+                content="a",
+                num_tokens=output_tokens,
+                delay_until_next_message=delay_ms,
+            )
+        )
+    return ChatSession(id=session_id, messages=msgs)
+
+
+def _dataset(size: int) -> list[ChatSession]:
+    """``size`` sessions of 180 s think time, so 1.5 sessions/s derives 270."""
+    return [
+        _thinking_session(i, turns=4, delay_ms=60_000.0) for i in range(size)
+    ]
+
+
+def _plan(
+    sessions: Sequence[ChatSession],
+    *,
+    rate: float = 1.5,
+    cap: int | None = None,
+    concurrency: int | None = None,
+    warmup_count: int | None = None,
+    main_pool_target: int = _MAIN,
+    warmup_oversample_factor: int = _FACTOR,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
+) -> WarmupPlan:
+    return resolve_warmup_plan(
+        warmup_count=warmup_count,
+        request_rate=rate,
+        sessions=sessions,
+        max_concurrent_conversations=cap,
+        max_concurrency=concurrency,
+        main_pool_target=main_pool_target,
+        warmup_oversample_factor=warmup_oversample_factor,
+        est_ttft_ms=est_ttft_ms,
+        est_tpot_ms=est_tpot_ms,
+    )
+
+
+def _pick(pool: Sequence[ChatSession], plan: WarmupPlan) -> list[ChatSession]:
+    """Run the picker exactly as the benchmark does, for the plan."""
+    sessions, report = pick_warmup_population(
+        pool,
+        plan.count,
+        warmup_multiturn=True,
+        warmup_oversample_factor=plan.oversample_factor,
+        main_pool_target=plan.main_pool_target,
+        rng=np.random.default_rng(0),
+    )
+    assert report is not None
+    assert report.warmup_count == plan.count, "the plan did not fit"
+    assert len(sessions) == plan.count + plan.main_pool_target
+    return sessions
+
+
+def test_session_lifetime_excludes_the_delay_after_the_last_turn() -> None:
+    """A session ends with its last reply; nothing waits on that final sleep."""
+    # 3 turns: 3 x (100 + 10 x 5) generation + 2 x 500 delay = 1450 ms.
+    s = _thinking_session(0, turns=3, delay_ms=500.0)
+    assert _session_lifetime_ms(s, 100.0, 10.0) == pytest.approx(1450.0)
+    # With zero estimates it is think time alone.
+    assert _session_lifetime_ms(s) == pytest.approx(1000.0)
+
+
+@pytest.mark.parametrize(
+    ("rate", "est_ttft_ms", "est_tpot_ms", "expected"),
+    [
+        # 1.5 sessions/s x 180 s of think time.
+        (1.5, 0.0, 0.0, 270),
+        # Generation is part of a lifetime: 180.6 s -> ceil(270.9).
+        (1.5, 100.0, 10.0, 271),
+        (0.5, 0.0, 0.0, 90),
+    ],
+)
+def test_rate_paced_count_is_rate_times_lifetime(
+    rate: float, est_ttft_ms: float, est_tpot_ms: float, expected: int
+) -> None:
+    """Little's law: a rate-paced run opens with the population it holds.
+
+    The conversation cap is Little's law plus headroom, so warming the cap
+    opens the measured window above the offered load and it drains from there.
+    """
+    plan = _plan(
+        _dataset(_MAIN + _FACTOR * 3000),
+        rate=rate,
+        cap=3000,
+        est_ttft_ms=est_ttft_ms,
+        est_tpot_ms=est_tpot_ms,
+    )
+    assert plan.count == expected
+    assert (plan.main_pool_target, plan.oversample_factor) == (_MAIN, _FACTOR)
+
+
+def test_uncapped_rate_run_warms_out_of_the_measured_pool() -> None:
+    """A dataset with nothing to spare still pre-warms its population.
+
+    An uncapped rate-paced run's dataset is exactly its measured pool, so
+    pre-warming out of that pool's tail is the only way for it not to warm
+    nothing. The count does not depend on the dataset size.
+    """
+    plan = _plan(_dataset(_MAIN))
+    assert (plan.count, plan.main_pool_target, plan.oversample_factor) == (
+        270,
+        _MAIN - 270,
+        1,
+    )
+    assert plan.main_pool_target + plan.count == _MAIN
+    _pick(_dataset(_MAIN), plan)
+    for size in (1000, 5000, 20_000):
+        assert _plan(_dataset(size), main_pool_target=size).count == 270
+
+
+def test_rate_run_with_no_lifetime_warms_nothing() -> None:
+    """No delays and no estimates is a zero-lifetime workload.
+
+    This is the one rate-paced case that changes behavior: the run used to
+    pre-warm its conversation cap here, all of it submitting at t0, which is
+    not the population a rate-paced run holds.
+    """
+    assert _plan([_fake_session(i, 4) for i in range(16)], cap=3000).count == 0
+
+
+@pytest.mark.parametrize(
+    ("cap", "concurrency", "expected"),
+    [(256, 128, 256), (None, 128, 128), (None, None, 0)],
+)
+def test_unpaced_run_keeps_its_cap(
+    cap: int | None, concurrency: int | None, expected: int
+) -> None:
+    """A closed-loop run holds as many sessions as its concurrency allows."""
+    plan = _plan(
+        _dataset(_MAIN + _FACTOR * 270),
+        rate=float("inf"),
+        cap=cap,
+        concurrency=concurrency,
+    )
+    assert plan.count == expected
+    assert (plan.main_pool_target, plan.oversample_factor) == (_MAIN, _FACTOR)
+
+
+@pytest.mark.parametrize(
+    ("cap", "concurrency", "expected"), [(100, None, 100), (None, 64, 64)]
+)
+def test_count_never_exceeds_the_sessions_the_run_can_hold(
+    cap: int | None, concurrency: int | None, expected: int
+) -> None:
+    """A run cannot hold more sessions open than its own limit allows."""
+    plan = _plan(
+        _dataset(_MAIN + _FACTOR * 270), cap=cap, concurrency=concurrency
+    )
+    assert plan.count == expected
+
+
+def test_explicit_count_overrides_the_derivation() -> None:
+    """--warmup-count wins over both Little's law and an unpaced run's cap."""
+    pool = _dataset(_MAIN + _FACTOR * 20)
+    for rate in (1.5, float("inf")):
+        plan = _plan(pool, rate=rate, cap=3000, warmup_count=17)
+        assert (plan.count, plan.main_pool_target, plan.oversample_factor) == (
+            17,
+            _MAIN,
+            _FACTOR,
+        )
+
+
+@pytest.mark.parametrize(
+    ("available", "expected_main", "expected_factor"),
+    [
+        (_MAIN + _FACTOR * 270, _MAIN, _FACTOR),
+        (_MAIN + 3 * 270, _MAIN, 3),  # a smaller candidate pool
+        (_MAIN + 270, _MAIN, 1),  # one candidate per slot
+        (_MAIN, _MAIN - 270, 1),  # nothing to spare: the measured tail
+    ],
+)
+def test_a_cramped_dataset_costs_length_bias_not_sessions(
+    available: int, expected_main: int, expected_factor: int
+) -> None:
+    """The pick gives up length bias before it gives up warm-up sessions."""
+    plan = _plan(_dataset(available))
+    assert (plan.count, plan.main_pool_target, plan.oversample_factor) == (
+        270,
+        expected_main,
+        expected_factor,
+    )
+    _pick(_dataset(available), plan)
+
+
+def test_a_dataset_smaller_than_the_population_warms_what_exists() -> None:
+    plan = _plan(_dataset(150), main_pool_target=300)
+    assert (plan.count, plan.main_pool_target) == (150, 0)
+    _pick(_dataset(150), plan)
+
+
+def test_a_cramped_dataset_says_which_flag_buys_a_candidate_pool(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Under-warming is a note with a lever in it, not an error."""
+    with caplog.at_level(logging.INFO, logger="max.benchmark"):
+        _plan(_dataset(_MAIN + 3 * 270))
+        _plan(_dataset(_MAIN))
+    notes = [r.getMessage() for r in caplog.records]
+    assert sum(m.startswith("Pre-warming") for m in notes) == 2
+    assert all("--max-concurrency" in m for m in notes)
+    # The conversation cap switches the run to the KV-cache stress runner, a
+    # different measurement, so the notes must not offer it as the lever.
+    assert not any("--max-concurrent-conversations" in m for m in notes)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_count", "expected"),
+    [
+        # The derived population, above the turn cap and above the sessions cap.
+        ({"concurrency": 128}, 128, "(--max-concurrency)"),
+        ({"cap": 100}, 100, "(--max-concurrent-conversations)"),
+        # An explicit count is not clamped, and is still flagged.
+        (
+            {"concurrency": 128, "warmup_count": 400},
+            400,
+            "--warmup-count (400)",
+        ),
+        # A population the run can hold open is silent.
+        ({"cap": 3000}, 270, None),
+        ({"cap": 3000, "warmup_count": 17}, 17, None),
+    ],
+)
+def test_a_clamped_count_warns_with_the_flag_that_limits_it(
+    caplog: pytest.LogCaptureFixture,
+    kwargs: dict[str, int],
+    expected_count: int,
+    expected: str | None,
+) -> None:
+    """A population the run cannot hold open is reported with its lever."""
+    with caplog.at_level(logging.WARNING, logger="max.benchmark"):
+        plan = _plan(_dataset(_MAIN + _FACTOR * 400), **kwargs)
+    assert plan.count == expected_count
+    assert expected in caplog.text if expected else caplog.text == ""
+
+
+@pytest.mark.parametrize(
+    ("warmup_count", "kwargs", "expected"),
+    [
+        (400, {"warmup_multiturn": False, "multi_turn": True}, "--no-warmup"),
+        (400, {"warmup_multiturn": True, "multi_turn": False}, "single-turn"),
+        (400, {"warmup_multiturn": True, "multi_turn": True}, None),
+        (None, {"warmup_multiturn": False, "multi_turn": False}, None),
+    ],
+)
+def test_ignored_warmup_count_is_reported(
+    caplog: pytest.LogCaptureFixture,
+    warmup_count: int | None,
+    kwargs: dict[str, bool],
+    expected: str | None,
+) -> None:
+    """A count this run cannot honour says so instead of doing nothing."""
+    with caplog.at_level(logging.WARNING, logger="max.benchmark"):
+        warn_if_warmup_count_ignored(warmup_count, **kwargs)
+    assert expected in caplog.text if expected else caplog.text == ""

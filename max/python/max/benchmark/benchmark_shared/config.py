@@ -949,6 +949,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
+    warmup_count: int | None = Field(
+        default=None,
+        ge=1,
+        description="Multi-turn workloads only: how many sessions --warmup-multiturn starts mid-conversation. This is a population, not a concurrency limit: a finite --request-rate derives it as ceil(rate x mean session lifetime), and an unpaced run uses --max-concurrent-conversations, else --max-concurrency. Set it to override either.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
     warmup_oversample_factor: int = Field(
         default=8,
         description="Warmup-candidate pool multiplier (sessions per warmup slot). 0 disables length-biased warmup; 1 = uniform random turn warmup; >=2 = length-biased warmup.",
@@ -963,7 +970,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     warmup_delay_estimated_ttft_ms: float = Field(
         default=0.0,
-        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. 0 = off.",
+        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. It also lengthens a rate-paced run's pre-warm population, and since a workload YAML cannot set it, a YAML-driven run derives from think time alone and slightly under-warms. 0 = off.",
         json_schema_extra={"group": "Traffic Control"},
     )
 

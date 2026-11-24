@@ -156,6 +156,15 @@ This version is still a work in progress.
   deprecation warning. Result files record the option as `warmup_multiturn`
   under `client_args`.
 
+- `max benchmark` starts a rate-paced multi-turn run at the population its
+  `--request-rate` holds open, `ceil(rate x mean session lifetime)` sessions
+  (Little's law), instead of at the conversation cap; `--warmup-count`
+  overrides it. Pre-warmed sessions phase-spread their first turn over that
+  turn's occupancy window so the population's submits arrive at the offered
+  rate. Closed-loop runs keep their previous start behavior, and a rate-paced
+  workload with neither an inter-turn delay nor `--warmup-delay-estimated-*`
+  still pre-warms nothing.
+
 ## Python API
 
 - `max.functional.random.gaussian` and `max.graph.ops.random.gaussian` on the

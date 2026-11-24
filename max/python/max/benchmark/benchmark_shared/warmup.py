@@ -38,6 +38,7 @@ from __future__ import annotations
 import dataclasses
 import heapq
 import logging
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -93,6 +94,249 @@ def _prefix_delays_ms(s: ChatSession) -> np.ndarray:
     Equivalent to :func:`_prefix_occupancy_ms` with zero runtime estimates.
     """
     return _prefix_occupancy_ms(s)
+
+
+def _session_lifetime_ms(
+    s: ChatSession, est_ttft_ms: float = 0.0, est_tpot_ms: float = 0.0
+) -> float:
+    """Return how long a session stays open, first submit to last reply.
+
+    A turn costs its generation time plus the delay before the next turn; the
+    delay after the last turn never elapses inside the session. This is the
+    ``W`` of Little's law ``L = rate * W``.
+
+    Args:
+        s: The session.
+        est_ttft_ms: Estimated time to first token per turn, in milliseconds.
+        est_tpot_ms: Estimated time per output token, in milliseconds.
+
+    Returns:
+        The lifetime in milliseconds.
+    """
+    total = 0.0
+    turns = s.num_turns
+    for k in range(turns):
+        msg_idx = 2 * k + 1  # turn k's assistant message
+        if msg_idx >= len(s.messages):
+            break
+        assistant = s.messages[msg_idx]
+        total += est_ttft_ms + est_tpot_ms * assistant.num_tokens
+        if k + 1 < turns:
+            total += float(assistant.delay_until_next_message or 0.0)
+    return total
+
+
+@dataclass(frozen=True)
+class WarmupPlan:
+    """The warm-up population a run opens with, and the pool split it fits."""
+
+    # Sessions to start mid-conversation; 0 for none.
+    count: int
+    # Sessions the measured window keeps at the head of the task list.
+    main_pool_target: int
+    # Candidates per warm-up slot; 0 or 1 means a uniform pick.
+    oversample_factor: int
+
+
+def _cap_flag(max_concurrent_conversations: int | None) -> str:
+    """Name the flag that limited the sessions the run can hold in flight."""
+    if max_concurrent_conversations is not None:
+        return "--max-concurrent-conversations"
+    return "--max-concurrency"
+
+
+def _fit_warmup_pool(
+    count: int,
+    available: int,
+    main_pool_target: int,
+    oversample_factor: int,
+    rate_note: str,
+) -> WarmupPlan:
+    """Return the plan that fits ``count`` warm-up sessions into the dataset.
+
+    The pick gives up length bias before it gives up sessions: a smaller
+    candidate pool first, and then, when the dataset has nothing to spare, the
+    measured pool's tail. Those sessions start mid-conversation, so only their
+    later turns are measured.
+
+    Args:
+        count: The warm-up count to fit; this never raises it.
+        available: Sessions the dataset produced.
+        main_pool_target: Sessions the measured window asked for.
+        oversample_factor: Candidates per slot the run configured.
+        rate_note: The rate and lifetime, worded for the log line.
+
+    Returns:
+        The plan to hand to :func:`pick_warmup_population`.
+    """
+    per_slot = max(1, oversample_factor)
+    if count <= 0:
+        return WarmupPlan(0, main_pool_target, per_slot)
+
+    spare = max(0, available - main_pool_target)
+    if count * per_slot <= spare:
+        logger.info("Pre-warming %d sessions (%s).", count, rate_note)
+        return WarmupPlan(count, main_pool_target, per_slot)
+
+    affordable = spare // count
+    if affordable >= 1:
+        logger.info(
+            "Pre-warming %d sessions (%s) from %d candidates per slot rather"
+            " than %d: the dataset holds %d sessions beyond the %d it measures"
+            " for. Add --max-concurrency to inflate it, for a length-biased"
+            " pick.",
+            count,
+            rate_note,
+            affordable,
+            per_slot,
+            spare,
+            main_pool_target,
+        )
+        return WarmupPlan(count, main_pool_target, affordable)
+
+    count = min(count, available)
+    measured = max(0, min(main_pool_target, available) - count)
+    logger.info(
+        "Pre-warming %d sessions (%s) out of the measured pool: the dataset"
+        " holds no sessions beyond the %d it measures for, so %d of them start"
+        " mid-conversation with a uniform turn pick and the measured window"
+        " keeps %d. Their later turns are measured turns either way. Add"
+        " --max-concurrency to inflate the dataset and keep that pool whole.",
+        count,
+        rate_note,
+        main_pool_target,
+        count,
+        measured,
+    )
+    return WarmupPlan(count, measured, 1)
+
+
+def resolve_warmup_plan(
+    *,
+    warmup_count: int | None,
+    request_rate: float,
+    sessions: Sequence[ChatSession],
+    max_concurrent_conversations: int | None,
+    max_concurrency: int | None,
+    main_pool_target: int,
+    warmup_oversample_factor: int,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
+) -> WarmupPlan:
+    """Return how many sessions to start mid-conversation, and the pool split.
+
+    A pre-warmed session is not an arrival: it is one of the sessions a running
+    server already holds open. A rate-paced run therefore opens with Little's
+    law, ``ceil(request_rate * mean session lifetime)``, which is the
+    population that rate holds. Sizing it from the conversation cap or the
+    turn-concurrency limit instead opens the run at that limit's load, and the
+    measured window drains from there instead of measuring the offered rate.
+
+    An unpaced run holds as many sessions as its concurrency allows, so its cap
+    is its population. A workload with no inter-turn delay and no runtime
+    estimate has a zero lifetime and pre-warms nothing.
+
+    Args:
+        warmup_count: The explicit ``--warmup-count``, if the user set one.
+        request_rate: Session arrivals per second; ``inf`` for unpaced load.
+        sessions: The workload's sessions, an unbiased sample of arrivals.
+        max_concurrent_conversations: The conversation cap, if any.
+        max_concurrency: The in-flight turn cap, if any.
+        main_pool_target: How many sessions the measured window asks for.
+        warmup_oversample_factor: Candidates the warm-up pick draws from, per
+            warm-up slot.
+        est_ttft_ms: Estimated time to first token per turn, in milliseconds.
+        est_tpot_ms: Estimated time per output token, in milliseconds.
+
+    Returns:
+        The plan to hand to :func:`pick_warmup_population`; ``count == 0``
+        pre-warms nothing.
+    """
+    session_cap = (
+        max_concurrent_conversations
+        if max_concurrent_conversations is not None
+        else max_concurrency
+    )
+    configured = WarmupPlan(0, main_pool_target, warmup_oversample_factor)
+
+    if warmup_count is not None:
+        if session_cap is not None and warmup_count > session_cap:
+            logger.warning(
+                "--warmup-count (%d) is more than the %d slots this run allows"
+                " (%s), so only that many are ever in flight. Raise it to"
+                " pre-warm the whole population.",
+                warmup_count,
+                session_cap,
+                _cap_flag(max_concurrent_conversations),
+            )
+        logger.info("Pre-warming %d sessions (--warmup-count).", warmup_count)
+        return dataclasses.replace(configured, count=warmup_count)
+
+    if request_rate == float("inf"):
+        return dataclasses.replace(configured, count=session_cap or 0)
+
+    lifetime_s = (
+        sum(_session_lifetime_ms(s, est_ttft_ms, est_tpot_ms) for s in sessions)
+        / (1000.0 * len(sessions))
+        if sessions
+        else 0.0
+    )
+    count = math.ceil(request_rate * lifetime_s)
+    if count == 0:
+        logger.info(
+            "Pre-warming no sessions: this workload has no inter-turn delay"
+            " and no --warmup-delay-estimated-* runtime estimate, so its"
+            " steady-state population is 0. Set --warmup-count to pre-warm"
+            " anyway."
+        )
+        return configured
+
+    rate_note = f"{request_rate:g} sessions/s x {lifetime_s:.1f} s mean session lifetime"
+    if session_cap is not None and count > session_cap:
+        logger.warning(
+            "%s is %d slots in flight, more than the %d this run allows (%s):"
+            " pre-warming %d. Raise it to serve the offered population.",
+            rate_note,
+            count,
+            session_cap,
+            _cap_flag(max_concurrent_conversations),
+            session_cap,
+        )
+        count = session_cap
+
+    return _fit_warmup_pool(
+        count,
+        len(sessions),
+        main_pool_target,
+        warmup_oversample_factor,
+        rate_note,
+    )
+
+
+def warn_if_warmup_count_ignored(
+    warmup_count: int | None, *, warmup_multiturn: bool, multi_turn: bool
+) -> None:
+    """Warn when ``--warmup-count`` is set but this run cannot honour it.
+
+    Args:
+        warmup_count: The explicit ``--warmup-count``, if the user set one.
+        warmup_multiturn: Whether the run pre-warms multi-turn sessions.
+        multi_turn: Whether the workload is multi-turn at all.
+    """
+    if warmup_count is None:
+        return
+    if not warmup_multiturn:
+        logger.warning(
+            "--warmup-count (%d) is ignored: --no-warmup-multiturn turns"
+            " pre-warming off.",
+            warmup_count,
+        )
+    elif not multi_turn:
+        logger.warning(
+            "--warmup-count (%d) is ignored: it applies to multi-turn"
+            " workloads only, and this run is single-turn.",
+            warmup_count,
+        )
 
 
 def _session_weights(
@@ -261,9 +505,11 @@ def pick_warmup_population(
 
     if n_total < warmup_count:
         raise ValueError(
-            f"Dataset produced {n_total} sessions but warmup needs at least"
-            f" {warmup_count}. Increase the dataset size or lower"
-            " --max-concurrency / --max-concurrent-conversations."
+            f"Dataset produced {n_total} sessions, but the warm-up needs at"
+            f" least {warmup_count}: it picks them from the"
+            f" {warmup_oversample_factor * warmup_count} candidates after the"
+            f" {main_pool_target} measured sessions. Raise --num-chat-sessions"
+            " or --max-concurrency, or lower --warmup-count."
         )
 
     # When the dataset under-produces, shrink both pools by the same

@@ -155,8 +155,11 @@ from max.benchmark.benchmark_shared.utils import (
     wait_for_server_ready,
 )
 from max.benchmark.benchmark_shared.warmup import (
+    WarmupPlan,
     log_warmup_sampling_report,
     pick_warmup_population,
+    resolve_warmup_plan,
+    warn_if_warmup_count_ignored,
 )
 from max.benchmark.benchmark_shared.workload import (
     apply_workload,
@@ -304,6 +307,29 @@ def _benchmark_request_total(samples: Samples) -> int:
         return len(samples.requests)
     # multi-turn chat scenario
     return sum(session.num_turns for session in samples.chat_sessions)
+
+
+def _warmup_plan(
+    args: ServingBenchmarkConfig,
+    samples: Samples,
+    request_rate: float,
+    max_concurrency: int | None,
+) -> WarmupPlan | None:
+    """Return the warm-up plan this run opens with, or None for no pre-warm."""
+    if not args.warmup_multiturn or not isinstance(samples, ChatSamples):
+        return None
+    chat_sessions = samples.chat_sessions
+    return resolve_warmup_plan(
+        warmup_count=args.warmup_count,
+        request_rate=request_rate,
+        sessions=chat_sessions,
+        max_concurrent_conversations=args.max_concurrent_conversations,
+        max_concurrency=max_concurrency,
+        main_pool_target=args.num_chat_sessions or len(chat_sessions),
+        warmup_oversample_factor=args.warmup_oversample_factor,
+        est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+        est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
+    )
 
 
 async def benchmark(
@@ -474,21 +500,18 @@ async def _benchmark_with_client(
     # prefix_turns; prerun_warmup_turns fires one request per session
     # covering that prefix. Sessions arriving mid-benchmark start cold.
     chat_sessions: Sequence[ChatSession] | None = None
+    plan = _warmup_plan(args, session.samples, request_rate, max_concurrency)
     if isinstance(session.samples, ChatSamples):
         assert session.tokenizer is not None
         chat_sessions = session.samples.chat_sessions
-        warmup_count = (
-            args.max_concurrent_conversations
-            if args.max_concurrent_conversations is not None
-            else max_concurrency
-        )
-        if args.warmup_multiturn and warmup_count:
+        if plan is not None and plan.count:
+            warmup_count = plan.count
             chat_sessions, report = pick_warmup_population(
                 chat_sessions,
-                warmup_count,
+                plan.count,
                 warmup_multiturn=True,
-                warmup_oversample_factor=args.warmup_oversample_factor,
-                main_pool_target=args.num_chat_sessions or len(chat_sessions),
+                warmup_oversample_factor=plan.oversample_factor,
+                main_pool_target=plan.main_pool_target,
                 rng=np.random.default_rng(args.seed),
                 delay_biased=args.warmup_delay_biased,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
@@ -496,6 +519,8 @@ async def _benchmark_with_client(
             )
             if report is not None:
                 log_warmup_sampling_report(report)
+                # A short dataset shrinks the pick; report what it warmed.
+                warmup_count = report.warmup_count
             if (
                 args.openai_response_format is not None
                 and args.response_format_turn == "first"
@@ -1497,22 +1522,26 @@ def _run_dry_run_sweep(
     if not args.print_workload_stats:
         print_workload_stats(session.samples, stats)
     if isinstance(session.samples, ChatSamples) and args.warmup_multiturn:
+        # A rate-paced sweep has one population for all its levels, so preview
+        # it once, at the first finite rate.
+        finite_rates = [r for r in request_rate_range if r != float("inf")]
+        rate = finite_rates[0] if finite_rates else float("inf")
         for mc in concurrency_range:
-            warmup_count = (
-                args.max_concurrent_conversations
-                or mc
-                or len(session.samples.chat_sessions)
-            )
+            plan = _warmup_plan(args, session.samples, rate, mc)
+            assert plan is not None
             print_section(
                 title=f" Warmup sampling preview (max_concurrency={mc}) ",
                 char="=",
             )
+            if plan.count == 0:
+                logger.info("This run will not pre-warm any sessions.")
+                continue
             _, report = pick_warmup_population(
                 session.samples.chat_sessions,
-                warmup_count,
+                plan.count,
                 warmup_multiturn=True,
-                warmup_oversample_factor=args.warmup_oversample_factor,
-                main_pool_target=args.num_chat_sessions or 0,
+                warmup_oversample_factor=plan.oversample_factor,
+                main_pool_target=plan.main_pool_target,
                 rng=np.random.default_rng(args.seed),
                 delay_biased=args.warmup_delay_biased,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
@@ -1691,6 +1720,13 @@ def main_with_parsed_args(
     )
 
     session = _build_session(args)
+
+    # Once per invocation: a sweep would otherwise repeat it at every point.
+    warn_if_warmup_count_ignored(
+        args.warmup_count,
+        warmup_multiturn=args.warmup_multiturn,
+        multi_turn=isinstance(session.samples, ChatSamples),
+    )
 
     if args.dry_run:
         # Dry-run exits before the server-ready clamp below, so the

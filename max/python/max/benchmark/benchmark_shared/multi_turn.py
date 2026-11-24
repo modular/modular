@@ -224,6 +224,7 @@ async def chat_session_driver(
     run_prefix_len: int = 0,
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
+    rate_paced: bool = False,
     use_session_id_as_cache_salt: bool = False,
     lora_id: str | None = None,
     disable_ignore_eos: bool = False,
@@ -365,19 +366,25 @@ async def chat_session_driver(
             if (
                 content_idx > 0
             ):  # pre-warmed: phase-spread across inter-turn window
-                # Spread the first measured turn across the just-completed
-                # turn's occupancy window R_{k} + D_{k} (generation + sleep).
-                # A draw landing in the generation portion (u < R_k) means the
-                # session would still be generating, so fire immediately;
-                # otherwise sleep the remaining delay u - R_k. With zero runtime
-                # estimates R_k = 0 and this is uniform[0, D_k] as before.
                 prev_msg = messages[content_idx - 1]
                 delay_ms = prev_msg.delay_until_next_message or 0.0
                 runtime_ms = est_ttft_ms + est_tpot_ms * prev_msg.num_tokens
                 window_ms = delay_ms + runtime_ms
                 if window_ms > 0:
-                    u = random.uniform(0, window_ms)
-                    sleep_s = max(0.0, u - runtime_ms) / 1000
+                    if rate_paced:
+                        # Open loop: the pre-warmed sessions are the population
+                        # already in flight, so a submit has to arrive at the
+                        # offered rate. A session sits at a uniform point of the
+                        # turn it just finished, so its next submit comes that
+                        # window's forward-recurrence time, uniform[0, R + D].
+                        sleep_s = random.uniform(0.0, window_ms) / 1000
+                    else:
+                        # Closed loop: a draw inside the generation part fires
+                        # now, so sessions in reach of the delay submit at t0,
+                        # which is what the ramp-up trim assumes. With no
+                        # runtime estimates this is uniform[0, D].
+                        u = random.uniform(0.0, window_ms)
+                        sleep_s = max(0.0, u - runtime_ms) / 1000
                     if sleep_s > 0:
                         if exceeds_deadline(sleep_s, benchmark_should_end_time):
                             return session_outputs
@@ -637,6 +644,8 @@ async def run_multiturn_benchmark(
     # apply the semaphore at the session level
     # ex: with max_concurrency = 1,
     # the first session finishes before the second session starts
+    use_rate_pacing = request_rate != float("inf")
+
     async def limited_chat_session_driver(
         chat_session: ChatSession,
         session_idx: int,
@@ -661,6 +670,7 @@ async def run_multiturn_benchmark(
                 run_prefix_len=run_prefix_len,
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
+                rate_paced=use_rate_pacing,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,
@@ -674,11 +684,11 @@ async def run_multiturn_benchmark(
         )
         return session_id, outputs
 
-    # Pre-warmed sessions (prefix_turns > 0) get phase-spread jitter inside
-    # chat_session_driver. Cold-start sessions are paced here: Poisson
-    # inter-arrival when request_rate is finite, warmup_delay_ms stagger otherwise.
-    use_rate_pacing = request_rate != float("inf")
-
+    # Pre-warmed sessions (prefix_turns > 0) phase-spread inside
+    # chat_session_driver and skip the gate below: they are the population
+    # already in flight, not sessions joining it. Cold-start sessions are
+    # paced here: Poisson inter-arrival when request_rate is finite,
+    # warmup_delay_ms stagger otherwise.
     async def _pace_cold_start(idx: int) -> bool:
         """Pace a cold-start session launch. Returns True if the deadline was hit."""
         if use_rate_pacing and idx > 0:
@@ -889,8 +899,9 @@ async def run_kv_cache_stress_benchmark(
                 return
 
             # Pre-warmed sessions (prefix_turns > 0) have their KV cache
-            # populated; start them immediately. Cold-start sessions
-            # (prefix_turns == 0) are rate-gated like new arrivals.
+            # populated and start immediately; they are the in-flight
+            # population, not arrivals. Cold-start sessions (prefix_turns ==
+            # 0) are rate-gated like new arrivals.
             if use_rate_pacing and chat_session.prefix_turns == 0:
                 if await _wait_for_rate_token():
                     return
@@ -912,6 +923,7 @@ async def run_kv_cache_stress_benchmark(
                 run_prefix_len=run_prefix_len,
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
+                rate_paced=use_rate_pacing,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,

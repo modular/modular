@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import random
 import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1441,13 +1442,12 @@ def test_interturn_sleep_deadline_skip() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _jitter_trial_fired_immediately() -> bool:
-    """Run one pre-warmed session and report whether the initial jitter slept.
+def _prewarmed_first_sleep_s(rate_paced: bool) -> float:
+    """Run one pre-warmed session and return the sleep before its first turn.
 
     prefix_turns=2 → just-completed turn is messages[3] (output 5 tokens,
-    delay 10ms). With tpot=1000ms/tok, R = 5000ms >> D = 10ms, so the phase
-    draw lands in the generation portion (fire immediately) ~99.8% of the time.
-    The turn 3→4 inter-turn delay (10ms = 0.01s) always fires regardless.
+    delay 10ms). With tpot=1000ms/tok the occupancy window is R + D =
+    5000 + 10 ms. The turn 3→4 inter-turn delay (0.01s) is filtered out.
     """
     sleep_calls: list[float] = []
 
@@ -1469,25 +1469,41 @@ def _jitter_trial_fired_immediately() -> bool:
                 sampling=SamplingConfig(),
                 est_ttft_ms=0.0,
                 est_tpot_ms=1000.0,
+                rate_paced=rate_paced,
             )
 
     asyncio.run(run_test())
-    # Only the inter-turn delay (0.01s) firing means the jitter collapsed to
-    # fire-now; an extra sleep means the draw landed in the sleep portion.
-    jitter_fired = [s for s in sleep_calls if s != pytest.approx(0.01)]
-    return not jitter_fired
+    first = [s for s in sleep_calls if s != pytest.approx(0.01)]
+    assert len(first) <= 1, sleep_calls
+    return first[0] if first else 0.0
 
 
-def test_jitter_collapse_fires_immediately_when_runtime_dominates() -> None:
-    """When R_k >> D_k, most pre-warmed sessions fire immediately (no sleep)."""
-    n_trials = 30
-    fire_immediately = sum(
-        _jitter_trial_fired_immediately() for _ in range(n_trials)
-    )
-    # R/(R+D) = 5000/5010 ≈ 0.998, so nearly every trial fires immediately.
-    assert fire_immediately >= 25, (
-        f"expected mostly fire-now: {fire_immediately}"
-    )
+def test_rate_paced_first_turn_waits_its_forward_recurrence_time() -> None:
+    """Open loop: the first turn waits uniform[0, R + D] even when R dominates.
+
+    Firing at once for a draw inside R puts R/(R+D) ~ 99.8% of these sessions
+    in one burst at t0, so the population's submits arrive at no particular
+    rate. Uniform over the window is what makes them arrive at the offered
+    one.
+    """
+    random.seed(0)
+    sleeps = [_prewarmed_first_sleep_s(rate_paced=True) for _ in range(200)]
+    assert all(0.0 <= s <= 5.01 for s in sleeps)
+    assert 2.0 < sum(sleeps) / len(sleeps) < 3.0
+    assert sum(1 for s in sleeps if s < 0.5) < 40
+
+
+def test_unpaced_first_turn_fires_at_once_when_generation_dominates() -> None:
+    """Closed loop: every session is ready to submit, so the run fills at t0.
+
+    A closed-loop run's ramp-up trim assumes it reaches its concurrency at
+    once. Spreading these sessions over the window instead makes each sleep
+    while holding its turn slot, so measured load ramps for a whole window.
+    """
+    random.seed(0)
+    sleeps = [_prewarmed_first_sleep_s(rate_paced=False) for _ in range(100)]
+    # A draw inside the generation part (99.8% of them here) fires at once.
+    assert sum(1 for s in sleeps if s == 0.0) >= 95
 
 
 def test_warmup_runtime_estimates_require_delay_biased() -> None:
