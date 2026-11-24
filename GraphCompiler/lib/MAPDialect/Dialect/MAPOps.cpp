@@ -110,7 +110,7 @@ bool CallElementwiseOp::readsIndex() {
   auto decl = SymbolTable::lookupNearestSymbolFrom<MOGG::KernelDeclOp>(
       *this, getCalleeAttr());
   return !decl ||
-         MOGG::KernelDeclAdaptor(decl).elementwiseFunction->takesIndexList();
+         MOGG::KernelDeclAdaptor(decl).elementwiseFunction->takesIndex();
 }
 
 //===----------------------------------------------------------------------===//

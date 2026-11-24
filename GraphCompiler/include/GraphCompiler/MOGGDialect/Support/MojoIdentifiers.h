@@ -121,6 +121,7 @@ constexpr MojoStaticValue kLeafFusedOutputVariadicTensors =
     "_FusedOutputVariadicTensors";
 constexpr MojoStaticValue kLeafSIMD = "SIMD";
 constexpr MojoStaticValue kLeafIndexList = "IndexList";
+constexpr MojoStaticValue kLeafCoord = "Coord";
 constexpr MojoStaticValue kLeafTileTensor = "TileTensor";
 constexpr MojoStaticValue kLeafDeviceContextArray = "DeviceContextArray";
 constexpr MojoStaticValue kLeafDeviceGraphBuilder = "DeviceGraphBuilder";
@@ -170,6 +171,8 @@ constexpr MojoStaticValue kMojoInternalDpsBoolTypeName = "std::Bool";
 constexpr MojoStaticValue kMojoInternalDpsIndexListTypeName = "std::IndexList";
 
 /// In `buildOpaqueSymbol`'s dotted form, for `isOpaqueWithTypeName`.
+constexpr MojoStaticValue kMojoInternalDpsCoordTypeQualifiedName =
+    "std.utils.coord.Coord";
 constexpr MojoStaticValue kMojoInternalDpsIndexListTypeQualifiedName =
     "std.utils.index.IndexList";
 

@@ -3537,11 +3537,9 @@ LogicalResult ChainSinkOp::emitMojo(EmitMojoState &) {
 LogicalResult CallElementwiseOp::emitMojo(EmitMojoState &state) {
   SmallVector<MojoValue> inputs = state.getMojoValuesFor(getInputs());
 
-  // `$index` (present only if `CallElementwiseOp::lowerToMOGG` wanted it) is a
-  // `layout.Coord`, the only form `CallForeachOp::emitMojo`'s closure produces,
-  // so convert it to the kernel's `IndexList`.
+  // `$index` is present only if `CallElementwiseOp::lowerToMOGG` wanted it.
   if (Value index = getIndex())
-    inputs.push_back(coordToIndexList(state.getMojoValueFor(index)));
+    inputs.push_back(state.getMojoValueFor(index));
 
   KernelDeclAdaptor ewAdaptor(
       state.registry.lookupKernelBySymName(getCallee()));

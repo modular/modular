@@ -365,7 +365,7 @@ static ElementwiseCallOperands resolveElementwiseCall(CallElementwiseOp op,
       Value()};
   for (Value arg : op.getArgs())
     call.inputs.push_back(state.mapping.lookup(arg));
-  if (call.adaptor.elementwiseFunction->takesIndexList())
+  if (call.adaptor.elementwiseFunction->takesIndex())
     call.index = state.mapping.lookup(op.getIndex());
   return call;
 }

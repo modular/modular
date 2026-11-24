@@ -458,7 +458,7 @@ struct KernelDeclOperandAdaptor {
       return false;
     // Strict equality: `name` must use buildOpaqueSymbol's
     // "root[.intermediate...]::leaf" form (e.g.
-    // kMojoInternalDpsIndexListTypeQualifiedName).
+    // kMojoInternalDpsCoordTypeQualifiedName).
     return o->typeName.strref() == name;
   }
 
@@ -500,17 +500,17 @@ struct KernelDeclFunctionAdaptor {
   KernelDeclFunctionAdaptor(ShapeFunctionDeclOp shapeDecl);
 
   /// Build an execute-compatible adaptor from an elementwise signature:
-  /// promotes SIMD arguments to fused tensors, strips a trailing IndexList
-  /// argument, and injects a synthetic fused-output tensor.
+  /// promotes SIMD arguments to fused tensors, strips a trailing `Coord`
+  /// index argument, and injects a synthetic fused-output tensor.
   static KernelDeclFunctionAdaptor
   synthesizeExecuteFromElementwise(KGEN::LIT::FnTypeGeneratorType sig);
 
-  /// Whether the last input is the element's `IndexList`, which an
+  /// Whether the last input is the element's `Coord` index, which an
   /// elementwise function takes when its result depends on the position.
-  bool takesIndexList() const {
+  bool takesIndex() const {
     return !inputArguments.empty() &&
            inputArguments.back().isOpaqueWithTypeName(
-               kMojoInternalDpsIndexListTypeQualifiedName);
+               kMojoInternalDpsCoordTypeQualifiedName);
   }
 
   template <typename StreamType>

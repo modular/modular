@@ -5,13 +5,12 @@
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
-#IndexList = #lit<symbol@std::@utils::@index::@IndexList>
+#Coord = #lit<symbol@std::@utils::@coord::@Coord>
 #SIMD = #lit<symbol@std::@simd::@SIMD>
-!Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
 
 module {
 
-mogg.kernel.decl @testing_kernels.testing_kernels.ElemwiseAddWithIndex registration = "elemwise_add_with_index" elementwise = <<!lit.generator<<"dtype": !DType, "width": !SIMDLength, "rank": !Int>("input": !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>, "indices": !lit.struct<#IndexList <:!Int *(0,2), :!DType {:dtype si64}>>) -> !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>>>, [#kgen<param.decl dtype : !DType>, #kgen<param.decl width : !SIMDLength>, #kgen<param.decl rank : !Int>], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}, {element_type = #lit.struct<{_mlir_value: dtype = si64}> : !DType, size = #kgen.param.decl.ref<"rank"> : !Int}], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}]> struct_params = [] is_user_defined = true
+mogg.kernel.decl @testing_kernels.testing_kernels.ElemwiseAddWithIndex registration = "elemwise_add_with_index" elementwise = <<!lit.generator<<"dtype": !DType, "width": !SIMDLength>("input": !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>, "indices": !lit.struct<#Coord>) -> !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>>>, [#kgen<param.decl dtype : !DType>, #kgen<param.decl width : !SIMDLength>], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}, unit], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}]> struct_params = [] is_user_defined = true
 mogg.kernel.decl @kernels.consumer registration = "kernels.consumer" struct_params = [] is_user_defined = false
 
 // CHECK-LABEL: mo.graph @indexReaderThroughSliceInPrologue

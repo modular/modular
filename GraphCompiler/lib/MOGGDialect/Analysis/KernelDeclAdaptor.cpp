@@ -589,11 +589,12 @@ KernelDeclFunctionAdaptor::synthesizeExecuteFromElementwise(
   for (size_t i = 0; i < endOfInputArgs; ++i) {
     mlir::Type argType = sig.getArgument(i);
 
-    // Skip a trailing IndexList argument (it is an elementwise-only concept).
+    // Skip a trailing `Coord` index argument (it is an elementwise-only
+    // concept).
     if (i + 1 == endOfInputArgs) {
       KGEN::LIT::StructType structType = getAsStructType(argType);
       if (structType && symbolMatchesRootAndLeaf(structType.getSymbol(),
-                                                 kPackageStd, kLeafIndexList))
+                                                 kPackageStd, kLeafCoord))
         continue;
     }
 

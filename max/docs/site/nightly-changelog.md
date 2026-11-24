@@ -398,6 +398,10 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- A custom op's `elementwise` function that reads the element's position now
+  takes it as a trailing `Coord` argument. A trailing `IndexList` argument is
+  no longer recognized as the position; change its type to `Coord`.
+
 - A custom op's `execute` method no longer accepts `ManagedTensorSlice`
   arguments (`InputTensor`, `OutputTensor` and their fused, mutable and
   variadic variants). Loading a kernel package that uses them fails with an

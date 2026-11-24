@@ -2771,8 +2771,8 @@ struct PrintVectorSize:
     def elementwise[
         dtype: DType,
         width: SIMDLength,
-    ](x: SIMD[dtype, width], idx: IndexList) -> SIMD[dtype, width]:
-        if idx[0] == 0:
+    ](x: SIMD[dtype, width], idx: Coord) -> SIMD[dtype, width]:
+        if Int(idx[0]) == 0:
             # Only print once
             # We can't directly print `width` as it's HW-dependent.
             # Instead compare it with the width of i8 / f32.
@@ -3147,13 +3147,10 @@ struct ElemwiseAddWithIndex:
     def elementwise[
         dtype: DType,
         width: SIMDLength,
-        rank: Int,
-    ](input: SIMD[dtype, width], indices: IndexList[rank]) -> SIMD[
-        dtype, width
-    ]:
+    ](input: SIMD[dtype, width], indices: Coord) -> SIMD[dtype, width]:
         var bias = SIMD[dtype, width]()
         comptime for i in range(width):
-            bias[i] = Scalar[dtype](indices[0] + i)
+            bias[i] = Scalar[dtype](Int(indices[0]) + i)
         return input + bias
 
 
