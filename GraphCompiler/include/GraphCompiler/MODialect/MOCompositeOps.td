@@ -122,56 +122,6 @@ def MOComposite_ReduceSoftmaxOp : MO_CompositeOp<"reduce.softmax", [
 }
 
 //===----------------------------------------------------------------------===//
-// ReduceRMSNormRoPEOp
-//===----------------------------------------------------------------------===//
-
-def MOComposite_ReduceRMSNormRoPEOp : MO_CompositeOp<"rms_norm_rope", [
-  Pure,
-  MO_SingleDevice,
-  MO_ParamDeclaration,
-]> {
-  let hasVerifier = 1;
-  let summary = "Fused RMS normalization with Rotary Position Embedding";
-  let description = [{
-      normed = rms_norm(input, weight, epsilon, weight_offset)
-      x1, x2 = split(normed, axis=-1)
-      rotated = concat(-x2, x1, axis=-1)
-      result = normed * cos_vals + rotated * sin_vals
-
-    Example:
-
-    ```mlir
-      %result = mo.composite.rms_norm_rope(%input, %weight, %cos_vals,
-                                           %sin_vals)
-        {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>,
-         weight_offset = #M.dense_array<0.0> : tensor<f32>,
-         multiply_before_cast = false} :
-        (!mo.tensor<[2, 3, 128], bf16, gpu:0>, !mo.tensor<[128], bf16, gpu:0>,
-         !mo.tensor<[2, 3, 128], f32, gpu:0>, !mo.tensor<[2, 3, 128], f32, gpu:0>)
-        -> !mo.tensor<[2, 3, 128], bf16, gpu:0>
-    ```
-  }];
-
-  let arguments = (ins
-    MO_Tensor:$input,
-    MO_Tensor:$weight,
-    MO_Tensor:$cosVals,
-    MO_Tensor:$sinVals,
-    MO_F32ScalarAttr:$epsilon,
-    MO_F32ScalarAttr:$weight_offset,
-    BoolAttr:$multiply_before_cast,
-    MO_ParamDecls:$outputParamDecls
-  );
-  let results = (outs MO_Tensor:$result);
-  let assemblyFormat = [{
-    `` custom<ParamDecls>($outputParamDecls) `(` operands `)`
-    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
-    `multiply_before_cast` `=` $multiply_before_cast `}` attr-dict `:`
-    functional-type(operands, results)
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // RopeRaggedOp
 //===----------------------------------------------------------------------===//
 

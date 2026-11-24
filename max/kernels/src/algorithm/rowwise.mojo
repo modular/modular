@@ -444,7 +444,7 @@ def strided_load[
 #
 # - `num_phases > 1`: normalize-shaped — output keeps the input shape,
 #   per-element emission along the axis (e.g. `softmax`, `layer_norm`,
-#   `rms_norm`, `rms_norm_rope`). Body writes
+#   `rms_norm`). Body writes
 #   via `rowwise.elementwise` inside `rowwise.reduce` over the row. The
 #   reduce-shaped single-launch split-K (partials-buffer join) does not
 #   apply here — its last-block-only emission can't produce per-element
@@ -456,7 +456,7 @@ def strided_load[
 # `num_phases` is the number of plain (uncached) `row.reduce` calls plus one:
 # the 8 pure reductions plus `row_mean_of_squares` pass `1` (the reduce's own
 # result IS the final output — no separate normalize phase); `rms_norm` /
-# `layer_norm` / `rms_norm_rope` / `layer_norm_rope_ragged` pass `2`, and so
+# `layer_norm` / `layer_norm_rope_ragged` pass `2`, and so
 # does the generated rms_norm_fused_residual_add (its second reduce reads a
 # cache);
 # `softmax` / `log_softmax` pass `3` (two plain reduces, then the

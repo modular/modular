@@ -29,7 +29,6 @@ _EXTRA_DEPS = {
         "//max:builtin_kernels",
         "//max/kernels/src/state_space",
     ],
-    "gpu/nn/bench_rms_norm_rope.mojo": ["//max:builtin_kernels"],
     "gpu/nn/bench_softmax.mojo": ["//max:builtin_kernels"],
     "gpu/state_space/bench_causal_conv1d_prefill.mojo": [
         "//max:extensibility",

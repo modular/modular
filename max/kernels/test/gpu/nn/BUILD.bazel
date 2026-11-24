@@ -587,12 +587,8 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    "test_rms_norm_rope.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: KERN-3390 — Row rms_norm_rope writes all zeros on Metal, at every tier.
-    # Same KERN-3390 Metal gap in the Row-API rope body: every one of the 48
-    # output elements comes back 0.0 on an M3 Pro, reference non-zero.
+    # KERN-3390: the Row-API rope body writes all zeros on Metal: every one of
+    # the 48 output elements comes back 0.0 on an M3 Pro, reference non-zero.
     "test_layer_norm_rope_ragged.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -787,7 +783,6 @@ _EXTRA_DEPS = {
     "test_layer_norm_rope_ragged.mojo": ["//max:builtin_kernels"],
     "test_mma_ws_ts_pv_m32.mojo": ["//max:max_mojo"],
     "test_rms_norm_residual_add.mojo": ["//max:builtin_kernels"],
-    "test_rms_norm_rope.mojo": ["//max:builtin_kernels"],
     "test_row_mean_of_squares.mojo": ["//max:builtin_kernels"],
     "test_row_mean_of_squares_qk.mojo": ["//max:builtin_kernels"],
     "test_rowwise_determinism.mojo": ["//max:builtin_kernels"],

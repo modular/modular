@@ -115,7 +115,6 @@ MOComposite_LayerNormRopeRaggedOp                    # CompositeLayerNormRopeRag
 MOComposite_QuantizeDynamicScaledFP8Op               # CompositeQuantizeDynamicScaledFp8Op
 MOComposite_RMSNormResidualAddOp                     # CompositeRmsNormResidualAddOp; declares output params; graph.py reaches it structurally
 MOComposite_ReduceRMSNormOp                          # CompositeReduceRmsNormOp
-MOComposite_ReduceRMSNormRoPEOp                      # CompositeRmsNormRopeOp; declares output params; graph.py reaches it structurally
 MOComposite_ReduceSoftmaxOp                          # CompositeReduceSoftmaxOp
 MOComposite_RopeRaggedOp                             # CompositeRopeRaggedOp
 MODialect                                            # required: module docstring for mo.cpp
