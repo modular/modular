@@ -238,7 +238,10 @@ def compile_roles_separately() -> Iterator[None]:
 
 
 def compile_and_init_graphs(
-    session: InferenceSession, specs: Mapping[str, GraphSpec]
+    session: InferenceSession,
+    specs: Mapping[str, GraphSpec],
+    *,
+    tile_based_fusion: bool = False,
 ) -> dict[str, CompiledCallable[..., Any]]:
     """Compiles and initializes each role's graph.
 
@@ -262,6 +265,9 @@ def compile_and_init_graphs(
     Args:
         session: The session that compiles and initializes the graphs.
         specs: The graphs to compile, keyed by role.
+        tile_based_fusion: Whether to compile under the tile-based
+            programming model, for backends whose elementwise kernels lower
+            only under it. Defaults to ``False``.
 
     Returns:
         Each role's compiled, initialized graph.
@@ -309,7 +315,9 @@ def compile_and_init_graphs(
         # Not session.load_all, which drops the compiled model a callable
         # keeps to export its MEF.
         compiled = session.compile_reusing_mefs(
-            traced_graph, custom_extensions=extensions
+            traced_graph,
+            custom_extensions=extensions,
+            tile_based_fusion=tile_based_fusion,
         )
 
         weights: dict[str, DLPackArray] = {}
