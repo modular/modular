@@ -29,7 +29,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import is_cpu
-from std.memory import alloc, unsafe_stack_allocation
+from std.memory import alloc
 from std.memory.alloc import Layout as AllocLayout
 from std.atomic import Atomic
 from std.sys import simd_width_of
@@ -51,8 +51,10 @@ def _nan_check_gpu_kernel[
     out_inf: MutPointer[Int32, MutUntrackedOrigin],
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
-    var nan_local = unsafe_stack_allocation[1, Int32, address_space=.SHARED]()
-    var inf_local = unsafe_stack_allocation[1, Int32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var nan_local = Array[Int32, 1](uninitialized=True)
+    @__address_space(.SHARED)
+    var inf_local = Array[Int32, 1](uninitialized=True)
     if thread_idx.x == 0:
         nan_local[0] = Int32(0)
         inf_local[0] = Int32(0)
@@ -69,9 +71,9 @@ def _nan_check_gpu_kernel[
         elif isinf(val):
             my_inf = Int32(1)
     if my_nan > 0:
-        _ = Atomic.fetch_add(nan_local, my_nan)
+        _ = Atomic.fetch_add(nan_local.unsafe_ptr(), my_nan)
     if my_inf > 0:
-        _ = Atomic.fetch_add(inf_local, my_inf)
+        _ = Atomic.fetch_add(inf_local.unsafe_ptr(), my_inf)
 
     barrier()
 

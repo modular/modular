@@ -36,7 +36,6 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from max.gpu.primitives import warp
-from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
 
 from std.utils.coord import Coord, CoordLike
@@ -163,11 +162,11 @@ def block_reduce[
 
         return result
 
-    var shared = unsafe_stack_allocation[
-        (BLOCK_SIZE // WARP_SIZE) * num_reductions * simd_width,
-        dtype,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[
+        Scalar[dtype], (BLOCK_SIZE // WARP_SIZE) * num_reductions * simd_width
+    ](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
 
     var warp = warp_id()
 
