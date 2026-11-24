@@ -45,6 +45,11 @@ MODULAR_CXX_EXPORT size_t getProcessPhysicalMemUsage();
 // Returns the full path to the current executable, or "<unknown>" if the path
 // cannot be obtained.
 MODULAR_CXX_EXPORT std::string getProcessExecutablePath();
+
+/// On macOS, stops the system from writing a crash report for this process and
+/// the processes it starts. A crashing process still dies by its signal. Does
+/// nothing elsewhere.
+MODULAR_CXX_EXPORT void disableMacOSCrashReport();
 } // namespace M
 
 #endif // SUPPORT_PROCESS_H

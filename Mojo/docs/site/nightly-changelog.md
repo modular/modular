@@ -571,6 +571,14 @@ Most code that no longer compiles matches one of these patterns:
   While precompiling, the package may refer to itself both by `pkg` and by
   `foo.bar.pkg`. Both paths resolve to the source being compiled.
 
+- On macOS, a Mojo program that crashes, whether built with `mojo build` or
+  run with `mojo run`, no longer leaves a system crash report in
+  `~/Library/Logs/DiagnosticReports`. Under `mojo run` the report named
+  `mojo` and held none of the program's frames. To get reports back, set the
+  `max-debug.macos-crash-report` config key, for example with
+  `MODULAR_DEBUG=macos-crash-report` or
+  `MODULAR_MAX_DEBUG_MACOS_CRASH_REPORT=true`.
+
 ## Removed
 
 - Legacy closures are removed. The `capturing` function effect and the
