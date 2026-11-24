@@ -30,6 +30,8 @@ Key differences from standard/block-scaled kernels:
 
 from std.sys import size_of
 
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+
 from max.gpu import WARP_SIZE
 from max.gpu.primitives.cluster import (
     cluster_sync,
@@ -103,10 +105,44 @@ from ..structured_kernels.tile_pipeline import OutputTilePipeline
 # Blockwise FP8 specific components
 from .blockwise_fp8_accumulator import (
     BlockwiseFP8Accumulator,
+    BlockwiseFP8BScales,
+    BlockwiseFP8SwapAccumulator,
     get_accumulator_dims,
     is_lower_fragment_required,
 )
 from .blockwise_fp8_output_writer import BlockwiseFP8TileWriter
+
+
+# =============================================================================
+# SwapOutput - the swap-AB tile's output argument
+# =============================================================================
+
+
+struct SwapOutput[c_type: DType](DevicePassable, TrivialRegisterPassable):
+    """Base pointer of row-major C for the swap-AB epilogue's direct stores.
+
+    Parameters:
+        c_type: Element type of C.
+    """
+
+    comptime device_type: AnyType = Self
+
+    var ptr: MutPointer[Scalar[Self.c_type], MutUntrackedOrigin]
+
+    @inline(.always)
+    def __init__(
+        out self, ptr: MutPointer[Scalar[Self.c_type], MutUntrackedOrigin]
+    ):
+        self.ptr = ptr
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return String(t"SwapOutput[{Self.c_type}]")
 
 
 # =============================================================================
@@ -132,6 +168,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     n_scale_granularity: Int = 128,
     b_scales_engine: TensorEngine = DefaultEngine[element_width=1],
     pdl_level: PDLLevel = PDLLevel(),
+    swap_ab: Bool = False,
 ]:
     """Blockwise FP8 matmul kernel with register-based accumulation.
 
@@ -159,6 +196,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             its first TMA load of A and the A-scales, and the MMA warp
             releases dependent grids once its main loop is done (defaults to
             `PDLLevel.OVERLAP_AT_BEGINNING`).
+        swap_ab: The MMA's A operand is the weight (`b`) and its B operand
+            the activation (`a`), so a decode-sized M sits on UMMA N and the
+            tile computes C^T; the epilogue stores it transposed.
     """
 
     # ========== Derived Constants (from config) ==========
@@ -240,10 +280,14 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
     comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
     comptime a_scales_expected_bytes = Self.BM * size_of[Self.a_scales_type]()
-    comptime input_expected_bytes = Self.cta_group * (
-        Self.a_expected_bytes
-        + Self.b_expected_bytes
-        + Self.a_scales_expected_bytes
+    comptime input_expected_bytes = (
+        Self.cta_group
+        * Self.config.k_group_size
+        * (
+            Self.a_expected_bytes
+            + Self.b_expected_bytes
+            + Self.a_scales_expected_bytes
+        )
     )
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
@@ -431,6 +475,14 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         cta_group=Self.cta_group,
     ]()
 
+    comptime SwapAccumulator = BlockwiseFP8SwapAccumulator[
+        Self.accum_type, Self.MMA_M, Self.MMA_N, Self.CLUSTER_SIZE
+    ]
+    # With swap_ab a tile's B scale is the weight rows' (BM of them).
+    comptime SwapBScales = BlockwiseFP8BScales[
+        Self.accum_type, Self.BM, Self.n_scale_granularity
+    ]
+
     comptime Accumulator = BlockwiseFP8Accumulator[
         Self.accum_type,
         Self.accum_dims[0],
@@ -525,7 +577,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             tiles: InputProducerStage context with encapsulated tile access.
             peer_cta_coord: Peer CTA coordinates for multicast.
             work_tile_coord: Current work tile M/N coordinates.
-            iter_idx: K iteration index.
+            iter_idx: Index of the group of `k_group_size` K tiles.
             elect_one_cta: Whether this is the elected CTA in the cluster.
         """
         var peer_rank_n = peer_cta_coord[0]
@@ -548,44 +600,51 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             var barrier = tiles.barrier()
             var stage = tiles.stage()
 
-            # Get tiles as TileTensor (native SMEM storage)
-            var a_tile, b_tile, a_scales_tile = tiles.payload().get_tile[
-                Self.config.k_group_size
-            ](stage, 0)
+            comptime for jj in range(Self.config.k_group_size):
+                var k_tile = iter_idx * Self.config.k_group_size + jj
 
-            # Peer CTA slicing using TileTensor pattern (ptr + layout)
-            var a_peer_tile = type_of(a_tile)(
-                a_tile._storage.unsafe_offset(
-                    peer_m_rank * Self.a_tma_load_size
-                ),
-                a_tile.layout,
-            )
-            var b_peer_tile = type_of(b_tile)(
-                b_tile._storage.unsafe_offset(
-                    peer_rank_m * Self.b_tma_load_size
-                ),
-                b_tile.layout,
-            )
+                # Get tiles as TileTensor (native SMEM storage)
+                var a_tile, b_tile, a_scales_tile = tiles.payload().get_tile[
+                    Self.config.k_group_size
+                ](stage, jj)
 
-            # Load A, B, and A-scales via TMA (TileTensor directly)
-            a_loader.load(
-                a_peer_tile,
-                barrier[0],
-                iter_idx * Self.BK,
-                a_gmem_m_coord,
-            )
-            b_loader.load(
-                b_peer_tile,
-                barrier[0],
-                iter_idx * Self.BK,
-                b_gmem_n_coord,
-            )
-            a_scales_loader.load(
-                a_scales_tile,
-                barrier[0],
-                work_tile_coord[0] * Self.BM,
-                iter_idx,
-            )
+                # Peer CTA slicing using TileTensor pattern (ptr + layout)
+                var a_peer_tile = type_of(a_tile)(
+                    a_tile._storage.unsafe_offset(
+                        peer_m_rank * Self.a_tma_load_size
+                    ),
+                    a_tile.layout,
+                )
+                var b_peer_tile = type_of(b_tile)(
+                    b_tile._storage.unsafe_offset(
+                        peer_rank_m * Self.b_tma_load_size
+                    ),
+                    b_tile.layout,
+                )
+
+                # Load A, B, and A-scales via TMA (TileTensor directly)
+                a_loader.load(
+                    a_peer_tile,
+                    barrier[0],
+                    k_tile * Self.BK,
+                    a_gmem_m_coord,
+                )
+                b_loader.load(
+                    b_peer_tile,
+                    barrier[0],
+                    k_tile * Self.BK,
+                    b_gmem_n_coord,
+                )
+                # A-scales follow the activation rows: tile M, or with
+                # swap_ab the tile's UMMA N.
+                a_scales_loader.load(
+                    a_scales_tile,
+                    barrier[0],
+                    work_tile_coord[1]
+                    * Self.MMA_N if Self.swap_ab else work_tile_coord[0]
+                    * Self.BM,
+                    k_tile,
+                )
 
     # ========== MMA Operation ==========
 
@@ -627,11 +686,12 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 ](tiles.stage(), jj)
 
                 # Blockwise FP8: always init_c=True since epilogue accumulates
-                # in registers, not TMEM.
+                # in registers, not TMEM. Each K tile of a group writes its
+                # own partial, MMA_N columns apart.
                 mma_op.mma(
                     a_tile,
                     b_tile,
-                    UInt32(accum_tensor.offset()),
+                    UInt32(accum_tensor.offset() + jj * Self.MMA_N),
                     init_c=True,
                 )
 
@@ -651,16 +711,32 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             2,
         ), "Only support cta_group == 1 or 2"
         comptime assert Self.BK in (64, 128), "Only support BK in (64, 128)"
+        comptime assert not Self.swap_ab or (
+            Self.cta_group == 1
+            and Self.CLUSTER_SIZE == 1
+            and Self.MMA_M in (64, 128)
+            and Self.MMA_N in (8, 16)
+            and Self.n_scale_granularity % Self.BM == 0
+        ), (
+            "swap_ab needs a 1-SM {64, 128} x {8, 16} tile inside one B-scale"
+            " block"
+        )
+        comptime assert Self.config.k_group_size == 1 or (
+            Self.swap_ab
+            and Self.config.k_group_size * Self.MMA_N <= Self.stage_stride_cols
+        ), "K-tile groups need swap_ab and a TMEM stage per group"
 
     # ========== Static Helper Methods ==========
 
     @staticmethod
     @inline(.always)
-    def init_barriers(
+    def init_barriers[
+        COut: AnyType
+    ](
         ctx: Self.Context,
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
-        c_tma_op: Self.CTmaOp,
+        c_out: COut,
         a_scales_tma_op: Self.AScalesTmaOp,
         input_barriers: Self.SmemType.Pipelines.InputBarriers,
         accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
@@ -671,11 +747,15 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ):
         """Initialize barriers and prefetch TMA descriptors.
 
+        Parameters:
+            COut: The C descriptor op, or with `swap_ab` the C base pointer.
+
         Args:
             ctx: Kernel context with warp and CTA role and multicast masks.
             a_tma_op: TMA descriptor op for A matrix tiles.
             b_tma_op: TMA descriptor op for B matrix tiles.
-            c_tma_op: TMA descriptor op for C output tiles.
+            c_out: TMA descriptor op for C output tiles, or with `swap_ab`
+                the base pointer of C.
             a_scales_tma_op: TMA descriptor op for A-scales tiles.
             input_barriers: Input pipeline barriers for producer and consumer.
             accum_barriers: Accumulator barriers for MMA to epilogue sync.
@@ -687,7 +767,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
+            comptime if not Self.swap_ab:
+                rebind[Self.CTmaOp](c_out).prefetch_descriptor()
             a_scales_tma_op.prefetch_descriptor()
 
             # Epilogue warps also consume A-scales from input pipeline.
@@ -728,7 +809,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         fence_mbarrier_init()
         cluster_sync()
 
-    # ========== Kernel Entry Point ==========
+    # ========== Kernel Entry Points ==========
 
     @staticmethod
     @inline(.always)
@@ -756,7 +837,74 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         problem_shape: StaticTuple[Int32, 3],
     ):
         """Kernel entry point for blockwise FP8 matmul."""
+        comptime assert not Self.swap_ab, "swap_ab launches run_swap"
+        Self._run(
+            a_tma_op,
+            b_tma_op,
+            c_tma_op,
+            a_scales_tma_op,
+            cluster_dim,
+            num_iters,
+            b_scales,
+            problem_shape,
+        )
+
+    # The swap-AB tile has the same config as a plain 64/128 x N tile; its
+    # epilogue stores through C's base pointer, so there is no C descriptor.
+    @staticmethod
+    @inline(.always)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
+    @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernel_name() + "_swapab"))
+    def run_swap(
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_out: SwapOutput[Self.c_type],
+        a_scales_tma_op: Self.AScalesTmaOp,
+        cluster_dim: StaticTuple[Int32, 3],
+        num_iters: Int32,
+        b_scales: Self.BScalesTile,
+        problem_shape: StaticTuple[Int32, 3],
+    ):
+        """Kernel entry point for the swap-AB blockwise FP8 matmul."""
+        comptime assert Self.swap_ab, "run_swap needs swap_ab"
+        Self._run(
+            a_tma_op,
+            b_tma_op,
+            c_out,
+            a_scales_tma_op,
+            cluster_dim,
+            num_iters,
+            b_scales,
+            problem_shape,
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run[
+        COut: AnyType
+    ](
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_out: COut,
+        a_scales_tma_op: Self.AScalesTmaOp,
+        cluster_dim: StaticTuple[Int32, 3],
+        num_iters: Int32,
+        b_scales: Self.BScalesTile,
+        problem_shape: StaticTuple[Int32, 3],
+    ):
         var _num_iters = Int(num_iters)
+        # Pipeline steps: one per group of k_group_size K tiles. The dispatch
+        # only groups K tiles when the group size divides num_iters.
+        var _num_groups = _num_iters // Self.config.k_group_size
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
@@ -792,7 +940,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             ctx,
             a_tma_op,
             b_tma_op,
-            c_tma_op,
+            c_out,
             a_scales_tma_op,
             input_barriers,
             accum_barriers,
@@ -850,7 +998,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             for current in load_iter:
                 scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                for i in range(_num_iters):
+                for i in range(_num_groups):
                     # Acquire tiles (waits for consumer to free slot)
                     var tiles = producer.acquire_stage()
                     Self.load_input_tiles(
@@ -895,7 +1043,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             for _ in mma_iter:
                 if ctx.elect_one_cta:
-                    for _ in range(_num_iters):
+                    for _ in range(_num_groups):
                         # Acquire MMA stage (waits for epilogue)
                         var mma_stage = mma_handle.acquire_k_stage_linear()
                         var accum = Self.AccumTensor(mma_stage.tmem_offset())
@@ -932,29 +1080,58 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             var epi_iter = scheduler.work_iterator()
 
             for current in epi_iter:
-                var accum = Self.Accumulator()
+                comptime if Self.swap_ab:
+                    # Tile coord: (weight-row tile, activation-row tile).
+                    var acc = Self.SwapAccumulator()
+                    var w_sc = Self.SwapBScales(
+                        b_scales, current.coord()[0], _num_iters
+                    )
+                    for g in range(_num_groups):
+                        var w_g = SIMD[
+                            Self.accum_type, Self.config.k_group_size
+                        ]()
+                        comptime for j in range(Self.config.k_group_size):
+                            var k_iter = g * Self.config.k_group_size + j
+                            w_sc.advance(b_scales, k_iter)
+                            w_g[j] = w_sc.get(k_iter)
+                        with epi_handle.per_k_stage(
+                            input_pipeline
+                        ) as epi_stage:
+                            acc.promote[Self.config.k_group_size](
+                                w_g, a_scales_tiles, epi_stage
+                            )
+                    acc.store(
+                        rebind[SwapOutput[Self.c_type]](c_out).ptr,
+                        problem_shape,
+                        current.coord()[0] * Self.BM,
+                        current.coord()[1] * Self.MMA_N,
+                    )
+                else:
+                    var accum = Self.Accumulator()
 
-                # Per-K stages still use context manager for bundled sync
-                # (combines MMA→Epilogue and A-scales pipelines)
-                for k_iter in range(_num_iters):
-                    with epi_handle.per_k_stage(input_pipeline) as epi_stage:
-                        accum.promote(
-                            b_scales,
-                            a_scales_tiles,
-                            epi_stage,
-                            work_tile_coord=current.coord(),
-                            k_iter=k_iter,
-                            problem_shape=problem_shape,
-                        )
+                    # Per-K stages still use context manager for bundled sync
+                    # (combines MMA→Epilogue and A-scales pipelines)
+                    for k_iter in range(_num_iters):
+                        with epi_handle.per_k_stage(
+                            input_pipeline
+                        ) as epi_stage:
+                            accum.promote(
+                                b_scales,
+                                a_scales_tiles,
+                                epi_stage,
+                                work_tile_coord=current.coord(),
+                                k_iter=k_iter,
+                                problem_shape=problem_shape,
+                            )
 
-                named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()
+                    named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()
 
-                Self.TileWriterType.write(
-                    accum,
-                    c_tiles,
-                    c_tma_op,
-                    c_coord=current.coord(),
-                )
+                    Self.TileWriterType.write(
+                        accum,
+                        c_tiles,
+                        rebind[Self.CTmaOp](c_out),
+                        c_coord=current.coord(),
+                    )
 
             # Signal epilogue completion
             epi_handle^.release()

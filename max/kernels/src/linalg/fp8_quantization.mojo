@@ -2712,12 +2712,16 @@ def blockwise_scaled_fp8_with_epilogue[
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
         # M <= 64 (runtime branch below).
+        comptime tiny_mma_n = _one_wave_mma_n(static_N, 2 * N_G)
         comptime tiny_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
             cluster_shape=(1, 1, 1),
-            mma_shape=(64, _one_wave_mma_n(static_N, 2 * N_G), MMA_K),
+            mma_shape=(64, tiny_mma_n, MMA_K),
             cta_group=1,
+            # One wave of tiles needs no cluster launch control.
+            num_clc_pipeline_stages=0 if ceildiv(static_N, tiny_mma_n)
+            <= B200.sm_count else 2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         ) if static_N > 0 else small_m_config
         # 128 < M <= 512: the previous N-width rule.
@@ -2742,6 +2746,33 @@ def blockwise_scaled_fp8_with_epilogue[
         comptime small_m_max = 128
         comptime mid_m_max = 512
 
+        # M <= 16: swap AB so the weight fills UMMA M=64 and the activation
+        # rows sit on UMMA N=16 (the 64-row activation tile was mostly TMA
+        # zero fill and 4x the MMA work). The MMA and epilogue warps each pay
+        # a fixed mbarrier/commit handshake per pipeline stage, so a stage
+        # carries 4 (or 2) K tiles when that divides K/128. K order per
+        # output is unchanged. Only for 128-wide scales (one scale block per
+        # weight tile) and a static N (one-wave grid known at compile time).
+        comptime static_K = type_of(b).static_shape[1]
+        comptime swap_k_group = 4 if static_K > 0 and static_K % (
+            4 * 128
+        ) == 0 else (2 if static_K > 0 and static_K % (2 * 128) == 0 else 1)
+        comptime swap_m_max = 16
+        comptime use_swap_ab = N_G == 128 and static_N > 0
+        # 128 weight rows per CTA when 64-row tiles would take a second wave.
+        comptime swap_bm = 128 if static_N > 64 * B200.sm_count else 64
+        comptime swap_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=(1, 1, 1),
+            mma_shape=(swap_bm, swap_m_max, MMA_K),
+            cta_group=1,
+            k_group_size=swap_k_group,
+            num_clc_pipeline_stages=0 if ceildiv(static_N, swap_bm)
+            <= B200.sm_count else 2,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
+        ) if use_swap_ab else tiny_m_config
+
         comptime if has_epilogue_fn:
             comptime simd_size = 32 // size_of[c_type]()
             var m = Int(c.dim[0]())
@@ -2753,7 +2784,19 @@ def blockwise_scaled_fp8_with_epilogue[
                 var c_val = c.load[simd_width](idx)
                 epilogue_fn[c_type, simd_width, alignment=alignment](idx, c_val)
 
-            if m <= tiny_m_max:
+            if use_swap_ab and m <= swap_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=swap_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                    # Folds to the tiny-M kernel when the swap gate is off, so
+                    # no swap-AB instantiation exists for 64-wide scales.
+                    swap_ab=use_swap_ab,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m <= tiny_m_max:
                 blockwise_fp8_matmul[
                     transpose_b=transpose_b,
                     a_scales_type=a_scales_type,
@@ -2795,7 +2838,19 @@ def blockwise_scaled_fp8_with_epilogue[
             ](value_epilogue_wrapper, Coord(m, n), ctx)
         else:
             var m_runtime = Int(c.dim[0]())
-            if m_runtime <= tiny_m_max:
+            if use_swap_ab and m_runtime <= swap_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=swap_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                    # Folds to the tiny-M kernel when the swap gate is off, so
+                    # no swap-AB instantiation exists for 64-wide scales.
+                    swap_ab=use_swap_ab,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m_runtime <= tiny_m_max:
                 blockwise_fp8_matmul[
                     transpose_b=transpose_b,
                     a_scales_type=a_scales_type,
