@@ -300,9 +300,13 @@ def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {
 
           broadcast [M, 1] -> [M, N]:  [0, kPinnedCoordinate]
           broadcast [N] -> [M, N]:     [1]
-          transpose, perm [1, 0]:      [1, 0]}],
+          transpose, perm [1, 0]:      [1, 0]
+
+        With `axis`, a coordinate of loop dimension `axis` may also move
+        along it and still report `axis`, as a slice along a row moves it.}],
       "std::optional<::llvm::SmallVector<int64_t>>", "mapLoopDims",
-      (ins "::llvm::ArrayRef<int64_t>":$dims), [{}],
+      (ins "::llvm::ArrayRef<int64_t>":$dims,
+           "std::optional<int64_t>":$axis), [{}],
       "return std::nullopt;"
     >,
   ];
@@ -314,8 +318,15 @@ def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {
     /// The loop dimension each coordinate of `index` is (see `mapLoopDims`),
     /// following the index transforms from `loopIdx`. Nullopt when one of them
     /// doesn't map loop dimensions.
+    ///
+    /// With `rowAxis`, the coordinate of loop dimension `rowAxis` may also
+    /// move along it, through a slice or a concat select on it, and still
+    /// reports that dimension. Pass it only when that coordinate's value
+    /// doesn't matter, as for a read of a per-row value, whose broadcast pins
+    /// it.
     static std::optional<::llvm::SmallVector<int64_t>>
-    traceLoopDims(::mlir::Value index, ::mlir::Value loopIdx);
+    traceLoopDims(::mlir::Value index, ::mlir::Value loopIdx,
+                  std::optional<int64_t> rowAxis = std::nullopt);
   }];
 }
 

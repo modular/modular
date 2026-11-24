@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h"
+#include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
@@ -25,15 +26,31 @@
 #include "GraphCompiler/MAPDialect/Dialect/MAPTypes.h"
 
 std::optional<llvm::SmallVector<int64_t>>
-M::MAP::IndexTransformOpInterface::traceLoopDims(mlir::Value index,
-                                                 mlir::Value loopIdx) {
+M::MAP::IndexTransformOpInterface::traceLoopDims(
+    mlir::Value index, mlir::Value loopIdx, std::optional<int64_t> rowAxis) {
   if (index == loopIdx)
     return llvm::to_vector(llvm::seq<int64_t>(
         0, mlir::cast<IndexType>(index.getType()).getRank()));
+
+  // A concat select's region reads at its index, moved along the select's
+  // axis.
+  if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(index); arg && rowAxis) {
+    auto select = mlir::dyn_cast<ConcatSelectOp>(arg.getOwner()->getParentOp());
+    if (!select)
+      return std::nullopt;
+    std::optional<llvm::SmallVector<int64_t>> dims =
+        traceLoopDims(select.getIndex(), loopIdx, rowAxis);
+    if (!dims || (*dims)[select.getSpec().getAxis()] != *rowAxis)
+      return std::nullopt;
+    return dims;
+  }
+
   auto transform = index.getDefiningOp<IndexTransformOpInterface>();
   if (!transform)
     return std::nullopt;
   std::optional<llvm::SmallVector<int64_t>> outer =
-      traceLoopDims(transform.getIndex(), loopIdx);
-  return outer ? transform.mapLoopDims(*outer) : std::nullopt;
+      traceLoopDims(transform.getIndex(), loopIdx, rowAxis);
+  if (!outer)
+    return std::nullopt;
+  return transform.mapLoopDims(*outer, rowAxis);
 }

@@ -166,23 +166,20 @@ bool canFuseProducer(IterRowwiseOp dst, IterElementwiseOp src) {
         (!llvm::all_of(arg.getUsers(), llvm::IsaPred<LoadOp>) ||
          crossesFusionBarrier(src, arg)))
       return false;
-  // A concat select fuses only into a fold reading it at the fold's own
-  // index: a map phase has no lowering for it, and a transformed index would
-  // break the vector it picks its input for.
+  // A concat select fuses only into a phase reading it at the phase's own
+  // index: a transformed index would break the vector it picks its input for.
   //
-  //   %c = concat(%a, %b); %s = reduce.add(%c)             -> fuses
-  //   %c = concat(%a, %b); %y = add(%c, reduce.add(%c))    -> no: map phase
+  //   %c = concat(%a, %b); %y = add(%c, reduce.add(%c))    -> fuses
   //   %c = concat(%a, %b); %s = reduce.add(transpose(%c))  -> no: transformed
-  auto atFoldIndex = [](Value index) {
-    auto fold = dyn_cast<IterReduceOp>(index.getParentRegion()->getParentOp());
-    return fold &&
-           index ==
-               cast<RowwisePhaseOpInterface>(fold.getOperation()).getIndexArg();
+  auto atPhaseIndex = [](Value index) {
+    auto phase = dyn_cast<RowwisePhaseOpInterface>(
+        index.getParentRegion()->getParentOp());
+    return phase && index == phase.getIndexArg();
   };
   if (holdsConcatSelect(src))
     for (auto [input, arg] :
          llvm::zip(dst.getInputs(), dst.getInputBlockArgs()))
-      if (input == result && !loadsOnlyAt(arg, atFoldIndex))
+      if (input == result && !loadsOnlyAt(arg, atPhaseIndex))
         return false;
   return true;
 }
@@ -250,7 +247,7 @@ bool needsSink(IterRowwiseOp dst, IterElementwiseOp consumer) {
 }
 
 bool canFuseConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
-  // A concat select runs only in a fold, never at the row index.
+  // A concat select runs only in a phase, never at the row index.
   if (!(isPlainForeach(consumer) || isFusibleMutableStore(consumer, dst)) ||
       holdsConcatSelect(consumer) || dst.getInputChain() ||
       consumer->getBlock() != dst->getBlock() || !sameDevice(consumer, dst) ||
@@ -515,10 +512,9 @@ bool laterReductionTakes(IterElementwiseOp consumer) {
 }
 
 bool canFuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
-  // A map phase has no lowering for a concat select.
-  if (!isPlainForeach(consumer) || holdsConcatSelect(consumer) ||
-      dst.getInputChain() || consumer->getBlock() != dst->getBlock() ||
-      !sameDevice(consumer, dst) || consumer.getShape() != dst.getShape())
+  if (!isPlainForeach(consumer) || dst.getInputChain() ||
+      consumer->getBlock() != dst->getBlock() || !sameDevice(consumer, dst) ||
+      consumer.getShape() != dst.getShape())
     return false;
 
   int64_t rank = dst.getShape().getRank(), axis = dst.getAxis();
@@ -534,11 +530,15 @@ bool canFuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
     if (!perRow && !perElementStore(dst, idx))
       return false;
     readsElement |= !perRow;
+    // A per-row read may move along the row, as in the input of a concat
+    // select on the axis (rotate-half: concat(-x2, x1)).
+    std::optional<int64_t> rowAxis =
+        perRow ? std::optional<int64_t>(axis) : std::nullopt;
     for (Operation *user : body.getArgument(i).getUsers()) {
       auto load = dyn_cast<LoadOp>(user);
       std::optional<SmallVector<int64_t>> dims =
           load ? IndexTransformOpInterface::traceLoopDims(load.getIndex(),
-                                                          loopIdx)
+                                                          loopIdx, rowAxis)
                : std::nullopt;
       if (!dims || !(perRow ? readsOwnRow(*dims, rank, axis)
                             : readsSameElement(*dims, rank)))
@@ -592,19 +592,16 @@ IterRowwiseOp fuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer,
   }
   mapping.map(consumerBody.getArguments().back(), phase.getIndexArg());
 
-  // Loads of a rowwise result read the stored value instead.
+  // Loads of a rowwise result read the stored value instead, including those
+  // in a concat select's regions.
   rewriter.setInsertionPointToEnd(&phase.getBody().front());
-  for (Operation &op : consumerBody) {
-    if (auto load = dyn_cast<LoadOp>(op)) {
-      auto arg = dyn_cast<BlockArgument>(load.getTensor());
-      if (arg && readOutputs.count(arg)) {
-        mapping.map(load.getResult(),
-                    storedValue(newDst, readOutputs.lookup(arg)));
-        continue;
-      }
-    }
+  for (Operation &op : consumerBody)
     rewriter.clone(op, mapping);
-  }
+  phase.getBody().walk([&](LoadOp load) {
+    auto arg = dyn_cast<BlockArgument>(load.getTensor());
+    if (arg && readOutputs.count(arg))
+      rewriter.replaceOp(load, storedValue(newDst, readOutputs.lookup(arg)));
+  });
 
   stampFusion(newDst, consumer, /*isProducer=*/false);
   rewriter.replaceAllUsesWith(consumerResult, newDst.getResult(numOutputs));

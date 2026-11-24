@@ -1001,7 +1001,8 @@ def MAP_CallElementwiseOp : MAP_Op<"call.elementwise", [
 def MAP_SliceIndexOp : MAP_Op<"index.slice", [
   DeclareOpInterfaceMethods<MAP_FlattenableOpInterface, ["getOutputLayout"]>,
   Pure,
-  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
+  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
+    "createStridedView", "mapLoopDims"]>,
 ]> {
   let summary = "Project an output-shape index to the input-shape index for a slice view";
   let description = [{
@@ -1133,10 +1134,10 @@ def MAP_ConcatSelectOp : MAP_Op<"index.concat.select", [
 
     The lowering evaluates the op once per loaded vector, which runs along
     the output's innermost dim, so `index` must be one the vector runs along:
-    a foreach's own index or an enclosing select's argument, never a
-    transformed one. Along the innermost axis a vector could cross from one
-    input into the next; the kernel launch rules that out, running only
-    widths that divide every input's extent.
+    a foreach's own index, a rowwise phase's index or an enclosing select's
+    argument, never a transformed one. Along the innermost axis a vector
+    could cross from one input into the next; the kernel launch rules that
+    out, running only widths that divide every input's extent.
 
     Example:
     ```mlir

@@ -588,7 +588,8 @@ LogicalResult SliceIndexOp::verify() {
 // own index, the tensor the kernel hands the epilogue; at a foreach's loop
 // index (the last argument, or the first once outlined), its loop shape; at a
 // select body's argument, that select's out-shape; at a concat select
-// region's argument, its input's shape. Null elsewhere.
+// region's argument, its input's shape; at a rowwise phase's index, the
+// rowwise shape. Null elsewhere.
 static MOSH::ShapeAttr getIndexedShape(Value index) {
   auto arg = llvm::dyn_cast<BlockArgument>(index);
   if (!arg)
@@ -604,8 +605,10 @@ static MOSH::ShapeAttr getIndexedShape(Value index) {
                                                         : MOSH::ShapeAttr();
   if (auto body = llvm::dyn_cast<IterElementwiseBodyOp>(owner))
     return arg.getArgNumber() == 0 ? body.getShape() : MOSH::ShapeAttr();
-  if (auto fold = llvm::dyn_cast<IterReduceOp>(owner)) {
-    Operation *rowwise = fold->getParentOp();
+  if (auto phase = llvm::dyn_cast<RowwisePhaseOpInterface>(owner)) {
+    if (arg != phase.getIndexArg())
+      return {};
+    Operation *rowwise = phase->getParentOp();
     if (auto op = llvm::dyn_cast<IterRowwiseOp>(rowwise))
       return op.getShape();
     if (auto body = llvm::dyn_cast<IterRowwiseBodyOp>(rowwise))
@@ -710,16 +713,16 @@ LogicalResult ConcatSelectOp::verify() {
 
   // The select runs at the loaded vector's first index, so the index must run
   // along the out-shape's innermost dim with the vector: a loop index, a
-  // fold's index or an enclosing select's argument, never one an index op
-  // computed.
+  // rowwise phase's index or an enclosing select's argument, never one an
+  // index op computed or an epilogue's.
   auto arg = dyn_cast<BlockArgument>(getIndex());
   MOSH::ShapeAttr indexed;
-  if (arg && isa<IterElementwiseOp, IterElementwiseBodyOp, IterReduceOp,
-                 SliceSelectOp, ConcatSelectOp>(arg.getOwner()->getParentOp()))
+  if (arg && !isa<IterEpilogueOp>(arg.getOwner()->getParentOp()))
     indexed = getIndexedShape(arg);
   if (!indexed)
-    return emitOpError() << "index must be its foreach's loop index, a fold's "
-                            "index or an enclosing select's argument";
+    return emitOpError() << "index must be its foreach's loop index, a "
+                            "rowwise phase's index or an enclosing select's "
+                            "argument";
   if (indexed != spec.getResultShape())
     return emitOpError() << "spec's out-shape " << spec.getResultShape()
                          << " does not match the shape " << indexed

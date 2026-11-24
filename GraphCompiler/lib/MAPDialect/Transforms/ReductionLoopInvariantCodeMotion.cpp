@@ -19,6 +19,9 @@
 //     %y = mul(%x[%i], %inv)              %y = mul(%x[%i], %inv)
 //   }                                   }
 //
+// That includes the work in a phase's regions, such as a concat select's,
+// which read the same row.
+//
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h"
@@ -46,21 +49,25 @@ bool isRowValue(IterMapOp phase, Value value) {
 }
 
 // Re-indexes `load` by the row, before `phase`, when its index ignores the
-// reduced axis.
+// reduced axis. The index may move along that axis first, as in a concat
+// select's region.
 void hoistLoad(IterRowwiseOp dst, IterMapOp phase, LoadOp load,
                RewriterBase &rewriter) {
   std::optional<SmallVector<int64_t>> dims =
-      IndexTransformOpInterface::traceLoopDims(load.getIndex(),
-                                               phase.getIndexArg());
+      IndexTransformOpInterface::traceLoopDims(
+          load.getIndex(), phase.getIndexArg(), dst.getAxis());
   if (!dims || llvm::is_contained(*dims, dst.getAxis()) ||
       !isRowValue(phase, load.getTensor()))
     return;
-  IRMapping toRow;
-  toRow.map(phase.getIndexArg(), dst.getRowArg());
   SmallVector<Operation *> chain;
-  for (Operation *def = load.getIndex().getDefiningOp(); def;
-       def = cast<IndexTransformOpInterface>(def).getIndex().getDefiningOp())
+  Value root = load.getIndex();
+  for (Operation *def = root.getDefiningOp(); def; def = root.getDefiningOp()) {
     chain.push_back(def);
+    root = cast<IndexTransformOpInterface>(def).getIndex();
+  }
+  // The phase's index or a select region's argument: any index in the row.
+  IRMapping toRow;
+  toRow.map(root, dst.getRowArg());
   for (Operation *def : llvm::reverse(chain))
     rewriter.clone(*def, toRow);
   rewriter.replaceOp(load, rewriter.clone(*load, toRow)->getResults());
@@ -76,23 +83,35 @@ void hoistCall(IterRowwiseOp dst, IterMapOp phase, CallElementwiseOp call) {
   call.getIndexMutable().assign(dst.getRowArg());
 }
 
+// Erases the ops of `region` and its nested regions that nothing reads.
+void eraseDeadOps(Region &region, RewriterBase &rewriter) {
+  for (Operation &op : llvm::make_early_inc_range(
+           llvm::reverse(region.front().getOperations()))) {
+    for (Region &inner : op.getRegions())
+      eraseDeadOps(inner, rewriter);
+    if (isOpTriviallyDead(&op))
+      rewriter.eraseOp(&op);
+  }
+}
+
 // Hoists `phase`'s row-invariant ops in order, so an op whose operands were
-// hoisted before it follows them.
+// hoisted before it follows them. That includes the ops in its regions, such
+// as a concat select's.
 void hoistRowInvariant(IterRowwiseOp dst, IterMapOp phase,
                        RewriterBase &rewriter) {
-  for (Operation &op : llvm::make_early_inc_range(phase.getBody().front())) {
+  SmallVector<Operation *> ops;
+  phase.getBody().walk<WalkOrder::PreOrder>(
+      [&](Operation *op) { ops.push_back(op); });
+  for (Operation *op : ops) {
     rewriter.setInsertionPoint(phase);
     if (isa<ConstantScalarOp>(op))
-      op.moveBefore(phase);
+      op->moveBefore(phase);
     else if (auto load = dyn_cast<LoadOp>(op))
       hoistLoad(dst, phase, load, rewriter);
     else if (auto call = dyn_cast<CallElementwiseOp>(op))
       hoistCall(dst, phase, call);
   }
-  for (Operation &op : llvm::make_early_inc_range(
-           llvm::reverse(phase.getBody().front().getOperations())))
-    if (isOpTriviallyDead(&op))
-      rewriter.eraseOp(&op);
+  eraseDeadOps(phase.getBody(), rewriter);
 }
 
 struct ReductionLoopInvariantCodeMotionPass

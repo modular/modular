@@ -52,7 +52,7 @@ static bool isStaticOne(Attribute dim) {
 // numpy broadcast: `in`'s missing leading dims are dropped, its size-1 dims
 // pinned.
 std::optional<SmallVector<int64_t>>
-BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t>) {
   ViewSignatureAttr signature = getSpec().getSignature();
   MOSH::ShapeAttr in = signature.getIn(), out = signature.getOut();
   int64_t lead = out.getRank() - in.getRank();
@@ -70,7 +70,7 @@ BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
 
 // Only a reshape that adds or drops unit dims maps coordinates one to one.
 std::optional<SmallVector<int64_t>>
-ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t>) {
   ViewSignatureAttr signature = getSpec().getSignature();
   MOSH::ShapeAttr in = signature.getIn(), out = signature.getOut();
   auto nonUnitDims = [](MOSH::ShapeAttr shape) {
@@ -93,8 +93,19 @@ ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
   return result;
 }
 
+// Each coordinate the slice moves must be `axis`'s.
 std::optional<SmallVector<int64_t>>
-TransposeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+SliceIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t> axis) {
+  SliceSpecAttr spec = getSpec();
+  for (auto [d, start, step] : llvm::enumerate(spec.getStarts().asArrayRef(),
+                                               spec.getSteps().asArrayRef()))
+    if ((start != 0 || step != 1) && dims[d] != axis)
+      return std::nullopt;
+  return llvm::to_vector(dims);
+}
+
+std::optional<SmallVector<int64_t>>
+TransposeIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t>) {
   ArrayRef<int64_t> perm = getSpec().getPerm();
   SmallVector<int64_t> result(perm.size());
   for (auto [i, p] : llvm::enumerate(perm))

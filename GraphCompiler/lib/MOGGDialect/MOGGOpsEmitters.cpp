@@ -688,9 +688,9 @@ LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
   // calls the branch. Sharing the width lets a region use values the
   // enclosing closure computed, such as a constant hoisted out of it.
   // A select sits in a foreach's closure or, fused into a reduction, in a
-  // fold's or the row tile's. Each enters an `ElementwiseLambdaRegion` with the
-  // width used here, and its launch keeps every vector inside one input (the
-  // width limit), so a rebased index keeps the vector's alignment.
+  // phase's or the row tile's. Each enters an `ElementwiseLambdaRegion` with
+  // the width used here, and its launch keeps every vector inside one input
+  // (the width limit), so a rebased index keeps the vector's alignment.
   auto primDecl =
       state.registry.lookupPrimitive(IndexConcatSelectOp::getOperationName());
   ASSERT_STREAM(primDecl, "Primitive not found for "
