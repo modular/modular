@@ -204,16 +204,12 @@ struct _ClcKernel[
             alignment=8,
         ]()
         # Shared variables for single-barrier broadcast of cancel results.
-        var canceled = unsafe_stack_allocation[
-            1,
-            UInt32,
-            address_space=.SHARED,
-        ]()
-        var next_tile = unsafe_stack_allocation[
-            1,
-            UInt32,
-            address_space=.SHARED,
-        ]()
+        @__address_space(.SHARED)
+        var canceled_storage = Array[UInt32, 1](uninitialized=True)
+        var canceled = canceled_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var next_tile_storage = Array[UInt32, 1](uninitialized=True)
+        var next_tile = next_tile_storage.unsafe_ptr()
 
         var tile_id = block_idx.x
         var phase: UInt32 = 0

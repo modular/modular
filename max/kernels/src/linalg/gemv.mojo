@@ -74,7 +74,6 @@ from layout import (
     stack_allocation as tt_stack_allocation,
 )
 from std.logger import Logger
-from std.memory import unsafe_stack_allocation
 from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -2663,11 +2662,11 @@ def _gevm_kernel_impl[
     var col = block_idx.x * WARP_SIZE + lane_id
     var global_warp_id = global_idx.x // warps_per_block
 
-    var x_shared = unsafe_stack_allocation[
-        tile_size,
-        accum_type,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var x_shared_storage = Array[Scalar[accum_type], tile_size](
+        uninitialized=True
+    )
+    var x_shared = x_shared_storage.unsafe_ptr()
 
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()

@@ -39,7 +39,6 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from std.memory import unsafe_stack_allocation
 
 from max.gpu.compute.mma import mma
 from max.gpu.host import DeviceContext, GridBlockLaunchConfig
@@ -223,11 +222,11 @@ def _gemm_smallm_streaming_kernel[
     # stride is an odd multiple of 4 words: every ds_read_b128 phase of the
     # warp-0 reduction then hits all 64 LDS banks conflict-free.
     comptime lane_slot = (m_tiles * col_tiles + 1) * 4
-    var c_smem = unsafe_stack_allocation[
-        warps_per_block * WARP_SIZE * lane_slot,
-        DType.float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var c_smem_storage = Array[
+        Float32, warps_per_block * WARP_SIZE * lane_slot
+    ](uninitialized=True)
+    var c_smem = c_smem_storage.unsafe_ptr()
 
     # The runtime column loop exists only where its iterations reuse the
     # register-resident A. A runtime loop around the multi-tile body makes

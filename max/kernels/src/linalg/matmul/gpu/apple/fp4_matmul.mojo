@@ -49,7 +49,6 @@ from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv
-from std.memory import unsafe_stack_allocation
 from std.sys import align_of
 
 from layout import TensorEngine, TileTensor, Idx
@@ -275,11 +274,11 @@ struct AppleM5Fp4MatMul[
         # Double-buffered (2, BN, BK) bf16 SMEM weight sub-tile. Wrapped in a
         # TileTensor view so both buffers are addressed by `(buf, nrow, col)`
         # indexing (in-bounds by construction) -- no raw SMEM pointer arithmetic.
-        var b_smem = unsafe_stack_allocation[
-            2 * BN * BK,
-            Scalar[Self.in_type],
-            address_space=.SHARED,
-        ]()
+        @__address_space(.SHARED)
+        var b_smem_storage = Array[Scalar[Self.in_type], 2 * BN * BK](
+            uninitialized=True
+        )
+        var b_smem = b_smem_storage.unsafe_ptr()
         var b_smem_view = TileTensor(
             b_smem,
             Layout(Coord(2, BN, BK), Coord(BN * BK, BK, Idx[1])),
@@ -294,11 +293,9 @@ struct AppleM5Fp4MatMul[
         # read on the `coalesce_scales` path.
         comptime NBLK = Self.NBLK_PER_STRIP
         comptime SCALE_SMEM = (2 * BN * NBLK) if Self.coalesce_scales else 1
-        var s_smem = unsafe_stack_allocation[
-            SCALE_SMEM,
-            Float32,
-            address_space=.SHARED,
-        ]()
+        @__address_space(.SHARED)
+        var s_smem_storage = Array[Float32, SCALE_SMEM](uninitialized=True)
+        var s_smem = s_smem_storage.unsafe_ptr()
         var s_smem_view = TileTensor(
             s_smem,
             Layout(Coord(2, BN, NBLK), Coord(BN * NBLK, NBLK, Idx[1])),

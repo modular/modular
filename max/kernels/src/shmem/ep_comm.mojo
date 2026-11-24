@@ -804,11 +804,11 @@ def block_prefix_sum[
         n_warps <= WARP_SIZE
     ), "Number of warps must be less than or equal to warp size"
 
-    var warp_prefix_sum = unsafe_stack_allocation[
-        n_warps,
-        Scalar[dtype],
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var warp_prefix_sum_storage = Array[Scalar[dtype], n_warps](
+        uninitialized=True
+    )
+    var warp_prefix_sum = warp_prefix_sum_storage.unsafe_ptr()
 
     var val = Scalar[dtype](0)
     if ltid < num_elements:
@@ -4210,9 +4210,9 @@ struct EPDispatchKernel[
         Returns:
             The calling warp's expert's row count.
         """
-        var hist = unsafe_stack_allocation[
-            Self.n_warps, Int32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var hist_storage = Array[Int32, Self.n_warps](uninitialized=True)
+        var hist = hist_storage.unsafe_ptr()
         if thread_idx.x < Self.n_warps:
             hist[thread_idx.x] = 0
         barrier()
@@ -5172,9 +5172,9 @@ struct EPDispatchKernel[
             n_scoped_threads=n_comm_threads,
             barrier_id=comm_barrier_id,
         ](Int32(1) if my_tiles > 0 else Int32(0))
-        var smem_sched_totals = unsafe_stack_allocation[
-            2, Int32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var smem_sched_totals_storage = Array[Int32, 2](uninitialized=True)
+        var smem_sched_totals = smem_sched_totals_storage.unsafe_ptr()
         if tid == Self.n_local_experts - 1:
             smem_sched_totals[0] = tiles_upto
             smem_sched_totals[1] = active_upto
@@ -5261,12 +5261,20 @@ struct EPDispatchKernel[
         comptime sms_per_tile = Self.token_fmt_type.dispatch_wait_tile_shape[1]
         var tid = thread_idx.x - comm_thread_base
 
-        var prefix_sum_arr = unsafe_stack_allocation[
-            Self.n_experts, DType.uint32, address_space=.SHARED
-        ]()
-        var smem_expert_tiles = unsafe_stack_allocation[
-            Self.n_local_experts, Int32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var prefix_sum_arr_storage = Array[UInt32, Self.n_experts](
+            uninitialized=True
+        )
+        var prefix_sum_arr = prefix_sum_arr_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var smem_expert_tiles_storage = Array[Int32, Self.n_local_experts](
+            uninitialized=True
+        )
+        var smem_expert_tiles = (
+            smem_expert_tiles_storage.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ]()
+        )
 
         if tid < Self.n_local_experts + shared_expert_offset:
             expert_ids[tid] = Int32(tid)
@@ -5548,19 +5556,21 @@ struct EPDispatchKernel[
 
         # Shared memory: rank prefix sums, per-tile token-to-rank map, and
         # the expert start / tile id / chosen-expert broadcast slots.
-        var rank_prefix = unsafe_stack_allocation[
-            Self.n_ranks, Int32, address_space=.SHARED
-        ]()
-        var tok_rank_map = unsafe_stack_allocation[
-            tile_size, Int32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var rank_prefix_storage = Array[Int32, Self.n_ranks](uninitialized=True)
+        var rank_prefix = rank_prefix_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var tok_rank_map_storage = Array[Int32, tile_size](uninitialized=True)
+        var tok_rank_map = tok_rank_map_storage.unsafe_ptr()
         # Under `token_recv`, each tile row's source token.
-        var tok_row_map = unsafe_stack_allocation[
-            tile_size if Self.token_recv else 1, Int32, address_space=.SHARED
-        ]()
-        var smem_vals = unsafe_stack_allocation[
-            3, Int32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var tok_row_map_storage = Array[
+            Int32, tile_size if Self.token_recv else 1
+        ](uninitialized=True)
+        var tok_row_map = tok_row_map_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var smem_vals_storage = Array[Int32, 3](uninitialized=True)
+        var smem_vals = smem_vals_storage.unsafe_ptr()
 
         @inline(.always)
         def fetch_tile_id(expert: Int) {imm} -> Int32:
@@ -6460,20 +6470,28 @@ struct EPCombineKernel[
                 # `input_tokens`; `vbase` is the pair's first work unit within
                 # its destination rank, so a claimed unit maps back to a pair
                 # by a scan. Every block builds the same table.
-                var smem_start = unsafe_stack_allocation[
-                    Self.n_experts, Int32, address_space=.SHARED
-                ]()
-                var smem_count = unsafe_stack_allocation[
-                    Self.n_experts, Int32, address_space=.SHARED
-                ]()
-                var smem_vbase = unsafe_stack_allocation[
-                    Self.n_experts, Int32, address_space=.SHARED
-                ]()
+                @__address_space(.SHARED)
+                var smem_start_storage = Array[Int32, Self.n_experts](
+                    uninitialized=True
+                )
+                var smem_start = smem_start_storage.unsafe_ptr()
+                @__address_space(.SHARED)
+                var smem_count_storage = Array[Int32, Self.n_experts](
+                    uninitialized=True
+                )
+                var smem_count = smem_count_storage.unsafe_ptr()
+                @__address_space(.SHARED)
+                var smem_vbase_storage = Array[Int32, Self.n_experts](
+                    uninitialized=True
+                )
+                var smem_vbase = smem_vbase_storage.unsafe_ptr()
                 # Unit-space bounds, one per rank plus the grand total, so
                 # rank `r` owns `[smem_rank_base[r], smem_rank_base[r + 1])`.
-                var smem_rank_base = unsafe_stack_allocation[
-                    Self.n_ranks + 1, Int32, address_space=.SHARED
-                ]()
+                @__address_space(.SHARED)
+                var smem_rank_base_storage = Array[Int32, Self.n_ranks + 1](
+                    uninitialized=True
+                )
+                var smem_rank_base = smem_rank_base_storage.unsafe_ptr()
 
                 # Walk pairs in (rank, expert) order so each destination rank
                 # owns a contiguous run of work units.
@@ -6671,15 +6689,15 @@ struct EPCombineKernel[
                 comptime assert (
                     Self.mx_msg or Self.msg_bytes % vec == 0
                 ), "flat send copies whole 16-byte units"
-                var f_start = unsafe_stack_allocation[
-                    FP, Int32, address_space=.SHARED
-                ]()
-                var f_cnt = unsafe_stack_allocation[
-                    FP, Int32, address_space=.SHARED
-                ]()
-                var f_dst = unsafe_stack_allocation[
-                    FP, Int32, address_space=.SHARED
-                ]()
+                @__address_space(.SHARED)
+                var f_start_storage = Array[Int32, FP](uninitialized=True)
+                var f_start = f_start_storage.unsafe_ptr()
+                @__address_space(.SHARED)
+                var f_cnt_storage = Array[Int32, FP](uninitialized=True)
+                var f_cnt = f_cnt_storage.unsafe_ptr()
+                @__address_space(.SHARED)
+                var f_dst_storage = Array[Int32, FP](uninitialized=True)
+                var f_dst = f_dst_storage.unsafe_ptr()
                 for pass_base in range(sm_id, Self.n_experts, n_send_sms * FP):
                     if Int(tid) < FP:
                         var g = pass_base + Int(tid) * n_send_sms
@@ -7011,9 +7029,9 @@ struct EPCombineKernel[
         # `n_send_sms` while other blocks are still reading region A, which
         # wipes the counts they need. Reaching `n_send_sms` here proves every
         # block is past its reads, so this cannot race and needs no spin.
-        var smem_done = unsafe_stack_allocation[
-            1, Int32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var smem_done_storage = Array[Int32, 1](uninitialized=True)
+        var smem_done = smem_done_storage.unsafe_ptr()
         _scoped_barrier[Self.num_threads, comm_barrier_id]()
         if tid == 0:
             var prev_b = _counter_atomic.fetch_add[ordering=.relaxed](
@@ -8418,25 +8436,27 @@ def p2p_small_dispatch_kernel[
         alignment=token_fmt_type.alignment,
         address_space=.SHARED,
     ]()
-    var dest_has = unsafe_stack_allocation[
-        W, DType.int32, address_space=.SHARED
-    ]()
-    var n_src = unsafe_stack_allocation[W, DType.int32, address_space=.SHARED]()
-    var has_msg = unsafe_stack_allocation[
-        n_slots, DType.int32, address_space=.SHARED
-    ]()
-    var local_expert = unsafe_stack_allocation[
-        max_entries, DType.int32, address_space=.SHARED
-    ]()
-    var group_rows = unsafe_stack_allocation[
-        n_groups, DType.int32, address_space=.SHARED
-    ]()
-    var offsets = unsafe_stack_allocation[
-        n_groups + 1, DType.uint32, address_space=.SHARED
-    ]()
-    var dst_rows = unsafe_stack_allocation[
-        top_k, DType.int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var dest_has_storage = Array[Int32, W](uninitialized=True)
+    var dest_has = dest_has_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var n_src_storage = Array[Int32, W](uninitialized=True)
+    var n_src = n_src_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var has_msg_storage = Array[Int32, n_slots](uninitialized=True)
+    var has_msg = has_msg_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var local_expert_storage = Array[Int32, max_entries](uninitialized=True)
+    var local_expert = local_expert_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var group_rows_storage = Array[Int32, n_groups](uninitialized=True)
+    var group_rows = group_rows_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var offsets_storage = Array[UInt32, n_groups + 1](uninitialized=True)
+    var offsets = offsets_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var dst_rows_storage = Array[Int32, top_k](uninitialized=True)
+    var dst_rows = dst_rows_storage.unsafe_ptr()
 
     var first_expert = Int32(my_rank) * Int32(n_local)
 
@@ -9078,8 +9098,10 @@ def p2p_prefill_combine_kernel[
     )
 
     comptime if phase == 0:
-        var n_src = unsafe_stack_allocation[
-            n_ranks, DType.int32, address_space=.SHARED
+        @__address_space(.SHARED)
+        var n_src_storage = Array[Int32, n_ranks](uninitialized=True)
+        var n_src = n_src_storage.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
         ]()
         if tid < n_ranks:
             var p = MutPointer[UInt64, MutUntrackedOrigin](
@@ -9495,8 +9517,10 @@ def p2p_prefill_dispatch_count_kernel[
     var first_expert = me * n_local
 
     # The small dispatch already exchanged every device's count.
-    var n_src = unsafe_stack_allocation[
-        n_ranks, DType.int32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var n_src_storage = Array[Int32, n_ranks](uninitialized=True)
+    var n_src = n_src_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
     if tid < n_ranks:
         var v = MutPointer[UInt64, MutUntrackedOrigin](
@@ -9650,11 +9674,13 @@ def p2p_prefill_dispatch_place_kernel[
     )
     var first_expert = me * n_local
 
-    var offsets = unsafe_stack_allocation[
-        n_groups + 1, DType.uint32, address_space=.SHARED
-    ]()
-    var n_src = unsafe_stack_allocation[
-        n_ranks, DType.int32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var offsets_storage = Array[UInt32, n_groups + 1](uninitialized=True)
+    var offsets = offsets_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var n_src_storage = Array[Int32, n_ranks](uninitialized=True)
+    var n_src = n_src_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
     var msgs = unsafe_stack_allocation[
         n_warps * msg_bytes,

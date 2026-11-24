@@ -32,7 +32,6 @@ from std.atomic import Atomic, Ordering
 from std.bit import pop_count
 from std.math import align_up, ceildiv, max, min
 from std.math.uutils import ufloordiv
-from std.memory import unsafe_stack_allocation
 from std.sys.info import align_of, simd_width_of, size_of
 from std.utils.index import StaticTuple
 
@@ -218,7 +217,9 @@ def _count_kernel[
         my_rank: The rank of this device.
     """
     comptime assert topk_ids.flat_rank == 2
-    var hist = unsafe_stack_allocation[n_local, Int32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var hist_storage = Array[Int32, n_local](uninitialized=True)
+    var hist = hist_storage.unsafe_ptr()
     var tid = thread_idx.x
     for e in range(tid, n_local, _EP_SELF_THREADS):
         hist[unsafe_offset=e] = 0
@@ -755,13 +756,13 @@ def _dispatch_kernel[
     comptime assert expert_ids.flat_rank == 1
     comptime assert src_info.flat_rank == 2
 
+    @__address_space(.SHARED)
+    var layout_storage = Array[UInt32, Tables.layout_words](uninitialized=True)
+    @__address_space(.SHARED)
+    var slot_storage = Array[UInt32, Tables.slot_words](uninitialized=True)
     var tables = Tables(
-        unsafe_stack_allocation[
-            Tables.layout_words, UInt32, address_space=.SHARED
-        ](),
-        unsafe_stack_allocation[
-            Tables.slot_words, UInt32, address_space=.SHARED
-        ](),
+        layout_storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+        slot_storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
     )
     tables.clear()
 
@@ -1141,11 +1142,15 @@ def _combine_index_kernel[
         num_tokens: Tokens on this device.
     """
     comptime assert src_info.flat_rank == 2
-    var row_start = unsafe_stack_allocation[
-        n_local, Int32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var row_start_storage = Array[Int32, n_local](uninitialized=True)
+    var row_start = row_start_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var row_prefix = unsafe_stack_allocation[
-        n_local + 1, Int32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var row_prefix_storage = Array[Int32, n_local + 1](uninitialized=True)
+    var row_prefix = row_prefix_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
 
     @always_inline
@@ -1265,15 +1270,21 @@ def _combine_kernel[
     comptime assert input_tokens.flat_rank == 2
     comptime assert src_info.flat_rank == 2
 
-    var row_start = unsafe_stack_allocation[
-        n_local, Int32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var row_start_storage = Array[Int32, n_local](uninitialized=True)
+    var row_start = row_start_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var row_prefix = unsafe_stack_allocation[
-        n_local + 1, Int32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var row_prefix_storage = Array[Int32, n_local + 1](uninitialized=True)
+    var row_prefix = row_prefix_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var mine = unsafe_stack_allocation[
-        _EP_SELF_MAX_TOKENS_PER_CTA * top_k, Int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var mine_storage = Array[Int32, _EP_SELF_MAX_TOKENS_PER_CTA * top_k](
+        uninitialized=True
+    )
+    var mine = mine_storage.unsafe_ptr()
 
     var tid = thread_idx.x
     var lane = lane_id()

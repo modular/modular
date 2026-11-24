@@ -2380,15 +2380,15 @@ def grouped_quantize_dynamic_scaled_fp4_from_sources_kernel[
     comptime SF_ROW_BYTES = SF_ATOM_M[1] * SF_ATOM_K
     comptime SF_TILE_BYTES = SF_MN_GROUP_SIZE * SF_ATOM_K
 
-    var dest_data = unsafe_stack_allocation[
-        top_k, Int64, address_space=.SHARED
-    ]()
-    var dest_scale = unsafe_stack_allocation[
-        top_k, Int64, address_space=.SHARED
-    ]()
-    var dest_sf = unsafe_stack_allocation[
-        top_k, Float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var dest_data_storage = Array[Int64, top_k](uninitialized=True)
+    var dest_data = dest_data_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var dest_scale_storage = Array[Int64, top_k](uninitialized=True)
+    var dest_scale = dest_scale_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var dest_sf_storage = Array[Float32, top_k](uninitialized=True)
+    var dest_sf = dest_sf_storage.unsafe_ptr()
 
     wait_on_dependent_grids()
     # As in the per-row kernel: the consumer's own wait still orders it
@@ -4655,9 +4655,11 @@ def rms_norm_quantize_mxfp8_q_kv_kernel[
                 gamma = kv_gamma.load[width=ELEMENTS_PER_THREAD]((Int(col),))
 
             # One reduction per row: q warps, then kv warps, of one block.
-            var warp_sums = unsafe_stack_allocation[
-                num_warps, DType.float32, address_space=.SHARED
-            ]()
+            @__address_space(.SHARED)
+            var warp_sums_storage = Array[Float32, num_warps](
+                uninitialized=True
+            )
+            var warp_sums = warp_sums_storage.unsafe_ptr()
             var warp_ssq = warp.sum((x * x).reduce_add())
             if lane_id() == 0:
                 warp_sums[warp_id()] = warp_ssq
