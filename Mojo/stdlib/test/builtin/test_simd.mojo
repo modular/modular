@@ -36,7 +36,6 @@ from std.testing.prop import PropTest
 # extensions in them.
 from std.testing.prop.strategy import SIMD
 
-from std.utils import StaticTuple
 from std.utils.numerics import inf, isfinite, isinf, isnan, nan
 from test_utils import check_convertible_to_python, check_python_object
 
@@ -1122,6 +1121,13 @@ def test_shuffle() raises:
         vec.shuffle[0, 2, 4, 6](vec), SIMD[dtype, width](100, 102, 100, 102)
     )
 
+    comptime reverse: Array[SIMDLength, width] = [3, 2, 1, 0]
+    assert_equal(vec.shuffle[reverse](), SIMD[dtype, width](103, 102, 101, 100))
+    comptime evens: Array[SIMDLength, width] = [0, 2, 4, 6]
+    assert_equal(
+        vec.shuffle[evens](vec), SIMD[dtype, width](100, 102, 100, 102)
+    )
+
     assert_equal(
         vec._shuffle_variadic[7, 6, 5, 4, 3, 2, 1, 0, output_size=2 * width](
             vec
@@ -1130,23 +1136,16 @@ def test_shuffle() raises:
     )
 
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[SIMDLength, width](3, 2, 1, 0)](
-            vec
-        ),
+        vec._shuffle_list[width, reverse](vec),
         SIMD[dtype, width](103, 102, 101, 100),
     )
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[SIMDLength, width](0, 2, 4, 6)](
-            vec
-        ),
+        vec._shuffle_list[width, evens](vec),
         SIMD[dtype, width](100, 102, 100, 102),
     )
 
     assert_equal(
-        vec._shuffle_list[
-            2 * width,
-            StaticTuple[SIMDLength, 2 * width](7, 6, 5, 4, 3, 2, 1, 0),
-        ](vec),
+        vec._shuffle_list[2 * width, [7, 6, 5, 4, 3, 2, 1, 0]](vec),
         SIMD[dtype, 2 * width](103, 102, 101, 100, 103, 102, 101, 100),
     )
 

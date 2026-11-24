@@ -600,6 +600,22 @@ Most code that no longer compiles matches one of these patterns:
   A function passed as a compile-time parameter must now be `thin`, for
   example `[f: def(Int) thin -> Int]`.
 
+- `SIMD.shuffle()` no longer takes its mask as an `IndexList`. Pass the lane
+  indices as parameters, as in `v.shuffle[3, 2, 1, 0]()`, or pass a mask
+  computed at compile time as an `Array[SIMDLength, N]`:
+
+  ```mojo
+  def reverse_mask[n: Int]() -> Array[SIMDLength, n]:
+      var mask = Array[SIMDLength, n](fill=0)
+      for i in range(n):
+          mask[i] = n - 1 - i
+      return mask^
+
+  def main():
+      var v = SIMD[DType.int32, 4](1, 2, 3, 4)
+      print(v.shuffle[reverse_mask[4]()]())  # [4, 3, 2, 1]
+  ```
+
 - `CompiledFunctionInfo` no longer has `num_captures`, `capture_sizes`, or
   `populate` members. Kernels can no longer capture implicitly, so these
   were always empty.

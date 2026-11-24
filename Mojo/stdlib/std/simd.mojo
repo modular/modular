@@ -81,7 +81,6 @@ from std.python import (
     PythonObject,
 )
 
-from std.utils import IndexList, StaticTuple
 from std.utils._visualizers import lldb_formatter_wrapping_type
 from std.utils.coord import CoordLike, Coord
 from std.utils.numerics import FPUtils
@@ -294,29 +293,29 @@ def _has_native_f8_support() -> Bool:
 
 
 @inline(.nodebug)
-def _rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
+def _rotate_mask[size: Int, shift: Int]() -> Array[SIMDLength, size]:
     """Mask for `SIMD.rotate_left[shift]()`; any sign of `shift`."""
-    var res = IndexList[size]()
+    var res = Array[SIMDLength, size](fill=0)
     for i in range(size):
         res[i] = (i + shift + size) % size
-    return res
+    return res^
 
 
 @inline(.nodebug)
-def _shift_mask[size: Int, shift: Int]() -> IndexList[size]:
+def _shift_mask[size: Int, shift: Int]() -> Array[SIMDLength, size]:
     """Mask for `SIMD.shift_{left,right}[shift]()`.
 
     Sign of `shift` selects direction (positive=left, negative=right);
     out-of-range lanes index `other`, which callers pass as zero.
     """
-    var res = IndexList[size]()
+    var res = Array[SIMDLength, size](fill=0)
     for i in range(size):
         var src = i + shift
         if 0 <= src < size:
             res[i] = src
         else:
             res[i] = size
-    return res
+    return res^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2973,13 +2972,14 @@ struct SIMD[dtype: DType, length: SIMDLength](
             output_size == mask.length
         ), "size of the mask must match the output SIMD size"
 
-        # FIXME: Support parameters on initializers better, removing __init__.
-        comptime tup = StaticTuple[SIMDLength, output_size].__init__[*mask]()
-        return self._shuffle_list[output_size, tup](other)
+        comptime array = Array[SIMDLength, output_size](
+            fill_with_unrolled=lambda [i: Int]() -> SIMDLength: mask[i]
+        )
+        return self._shuffle_list[output_size, array](other)
 
     @inline(.nodebug)
     def _shuffle_list[
-        output_size: SIMDLength, mask: StaticTuple[SIMDLength, output_size]
+        output_size: SIMDLength, mask: Array[SIMDLength, output_size]
     ](self, other: Self) -> SIMD[Self.dtype, output_size]:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -3003,7 +3003,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             ), "invalid index in the shuffle operation"
 
         var res = __mlir_op.`pop.simd.shuffle`[
-            mask=mask._mlir_value,
+            mask=mask._array,
             _type=SIMD[Self.dtype, output_size]._mlir_type,
         ](self._mlir_value, other._mlir_value)
         return SIMD[Self.dtype, output_size](mlir_value=res)
@@ -3042,7 +3042,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         return self._shuffle_variadic[*mask](other)
 
     @inline(.nodebug)
-    def shuffle[mask: IndexList[Self.length, element_type=_]](self) -> Self:
+    def shuffle[mask: Array[SIMDLength, Self.length]](self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.
@@ -3054,11 +3054,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A new vector with the same length as the mask where the value at
             position `i` is `(self)[permutation[i]]`.
         """
-        return self._shuffle_list[Self.length, mask.as_index_tuple()](self)
+        return self._shuffle_list[Self.length, mask](self)
 
     @inline(.nodebug)
     def shuffle[
-        mask: IndexList[Self.length, element_type=_]
+        mask: Array[SIMDLength, Self.length]
     ](self, other: Self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -3074,7 +3074,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A new vector with the same length as the mask where the value at
             position `i` is `(self + other)[permutation[i]]`.
         """
-        return self._shuffle_list[Self.length, mask.as_index_tuple()](other)
+        return self._shuffle_list[Self.length, mask](other)
 
     # Not an overload of shuffle because there is ambiguity
     # with def shuffle[*mask: Int](self, other: Self) -> Self:
@@ -3256,13 +3256,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A new vector `self_0, self_1, ..., self_n, other_0, ..., other_n`.
         """
 
-        def indices() -> StaticTuple[SIMDLength, 2 * Int(Self.length)]:
-            var res = StaticTuple[SIMDLength, 2 * Int(Self.length)](0)
-            for i in range(len(res)):
-                res[i] = i
-            return res
-
-        return self._shuffle_list[2 * Self.length, indices()](other)
+        comptime indices = Array[SIMDLength, 2 * Int(Self.length)](
+            fill_with=lambda (i: Int) -> SIMDLength: i
+        )
+        return self._shuffle_list[2 * Self.length, indices](other)
 
     @inline(.nodebug)
     def interleave(self, other: Self) -> SIMD[Self.dtype, Int(Self.length) * 2]:
@@ -3847,11 +3844,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ```
         """
 
-        def indices() -> IndexList[Self.length]:
-            var res = IndexList[Self.length]()
+        def indices() -> Array[SIMDLength, Self.length]:
+            var res = Array[SIMDLength, Self.length](fill=0)
             for i in range(Self.length):
                 res[i] = Self.length - i - 1
-            return res
+            return res^
 
         return self.shuffle[mask=indices()]()
 

@@ -939,11 +939,8 @@ def simd_load_from_tensor_pointer[
     ](tensor, indices)
 
 
-def _strided_lanes_mask[width: Int, stride: Int]() -> IndexList[width]:
-    var mask = IndexList[width]()
-    for i in range(width):
-        mask[i] = i * stride
-    return mask
+def _strided_lanes_mask[width: Int, stride: Int]() -> Array[SIMDLength, width]:
+    return {fill_with = lambda (i: Int) -> SIMDLength: i * stride}
 
 
 @doc_hidden
@@ -1061,9 +1058,7 @@ def _simd_load_at_flat_index[
                         comptime mask = _strided_lanes_mask[
                             simd_width, _last_stride_value
                         ]()
-                        return v._shuffle_list[
-                            simd_width, mask.as_index_tuple()
-                        ](v)
+                        return v._shuffle_list[simd_width, mask](v)
                 return load_strided(_last_stride_value)
 
 

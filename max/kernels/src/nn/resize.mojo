@@ -34,7 +34,7 @@ from layout import (
 from std.memory import unsafe_memcpy
 from std.sys import simd_width_of, size_of
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.coord import DynamicCoord
 
 
@@ -1251,13 +1251,13 @@ def _weighted_row_sum[
 
 def _lane_group_mask[
     width: Int, *, halves: Bool, high: Bool
-]() -> IndexList[width]:
+]() -> Array[SIMDLength, width]:
     """Returns a two-vector shuffle that works within each group of 4 lanes.
 
     It interleaves the low or high pairs of the two vectors. With halves, it
     joins their low or high halves instead.
     """
-    var mask = IndexList[width]()
+    var mask = Array[SIMDLength, width](fill=0)
     for g in range(0, width, 4):
         var lo = g + (2 if high else 0)
         comptime if halves:
@@ -1266,7 +1266,7 @@ def _lane_group_mask[
         else:
             mask[g], mask[g + 1] = lo, width + lo
             mask[g + 2], mask[g + 3] = lo + 1, width + lo + 1
-    return mask
+    return mask^
 
 
 @inline(.always)
