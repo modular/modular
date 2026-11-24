@@ -1260,6 +1260,12 @@ def test_removeprefix() raises:
     var s4 = String("héllo")
     assert_equal(s4.removeprefix("hé"), "llo")
     assert_equal(s4.removeprefix("ll"), "héllo")
+    # Empty string with empty prefix.
+    var s5 = String("")
+    assert_equal(s5.removeprefix(""), "")
+    # Multi-byte codepoint prefix.
+    var s6 = String("🌍hello")
+    assert_equal(s6.removeprefix("🌍"), "hello")
 
 
 def test_removesuffix() raises:
@@ -1288,6 +1294,12 @@ def test_removesuffix() raises:
     var t4 = String("hellé")
     assert_equal(t4.removesuffix("lé"), "hel")
     assert_equal(t4.removesuffix("ll"), "hellé")
+    # Empty string with empty suffix.
+    var t5 = String("")
+    assert_equal(t5.removesuffix(""), "")
+    # Multi-byte codepoint suffix.
+    var t6 = String("hello🌍")
+    assert_equal(t6.removesuffix("🌍"), "hello")
 
 
 def test_intable() raises:

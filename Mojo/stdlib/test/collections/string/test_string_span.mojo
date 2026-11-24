@@ -1050,6 +1050,11 @@ def test_removeprefix() raises:
     # Unicode prefix.
     assert_equal(StringSpan("héllo").removeprefix("hé"), "llo")
     assert_equal(StringSpan("héllo").removeprefix("ll"), "héllo")
+    # Empty string with empty prefix.
+    assert_equal(StringSpan("").removeprefix(""), "")
+    # Multi-byte codepoints at the prefix boundary.
+    assert_equal(StringSpan("hello🌍").removeprefix("hello"), "🌍")
+    assert_equal(StringSpan("🌍hello").removeprefix("🌍"), "hello")
 
 
 def test_removesuffix() raises:
@@ -1075,6 +1080,11 @@ def test_removesuffix() raises:
     # Unicode suffix.
     assert_equal(StringSpan("hellé").removesuffix("lé"), "hel")
     assert_equal(StringSpan("hellé").removesuffix("ll"), "hellé")
+    # Empty string with empty suffix.
+    assert_equal(StringSpan("").removesuffix(""), "")
+    # Multi-byte codepoints at the suffix boundary.
+    assert_equal(StringSpan("🌍hello").removesuffix("hello"), "🌍")
+    assert_equal(StringSpan("hello🌍").removesuffix("🌍"), "hello")
 
 
 def test_isupper() raises:
