@@ -39,7 +39,7 @@ from nn.attention.gpu.nvidia.common import (
     q_tma_fused,
     q_tma_prefill,
 )
-from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_mask import CausalMask, MHAMask
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import TransientScheduler
 from nn.attention.mha_utils import (
@@ -210,7 +210,7 @@ def mha_sm100_depth512_dispatch[
         UInt32(
             d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads
         ),
-        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+        flip_prompt_idx=MaskType == CausalMask,
         pair_cta=True,
     ]
     var scheduler: SchedulerType = SchedulerType()

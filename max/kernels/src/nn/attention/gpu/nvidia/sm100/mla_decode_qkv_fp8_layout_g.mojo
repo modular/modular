@@ -73,7 +73,7 @@ from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     KVTMATile,
 )
-from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_operand import MHAOperand
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
@@ -1094,8 +1094,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # Native FP8 backend supports NullMask, CausalMask, SlidingWindowCausalMask.
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
-            _mask_type_name == "NullMask"
-            or _mask_type_name == "CausalMask"
+            Self.MaskType == NullMask
+            or Self.MaskType == CausalMask
             or _mask_type_name == "SlidingWindowCausalMask"
         ), (
             "MLA_SM100_Decode_QKV_FP8_Layout_G supports NullMask, CausalMask,"

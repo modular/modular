@@ -67,7 +67,7 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     OptionalPointer,
 )
-from nn.attention.mha_mask import MHAMask, MASK_VALUE
+from nn.attention.mha_mask import CausalMask, MHAMask, MASK_VALUE
 from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.mla_common import (
@@ -6938,7 +6938,7 @@ struct MLA_SM100_Decode_Common[
                 Self.config.cta_group == 1
                 and Self.config.num_q_heads == 128
                 and Self.config.BN_QK == 64
-                and Self.MaskType.get_type_name() == "CausalMask"
+                and Self.MaskType == CausalMask
             ), "the countdown form requires the clamped NV geometry"
         comptime iteration_dtype = DType.int32 if countdown else DType.int
         comptime IterationType = Scalar[iteration_dtype]

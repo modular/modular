@@ -20,7 +20,7 @@ memory before the MMA stage.
 from std.sys import size_of
 from std.math import ceildiv, align_up
 from nn.attention.mha_operand import MHAOperand
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     SeqInfo,
     TransientScheduler,
@@ -378,7 +378,7 @@ __extension SM100MLA:
                     var seq_info: SeqInfo = get_seq_info[
                         Self.BM,
                         Self.num_q_heads,
-                        Self.MaskType.get_type_name() == "CausalMask",
+                        Self.MaskType == CausalMask,
                     ](batch_size, max_seq_len, valid_length, partition)
 
                     if not seq_info.is_valid():
@@ -415,7 +415,7 @@ __extension SM100MLA:
                     var seq_info: SeqInfo = get_seq_info[
                         Self.BM,
                         Self.num_q_heads,
-                        Self.MaskType.get_type_name() == "CausalMask",
+                        Self.MaskType == CausalMask,
                     ](batch_size, max_seq_len, valid_length, partition)
                     if not seq_info.is_valid():
                         return
@@ -438,7 +438,7 @@ __extension SM100MLA:
                     var seq_info: SeqInfo = get_seq_info[
                         Self.BM,
                         Self.num_q_heads,
-                        Self.MaskType.get_type_name() == "CausalMask",
+                        Self.MaskType == CausalMask,
                     ](batch_size, max_seq_len, valid_length, partition)
 
                     if not seq_info.is_valid():
@@ -471,7 +471,7 @@ __extension SM100MLA:
                     var seq_info: SeqInfo = get_seq_info[
                         Self.BM,
                         Self.num_q_heads,
-                        Self.MaskType.get_type_name() == "CausalMask",
+                        Self.MaskType == CausalMask,
                     ](batch_size, max_seq_len, valid_length, partition)
 
                     if not seq_info.is_valid():
@@ -501,7 +501,7 @@ __extension SM100MLA:
                     var seq_info: SeqInfo = get_seq_info[
                         Self.BM,
                         Self.num_q_heads,
-                        Self.MaskType.get_type_name() == "CausalMask",
+                        Self.MaskType == CausalMask,
                     ](batch_size, max_seq_len, valid_length, partition)
 
                     if not seq_info.is_valid():
@@ -2017,7 +2017,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     comptime SchedulerType = TransientScheduler[
         UInt32(fa4_config.BM),
         UInt32(fa4_config.num_q_heads),
-        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+        flip_prompt_idx=MaskType == CausalMask,
     ]
     comptime ValidLengthType = NonNullPointer[.uint32]
     comptime SinkType = NullPointer[output_dtype]

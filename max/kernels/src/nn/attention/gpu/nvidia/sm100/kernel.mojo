@@ -55,7 +55,7 @@ from nn.attention.gpu.nvidia.common import (
     Pack,
     PositionSummary,
 )
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHATileScheduler,
@@ -367,7 +367,7 @@ struct SM100MHA2Q[
         var seq_info: SeqInfo = get_seq_info[
             Self.BM_mask,
             Self.config.num_kv_heads if Self.fuse_gqa else Self.num_q_heads,
-            Self.MaskType.get_type_name() == "CausalMask",
+            Self.MaskType == CausalMask,
             pair_cta=Self.pair_cta,
             splitk_partitions=UInt32(Self.config.splitk_partitions),
         ](batch_size, pack.max_seq_len, pack.valid_length, pack.partition)

@@ -47,7 +47,7 @@ from nn.attention.gpu.nvidia.common import (
     q_tma_fused,
     q_tma_prefill,
 )
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import TransientScheduler
 from nn.attention.mha_utils import (
@@ -755,7 +755,7 @@ def mha_sm100_dispatch[
             UInt32(
                 fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads
             ),
-            flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+            flip_prompt_idx=MaskType == CausalMask,
             pair_cta=fa4_config.pair_cta,
             splitk_partitions=UInt32(fa4_config.splitk_partitions),
         ]

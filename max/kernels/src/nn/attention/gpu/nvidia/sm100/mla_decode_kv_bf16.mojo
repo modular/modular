@@ -48,7 +48,7 @@ from layout import (
 from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
 )
-from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_operand import MHAOperand
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -254,9 +254,8 @@ struct MLA_SM100_Decode_KV_BF16[
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
         # (MLA_SM100_Decode_QKV_FP8). Reject it here at comptime.
-        comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
-            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+            Self.MaskType == NullMask or Self.MaskType == CausalMask
         ), (
             "MLA_SM100_Decode_KV_BF16 only supports NullMask and CausalMask."
             " Sliding window is supported only by MLA_SM100_Decode_QKV_FP8"
