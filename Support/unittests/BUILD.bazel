@@ -64,7 +64,8 @@ modular_cc_test(
     ],
 )
 
-# Own binary: it exits with the default logger mid-drain.
+# Own binary: its tests exit the process with the default logger's lifetime
+# under test.
 modular_cc_test(
     name = "LogExitTest",
     srcs = [
@@ -75,6 +76,7 @@ modular_cc_test(
     },
     deps = [
         "//Support:Log",
+        "@llvm-project//llvm:Support",
     ],
 )
 

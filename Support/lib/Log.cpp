@@ -29,6 +29,7 @@
 #include "Support/Threading/SpinWaiter.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -382,15 +383,16 @@ public:
 
 class StdoutSink : public Sink {
   std::mutex outputMutex;
-  // Bound in the constructor, which runs inside the Logger's: llvm::outs() is
-  // a function-local static, so building it before the Logger finishes
-  // construction destroys it after the Logger, whose consumer thread may
-  // still be writing during static destruction.
-  llvm::raw_fd_ostream &out = llvm::outs();
+  // Owned rather than llvm::outs(), so the stream lives exactly as long as the
+  // Logger, whose consumer thread may still be writing during static
+  // destruction. llvm::outs() is a function-local static, and its lifetime is
+  // not tied to the Logger's: a Logger first built inside an atexit handler
+  // may find it already destroyed.
+  llvm::raw_fd_ostream out{fileno(stdout), /*shouldClose=*/false};
 
   // Note: outputMutex only serializes accesses made through this sink.
-  // llvm::outs() is a process-global stream, so third-party writers that
-  // use it directly are outside this synchronization.
+  // llvm::outs() and other stdout writers keep their own buffers, so their
+  // output is not ordered against this sink's.
   void write(llvm::StringRef msg) override {
     std::lock_guard<std::mutex> lock(outputMutex);
     out << msg << "\n";
