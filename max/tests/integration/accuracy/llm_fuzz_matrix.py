@@ -95,14 +95,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         mach_key="reflection/Beam-1.0-501B-A23B-NVFP4__dflash2",
     ),
     PipelineEntry(
-        pipeline="tencent/Hy4-preview-FP8-ep-tp-mtp",
-        model_path="tencent/Hy4-preview-FP8",
+        pipeline="tencent/Hy4-FP8",
+        model_path="tencent/Hy4-FP8",
         runner="modrunner-b200-efa-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=210,
-        # Mach only, serving the MTP artifact.
-        mach_key="tencent/Hy4-preview-FP8__mtp",
+        # Mach only, serving the export artifact.
+        mach_key="tencent/Hy4-FP8",
     ),
     PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",

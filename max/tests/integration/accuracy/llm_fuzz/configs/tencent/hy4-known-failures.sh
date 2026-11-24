@@ -13,50 +13,59 @@
 
 # shellcheck disable=SC2034  # `exclude` is consumed when this file is sourced.
 
-# Model behaviour that vLLM 0.30.0 serving the same checkpoint with its hy_v4
-# parsers fails too, from the full validation run of 2026-10-14.
+# Measured on the tencent/Hy4-FP8 checkpoint through the orchestrator and Mach
+# on eight B200s with the CI flags. Each failing test was compared with vLLM
+# 7bce843 serving the same checkpoint with its hy_v4 parsers.
+
+# Model behaviour: vLLM fails the same test.
 _hy4_vllm_failures=(
-  # basic_reasoning_and_tool_usage: the model reasons until max_tokens and
-  # writes no content (vLLM: FAIL, finish=length, 32777 reasoning chars).
-  'basic_reasoning_and_tool_usage:special-token-content-thinking-on'
-  # openrouter_tests: the chat template closes a trailing assistant message
-  # with its hy_end token and adds no new generation prompt, so the model
-  # usually ends the turn at once (vLLM: FAIL; 5 of 5 replays had empty
-  # content).
-  'openrouter_tests:assistant-prefill'
-  # tc_advanced: on some iterations the model writes its call inside an
-  # unclosed thinking block (vLLM: FAIL, 17/20).
-  'tc_advanced:sequential_soak_20'
+  # Neither engine returns JSON content in any of the 100 runs.
+  'json_schema_compliance:schema_compliance_100_runs'
+  # The secret in an earlier turn's reasoning does not reach the answer.
+  'reasoning_carry_replay:carry_reasoning_content_key'
+  'reasoning_carry_replay:carry_reasoning_key'
+  # Hits the 16384-token cap before answering (Mach 4/4 and 3/4 samples,
+  # vLLM 4/4 and 2/4).
+  'reasoning_runaway:engineering_q21'
+  'reasoning_runaway:engineering_q46'
+  # Concurrent reasoning outlasts the 30 s client timeout (Mach 10/10 and
+  # 10/20 errors, vLLM 8/10 and 10/20).
+  'thinking_tokens:thinking_many_concurrent'
+  'thinking_tokens:thinking_rapid_alternation'
 )
 
-# Model behaviour seen only on MAX runs; vLLM 0.30.0 passed its single draw.
-_hy4_model_failures=(
-  # tc_basics: with tool_choice=auto the model sometimes spells the call as
-  # JSON or a [tool_call] block instead of its own tags, so no call parses
-  # (3 of 40 MAX replays; vLLM: INTERESTING, budget exhausted).
-  'tc_basics:20_tools_auto'
+# The fuzz load shape against Hy4's reasoning length, not an engine defect.
+_hy4_load_failures=(
+  # 200 requests in flight on 32 seats with a 30 s client timeout, and Hy4
+  # reasons for thousands of tokens by default: most requests time out on
+  # both engines (on the same load, vLLM 1180/1575 vs Mach 580/1575), and
+  # which ones changes from run to run, so the scenario is listed whole.
+  'constrained_decoding'
+  # Decode-heavy requests set max_tokens=4096 and the client times out at
+  # 30 s. Mach honours the explicit max_tokens (~68 s at 10 concurrent; 0/20
+  # errors with a 600 s timeout or with max_tokens 256); vLLM passes in CI
+  # only because its generation-config override clamps it to 256.
+  'pipeline_stall:long_decode_block'
+  'pipeline_stall:mixed_prefill_decode_pressure'
+  # zombie_horde: scenarios still running when the 300 s horde timeout
+  # elapses, on both engines. The horde shuffles its waves, so these names
+  # change from run to run.
+  'zombie_horde:output_correctness_under_burst__horde_timeout'
+  'zombie_horde:parallel_tool_call_ids__horde_timeout'
+  'zombie_horde:structured_output__horde_timeout'
+  'zombie_horde:token_runaway__horde_timeout'
 )
 
 # Intermittent: fail on some draws only.
 _hy4_intermittent_failures=(
-  # tc_schema_enforcement: the prompt asks only for values the schema
-  # forbids; with the grammar blocking them the model sometimes returned a
-  # shorter array than the check's minimum, which was schema-valid then. Each
-  # schema now sets minItems: 2, so a short array would be a grammar
-  # enforcement failure. Kept until this lane is re-validated at that schema.
-  'tc_schema_enforcement:ref_defs_array_of_enums[tool_choice=required]'
-  'tc_schema_enforcement:anyof_deeply_nested[tool_choice=required]'
-  'tc_schema_enforcement:anyof_deeply_nested[tool_choice=auto]'
-  'tc_schema_enforcement:ref_defs_nested_array_in_object[tool_choice=required]'
-  'tc_schema_enforcement:ref_defs_cross_referencing[tool_choice=required]'
-  # tc_schema_enforcement: the prompt asks for an undeclared key; the schema
-  # allows it (additionalProperties unset), the check does not.
-  'tc_schema_enforcement:ref_defs_adversarial_all_constraints[tool_choice=auto]'
-  'tc_schema_enforcement:ref_defs_adversarial_all_constraints[tool_choice=required]'
+  # Reasoning on with max_tokens 256: when reasoning runs past 256 tokens the
+  # required call never starts (no call in 1/10 replays on Mach, 2-3/10 on
+  # vLLM).
+  'tool_calling:tool_schema_with_oneof_and_const'
 )
 
 # Join into the comma-separated form the --exclude flag expects.
 exclude=$(
   IFS=,
-  printf "%s" "${_hy4_vllm_failures[*]},${_hy4_model_failures[*]},${_hy4_intermittent_failures[*]}"
+  printf "%s" "${_hy4_vllm_failures[*]},${_hy4_load_failures[*]},${_hy4_intermittent_failures[*]}"
 )
