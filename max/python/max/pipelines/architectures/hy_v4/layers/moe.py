@@ -21,23 +21,32 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TypeVar
 
+import numpy as np
 from max import functional as F
 from max import tree
-from max.driver import Device
+from max.driver import Device, accelerator_count
 from max.dtype import DType
 from max.nn import Module, ModuleList
+from max.nn._graph_ops import moe_sigmoid_gemv_router_supports
 from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.moe import MoEGate
 from max.nn.common_layers.quant_linear import QuantizedMLP
-from max.nn.common_layers.quant_tensor import MXFP8Activation, MXFP8Tensor
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockActivation,
+    FP8BlockTensor,
+    MXFP8Activation,
+    MXFP8Tensor,
+)
 from max.nn.kernels import (
     grouped_quantize_dynamic_block_scaled,
     moe_create_indices,
     moe_finalize,
     moe_fp8_host_usage_stats,
     moe_router_group_limited,
+    moe_sigmoid_gemv_router,
+    quantize_dynamic_scaled_float8,
 )
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor, default_device, defaults
@@ -74,7 +83,9 @@ class HYV4TopKRouter(MoEGate):
     The reference casts both the hidden state and the BF16 gate weight to
     float32 before the matmul; a BF16 matmul output would perturb the
     near-tied scores that decide the top-k. Scores are sigmoids, picked by a
-    group-limited top-k with a learned float32 expert correction bias.
+    group-limited top-k with a learned float32 expert correction bias. With
+    one group and a BF16 gate on a tensor-core GPU, one fused op runs the gate
+    GEMV, the sigmoid and the top-k.
     """
 
     def __init__(
@@ -116,8 +127,41 @@ class HYV4TopKRouter(MoEGate):
             [num_experts], dtype=DType.float32
         )
 
+    def _fused(self, hidden_states: Tensor) -> bool:
+        """Whether one op computes the gate on tensor cores and routes.
+
+        It multiplies the bf16 operands exactly in float32, so it differs
+        from the float32 matmul only in how the float32 products accumulate.
+        """
+        weight = self.gate_score.weight
+        return (
+            self.n_group == 1
+            and hidden_states.dtype == weight.dtype == DType.bfloat16
+            and accelerator_count() > 0
+            and not any(d.is_host for d in hidden_states.mesh.devices)
+            and moe_sigmoid_gemv_router_supports(
+                self.num_experts,
+                self.num_experts_per_token,
+                int(weight.shape[1]),
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.float32,
+                tensor_cores=True,
+            )
+        )
+
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:
         """Scores each token's experts and returns the routing weights."""
+        if self._fused(hidden_states):
+            return moe_sigmoid_gemv_router(
+                hidden_states,
+                self.gate_score.weight,
+                self.e_score_correction_bias,
+                self.num_experts_per_token,
+                self.norm_topk_prob,
+                self.routed_scaling_factor,
+                scores_dtype=DType.float32,
+            )
         weight = self.gate_score.weight.cast(DType.float32)
         logits = F.matmul(
             hidden_states.cast(DType.float32), F.transpose(weight, 0, 1)
@@ -307,7 +351,6 @@ class HYV4BlockFP8Experts(ModuleList[QuantizedMLP]):
         estimated_total_m = F.shape_to_tensor(token_order.shape)[0].cast(
             DType.uint32
         )
-        tokens = F.gather(x, (token_order // top_k).cast(DType.int32), axis=0)
         gate_up = quant_ops.stack(
             [
                 quant_ops.concat_weights(e.gate_proj.weight, e.up_proj.weight)
@@ -315,29 +358,64 @@ class HYV4BlockFP8Experts(ModuleList[QuantizedMLP]):
             ]
         )
         down = quant_ops.stack([e.down_proj.weight for e in self])
-        hidden = quant_ops.grouped_matmul_silu(
+        assert isinstance(gate_up, FP8BlockTensor)
+        assert isinstance(down, FP8BlockTensor)
+        # The quantize scales each token row on its own, so quantizing the
+        # tokens once and gathering the FP8 rows gives the same bytes as
+        # quantizing every gathered copy. Only this input's scales round to
+        # powers of two, as vLLM's TRTLLM experts do at TP2 on B200.
+        data, scales = _quantize_fp8(x, gate_up, pow2_scales=True)
+        rows = (token_order // top_k).cast(DType.int32)
+        tokens = FP8BlockActivation(
+            data=F.gather(data, rows, axis=0),
+            scales=F.gather(scales, rows, axis=1),
+        )
+        gate_up_out = quant_ops.grouped_matmul(
             tokens,
             gate_up,
-            down,
             expert_start_indices,
             expert_ids,
             usage_stats,
-            None,
             estimated_total_m=estimated_total_m,
-            swiglu_limit=self.swiglu_limit,
-            # As the TRTLLM experts vLLM runs at TP2 on B200: only the
-            # input's scales round; the weights keep fp32 scales and the
-            # kernel scales the SwiGLU by amax / 448.
-            pow2_scales=True,
+        )
+        hidden = quant_ops.grouped_silu(
+            gate_up_out, expert_start_indices, swiglu_limit=self.swiglu_limit
+        )
+        assert isinstance(hidden, Tensor)
+        # Only the rows of this device's experts are quantized. The SwiGLU
+        # stays a separate kernel: the fused SiLU-quantize may round it
+        # differently.
+        data, scales = _quantize_fp8(
+            hidden, down, row_offsets=expert_start_indices
         )
         return quant_ops.grouped_matmul(
-            hidden,
+            FP8BlockActivation(data=data, scales=scales),
             down,
             expert_start_indices,
             expert_ids,
             usage_stats,
             estimated_total_m=estimated_total_m,
         )
+
+
+def _quantize_fp8(
+    x: Tensor,
+    weight: FP8BlockTensor,
+    pow2_scales: bool = False,
+    row_offsets: Tensor | None = None,
+) -> tuple[Tensor, Tensor]:
+    """Quantizes ``x`` in the blocks a matmul against ``weight`` reads."""
+    input_spec, weight_spec = quant_ops.fp8_block_activation_specs(weight)
+    return quantize_dynamic_scaled_float8(
+        x,
+        input_spec,
+        weight_spec,
+        group_size_or_per_token=weight.block_size[1],
+        scales_type=DType.float32,
+        out_type=DType.float8_e4m3fn,
+        row_offsets=row_offsets,
+        pow2_scales=pow2_scales,
+    )
 
 
 def expert_sum(
@@ -351,41 +429,41 @@ def expert_sum(
     """Sums ``experts`` over the routed rows they own.
 
     ``first_expert`` is the global id of ``experts``' first expert under
-    expert parallelism. ``moe_create_indices`` leaves an id outside the
-    local range out of every group, and leaves the order slots and restore
-    entries it would have used unwritten, so those are masked here.
+    expert parallelism. Picks of other devices' experts go to one trailing
+    group, sorted past the local rows: no expert reads it and the finalize
+    stops before it.
     """
     ids = F.reshape(topk_idx, [-1])
-    if first_expert is not None:
-        ids = ids - first_expert
     num_local = experts.num_experts
-    indices = moe_create_indices(ids, num_local, needs_scales_offset=True)
-    order, start, restore = indices[0], indices[1], indices[2]
     if first_expert is None:
+        indices = moe_create_indices(ids, num_local, needs_scales_offset=True)
         return moe_finalize(
-            experts.grouped(x, top_k, indices), restore, topk_weight, x.dtype
+            experts.grouped(x, top_k, indices), indices[2], topk_weight, x.dtype
         )
-    # Order slots past the local rows are never written and may hold any
-    # index; point them at row 0 so a full gather stays in bounds.
-    local_rows = (
-        F.arange(
-            0,
-            F.shape_to_tensor(ids.shape)[0],
-            out_dim=ids.shape[0],
-            dtype=DType.uint32,
-            device=ids.device,
-        )
-        < start[num_local]
+    ids = ids - first_expert
+    ids = F.where((ids < 0) | (ids >= num_local), num_local, ids)
+    order, start, restore, expert_ids, usage, offsets = moe_create_indices(
+        ids, num_local + 1, needs_scales_offset=True
     )
-    order = F.where(local_rows, order, 0)
-    down = experts.grouped(x, top_k, (order, *indices[1:]))
-    foreign = (ids < 0) | (ids >= num_local)
-    restore = F.where(foreign, 0, restore)
-    topk_weight = F.where(foreign.reshape(topk_weight.shape), 0.0, topk_weight)
-    # A where, not a zero weight: rows past the local ones are never
-    # written and may hold NaN.
-    down = F.where(local_rows.unsqueeze(1), down, 0.0)
-    return moe_finalize(down, restore, topk_weight, x.dtype)
+    # The experts see only the local groups; the stats count them too.
+    num_groups = F.constant(
+        np.array([num_local], np.uint32), DType.uint32, device=usage.mapping
+    )
+    local = (
+        order,
+        start[: num_local + 1],
+        restore,
+        expert_ids[:num_local],
+        F.concat([usage[:1], num_groups], axis=0),
+        offsets[:num_local],
+    )
+    return moe_finalize(
+        experts.grouped(x, top_k, local),
+        restore,
+        topk_weight,
+        x.dtype,
+        valid_rows=start[num_local : num_local + 1],
+    )
 
 
 class HYV4MoE(Module[[Tensor], Tensor]):
