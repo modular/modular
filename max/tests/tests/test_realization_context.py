@@ -20,7 +20,7 @@ import pytest
 from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.graph import BufferValue, Graph, ops
+from max.graph import BufferValue, DeviceRef, Graph, ops
 from max.tensor import realization_context as rc
 from max.tensor.executor import CompilingExecutor, default_executor
 from max.tensor.support import _session
@@ -388,6 +388,20 @@ def test_signal_buffers_survive_pruning_an_unrelated_source() -> None:
         "an unrelated pruned source reset them"
     )
     assert ctx.signal_buffers[0] is buffer
+
+
+def test_signal_buffer_types_keep_each_device_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each signal buffer input takes the device ref it was given.
+
+    The CPU ref stands in for an accelerator whose label is not ``gpu``.
+    """
+    monkeypatch.setattr(rc, "_signal_bytes", lambda: 8)
+    devices = (DeviceRef.GPU(1), DeviceRef.CPU(0))
+    types = rc._signal_buffer_types(devices)
+    assert [t.device for t in types] == list(devices)
+    assert all(t.dtype == DType.uint8 for t in types)
 
 
 def test_lazy_context_does_not_execute_on_exit() -> None:

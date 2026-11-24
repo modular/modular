@@ -85,6 +85,7 @@ from max.engine import CompiledModel, InferenceSession, Model
 from max.graph import (
     BufferType,
     BufferValue,
+    DeviceRef,
     Graph,
     Shape,
     StaticDim,
@@ -282,8 +283,8 @@ class StagedGraph(Generic[_P, _R]):
         layouts: The layout of each tensor argument, in graph order.
         treedef: The tree structure of the arguments, as returned by
             ``_declared_layouts``.
-        signal_device_ids: The ids of the accelerators whose collectives need
-            signal buffers.
+        signal_devices: The accelerators whose collectives need signal
+            buffers.
         prefix: The name prefix that weights created inside ``fn`` are
             relative to.
         subgraph_cache: The table that :func:`as_subgraph` stores traced
@@ -305,7 +306,7 @@ class StagedGraph(Generic[_P, _R]):
     out_tree: tree.TreeDef
     """The tree structure of the return value."""
 
-    _signal_device_ids: tuple[int, ...]
+    _signal_devices: tuple[DeviceRef, ...]
 
     def __init__(
         self,
@@ -313,7 +314,7 @@ class StagedGraph(Generic[_P, _R]):
         graph: Graph,
         layouts: Sequence[TensorLayout],
         treedef: tree.TreeDef,
-        signal_device_ids: tuple[int, ...] = (),
+        signal_devices: tuple[DeviceRef, ...] = (),
         *,
         prefix: str = "",
         subgraph_cache: dict[Any, Any] | None = None,
@@ -348,7 +349,7 @@ class StagedGraph(Generic[_P, _R]):
         self.in_layouts, self.in_tree = list(layouts), in_tree
         self.out_layouts = [r.layout for r in results]
         self.out_tree = out_tree
-        self._signal_device_ids = signal_device_ids
+        self._signal_devices = signal_devices
         self._signal_buffer_index = signal_buffer_index
 
     def __str__(self) -> str:
@@ -420,7 +421,7 @@ class CompiledCallable(Generic[_P, _R]):
     _weights: dict[str, DLPackArray]
     # A deserialized callable holds the path of its MEF instead.
     _artifact: CompiledModel | Path
-    _signal_device_ids: tuple[int, ...]
+    _signal_devices: tuple[DeviceRef, ...]
     # ``None`` for a callable built without an initialized model.
     _engine_model: Model | None
     _signal_buffers: list[Buffer]
@@ -487,15 +488,17 @@ class CompiledCallable(Generic[_P, _R]):
     ) -> None:
         self.in_layouts, self.in_tree = staged.in_layouts, staged.in_tree
         self.out_layouts, self.out_tree = staged.out_layouts, staged.out_tree
-        self._signal_device_ids = staged._signal_device_ids
+        self._signal_devices = staged._signal_devices
         self._signal_buffer_index = staged._signal_buffer_index
         self._artifact = artifact
         self._weights = dict(weights or {})
         self._engine_model = engine_model
         self._signals_group = None
         # Allocate the signal buffers now rather than on the first call.
-        ids = self._signal_device_ids
-        self._signal_buffers = _cached_signal_buffers(ids)[0] if ids else []
+        devices = self._signal_devices
+        self._signal_buffers = (
+            _cached_signal_buffers(devices)[0] if devices else []
+        )
 
     @classmethod
     def from_compiled(
@@ -531,7 +534,7 @@ class CompiledCallable(Generic[_P, _R]):
         compiled = cls.__new__(cls)
         compiled.in_layouts, compiled.in_tree = list(in_layouts), in_tree
         compiled.out_layouts, compiled.out_tree = list(out_layouts), out_tree
-        compiled._signal_device_ids = ()
+        compiled._signal_devices = ()
         compiled._signal_buffer_index = None
         compiled._artifact = artifact
         compiled._weights = dict(weights or {})
@@ -694,17 +697,17 @@ class CompiledCallable(Generic[_P, _R]):
                 has no ``signals_group``, or their graph inputs fall inside
                 an argument.
         """
-        if not self._signal_device_ids:
+        if not self._signal_devices:
             return self.in_layouts, self.in_tree
         if self._signals_group is None:
             raise ArtifactError(
-                f"the graph takes {len(self._signal_device_ids)} signal"
+                f"the graph takes {len(self._signal_devices)} signal"
                 " buffers that its signature does not name: build the"
                 " callable with a signals_group"
             )
         signals = tuple(
             BufferLayout(t.dtype, t.shape, t.device)
-            for t in _signal_buffer_types(self._signal_device_ids)
+            for t in _signal_buffer_types(self._signal_devices)
         )
         return _with_signal_inputs(
             self.in_layouts,
@@ -760,7 +763,7 @@ class CompiledCallable(Generic[_P, _R]):
             value.get("out_layouts"), "out_layouts"
         )
         compiled.out_tree = decode_field(value, "out_tree", treedef_from_json)
-        compiled._signal_device_ids = ()
+        compiled._signal_devices = ()
         compiled._signal_buffer_index = None
         compiled._artifact = mef
         compiled._weights = {}
@@ -953,9 +956,9 @@ def stage(
         # part in the graph, unless the caller places them: then they belong
         # to its calling convention, as on one accelerator.
         placed = signal_buffer_index is not None
-        ids = tuple(
+        devices = tuple(
             dict.fromkeys(
-                device.id
+                DeviceRef.from_device(device)
                 for device in itertools.chain(
                     (
                         device
@@ -969,12 +972,12 @@ def stage(
                 if isinstance(device, Accelerator)
             )
         )
-        ids = ids if placed or len(ids) > 1 else ()
+        devices = devices if placed or len(devices) > 1 else ()
         graph = Graph(
             name or _sanitized_graph_name(fn),
             input_types=_with_signal_buffers(
                 [t for layout in layouts for t in layout.local_types],
-                _signal_buffer_types(ids),
+                _signal_buffer_types(devices),
                 signal_buffer_index,
             ),
             custom_extensions=custom_extensions,
@@ -985,7 +988,7 @@ def stage(
             graph,
             layouts,
             treedef,
-            ids,
+            devices,
             subgraph_cache={} if allow_subgraphs else None,
             signal_buffer_index=signal_buffer_index,
         )
