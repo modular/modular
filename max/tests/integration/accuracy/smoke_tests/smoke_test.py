@@ -543,6 +543,8 @@ def get_server_cmd(
         "vllm.entrypoints.openai.api_server",
         "--host",
         "0.0.0.0",
+        "--safetensors-load-strategy",
+        "prefetch",
     ]
     kimi_k3_vllm = (
         framework == "vllm" and model.casefold() == "moonshotai/kimi-k3"
