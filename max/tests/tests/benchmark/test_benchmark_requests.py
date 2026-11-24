@@ -268,6 +268,13 @@ class _WordCountingTokenizer:
         )
 
 
+class _RefusingTokenizer(_WordCountingTokenizer):
+    """Raises on every call, as a tokenizer that rejects the text would."""
+
+    def __call__(self, texts: Any, add_special_tokens: bool = True) -> Any:
+        raise ValueError("unsupported text")
+
+
 def _text_event(content: str) -> str:
     """Returns a streamed text chunk carrying ``content``."""
     return json.dumps({"choices": [{"delta": {"content": content}}]})
@@ -1327,12 +1334,6 @@ class TestOpenAIStreamRecorder:
     def test_chunk_tpot_survives_a_tokenizer_that_raises(self) -> None:
         """A failing tokenizer costs per-chunk TPOT, not the result build."""
 
-        class _RefusingTokenizer(_WordCountingTokenizer):
-            def __call__(
-                self, texts: Any, add_special_tokens: bool = True
-            ) -> Any:
-                raise ValueError("unsupported text")
-
         tokenizer: Any = _RefusingTokenizer()
         recorder = OpenAIStreamRecorder(
             prompt_len=1, chat=True, tokenizer=tokenizer
@@ -1356,12 +1357,6 @@ class TestOpenAIStreamRecorder:
         mocker.patch(
             "max.benchmark.benchmark_shared.request._TPOT_TOKENIZE_SLICE", 2
         )
-
-        class _RefusingTokenizer(_WordCountingTokenizer):
-            def __call__(
-                self, texts: Any, add_special_tokens: bool = True
-            ) -> Any:
-                raise ValueError("unsupported text")
 
         tokenizer: Any = _RefusingTokenizer()
         # Three chunks each, so each response fills one slice on its own.

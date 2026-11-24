@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -373,11 +374,20 @@ def test_other_backends_do_not_wait_for_their_metrics(
     wait.assert_not_called()
 
 
-def test_engine_state_json_rejects_a_multi_point_sweep() -> None:
+@pytest.mark.parametrize(
+    "sweep",
+    [
+        pytest.param({"max_concurrency": [8, 16]}, id="max_concurrency"),
+        pytest.param({"request_rate": [1.0, 2.0]}, id="request_rate"),
+    ],
+)
+def test_engine_state_json_rejects_a_multi_point_sweep(
+    sweep: Mapping[str, Any],
+) -> None:
     config = ServingBenchmarkConfig(
         model="HuggingFaceTB/SmolLM2-135M",
         engine_state_json="state.json",
-        max_concurrency=[8, 16],
+        **sweep,
     )
     with pytest.raises(ValueError, match="single --max-concurrency"):
         list(main_with_parsed_args(config))
@@ -729,16 +739,6 @@ def test_stats_file_keeps_its_pre_run_content_across_a_sweep(
     )
 
     assert path.read_text() == before
-
-
-def test_engine_state_json_is_still_refused_for_a_sweep() -> None:
-    config = ServingBenchmarkConfig(
-        model="HuggingFaceTB/SmolLM2-135M",
-        engine_state_json="state.json",
-        request_rate=[1.0, 2.0],
-    )
-    with pytest.raises(ValueError, match="single --max-concurrency"):
-        list(main_with_parsed_args(config))
 
 
 # ===----------------------------------------------------------------------=== #
