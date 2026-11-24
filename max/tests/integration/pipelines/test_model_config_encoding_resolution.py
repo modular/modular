@@ -750,7 +750,7 @@ class TestPipelineArgsWriteThroughRegressions:
         """
         from max.pipelines.lib import MAXModelConfig, PipelineArgs
 
-        args = PipelineArgs(model_path="meta-llama/Meta-Llama-3-8B-Instruct")
+        args = PipelineArgs(model_path="meta-llama/Llama-3.1-8B-Instruct")
 
         # The buggy pattern: mutating the returned object's copy is a no-op.
         MAXModelConfig.from_pipeline_args(
@@ -758,7 +758,7 @@ class TestPipelineArgsWriteThroughRegressions:
         )._weights_repo_id = "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
         assert (
             MAXModelConfig.from_pipeline_args(args).huggingface_weight_repo_id
-            == "meta-llama/Meta-Llama-3-8B-Instruct"
+            == "meta-llama/Llama-3.1-8B-Instruct"
         )
 
         # The fix: set the private attr on PipelineArgs itself.

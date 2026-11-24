@@ -30,7 +30,7 @@ SMOKE_TEST_PIPELINE = "google/gemma-4-26B-A4B-it"
 
 PIPELINES: list[PipelineEntry] = [
     PipelineEntry(
-        pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
+        pipeline="meta-llama/Llama-3.1-8B-Instruct",
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",

@@ -327,20 +327,20 @@ PIPELINE_SPECS = [
     # They are still verified via the Pipeline Logit Verification workflow
     # which has access to pregenerated S3 goldens.
     #
-    # Llama 3.3 70B
+    # Llama 3.1 8B
     {
-        "pipeline": "meta-llama/Llama-3.3-70B-Instruct-bfloat16",
-        "model_path": "meta-llama/Llama-3.3-70B-Instruct",
+        "pipeline": "meta-llama/Llama-3.1-8B-Instruct-bfloat16",
+        "model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "encoding": "bfloat16",
         "target": "cuda:sm_100a",
         "tags": ["gpu"],
         "gpu_constraints": ["//:b200_gpu"],
         "devices": "gpu",
-        "exec_properties": {"test.resources:gpu-memory": "180"},
+        "exec_properties": {"test.resources:gpu-memory": "40"},
     },
     {
-        "pipeline": "meta-llama/Llama-3.3-70B-Instruct-bfloat16",
-        "model_path": "meta-llama/Llama-3.3-70B-Instruct",
+        "pipeline": "meta-llama/Llama-3.1-8B-Instruct-bfloat16",
+        "model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "encoding": "bfloat16",
         "target": "cuda:sm_90a",
         "tags": ["gpu"],

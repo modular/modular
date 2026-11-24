@@ -1223,18 +1223,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 8192, "max_batch_size": 16},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "meta-llama/Meta-Llama-3-8B-Instruct": GenericOracle(
-        model_path="meta-llama/Meta-Llama-3-8B-Instruct",
-        weight_path_map={
-            "q4_k": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
-            "float32": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp32.gguf",
-        },
-        config_params={"max_length": 512},
-        device_encoding_map={
-            "gpu": ["float32", "bfloat16"],
-            "cpu": ["float32", "q4_k"],
-        },
-    ),
     "meta-llama/Llama-3.1-8B-Instruct": GenericOracle(
         model_path="meta-llama/Llama-3.1-8B-Instruct",
         weight_path_map={
@@ -1305,11 +1293,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={
             "gpu": ["bfloat16"],
         },
-    ),
-    "meta-llama/Llama-3.3-70B-Instruct": GenericOracle(
-        model_path="meta-llama/Llama-3.3-70B-Instruct",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
     ),
     "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-30B-A3B-Instruct"

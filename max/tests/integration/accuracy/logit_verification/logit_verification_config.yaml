@@ -67,21 +67,6 @@ logit_verification_pipelines:
   # Generally speaking, these models should have absolute and relative
   # tolerances below ~5e-2.
 
-  meta-llama/Meta-Llama-3-8B-Instruct-float32:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "meta-llama/Meta-Llama-3-8B-Instruct"
-    compatible_with: [cpu, gpu]
-    encoding: float32
-    tags: []
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz"
-      json_file: "torch_llama3-8b_float32_golden.json"
-    absolute_tolerance: 2.9e-2
-    relative_tolerance: 9.4e-2
-    cos_dist_threshold: 2.6e-6
-    kl_div_threshold: 1.5e-05
-
   meta-llama/Llama-3.1-8B-Instruct-float32:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
@@ -128,34 +113,6 @@ logit_verification_pipelines:
   # and kl divergence.
   # Likely as cosine distance and kl divergence drop below ~1e-5, they should
   # be migrated to being a robust pipelines.
-
-  bartowski/Meta-Llama-3-8B-Instruct-GGUF-q4_k:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "meta-llama/Meta-Llama-3-8B-Instruct"
-    compatible_with: [cpu]
-    encoding: q4_k
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama3-8b_q4_k_golden/1/5078639f4386c9d7e11eff0b09de2917b41494aae1168efe9e3db2bb4c8be3ef/torch_llama3-8b_q4_k_golden.tar.gz"
-      json_file: "torch_llama3-8b_q4_k_golden.json"
-    # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
-    # pipeline.  We only pass with these sky-high tolerances --
-    # something is very wrong but at least we will be able to detect
-    # further regressions with this.
-    cos_dist_threshold: 0.39
-    kl_div_threshold: 8.3e-03
-
-  meta-llama/Meta-Llama-3-8B-Instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "meta-llama/Meta-Llama-3-8B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama3-8b_bfloat16_golden/1/1ba2f2214bfffa3e8e5f166d5d1d5573201efa4dcb5c668f4b84fb9466861e56/torch_llama3-8b_bfloat16_golden.tar.gz"
-      json_file: "torch_llama3-8b_bfloat16_golden.json"
-    cos_dist_threshold: 3.7e-2
-    kl_div_threshold: 1.3e-1
 
   bartowski/Meta-Llama-3.1-8B-Instruct-GGUF-q4_k:
     config_params_override: {"prefer_module_v3": false}
@@ -298,20 +255,6 @@ logit_verification_pipelines:
       json_file: "torch_llama3.2-1b_bfloat16_golden.json"
     cos_dist_threshold: 6.0e-03
     kl_div_threshold: 1.5e-02
-
-  meta-llama/Llama-3.3-70B-Instruct-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "meta-llama/Llama-3.3-70B-Instruct"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-multi]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama3.3-70b-instruct_bfloat16_golden/1/e4a07947f7f23c0b1bc5d297bbe1575b637abb53270e99b284936bf6d2dc703f/torch_llama3.3-70b-instruct_bfloat16_golden.tar.gz"
-      json_file: "torch_llama3.3-70b-instruct_bfloat16_golden.json"
-    # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-    cos_dist_threshold: 9.0e-04
-    kl_div_threshold: 5.0e-03
 
   Qwen/Qwen3-VL-30B-A3B-Instruct:
     pre_submit_agents: []

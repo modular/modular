@@ -170,7 +170,6 @@ declare -a PIPELINES=(
   "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8|gpu|float8-support|Llama 3.1 8B FP8 static"
   "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic|gpu|float8-support|Llama 3.1 8B FP8 dynamic"
   "meta-llama/Llama-3.2-1B|gpu|nvidia-only|Llama 3.2 1B bfloat16"
-  "meta-llama/Llama-3.3-70B-Instruct|gpu|nvidia-multi|Llama 3.3 70B bfloat16"
 
   # Mistral family
   "mistralai/Mistral-Nemo-Instruct-2407|gpu|big|Mistral Nemo bfloat16"
