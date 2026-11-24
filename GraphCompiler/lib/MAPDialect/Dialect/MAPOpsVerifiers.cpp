@@ -502,11 +502,17 @@ LogicalResult IterCacheOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult IterCacheLoadOp::verify() {
-  if (!getCache().getDefiningOp<IterCacheOp>())
+  auto cache = getCache().getDefiningOp<IterCacheOp>();
+  if (!cache)
     return emitOpError() << "reads a value that isn't a map.iter.cache";
-  auto phase = cast<RowwisePhaseOpInterface>(getOperation()->getParentOp());
+  auto phase = getOperation()->getParentOfType<RowwisePhaseOpInterface>();
+  if (!phase || isa<IterCacheOp>(*phase))
+    return emitOpError() << "must be in a fold or a map phase";
   if (getIndex() != phase.getIndexArg())
     return emitOpError() << "must read at its phase's index";
+  if (getOffset() != 0 && !cache.getShared())
+    return emitOpError() << "reads another element of a cache that isn't "
+                            "shared";
   // The phase's closure gets either the tile or one cache as its argument.
   WalkResult other = phase->walk<WalkOrder::PreOrder>([&](Operation *op) {
     if (isa<IterTileLoadOp>(op))

@@ -1624,6 +1624,9 @@ static LogicalResult bindRowValues(EmitMojoState &state, Region &region,
         return failure();
       continue;
     }
+    // A cache is the Row's handle, not a value of the row.
+    if (value.getDefiningOp<RowwiseCacheOp>())
+      continue;
     // <value>.slice[width]()
     state.setMojoValueFor(value,
                           state.getMojoValueFor(value).get("slice")[width]({}));
@@ -2008,7 +2011,7 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
 //     comptime al = Context[params].element_alignment[dtype, w]()
 //     <cache body, reading `tile` and row values as .slice[w]()>
 //     return <the yielded value>
-//   var cache = row.cache[T](compute)                                   (2)
+//   var cache = row.cache[T, shared](compute)                           (2)
 LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
   RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
   MojoValue cached = cachedDType(state, *this);
@@ -2037,19 +2040,44 @@ LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
   if (failedToLower)
     return failure();
 
-  // (2) var cache = row.cache[T](compute)
+  // (2) var cache = row.cache[T, shared](compute)
   info.cacheComputes[getResult()] = compute;
-  state.setMojoValueFor(
-      getResult(), state.file->var(info.row.get("cache")[cached]({compute}),
-                                   /*cache=*/false));
+  MojoValue cache = info.row.get(
+      "cache")[{cached, MojoValue("shared").equal(MojoValue(getShared()))}](
+      {compute});
+  state.setMojoValueFor(getResult(), state.file->var(cache, /*cache=*/false));
   return success();
 }
 
-// The phase's closure gets the cached value as its argument; the read prints
-// nothing: tile
+// The phase's closure gets the cached value as its argument, so a read at its
+// own element prints nothing (1). Another element of a shared cache is read
+// from the row it keeps (2):
+//
+//   tile                                                                (1)
+//   cache.load[w](at_axis[axis](idx, Int(idx[axis]) + offset),          (2)
+//                 load, compute)
 LogicalResult RowwiseCacheLoadOp::emitMojo(EmitMojoState &state) {
-  state.setMojoValueFor(getResult(),
-                        state.currentRegion<RowwiseBodyRegion>().tile);
+  RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+  // (1) tile
+  if (getOffset() == 0) {
+    state.setMojoValueFor(getResult(), info.tile);
+    return success();
+  }
+  // (2) cache.load[w](at_axis[axis](idx, Int(idx[axis]) + offset), ...)
+  auto phase = getOperation()->getParentOfType<RowwisePhaseOpInterface>();
+  MojoValue idx = state.getMojoValueFor(phase.getIndexArg());
+  MojoValue axis(
+      uint64_t(getOperation()->getParentOfType<CallRowwiseOp>().getAxis()));
+  MojoValue column =
+      MojoValue(kStructInt)({idx[axis]}) + MojoValue(getOffsetAttr().getInt());
+  MojoValue moved = kFuncRowwiseAtAxis[axis]({idx, column});
+  MojoValue width = state.currentRegion<ElementwiseLambdaRegion>().width();
+  state.setMojoValueFor(
+      getResult(),
+      state.file->var(
+          state.getMojoValueFor(getCache())
+              .get("load")[width](
+                  {moved, info.load, info.cacheComputes.lookup(getCache())})));
   return success();
 }
 

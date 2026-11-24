@@ -773,7 +773,8 @@ def MAP_IterCacheOp : MAP_Op<"iter.cache", [
     Unlike the tile, it comes after folds and may read their results, and it
     may store at `%i` into tensors of the rowwise shape, such as a side
     output. A phase reads either the tile or one cache, and a row with a
-    cache ends with a map phase.
+    cache ends with a map phase. A `shared` cache can also be read at
+    another element of the row.
 
     Example:
     ```mlir
@@ -793,6 +794,7 @@ def MAP_IterCacheOp : MAP_Op<"iter.cache", [
     ```
   }];
 
+  let arguments = (ins DefaultValuedAttr<BoolAttr, "false">:$shared);
   let results = (outs AnyType:$result);
   let regions = (region SizedRegion<1>:$body);
 
@@ -801,7 +803,6 @@ def MAP_IterCacheOp : MAP_Op<"iter.cache", [
 }
 
 def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
-  ParentOneOf<["IterReduceOp", "IterMapOp"]>,
   AllTypesMatch<["cache", "result"]>,
   Pure,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
@@ -809,12 +810,22 @@ def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
   let summary = "Read a row cache at the current phase's element";
   let description = [{
     Reads the value the `map.iter.cache` `$cache` computes at `$index`, the
-    enclosing phase's index.
+    enclosing phase's index, moved `$offset` elements along the row. A
+    nonzero offset reads another element of the row, so the cache must be
+    `shared`; it may sit in a region of the phase, such as a concat
+    select's, that runs only where the moved element is in the row.
+
+    Example:
+    ```mlir
+    %p = map.iter.cache.load %c[%j] offset(64) : !map.index<2>, bf16
+    ```
   }];
-  let arguments = (ins AnyType:$cache, MAP_AnyIndex:$index);
+  let arguments = (ins AnyType:$cache, MAP_AnyIndex:$index,
+                       DefaultValuedAttr<I64Attr, "0">:$offset);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $cache `[` $index `]` attr-dict `:` type($index) `,` type($result)
+    $cache `[` $index `]` (`offset` `(` $offset^ `)`)? attr-dict `:`
+    type($index) `,` type($result)
   }];
   let hasVerifier = 1;
 }

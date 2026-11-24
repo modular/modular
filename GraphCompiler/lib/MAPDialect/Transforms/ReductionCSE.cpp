@@ -28,6 +28,22 @@
 //                                           %v = map.iter.tile.load %c[%j]
 //                                           ...
 //
+// First, a value the map phase computes at its element and again at another
+// element of the row, in a concat select's regions, is computed once per
+// element in a shared `map.iter.cache`. The regions read the row the cache
+// keeps, `offset` elements away (rotate-half reads each element's partner):
+//
+//   map.iter.map index (%j) {             %c = map.iter.cache index (%i) {
+//     %n = f(%x[%j])                        %n = f(%x[%i])
+//     select(%j) {                  =>      map.yield %n
+//       (%a) { f(%x[slice(%a)]) }         } {shared = true}
+//     } ...                               map.iter.map index (%j) {
+//   }                                       %n = map.iter.cache.load %c[%j]
+//                                           select(%j) {
+//                                             (%a) { map.iter.cache.load
+//                                                      %c[%j] offset(64) }
+//                                           } ...
+//
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h"
@@ -235,11 +251,15 @@ void createTile(RowwiseOpInterface row, RowwisePhaseOpInterface first,
   }
 }
 
-void eraseDeadOps(RowwisePhaseOpInterface phase) {
+// Erases the ops of `region` and its nested regions that nothing reads.
+void eraseDeadOps(Region &region) {
   for (Operation &op : llvm::make_early_inc_range(
-           llvm::reverse(phase->getRegion(0).front().getOperations())))
+           llvm::reverse(region.front().getOperations()))) {
+    for (Region &inner : op.getRegions())
+      eraseDeadOps(inner);
     if (isOpTriviallyDead(&op))
       op.erase();
+  }
 }
 
 void createRowTile(RowwiseOpInterface row) {
@@ -271,14 +291,193 @@ void createRowTile(RowwiseOpInterface row) {
   ASSERT_STREAM(tile, << "the load of the reduced input always qualifies");
   createTile(row, first, *tile);
   for (RowwisePhaseOpInterface phase : phases)
-    eraseDeadOps(phase);
+    eraseDeadOps(phase->getRegion(0));
+}
+
+// How far `index` moves from `phaseIndex` along `axis`, the other coordinates
+// kept: through a concat select's region on `axis`, which runs at its index
+// minus the extents before it, and slices that move only `axis`.
+std::optional<int64_t> shiftAlong(Value index, Value phaseIndex, int64_t axis) {
+  if (index == phaseIndex)
+    return 0;
+  if (auto arg = dyn_cast<BlockArgument>(index)) {
+    auto select = dyn_cast<ConcatSelectOp>(arg.getOwner()->getParentOp());
+    if (!select || select.getSpec().getAxis() != axis)
+      return std::nullopt;
+    std::optional<int64_t> shift =
+        shiftAlong(select.getIndex(), phaseIndex, axis);
+    unsigned region = arg.getOwner()->getParent()->getRegionNumber();
+    for (MOSH::ShapeAttr input :
+         select.getSpec().getInputShapes().take_front(region)) {
+      std::optional<int64_t> extent =
+          MOSH::ShapeAttr::getStaticDim(input[axis]);
+      if (!shift || !extent)
+        return std::nullopt;
+      *shift -= *extent;
+    }
+    return shift;
+  }
+  auto slice = index.getDefiningOp<SliceIndexOp>();
+  if (!slice)
+    return std::nullopt;
+  std::optional<int64_t> shift = shiftAlong(slice.getIndex(), phaseIndex, axis);
+  SliceSpecAttr spec = slice.getSpec();
+  for (auto [d, start, step] : llvm::enumerate(spec.getStarts().asArrayRef(),
+                                               spec.getSteps().asArrayRef()))
+    if (!shift || step != 1 || ShapedType::isDynamic(start) ||
+        (static_cast<int64_t>(d) != axis && start != 0))
+      return std::nullopt;
+  return *shift + spec.getStarts()[axis];
+}
+
+struct MovedCopy {
+  Value value;
+  int64_t offset;
+};
+
+// A value a map phase computes at its element from a load, and its copies at
+// other elements of the row.
+struct SharedValue {
+  Value value;
+  SmallVector<MovedCopy> copies;
+};
+
+// Values `phase` computes from a load, without nested regions, so a cache
+// can compute them instead.
+SmallVector<Value> loadedValues(IterMapOp phase) {
+  auto rowPhase = cast<RowwisePhaseOpInterface>(*phase);
+  SmallVector<Value> values;
+  for (Operation &op : phase.getBody().front()) {
+    if (op.getNumResults() != 1 || !op.getResult(0).getType().isIntOrFloat())
+      continue;
+    llvm::SetVector<Operation *> ops = exprOps(op.getResult(0), rowPhase);
+    if (llvm::any_of(ops, llvm::IsaPred<LoadOp>) &&
+        llvm::none_of(ops, [](Operation *o) { return o->getNumRegions(); }))
+      values.push_back(op.getResult(0));
+  }
+  return values;
+}
+
+// The value of `phase` whose copies its concat selects on the row's axis
+// compute at other elements of the row, in their regions. The outermost copy
+// counts, and all copies must be of one value: a row has one cache.
+std::optional<SharedValue> findSharedValue(IterRowwiseOp row, IterMapOp phase) {
+  auto rowPhase = cast<RowwisePhaseOpInterface>(*phase);
+  Value index = rowPhase.getIndexArg();
+  SmallVector<Value> candidates = loadedValues(phase);
+  std::optional<SharedValue> shared;
+  bool conflict = false;
+  // Records `copy` when it is a candidate at an index moved along the row. A
+  // copy that reads a value the phase computes at its own element isn't one.
+  auto matchCopy = [&](Value copy, Region &region) {
+    llvm::SetVector<Operation *> ops = exprOps(copy, rowPhase);
+    if (llvm::any_of(ops, [&](Operation *def) {
+          return llvm::any_of(def->getOperands(), [&](Value operand) {
+            return rowPhase->isAncestor(
+                       operand.getParentRegion()->getParentOp()) &&
+                   !region.isAncestor(operand.getParentRegion());
+          });
+        }))
+      return false;
+    for (Operation *def : ops)
+      for (Value moved : def->getOperands()) {
+        std::optional<int64_t> offset =
+            isa<IndexType>(moved.getType())
+                ? shiftAlong(moved, index, row.getAxis())
+                : std::nullopt;
+        if (!offset || *offset == 0)
+          continue;
+        ElementExprs exprs;
+        for (Value value : candidates) {
+          if (!exprs.same(copy, moved, value, index))
+            continue;
+          conflict |= shared && shared->value != value;
+          if (!shared)
+            shared = SharedValue{value, {}};
+          shared->copies.push_back({copy, *offset});
+          return true;
+        }
+      }
+    return false;
+  };
+  phase.walk([&](ConcatSelectOp select) {
+    if (select.getIndex() != index ||
+        select.getSpec().getAxis() != static_cast<int64_t>(row.getAxis()))
+      return;
+    for (Region &region : select.getInputs()) {
+      SmallVector<Operation *> ops;
+      region.walk([&](Operation *op) { ops.push_back(op); });
+      llvm::DenseSet<Operation *> covered;
+      for (Operation *op : llvm::reverse(ops))
+        if (!covered.contains(op) && op->getNumResults() == 1 &&
+            matchCopy(op->getResult(0), region)) {
+          llvm::SetVector<Operation *> inner =
+              exprOps(op->getResult(0), rowPhase);
+          covered.insert(inner.begin(), inner.end());
+        }
+    }
+  });
+  if (conflict)
+    return std::nullopt;
+  return shared;
+}
+
+// Computes `shared.value` in a shared cache before `phase`, which reads it
+// at its element, and its copies further along the row.
+void createSharedCache(IterMapOp phase, const SharedValue &shared) {
+  Location loc = phase.getLoc();
+  Value index = cast<RowwisePhaseOpInterface>(*phase).getIndexArg();
+  Type type = shared.value.getType();
+  OpBuilder builder(phase);
+  auto cache = IterCacheOp::create(builder, loc, type, /*shared=*/true);
+  Block *block =
+      builder.createBlock(&cache.getBody(), {}, {index.getType()}, {loc});
+  IRMapping mapping;
+  mapping.map(index, block->getArgument(0));
+  SmallVector<Operation *> ops =
+      exprOps(shared.value, cast<RowwisePhaseOpInterface>(*phase)).takeVector();
+  llvm::sort(ops,
+             [](Operation *a, Operation *b) { return a->isBeforeInBlock(b); });
+  for (Operation *op : ops)
+    builder.clone(*op, mapping);
+  YieldOp::create(builder, loc, mapping.lookup(shared.value));
+
+  auto readAt = [&](Value value, int64_t offset) {
+    builder.setInsertionPoint(value.getDefiningOp());
+    value.replaceAllUsesWith(IterCacheLoadOp::create(builder, value.getLoc(),
+                                                     type, cache.getResult(),
+                                                     index, offset)
+                                 .getResult());
+  };
+  readAt(shared.value, 0);
+  for (const MovedCopy &copy : shared.copies)
+    readAt(copy.value, copy.offset);
+  eraseDeadOps(phase.getBody());
+}
+
+void cacheSharedValue(RowwiseOpInterface rowOp) {
+  auto row = dyn_cast<IterRowwiseOp>(*rowOp);
+  Block &body = rowOp->getRegion(0).front();
+  // A row has one cache, which follows a fold and comes before the tile.
+  if (!row || !body.getOps<IterCacheOp>().empty() ||
+      !body.getOps<IterTileOp>().empty() ||
+      body.getOps<IterReduceOp>().empty() || body.getOps<IterMapOp>().empty())
+    return;
+  IterMapOp phase;
+  for (IterMapOp map : body.getOps<IterMapOp>())
+    phase = map;
+  if (std::optional<SharedValue> shared = findSharedValue(row, phase))
+    createSharedCache(phase, *shared);
 }
 
 struct ReductionCSEPass : public impl::ReductionCSEBase<ReductionCSEPass> {
   using Base::Base;
 
   void runOnOperation() override {
-    getOperation().walk([](RowwiseOpInterface row) { createRowTile(row); });
+    getOperation().walk([](RowwiseOpInterface row) {
+      cacheSharedValue(row);
+      createRowTile(row);
+    });
   }
 };
 

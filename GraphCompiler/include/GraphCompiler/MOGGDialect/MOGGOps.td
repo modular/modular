@@ -2028,8 +2028,10 @@ def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
     read with `mogg.rowwise.cache.load` instead of computing it again. It
     reads the tile and the row's values computed before it, and may store
     each element. It prints as the Row's `cache`, and a phase that reads it
-    as the cached overload of its Row call.
+    as the cached overload of its Row call. A `shared` cache also keeps the
+    row in shared memory, where a phase reads other elements of it.
   }];
+  let arguments = (ins DefaultValuedAttr<BoolAttr, "false">:$shared);
   let results = (outs MOGG_Simd:$result);
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
@@ -2037,7 +2039,6 @@ def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
 }
 
 def MOGG_RowwiseCacheLoadOp : MOGG_Op<"rowwise.cache.load", [
-  ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp"]>,
   AllTypesMatch<["cache", "result"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
   Pure,
@@ -2045,12 +2046,16 @@ def MOGG_RowwiseCacheLoadOp : MOGG_Op<"rowwise.cache.load", [
   let summary = "Read a row cache at the current element.";
   let description = [{
     Reads the value the `mogg.rowwise.cache` `$cache` computes, at the
-    phase's own index. A phase reads either the tile or one cache: the value
-    the Row hands its closure.
+    phase's own index moved `$offset` elements along the row. A phase reads
+    either the tile or one cache: the value the Row hands its closure. A
+    nonzero offset reads a `shared` cache's row from shared memory.
   }];
-  let arguments = (ins MOGG_Simd:$cache);
+  let arguments = (ins MOGG_Simd:$cache,
+                       DefaultValuedAttr<I64Attr, "0">:$offset);
   let results = (outs MOGG_Simd:$result);
-  let assemblyFormat = "$cache attr-dict `:` qualified(type($cache))";
+  let assemblyFormat = [{
+    $cache (`offset` `(` $offset^ `)`)? attr-dict `:` qualified(type($cache))
+  }];
   let hasVerifier = 1;
 }
 

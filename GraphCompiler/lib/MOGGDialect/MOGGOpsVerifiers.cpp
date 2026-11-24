@@ -450,19 +450,23 @@ LogicalResult RowwiseCacheOp::verify() {
 }
 
 LogicalResult RowwiseCacheLoadOp::verify() {
-  if (!getCache().getDefiningOp<RowwiseCacheOp>())
+  auto cache = getCache().getDefiningOp<RowwiseCacheOp>();
+  if (!cache)
     return emitOpError("reads a value that isn't a mogg.rowwise.cache");
+  Operation *phase = getOperation()->getParentOfType<RowwisePhaseOpInterface>();
+  if (!isa_and_present<RowwiseReduceOp, RowwiseMapOp>(phase))
+    return emitOpError("must be in a fold or a map phase");
+  if (getOffset() != 0 && !cache.getShared())
+    return emitOpError("reads another element of a cache that isn't shared");
   // The phase's closure gets either the tile or one cache as its argument.
-  WalkResult other =
-      getOperation()->getParentOp()->walk<mlir::WalkOrder::PreOrder>(
-          [&](Operation *op) {
-            if (isa<RowwiseTileLoadOp>(op))
-              return WalkResult::interrupt();
-            if (auto load = dyn_cast<RowwiseCacheLoadOp>(op);
-                load && load.getCache() != getCache())
-              return WalkResult::interrupt();
-            return WalkResult::advance();
-          });
+  WalkResult other = phase->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (isa<RowwiseTileLoadOp>(op))
+      return WalkResult::interrupt();
+    if (auto load = dyn_cast<RowwiseCacheLoadOp>(op);
+        load && load.getCache() != getCache())
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
   if (other.wasInterrupted())
     return emitOpError("must be the only source of its phase: it reads the "
                        "tile or another cache too");

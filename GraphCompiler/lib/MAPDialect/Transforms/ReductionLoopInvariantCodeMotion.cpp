@@ -27,6 +27,7 @@
 #include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h"
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
 #include "GraphCompiler/MAPDialect/Transforms/MAPTransforms.h"
+#include "Support/AssertStream.h"
 
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -65,11 +66,26 @@ void hoistLoad(IterRowwiseOp dst, IterMapOp phase, LoadOp load,
     chain.push_back(def);
     root = cast<IndexTransformOpInterface>(def).getIndex();
   }
-  // The phase's index or a select region's argument: any index in the row.
+  // The phase's index or a select region's argument: any index in the row. A
+  // transform that keeps every loop dimension in place only moves the
+  // coordinate along the row, which the load ignores, so it goes: copies read
+  // in a select's regions then match for CSE.
   IRMapping toRow;
   toRow.map(root, dst.getRowArg());
-  for (Operation *def : llvm::reverse(chain))
+  auto loopDims = llvm::to_vector(
+      llvm::seq<int64_t>(0, cast<IndexType>(root.getType()).getRank()));
+  for (Operation *def : llvm::reverse(chain)) {
+    auto transform = cast<IndexTransformOpInterface>(def);
+    std::optional<SmallVector<int64_t>> next =
+        transform.mapLoopDims(loopDims, dst.getAxis());
+    ASSERT_STREAM(next, << "traceLoopDims mapped the whole chain");
+    if (*next == loopDims) {
+      toRow.map(def->getResult(0), toRow.lookup(transform.getIndex()));
+      continue;
+    }
+    loopDims = std::move(*next);
     rewriter.clone(*def, toRow);
+  }
   rewriter.replaceOp(load, rewriter.clone(*load, toRow)->getResults());
 }
 
@@ -125,6 +141,7 @@ struct ReductionLoopInvariantCodeMotionPass
       for (IterMapOp phase : llvm::make_early_inc_range(
                dst.getBody().front().getOps<IterMapOp>()))
         hoistRowInvariant(dst, phase, rewriter);
+      return WalkResult::skip();
     });
   }
 };

@@ -708,12 +708,40 @@ mo.graph @cacheLoadInCache(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128]
       map.yield %xv : f32
     }
     %d = map.iter.cache index (%k: !map.index<2>) -> f32 {
-      // expected-error @below{{expects parent op to be one of 'map.iter.reduce, map.iter.map'}}
+      // expected-error @below{{must be in a fold or a map phase}}
       %v = map.iter.cache.load %c[%k] : !map.index<2>, f32
       map.yield %v : f32
     }
     map.iter.map index (%j: !map.index<2>) {
       %v = map.iter.cache.load %d[%j] : !map.index<2>, f32
+      map.store %out[%j] = %v : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}
+
+// -----
+
+mo.graph @cacheOffsetNotShared(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    %p = map.iter.tile index (%k: !map.index<2>) -> f32 {
+      %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
+      map.yield %xv : f32
+    }
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %v = map.iter.tile.load %p[%i] : !map.index<2>, f32
+      map.yield %v : f32
+    }
+    %c = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %xv = map.iter.tile.load %p[%k] : !map.index<2>, f32
+      map.yield %xv : f32
+    }
+    map.iter.map index (%j: !map.index<2>) {
+      // expected-error @below{{reads another element of a cache that isn't shared}}
+      %v = map.iter.cache.load %c[%j] offset(1) : !map.index<2>, f32
       map.store %out[%j] = %v : !mo.tensor<[8, 128], f32>
     }
   }

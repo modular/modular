@@ -338,6 +338,8 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
   pm.addNestedPass<GraphOp>(MAP::createReductionLoopInvariantCodeMotion());
+  // Map phases may hoist the same row value, and map-rcse needs one copy.
+  pm.addNestedPass<GraphOp>(mlir::createCSEPass());
   pm.addNestedPass<GraphOp>(MAP::createReductionCSE());
 
   // After fusion settles, give every fused-output epilogue a real store pointer

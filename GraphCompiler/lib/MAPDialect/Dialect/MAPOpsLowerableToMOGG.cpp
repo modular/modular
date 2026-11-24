@@ -1301,15 +1301,21 @@ LogicalResult IterTileLoadOp::lowerToMOGG(MAPToMOGGState &state) {
 
 // map.iter.cache -> mogg.rowwise.cache.
 LogicalResult IterCacheOp::lowerToMOGG(MAPToMOGGState &state) {
-  return lowerRowValue<MOGG::RowwiseCacheOp>(*this, state);
+  if (failed(lowerRowValue<MOGG::RowwiseCacheOp>(*this, state)))
+    return failure();
+  state.mapping.lookup(getResult())
+      .getDefiningOp<MOGG::RowwiseCacheOp>()
+      .setShared(getShared());
+  return success();
 }
 
 // map.iter.cache.load -> mogg.rowwise.cache.load.
 LogicalResult IterCacheLoadOp::lowerToMOGG(MAPToMOGGState &state) {
-  state.mapping.map(getResult(), MOGG::RowwiseCacheLoadOp::create(
-                                     state.builder, getLoc(),
-                                     state.mapping.lookup(getCache()))
-                                     .getResult());
+  state.mapping.map(getResult(),
+                    MOGG::RowwiseCacheLoadOp::create(
+                        state.builder, getLoc(),
+                        state.mapping.lookup(getCache()), getOffset())
+                        .getResult());
   return success();
 }
 
