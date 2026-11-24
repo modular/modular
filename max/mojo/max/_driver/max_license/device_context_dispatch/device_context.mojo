@@ -45,9 +45,12 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,
-    _HALDeviceExternalFunction,
-    _HALDeviceFunction,
-    _check_config_dims,
+)
+from ._hal_launch import (
+    _hal_check_config,
+    _hal_check_grid_block,
+    _hal_enqueue_compiled,
+    _hal_enqueue_external,
 )
 from max._driver.max_license.hal import (
     Buffer,
@@ -2530,38 +2533,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
             return
 
-        var hal_f: _HALDeviceExternalFunction = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_external(
-                self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args
-            )
-        else:
-            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-                grid_dim, location=call_location()
-            )
-            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-                block_dim, location=call_location()
-            )
-            f._call_with_pack(
-                self._hal_stream(),
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_external[Self.target, "DeviceContext.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -2650,39 +2633,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 )
             return
 
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args)
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
-            f._call_with_pack_checked(
-                self,
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_compiled[Self.target, "DeviceContext.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -2735,27 +2697,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceContext"
         )
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](
-                self._hal_stream()[],
-                hal_f._inner[]._func_handle,
-                execution_config,
-                *args,
-            )
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceContext.enqueue_function"](
-                    execution_config, location=call_location()
-                )
-            f._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_compiled[Self.target, "DeviceContext.enqueue_function"](
+            self,
+            execution_config,
+            f,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -2891,13 +2839,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], launch, *encoded_args, host_args=host_args
             )
         else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+            _hal_check_grid_block[
+                Self.target, "DeviceContext.enqueue_function"
+            ](grid_dim, block_dim, call_location())
             var gpu_kernel = self.compile_function[func](
                 func_attribute=func_attribute
             )
@@ -3034,10 +2978,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         else:
             var gpu_kernel = self.compile_function[func]()
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceContext.enqueue_function"](
-                    execution_config, location=call_location()
-                )
+            _hal_check_config[Self.target, "DeviceContext.enqueue_function"](
+                execution_config, call_location()
+            )
             comptime for idx in range(HostArgs.length):
                 type_of(gpu_kernel)._check_trailing_host[
                     HostArgs[idx], encoded_types.length + idx
@@ -3365,13 +3308,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], launch, func
             )
         else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+            _hal_check_grid_block[
+                Self.target, "DeviceContext.enqueue_function"
+            ](grid_dim, block_dim, call_location())
             var gpu_kernel = DeviceFunction[
                 FuncType.__call__, target=Self.target
             ](self, func_attribute=func_attribute)
@@ -3426,10 +3365,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, func
             )
         else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceContext.enqueue_function"](
-                    execution_config, location=call_location()
-                )
+            _hal_check_config[Self.target, "DeviceContext.enqueue_function"](
+                execution_config, call_location()
+            )
 
             var gpu_kernel = DeviceFunction[
                 FuncType.__call__, target=Self.target

@@ -26,9 +26,6 @@ from std.os import abort
 from std.reflection import SourceLocation, call_location
 from std.sys.info import CompilationTarget
 
-from max._driver.max_license.device_context_dispatch.device_function import (
-    _check_config_dims,
-)
 from max._driver.max_license.hal import Event, Stream, get_device_spec
 from max._driver.max_license.hal.extensions.completion_flag import FlagCondition
 from max._driver.max_license.hal.extensions.traits import (
@@ -40,7 +37,6 @@ from max._driver.max_license.hal.extensions.traits import (
     SupportsPeerAccessV1,
 )
 from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
-from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
 from max._plugin import MaxPluginForTarget
 from .device_context import use_legacy_backend
 from max.gpu.host._legacy.device_context import (
@@ -70,8 +66,11 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,
-    _HALDeviceExternalFunction,
-    _HALDeviceFunction,
+)
+from ._hal_launch import (
+    _hal_check_config,
+    _hal_enqueue_compiled,
+    _hal_enqueue_external,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
@@ -465,39 +464,18 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             )
             return
 
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args)
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
-            f._call_with_pack_checked(
-                self,
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=call_location(),
-            )
+        _hal_enqueue_compiled[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=call_location(),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -543,11 +521,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 DeviceContext[Self.target].FunctionWrapper,
                 target=Self.target,
             ](self._impl._ctx)
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceStream.enqueue_function"](
-                    execution_config, location=call_location()
-                )
-
+            _hal_check_config[Self.target, "DeviceStream.enqueue_function"](
+                execution_config, call_location()
+            )
             gpu_f._do_call_with_pack_checked(
                 self._hal_stream(),
                 execution_config,
@@ -588,28 +564,13 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceStream"
         )
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](
-                self._hal_stream()[],
-                hal_f._inner[]._func_handle,
-                execution_config,
-                *args,
-            )
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceStream.enqueue_function"](
-                    execution_config, location=call_location()
-                )
-
-            f._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_compiled[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            execution_config,
+            f,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -650,38 +611,18 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "external functions can only be enqueued on a HAL DeviceStream"
-        var hal_f: _HALDeviceExternalFunction = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_external(
-                self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args
-            )
-        else:
-            _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
-                grid_dim, location=call_location()
-            )
-            _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
-                block_dim, location=call_location()
-            )
-            f._call_with_pack(
-                self._hal_stream(),
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_external[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -715,30 +656,13 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "external functions can only be enqueued on a HAL DeviceStream"
-        var hal_f: _HALDeviceExternalFunction = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_external(
-                self._hal_stream()[],
-                hal_f._inner[]._func_handle,
-                execution_config,
-                *args,
-            )
-        else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
-            _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
-                grid_dim, location=call_location()
-            )
-            _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
-                block_dim, location=call_location()
-            )
-            f._call_with_pack(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_external[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            execution_config,
+            f,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
 
 comptime DeviceStream = DeviceStreamBase[]
