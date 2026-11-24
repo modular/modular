@@ -428,33 +428,6 @@ def test_lfm3_smoke_uses_architecture_defaults(
     }.intersection(cmd)
 
 
-@pytest.mark.parametrize(
-    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
-)
-@pytest.mark.parametrize("model", ["moonshotai/Kimi-K3", "MOONSHOTAI/KIMI-K3"])
-def test_kimi_k3_vision_detection(model: str, framework: str | None) -> None:
-    assert smoke_test.is_vision_model(model, framework) is (
-        framework == "mach-ci"
-    )
-
-
-@pytest.mark.parametrize(
-    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
-)
-def test_kimi_k3_dspark_stays_text_only(framework: str | None) -> None:
-    assert not smoke_test.is_vision_model(
-        "moonshotai/Kimi-K3__dspark", framework
-    )
-    assert not smoke_test.is_vision_model(
-        "MOONSHOTAI/KIMI-K3__DSPARK", framework
-    )
-
-
-@pytest.mark.parametrize("model", ["other/Kimi-K3", "moonshotai/Kimi-K3-extra"])
-def test_kimi_k3_vision_detection_requires_exact_repo(model: str) -> None:
-    assert not smoke_test.is_vision_model(model, "mach-ci")
-
-
 CASCADE_KEY = "google/gemma-4-31B-it__cascade"
 
 
@@ -470,17 +443,18 @@ def test_cascade_gate_admits_max_and_mach_only() -> None:
 
 def test_cascade_run_is_text_only() -> None:
     # The key is a vision model, so the Cascade flag is what drops the images.
-    assert smoke_test.runs_vision(CASCADE_KEY, "mach-ci", cascade=False)
-    assert not smoke_test.runs_vision(CASCADE_KEY, "mach-ci", cascade=True)
-    assert smoke_test.tasks_for(
-        CASCADE_KEY, "mach-ci", cascade=False, override=()
-    ) == [smoke_test.VISION_TASK, smoke_test.TEXT_TASK]
-    assert smoke_test.tasks_for(
-        CASCADE_KEY, "mach-ci", cascade=True, override=()
-    ) == [smoke_test.TEXT_TASK]
+    assert smoke_test.runs_vision(CASCADE_KEY, cascade=False)
+    assert not smoke_test.runs_vision(CASCADE_KEY, cascade=True)
+    assert smoke_test.tasks_for(CASCADE_KEY, cascade=False, override=()) == [
+        smoke_test.VISION_TASK,
+        smoke_test.TEXT_TASK,
+    ]
+    assert smoke_test.tasks_for(CASCADE_KEY, cascade=True, override=()) == [
+        smoke_test.TEXT_TASK
+    ]
 
 
 def test_override_tasks_win_over_the_cascade_default() -> None:
     assert smoke_test.tasks_for(
-        CASCADE_KEY, "mach-ci", cascade=True, override=("babilong_qa1",)
+        CASCADE_KEY, cascade=True, override=("babilong_qa1",)
     ) == ["babilong_qa1"]

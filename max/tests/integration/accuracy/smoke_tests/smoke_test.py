@@ -223,11 +223,12 @@ SERVERS: dict[
 
 
 # TODO Refactor this to a model list/matrix specifying type of model
-def is_vision_model(model: str, framework: str | None = None) -> bool:
-    """Selects image coverage supported by the model's smoke route."""
+def is_vision_model(model: str) -> bool:
+    """Returns whether the model serves images in its smoke route."""
     model = model.casefold()
+    # Kimi-K3's DSpark export has no vision graph.
     if model.split("__", 1)[0] == "moonshotai/kimi-k3":
-        return framework == "mach-ci" and not model.endswith("__dspark")
+        return not model.endswith("__dspark")
     # gemma-4-12B is served text-only in MAX (gemma4_unified arch), and Mach
     # serves its pipeline-parallel variants (`__pp`, `__pp_mtp`) text-only.
     if any(
@@ -262,22 +263,22 @@ def cascade_gate(framework: str, cascade: bool) -> None:
         )
 
 
-def runs_vision(model: str, framework: str, cascade: bool) -> bool:
+def runs_vision(model: str, cascade: bool) -> bool:
     """Whether the run sends images.
 
     TODO(SERVSYS-1330): run the vision task with Cascade once it accepts
     images.
     """
-    return is_vision_model(model, framework) and not cascade
+    return is_vision_model(model) and not cascade
 
 
 def tasks_for(
-    model: str, framework: str, cascade: bool, override: tuple[str, ...]
+    model: str, cascade: bool, override: tuple[str, ...]
 ) -> list[str]:
     """The eval tasks this run uses."""
     if override:
         return list(override)
-    if runs_vision(model, framework, cascade):
+    if runs_vision(model, cascade):
         return [VISION_TASK, TEXT_TASK]
     return [TEXT_TASK]
 
@@ -823,7 +824,7 @@ def smoke_test(
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
     cascade_gate(framework, cascade)
-    vision = runs_vision(model, framework, cascade)
+    vision = runs_vision(model, cascade)
     # A recipe can serve its weights under another name; requests must use it.
     served = hf_model_path
     if recipe_path:
@@ -851,7 +852,7 @@ def smoke_test(
         logger.info(f"Starting server with command:\n {shlex.join(cmd)}")
         serving = start_server(cmd, timeout, env_overrides=server_env)
 
-    tasks = tasks_for(model, framework, cascade, override_tasks)
+    tasks = tasks_for(model, cascade, override_tasks)
 
     results = []
     all_samples = []
