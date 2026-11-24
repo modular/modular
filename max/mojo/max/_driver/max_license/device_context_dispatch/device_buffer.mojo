@@ -533,7 +533,7 @@ struct DeviceBuffer[dtype: DType](
 
         This method schedules a memory copy operation from this buffer to the
         destination buffer. The operation is asynchronous and will be executed
-        in the stream associated with this buffer's context.
+        in the stream associated with the destination buffer's context.
 
         Args:
             dst: Device buffer to copy to.
@@ -541,18 +541,15 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_to(dst._impl)
-            return
-
-        self.context().enqueue_copy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
 
         This method schedules a memory copy operation from this buffer to the
         destination host buffer. The operation is asynchronous and will be
-        executed in the stream associated with this buffer's context.
+        executed in the stream associated with the destination buffer's
+        context.
 
         Args:
             dst: Host buffer to copy to.
@@ -560,11 +557,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_to(dst._impl)
-            return
-
-        self.context().enqueue_copy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
         self, dst_ptr: Pointer[mut=True, Scalar[Self.dtype], _]
@@ -593,10 +586,6 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_from(src._impl)
-            return
-
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
@@ -612,10 +601,6 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_from(src._impl)
-            return
-
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
@@ -633,10 +618,6 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_from(src_ptr)
-            return
-
         self.context().enqueue_copy(self, src_ptr)
 
     def enqueue_copy_from(
@@ -650,10 +631,6 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_from(src)
-            return
-
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_to(
@@ -667,10 +644,6 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_to(dst)
-            return
-
         self.context().enqueue_copy(dst, self)
 
     def enqueue_fill(self, val: Scalar[Self.dtype]) raises:
@@ -686,10 +659,6 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_fill(val)
-            return
-
         self.context().enqueue_memset(self, val)
 
     comptime _Handle = (

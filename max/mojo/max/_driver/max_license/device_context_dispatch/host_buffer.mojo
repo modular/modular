@@ -399,7 +399,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
 
         This method schedules a memory copy operation from this buffer to the
         destination device buffer. The operation is asynchronous and will be
-        executed in the stream associated with this buffer's context.
+        executed in the stream associated with the destination buffer's
+        context.
 
         Args:
             dst: Device buffer to copy to.
@@ -407,11 +408,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_to(dst._impl)
-            return
-
-        self.context().enqueue_copy(dst, self)
+        dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
         self, dst_ptr: Pointer[mut=True, Scalar[Self.dtype], _]
@@ -424,11 +421,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime assert use_legacy_backend(), (
-            "enqueue_copy_to a raw pointer is only available on the legacy"
-            " DeviceContext"
-        )
-        self._impl.enqueue_copy_to(dst_ptr)
+        self.context().enqueue_copy(dst_ptr, self)
 
     def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from another host buffer.
@@ -460,10 +453,6 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_from(src._impl)
-            return
-
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
@@ -477,11 +466,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime assert use_legacy_backend(), (
-            "enqueue_copy_from a raw pointer is only available on the legacy"
-            " DeviceContext"
-        )
-        self._impl.enqueue_copy_from(src_ptr)
+        self.context().enqueue_copy(self, src_ptr)
 
     def enqueue_copy_from(
         self, src: Span[mut=False, Scalar[Self.dtype], _]
@@ -494,10 +479,6 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_from(src)
-            return
-
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_to(
@@ -511,10 +492,6 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy_to(dst)
-            return
-
         self.context().enqueue_copy(dst, self)
 
     def enqueue_fill(self, val: Scalar[Self.dtype]) raises:
@@ -526,10 +503,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime assert (
-            use_legacy_backend()
-        ), "enqueue_fill is only available on the legacy DeviceContext"
-        self._impl.enqueue_fill(val)
+        self.context().enqueue_memset(self, val)
 
     def take_ptr(deinit self) -> Self._HostPtr:
         """Takes ownership of the host pointer from this buffer.

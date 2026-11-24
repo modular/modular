@@ -1751,10 +1751,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst_ptr, src_ptr, size)
-            return
-
         self.enqueue_copy(
             DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
             DeviceBuffer[dtype](self, src_ptr, size, owning=False),
@@ -2023,10 +2019,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst_buf._impl, src)
-            return
-
         debug_assert(
             len(src) >= len(dst_buf),
             "source span length must be >= destination buffer length",
@@ -2054,10 +2046,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst_buf._impl, src)
-            return
-
         debug_assert(
             len(src) >= len(dst_buf),
             "source span length must be >= destination buffer length",
@@ -2088,10 +2076,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst, src_buf._impl)
-            return
-
         debug_assert(
             len(dst) >= len(src_buf),
             "destination span length must be >= source buffer length",
@@ -2120,10 +2104,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst, src_buf._impl)
-            return
-
         debug_assert(
             len(dst) >= len(src_buf),
             "destination span length must be >= source buffer length",

@@ -1214,9 +1214,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.multiprocessor_count()
-
         return self.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
     def max_threads_per_block(self) raises -> Int:
@@ -1232,9 +1229,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_threads_per_block()
-
         return self.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
 
     def max_shared_memory_per_block(self) raises -> Int:
@@ -1250,9 +1244,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_shared_memory_per_block()
-
         return self.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
 
     def max_grid_dim_x(self) raises -> Int:
@@ -1267,9 +1258,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim_x()
-
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_X)
 
     def max_grid_dim_y(self) raises -> Int:
@@ -1284,9 +1272,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim_y()
-
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Y)
 
     def max_grid_dim_z(self) raises -> Int:
@@ -1301,9 +1286,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim_z()
-
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Z)
 
     def max_grid_dim(self) raises -> Dim:
@@ -1320,9 +1302,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim()
-
         return Dim(
             self.max_grid_dim_x(), self.max_grid_dim_y(), self.max_grid_dim_z()
         )
