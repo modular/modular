@@ -184,6 +184,12 @@ private:
 
 enum class VisitedState { SUS, NOSUS, SUS_AND_NOSUS };
 
+static int32_t getSuspensionState(SuspendOp suspend) {
+  assert(suspend.getStateAttr() &&
+         "suspension point was not numbered by preprocessing");
+  return static_cast<int32_t>(*suspend.getState());
+}
+
 static Operation *insertCoroutineEnd(ImplicitLocOpBuilder &builder,
                                      Value callback, Value closure) {
   auto signatureType = cast<FuncTypeGeneratorType>(callback.getType());
@@ -574,12 +580,11 @@ FuncOp LowerAsyncBuildContext::createColdResume(StringRef prefix, FuncOp funcOp,
                          /*loadFromFrame=*/true);
 
   // Insert state updates.
-  int susId = 0;
   Value continuation = resumeFunction.getBodyRegion().getArgument(0);
   resumeFunction.walk([&](SuspendOp suspendOp) {
     builder.setInsertionPoint(suspendOp);
-    Value newState =
-        ParamConstantOp::create(builder, builder.getI32IntegerAttr(++susId));
+    Value newState = ParamConstantOp::create(
+        builder, builder.getI32IntegerAttr(getSuspensionState(suspendOp)));
     Value stateSlot = StructGEPOp::create(builder, continuation, State);
     StoreOp::create(builder, newState, stateSlot);
   });
@@ -662,16 +667,13 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
   }
 
   // (4) Insert state updates.
-  int susId = 0;
   Value continuation = resumeFunction.getBodyRegion().getArgument(0);
   resumeFunction.walk([&](SuspendOp suspendOp) {
-    if (frame.firstSuspends().contains(suspendOp)) {
-      ++susId;
+    if (frame.firstSuspends().contains(suspendOp))
       return;
-    }
     builder.setInsertionPoint(suspendOp);
-    Value newState =
-        ParamConstantOp::create(builder, builder.getI32IntegerAttr(++susId));
+    Value newState = ParamConstantOp::create(
+        builder, builder.getI32IntegerAttr(getSuspensionState(suspendOp)));
     Value stateSlot = StructGEPOp::create(builder, continuation, State);
     StoreOp::create(builder, newState, stateSlot);
   });
@@ -829,15 +831,14 @@ FuncOp LowerAsyncBuildContext::createHotRamp(StringRef prefix, FuncOp original,
   // Return the continuation.
   Value bitcast = PointerBitcastOp::create(
       builder, PointerType::get(coTypes.getHeaderType()), continuation);
-  int susId = 0;
   hotRamp.walk([&](Operation *op) {
     if (auto returnOp = dyn_cast<ReturnOp>(op)) {
       returnOp->insertOperands(0, bitcast);
     } else if (auto suspend = dyn_cast<SuspendOp>(op)) {
       // Insert state change
       builder.setInsertionPoint(suspend);
-      Value newState =
-          ParamConstantOp::create(builder, builder.getI32IntegerAttr(++susId));
+      Value newState = ParamConstantOp::create(
+          builder, builder.getI32IntegerAttr(getSuspensionState(suspend)));
       Value stateSlot = StructGEPOp::create(builder, continuation, State);
       StoreOp::create(builder, newState, stateSlot);
 
@@ -1228,6 +1229,7 @@ void LowerAsyncBuildContext::preprocessAsyncFunction(
   // (1) move stack allocation ops as close to their first use as possible.
   // (2) insert suspension points around hot invokes
   // (3) update the temperatures of calls to async functions
+  // (4) number the suspension points
   SmallVector<StackAllocationOp> allocs;
   funcOp.walk([&](Operation *op) {
     if (auto alloc = dyn_cast<StackAllocationOp>(op))
@@ -1284,6 +1286,12 @@ void LowerAsyncBuildContext::preprocessAsyncFunction(
     }
     alloc->moveBefore(ancestor);
   }
+
+  // Number the suspension points.
+  int32_t nextState = 0;
+  funcOp.walk([&](SuspendOp suspend) {
+    suspend.setState(static_cast<uint32_t>(++nextState));
+  });
 }
 
 void LowerAsyncFunctionsPass::runOnOperation() {
